@@ -35,6 +35,9 @@ nslab = "news_scalping_lab.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+news_scalping_lab = ["py.typed"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
