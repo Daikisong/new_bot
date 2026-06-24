@@ -22,6 +22,7 @@ from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
+from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
@@ -120,7 +121,10 @@ def news_import(csv_path: Path) -> None:
 @research_app.command("import")
 def research_import(path: Path, mode: str = "auto") -> None:
     settings = load_settings()
-    episode = ResearchImporter(settings.project_root).import_path(path, mode=mode)
+    episode = ResearchImporter(
+        settings.project_root,
+        llm=create_llm_provider(settings),
+    ).import_path(path, mode=mode)
     _echo(
         {
             "episode_id": episode.episode_id,
@@ -133,7 +137,10 @@ def research_import(path: Path, mode: str = "auto") -> None:
 @research_app.command("import-batch")
 def research_import_batch(directory: Path, mode: str = "auto") -> None:
     settings = load_settings()
-    importer = ResearchImporter(settings.project_root)
+    importer = ResearchImporter(
+        settings.project_root,
+        llm=create_llm_provider(settings),
+    )
     imported = []
     for path in sorted(directory.iterdir()):
         if path.is_file():

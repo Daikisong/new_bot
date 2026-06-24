@@ -78,10 +78,21 @@ Copy `.env.example` to `.env` and set values as needed.
 ```text
 NSLAB_LLM_PROVIDER=mock
 OPENAI_API_KEY=
+NSLAB_OPENAI_MODEL=gpt-5-mini
+NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 NSLAB_STOCK_WEB_PATH=
 ```
 
-Without API keys, the deterministic mock providers are used. With API keys and adapter config, provider seams are ready for real calls.
+Without API keys, the deterministic mock providers are used. To use OpenAI for structured semantic import:
+
+```bash
+python -m pip install -e ".[openai]"
+set NSLAB_LLM_PROVIDER=openai
+set OPENAI_API_KEY=...
+nslab research import data/inbox/research/example.md --mode semantic
+```
+
+The OpenAI adapter uses Structured Outputs through the Python SDK and validates responses against the project Pydantic contracts.
 
 ## stock-web Price Source
 
