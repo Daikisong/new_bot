@@ -169,24 +169,274 @@ INFERRED_NEW
 단, 이것도 고정 법칙으로 만들지 말고 사례별 증거와 반례를 함께 연구하라.
 
 ────────────────────────────────────────
+1. 이번 실행의 단일 산출물 계약
+────────────────────────────────────────
 
-1. 이번 실행의 산출물
-   ────────────────────────────────────────
+이 섹션은 이후 본문에 등장하는 모든 파일 생성·첨부·최종 응답 지시보다 우선한다.
 
-반드시 다음 파일을 생성한다.
+이번 실행에서 사용자에게 제공하는 물리적 산출물은 정확히 하나의 Markdown 파일이다.
+
+파일명:
 
 ```text
-<TRADE_DATE>_blind_prediction.json
-<TRADE_DATE>_research_episode.json
-<TRADE_DATE>_brain_delta.jsonl
-<TRADE_DATE>_research_report.md
-<TRADE_DATE>_source_ledger.jsonl
-<TRADE_DATE>_research_bundle.zip
+<TRADE_DATE>_nslab_episode_bundle_<INPUT_SHA8>.md
 ```
 
-파일 생성 도구를 사용할 수 없다면 최종 응답에 위 파일별 내용을 각각 독립된 코드블록으로 출력하되, JSON은 완전한 유효 JSON이어야 한다.
+예:
 
-BLIND 파일은 결과 가격을 열기 전에 생성하고 해시를 계산해야 한다.
+```text
+2026-06-24_nslab_episode_bundle_a1b2c3d4.md
+```
+
+여기서:
+
+```text
+<TRADE_DATE>
+= CSV 본문과 거래일 검증을 통해 확정한 연구 대상 거래일
+
+<INPUT_SHA8>
+= 입력 CSV SHA-256의 앞 8자리
+```
+
+별도의 JSON, JSONL, ZIP 또는 추가 Markdown 파일을 사용자에게 생성하거나 첨부하지 마라.
+
+다만 연구 절차상 아래 논리 아티팩트는 각각 독립적이고 완전한 내용으로 작성해야 한다.
+
+```text
+blind_prediction.json
+research_episode.json
+brain_delta.jsonl
+source_ledger.jsonl
+research_report.md
+bundle_manifest.json
+```
+
+이후 본문에서 위 파일을 “생성한다”, “저장한다”, “봉인한다”, “해시를 계산한다”고 표현하는 경우, 이는 별도의 사용자용 파일을 여러 개 생성한다는 뜻이 아니다.
+
+다음과 같이 해석한다.
+
+```text
+각 논리 아티팩트의 canonical 내용을 독립적으로 완성
+→ 형식 검증
+→ 필요한 SHA-256 계산
+→ 단일 Markdown 번들 내부 지정 블록에 원문 그대로 삽입
+```
+
+연구 과정에서 내부 임시 파일을 생성하는 것은 허용한다. 그러나 최종적으로 사용자에게 제공하는 다운로드 파일은 Markdown 번들 하나뿐이어야 한다.
+
+기존 본문의 `research_bundle.zip` 생성 지시는 폐기한다.
+
+## 1.1 단일 Markdown 번들의 필수 구조
+
+최종 Markdown 파일은 반드시 아래 구조를 따른다.
+
+```markdown
+---
+schema_version: nslab.research_bundle.v1
+artifact_type: research_episode_bundle
+episode_id: <EPISODE_ID>
+trade_date: <TRADE_DATE>
+window_start: <WINDOW_START>
+cutoff_at: <CUTOFF_AT>
+input_file: <INPUT_FILE>
+input_sha256: <FULL_INPUT_SHA256>
+blind_valid: <true_or_false>
+blind_artifact_sha256: <BLIND_ARTIFACT_SHA256>
+created_at: <CREATED_AT>
+---
+
+<!-- NSLAB:BEGIN research_report.md -->
+
+# 연구 episode 개요
+
+사람이 읽는 전체 연구 보고서 본문
+
+<!-- NSLAB:END research_report.md -->
+
+<!-- NSLAB:BEGIN blind_prediction.json -->
+```json
+{
+  "schema_version": "nslab.blind_prediction.v1"
+}
+```
+<!-- NSLAB:END blind_prediction.json -->
+
+<!-- NSLAB:BEGIN research_episode.json -->
+```json
+{
+  "schema_version": "nslab.research_episode.v1"
+}
+```
+<!-- NSLAB:END research_episode.json -->
+
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+```jsonl
+{"record_type":"memory_claim"}
+{"record_type":"counterexample"}
+```
+<!-- NSLAB:END brain_delta.jsonl -->
+
+<!-- NSLAB:BEGIN source_ledger.jsonl -->
+```jsonl
+{"source_id":"SRC-000001"}
+```
+<!-- NSLAB:END source_ledger.jsonl -->
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+```json
+{
+  "schema_version": "nslab.bundle_manifest.v1"
+}
+```
+<!-- NSLAB:END bundle_manifest.json -->
+```
+
+위 예시는 구조 예시일 뿐이다. 실제 블록에는 이번 연구의 완전한 데이터를 기록해야 하며 빈 예시 객체만 출력해서는 안 된다.
+
+## 1.2 블록 형식 규칙
+
+다음 규칙을 반드시 지킨다.
+
+```text
+1. 각 BEGIN 마커와 END 마커는 파일 안에 정확히 한 번만 존재한다.
+2. 마커 이름과 대소문자를 임의로 변경하지 않는다.
+3. JSON 블록은 파싱 가능한 완전한 JSON이어야 한다.
+4. JSON 안에 주석, 말줄임표, placeholder를 남기지 않는다.
+5. JSONL은 한 줄에 JSON 객체 하나만 기록한다.
+6. JSONL 블록에 Markdown 설명문을 섞지 않는다.
+7. brain_delta.jsonl의 모든 행에 record_type이 있어야 한다.
+8. source_ledger.jsonl의 모든 행에 source_id가 있어야 한다.
+9. research_report.md 이외의 기계 블록에는 자유 산문을 넣지 않는다.
+10. 동일한 source_id, event_id, candidate_id는 모든 블록에서 일관되게 사용한다.
+```
+
+## 1.3 BLIND 논리 아티팩트 봉인 규칙
+
+D의 가격 결과를 열기 전에 `blind_prediction.json`의 내용을 완전히 확정한다.
+
+봉인 순서는 다음과 같다.
+
+```text
+1. blind_prediction 객체 완성
+2. 필수 필드 검증
+3. canonical JSON 직렬화
+4. SHA-256 계산
+5. sealed_at 기록
+6. 해당 내용을 변경 불가능한 상태로 보존
+7. 그 후에만 D 가격 결과 조회
+```
+
+Canonical JSON은 다음 방식으로 생성한다.
+
+```python
+json.dumps(
+    blind_prediction,
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":")
+)
+```
+
+문자 인코딩은 UTF-8, 줄바꿈은 LF, BOM은 사용하지 않는다.
+
+`blind_artifact_sha256`은 위 canonical JSON 문자열의 UTF-8 바이트를 기준으로 계산한다.
+
+최종 Markdown 번들의 `blind_prediction.json` 블록은 봉인된 객체와 의미상 완전히 동일해야 한다.
+
+결과 확인 후 다음을 금지한다.
+
+```text
+blind_prediction 후보 추가
+후보 순위 변경
+근거 변경
+섹터 가설 변경
+불확실성 문구 변경
+실제 승자에 맞춘 설명 보강
+```
+
+사후에 발견된 내용은 `research_episode.json`의 postmortem과 `research_report.md`의 결과 공개 이후 섹션에만 기록한다.
+
+## 1.4 Bundle Manifest
+
+`bundle_manifest.json`에는 최소한 다음을 기록한다.
+
+```json
+{
+  "schema_version": "nslab.bundle_manifest.v1",
+  "artifact_type": "research_episode_bundle",
+  "bundle_file_name": "",
+  "episode_id": "",
+  "trade_date": "",
+  "input_file": "",
+  "input_sha256": "",
+  "blind_valid": true,
+  "blind_artifact_sha256": "",
+  "created_at": "",
+  "embedded_artifacts": [
+    {
+      "name": "research_report.md",
+      "format": "markdown",
+      "begin_marker": "NSLAB:BEGIN research_report.md",
+      "end_marker": "NSLAB:END research_report.md"
+    },
+    {
+      "name": "blind_prediction.json",
+      "format": "json",
+      "begin_marker": "NSLAB:BEGIN blind_prediction.json",
+      "end_marker": "NSLAB:END blind_prediction.json"
+    },
+    {
+      "name": "research_episode.json",
+      "format": "json",
+      "begin_marker": "NSLAB:BEGIN research_episode.json",
+      "end_marker": "NSLAB:END research_episode.json"
+    },
+    {
+      "name": "brain_delta.jsonl",
+      "format": "jsonl",
+      "begin_marker": "NSLAB:BEGIN brain_delta.jsonl",
+      "end_marker": "NSLAB:END brain_delta.jsonl"
+    },
+    {
+      "name": "source_ledger.jsonl",
+      "format": "jsonl",
+      "begin_marker": "NSLAB:BEGIN source_ledger.jsonl",
+      "end_marker": "NSLAB:END source_ledger.jsonl"
+    }
+  ],
+  "validation": {
+    "json_valid": true,
+    "jsonl_valid": true,
+    "markers_complete": true,
+    "blind_hash_verified": true
+  }
+}
+```
+
+각 기계 블록은 최종 파일 저장 전에 실제로 파싱하여 유효성을 확인한다.
+
+검증에 실패한 상태에서 정상 완료로 보고하지 마라.
+
+## 1.5 다운로드 파일 생성
+
+최종 결과는 채팅 코드블록으로만 출력하지 말고 실제 다운로드 가능한 `.md` 파일로 생성한다.
+
+사용자에게 제공되는 최종 파일은 정확히 하나여야 한다.
+
+```text
+<TRADE_DATE>_nslab_episode_bundle_<INPUT_SHA8>.md
+```
+
+연구 결과가 길더라도 여러 파일로 분할하지 않는다.
+
+파일 크기 또는 도구 제한으로 일부 내용을 완성할 수 없다면 내용을 조용히 생략하지 말고 다음을 기록한다.
+
+```text
+bundle_incomplete = true
+incomplete_reasons = [...]
+```
+
+그 경우에도 가능한 범위의 단일 Markdown 번들을 생성한다.
 
 ────────────────────────────────────────
 2. 입력 날짜와 거래일 확정
@@ -1313,40 +1563,13 @@ available_from을 다음 거래일로 설정했는가
 ```
 
 ────────────────────────────────────────
-14. 최종 응답 방식
+14. 최종 파일 및 채팅 응답 방식
 ────────────────────────────────────────
 
-연구가 끝나면 최종 채팅 응답은 짧게 한다.
-
-다음만 보고한다.
+연구가 끝나면 다음 파일 하나만 실제 다운로드 가능한 첨부파일로 생성한다.
 
 ```text
-trade_date
-blind_valid
-BLIND 파일 SHA-256
-입력 기사 수
-사건 수
-BLIND 최종 관심종목 수
-실제 상한가 터치 수
-Recall@5
-Recall@10
-Recall@20
-주요 실패 유형
-생성한 파일 링크
-```
-
-상세 연구 내용은 첨부파일에 담는다.
-
-반드시 다음 파일을 링크한다.
-
-```text
-<TRADE_DATE>_blind_prediction.json
-<TRADE_DATE>_research_episode.json
-<TRADE_DATE>_brain_delta.jsonl
-<TRADE_DATE>_research_report.md
-<TRADE_DATE>_source_ledger.jsonl
-<TRADE_DATE>_research_bundle.zip
-```
+<TRADE_DATE>_nslab_episode_bundle_<INPUT_SHA8>.md
 
 ────────────────────────────────────────
 15. 작업 시작
