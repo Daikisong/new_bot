@@ -59,7 +59,7 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
             f"# Research 2030-01-{day}\n\nMechanism notes and counterexamples.",
             encoding="utf-8",
         )
-        episode = importer.import_path(source, mode="semantic")
+        episode = await importer.import_path_async(source, mode="semantic")
         store.accept(episode.episode_id)
     BrainCompiler(tmp_path).rebuild(mode="full")
 

@@ -8,7 +8,7 @@ placeholders from the input text so tests can exercise the pipeline without API 
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, time
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -21,7 +21,8 @@ from news_scalping_lab.contracts.models import (
     DominantSectorHypothesis,
     PathType,
 )
-from news_scalping_lab.utils import now_kst, sha256_text, stable_id
+from news_scalping_lab.research_import.semantic import SemanticResearchDraft
+from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -39,6 +40,9 @@ class DeterministicMockLLMProvider:
         if response_model is BlindPrediction:
             prediction = self._blind_prediction(prompt)
             return prediction  # type: ignore[return-value]
+        if response_model is SemanticResearchDraft:
+            draft = self._semantic_research_draft(prompt)
+            return draft  # type: ignore[return-value]
         raise NotImplementedError(f"mock structured output not registered for {response_model}")
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
@@ -165,3 +169,35 @@ class DeterministicMockLLMProvider:
             dominant_sectors=[sector],
             candidates=candidates,
         )
+
+    def _semantic_research_draft(self, prompt: str) -> SemanticResearchDraft:
+        trade_day = self._infer_generic_date(prompt) or date.today()
+        cutoff_at = datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST)
+        source_text = prompt.split("---SOURCE_TEXT---", maxsplit=1)[-1].strip()
+        compact = re.sub(r"\s+", " ", source_text).strip()
+        summary = compact[:1000] or "Structured semantic import created from an empty source."
+        mechanisms = self.infer_mechanisms(source_text or prompt)
+        return SemanticResearchDraft(
+            trade_date=trade_day,
+            cutoff_at=cutoff_at,
+            summary=summary,
+            open_world_mechanisms=mechanisms,
+            initial_uncertainties=[
+                "semantic conversion should be reviewed before acceptance",
+                "raw source remains immutable for provenance",
+            ],
+            price_source_snapshot={"source": "semantic_import_unknown"},
+        )
+
+    def _infer_generic_date(self, text: str) -> date | None:
+        match = re.search(r"(20[0-9]{2})[-_./](0[1-9]|1[0-2])[-_./]([0-2][0-9]|3[01])", text)
+        if match:
+            return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        compact_match = re.search(r"(20[0-9]{2})(0[1-9]|1[0-2])([0-2][0-9]|3[01])", text)
+        if compact_match:
+            return date(
+                int(compact_match.group(1)),
+                int(compact_match.group(2)),
+                int(compact_match.group(3)),
+            )
+        return None
