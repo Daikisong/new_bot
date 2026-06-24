@@ -152,7 +152,7 @@ class DailyAnalyzer:
         manifest.errors.extend(sweep.errors)
         self._fail_if_exhaustive_coverage_incomplete(manifest)
 
-        prediction = await self._generate_prediction(
+        prediction, blind_prompt_hash, blind_prompt_tokens = await self._generate_prediction(
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             news_texts=news_texts,
@@ -174,6 +174,7 @@ class DailyAnalyzer:
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
             },
         )
+        manifest.token_counts["blind_analysis_prompt"] = blind_prompt_tokens
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
         red_team = await run_red_team_pass(
             root=self.root,
@@ -206,9 +207,7 @@ class DailyAnalyzer:
         manifest.token_counts["final_synthesis_prompt"] = final_synthesis_prompt_tokens
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
-        manifest.prompt_hashes["blind_analysis"] = sha256_text(
-            canonical_json(prediction.model_dump(mode="json"))
-        )
+        manifest.prompt_hashes["blind_analysis"] = blind_prompt_hash
         manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
         manifest.prompt_hashes["final_synthesis"] = final_synthesis_prompt_hash
 
@@ -593,7 +592,7 @@ class DailyAnalyzer:
         excluded_source_ids: list[str],
         first_pass_mechanisms: list[str],
         context_payload: dict[str, Any],
-    ) -> BlindPrediction:
+    ) -> tuple[BlindPrediction, str, int]:
         prompt = self._build_blind_prediction_prompt(
             trade_date=trade_date,
             cutoff_at=cutoff_at,
@@ -619,7 +618,7 @@ class DailyAnalyzer:
                 excluded_source_ids=excluded_source_ids,
                 first_pass_mechanisms=first_pass_mechanisms,
             )
-        return self._normalize_prediction(
+        normalized = self._normalize_prediction(
             prediction,
             trade_date=trade_date,
             cutoff_at=cutoff_at,
@@ -628,6 +627,7 @@ class DailyAnalyzer:
             prompt=prompt,
             purpose="daily_blind_analysis",
         )
+        return normalized, sha256_text(prompt), max(1, len(prompt) // 4)
 
     def _build_blind_prediction_prompt(
         self,

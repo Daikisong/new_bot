@@ -284,7 +284,23 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]
+    assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
+    traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
+    prompt_hash_by_purpose = {
+        trace["purpose"]: trace["input"]["prompt_sha256"]
+        for trace in traces
+        if "prompt_sha256" in trace["input"]
+    }
+    assert saved_manifest["prompt_hashes"]["blind_analysis"] == prompt_hash_by_purpose[
+        "daily_blind_analysis"
+    ]
+    assert saved_manifest["prompt_hashes"]["red_team_candidate_review"] == prompt_hash_by_purpose[
+        "red_team_candidate_review"
+    ]
+    assert saved_manifest["prompt_hashes"]["final_synthesis"] == prompt_hash_by_purpose[
+        "final_synthesis"
+    ]
     red_team_path = tmp_path / analysis.context_manifest.red_team_artifacts[0]
     red_team = read_json(red_team_path)
     assert red_team["schema_version"] == "nslab.red_team_artifact.v1"

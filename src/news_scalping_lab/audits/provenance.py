@@ -28,6 +28,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: context manifest missing price_snapshot")
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
+            _check_prompt_hash_traces(root, path, prompt_hashes, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
         for candidate in prediction.get("candidates", []):
             if not isinstance(candidate, dict):
@@ -79,6 +80,28 @@ def _check_manifest_basics(
     return prompt_hashes
 
 
+def _check_prompt_hash_traces(
+    root: Path,
+    prediction_path: Path,
+    prompt_hashes: dict[str, Any],
+    findings: list[str],
+) -> None:
+    purpose_by_hash_key = {
+        "blind_analysis": "daily_blind_analysis",
+        "red_team_candidate_review": "red_team_candidate_review",
+        "final_synthesis": "final_synthesis",
+    }
+    traces_by_purpose = _trace_prompt_hashes_by_purpose(root)
+    for hash_key, purpose in purpose_by_hash_key.items():
+        manifest_hash = prompt_hashes.get(hash_key)
+        if not manifest_hash or purpose not in traces_by_purpose:
+            continue
+        if manifest_hash not in traces_by_purpose[purpose]:
+            findings.append(
+                f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
+            )
+
+
 def _check_context_manifest(
     root: Path,
     prediction_path: Path,
@@ -98,6 +121,23 @@ def _check_context_manifest(
     if manifest.get("run_id") != context_manifest_id:
         findings.append(f"{prediction_path.name}: context manifest run_id mismatch")
     return manifest
+
+
+def _trace_prompt_hashes_by_purpose(root: Path) -> dict[str, set[str]]:
+    traces: dict[str, set[str]] = {}
+    for path in sorted((root / "runs" / "traces").glob("*.json")):
+        payload = _read_json_object(path, [])
+        if payload is None:
+            continue
+        purpose = payload.get("purpose")
+        trace_input = payload.get("input")
+        if not isinstance(purpose, str) or not isinstance(trace_input, dict):
+            continue
+        prompt_sha256 = trace_input.get("prompt_sha256")
+        if not isinstance(prompt_sha256, str) or not prompt_sha256:
+            continue
+        traces.setdefault(purpose, set()).add(prompt_sha256)
+    return traces
 
 
 def _check_red_team_artifacts(

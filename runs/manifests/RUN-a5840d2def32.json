@@ -32,6 +32,8 @@
   "counterexample_episode_ids": [],
   "cutoff_at": "2026-06-24T08:59:59+09:00",
   "errors": [],
+  "excluded_retrieved_episode_ids": [],
+  "excluded_web_source_ids": [],
   "memory_sweep_artifacts": [],
   "memory_sweep_cache_hits": 0,
   "memory_sweep_shard_count": 0,
@@ -48,16 +50,26 @@
     "source_ref": null
   },
   "prompt_hashes": {
-    "blind_analysis": "1edacad84c9253033db08e05b312b08b519bbcbafef785651be47a0963eb8151"
+    "blind_analysis": "6c7f396f694375e3b02e3b355b962d27b43cfea4f01793c5591369265f47fe68",
+    "final_synthesis": "b3f75e00a7bf6625db9bb893eb654f2dfb1fd1654da4c3290de08e33d380c7da",
+    "red_team_candidate_review": "b6f2e7e07de0f9050226875cd64afcbf005631aa9a0ab9630592ec0b84ab171b"
   },
+  "red_team_artifacts": [
+    "runs/checkpoints/red_team/RUN-a5840d2def32.json"
+  ],
   "retrieved_episode_ids": [],
   "run_id": "RUN-a5840d2def32",
   "schema_version": "nslab.context_manifest.v1",
+  "shard_brain_file_hashes": {},
+  "shard_brain_files": [],
   "swept_episode_count": 0,
   "swept_episode_ids": [],
   "token_counts": {
+    "blind_analysis_prompt": 12457,
     "current_news": 6278,
-    "memory_sweep": 0
+    "final_synthesis_prompt": 12430,
+    "memory_sweep": 0,
+    "red_team_prompt": 2133
   },
   "trade_date": "2026-06-24",
   "truncations": [],
