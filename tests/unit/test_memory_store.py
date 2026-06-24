@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from datetime import date, datetime, time
+
+from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.retrieval.store import LocalRetrievalStore
+from news_scalping_lab.utils import KST
+
+
+def _episode(
+    episode_id: str,
+    *,
+    summary: str,
+    mechanism: str,
+    available_at: datetime,
+) -> ResearchEpisode:
+    trade_day = date(2030, 1, 9)
+    return ResearchEpisode(
+        episode_id=episode_id,
+        trade_date=trade_day,
+        cutoff_at=datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST),
+        created_at=datetime.combine(trade_day, time(16, 0, 0), tzinfo=KST),
+        research_version="test-v1",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(
+            summary=summary,
+            open_world_mechanisms=[mechanism],
+        ),
+        available_from=available_at,
+    )
+
+
+def test_local_memory_store_adds_and_lists_accepted_episode(tmp_path) -> None:
+    memory = LocalRetrievalStore(tmp_path)
+    episode = _episode(
+        "EP-memory",
+        summary="Accepted memory summary.",
+        mechanism="current event -> open-world path",
+        available_at=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+    )
+
+    memory.add_episode(episode)
+
+    assert [item.episode_id for item in memory.list_all_episodes()] == ["EP-memory"]
+    assert (tmp_path / "research" / "accepted" / "EP-memory.json").exists()
+
+
+def test_local_memory_store_filters_available_as_of_cutoff(tmp_path) -> None:
+    memory = LocalRetrievalStore(tmp_path)
+    available = _episode(
+        "EP-available",
+        summary="Available before cutoff.",
+        mechanism="available mechanism",
+        available_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    future = _episode(
+        "EP-future",
+        summary="Unavailable after cutoff.",
+        mechanism="future mechanism",
+        available_at=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    memory.add_episode(available)
+    memory.add_episode(future)
+
+    as_of = memory.get_available_as_of(datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST))
+
+    assert [episode.episode_id for episode in as_of] == ["EP-available"]
+
+
+def test_semantic_search_keeps_research_available_without_exact_keyword_gate(tmp_path) -> None:
+    memory = LocalRetrievalStore(tmp_path)
+    memory.add_episode(
+        _episode(
+            "EP-abstract",
+            summary="Past case about indirect supply-chain beneficiary discovery.",
+            mechanism="new catalyst -> infer adjacent infrastructure demand",
+            available_at=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+    )
+
+    assert memory.search_semantic("unseen wording with no shared tokens", limit=5) == [
+        "EP-abstract"
+    ]
+    assert LocalRetrievalStore(tmp_path, force_empty=True).search_semantic(
+        "unseen wording with no shared tokens", limit=5
+    ) == []

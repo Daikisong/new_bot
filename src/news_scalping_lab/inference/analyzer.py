@@ -35,6 +35,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
+from news_scalping_lab.memory import MemoryStore
 from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
@@ -73,7 +74,7 @@ class DailyAnalyzer:
         settings: Settings,
         *,
         llm: LLMProvider | None = None,
-        retrieval: LocalRetrievalStore | None = None,
+        retrieval: MemoryStore | None = None,
         price_source: PriceSource | None = None,
         web_provider: WebResearchProvider | None = None,
     ) -> None:
@@ -97,7 +98,7 @@ class DailyAnalyzer:
         batch = load_news_csv(news_csv, trade_date=trade_date).before_or_at(cutoff_at)
         run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
         web_queries = self._build_web_queries(batch.items)
-        raw_retrieved_ids = self.retrieval.search(" ".join(web_queries), limit=20)
+        raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
         retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
             cutoff_at=cutoff_at,
