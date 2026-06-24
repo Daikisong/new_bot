@@ -75,6 +75,8 @@ nslab evaluate --trade-date 2026-07-15
 ```
 
 Evaluation loads the sealed blind prediction, reads D-day outcome data only in the evaluation phase, labels outcomes, and writes postmortem learning with `available_from` set after the trade date.
+When the price source exposes a full D-day outcome universe, evaluation also fills UpperLimit Recall@5/10/20.
+Without that universe it leaves recall empty with an explicit unavailable reason instead of faking recall from predicted candidates only.
 
 ## Session Pack
 

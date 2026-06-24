@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from news_scalping_lab.contracts.models import OutcomeLabels
 
@@ -38,6 +38,12 @@ class PriceSource(Protocol):
 
     def get_outcome(self, ticker: str, *, trade_date: date) -> OutcomeLabels:
         """Return D-day outcome labels for evaluation only."""
+
+
+@runtime_checkable
+class OutcomeUniversePriceSource(Protocol):
+    def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
+        """Return D-day outcome labels for the full tradable universe when available."""
 
 
 class BlindPriceGuard:

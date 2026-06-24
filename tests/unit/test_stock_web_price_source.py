@@ -13,9 +13,11 @@ from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock
 def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> None:
     atlas = tmp_path / "atlas"
     (atlas / "ohlcv_tradable_by_symbol_year" / "005" / "005930").mkdir(parents=True)
+    (atlas / "ohlcv_tradable_by_symbol_year" / "123" / "123456").mkdir(parents=True)
     (atlas / "ohlcv_raw_by_symbol_year").mkdir(parents=True)
     (atlas / "ohlcv_min_by_symbol_year").mkdir(parents=True)
     (atlas / "symbol_profiles" / "005").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "123").mkdir(parents=True)
     (atlas / "manifest.json").write_text(
         """
 {
@@ -66,6 +68,10 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
         '{"code":"005930","available_years":[2030]}',
         encoding="utf-8",
     )
+    (atlas / "symbol_profiles" / "123" / "123456.json").write_text(
+        '{"code":"123456","available_years":[2030]}',
+        encoding="utf-8",
+    )
     (atlas / "ohlcv_tradable_by_symbol_year" / "005" / "005930" / "2030.csv").write_text(
         "\n".join(
             [
@@ -77,11 +83,23 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
         + "\n",
         encoding="utf-8",
     )
+    (atlas / "ohlcv_tradable_by_symbol_year" / "123" / "123456" / "2030.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c,v,a,mc,s,m",
+                "2030-01-08,100,110,95,100,1000,100000,1000000,10000,KOSPI",
+                "2030-01-10,101,105,98,103,1500,150000,1030000,10000,KOSPI",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     source = StockWebPriceSource(tmp_path)
     schema = source.inspect_atlas_schema()
     history = source.get_history("005930", through=date(2030, 1, 10))
     outcome = source.get_outcome("005930", trade_date=date(2030, 1, 10))
+    universe = source.get_outcome_universe(trade_date=date(2030, 1, 10))
 
     assert schema["calibration_shard_root"] == "atlas/ohlcv_tradable_by_symbol_year"
     assert [record.trade_date for record in history] == [date(2030, 1, 8), date(2030, 1, 10)]
@@ -90,6 +108,9 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     assert outcome.close_return_pct == pytest.approx(29.0)
     assert outcome.upper_limit_touched is True
     assert outcome.upper_limit_closed is True
+    assert sorted(universe) == ["005930", "123456"]
+    assert universe["005930"].upper_limit_touched is True
+    assert universe["123456"].upper_limit_touched is False
 
 
 def test_stock_web_cache_clones_remote_when_cache_is_missing(tmp_path) -> None:

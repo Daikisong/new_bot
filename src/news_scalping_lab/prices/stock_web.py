@@ -126,6 +126,15 @@ class StockWebPriceSource:
             ],
         )
 
+    def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
+        universe: dict[str, OutcomeLabels] = {}
+        for ticker in self._known_tickers():
+            outcome = self.get_outcome(ticker, trade_date=trade_date)
+            if outcome.flags == ["PRICE_UNAVAILABLE"]:
+                continue
+            universe[ticker] = outcome
+        return universe
+
     def _iter_records(self, ticker: str) -> list[PriceRecord]:
         records: list[PriceRecord] = []
         paths = self._ticker_shard_paths(ticker)
@@ -193,6 +202,28 @@ class StockWebPriceSource:
             if paths:
                 return sorted(paths)
         return []
+
+    def _known_tickers(self) -> list[str]:
+        tickers: set[str] = set()
+        profile_root = self.atlas_root / "symbol_profiles"
+        if profile_root.exists():
+            for path in profile_root.glob("*/*.json"):
+                normalized = _normalize_ticker(path.stem)
+                if normalized is not None:
+                    tickers.add(normalized)
+        for root in self._preferred_shard_roots():
+            if not root.exists():
+                continue
+            for prefix_dir in root.iterdir():
+                if not prefix_dir.is_dir():
+                    continue
+                for ticker_dir in prefix_dir.iterdir():
+                    if not ticker_dir.is_dir():
+                        continue
+                    normalized = _normalize_ticker(ticker_dir.name)
+                    if normalized is not None:
+                        tickers.add(normalized)
+        return sorted(tickers)
 
     def _available_years(self, ticker: str) -> list[int]:
         profile_path = self.atlas_root / "symbol_profiles" / ticker[:3] / f"{ticker}.json"

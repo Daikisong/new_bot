@@ -85,6 +85,15 @@ class MetricsPriceSource:
         return outcomes[ticker]
 
 
+class UniverseMetricsPriceSource(MetricsPriceSource):
+    def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
+        return {
+            "T1": OutcomeLabels(upper_limit_touched=True, upper_limit_closed=True),
+            "T4": OutcomeLabels(upper_limit_touched=True, upper_limit_closed=False),
+            "T5": OutcomeLabels(upper_limit_touched=False, upper_limit_closed=False),
+        }
+
+
 def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -190,6 +199,55 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     assert metrics["upper_limit_recall_at_5"] is None
     assert metrics["theme_recall"] is None
     assert "universe is unavailable" in metrics["recall_unavailable_reason"]
+
+
+def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    prediction = prediction.model_copy(
+        update={
+            "candidates": [
+                Candidate(
+                    rank=1,
+                    ticker="T1",
+                    company_name="HitCandidate",
+                    path_type=PathType.SINGLE_EVENT,
+                    thesis="Candidate expected to touch upper limit.",
+                    why_now="Pre-cutoff catalyst.",
+                    causal_chain=["news", "direct relevance"],
+                ),
+                Candidate(
+                    rank=2,
+                    ticker="T2",
+                    company_name="HighReturnCandidate",
+                    path_type=PathType.THEME_BENEFICIARY,
+                    thesis="Candidate expected to move but not upper-limit.",
+                    why_now="Pre-cutoff catalyst.",
+                    causal_chain=["news", "beneficiary path"],
+                ),
+            ]
+        }
+    )
+    resealed = prediction.model_copy(update={"blind_artifact_sha256": None})
+    prediction = resealed.model_copy(
+        update={"blind_artifact_sha256": sha256_text(canonical_json(resealed.model_dump(mode="json")))}
+    )
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+
+    result = Evaluator(tmp_path, price_source=UniverseMetricsPriceSource()).evaluate(
+        trade_date=trade_day
+    )
+
+    metrics = read_json(result.report_path)["performance_metrics"]
+    assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)
+    assert metrics["upper_limit_recall_at_10"] == pytest.approx(0.5)
+    assert metrics["upper_limit_recall_at_20"] == pytest.approx(0.5)
+    assert metrics["recall_unavailable_reason"] is None
 
 
 def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:

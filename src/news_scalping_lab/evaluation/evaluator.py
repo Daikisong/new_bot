@@ -17,7 +17,7 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
-from news_scalping_lab.prices.base import PriceSource
+from news_scalping_lab.prices.base import OutcomeUniversePriceSource, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -72,7 +72,8 @@ class Evaluator:
                 hits.append(company)
             else:
                 false_positives.append(company)
-        metrics = _build_metrics(ranked_outcomes)
+        outcome_universe = _load_outcome_universe(self.price_source, trade_date=trade_date)
+        metrics = _build_metrics(ranked_outcomes, outcome_universe=outcome_universe)
         postmortem = Postmortem(
             summary="Mock postmortem generated from sealed blind prediction and evaluation-only outcomes.",
             hits=hits,
@@ -180,20 +181,38 @@ class Evaluator:
         )
 
 
-def _build_metrics(ranked_outcomes: list[tuple[Candidate, OutcomeLabels]]) -> EvaluationMetrics:
+def _build_metrics(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    *,
+    outcome_universe: dict[str, OutcomeLabels] | None = None,
+) -> EvaluationMetrics:
     candidate_count = len(ranked_outcomes)
     upper_limit_hits_at_5 = _upper_limit_hits_at(ranked_outcomes, 5)
     upper_limit_hits_at_10 = _upper_limit_hits_at(ranked_outcomes, 10)
     upper_limit_hits_at_20 = _upper_limit_hits_at(ranked_outcomes, 20)
+    recall_unavailable_reason = None
+    if outcome_universe is None:
+        recall_unavailable_reason = (
+            "Daily market outcome universe is unavailable; recall requires all "
+            "upper-limit and high-return symbols, not only predicted candidates."
+        )
+    elif not _upper_limit_universe_tickers(outcome_universe):
+        recall_unavailable_reason = "Daily market outcome universe has no upper-limit symbols."
     return EvaluationMetrics(
         candidate_count=candidate_count,
         upper_limit_hits_at_5=upper_limit_hits_at_5,
         upper_limit_hits_at_10=upper_limit_hits_at_10,
         upper_limit_hits_at_20=upper_limit_hits_at_20,
-        recall_unavailable_reason=(
-            "Daily market outcome universe is unavailable; recall requires all "
-            "upper-limit and high-return symbols, not only predicted candidates."
+        upper_limit_recall_at_5=_upper_limit_recall_at(
+            ranked_outcomes, outcome_universe, 5
         ),
+        upper_limit_recall_at_10=_upper_limit_recall_at(
+            ranked_outcomes, outcome_universe, 10
+        ),
+        upper_limit_recall_at_20=_upper_limit_recall_at(
+            ranked_outcomes, outcome_universe, 20
+        ),
+        recall_unavailable_reason=recall_unavailable_reason,
         precision_at_5=_rate(upper_limit_hits_at_5, min(5, candidate_count)),
         precision_at_10=_rate(upper_limit_hits_at_10, min(10, candidate_count)),
         theme_recall=None,
@@ -225,6 +244,42 @@ def _upper_limit_hits_at(
     ranked_outcomes: list[tuple[Candidate, OutcomeLabels]], limit: int
 ) -> int:
     return sum(1 for _, outcome in ranked_outcomes[:limit] if outcome.upper_limit_touched)
+
+
+def _load_outcome_universe(
+    price_source: PriceSource,
+    *,
+    trade_date: date,
+) -> dict[str, OutcomeLabels] | None:
+    if not isinstance(price_source, OutcomeUniversePriceSource):
+        return None
+    return price_source.get_outcome_universe(trade_date=trade_date)
+
+
+def _upper_limit_recall_at(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    limit: int,
+) -> float | None:
+    if outcome_universe is None:
+        return None
+    universe_tickers = _upper_limit_universe_tickers(outcome_universe)
+    if not universe_tickers:
+        return None
+    predicted_tickers = {
+        candidate.ticker
+        for candidate, outcome in ranked_outcomes[:limit]
+        if outcome.upper_limit_touched and candidate.ticker in universe_tickers
+    }
+    return len(predicted_tickers) / len(universe_tickers)
+
+
+def _upper_limit_universe_tickers(outcome_universe: dict[str, OutcomeLabels]) -> set[str]:
+    return {
+        ticker
+        for ticker, outcome in outcome_universe.items()
+        if outcome.upper_limit_touched is True
+    }
 
 
 def _average_high_return_at(
