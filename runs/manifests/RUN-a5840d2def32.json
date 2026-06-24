@@ -43,11 +43,11 @@
     "allowed_through": "2026-06-23",
     "as_of": null,
     "notes": [],
-    "source_name": "blind-guarded",
+    "source_name": "mock-price",
     "source_ref": null
   },
   "prompt_hashes": {
-    "blind_analysis": "268b6a23c0e4d23b05aeb68d76af598a504e42c7c1a4b57da33534c0e58c1b3d"
+    "blind_analysis": "6daf5d7da66fa092ba006244823a6bdf895a02a749a284528d52e3ee497fff33"
   },
   "retrieved_episode_ids": [],
   "run_id": "RUN-a5840d2def32",

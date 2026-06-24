@@ -7,9 +7,10 @@ placeholders from the input text so tests can exercise the pipeline without API 
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, time
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -79,10 +80,17 @@ class DeterministicMockLLMProvider:
         return mentions
 
     def _blind_prediction(self, prompt: str) -> BlindPrediction:
-        today = date.today()
+        payload = self._blind_payload(prompt)
+        today = self._payload_date(payload, "trade_date") or date.today()
         created_at = now_kst()
-        mechanisms = self.infer_mechanisms(prompt)
-        mentions = self.extract_company_mentions(prompt.split("\n---NEWS---\n"))
+        cutoff_at = self._payload_datetime(payload, "cutoff_at") or created_at
+        current_news = self._payload_string_list(payload, "current_news")
+        event_ids = self._payload_string_list(payload, "event_ids")
+        mechanisms = self._payload_string_list(payload, "first_pass_mechanisms")
+        if not mechanisms:
+            mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
+        mentions = self.extract_company_mentions(current_news or [prompt])
+        event_anchor = f"news://{event_ids[0]}" if event_ids else "news://current-batch"
         candidates: list[Candidate] = []
         for rank, company in enumerate(mentions[:5], start=1):
             candidates.append(
@@ -91,7 +99,7 @@ class DeterministicMockLLMProvider:
                     ticker="UNKNOWN",
                     company_name=company,
                     path_type=PathType.SINGLE_EVENT,
-                    event_ids=[],
+                    event_ids=event_ids[:1],
                     thesis=(
                         "Directly mentioned entity requires verification of listing status, "
                         "economic ownership, novelty, and D-1 market absorption."
@@ -117,6 +125,7 @@ class DeterministicMockLLMProvider:
                     ],
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
+                    source_urls=[event_anchor],
                 )
             )
         if not candidates:
@@ -134,16 +143,56 @@ class DeterministicMockLLMProvider:
                     inferred_evidence=["retrieval miss does not block candidate discovery"],
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
+                    source_urls=[event_anchor],
                 )
             )
+        discovery_rank = len(candidates) + 1
+        candidates.append(
+            Candidate(
+                rank=discovery_rank,
+                ticker="UNKNOWN",
+                company_name="BENEFICIARY_DISCOVERY_REQUIRED",
+                path_type=PathType.THEME_BENEFICIARY,
+                event_ids=event_ids[:3],
+                thesis="Policy, industry, or supply-chain beneficiaries require web/company discovery.",
+                why_now="Open-world mechanisms indicate indirect paths before any retrieval gate.",
+                causal_chain=["current catalyst", "beneficiary path discovery", "company verification"],
+                inferred_evidence=mechanisms[:2],
+                novel_reasoning="A new beneficiary can be investigated even when memory has no exact precedent.",
+                counterarguments=["theme breadth may fail", "indirect relation may be too weak"],
+                confidence_label=ConfidenceLabel.SPECULATIVE,
+                evidence_quality=ConfidenceLabel.LOW,
+                source_urls=[event_anchor],
+            )
+        )
+        candidates.append(
+            Candidate(
+                rank=discovery_rank + 1,
+                ticker="UNKNOWN",
+                company_name="D_MINUS_ONE_LEADER_REVIEW",
+                path_type=PathType.CONTINUATION,
+                event_ids=[],
+                thesis="Recent leaders must be checked using only D-1 and earlier market data.",
+                why_now="Continuation is evaluated separately from current-news directness.",
+                causal_chain=["D-1 market memory", "current catalyst overlap", "continuation red-team"],
+                inferred_evidence=["requires blind-safe price provider"],
+                market_memory_evidence=["D-day prices are blocked during blind analysis"],
+                counterarguments=["already exhausted", "no current catalyst overlap"],
+                confidence_label=ConfidenceLabel.SPECULATIVE,
+                evidence_quality=ConfidenceLabel.LOW,
+                source_urls=["price://blind-safe-d-minus-one"],
+            )
+        )
 
         sector = DominantSectorHypothesis(
             name="open-world catalyst cluster",
-            triggering_events=[],
+            triggering_events=event_ids[:5],
             formation_mechanism=mechanisms[0],
             expected_breadth="unknown until web and memory evidence are compared",
-            direct_beneficiaries=[candidate.company_name for candidate in candidates[:3]],
-            indirect_beneficiaries=[],
+            direct_beneficiaries=[
+                candidate.company_name for candidate in candidates if candidate.path_type == PathType.SINGLE_EVENT
+            ][:3],
+            indirect_beneficiaries=["BENEFICIARY_DISCOVERY_REQUIRED"],
             narrative_beneficiaries=[],
             possible_leaders=[candidate.company_name for candidate in candidates[:3]],
             failure_conditions=[
@@ -155,7 +204,7 @@ class DeterministicMockLLMProvider:
         return BlindPrediction(
             prediction_id=stable_id("PRED", prompt, created_at.isoformat()),
             trade_date=today,
-            cutoff_at=created_at,
+            cutoff_at=cutoff_at,
             created_at=created_at,
             blind_analysis=BlindAnalysis(
                 summary="Mock open-world blind analysis produced from current evidence only.",
@@ -169,6 +218,41 @@ class DeterministicMockLLMProvider:
             dominant_sectors=[sector],
             candidates=candidates,
         )
+
+    def _blind_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---BLIND_ANALYSIS_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _payload_string_list(self, payload: dict[str, Any], key: str) -> list[str]:
+        value = payload.get(key)
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
+
+    def _payload_date(self, payload: dict[str, Any], key: str) -> date | None:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+
+    def _payload_datetime(self, payload: dict[str, Any], key: str) -> datetime | None:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     def _semantic_research_draft(self, prompt: str) -> SemanticResearchDraft:
         trade_day = self._infer_generic_date(prompt) or date.today()

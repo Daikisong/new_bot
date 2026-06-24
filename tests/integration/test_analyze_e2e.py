@@ -132,8 +132,15 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         == analysis.context_manifest.swept_episode_count
     )
     assert analysis.blind_prediction.candidates
+    assert analysis.blind_prediction.candidates[0].company_name != "Create"
+    path_types = {candidate.path_type for candidate in analysis.blind_prediction.candidates}
+    assert PathType.THEME_BENEFICIARY in path_types
+    assert PathType.CONTINUATION in path_types
     assert (tmp_path / analysis.report_path).exists()
     assert (tmp_path / analysis.prediction_path).exists()
+    assert analysis.blind_prediction.context_manifest_id == analysis.context_manifest.run_id
+    saved_prediction = read_json(tmp_path / analysis.prediction_path)
+    assert saved_prediction["context_manifest_id"] == analysis.context_manifest.run_id
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert audit_provenance(tmp_path)["passed"]
 

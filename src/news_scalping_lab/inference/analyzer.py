@@ -129,6 +129,7 @@ class DailyAnalyzer:
                 "web_sources": manifest.web_sources,
             },
         )
+        prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["blind_analysis"] = sha256_text(

@@ -6,9 +6,10 @@ from pathlib import Path
 import pytest
 
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
+from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.prices.base import BlindPriceAccessError, BlindPriceGuard
 from news_scalping_lab.prices.mock import MockPriceSource
-from news_scalping_lab.utils import KST
+from news_scalping_lab.utils import KST, write_json
 from news_scalping_lab.web.provider import TemporalWebGuard, WebSearchResult
 
 
@@ -100,3 +101,53 @@ def rank(title: str) -> int:
     assert isinstance(findings, list)
     rules = {finding["rule"] for finding in findings}
     assert "fixed_expression_score" in rules
+
+
+def test_provenance_audit_requires_prediction_context_manifest(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-missing`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "2030-01-10.json: missing context_manifest_id" in result["findings"]
+
+
+def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
