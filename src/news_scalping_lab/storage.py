@@ -25,9 +25,9 @@ class ResearchStore:
 
     def get_episode(self, episode_id: str) -> ResearchEpisode:
         candidates = [
-            self.episodes_dir / f"{episode_id}.json",
             self.accepted_dir / f"{episode_id}.json",
             self.rejected_dir / f"{episode_id}.json",
+            self.episodes_dir / f"{episode_id}.json",
         ]
         for path in candidates:
             if path.exists():

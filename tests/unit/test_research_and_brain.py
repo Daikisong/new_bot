@@ -9,6 +9,7 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.contracts.models import BlindAnalysis
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.storage import ResearchStore
@@ -91,6 +92,39 @@ def test_research_accept_reject_stages_are_mutually_exclusive(tmp_path) -> None:
     assert not rejected_path.exists()
     assert [item.episode_id for item in store.list_accepted()] == [episode.episode_id]
     assert [item.episode_id for item in store.list_rejected()] == []
+
+
+def test_brain_rebuild_uses_accepted_snapshot_when_canonical_episode_changes(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Accepted snapshot note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    store = ResearchStore(tmp_path)
+    store.accept(episode.episode_id)
+
+    changed_mechanism = "changed canonical mechanism must not enter accepted brain"
+    changed = episode.model_copy(
+        update={
+            "blind_analysis": BlindAnalysis(
+                summary="Changed canonical summary should not affect accepted brain.",
+                open_world_mechanisms=[changed_mechanism],
+            )
+        }
+    )
+    store.save_episode(changed)
+
+    fetched = store.get_episode(episode.episode_id)
+    assert fetched.blind_analysis.open_world_mechanisms == (
+        episode.blind_analysis.open_world_mechanisms
+    )
+
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    claims_text = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+
+    assert changed_mechanism not in claims_text
+    assert episode.blind_analysis.open_world_mechanisms[0] in claims_text
+    assert episode.episode_id in manifest.covered_episode_ids
 
 
 def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
