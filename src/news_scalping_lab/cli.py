@@ -223,8 +223,14 @@ def analyze(
 @app.command()
 def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
     settings = load_settings()
-    path = Evaluator(settings.project_root).evaluate(trade_date=_parse_date(trade_date))
-    _echo({"postmortem": path.as_posix()})
+    result = Evaluator(settings.project_root).evaluate(trade_date=_parse_date(trade_date))
+    _echo(
+        {
+            "postmortem": result.report_path.as_posix(),
+            "research_episode_id": result.episode_id,
+            "research_episode_path": result.episode_path.as_posix(),
+        }
+    )
 
 
 @context_app.command("inspect")
