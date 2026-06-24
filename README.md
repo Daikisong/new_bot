@@ -55,6 +55,10 @@ nslab brain rebuild --mode full
 nslab brain audit
 ```
 
+`import-batch` accepts imported episodes by default so the documented rebuild flow
+updates the brain immediately. Use `--no-accept` when you want to stage episodes
+for manual validation first.
+
 ## Daily Blind Analysis
 
 ```bash

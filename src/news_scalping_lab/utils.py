@@ -75,7 +75,7 @@ def write_json(path: Path, data: Any) -> None:
 
 
 def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def slug(value: str, max_length: int = 80) -> str:

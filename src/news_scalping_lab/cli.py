@@ -141,17 +141,27 @@ def research_import(path: Path, mode: str = "auto") -> None:
 
 
 @research_app.command("import-batch")
-def research_import_batch(directory: Path, mode: str = "auto") -> None:
+def research_import_batch(
+    directory: Path,
+    mode: str = "auto",
+    accept: Annotated[bool, typer.Option("--accept/--no-accept")] = True,
+) -> None:
     settings = load_settings()
     importer = ResearchImporter(
         settings.project_root,
         llm=create_llm_provider(settings),
     )
-    imported = []
+    store = ResearchStore(settings.project_root)
+    imported: list[str] = []
+    accepted: list[str] = []
     for path in sorted(directory.iterdir()):
         if path.is_file():
-            imported.append(importer.import_path(path, mode=mode).episode_id)
-    _echo({"imported_episode_ids": imported})
+            episode = importer.import_path(path, mode=mode)
+            imported.append(episode.episode_id)
+            if accept:
+                store.accept(episode.episode_id)
+                accepted.append(episode.episode_id)
+    _echo({"imported_episode_ids": imported, "accepted_episode_ids": accepted})
 
 
 @research_app.command("validate")

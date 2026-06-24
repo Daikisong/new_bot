@@ -7,14 +7,20 @@ from typing import TypeVar
 import pytest
 import typer
 from pydantic import BaseModel
+from typer.testing import CliRunner
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
-from news_scalping_lab.cli import audit_coverage_cmd
+from news_scalping_lab.cli import app, audit_coverage_cmd
 from news_scalping_lab.cli import brain_audit as cli_brain_audit
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.contracts.models import BlindAnalysis, MemoryClaim, Provenance
+from news_scalping_lab.contracts.models import (
+    BlindAnalysis,
+    MemoryClaim,
+    Provenance,
+    ResearchEpisode,
+)
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.storage import ResearchStore
@@ -22,6 +28,7 @@ from news_scalping_lab.utils import KST, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 T = TypeVar("T", bound=BaseModel)
+RUNNER = CliRunner()
 
 
 class RecordingSemanticLLM:
@@ -50,6 +57,23 @@ class RecordingSemanticLLM:
         return [[0.0] for _ in texts]
 
 
+def _batch_episode(episode_id: str, summary: str) -> ResearchEpisode:
+    trade_day = date(2030, 1, 10)
+    return ResearchEpisode(
+        episode_id=episode_id,
+        trade_date=trade_day,
+        cutoff_at=datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST),
+        created_at=datetime.combine(trade_day, time(16, 0, 0), tzinfo=KST),
+        research_version="batch-import-test-v1",
+        price_source_snapshot={"source": "batch-test"},
+        blind_analysis=BlindAnalysis(
+            summary=summary,
+            open_world_mechanisms=[f"{episode_id} -> batch import -> brain rebuild"],
+        ),
+        available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
+    )
+
+
 def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -72,6 +96,67 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert episode.episode_id in shard_path.read_text(encoding="utf-8")
     assert (tmp_path / "memory" / "shard_brains" / manifest.brain_version).exists()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
+
+
+def test_cli_import_batch_accepts_by_default_and_rebuilds_brain(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    inbox = tmp_path / "data" / "inbox" / "research"
+    (inbox / "one.json").write_text(
+        _batch_episode("EP-batch-one", "First batch lesson.").model_dump_json(),
+        encoding="utf-8-sig",
+    )
+    (inbox / "two.json").write_text(
+        _batch_episode("EP-batch-two", "Second batch lesson.").model_dump_json(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    imported = RUNNER.invoke(app, ["research", "import-batch", str(inbox), "--mode", "strict"])
+
+    assert imported.exit_code == 0, imported.output
+    imported_output = json.loads(imported.output)
+    assert imported_output["imported_episode_ids"] == ["EP-batch-one", "EP-batch-two"]
+    assert imported_output["accepted_episode_ids"] == ["EP-batch-one", "EP-batch-two"]
+
+    rebuilt = RUNNER.invoke(app, ["brain", "rebuild", "--mode", "full"])
+
+    assert rebuilt.exit_code == 0, rebuilt.output
+    manifest = json.loads(rebuilt.output)
+    assert manifest["accepted_episode_count"] == 2
+    assert manifest["covered_episode_ids"] == ["EP-batch-one", "EP-batch-two"]
+    assert ResearchStore(tmp_path).accepted_hashes().keys() == {
+        "EP-batch-one",
+        "EP-batch-two",
+    }
+
+
+def test_cli_import_batch_can_leave_episodes_unaccepted(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    inbox = tmp_path / "data" / "inbox" / "research"
+    (inbox / "one.json").write_text(
+        _batch_episode("EP-staged-only", "Staged batch lesson.").model_dump_json(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    imported = RUNNER.invoke(
+        app,
+        ["research", "import-batch", str(inbox), "--mode", "strict", "--no-accept"],
+    )
+
+    assert imported.exit_code == 0, imported.output
+    imported_output = json.loads(imported.output)
+    assert imported_output["imported_episode_ids"] == ["EP-staged-only"]
+    assert imported_output["accepted_episode_ids"] == []
+    assert ResearchStore(tmp_path).list_accepted() == []
 
 
 def test_research_accept_reject_stages_are_mutually_exclusive(tmp_path) -> None:
