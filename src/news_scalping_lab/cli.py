@@ -303,19 +303,40 @@ def audit_coverage_cmd() -> None:
 @training_app.command("export-sft")
 def training_export_sft() -> None:
     settings = load_settings()
-    _echo({"path": export_training(settings.project_root, kind="sft").as_posix()})
+    result = export_training(settings.project_root, kind="sft")
+    _echo(
+        {
+            "path": result.path.as_posix(),
+            "manifest": result.manifest_path.as_posix(),
+            "row_count": result.row_count,
+        }
+    )
 
 
 @training_app.command("export-preference")
 def training_export_preference() -> None:
     settings = load_settings()
-    _echo({"path": export_training(settings.project_root, kind="preference").as_posix()})
+    result = export_training(settings.project_root, kind="preference")
+    _echo(
+        {
+            "path": result.path.as_posix(),
+            "manifest": result.manifest_path.as_posix(),
+            "row_count": result.row_count,
+        }
+    )
 
 
 @training_app.command("export-evals")
 def training_export_evals() -> None:
     settings = load_settings()
-    _echo({"path": export_training(settings.project_root, kind="evals").as_posix()})
+    result = export_training(settings.project_root, kind="evals")
+    _echo(
+        {
+            "path": result.path.as_posix(),
+            "manifest": result.manifest_path.as_posix(),
+            "row_count": result.row_count,
+        }
+    )
 
 
 @warehouse_app.command("rebuild")
