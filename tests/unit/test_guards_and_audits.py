@@ -41,6 +41,28 @@ class FutureOnlyProvider:
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         return url
 
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return result.published_at is None or result.published_at <= cutoff_at
+
+
+class ProviderTimestampRejectsUnknown:
+    async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
+        return [
+            WebSearchResult(
+                source_id="WEB-UNVERIFIED",
+                title=query,
+                url="mock://unknown",
+                snippet="timestamp cannot be verified",
+                published_at=None,
+            )
+        ]
+
+    async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        return url
+
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return False
+
 
 @pytest.mark.asyncio
 async def test_temporal_web_guard_excludes_cutoff_after_sources() -> None:
@@ -48,6 +70,14 @@ async def test_temporal_web_guard_excludes_cutoff_after_sources() -> None:
     guard = TemporalWebGuard(FutureOnlyProvider())
     assert await guard.search("query", cutoff_at=cutoff) == []
     assert guard.excluded_source_ids == ["WEB-FUTURE"]
+
+
+@pytest.mark.asyncio
+async def test_temporal_web_guard_uses_provider_timestamp_verification() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    guard = TemporalWebGuard(ProviderTimestampRejectsUnknown())
+    assert await guard.search("query", cutoff_at=cutoff) == []
+    assert guard.excluded_source_ids == ["WEB-UNVERIFIED"]
 
 
 def test_hardcoding_audit_passes_current_source() -> None:

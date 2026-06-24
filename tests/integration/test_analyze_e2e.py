@@ -123,6 +123,9 @@ class FutureOnlyWebProvider:
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         return url
 
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return result.published_at is None or result.published_at <= cutoff_at
+
 
 @pytest.mark.asyncio
 async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None:

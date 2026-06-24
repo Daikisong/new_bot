@@ -20,10 +20,13 @@ class WebSearchResult:
 
 class WebResearchProvider(Protocol):
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
-        """Return cutoff-safe search results."""
+        """Return search results for the guard to timestamp-filter."""
 
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         """Open a cutoff-safe source."""
+
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        """Return whether a result is safe to use for a blind run."""
 
 
 class MockWebResearchProvider:
@@ -42,6 +45,9 @@ class MockWebResearchProvider:
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         return f"Mock page {url} opened at {now_kst().isoformat()} with cutoff {cutoff_at.isoformat()}."
 
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return result.published_at is None or result.published_at <= cutoff_at
+
 
 class TemporalWebGuard:
     def __init__(self, provider: WebResearchProvider) -> None:
@@ -52,7 +58,7 @@ class TemporalWebGuard:
         results = await self.provider.search(query, cutoff_at=cutoff_at)
         kept: list[WebSearchResult] = []
         for result in results:
-            if result.published_at is not None and result.published_at > cutoff_at:
+            if not await self.provider.verify_timestamp(result, cutoff_at=cutoff_at):
                 self.excluded_source_ids.append(result.source_id)
                 continue
             kept.append(result)
