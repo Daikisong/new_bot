@@ -103,11 +103,12 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     preference_rows = _jsonl(preference.path)
     eval_rows = _jsonl(evals.path)
 
-    assert sft.row_count == 4
+    assert sft.row_count == 5
     assert {row["task"] for row in sft_rows} == {
         "blind_reasoning",
         "theme_formation",
         "beneficiary_discovery",
+        "leader_selection_comparison",
         "failure_correction",
     }
     blind_rows = [row for row in sft_rows if row["hindsight_safe_for_blind_sft"]]
@@ -115,6 +116,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "blind_reasoning",
         "theme_formation",
         "beneficiary_discovery",
+        "leader_selection_comparison",
     }
     blind_row_text = json.dumps(blind_rows, ensure_ascii=False, sort_keys=True)
     assert "prefer verified directness over loose theme breadth" not in blind_row_text
@@ -126,6 +128,16 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert theme_row["output"]["failure_conditions"] == ["leader selection"]
     beneficiary_row = next(row for row in blind_rows if row["task"] == "beneficiary_discovery")
     assert "event_ticker_edges" not in beneficiary_row["output"]
+    leader_row = next(row for row in blind_rows if row["task"] == "leader_selection_comparison")
+    assert leader_row["output"]["preferred_order"][0]["company_name"] == "WinnerCo"
+    assert leader_row["output"]["preferred_order"][1]["company_name"] == "LoserCo"
+    assert leader_row["output"]["comparison_basis"] == [
+        "sealed blind rank",
+        "pre-cutoff causal chain",
+        "confidence label",
+        "evidence quality",
+        "counterarguments and disconfirming conditions",
+    ]
     failure_rows = [row for row in sft_rows if row["task"] == "failure_correction"]
     assert failure_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert failure_rows[0]["source_phase"] == "POSTMORTEM"
@@ -149,9 +161,10 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     manifest = read_json(sft.manifest_path)
     assert manifest["row_count"] == sft.row_count
     assert manifest["task_counts"]["blind_reasoning"] == 1
-    assert manifest["blind_safe_row_count"] == 3
+    assert manifest["task_counts"]["leader_selection_comparison"] == 1
+    assert manifest["blind_safe_row_count"] == 4
     assert manifest["hindsight_row_count"] == 1
-    assert manifest["source_phase_counts"] == {"BLIND": 3, "POSTMORTEM": 1}
+    assert manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
     assert manifest["output_sha256"]
     assert "Do not train postmortem labels as if they were blind answers." in manifest["notes"]
 

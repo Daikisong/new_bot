@@ -132,6 +132,51 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
             split="sft",
             hindsight_safe=True,
         ),
+        _training_row(
+            task="leader_selection_comparison",
+            episode=episode,
+            input_payload={
+                "blind_summary": episode.blind_analysis.summary,
+                "candidate_count": len(episode.blind_predictions),
+                "candidates": [
+                    {
+                        "rank": candidate.rank,
+                        "company_name": candidate.company_name,
+                        "ticker": candidate.ticker,
+                        "path_type": str(candidate.path_type),
+                        "why_now": candidate.why_now,
+                        "causal_chain": candidate.causal_chain,
+                        "counterarguments": candidate.counterarguments,
+                        "confidence_label": str(candidate.confidence_label),
+                        "evidence_quality": str(candidate.evidence_quality),
+                    }
+                    for candidate in episode.blind_predictions
+                ],
+            },
+            output_payload={
+                "preferred_order": [
+                    {
+                        "rank": candidate.rank,
+                        "company_name": candidate.company_name,
+                        "selection_reason": candidate.why_now,
+                        "risk_checks": candidate.disconfirming_conditions,
+                    }
+                    for candidate in sorted(
+                        episode.blind_predictions,
+                        key=lambda item: item.rank,
+                    )
+                ],
+                "comparison_basis": [
+                    "sealed blind rank",
+                    "pre-cutoff causal chain",
+                    "confidence label",
+                    "evidence quality",
+                    "counterarguments and disconfirming conditions",
+                ],
+            },
+            split="sft",
+            hindsight_safe=True,
+        ),
     ]
     if episode.postmortem is not None:
         rows.append(
