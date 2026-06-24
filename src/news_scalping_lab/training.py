@@ -98,7 +98,7 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
             input_payload={"blind_summary": episode.blind_analysis.summary},
             output_payload={
                 "mechanisms": episode.blind_analysis.open_world_mechanisms,
-                "failure_conditions": _postmortem_lessons(episode),
+                "failure_conditions": episode.blind_analysis.initial_uncertainties,
             },
             split="sft",
             hindsight_safe=True,
@@ -282,13 +282,6 @@ def _outcome_for_candidate(
         if candidate.company_name in key or candidate.ticker in key:
             return outcome
     return None
-
-
-def _postmortem_lessons(episode: ResearchEpisode) -> list[str]:
-    if episode.postmortem is None:
-        return []
-    return episode.postmortem.lessons
-
 
 def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}

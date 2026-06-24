@@ -101,6 +101,12 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "theme_formation",
         "beneficiary_discovery",
     }
+    blind_row_text = json.dumps(blind_rows, ensure_ascii=False, sort_keys=True)
+    assert "prefer verified directness over loose theme breadth" not in blind_row_text
+    assert "Winner hit and loser failed." not in blind_row_text
+    assert "DIRECTNESS_ERROR" not in blind_row_text
+    theme_row = next(row for row in blind_rows if row["task"] == "theme_formation")
+    assert theme_row["output"]["failure_conditions"] == ["leader selection"]
     failure_rows = [row for row in sft_rows if row["task"] == "failure_correction"]
     assert failure_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert "failure_codes" in failure_rows[0]["output"]
