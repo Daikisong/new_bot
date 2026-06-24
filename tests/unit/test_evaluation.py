@@ -198,6 +198,9 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     assert metrics["upper_limit_closed_count"] == 1
     assert metrics["upper_limit_recall_at_5"] is None
     assert metrics["theme_recall"] is None
+    assert metrics["single_event_recall"] is None
+    assert metrics["beneficiary_recall"] is None
+    assert metrics["continuation_recall"] is None
     assert "universe is unavailable" in metrics["recall_unavailable_reason"]
 
 
@@ -248,6 +251,10 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_10"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_20"] == pytest.approx(0.5)
+    assert metrics["single_event_recall"] == pytest.approx(0.5)
+    assert metrics["theme_recall"] == pytest.approx(0.0)
+    assert metrics["beneficiary_recall"] == pytest.approx(0.0)
+    assert metrics["continuation_recall"] == pytest.approx(0.0)
     assert metrics["recall_unavailable_reason"] is None
     assert postmortem["misses"] == ["T4"]
     assert postmortem["failure_codes"] == ["UNKNOWN", "RANKING_MISS"]

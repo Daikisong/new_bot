@@ -13,6 +13,7 @@ from news_scalping_lab.contracts.models import (
     EvaluationMetrics,
     FailureCode,
     OutcomeLabels,
+    PathType,
     Postmortem,
     Provenance,
     ResearchEpisode,
@@ -216,10 +217,26 @@ def _build_metrics(
         recall_unavailable_reason=recall_unavailable_reason,
         precision_at_5=_rate(upper_limit_hits_at_5, min(5, candidate_count)),
         precision_at_10=_rate(upper_limit_hits_at_10, min(10, candidate_count)),
-        theme_recall=None,
-        single_event_recall=None,
-        beneficiary_recall=None,
-        continuation_recall=None,
+        theme_recall=_path_recall(
+            ranked_outcomes,
+            outcome_universe,
+            path_types={PathType.THEME_BENEFICIARY, PathType.HYBRID},
+        ),
+        single_event_recall=_path_recall(
+            ranked_outcomes,
+            outcome_universe,
+            path_types={PathType.SINGLE_EVENT, PathType.HYBRID},
+        ),
+        beneficiary_recall=_path_recall(
+            ranked_outcomes,
+            outcome_universe,
+            path_types={PathType.THEME_BENEFICIARY, PathType.HYBRID},
+        ),
+        continuation_recall=_path_recall(
+            ranked_outcomes,
+            outcome_universe,
+            path_types={PathType.CONTINUATION, PathType.HYBRID},
+        ),
         average_max_return_top_5=_average_high_return_at(ranked_outcomes, 5),
         average_max_return_top_10=_average_high_return_at(ranked_outcomes, 10),
         average_max_return_top_20=_average_high_return_at(ranked_outcomes, 20),
@@ -281,6 +298,27 @@ def _upper_limit_universe_tickers(outcome_universe: dict[str, OutcomeLabels]) ->
         for ticker, outcome in outcome_universe.items()
         if outcome.upper_limit_touched is True
     }
+
+
+def _path_recall(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    *,
+    path_types: set[PathType],
+) -> float | None:
+    if outcome_universe is None:
+        return None
+    universe_tickers = _upper_limit_universe_tickers(outcome_universe)
+    if not universe_tickers:
+        return None
+    predicted_tickers = {
+        candidate.ticker
+        for candidate, outcome in ranked_outcomes
+        if candidate.path_type in path_types
+        and outcome.upper_limit_touched
+        and candidate.ticker in universe_tickers
+    }
+    return len(predicted_tickers) / len(universe_tickers)
 
 
 def _upper_limit_misses(
