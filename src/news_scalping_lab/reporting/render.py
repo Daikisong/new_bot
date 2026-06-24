@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from news_scalping_lab.contracts.models import BlindPrediction, ContextManifest, PathType
+from collections.abc import Sequence
+
+from news_scalping_lab.contracts.models import BlindPrediction, Candidate, ContextManifest, PathType
 
 
 def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest) -> str:
     candidates = sorted(prediction.candidates, key=lambda candidate: candidate.rank)
+
+    def list_text(values: list[str]) -> str:
+        return ", ".join(values) if values else "none"
 
     def section_for(path_type: PathType) -> str:
         rows = [candidate for candidate in candidates if candidate.path_type == path_type]
@@ -22,8 +27,17 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                     f"- Evidence quality: `{candidate.evidence_quality}`",
                     f"- Thesis: {candidate.thesis}",
                     f"- Why now: {candidate.why_now}",
+                    f"- Causal chain: {list_text(candidate.causal_chain)}",
+                    f"- Direct evidence: {list_text(candidate.direct_evidence)}",
+                    f"- Inferred evidence: {list_text(candidate.inferred_evidence)}",
+                    f"- Market-memory evidence: {list_text(candidate.market_memory_evidence)}",
+                    f"- Prior positive cases: {list_text(candidate.prior_positive_cases)}",
+                    f"- Prior negative cases: {list_text(candidate.prior_negative_cases)}",
                     f"- Counterarguments: {'; '.join(candidate.counterarguments) or 'none recorded'}",
-                    f"- Memory episodes: {', '.join(candidate.memory_episode_ids) or 'none'}",
+                    f"- Disconfirming conditions: {list_text(candidate.disconfirming_conditions)}",
+                    f"- Memory episodes: {list_text(candidate.memory_episode_ids)}",
+                    f"- Source URLs: {list_text(candidate.source_urls)}",
+                    f"- Provenance sources: {list_text([item.source_id for item in candidate.provenance])}",
                     "",
                 ]
             )
@@ -90,6 +104,11 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "",
             "\n".join(f"- {item}" for item in prediction.blind_analysis.initial_uncertainties),
             "",
+            "Counterexample episode ids:",
+            "",
+            "\n".join(f"- {episode_id}" for episode_id in manifest.counterexample_episode_ids)
+            or "- none",
+            "",
             "Red-team objections passed to synthesis:",
             "",
             "\n".join(f"- {path}" for path in manifest.red_team_artifacts) or "- none",
@@ -97,6 +116,21 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "## 11. Used Past Research Cases",
             "",
             "\n".join(f"- {episode_id}" for episode_id in manifest.swept_episode_ids) or "- none",
+            "",
+            "Retrieved raw episode ids:",
+            "",
+            "\n".join(f"- {episode_id}" for episode_id in manifest.retrieved_episode_ids)
+            or "- none",
+            "",
+            "Prior positive cases referenced by candidates:",
+            "",
+            "\n".join(f"- {case}" for case in _candidate_case_refs(candidates, "prior_positive_cases"))
+            or "- none",
+            "",
+            "Prior negative cases referenced by candidates:",
+            "",
+            "\n".join(f"- {case}" for case in _candidate_case_refs(candidates, "prior_negative_cases"))
+            or "- none",
             "",
             "## 12. Additional Web Sources",
             "",
@@ -118,3 +152,18 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "",
         ]
     )
+
+
+def _candidate_case_refs(candidates: Sequence[Candidate], field_name: str) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        value = getattr(candidate, field_name, None)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            if not isinstance(item, str) or not item or item in seen:
+                continue
+            seen.add(item)
+            refs.append(item)
+    return refs
