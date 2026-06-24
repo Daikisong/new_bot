@@ -196,7 +196,7 @@ def brain_audit() -> None:
     settings = load_settings()
     result = audit_brain(settings.project_root)
     _echo(result)
-    if not result.get("coverage_complete", False):
+    if not result.get("passed", False):
         raise typer.Exit(code=1)
 
 
@@ -315,7 +315,7 @@ def audit_coverage_cmd() -> None:
     settings = load_settings()
     result = audit_coverage(settings.project_root)
     _echo(result)
-    if not result.get("coverage_complete", False):
+    if not result.get("passed", False):
         raise typer.Exit(code=1)
 
 

@@ -3,11 +3,15 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import TypeVar
 
+import pytest
+import typer
 from pydantic import BaseModel
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
+from news_scalping_lab.cli import audit_coverage_cmd
+from news_scalping_lab.cli import brain_audit as cli_brain_audit
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, MemoryClaim, Provenance
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -264,6 +268,52 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
         "CL-temporal-leak",
         "CL-single-support-warning",
     ]
+
+
+def test_brain_audit_cli_fails_on_hard_claim_findings(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("CLI audit mechanism note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    claim = MemoryClaim(
+        claim_id="CL-cli-no-provenance",
+        statement="CLI audit should fail hard findings even when coverage is complete.",
+        mechanism="cli audit exit code",
+        scope="audit fixture",
+        support_episode_ids=[episode.episode_id],
+        available_from=episode.available_from,
+        provenance=[],
+    )
+    (tmp_path / "brain" / "current" / "claims.jsonl").write_text(
+        claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(typer.Exit) as brain_exit:
+        cli_brain_audit()
+
+    assert brain_exit.value.exit_code == 1
+    first_output = capsys.readouterr().out
+    assert '"coverage_complete": true' in first_output
+    assert '"passed": false' in first_output
+    assert "CL-cli-no-provenance" in first_output
+
+    with pytest.raises(typer.Exit) as coverage_exit:
+        audit_coverage_cmd()
+
+    assert coverage_exit.value.exit_code == 1
+    second_output = capsys.readouterr().out
+    assert '"coverage_complete": true' in second_output
+    assert '"passed": false' in second_output
+    assert "CL-cli-no-provenance" in second_output
 
 
 def test_brain_update_requires_accepted_episode(tmp_path) -> None:
