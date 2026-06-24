@@ -53,3 +53,50 @@ def test_hardcoding_audit_passes_current_source() -> None:
     root = Path(__file__).resolve().parents[2]
     result = audit_hardcoding(root)
     assert result["passed"], result["findings"]
+
+
+def test_hardcoding_audit_flags_domain_maps_and_ticker_lists(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src" / "news_scalping_lab"
+    source_dir.mkdir(parents=True)
+    (source_dir / "domain_rules.py").write_text(
+        """
+THEME_MAP = {
+    "new_policy": ["111111", "FictionalBuilder"],
+}
+
+BENEFICIARY_WHITELIST = ["222222", "FictionalInfra"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    rules = {finding["rule"] for finding in findings}
+    assert "domain_hardcoding_collection" in rules
+    assert "quoted_six_digit_ticker" in rules
+
+
+def test_hardcoding_audit_flags_fixed_news_expression_scores(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src" / "news_scalping_lab"
+    source_dir.mkdir(parents=True)
+    (source_dir / "ranking.py").write_text(
+        """
+def rank(title: str) -> int:
+    score = 0
+    if "special-region plant" in title:
+        score = 5
+    return score
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    rules = {finding["rule"] for finding in findings}
+    assert "fixed_expression_score" in rules

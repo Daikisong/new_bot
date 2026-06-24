@@ -2,40 +2,184 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
+
+TICKER_LITERAL_RE = re.compile(r"[\"'][0-9]{6}[\"']")
+DOMAIN_TOKENS = {
+    "beneficiary",
+    "company",
+    "event",
+    "policy",
+    "region",
+    "sector",
+    "stock",
+    "theme",
+    "ticker",
+}
+CONTAINER_TOKENS = {
+    "allowlist",
+    "blacklist",
+    "catalog",
+    "dict",
+    "denylist",
+    "list",
+    "map",
+    "mapping",
+    "registry",
+    "table",
+    "whitelist",
+}
+SCORE_NAME_TOKENS = {"score", "scores", "scoring"}
+SCORE_QUALIFIER_TOKENS = {
+    "event",
+    "expression",
+    "fixed",
+    "keyword",
+    "mou",
+    "news",
+    "policy",
+    "region",
+    "sector",
+    "static",
+    "theme",
+}
+TEXT_FIELD_NAMES = {"article", "body", "content", "headline", "news", "snippet", "summary", "text", "title"}
 
 
 def audit_hardcoding(root: Path) -> dict[str, object]:
     src = root / "src" / "news_scalping_lab"
     findings: list[dict[str, object]] = []
-    theme_tokens = [
-        "_".join(parts)
-        for parts in (
-            ("THEME", "MAP"),
-            ("TICKER", "MAP"),
-            ("SECTOR", "TO", "TICKER"),
-            ("REGION", "TO", "THEME"),
-        )
-    ]
-    score_parts = (("KEYWORD", "SCORE"), ("FIXED", "SCORE"), ("STATIC", "SCORE"))
-    score_tokens = ["_".join(parts) for parts in score_parts]
-    patterns = {
-        "quoted_six_digit_ticker": re.compile(r"[\"'][0-9]{6}[\"']"),
-        "theme_map_name": re.compile(r"\b(" + "|".join(theme_tokens) + r")\b"),
-        "score_table_name": re.compile(r"\b(" + "|".join(score_tokens) + r")\b"),
-    }
     for path in sorted(src.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
         for line_number, line in enumerate(text.splitlines(), start=1):
-            for name, pattern in patterns.items():
-                if pattern.search(line):
-                    findings.append(
-                        {
-                            "file": path.relative_to(root).as_posix(),
-                            "line": line_number,
-                            "rule": name,
-                            "text": line.strip(),
-                        }
-                    )
+            if TICKER_LITERAL_RE.search(line):
+                findings.append(_finding(root, path, line_number, "quoted_six_digit_ticker", line))
+        try:
+            tree = ast.parse(text, filename=str(path))
+        except SyntaxError as exc:
+            findings.append(
+                _finding(root, path, exc.lineno or 1, "python_parse_error", _line_at(lines, exc.lineno or 1))
+            )
+            continue
+        findings.extend(_ast_findings(root, path, tree, lines))
     return {"passed": not findings, "findings": findings}
+
+
+def _ast_findings(root: Path, path: Path, tree: ast.AST, lines: list[str]) -> list[dict[str, object]]:
+    findings: list[dict[str, object]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign | ast.AnnAssign):
+            value = node.value
+            if value is None:
+                continue
+            for target in _assignment_targets(node):
+                target_name = _target_name(target)
+                if target_name and _is_forbidden_domain_assignment(target_name, value):
+                    findings.append(
+                        _finding(
+                            root,
+                            path,
+                            node.lineno,
+                            "domain_hardcoding_collection",
+                            _line_at(lines, node.lineno),
+                        )
+                    )
+                    break
+        if isinstance(node, ast.If) and _has_literal_condition_scoring(node):
+            findings.append(
+                _finding(root, path, node.lineno, "fixed_expression_score", _line_at(lines, node.lineno))
+            )
+    return findings
+
+
+def _assignment_targets(node: ast.Assign | ast.AnnAssign) -> list[ast.expr]:
+    if isinstance(node, ast.Assign):
+        return list(node.targets)
+    return [node.target]
+
+
+def _target_name(target: ast.expr) -> str | None:
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    return None
+
+
+def _is_forbidden_domain_assignment(name: str, value: ast.AST) -> bool:
+    tokens = set(_identifier_tokens(name))
+    if _is_score_table_name(tokens):
+        return True
+    if not _is_collection_literal(value):
+        return False
+    if tokens & DOMAIN_TOKENS and tokens & CONTAINER_TOKENS:
+        return True
+    domain_token_count = len(tokens & DOMAIN_TOKENS)
+    return domain_token_count >= 2 and "to" in tokens
+
+
+def _is_score_table_name(tokens: set[str]) -> bool:
+    return bool(tokens & SCORE_NAME_TOKENS and tokens & SCORE_QUALIFIER_TOKENS)
+
+
+def _is_collection_literal(value: ast.AST) -> bool:
+    return isinstance(value, ast.Dict | ast.List | ast.Tuple | ast.Set)
+
+
+def _identifier_tokens(name: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", name.lower())
+
+
+def _has_literal_condition_scoring(node: ast.If) -> bool:
+    return _test_contains_string_trigger(node.test) and any(_contains_score_mutation(child) for child in node.body)
+
+
+def _test_contains_string_trigger(test: ast.AST) -> bool:
+    has_string_literal = any(
+        isinstance(child, ast.Constant) and isinstance(child.value, str) and len(child.value.strip()) >= 2
+        for child in ast.walk(test)
+    )
+    if not has_string_literal:
+        return False
+    referenced_names = {child.id.lower() for child in ast.walk(test) if isinstance(child, ast.Name)}
+    return bool(referenced_names & TEXT_FIELD_NAMES) or any(name.endswith("_type") for name in referenced_names)
+
+
+def _contains_score_mutation(node: ast.AST) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.AugAssign) and _target_mentions_score(child.target):
+            return True
+        if isinstance(child, ast.Assign):
+            targets = list(child.targets)
+            if any(_target_mentions_score(target) for target in targets):
+                return True
+    return False
+
+
+def _target_mentions_score(target: ast.AST) -> bool:
+    if isinstance(target, ast.Name):
+        return target.id.lower() in SCORE_NAME_TOKENS
+    if isinstance(target, ast.Attribute):
+        return target.attr.lower() in SCORE_NAME_TOKENS
+    if isinstance(target, ast.Subscript):
+        return _target_mentions_score(target.value)
+    return False
+
+
+def _finding(root: Path, path: Path, line_number: int, rule: str, line: str) -> dict[str, object]:
+    return {
+        "file": path.relative_to(root).as_posix(),
+        "line": line_number,
+        "rule": rule,
+        "text": line.strip(),
+    }
+
+
+def _line_at(lines: list[str], line_number: int) -> str:
+    index = line_number - 1
+    if 0 <= index < len(lines):
+        return lines[index]
+    return ""
