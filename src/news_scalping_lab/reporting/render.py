@@ -98,6 +98,11 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "\n".join(f"- {source}" for source in manifest.web_sources)
             or "- mock/no external web sources",
             "",
+            "Excluded after-cutoff web source ids:",
+            "",
+            "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)
+            or "- none",
+            "",
             "## 13. Memory Coverage",
             "",
             f"- Accepted episodes: {manifest.accepted_episode_count}",

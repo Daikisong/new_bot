@@ -33,7 +33,8 @@ from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.utils import canonical_json, now_kst, sha256_text, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
-from news_scalping_lab.web.provider import MockWebResearchProvider, TemporalWebGuard
+from news_scalping_lab.web.factory import create_web_provider
+from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider
 
 
 class ExhaustiveCoverageError(RuntimeError):
@@ -48,6 +49,7 @@ class DailyAnalyzer:
         llm: LLMProvider | None = None,
         retrieval: LocalRetrievalStore | None = None,
         price_source: PriceSource | None = None,
+        web_provider: WebResearchProvider | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
@@ -55,6 +57,7 @@ class DailyAnalyzer:
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
         self.price_source = price_source or create_price_source(self.settings)
+        self.web_provider = web_provider or create_web_provider(self.settings)
 
     async def analyze(
         self,
@@ -77,11 +80,12 @@ class DailyAnalyzer:
             web_queries=web_queries,
         )
 
-        web_guard = TemporalWebGuard(MockWebResearchProvider())
+        web_guard = TemporalWebGuard(self.web_provider)
         if web_search:
             for query in web_queries[:5]:
                 results = await web_guard.search(query, cutoff_at=cutoff_at)
                 manifest.web_sources.extend(result.url for result in results)
+            manifest.excluded_web_source_ids = sorted(set(web_guard.excluded_source_ids))
 
         price_guard = BlindPriceGuard(self.price_source, trade_date=trade_date)
         manifest.price_snapshot.source_name = price_guard.source_name
@@ -128,6 +132,7 @@ class DailyAnalyzer:
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
+                "excluded_web_source_ids": manifest.excluded_web_source_ids,
             },
         )
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})

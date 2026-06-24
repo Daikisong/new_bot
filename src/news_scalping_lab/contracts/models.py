@@ -305,6 +305,7 @@ class ContextManifest(StrictModel):
     truncations: list[str] = Field(default_factory=list)
     web_queries: list[str] = Field(default_factory=list)
     web_sources: list[str] = Field(default_factory=list)
+    excluded_web_source_ids: list[str] = Field(default_factory=list)
     price_snapshot: PriceSnapshot
     llm_model_config: dict[str, Any] = Field(default_factory=dict, alias="model_config")
     prompt_hashes: dict[str, str] = Field(default_factory=dict)

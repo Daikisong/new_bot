@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TypeVar
 
 import pytest
@@ -25,6 +25,7 @@ from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -107,6 +108,22 @@ class BrokenMemorySweeper:
         )
 
 
+class FutureOnlyWebProvider:
+    async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
+        return [
+            WebSearchResult(
+                source_id="WEB-FUTURE-PIPELINE",
+                title=query,
+                url="mock://future-pipeline",
+                snippet="Published after cutoff and must not enter blind evidence.",
+                published_at=cutoff_at + timedelta(seconds=1),
+            )
+        ]
+
+    async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        return url
+
+
 @pytest.mark.asyncio
 async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
@@ -143,6 +160,40 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_prediction["context_manifest_id"] == analysis.context_manifest.run_id
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert audit_provenance(tmp_path)["passed"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_excludes_cutoff_after_web_sources_from_manifest_and_prediction(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","FutureGuardCo, catalyst",'
+        '"Only cutoff-safe web evidence may be used."\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    analysis = await DailyAnalyzer(settings, web_provider=FutureOnlyWebProvider()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=True,
+    )
+
+    assert analysis.context_manifest.web_sources == []
+    assert analysis.context_manifest.excluded_web_source_ids == ["WEB-FUTURE-PIPELINE"]
+    assert analysis.blind_prediction.blind_analysis.excluded_after_cutoff_source_ids == [
+        "WEB-FUTURE-PIPELINE"
+    ]
+    manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
+    saved_manifest = read_json(manifest_path)
+    assert saved_manifest["web_sources"] == []
+    assert saved_manifest["excluded_web_source_ids"] == ["WEB-FUTURE-PIPELINE"]
 
 
 @pytest.mark.asyncio
