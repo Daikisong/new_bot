@@ -320,6 +320,11 @@
           "title": "Counterexample Episode Ids",
           "type": "array"
         },
+        "cutoff_at": {
+          "format": "date-time",
+          "title": "Cutoff At",
+          "type": "string"
+        },
         "errors": {
           "items": {
             "type": "string"
@@ -432,6 +437,11 @@
           "title": "Token Counts",
           "type": "object"
         },
+        "trade_date": {
+          "format": "date",
+          "title": "Trade Date",
+          "type": "string"
+        },
         "truncations": {
           "items": {
             "type": "string"
@@ -457,6 +467,8 @@
       "required": [
         "run_id",
         "mode",
+        "trade_date",
+        "cutoff_at",
         "accepted_episode_count",
         "swept_episode_count",
         "price_snapshot"

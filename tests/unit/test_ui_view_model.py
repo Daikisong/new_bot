@@ -59,6 +59,8 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     manifest = ContextManifest(
         run_id="RUN-ui",
         mode="exhaustive",
+        trade_date=trade_day,
+        cutoff_at=cutoff,
         brain_version="brain-ui",
         accepted_episode_count=2,
         swept_episode_count=2,

@@ -87,6 +87,7 @@ class DailyAnalyzer:
         manifest = ContextAssembler(self.root).assemble(
             mode=mode,
             trade_date=trade_date,
+            cutoff_at=cutoff_at,
             run_seed=run_seed,
             retrieved_episode_ids=retrieved_ids,
             web_queries=web_queries,

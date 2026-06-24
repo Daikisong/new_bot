@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from news_scalping_lab.brain.compiler import current_brain_file_hashes, current_brain_version
@@ -21,6 +21,7 @@ class ContextAssembler:
         *,
         mode: str,
         trade_date: date,
+        cutoff_at: datetime,
         run_seed: str,
         retrieved_episode_ids: list[str] | None = None,
         web_queries: list[str] | None = None,
@@ -41,6 +42,8 @@ class ContextAssembler:
         manifest = ContextManifest(
             run_id=stable_id("RUN", trade_date.isoformat(), mode, run_seed),
             mode=mode,
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
             brain_version=current_brain_version(self.root),
             brain_files=list(current_brain_file_hashes(self.root).keys()),
             brain_file_hashes=current_brain_file_hashes(self.root),

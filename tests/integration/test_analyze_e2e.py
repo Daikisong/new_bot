@@ -278,6 +278,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_prediction["context_manifest_id"] == analysis.context_manifest.run_id
     assert len(analysis.context_manifest.red_team_artifacts) == 1
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["trade_date"] == "2030-01-10"
+    assert saved_manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]

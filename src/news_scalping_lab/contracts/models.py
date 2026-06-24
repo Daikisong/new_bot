@@ -343,6 +343,8 @@ class ContextManifest(StrictModel):
     schema_version: str = "nslab.context_manifest.v1"
     run_id: str
     mode: str
+    trade_date: date
+    cutoff_at: datetime
     brain_version: str | None = None
     brain_files: list[str] = Field(default_factory=list)
     brain_file_hashes: dict[str, str] = Field(default_factory=dict)
