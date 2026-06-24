@@ -28,6 +28,11 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
+from news_scalping_lab.ui.launcher import (
+    StreamlitLaunchConfig,
+    StreamlitLaunchError,
+    run_streamlit_ui,
+)
 from news_scalping_lab.utils import parse_datetime, read_json
 from news_scalping_lab.warehouse import WarehouseStore
 
@@ -72,6 +77,22 @@ def init() -> None:
 def doctor() -> None:
     settings = load_settings()
     _echo(build_doctor_report(settings))
+
+
+@app.command("ui")
+def ui(
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", min=1, max=65_535)] = 8501,
+    headless: Annotated[bool, typer.Option("--headless/--open-browser")] = False,
+) -> None:
+    config = StreamlitLaunchConfig(host=host, port=port, headless=headless)
+    try:
+        exit_code = run_streamlit_ui(config)
+    except (StreamlitLaunchError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)
 
 
 @news_app.command("inspect")

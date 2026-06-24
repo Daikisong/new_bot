@@ -37,17 +37,21 @@ def main() -> None:
     web_search = st.checkbox("Web search", value=False)
     if st.button("Analyze") and uploaded is not None:
         temp = settings.path("data/inbox/news") / uploaded.name
+        temp.parent.mkdir(parents=True, exist_ok=True)
         temp.write_bytes(uploaded.getvalue())
-        analysis = asyncio.run(
-            DailyAnalyzer(settings).analyze(
-                news_csv=temp,
-                trade_date=trade_day,
-                cutoff_at=parse_datetime(cutoff),
-                mode=mode,
-                web_search=web_search,
+        with st.status("Running blind analysis", expanded=True) as status:
+            st.write("Loading brain context and sweeping memory shards.")
+            st.write("Running candidate generation, red-team review, and final synthesis.")
+            analysis = asyncio.run(
+                DailyAnalyzer(settings).analyze(
+                    news_csv=temp,
+                    trade_date=trade_day,
+                    cutoff_at=parse_datetime(cutoff),
+                    mode=mode,
+                    web_search=web_search,
+                )
             )
-        )
-        st.success(f"Run complete: {analysis.run_id}")
+            status.update(label=f"Run complete: {analysis.run_id}", state="complete")
         _render_analysis(build_analysis_view_model(settings.project_root, analysis), st)
 
 
