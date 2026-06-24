@@ -144,6 +144,7 @@ def _check_context_files_for_future_episode_ids(
     for relative_path in [
         *_string_list(manifest.get("brain_files")),
         *_string_list(manifest.get("shard_brain_files")),
+        *_string_list(manifest.get("memory_sweep_artifacts")),
     ]:
         path = root / relative_path
         if not path.exists() or not path.is_file():

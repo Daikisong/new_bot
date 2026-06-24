@@ -483,6 +483,9 @@ def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
     (tmp_path / "research" / "accepted").mkdir(parents=True)
     (tmp_path / "brain" / "current").mkdir(parents=True)
     (tmp_path / "memory" / "shard_brains" / "current").mkdir(parents=True)
+    (tmp_path / "runs" / "checkpoints" / "memory_sweep" / "RUN-lookahead").mkdir(
+        parents=True
+    )
     write_json(
         tmp_path / "research" / "accepted" / "EP-future.json",
         {
@@ -499,6 +502,15 @@ def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
         encoding="utf-8",
     )
     write_json(
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "memory_sweep"
+        / "RUN-lookahead"
+        / "shard_0001.json",
+        {"episode_ids": ["EP-future"], "related_lessons": ["future leak EP-future"]},
+    )
+    write_json(
         tmp_path / "runs" / "manifests" / "RUN-lookahead.json",
         {
             "run_id": "RUN-lookahead",
@@ -510,6 +522,9 @@ def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
             "excluded_retrieved_episode_ids": [],
             "brain_files": ["brain/current/00_world_model.md"],
             "shard_brain_files": ["memory/shard_brains/current/shard_0001.md"],
+            "memory_sweep_artifacts": [
+                "runs/checkpoints/memory_sweep/RUN-lookahead/shard_0001.json"
+            ],
         },
     )
 
@@ -526,6 +541,10 @@ def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
     assert (
         "RUN-lookahead.json: context file contains future episode EP-future: "
         "memory/shard_brains/current/shard_0001.md"
+    ) in findings
+    assert (
+        "RUN-lookahead.json: context file contains future episode EP-future: "
+        "runs/checkpoints/memory_sweep/RUN-lookahead/shard_0001.json"
     ) in findings
 
 
