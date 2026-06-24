@@ -51,6 +51,9 @@ class ResearchStore:
             raise FileNotFoundError(f"episode not found: {episode_id}")
         target = self.accepted_dir / source.name
         shutil.copy2(source, target)
+        rejected_copy = self.rejected_dir / source.name
+        if rejected_copy.exists():
+            rejected_copy.unlink()
         return target
 
     def reject(self, episode_id: str) -> Path:
@@ -61,6 +64,9 @@ class ResearchStore:
             raise FileNotFoundError(f"episode not found: {episode_id}")
         target = self.rejected_dir / source.name
         shutil.copy2(source, target)
+        accepted_copy = self.accepted_dir / source.name
+        if accepted_copy.exists():
+            accepted_copy.unlink()
         return target
 
     def accepted_hashes(self) -> dict[str, str]:

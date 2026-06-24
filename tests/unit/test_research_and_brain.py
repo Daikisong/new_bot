@@ -68,6 +68,31 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
 
 
+def test_research_accept_reject_stages_are_mutually_exclusive(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Stage transition research note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    store = ResearchStore(tmp_path)
+
+    accepted_path = store.accept(episode.episode_id)
+    rejected_path = store.reject(episode.episode_id)
+
+    assert (tmp_path / "research" / "episodes" / f"{episode.episode_id}.json").exists()
+    assert not accepted_path.exists()
+    assert rejected_path.exists()
+    assert [item.episode_id for item in store.list_accepted()] == []
+    assert [item.episode_id for item in store.list_rejected()] == [episode.episode_id]
+
+    accepted_path = store.accept(episode.episode_id)
+
+    assert accepted_path.exists()
+    assert not rejected_path.exists()
+    assert [item.episode_id for item in store.list_accepted()] == [episode.episode_id]
+    assert [item.episode_id for item in store.list_rejected()] == []
+
+
 def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
