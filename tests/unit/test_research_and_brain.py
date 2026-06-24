@@ -9,11 +9,11 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.contracts.models import BlindAnalysis
+from news_scalping_lab.contracts.models import BlindAnalysis, MemoryClaim, Provenance
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 T = TypeVar("T", bound=BaseModel)
@@ -180,6 +180,90 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     assert second_manifest.model_dump(mode="json") == first_manifest.model_dump(mode="json")
     assert second_hashes == first_hashes
     assert second_claims == first_claims
+
+
+def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Audited mechanism note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    provenance = Provenance(
+        source_id="SRC-audit",
+        source_type="test",
+        uri="test://audit",
+        content_sha256=sha256_text("audit"),
+    )
+    claims = [
+        MemoryClaim(
+            claim_id="CL-no-support",
+            statement="Missing support should fail audit.",
+            mechanism="missing support",
+            scope="audit fixture",
+            support_episode_ids=[],
+            available_from=episode.available_from,
+            provenance=[provenance],
+        ),
+        MemoryClaim(
+            claim_id="CL-unknown-support",
+            statement="Unknown support should fail audit.",
+            mechanism="unknown support",
+            scope="audit fixture",
+            support_episode_ids=["EP-unknown"],
+            available_from=episode.available_from,
+            provenance=[provenance],
+        ),
+        MemoryClaim(
+            claim_id="CL-no-provenance",
+            statement="Missing provenance should fail audit.",
+            mechanism="missing provenance",
+            scope="audit fixture",
+            support_episode_ids=[episode.episode_id],
+            available_from=episode.available_from,
+            provenance=[],
+        ),
+        MemoryClaim(
+            claim_id="CL-temporal-leak",
+            statement="Claim availability cannot precede support availability.",
+            mechanism="temporal leak",
+            scope="audit fixture",
+            support_episode_ids=[episode.episode_id],
+            available_from=episode.cutoff_at,
+            provenance=[provenance],
+        ),
+        MemoryClaim(
+            claim_id="CL-single-support-warning",
+            statement="Single-support generalization should be surfaced as a warning.",
+            mechanism="single support",
+            scope="audit fixture",
+            support_episode_ids=[episode.episode_id],
+            available_from=episode.available_from,
+            provenance=[provenance],
+        ),
+    ]
+    (tmp_path / "brain" / "current" / "claims.jsonl").write_text(
+        "".join(claim.model_dump_json() + "\n" for claim in claims),
+        encoding="utf-8",
+    )
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["coverage_complete"] is True
+    assert audit["passed"] is False
+    assert audit["claims_without_support"] == ["CL-no-support"]
+    assert audit["claims_with_unknown_support"] == ["CL-unknown-support: EP-unknown"]
+    assert audit["claims_without_provenance"] == ["CL-no-provenance"]
+    assert audit["claim_temporal_leaks"] == [
+        f"CL-temporal-leak: available_from precedes support {episode.episode_id}"
+    ]
+    assert audit["single_support_claims_without_contradictions"] == [
+        "CL-no-provenance",
+        "CL-temporal-leak",
+        "CL-single-support-warning",
+    ]
 
 
 def test_brain_update_requires_accepted_episode(tmp_path) -> None:
