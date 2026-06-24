@@ -95,6 +95,8 @@ nslab context export-session-pack \
 This creates a GPT Web session pack under `session_packs/YYYY-MM-DD/`.
 If the selected brain or shard-brain context contains cutoff-after episode IDs,
 the export writes a blocked manifest and exits non-zero instead of producing an unsafe pack.
+If the token budget would omit currently available research episodes, the command also
+writes a blocked manifest and exits non-zero so coverage loss is not missed silently.
 
 ## Environment
 

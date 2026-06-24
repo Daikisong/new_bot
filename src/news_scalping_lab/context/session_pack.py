@@ -29,6 +29,13 @@ class SessionPackFutureContextError(RuntimeError):
         super().__init__("session pack brain context contains future-unavailable research")
 
 
+class SessionPackBudgetExceededError(RuntimeError):
+    def __init__(self, output_dir: Path, errors: list[str]) -> None:
+        self.output_dir = output_dir
+        self.errors = errors
+        super().__init__("session pack omitted available research because the token budget is too small")
+
+
 def export_session_pack(
     settings: Settings,
     *,
@@ -179,6 +186,7 @@ def export_session_pack(
     ]
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
+        "blocked": bool(omitted_ids),
         "trade_date": trade_date.isoformat(),
         "cutoff_at": cutoff_at.isoformat(),
         "mode": mode,
@@ -211,6 +219,8 @@ def export_session_pack(
         "errors": errors,
     }
     write_json(output_dir / "manifest.json", manifest)
+    if omitted_ids:
+        raise SessionPackBudgetExceededError(output_dir, errors)
     return output_dir
 
 

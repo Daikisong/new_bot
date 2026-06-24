@@ -18,7 +18,11 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings
-from news_scalping_lab.context.session_pack import SessionPackFutureContextError, export_session_pack
+from news_scalping_lab.context.session_pack import (
+    SessionPackBudgetExceededError,
+    SessionPackFutureContextError,
+    export_session_pack,
+)
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostics import build_doctor_report
 from news_scalping_lab.evaluation.evaluator import Evaluator
@@ -281,7 +285,7 @@ def context_export_session_pack(
             cutoff_at=parse_datetime(cutoff) if cutoff else None,
             mode=mode,
         )
-    except SessionPackFutureContextError as exc:
+    except (SessionPackBudgetExceededError, SessionPackFutureContextError) as exc:
         _echo(
             {
                 "session_pack": exc.output_dir.as_posix(),

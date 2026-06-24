@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
+import pytest
+from typer.testing import CliRunner
+
+from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.context.session_pack import export_session_pack
+from news_scalping_lab.context.session_pack import SessionPackBudgetExceededError, export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
+
+RUNNER = CliRunner()
 
 
 def _episode(
@@ -34,7 +40,7 @@ def _episode(
     )
 
 
-def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
+def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     settings.limits.session_pack_token_budget = 500
     ensure_project_dirs(settings)
@@ -72,18 +78,21 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    output_dir = export_session_pack(
-        settings,
-        news_csv=news_csv,
-        trade_date=date(2030, 1, 10),
-        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-        mode="brain",
-    )
+    with pytest.raises(SessionPackBudgetExceededError) as exc_info:
+        export_session_pack(
+            settings,
+            news_csv=news_csv,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="brain",
+        )
 
+    output_dir = exc_info.value.output_dir
     manifest = read_json(output_dir / "manifest.json")
     memory_cases = (output_dir / "memory_cases.md").read_text(encoding="utf-8")
     research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
 
+    assert manifest["blocked"] is True
     assert manifest["accepted_episode_count"] == 4
     assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
@@ -131,6 +140,56 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     }
     assert manifest["pack_sha256"]
     assert manifest["token_counts"]["memory_cases.md"] > 0
+    assert "session pack omitted available episodes due to token budget" in exc_info.value.errors
+
+
+def test_session_pack_cli_exits_nonzero_when_available_episode_exceeds_budget(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.session_pack_token_budget = 500
+    ensure_project_dirs(settings)
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "default.yaml").write_text(
+        "limits:\n  session_pack_token_budget: 500\n",
+        encoding="utf-8",
+    )
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","PackCo, catalyst","Session pack current news."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    for episode in (
+        _episode("EP-small", summary="Short useful lesson.", available_day=date(2030, 1, 10)),
+        _episode("EP-large", summary="Long lesson. " * 300, available_day=date(2030, 1, 10)),
+    ):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    monkeypatch.chdir(tmp_path)
+
+    result = RUNNER.invoke(
+        app,
+        [
+            "context",
+            "export-session-pack",
+            "--news",
+            str(news_csv),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "2030-01-10T08:59:59+09:00",
+            "--mode",
+            "brain",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "session pack omitted available episodes due to token budget" in result.output
+    manifest = read_json(tmp_path / "session_packs" / "2030-01-10" / "manifest.json")
+    assert manifest["blocked"] is True
 
 
 def test_session_pack_uses_as_of_brain_context_when_current_contains_future_episode(
