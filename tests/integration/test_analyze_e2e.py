@@ -179,6 +179,38 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_new_company_candidate_creates_company_memory_candidate(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","NovelCo, new facility",'
+        '"New company appears without pre-existing company memory."\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    assert analysis.blind_prediction.candidates[0].company_name == "NovelCo"
+    memory_paths = list((tmp_path / "memory" / "company_memory").glob("*.json"))
+    assert len(memory_paths) == 1
+    memory = read_json(memory_paths[0])
+    assert memory["company_name"] == "NovelCo"
+    assert memory["ticker"] == "UNKNOWN"
+    assert memory["known_at"] == "2030-01-10T08:59:59+09:00"
+    assert memory["provenance"][0]["source_type"] == "blind_analysis_company_memory_candidate"
+    assert memory["provenance"][0]["uri"] == analysis.prediction_path
+
+
+@pytest.mark.asyncio
 async def test_exhaustive_analyze_fails_when_memory_sweep_is_incomplete(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

@@ -26,6 +26,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
+from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
@@ -143,6 +144,11 @@ class DailyAnalyzer:
         report_path = report_dir / f"{trade_date.isoformat()}_preopen.md"
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
         write_json(prediction_path, prediction.model_dump(mode="json"))
+        CompanyMemoryStore(self.root).upsert_from_candidates(
+            prediction.candidates,
+            prediction_path=prediction_path,
+            known_at=prediction.cutoff_at,
+        )
         write_json(manifest_path, manifest.model_dump(mode="json"))
         WarehouseStore(self.root).write_prediction(prediction)
         report_path.parent.mkdir(parents=True, exist_ok=True)
