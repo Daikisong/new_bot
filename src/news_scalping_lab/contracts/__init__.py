@@ -14,6 +14,8 @@ from news_scalping_lab.contracts.models import (
     PathType,
     PriceSnapshot,
     Provenance,
+    RedTeamArtifact,
+    RedTeamFinding,
     ResearchEpisode,
 )
 
@@ -31,5 +33,7 @@ __all__ = [
     "PathType",
     "PriceSnapshot",
     "Provenance",
+    "RedTeamArtifact",
+    "RedTeamFinding",
     "ResearchEpisode",
 ]

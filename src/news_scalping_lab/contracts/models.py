@@ -127,6 +127,31 @@ class Candidate(StrictModel):
         return value
 
 
+class RedTeamFinding(StrictModel):
+    candidate_rank: int
+    ticker: str
+    company_name: str
+    path_type: PathType
+    attack_summary: str
+    objections: list[str] = Field(default_factory=list)
+    contrary_evidence: list[str] = Field(default_factory=list)
+    disconfirming_conditions: list[str] = Field(default_factory=list)
+    verification_questions: list[str] = Field(default_factory=list)
+    passed_to_synthesis: bool = True
+
+
+class RedTeamArtifact(StrictModel):
+    schema_version: str = "nslab.red_team_artifact.v1"
+    run_id: str
+    source_prediction_id: str
+    prompt_version: str
+    prompt_sha256: str
+    created_at: datetime
+    candidate_count: int
+    candidate_findings: list[RedTeamFinding] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class DominantSectorHypothesis(StrictModel):
     name: str
     triggering_events: list[str] = Field(default_factory=list)
@@ -329,6 +354,7 @@ class ContextManifest(StrictModel):
     memory_sweep_artifacts: list[str] = Field(default_factory=list)
     memory_sweep_shard_count: int = 0
     memory_sweep_cache_hits: int = 0
+    red_team_artifacts: list[str] = Field(default_factory=list)
     token_counts: dict[str, int] = Field(default_factory=dict)
     truncations: list[str] = Field(default_factory=list)
     web_queries: list[str] = Field(default_factory=list)

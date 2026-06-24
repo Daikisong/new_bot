@@ -149,6 +149,13 @@
       "title": "Prompt Hashes",
       "type": "object"
     },
+    "red_team_artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Red Team Artifacts",
+      "type": "array"
+    },
     "retrieved_episode_ids": {
       "items": {
         "type": "string"

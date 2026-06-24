@@ -18,6 +18,8 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     OutcomeLabels,
     PathType,
+    RedTeamArtifact,
+    RedTeamFinding,
 )
 from news_scalping_lab.inference.analyzer import DailyAnalyzer, ExhaustiveCoverageError
 from news_scalping_lab.prices.base import PriceRecord
@@ -64,6 +66,28 @@ class RecordingBlindLLM:
         self.calls.append(
             {"prompt": prompt, "response_model": response_model, "purpose": purpose}
         )
+        if response_model is RedTeamArtifact:
+            artifact = RedTeamArtifact(
+                run_id="RUN-provider-red-team",
+                source_prediction_id="PRED-provider-raw",
+                prompt_version="test",
+                prompt_sha256="test",
+                created_at=datetime(1999, 1, 1, 8, 30, 0, tzinfo=KST),
+                candidate_count=1,
+                candidate_findings=[
+                    RedTeamFinding(
+                        candidate_rank=1,
+                        ticker="UNKNOWN",
+                        company_name="ProviderCandidate",
+                        path_type=PathType.SINGLE_EVENT,
+                        attack_summary="Provider red-team finding.",
+                        objections=["provider red-team objection"],
+                        disconfirming_conditions=["provider disconfirming condition"],
+                        verification_questions=["provider verification question"],
+                    )
+                ],
+            )
+            return artifact  # type: ignore[return-value]
         assert response_model is BlindPrediction
         prediction = BlindPrediction(
             prediction_id="PRED-provider-raw",
@@ -161,6 +185,17 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert analysis.blind_prediction.context_manifest_id == analysis.context_manifest.run_id
     saved_prediction = read_json(tmp_path / analysis.prediction_path)
     assert saved_prediction["context_manifest_id"] == analysis.context_manifest.run_id
+    assert len(analysis.context_manifest.red_team_artifacts) == 1
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
+    assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
+    red_team_path = tmp_path / analysis.context_manifest.red_team_artifacts[0]
+    red_team = read_json(red_team_path)
+    assert red_team["schema_version"] == "nslab.red_team_artifact.v1"
+    assert red_team["run_id"] == analysis.context_manifest.run_id
+    assert red_team["candidate_count"] == len(analysis.blind_prediction.candidates)
+    assert len(red_team["candidate_findings"]) == len(analysis.blind_prediction.candidates)
+    assert all(finding["passed_to_synthesis"] for finding in red_team["candidate_findings"])
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert audit_provenance(tmp_path)["passed"]
 
@@ -220,16 +255,20 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         web_search=False,
     )
 
-    assert len(llm.calls) == 1
+    assert len(llm.calls) == 2
     assert llm.calls[0]["purpose"] == "daily_blind_analysis"
+    assert llm.calls[1]["purpose"] == "red_team_candidate_review"
     assert "ProviderCo" in str(llm.calls[0]["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     assert analysis.blind_prediction.candidates[0].rank == 1
     assert analysis.blind_prediction.candidates[0].event_ids
+    assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
     assert analysis.blind_prediction.blind_artifact_sha256
+    assert analysis.context_manifest.red_team_artifacts
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
+    assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
 
 
 @pytest.mark.asyncio

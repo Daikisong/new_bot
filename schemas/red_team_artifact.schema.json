@@ -1,0 +1,137 @@
+{
+  "$defs": {
+    "PathType": {
+      "enum": [
+        "SINGLE_EVENT",
+        "THEME_BENEFICIARY",
+        "CONTINUATION",
+        "HYBRID"
+      ],
+      "title": "PathType",
+      "type": "string"
+    },
+    "RedTeamFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "attack_summary": {
+          "title": "Attack Summary",
+          "type": "string"
+        },
+        "candidate_rank": {
+          "title": "Candidate Rank",
+          "type": "integer"
+        },
+        "company_name": {
+          "title": "Company Name",
+          "type": "string"
+        },
+        "contrary_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contrary Evidence",
+          "type": "array"
+        },
+        "disconfirming_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Disconfirming Conditions",
+          "type": "array"
+        },
+        "objections": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Objections",
+          "type": "array"
+        },
+        "passed_to_synthesis": {
+          "default": true,
+          "title": "Passed To Synthesis",
+          "type": "boolean"
+        },
+        "path_type": {
+          "$ref": "#/$defs/PathType"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        },
+        "verification_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Verification Questions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_rank",
+        "ticker",
+        "company_name",
+        "path_type",
+        "attack_summary"
+      ],
+      "title": "RedTeamFinding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_count": {
+      "title": "Candidate Count",
+      "type": "integer"
+    },
+    "candidate_findings": {
+      "items": {
+        "$ref": "#/$defs/RedTeamFinding"
+      },
+      "title": "Candidate Findings",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "prompt_sha256": {
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.red_team_artifact.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_prediction_id": {
+      "title": "Source Prediction Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "source_prediction_id",
+    "prompt_version",
+    "prompt_sha256",
+    "created_at",
+    "candidate_count"
+  ],
+  "title": "RedTeamArtifact",
+  "type": "object"
+}

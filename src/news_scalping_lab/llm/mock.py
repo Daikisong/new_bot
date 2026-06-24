@@ -21,6 +21,8 @@ from news_scalping_lab.contracts.models import (
     ConfidenceLabel,
     DominantSectorHypothesis,
     PathType,
+    RedTeamArtifact,
+    RedTeamFinding,
 )
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
@@ -41,6 +43,9 @@ class DeterministicMockLLMProvider:
         if response_model is BlindPrediction:
             prediction = self._blind_prediction(prompt)
             return prediction  # type: ignore[return-value]
+        if response_model is RedTeamArtifact:
+            artifact = self._red_team_artifact(prompt)
+            return artifact  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
@@ -229,6 +234,104 @@ class DeterministicMockLLMProvider:
         except json.JSONDecodeError:
             return {}
         return payload if isinstance(payload, dict) else {}
+
+    def _red_team_artifact(self, prompt: str) -> RedTeamArtifact:
+        payload = self._red_team_payload(prompt)
+        candidates = payload.get("candidates", [])
+        findings: list[RedTeamFinding] = []
+        if isinstance(candidates, list):
+            for raw_candidate in candidates:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                rank = raw_candidate.get("rank")
+                candidate_rank = rank if isinstance(rank, int) else len(findings) + 1
+                ticker = str(raw_candidate.get("ticker") or "UNKNOWN")
+                company_name = str(raw_candidate.get("company_name") or "UNVERIFIED_ENTITY")
+                path_type = str(raw_candidate.get("path_type") or "HYBRID")
+                try:
+                    parsed_path_type = PathType(path_type)
+                except ValueError:
+                    parsed_path_type = PathType.HYBRID
+                counterarguments = [
+                    item for item in raw_candidate.get("counterarguments", []) if isinstance(item, str)
+                ]
+                disconfirming = [
+                    item
+                    for item in raw_candidate.get("disconfirming_conditions", [])
+                    if isinstance(item, str)
+                ]
+                prior_negative_cases = [
+                    item for item in raw_candidate.get("prior_negative_cases", []) if isinstance(item, str)
+                ]
+                direct_evidence = [
+                    item for item in raw_candidate.get("direct_evidence", []) if isinstance(item, str)
+                ]
+                objections = list(counterarguments)
+                if ticker.upper() in {"UNKNOWN", "UNVERIFIED"}:
+                    objections.append("ticker or listing status is unverified")
+                if not direct_evidence:
+                    objections.append("direct evidence is weak or absent")
+                if path_type != "SINGLE_EVENT":
+                    objections.append("candidate depends on indirect path reasoning")
+                findings.append(
+                    RedTeamFinding(
+                        candidate_rank=candidate_rank,
+                        ticker=ticker,
+                        company_name=company_name,
+                        path_type=parsed_path_type,
+                        attack_summary=(
+                            "Mock red-team review retained the candidate and passed objections forward."
+                        ),
+                        objections=self._dedupe_strings(objections),
+                        contrary_evidence=[
+                            f"negative memory case: {case}" for case in prior_negative_cases
+                        ],
+                        disconfirming_conditions=self._dedupe_strings(
+                            [
+                                *disconfirming,
+                                "only cutoff-after evidence is available",
+                                "D-1 and earlier market action already reflected the catalyst",
+                            ]
+                        ),
+                        verification_questions=[
+                            "Is the candidate a listed security with a current tradable ticker?",
+                            "Is the catalyst economically attributable to this listed entity?",
+                            "Was the catalyst already absorbed by D-1 and earlier market data?",
+                        ],
+                    )
+                )
+        return RedTeamArtifact(
+            run_id=str(payload.get("run_id") or "RUN-mock-red-team"),
+            source_prediction_id=str(payload.get("source_prediction_id") or "PRED-mock"),
+            prompt_version="red_team.candidate_attack.v1",
+            prompt_sha256=sha256_text(prompt),
+            created_at=now_kst(),
+            candidate_count=len(findings),
+            candidate_findings=findings,
+            notes=["Mock structured red-team pass."],
+        )
+
+    def _red_team_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---RED_TEAM_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _dedupe_strings(self, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            stripped = value.strip()
+            if not stripped or stripped in seen:
+                continue
+            seen.add(stripped)
+            deduped.append(stripped)
+        return deduped
 
     def _payload_string_list(self, payload: dict[str, Any], key: str) -> list[str]:
         value = payload.get(key)

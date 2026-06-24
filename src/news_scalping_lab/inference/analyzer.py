@@ -21,6 +21,7 @@ from news_scalping_lab.contracts.models import (
     NewsItem,
     PathType,
 )
+from news_scalping_lab.inference.red_team import apply_red_team_findings, run_red_team_pass
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
@@ -136,11 +137,21 @@ class DailyAnalyzer:
             },
         )
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
+        red_team = await run_red_team_pass(
+            root=self.root,
+            llm=self.llm,
+            prediction=prediction,
+            manifest=manifest,
+        )
+        prediction = apply_red_team_findings(prediction, red_team.artifact)
+        manifest.red_team_artifacts = [red_team.artifact_path]
+        manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["blind_analysis"] = sha256_text(
             canonical_json(prediction.model_dump(mode="json"))
         )
+        manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
 
         prediction_dir = self.settings.path(self.settings.output_dirs.predictions)
         report_dir = self.settings.path(self.settings.output_dirs.reports)
