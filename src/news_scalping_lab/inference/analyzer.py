@@ -20,6 +20,7 @@ from news_scalping_lab.contracts.models import (
     DominantSectorHypothesis,
     NewsItem,
     PathType,
+    RedTeamArtifact,
 )
 from news_scalping_lab.inference.red_team import apply_red_team_findings, run_red_team_pass
 from news_scalping_lab.ingest.news import load_news_csv
@@ -32,7 +33,7 @@ from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
-from news_scalping_lab.utils import canonical_json, now_kst, sha256_text, stable_id, write_json
+from news_scalping_lab.utils import canonical_json, now_kst, read_json, sha256_text, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
 from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider
@@ -73,6 +74,7 @@ class DailyAnalyzer:
         run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
         web_queries = self._build_web_queries(batch.items)
         retrieved_ids = self.retrieval.search(" ".join(web_queries), limit=20)
+        event_ids = [item.event_id for item in batch.items]
         manifest = ContextAssembler(self.root).assemble(
             mode=mode,
             trade_date=trade_date,
@@ -120,7 +122,7 @@ class DailyAnalyzer:
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             news_texts=news_texts,
-            event_ids=[item.event_id for item in batch.items],
+            event_ids=event_ids,
             retrieved_episode_ids=retrieved_ids,
             excluded_source_ids=web_guard.excluded_source_ids,
             first_pass_mechanisms=first_pass_mechanisms,
@@ -146,12 +148,33 @@ class DailyAnalyzer:
         prediction = apply_red_team_findings(prediction, red_team.artifact)
         manifest.red_team_artifacts = [red_team.artifact_path]
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
+        d_minus_one_market_data = self._collect_d_minus_one_market_data(
+            candidates=prediction.candidates,
+            price_guard=price_guard,
+            manifest=manifest,
+        )
+        prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = (
+            await self._run_final_synthesis(
+                prediction=prediction,
+                manifest=manifest,
+                news_texts=news_texts,
+                event_ids=event_ids,
+                retrieved_episode_ids=retrieved_ids,
+                excluded_source_ids=web_guard.excluded_source_ids,
+                first_pass_mechanisms=first_pass_mechanisms,
+                red_team_artifact=red_team.artifact,
+                d_minus_one_market_data=d_minus_one_market_data,
+            )
+        )
+        prediction = apply_red_team_findings(prediction, red_team.artifact)
+        manifest.token_counts["final_synthesis_prompt"] = final_synthesis_prompt_tokens
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["blind_analysis"] = sha256_text(
             canonical_json(prediction.model_dump(mode="json"))
         )
         manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
+        manifest.prompt_hashes["final_synthesis"] = final_synthesis_prompt_hash
 
         prediction_dir = self.settings.path(self.settings.output_dirs.predictions)
         report_dir = self.settings.path(self.settings.output_dirs.reports)
@@ -179,6 +202,189 @@ class DailyAnalyzer:
             context_manifest=manifest,
             report_path=report_path.relative_to(self.root).as_posix(),
             prediction_path=prediction_path.relative_to(self.root).as_posix(),
+        )
+
+    async def _run_final_synthesis(
+        self,
+        *,
+        prediction: BlindPrediction,
+        manifest: ContextManifest,
+        news_texts: list[str],
+        event_ids: list[str],
+        retrieved_episode_ids: list[str],
+        excluded_source_ids: list[str],
+        first_pass_mechanisms: list[str],
+        red_team_artifact: RedTeamArtifact,
+        d_minus_one_market_data: dict[str, Any],
+    ) -> tuple[BlindPrediction, str, int]:
+        prompt = self._build_final_synthesis_prompt(
+            prediction=prediction,
+            manifest=manifest,
+            news_texts=news_texts,
+            first_pass_mechanisms=first_pass_mechanisms,
+            red_team_artifact=red_team_artifact,
+            d_minus_one_market_data=d_minus_one_market_data,
+        )
+        prompt_sha256 = sha256_text(prompt)
+        try:
+            synthesized = await self.llm.generate_structured(
+                prompt=prompt,
+                response_model=BlindPrediction,
+                purpose="final_synthesis",
+            )
+        except NotImplementedError:
+            synthesized = prediction
+        if not synthesized.candidates:
+            synthesized = prediction
+        normalized = self._normalize_prediction(
+            synthesized,
+            trade_date=prediction.trade_date,
+            cutoff_at=prediction.cutoff_at,
+            event_ids=event_ids,
+            excluded_source_ids=excluded_source_ids,
+            prompt=prompt,
+            purpose="final_synthesis",
+        )
+        normalized = normalized.model_copy(update={"context_manifest_id": manifest.run_id})
+        if not normalized.blind_analysis.open_world_mechanisms:
+            normalized = normalized.model_copy(
+                update={
+                    "blind_analysis": normalized.blind_analysis.model_copy(
+                        update={"open_world_mechanisms": first_pass_mechanisms}
+                    )
+                }
+            )
+        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+
+    def _build_final_synthesis_prompt(
+        self,
+        *,
+        prediction: BlindPrediction,
+        manifest: ContextManifest,
+        news_texts: list[str],
+        first_pass_mechanisms: list[str],
+        red_team_artifact: RedTeamArtifact,
+        d_minus_one_market_data: dict[str, Any],
+    ) -> str:
+        payload = {
+            "schema": "nslab.blind_prediction.v1",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": [
+                "current_news",
+                "open_world_first_analysis",
+                "web_research",
+                "global_brain",
+                "all_shard_contributions",
+                "retrieved_raw_episodes",
+                "positive_cases",
+                "negative_cases",
+                "counterexamples",
+                "candidate_research",
+                "red_team_output",
+                "d_minus_one_market_data",
+            ],
+            "run_id": manifest.run_id,
+            "trade_date": prediction.trade_date.isoformat(),
+            "cutoff_at": prediction.cutoff_at.isoformat(),
+            "current_news": news_texts,
+            "open_world_first_analysis": first_pass_mechanisms,
+            "web_research": {
+                "queries": manifest.web_queries,
+                "included_sources": manifest.web_sources,
+                "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
+            },
+            "global_brain": self._read_brain_context(manifest),
+            "all_shard_contributions": self._read_json_artifacts(
+                manifest.memory_sweep_artifacts
+            ),
+            "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
+            "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),
+            "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
+            "counterexamples": manifest.counterexample_episode_ids,
+            "candidate_research": prediction.model_dump(mode="json"),
+            "red_team_output": red_team_artifact.model_dump(mode="json"),
+            "d_minus_one_market_data": d_minus_one_market_data,
+        }
+        return (
+            f"{self._load_synthesis_prompt().strip()}\n"
+            "Return the final BlindPrediction. Keep qualitative confidence only, "
+            "preserve red-team objections in candidate counterarguments, and do not use "
+            "D-day prices, outcomes, or cutoff-after sources.\n"
+            "---FINAL_SYNTHESIS_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _collect_d_minus_one_market_data(
+        self,
+        *,
+        candidates: list[Candidate],
+        price_guard: BlindPriceGuard,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        allowed_through = manifest.price_snapshot.allowed_through
+        payload: dict[str, Any] = {
+            "source_name": price_guard.source_name,
+            "allowed_through": allowed_through.isoformat() if allowed_through else None,
+            "snapshots": [],
+            "skipped_tickers": [],
+        }
+        if allowed_through is None:
+            return payload
+        seen: set[str] = set()
+        for candidate in candidates:
+            ticker = candidate.ticker.strip().upper()
+            if not ticker or ticker in seen:
+                continue
+            seen.add(ticker)
+            if ticker in {"UNKNOWN", "UNVERIFIED"}:
+                payload["skipped_tickers"].append(
+                    {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
+                )
+                continue
+            snapshot = price_guard.get_snapshot(ticker, as_of=allowed_through)
+            payload["snapshots"].append(
+                {
+                    "ticker": ticker,
+                    "as_of": allowed_through.isoformat(),
+                    "record": snapshot.__dict__ if snapshot is not None else None,
+                }
+            )
+        return payload
+
+    def _read_brain_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        files: list[dict[str, Any]] = []
+        for relative_path in manifest.brain_files:
+            path = self.root / relative_path
+            if not path.exists() or not path.is_file():
+                files.append({"path": relative_path, "missing": True})
+                continue
+            files.append(
+                {
+                    "path": relative_path,
+                    "sha256": manifest.brain_file_hashes.get(relative_path),
+                    "text": path.read_text(encoding="utf-8"),
+                }
+            )
+        return files
+
+    def _read_json_artifacts(self, relative_paths: list[str]) -> list[dict[str, Any]]:
+        artifacts: list[dict[str, Any]] = []
+        for relative_path in relative_paths:
+            path = self.root / relative_path
+            if not path.exists() or not path.is_file():
+                artifacts.append({"path": relative_path, "missing": True})
+                continue
+            payload = read_json(path)
+            artifacts.append({"path": relative_path, "payload": payload})
+        return artifacts
+
+    def _load_synthesis_prompt(self) -> str:
+        path = self.root / "prompts" / "synthesis" / "final.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return (
+            "Synthesize current news, web verification, global brain, swept memory, "
+            "counterexamples, candidate research, red-team objections, and D-1 market data."
         )
 
     def _build_web_queries(self, items: Sequence[NewsItem]) -> list[str]:
@@ -258,6 +464,7 @@ class DailyAnalyzer:
             event_ids=event_ids,
             excluded_source_ids=excluded_source_ids,
             prompt=prompt,
+            purpose="daily_blind_analysis",
         )
 
     def _build_blind_prediction_prompt(
@@ -302,6 +509,7 @@ class DailyAnalyzer:
         event_ids: list[str],
         excluded_source_ids: list[str],
         prompt: str,
+        purpose: str,
     ) -> BlindPrediction:
         analysis = prediction.blind_analysis.model_copy(
             update={
@@ -323,7 +531,7 @@ class DailyAnalyzer:
             update={
                 "prediction_id": stable_id(
                     "PRED",
-                    "daily_blind_analysis",
+                    purpose,
                     trade_date.isoformat(),
                     cutoff_at.isoformat(),
                     sha256_text(prompt),
@@ -505,3 +713,18 @@ class DailyAnalyzer:
         )
         digest = sha256_text(canonical_json(sealed.model_dump(mode="json")))
         return sealed.model_copy(update={"blind_artifact_sha256": digest})
+
+
+def _candidate_case_refs(prediction: BlindPrediction, field_name: str) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+    for candidate in prediction.candidates:
+        value = getattr(candidate, field_name)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            if not isinstance(item, str) or not item or item in seen:
+                continue
+            seen.add(item)
+            refs.append(item)
+    return refs

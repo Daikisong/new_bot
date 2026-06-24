@@ -40,6 +40,9 @@ class DeterministicMockLLMProvider:
         )
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        if response_model is BlindPrediction and purpose == "final_synthesis":
+            prediction = self._final_synthesis_prediction(prompt)
+            return prediction  # type: ignore[return-value]
         if response_model is BlindPrediction:
             prediction = self._blind_prediction(prompt)
             return prediction  # type: ignore[return-value]
@@ -313,6 +316,50 @@ class DeterministicMockLLMProvider:
 
     def _red_team_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---RED_TEAM_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _final_synthesis_prediction(self, prompt: str) -> BlindPrediction:
+        payload = self._final_synthesis_payload(prompt)
+        draft = payload.get("candidate_research")
+        if isinstance(draft, dict):
+            prediction = BlindPrediction.model_validate(draft)
+        else:
+            prediction = self._blind_prediction(prompt)
+        red_team = payload.get("red_team_output", {})
+        red_team_notes = []
+        if isinstance(red_team, dict):
+            raw_findings = red_team.get("candidate_findings", [])
+            if isinstance(raw_findings, list):
+                red_team_notes = [
+                    str(finding.get("attack_summary"))
+                    for finding in raw_findings
+                    if isinstance(finding, dict) and finding.get("attack_summary")
+                ]
+        analysis = prediction.blind_analysis.model_copy(
+            update={
+                "summary": (
+                    "Mock final synthesis reviewed current news, memory sweep, web context, "
+                    "red-team output, and blind-safe D-1 market data."
+                ),
+                "initial_uncertainties": self._dedupe_strings(
+                    [
+                        *prediction.blind_analysis.initial_uncertainties,
+                        *red_team_notes[:3],
+                    ]
+                ),
+            }
+        )
+        return prediction.model_copy(update={"blind_analysis": analysis})
+
+    def _final_synthesis_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---FINAL_SYNTHESIS_PAYLOAD---"
         if marker not in prompt:
             return {}
         payload_text = prompt.split(marker, maxsplit=1)[-1].strip()

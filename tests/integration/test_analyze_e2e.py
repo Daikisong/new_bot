@@ -89,6 +89,32 @@ class RecordingBlindLLM:
             )
             return artifact  # type: ignore[return-value]
         assert response_model is BlindPrediction
+        if purpose == "final_synthesis":
+            assert "red_team_output" in prompt
+            assert "d_minus_one_market_data" in prompt
+            assert "all_shard_contributions" in prompt
+            prediction = BlindPrediction(
+                prediction_id="PRED-provider-final",
+                trade_date=date(1999, 1, 1),
+                cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
+                created_at=datetime(1999, 1, 1, 8, 45, 0, tzinfo=KST),
+                blind_analysis=BlindAnalysis(
+                    summary="Provider final synthesis.",
+                    open_world_mechanisms=["provider final synthesis mechanism"],
+                ),
+                candidates=[
+                    Candidate(
+                        rank=1,
+                        ticker="UNKNOWN",
+                        company_name="ProviderCandidate",
+                        path_type=PathType.SINGLE_EVENT,
+                        thesis="Final synthesized candidate.",
+                        why_now="The final synthesizer saw red-team output.",
+                        causal_chain=["payload", "red-team", "final synthesis"],
+                    )
+                ],
+            )
+            return prediction  # type: ignore[return-value]
         prediction = BlindPrediction(
             prediction_id="PRED-provider-raw",
             trade_date=date(1999, 1, 1),
@@ -189,6 +215,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
+    assert saved_manifest["prompt_hashes"]["final_synthesis"]
+    assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     red_team_path = tmp_path / analysis.context_manifest.red_team_artifacts[0]
     red_team = read_json(red_team_path)
     assert red_team["schema_version"] == "nslab.red_team_artifact.v1"
@@ -255,20 +283,25 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         web_search=False,
     )
 
-    assert len(llm.calls) == 2
+    assert len(llm.calls) == 3
     assert llm.calls[0]["purpose"] == "daily_blind_analysis"
     assert llm.calls[1]["purpose"] == "red_team_candidate_review"
+    assert llm.calls[2]["purpose"] == "final_synthesis"
     assert "ProviderCo" in str(llm.calls[0]["prompt"])
+    assert "red_team_output" in str(llm.calls[2]["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     assert analysis.blind_prediction.candidates[0].rank == 1
     assert analysis.blind_prediction.candidates[0].event_ids
+    assert analysis.blind_prediction.blind_analysis.summary == "Provider final synthesis."
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
     assert analysis.blind_prediction.blind_artifact_sha256
     assert analysis.context_manifest.red_team_artifacts
+    assert analysis.context_manifest.prompt_hashes["final_synthesis"]
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
+    assert any(trace["purpose"] == "final_synthesis" for trace in traces)
 
 
 @pytest.mark.asyncio
