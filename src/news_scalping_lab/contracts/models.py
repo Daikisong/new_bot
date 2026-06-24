@@ -181,6 +181,34 @@ class Postmortem(StrictModel):
     provenance: list[Provenance] = Field(default_factory=list)
 
 
+class EvaluationMetrics(StrictModel):
+    candidate_count: int
+    upper_limit_hits_at_5: int
+    upper_limit_hits_at_10: int
+    upper_limit_hits_at_20: int
+    upper_limit_recall_at_5: float | None = None
+    upper_limit_recall_at_10: float | None = None
+    upper_limit_recall_at_20: float | None = None
+    recall_unavailable_reason: str | None = None
+    precision_at_5: float | None = None
+    precision_at_10: float | None = None
+    theme_recall: float | None = None
+    single_event_recall: float | None = None
+    beneficiary_recall: float | None = None
+    continuation_recall: float | None = None
+    average_max_return_top_5: float | None = None
+    average_max_return_top_10: float | None = None
+    average_max_return_top_20: float | None = None
+    gap_up_hit_rate: float | None = None
+    false_positive_rate: float | None = None
+    high_return_5pct_hit_rate: float | None = None
+    high_return_10pct_hit_rate: float | None = None
+    high_return_15pct_hit_rate: float | None = None
+    high_return_20pct_hit_rate: float | None = None
+    upper_limit_touched_count: int
+    upper_limit_closed_count: int
+
+
 class EventTickerEdge(StrictModel):
     edge_id: str
     episode_id: str

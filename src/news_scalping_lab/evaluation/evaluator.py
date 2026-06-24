@@ -9,6 +9,8 @@ from pathlib import Path
 from news_scalping_lab.config import Settings, load_settings
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
+    Candidate,
+    EvaluationMetrics,
     FailureCode,
     OutcomeLabels,
     Postmortem,
@@ -55,19 +57,22 @@ class Evaluator:
             raise ValueError("evaluation requires a sealed blind prediction")
         outcomes: dict[str, object] = {}
         outcome_labels: dict[str, OutcomeLabels] = {}
+        ranked_outcomes: list[tuple[Candidate, OutcomeLabels]] = []
         hits: list[str] = []
         false_positives: list[str] = []
-        for candidate in prediction.candidates:
+        for candidate in sorted(prediction.candidates, key=lambda item: item.rank):
             ticker = candidate.ticker
             company = candidate.company_name
             outcome = self.price_source.get_outcome(ticker, trade_date=trade_date)
             outcome_key = f"{candidate.rank}:{ticker}:{company}"
             outcomes[company] = outcome.model_dump(mode="json")
             outcome_labels[outcome_key] = outcome
+            ranked_outcomes.append((candidate, outcome))
             if outcome.upper_limit_touched:
                 hits.append(company)
             else:
                 false_positives.append(company)
+        metrics = _build_metrics(ranked_outcomes)
         postmortem = Postmortem(
             summary="Mock postmortem generated from sealed blind prediction and evaluation-only outcomes.",
             hits=hits,
@@ -85,6 +90,7 @@ class Evaluator:
             "created_at": now_kst().isoformat(),
             "blind_prediction_id": prediction.prediction_id,
             "outcomes": outcomes,
+            "performance_metrics": metrics.model_dump(mode="json"),
             "postmortem": postmortem.model_dump(mode="json"),
         }
         target = self.root / "reports" / f"{trade_date.isoformat()}_postmortem.json"
@@ -172,3 +178,93 @@ class Evaluator:
             provenance=[prediction_provenance, evaluation_provenance],
             available_from=available_from,
         )
+
+
+def _build_metrics(ranked_outcomes: list[tuple[Candidate, OutcomeLabels]]) -> EvaluationMetrics:
+    candidate_count = len(ranked_outcomes)
+    upper_limit_hits_at_5 = _upper_limit_hits_at(ranked_outcomes, 5)
+    upper_limit_hits_at_10 = _upper_limit_hits_at(ranked_outcomes, 10)
+    upper_limit_hits_at_20 = _upper_limit_hits_at(ranked_outcomes, 20)
+    return EvaluationMetrics(
+        candidate_count=candidate_count,
+        upper_limit_hits_at_5=upper_limit_hits_at_5,
+        upper_limit_hits_at_10=upper_limit_hits_at_10,
+        upper_limit_hits_at_20=upper_limit_hits_at_20,
+        recall_unavailable_reason=(
+            "Daily market outcome universe is unavailable; recall requires all "
+            "upper-limit and high-return symbols, not only predicted candidates."
+        ),
+        precision_at_5=_rate(upper_limit_hits_at_5, min(5, candidate_count)),
+        precision_at_10=_rate(upper_limit_hits_at_10, min(10, candidate_count)),
+        theme_recall=None,
+        single_event_recall=None,
+        beneficiary_recall=None,
+        continuation_recall=None,
+        average_max_return_top_5=_average_high_return_at(ranked_outcomes, 5),
+        average_max_return_top_10=_average_high_return_at(ranked_outcomes, 10),
+        average_max_return_top_20=_average_high_return_at(ranked_outcomes, 20),
+        gap_up_hit_rate=_gap_up_hit_rate(ranked_outcomes),
+        false_positive_rate=_rate(
+            sum(1 for _, outcome in ranked_outcomes if not outcome.upper_limit_touched),
+            candidate_count,
+        ),
+        high_return_5pct_hit_rate=_high_return_hit_rate(ranked_outcomes, 5.0),
+        high_return_10pct_hit_rate=_high_return_hit_rate(ranked_outcomes, 10.0),
+        high_return_15pct_hit_rate=_high_return_hit_rate(ranked_outcomes, 15.0),
+        high_return_20pct_hit_rate=_high_return_hit_rate(ranked_outcomes, 20.0),
+        upper_limit_touched_count=sum(
+            1 for _, outcome in ranked_outcomes if outcome.upper_limit_touched
+        ),
+        upper_limit_closed_count=sum(
+            1 for _, outcome in ranked_outcomes if outcome.upper_limit_closed
+        ),
+    )
+
+
+def _upper_limit_hits_at(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]], limit: int
+) -> int:
+    return sum(1 for _, outcome in ranked_outcomes[:limit] if outcome.upper_limit_touched)
+
+
+def _average_high_return_at(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]], limit: int
+) -> float | None:
+    values = [
+        outcome.intraday_high_return_pct
+        for _, outcome in ranked_outcomes[:limit]
+        if outcome.intraday_high_return_pct is not None
+    ]
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _gap_up_hit_rate(ranked_outcomes: list[tuple[Candidate, OutcomeLabels]]) -> float | None:
+    values = [
+        outcome.open_gap_pct
+        for _, outcome in ranked_outcomes
+        if outcome.open_gap_pct is not None
+    ]
+    if not values:
+        return None
+    return sum(1 for value in values if value > 0) / len(values)
+
+
+def _high_return_hit_rate(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]], threshold: float
+) -> float | None:
+    values = [
+        outcome.intraday_high_return_pct
+        for _, outcome in ranked_outcomes
+        if outcome.intraday_high_return_pct is not None
+    ]
+    if not values:
+        return None
+    return sum(1 for value in values if value >= threshold) / len(values)
+
+
+def _rate(count: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return count / denominator

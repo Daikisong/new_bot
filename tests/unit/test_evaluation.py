@@ -11,12 +11,14 @@ from news_scalping_lab.contracts.models import (
     BlindPrediction,
     Candidate,
     ConfidenceLabel,
+    OutcomeLabels,
     PathType,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
+from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.prices.mock import MockPriceSource
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, write_json
 
 
 def _sealed_prediction(trade_day: date) -> BlindPrediction:
@@ -48,6 +50,39 @@ def _sealed_prediction(trade_day: date) -> BlindPrediction:
     sealed = prediction.model_copy(update={"sealed_at": created_at, "blind_artifact_sha256": None})
     digest = sha256_text(canonical_json(sealed.model_dump(mode="json")))
     return sealed.model_copy(update={"blind_artifact_sha256": digest})
+
+
+class MetricsPriceSource:
+    source_name = "metrics-test"
+
+    def get_history(self, ticker: str, *, through: date) -> list[PriceRecord]:
+        return []
+
+    def get_snapshot(self, ticker: str, *, as_of: date) -> PriceRecord | None:
+        return None
+
+    def get_outcome(self, ticker: str, *, trade_date: date) -> OutcomeLabels:
+        outcomes = {
+            "T1": OutcomeLabels(
+                open_gap_pct=2.0,
+                intraday_high_return_pct=29.0,
+                upper_limit_touched=True,
+                upper_limit_closed=True,
+            ),
+            "T2": OutcomeLabels(
+                open_gap_pct=0.0,
+                intraday_high_return_pct=12.0,
+                upper_limit_touched=False,
+                upper_limit_closed=False,
+            ),
+            "T3": OutcomeLabels(
+                open_gap_pct=None,
+                intraday_high_return_pct=4.0,
+                upper_limit_touched=False,
+                upper_limit_closed=False,
+            ),
+        }
+        return outcomes[ticker]
 
 
 def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path) -> None:
@@ -83,6 +118,78 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")
     assert manifest.accepted_episode_count == 1
     assert episode.episode_id in manifest.covered_episode_ids
+
+
+def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    prediction = prediction.model_copy(
+        update={
+            "candidates": [
+                Candidate(
+                    rank=1,
+                    ticker="T1",
+                    company_name="HitCandidate",
+                    path_type=PathType.SINGLE_EVENT,
+                    thesis="Candidate expected to touch upper limit.",
+                    why_now="Pre-cutoff catalyst.",
+                    causal_chain=["news", "direct relevance"],
+                ),
+                Candidate(
+                    rank=2,
+                    ticker="T2",
+                    company_name="HighReturnCandidate",
+                    path_type=PathType.THEME_BENEFICIARY,
+                    thesis="Candidate expected to move but not upper-limit.",
+                    why_now="Pre-cutoff catalyst.",
+                    causal_chain=["news", "beneficiary path"],
+                ),
+                Candidate(
+                    rank=3,
+                    ticker="T3",
+                    company_name="FalsePositiveCandidate",
+                    path_type=PathType.CONTINUATION,
+                    thesis="Candidate expected to continue.",
+                    why_now="D-1 continuation review.",
+                    causal_chain=["market memory", "continuation"],
+                ),
+            ]
+        }
+    )
+    resealed = prediction.model_copy(update={"blind_artifact_sha256": None})
+    prediction = resealed.model_copy(
+        update={"blind_artifact_sha256": sha256_text(canonical_json(resealed.model_dump(mode="json")))}
+    )
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+
+    result = Evaluator(tmp_path, price_source=MetricsPriceSource()).evaluate(
+        trade_date=trade_day
+    )
+
+    metrics = read_json(result.report_path)["performance_metrics"]
+    assert metrics["candidate_count"] == 3
+    assert metrics["upper_limit_hits_at_5"] == 1
+    assert metrics["upper_limit_hits_at_10"] == 1
+    assert metrics["upper_limit_hits_at_20"] == 1
+    assert metrics["precision_at_5"] == pytest.approx(1 / 3)
+    assert metrics["precision_at_10"] == pytest.approx(1 / 3)
+    assert metrics["average_max_return_top_5"] == pytest.approx(15.0)
+    assert metrics["gap_up_hit_rate"] == pytest.approx(0.5)
+    assert metrics["false_positive_rate"] == pytest.approx(2 / 3)
+    assert metrics["high_return_5pct_hit_rate"] == pytest.approx(2 / 3)
+    assert metrics["high_return_10pct_hit_rate"] == pytest.approx(2 / 3)
+    assert metrics["high_return_15pct_hit_rate"] == pytest.approx(1 / 3)
+    assert metrics["high_return_20pct_hit_rate"] == pytest.approx(1 / 3)
+    assert metrics["upper_limit_touched_count"] == 1
+    assert metrics["upper_limit_closed_count"] == 1
+    assert metrics["upper_limit_recall_at_5"] is None
+    assert metrics["theme_recall"] is None
+    assert "universe is unavailable" in metrics["recall_unavailable_reason"]
 
 
 def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:
