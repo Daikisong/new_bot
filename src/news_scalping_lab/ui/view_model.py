@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from news_scalping_lab.contracts.models import (
     Candidate,
@@ -11,6 +12,7 @@ from news_scalping_lab.contracts.models import (
     DominantSectorHypothesis,
     PathType,
 )
+from news_scalping_lab.utils import read_json
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,17 @@ class ArtifactLinks:
     prediction_json: Path
     report_markdown: Path
     context_manifest_json: Path
+
+
+@dataclass(frozen=True)
+class SweepShardStatus:
+    shard_index: int | None
+    status: str
+    episode_count: int
+    episode_ids: list[str]
+    from_cache: bool
+    artifact_path: Path
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +42,7 @@ class AnalysisViewModel:
     swept_episode_count: int
     memory_sweep_shard_count: int
     memory_sweep_cache_hits: int
+    memory_sweep_shards: list[SweepShardStatus]
     coverage_errors: list[str]
     dominant_sectors: list[DominantSectorHypothesis]
     candidates_by_path: dict[str, list[Candidate]]
@@ -45,6 +59,7 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
         swept_episode_count=manifest.swept_episode_count,
         memory_sweep_shard_count=manifest.memory_sweep_shard_count,
         memory_sweep_cache_hits=manifest.memory_sweep_cache_hits,
+        memory_sweep_shards=_memory_sweep_shards(root, manifest.memory_sweep_artifacts),
         coverage_errors=manifest.errors,
         dominant_sectors=analysis.blind_prediction.dominant_sectors,
         candidates_by_path=_candidates_by_path(analysis.blind_prediction.candidates),
@@ -61,3 +76,62 @@ def _candidates_by_path(candidates: list[Candidate]) -> dict[str, list[Candidate
     for candidate in sorted(candidates, key=lambda item: item.rank):
         grouped.setdefault(str(candidate.path_type), []).append(candidate)
     return grouped
+
+
+def _memory_sweep_shards(root: Path, artifact_paths: list[str]) -> list[SweepShardStatus]:
+    shards: list[SweepShardStatus] = []
+    for relative_path in artifact_paths:
+        artifact_path = root / relative_path
+        if not artifact_path.exists():
+            shards.append(
+                SweepShardStatus(
+                    shard_index=None,
+                    status="missing",
+                    episode_count=0,
+                    episode_ids=[],
+                    from_cache=False,
+                    artifact_path=artifact_path,
+                    error="artifact does not exist",
+                )
+            )
+            continue
+        try:
+            payload = read_json(artifact_path)
+        except ValueError as exc:
+            shards.append(
+                SweepShardStatus(
+                    shard_index=None,
+                    status="unreadable",
+                    episode_count=0,
+                    episode_ids=[],
+                    from_cache=False,
+                    artifact_path=artifact_path,
+                    error=str(exc),
+                )
+            )
+            continue
+        shards.append(_sweep_status_from_payload(artifact_path, payload))
+    return sorted(
+        shards,
+        key=lambda item: (
+            item.shard_index is None,
+            item.shard_index if item.shard_index is not None else 0,
+            item.artifact_path.as_posix(),
+        ),
+    )
+
+
+def _sweep_status_from_payload(artifact_path: Path, payload: dict[str, Any]) -> SweepShardStatus:
+    from_cache = bool(payload.get("from_cache", False))
+    return SweepShardStatus(
+        shard_index=_optional_int(payload.get("shard_index")),
+        status="cached" if from_cache else "completed",
+        episode_count=_optional_int(payload.get("episode_count")) or 0,
+        episode_ids=[item for item in payload.get("episode_ids", []) if isinstance(item, str)],
+        from_cache=from_cache,
+        artifact_path=artifact_path,
+    )
+
+
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None

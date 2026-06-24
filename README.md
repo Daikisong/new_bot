@@ -34,7 +34,7 @@ python -m news_scalping_lab.cli ui --port 8501
 ```
 
 The UI accepts a news CSV, trade date, cutoff timestamp, analysis mode, and web-search option.
-It shows the active brain version, memory sweep coverage, dominant sector hypotheses, candidates,
+It shows the active brain version, memory sweep coverage, shard status, dominant sector hypotheses, candidates,
 evidence and objections, plus downloads for the context manifest, prediction JSON, and Markdown report.
 
 ## Research Flow

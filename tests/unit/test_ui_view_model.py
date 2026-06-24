@@ -14,7 +14,7 @@ from news_scalping_lab.contracts.models import (
     PriceSnapshot,
 )
 from news_scalping_lab.ui.view_model import build_analysis_view_model
-from news_scalping_lab.utils import KST
+from news_scalping_lab.utils import KST, write_json
 
 
 def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> None:
@@ -66,7 +66,34 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         swept_episode_count=2,
         memory_sweep_shard_count=2,
         memory_sweep_cache_hits=1,
+        memory_sweep_artifacts=[
+            "runs/checkpoints/memory_sweep/RUN-ui/shard_0002.json",
+            "runs/checkpoints/memory_sweep/RUN-ui/shard_0001.json",
+            "runs/checkpoints/memory_sweep/RUN-ui/missing.json",
+        ],
         price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
+    )
+    sweep_dir = tmp_path / "runs" / "checkpoints" / "memory_sweep" / "RUN-ui"
+    sweep_dir.mkdir(parents=True)
+    write_json(
+        sweep_dir / "shard_0001.json",
+        {
+            "schema_version": "nslab.memory_sweep_contribution.v1",
+            "shard_index": 1,
+            "episode_count": 1,
+            "episode_ids": ["EP-1"],
+            "from_cache": False,
+        },
+    )
+    write_json(
+        sweep_dir / "shard_0002.json",
+        {
+            "schema_version": "nslab.memory_sweep_contribution.v1",
+            "shard_index": 2,
+            "episode_count": 1,
+            "episode_ids": ["EP-2"],
+            "from_cache": True,
+        },
     )
     analysis = DailyAnalysis(
         run_id="RUN-ui",
@@ -86,6 +113,14 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     assert view.brain_version == "brain-ui"
     assert view.swept_episode_count == 2
     assert view.memory_sweep_cache_hits == 1
+    assert [(shard.shard_index, shard.status) for shard in view.memory_sweep_shards] == [
+        (1, "completed"),
+        (2, "cached"),
+        (None, "missing"),
+    ]
+    assert view.memory_sweep_shards[0].episode_ids == ["EP-1"]
+    assert view.memory_sweep_shards[1].from_cache is True
+    assert view.memory_sweep_shards[2].error == "artifact does not exist"
     assert view.dominant_sectors[0].name == "open-world cluster"
     assert [candidate.company_name for candidate in view.candidates_by_path["SINGLE_EVENT"]] == [
         "DirectCo"

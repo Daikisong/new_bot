@@ -64,6 +64,24 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     st.caption(f"Memory sweep cache hits: {view.memory_sweep_cache_hits}")
     if view.coverage_errors:
         st.error("; ".join(view.coverage_errors))
+    if view.memory_sweep_shards:
+        st.subheader("Memory Sweep Shards")
+        st.dataframe(
+            [
+                {
+                    "shard": shard.shard_index,
+                    "status": shard.status,
+                    "episodes": shard.episode_count,
+                    "from_cache": shard.from_cache,
+                    "episode_ids": ", ".join(shard.episode_ids),
+                    "artifact": shard.artifact_path.as_posix(),
+                    "error": shard.error or "",
+                }
+                for shard in view.memory_sweep_shards
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
 
     st.subheader("Dominant Sector Hypotheses")
     if not view.dominant_sectors:
