@@ -28,7 +28,6 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
     ExhaustiveCoverageError,
-    FutureContextLeakError,
 )
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -479,7 +478,9 @@ async def test_retrieved_raw_episodes_are_filtered_by_available_from(tmp_path) -
 
 
 @pytest.mark.asyncio
-async def test_analyze_fails_when_brain_contains_future_unavailable_episode(tmp_path) -> None:
+async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episode(
+    tmp_path,
+) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
     csv_path = tmp_path / "news.csv"
@@ -504,23 +505,43 @@ async def test_analyze_fails_when_brain_contains_future_unavailable_episode(tmp_
         store.save_episode(episode)
         store.accept(episode.episode_id)
     BrainCompiler(tmp_path).rebuild(mode="full")
+    llm = RecordingBlindLLM()
 
-    with pytest.raises(FutureContextLeakError, match="future-unavailable episodes"):
-        await DailyAnalyzer(settings).analyze(
-            news_csv=csv_path,
-            trade_date=date(2030, 1, 10),
-            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-            mode="exhaustive",
-            web_search=False,
-        )
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
 
-    manifests = list((tmp_path / "runs" / "manifests").glob("RUN-*.json"))
-    assert len(manifests) == 1
-    manifest = read_json(manifests[0])
-    assert "brain context contains future-unavailable episodes: EP-future-brain" in manifest[
-        "errors"
-    ]
-    assert not (tmp_path / "predictions" / "2030-01-10.json").exists()
+    manifest = analysis.context_manifest
+    assert manifest.brain_version is not None
+    assert manifest.brain_version.startswith("brain-asof-")
+    assert manifest.accepted_episode_count == 1
+    assert manifest.swept_episode_ids == ["EP-available-brain"]
+    assert manifest.errors == []
+    assert all(
+        path.startswith(f"runs/checkpoints/brain_context/{manifest.run_id}/brain/")
+        for path in manifest.brain_files
+    )
+    assert all(
+        path.startswith(f"runs/checkpoints/brain_context/{manifest.run_id}/shards/")
+        for path in manifest.shard_brain_files
+    )
+    context_text = "\n".join(
+        (tmp_path / path).read_text(encoding="utf-8")
+        for path in [*manifest.brain_files, *manifest.shard_brain_files]
+    )
+    assert "EP-available-brain" in context_text
+    assert "EP-future-brain" not in context_text
+    final_prompt = str(llm.calls[2]["prompt"])
+    assert "ProviderCo available brain summary" in final_prompt
+    assert "ProviderCo future brain summary must stop analysis" not in final_prompt
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["brain_version"].startswith("brain-asof-")
+    assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
+    assert (tmp_path / "predictions" / "2030-01-10.json").exists()
 
 
 @pytest.mark.asyncio
