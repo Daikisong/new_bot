@@ -35,7 +35,7 @@ def _episode(
 
 def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
-    settings.limits.session_pack_token_budget = 220
+    settings.limits.session_pack_token_budget = 500
     ensure_project_dirs(settings)
     news_csv = tmp_path / "news.csv"
     news_csv.write_text(
@@ -54,6 +54,16 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     for episode in (small, large, future):
         store.save_episode(episode)
         store.accept(episode.episode_id)
+    shard_dir = tmp_path / "memory" / "shard_brains" / "current"
+    shard_dir.mkdir(parents=True)
+    (shard_dir / "shard_0001.md").write_text(
+        "# Shard Brain 0001\n\nEP-small\n",
+        encoding="utf-8",
+    )
+    (shard_dir / "shard_0002.md").write_text(
+        "# Shard Brain 0002\n\nEP-large\n",
+        encoding="utf-8",
+    )
 
     output_dir = export_session_pack(
         settings,
@@ -64,10 +74,17 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
 
     manifest = read_json(output_dir / "manifest.json")
     memory_cases = (output_dir / "memory_cases.md").read_text(encoding="utf-8")
+    research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
 
     assert manifest["accepted_episode_count"] == 3
     assert manifest["available_episode_count"] == 2
     assert manifest["included_episode_ids"] == ["EP-small"]
+    assert manifest["shard_brain_count"] == 2
+    assert set(manifest["shard_brain_files"]) == {
+        "memory/shard_brains/current/shard_0001.md",
+        "memory/shard_brains/current/shard_0002.md",
+    }
+    assert set(manifest["shard_brain_file_hashes"]) == set(manifest["shard_brain_files"])
     assert set(manifest["omitted_episode_ids"]) == {"EP-large", "EP-future"}
     assert manifest["unavailable_episode_ids"] == ["EP-future"]
     assert {item["reason"] for item in manifest["truncations"]} == {
@@ -79,6 +96,10 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     assert "EP-small" in memory_cases
     assert "EP-large" not in memory_cases
     assert "EP-future" not in memory_cases
+    assert "# Shard Brain Summaries" in research_brain
+    assert "Shard Brain 0001" in research_brain
+    assert "Shard Brain 0002" in research_brain
+    assert "EP-large" in research_brain
     assert set(manifest["pack_file_hashes"]) == {
         "system_instructions.md",
         "research_brain.md",

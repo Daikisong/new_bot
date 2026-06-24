@@ -29,7 +29,15 @@ def export_session_pack(settings: Settings, *, news_csv: Path, trade_date: date,
     brain_texts: list[str] = []
     for path in sorted((settings.project_root / "brain" / "current").glob("*.md")):
         brain_texts.append(f"\n<!-- {path.name} -->\n{path.read_text(encoding='utf-8')}")
+    shard_brain_text, shard_brain_files, shard_brain_hashes = _read_shard_brains(
+        settings.project_root / "memory" / "shard_brains" / "current",
+        root=settings.project_root,
+    )
     brain_text = "\n".join(brain_texts)
+    brain_text = (
+        f"{brain_text.rstrip()}\n\n# Shard Brain Summaries\n\n{shard_brain_text}".strip()
+        + "\n"
+    )
     news_text = "\n\n".join(
         f"## {item.event_id}\n{item.title}\n\n{item.body}" for item in batch.items
     )
@@ -104,6 +112,9 @@ def export_session_pack(settings: Settings, *, news_csv: Path, trade_date: date,
         "mode": mode,
         "brain_version": current_brain_version(settings.project_root),
         "brain_file_hashes": current_brain_file_hashes(settings.project_root),
+        "shard_brain_files": shard_brain_files,
+        "shard_brain_file_hashes": shard_brain_hashes,
+        "shard_brain_count": len(shard_brain_files),
         "news_file": news_csv.as_posix(),
         "news_sha256": file_sha256(news_csv),
         "accepted_episode_count": len(all_accepted),
@@ -185,6 +196,24 @@ def _read_memory_dir(path: Path) -> str:
         if file_path.is_file() and file_path.suffix.lower() in {".md", ".txt", ".json", ".jsonl"}:
             chunks.append(f"\n<!-- {file_path.name} -->\n{file_path.read_text(encoding='utf-8')}")
     return "\n".join(chunks).strip() + ("\n" if chunks else "")
+
+
+def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[str, str]]:
+    if not path.exists():
+        return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
+    chunks: list[str] = []
+    files: list[str] = []
+    hashes: dict[str, str] = {}
+    for file_path in sorted(path.glob("*.md")):
+        if not file_path.is_file():
+            continue
+        relative_path = file_path.relative_to(root).as_posix()
+        files.append(relative_path)
+        hashes[relative_path] = file_sha256(file_path)
+        chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
+    if not chunks:
+        return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
+    return "\n".join(chunks).strip() + "\n", files, hashes
 
 
 def _estimate_tokens(text: str) -> int:

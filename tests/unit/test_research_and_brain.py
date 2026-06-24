@@ -59,6 +59,12 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert manifest.coverage_complete
     assert audit["coverage_complete"]
     assert episode.episode_id in manifest.covered_episode_ids
+    shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
+    assert shard_manifest["brain_version"] == manifest.brain_version
+    assert shard_manifest["shard_count"] == 1
+    shard_path = tmp_path / shard_manifest["shard_files"][0]
+    assert episode.episode_id in shard_path.read_text(encoding="utf-8")
+    assert (tmp_path / "memory" / "shard_brains" / manifest.brain_version).exists()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
 
 

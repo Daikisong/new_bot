@@ -30,6 +30,7 @@ BRAIN_FILES = [
     "08_market_memory.md",
 ]
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
+SHARD_BRAIN_EPISODE_COUNT = 10
 
 
 class BrainCompiler:
@@ -40,7 +41,15 @@ class BrainCompiler:
         self.snapshots_dir = root / "brain" / "snapshots"
         self.diffs_dir = root / "brain" / "diffs"
         self.claims_dir = root / "memory" / "claims"
-        for directory in (self.current_dir, self.snapshots_dir, self.diffs_dir, self.claims_dir):
+        self.shard_brains_dir = root / "memory" / "shard_brains"
+        self.current_shard_brains_dir = self.shard_brains_dir / "current"
+        for directory in (
+            self.current_dir,
+            self.snapshots_dir,
+            self.diffs_dir,
+            self.claims_dir,
+            self.current_shard_brains_dir,
+        ):
             directory.mkdir(parents=True, exist_ok=True)
 
     def rebuild(self, *, mode: str = "full") -> BrainManifest:
@@ -73,6 +82,7 @@ class BrainCompiler:
             coverage_complete=len(covered_ids) == len(episodes),
         )
         self._write_current(manifest, claims)
+        self._write_shard_brains(manifest, episodes)
         snapshot_dir = self.snapshots_dir / version
         if snapshot_dir.exists():
             shutil.rmtree(snapshot_dir)
@@ -138,6 +148,93 @@ class BrainCompiler:
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
         write_json(self.current_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
 
+    def _write_shard_brains(
+        self,
+        manifest: BrainManifest,
+        episodes: list[ResearchEpisode],
+    ) -> None:
+        if self.current_shard_brains_dir.exists():
+            shutil.rmtree(self.current_shard_brains_dir)
+        self.current_shard_brains_dir.mkdir(parents=True, exist_ok=True)
+        shard_files: list[str] = []
+        for shard_index, shard in enumerate(_episode_shards(episodes), start=1):
+            path = self.current_shard_brains_dir / f"shard_{shard_index:04d}.md"
+            path.write_text(
+                self._shard_brain_body(
+                    manifest=manifest,
+                    shard_index=shard_index,
+                    episodes=shard,
+                ),
+                encoding="utf-8",
+            )
+            shard_files.append(path.relative_to(self.root).as_posix())
+        write_json(
+            self.current_shard_brains_dir / "manifest.json",
+            {
+                "schema_version": "nslab.shard_brain_manifest.v1",
+                "brain_version": manifest.brain_version,
+                "shard_episode_count": SHARD_BRAIN_EPISODE_COUNT,
+                "shard_count": len(shard_files),
+                "shard_files": shard_files,
+                "covered_episode_ids": manifest.covered_episode_ids,
+            },
+        )
+        versioned_dir = self.shard_brains_dir / manifest.brain_version
+        if versioned_dir.exists():
+            shutil.rmtree(versioned_dir)
+        shutil.copytree(self.current_shard_brains_dir, versioned_dir)
+
+    def _shard_brain_body(
+        self,
+        *,
+        manifest: BrainManifest,
+        shard_index: int,
+        episodes: list[ResearchEpisode],
+    ) -> str:
+        lines = [
+            f"# Shard Brain {shard_index:04d}",
+            "",
+            f"Brain version: `{manifest.brain_version}`",
+            f"Episode count: {len(episodes)}",
+            "",
+            (
+                "This shard is a compact, data-derived summary of accepted episodes. "
+                "It is not a whitelist, ticker map, or keyword gate."
+            ),
+            "",
+        ]
+        if not episodes:
+            lines.append("No accepted research episodes are assigned to this shard.")
+            return "\n".join(lines).rstrip() + "\n"
+        for episode in episodes:
+            mechanisms = episode.blind_analysis.open_world_mechanisms or [
+                episode.blind_analysis.summary
+            ]
+            counterexamples = [
+                counterexample.statement for counterexample in episode.counterexamples
+            ]
+            miss_lines = [f"  - {miss}" for miss in episode.misses] or ["  - none recorded"]
+            counterexample_lines = [f"  - {item}" for item in counterexamples] or [
+                "  - none recorded"
+            ]
+            lines.extend(
+                [
+                    f"## {episode.episode_id}",
+                    "",
+                    f"- Trade date: {episode.trade_date.isoformat()}",
+                    f"- Available from: {episode.available_from.isoformat()}",
+                    f"- Blind summary: {episode.blind_analysis.summary}",
+                    "- Mechanisms:",
+                    *[f"  - {mechanism}" for mechanism in mechanisms],
+                    "- Misses and near misses:",
+                    *miss_lines,
+                    "- Counterexamples:",
+                    *counterexample_lines,
+                    "",
+                ]
+            )
+        return "\n".join(lines).rstrip() + "\n"
+
     def _brain_file_body(
         self, title: str, manifest: BrainManifest, claims: list[MemoryClaim]
     ) -> str:
@@ -198,6 +295,13 @@ def _deterministic_brain_version(*, covered_episode_ids: list[str], source_hashe
         "schema": "nslab.brain.rebuild.v1",
     }
     return stable_id("brain", canonical_json(payload), length=10)
+
+
+def _episode_shards(episodes: list[ResearchEpisode]) -> list[list[ResearchEpisode]]:
+    return [
+        episodes[index : index + SHARD_BRAIN_EPISODE_COUNT]
+        for index in range(0, len(episodes), SHARD_BRAIN_EPISODE_COUNT)
+    ]
 
 
 def _deterministic_rebuild_timestamp(episodes: list[ResearchEpisode]) -> datetime:
