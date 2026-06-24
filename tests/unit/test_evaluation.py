@@ -244,10 +244,17 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     )
 
     metrics = read_json(result.report_path)["performance_metrics"]
+    postmortem = read_json(result.report_path)["postmortem"]
     assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_10"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_20"] == pytest.approx(0.5)
     assert metrics["recall_unavailable_reason"] is None
+    assert postmortem["misses"] == ["T4"]
+    assert postmortem["failure_codes"] == ["UNKNOWN", "RANKING_MISS"]
+    episode = ResearchStore(tmp_path).get_episode(result.episode_id)
+    assert episode.misses == ["T4"]
+    assert episode.postmortem is not None
+    assert episode.postmortem.misses == ["T4"]
 
 
 def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:

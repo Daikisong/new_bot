@@ -74,12 +74,13 @@ class Evaluator:
                 false_positives.append(company)
         outcome_universe = _load_outcome_universe(self.price_source, trade_date=trade_date)
         metrics = _build_metrics(ranked_outcomes, outcome_universe=outcome_universe)
+        misses = _upper_limit_misses(prediction.candidates, outcome_universe)
         postmortem = Postmortem(
             summary="Mock postmortem generated from sealed blind prediction and evaluation-only outcomes.",
             hits=hits,
-            misses=[],
+            misses=misses,
             false_positives=false_positives,
-            failure_codes=[FailureCode.UNKNOWN] if false_positives else [],
+            failure_codes=_failure_codes(false_positives=false_positives, misses=misses),
             lessons=[
                 "Use postmortem lessons only from the next trading day forward.",
                 "Do not rewrite sealed blind reasoning after outcomes are known.",
@@ -280,6 +281,25 @@ def _upper_limit_universe_tickers(outcome_universe: dict[str, OutcomeLabels]) ->
         for ticker, outcome in outcome_universe.items()
         if outcome.upper_limit_touched is True
     }
+
+
+def _upper_limit_misses(
+    candidates: list[Candidate],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+) -> list[str]:
+    if outcome_universe is None:
+        return []
+    predicted_tickers = {candidate.ticker for candidate in candidates}
+    return sorted(_upper_limit_universe_tickers(outcome_universe) - predicted_tickers)
+
+
+def _failure_codes(*, false_positives: list[str], misses: list[str]) -> list[FailureCode]:
+    codes: list[FailureCode] = []
+    if false_positives:
+        codes.append(FailureCode.UNKNOWN)
+    if misses:
+        codes.append(FailureCode.RANKING_MISS)
+    return codes
 
 
 def _average_high_return_at(
