@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
@@ -20,7 +21,10 @@ from news_scalping_lab.contracts.models import (
     PathType,
 )
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
@@ -35,13 +39,14 @@ class DailyAnalyzer:
         self,
         settings: Settings,
         *,
-        llm: DeterministicMockLLMProvider | None = None,
+        llm: LLMProvider | None = None,
         retrieval: LocalRetrievalStore | None = None,
         price_source: PriceSource | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
-        self.llm = llm or DeterministicMockLLMProvider()
+        self.llm = self._trace_llm(llm or create_llm_provider(settings))
+        self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
         self.price_source = price_source or create_price_source(self.settings)
 
@@ -78,7 +83,7 @@ class DailyAnalyzer:
         news_texts = [
             item.combined_text for item in batch.items[: self.settings.limits.max_news_items_for_mock]
         ]
-        first_pass_mechanisms = self.llm.infer_mechanisms("\n---NEWS---\n".join(news_texts))
+        first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
         sweep = MemorySweeper(
             self.root,
             shard_episode_count=self.settings.limits.shard_episode_count,
@@ -99,7 +104,7 @@ class DailyAnalyzer:
         manifest.token_counts["current_news"] = sum(len(text) for text in news_texts) // 4
         manifest.errors.extend(sweep.errors)
 
-        prediction = self._make_prediction(
+        prediction = await self._generate_prediction(
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             news_texts=news_texts,
@@ -107,6 +112,16 @@ class DailyAnalyzer:
             retrieved_episode_ids=retrieved_ids,
             excluded_source_ids=web_guard.excluded_source_ids,
             first_pass_mechanisms=first_pass_mechanisms,
+            context_payload={
+                "run_id": manifest.run_id,
+                "brain_version": manifest.brain_version,
+                "accepted_episode_count": manifest.accepted_episode_count,
+                "swept_episode_count": manifest.swept_episode_count,
+                "swept_episode_ids": manifest.swept_episode_ids,
+                "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
+                "web_queries": manifest.web_queries,
+                "web_sources": manifest.web_sources,
+            },
         )
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
@@ -153,6 +168,143 @@ class DailyAnalyzer:
         )
         return queries
 
+    async def _generate_prediction(
+        self,
+        *,
+        trade_date: date,
+        cutoff_at: datetime,
+        news_texts: list[str],
+        event_ids: list[str],
+        retrieved_episode_ids: list[str],
+        excluded_source_ids: list[str],
+        first_pass_mechanisms: list[str],
+        context_payload: dict[str, Any],
+    ) -> BlindPrediction:
+        prompt = self._build_blind_prediction_prompt(
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            news_texts=news_texts,
+            event_ids=event_ids,
+            retrieved_episode_ids=retrieved_episode_ids,
+            excluded_source_ids=excluded_source_ids,
+            first_pass_mechanisms=first_pass_mechanisms,
+            context_payload=context_payload,
+        )
+        prediction = await self.llm.generate_structured(
+            prompt=prompt,
+            response_model=BlindPrediction,
+            purpose="daily_blind_analysis",
+        )
+        if not prediction.candidates:
+            prediction = self._make_prediction(
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                news_texts=news_texts,
+                event_ids=event_ids,
+                retrieved_episode_ids=retrieved_episode_ids,
+                excluded_source_ids=excluded_source_ids,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
+        return self._normalize_prediction(
+            prediction,
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            event_ids=event_ids,
+            excluded_source_ids=excluded_source_ids,
+            prompt=prompt,
+        )
+
+    def _build_blind_prediction_prompt(
+        self,
+        *,
+        trade_date: date,
+        cutoff_at: datetime,
+        news_texts: list[str],
+        event_ids: list[str],
+        retrieved_episode_ids: list[str],
+        excluded_source_ids: list[str],
+        first_pass_mechanisms: list[str],
+        context_payload: dict[str, Any],
+    ) -> str:
+        payload = {
+            "schema": "nslab.blind_prediction.v1",
+            "trade_date": trade_date.isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
+            "event_ids": event_ids,
+            "retrieved_episode_ids": retrieved_episode_ids,
+            "excluded_after_cutoff_source_ids": excluded_source_ids,
+            "first_pass_mechanisms": first_pass_mechanisms,
+            "context": context_payload,
+            "current_news": news_texts,
+        }
+        return (
+            "Create a blind pre-open Korean market research prediction as BlindPrediction.\n"
+            "Do not use D-day prices, D-day outcomes, cutoff-after sources, fixed ticker maps, "
+            "or exact-keyword retrieval as a candidate gate.\n"
+            "Generate open-world candidates even when retrieved_episode_ids is empty. "
+            "Use qualitative confidence labels only.\n"
+            "---BLIND_ANALYSIS_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _normalize_prediction(
+        self,
+        prediction: BlindPrediction,
+        *,
+        trade_date: date,
+        cutoff_at: datetime,
+        event_ids: list[str],
+        excluded_source_ids: list[str],
+        prompt: str,
+    ) -> BlindPrediction:
+        analysis = prediction.blind_analysis.model_copy(
+            update={
+                "excluded_after_cutoff_source_ids": sorted(
+                    {
+                        *prediction.blind_analysis.excluded_after_cutoff_source_ids,
+                        *excluded_source_ids,
+                    }
+                )
+            }
+        )
+        normalized_candidates = []
+        for index, candidate in enumerate(prediction.candidates, start=1):
+            candidate_event_ids = candidate.event_ids or event_ids[:1]
+            normalized_candidates.append(
+                candidate.model_copy(update={"rank": index, "event_ids": candidate_event_ids})
+            )
+        return prediction.model_copy(
+            update={
+                "prediction_id": stable_id(
+                    "PRED",
+                    "daily_blind_analysis",
+                    trade_date.isoformat(),
+                    cutoff_at.isoformat(),
+                    sha256_text(prompt),
+                ),
+                "trade_date": trade_date,
+                "cutoff_at": cutoff_at,
+                "created_at": now_kst(),
+                "sealed_at": None,
+                "blind_artifact_sha256": None,
+                "blind_analysis": analysis,
+                "candidates": normalized_candidates,
+            }
+        )
+
+    def _infer_first_pass_mechanisms(self, news_texts: list[str]) -> list[str]:
+        return self.fallback_llm.infer_mechanisms("\n---NEWS---\n".join(news_texts))
+
+    def _trace_llm(self, provider: LLMProvider) -> LLMProvider:
+        if isinstance(provider, TracingLLMProvider):
+            return provider
+        return TracingLLMProvider(
+            provider,
+            trace_dir=self.settings.path(self.settings.output_dirs.traces),
+            model_config={"provider": type(provider).__name__, "configured": self.settings.llm_provider},
+            default_metadata={"prompt_version": "daily_blind_analysis.v1"},
+        )
+
     def _make_prediction(
         self,
         *,
@@ -165,8 +317,8 @@ class DailyAnalyzer:
         first_pass_mechanisms: list[str] | None = None,
     ) -> BlindPrediction:
         joined = "\n---NEWS---\n".join(news_texts)
-        mechanisms = first_pass_mechanisms or self.llm.infer_mechanisms(joined)
-        mentions = self.llm.extract_company_mentions(news_texts, limit=6)
+        mechanisms = first_pass_mechanisms or self.fallback_llm.infer_mechanisms(joined)
+        mentions = self.fallback_llm.extract_company_mentions(news_texts, limit=6)
         candidates: list[Candidate] = []
         for rank, company in enumerate(mentions[:4], start=1):
             candidates.append(

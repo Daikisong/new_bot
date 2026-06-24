@@ -83,13 +83,14 @@ NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 NSLAB_STOCK_WEB_PATH=
 ```
 
-Without API keys, the deterministic mock providers are used. To use OpenAI for structured semantic import:
+Without API keys, the deterministic mock providers are used. To use OpenAI for structured semantic import and daily blind analysis:
 
 ```bash
 python -m pip install -e ".[openai]"
 set NSLAB_LLM_PROVIDER=openai
 set OPENAI_API_KEY=...
 nslab research import data/inbox/research/example.md --mode semantic
+nslab analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
 ```
 
 The OpenAI adapter uses Structured Outputs through the Python SDK and validates responses against the project Pydantic contracts.
