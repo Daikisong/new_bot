@@ -33,6 +33,9 @@ class Settings(BaseModel):
     web_provider: str = "mock"
     price_provider: str = "mock"
     stock_web_path: Path | None = None
+    stock_web_remote_url: str = "https://github.com/Songdaiki/stock-web.git"
+    stock_web_cache_path: Path = Path("data/cache/stock-web")
+    stock_web_cache_enabled: bool = False
     default_mode: str = "exhaustive"
     timezone: str = "Asia/Seoul"
     output_dirs: OutputDirs = Field(default_factory=OutputDirs)
@@ -61,6 +64,8 @@ def load_settings(project_root: Path | None = None) -> Settings:
     data = _read_yaml(root / "configs" / "default.yaml")
     if "stock_web_path" in data and data["stock_web_path"] is not None:
         data["stock_web_path"] = Path(str(data["stock_web_path"]))
+    if "stock_web_cache_path" in data and data["stock_web_cache_path"] is not None:
+        data["stock_web_cache_path"] = Path(str(data["stock_web_cache_path"]))
 
     settings = Settings(project_root=root, **data)
 
@@ -74,6 +79,16 @@ def load_settings(project_root: Path | None = None) -> Settings:
     if stock_path:
         settings.stock_web_path = Path(stock_path)
         settings.price_provider = "stock-web"
+    stock_cache = os.getenv("NSLAB_STOCK_WEB_CACHE")
+    if stock_cache and stock_cache.lower() in {"1", "true", "yes", "on"}:
+        settings.stock_web_cache_enabled = True
+        settings.price_provider = "stock-web"
+    stock_cache_path = os.getenv("NSLAB_STOCK_WEB_CACHE_PATH")
+    if stock_cache_path:
+        settings.stock_web_cache_path = Path(stock_cache_path)
+    stock_remote_url = os.getenv("NSLAB_STOCK_WEB_REMOTE_URL")
+    if stock_remote_url:
+        settings.stock_web_remote_url = stock_remote_url
     max_concurrency = os.getenv("NSLAB_MAX_CONCURRENCY")
     if max_concurrency:
         settings.limits.max_concurrency = int(max_concurrency)

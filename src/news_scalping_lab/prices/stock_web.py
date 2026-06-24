@@ -8,13 +8,20 @@ the mock source while keeping the same interface.
 from __future__ import annotations
 
 import csv
+import subprocess
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from news_scalping_lab.contracts.models import OutcomeLabels
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.utils import read_json
+
+PRIMARY_STOCK_WEB_REMOTE_URL = "https://github.com/Songdaiki/stock-web.git"
+
+
+class GitRunner(Protocol):
+    def __call__(self, args: list[str], cwd: Path | None) -> None: ...
 
 
 class StockWebPriceSource:
@@ -228,3 +235,26 @@ def _normalize_ticker(ticker: str) -> str | None:
     if len(digits) != 6:
         return None
     return digits
+
+
+def ensure_stock_web_cache(
+    cache_path: Path,
+    *,
+    remote_url: str = PRIMARY_STOCK_WEB_REMOTE_URL,
+    refresh: bool = False,
+    runner: GitRunner | None = None,
+) -> Path:
+    runner = runner or _run_git
+    if cache_path.exists() and any(cache_path.iterdir()) and not (cache_path / ".git").exists():
+        return cache_path
+    if (cache_path / ".git").exists():
+        if refresh:
+            runner(["git", "fetch", "--all", "--tags", "--prune"], cache_path)
+        return cache_path
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    runner(["git", "clone", "--depth", "1", remote_url, cache_path.as_posix()], None)
+    return cache_path
+
+
+def _run_git(args: list[str], cwd: Path | None) -> None:
+    subprocess.run(args, cwd=cwd, check=True)

@@ -3,6 +3,9 @@ llm_provider: mock
 web_provider: mock
 price_provider: mock
 stock_web_path: null
+stock_web_remote_url: https://github.com/Songdaiki/stock-web.git
+stock_web_cache_path: data/cache/stock-web
+stock_web_cache_enabled: false
 default_mode: exhaustive
 timezone: Asia/Seoul
 output_dirs:

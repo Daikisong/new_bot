@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
-from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.config import Settings
+from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock_web_cache
 
 
 def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> None:
@@ -87,3 +90,93 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     assert outcome.close_return_pct == pytest.approx(29.0)
     assert outcome.upper_limit_touched is True
     assert outcome.upper_limit_closed is True
+
+
+def test_stock_web_cache_clones_remote_when_cache_is_missing(tmp_path) -> None:
+    commands: list[tuple[list[str], Path | None]] = []
+
+    def runner(args: list[str], cwd: Path | None) -> None:
+        commands.append((args, cwd))
+
+    cache_path = tmp_path / "cache" / "stock-web"
+
+    result = ensure_stock_web_cache(
+        cache_path,
+        remote_url="https://example.test/stock-web.git",
+        runner=runner,
+    )
+
+    assert result == cache_path
+    assert commands == [
+        (
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "https://example.test/stock-web.git",
+                cache_path.as_posix(),
+            ],
+            None,
+        )
+    ]
+
+
+def test_stock_web_cache_fetches_existing_git_checkout_when_refresh_requested(
+    tmp_path,
+) -> None:
+    commands: list[tuple[list[str], Path | None]] = []
+
+    def runner(args: list[str], cwd: Path | None) -> None:
+        commands.append((args, cwd))
+
+    cache_path = tmp_path / "stock-web"
+    (cache_path / ".git").mkdir(parents=True)
+
+    result = ensure_stock_web_cache(cache_path, refresh=True, runner=runner)
+
+    assert result == cache_path
+    assert commands == [(["git", "fetch", "--all", "--tags", "--prune"], cache_path)]
+
+
+def test_stock_web_cache_accepts_prepopulated_non_git_cache(tmp_path) -> None:
+    commands: list[tuple[list[str], Path | None]] = []
+
+    def runner(args: list[str], cwd: Path | None) -> None:
+        commands.append((args, cwd))
+
+    cache_path = tmp_path / "stock-web"
+    (cache_path / "atlas").mkdir(parents=True)
+
+    result = ensure_stock_web_cache(cache_path, runner=runner)
+
+    assert result == cache_path
+    assert commands == []
+
+
+def test_price_factory_can_prepare_stock_web_cache(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[Path, str]] = []
+
+    def fake_ensure_stock_web_cache(cache_path: Path, *, remote_url: str) -> Path:
+        calls.append((cache_path, remote_url))
+        (cache_path / "atlas").mkdir(parents=True)
+        return cache_path
+
+    monkeypatch.setattr(
+        "news_scalping_lab.prices.factory.ensure_stock_web_cache",
+        fake_ensure_stock_web_cache,
+    )
+    settings = Settings(
+        project_root=tmp_path,
+        stock_web_cache_enabled=True,
+        stock_web_cache_path=Path("cache/stock-web"),
+        stock_web_remote_url="https://example.test/stock-web.git",
+    )
+
+    source = create_price_source(settings)
+
+    assert isinstance(source, StockWebPriceSource)
+    assert calls == [(tmp_path / "cache" / "stock-web", "https://example.test/stock-web.git")]

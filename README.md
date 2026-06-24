@@ -104,6 +104,14 @@ set NSLAB_STOCK_WEB_PATH=data/cache/stock-web
 nslab doctor
 ```
 
+To let the price factory prepare a GitHub-backed cache on demand, opt in explicitly:
+
+```bash
+set NSLAB_STOCK_WEB_CACHE=1
+set NSLAB_STOCK_WEB_CACHE_PATH=data/cache/stock-web
+set NSLAB_STOCK_WEB_REMOTE_URL=https://github.com/Songdaiki/stock-web.git
+```
+
 The adapter reads `atlas/manifest.json` and `atlas/schema.json`, then uses:
 
 ```text
