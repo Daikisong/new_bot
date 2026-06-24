@@ -10,6 +10,7 @@ from pathlib import Path
 from news_scalping_lab.contracts.models import BlindAnalysis, Provenance, ResearchEpisode
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.research_import.bundle import (
     import_bundle_episode,
     looks_like_bundle,
@@ -22,14 +23,11 @@ from news_scalping_lab.research_import.semantic import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
-    canonical_json,
     file_sha256,
     next_calendar_day,
     now_kst,
     read_json,
-    sha256_text,
     stable_id,
-    write_json,
 )
 
 
@@ -42,11 +40,15 @@ class ResearchImporter:
     ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
-        self.llm = llm or DeterministicMockLLMProvider()
         self.raw_dir = root / "data" / "raw" / "research"
         self.trace_dir = root / "runs" / "traces"
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.trace_dir.mkdir(parents=True, exist_ok=True)
+        self.llm = TracingLLMProvider(
+            llm or DeterministicMockLLMProvider(),
+            trace_dir=self.trace_dir,
+            default_metadata={"prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION},
+        )
 
     def import_path(self, path: Path, *, mode: str = "auto") -> ResearchEpisode:
         try:
@@ -102,7 +104,6 @@ class ResearchImporter:
             response_model=SemanticResearchDraft,
             purpose="research_import.semantic",
         )
-        self._write_semantic_trace(path=path, source_hash=source_hash, prompt=prompt, draft=draft)
 
         episode_id = stable_id("EP", draft.trade_date.isoformat(), source_hash)
         provenance = Provenance(
@@ -139,33 +140,4 @@ class ResearchImporter:
             misses=[],
             provenance=[provenance],
             available_from=available_from,
-        )
-
-    def _write_semantic_trace(
-        self,
-        *,
-        path: Path,
-        source_hash: str,
-        prompt: str,
-        draft: SemanticResearchDraft,
-    ) -> None:
-        trace_id = stable_id(
-            "TRACE",
-            "research_import.semantic",
-            source_hash,
-            canonical_json(draft.model_dump(mode="json")),
-        )
-        write_json(
-            self.trace_dir / f"{trace_id}.json",
-            {
-                "trace_id": trace_id,
-                "purpose": "research_import.semantic",
-                "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
-                "source_path": path.as_posix(),
-                "source_sha256": source_hash,
-                "prompt_sha256": sha256_text(prompt),
-                "response_model": "SemanticResearchDraft",
-                "output": draft.model_dump(mode="json"),
-                "created_at": now_kst().isoformat(),
-            },
         )

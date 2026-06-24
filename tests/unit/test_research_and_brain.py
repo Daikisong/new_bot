@@ -79,5 +79,7 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert len(traces) == 1
     trace = read_json(traces[0])
     assert trace["purpose"] == "research_import.semantic"
-    assert trace["response_model"] == "SemanticResearchDraft"
+    assert trace["operation"] == "generate_structured"
+    assert trace["prompt_version"] == "semantic_import.v1"
+    assert trace["input"]["response_model"] == "SemanticResearchDraft"
     assert trace["output"]["trade_date"] == "2040-02-03"
