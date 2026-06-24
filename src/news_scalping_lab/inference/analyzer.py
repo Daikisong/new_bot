@@ -9,6 +9,7 @@ from typing import Any
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
+from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.sweep import MemorySweeper
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
@@ -95,6 +96,7 @@ class DailyAnalyzer:
         mode: str = "exhaustive",
         web_search: bool = False,
     ) -> DailyAnalysis:
+        mode = normalize_analysis_mode(mode)
         batch = load_news_csv(news_csv, trade_date=trade_date).before_or_at(cutoff_at)
         run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
         web_queries = self._build_web_queries(batch.items)

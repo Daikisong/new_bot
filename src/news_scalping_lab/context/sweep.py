@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.brain.compiler import current_brain_version
+from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, stable_id, write_json
@@ -51,6 +52,7 @@ class MemorySweeper:
         current_news_texts: list[str],
         first_pass_mechanisms: list[str],
     ) -> SweepResult:
+        mode = normalize_analysis_mode(mode)
         accepted = self._available_episodes(cutoff_at)
         if mode == "fast":
             return SweepResult(

@@ -8,6 +8,7 @@ from typing import Any
 
 from news_scalping_lab.brain.compiler import current_brain_file_hashes, current_brain_version
 from news_scalping_lab.config import Settings
+from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.storage import ResearchStore
@@ -29,6 +30,7 @@ def export_session_pack(
     mode: str,
     cutoff_at: datetime | None = None,
 ) -> Path:
+    mode = normalize_analysis_mode(mode)
     cutoff_at = cutoff_at or combine_kst(trade_date, "08:59:59")
     output_dir = settings.path(settings.output_dirs.session_packs) / trade_date.isoformat()
     output_dir.mkdir(parents=True, exist_ok=True)

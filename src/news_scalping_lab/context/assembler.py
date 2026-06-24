@@ -15,6 +15,7 @@ from news_scalping_lab.brain.compiler import (
     current_brain_file_hashes,
     current_brain_version,
 )
+from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ContextManifest,
@@ -53,6 +54,7 @@ class ContextAssembler:
         retrieved_episode_ids: list[str] | None = None,
         web_queries: list[str] | None = None,
     ) -> ContextManifest:
+        mode = normalize_analysis_mode(mode)
         run_id = stable_id("RUN", trade_date.isoformat(), mode, run_seed)
         accepted = [
             episode
