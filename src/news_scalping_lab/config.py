@@ -23,6 +23,7 @@ class Limits(BaseModel):
     max_concurrency: int = 4
     shard_episode_count: int = 20
     max_news_items_for_mock: int = 12
+    session_pack_token_budget: int = 60_000
 
 
 class Settings(BaseModel):
