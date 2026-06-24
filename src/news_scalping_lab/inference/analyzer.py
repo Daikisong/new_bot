@@ -15,6 +15,7 @@ from news_scalping_lab.contracts.models import (
     BlindPrediction,
     Candidate,
     ConfidenceLabel,
+    ContextManifest,
     DailyAnalysis,
     DominantSectorHypothesis,
     NewsItem,
@@ -32,6 +33,10 @@ from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.utils import canonical_json, now_kst, sha256_text, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.provider import MockWebResearchProvider, TemporalWebGuard
+
+
+class ExhaustiveCoverageError(RuntimeError):
+    """Raised when exhaustive mode fails to sweep every accepted episode exactly once."""
 
 
 class DailyAnalyzer:
@@ -103,6 +108,7 @@ class DailyAnalyzer:
         manifest.token_counts.update(sweep.token_counts)
         manifest.token_counts["current_news"] = sum(len(text) for text in news_texts) // 4
         manifest.errors.extend(sweep.errors)
+        self._fail_if_exhaustive_coverage_incomplete(manifest)
 
         prediction = await self._generate_prediction(
             trade_date=trade_date,
@@ -167,6 +173,23 @@ class DailyAnalyzer:
             ]
         )
         return queries
+
+    def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
+        if manifest.mode != "exhaustive":
+            return
+        if manifest.accepted_episode_count == manifest.swept_episode_count and not manifest.errors:
+            return
+        if manifest.accepted_episode_count != manifest.swept_episode_count:
+            manifest.errors.append(
+                "exhaustive mode requires swept_episode_count == accepted_episode_count"
+            )
+        manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
+        manifest_path = manifest_dir / f"{manifest.run_id}.json"
+        write_json(manifest_path, manifest.model_dump(mode="json"))
+        raise ExhaustiveCoverageError(
+            "exhaustive memory coverage failed; see "
+            f"{manifest_path.relative_to(self.root).as_posix()}"
+        )
 
     async def _generate_prediction(
         self,

@@ -7,6 +7,7 @@ misses do not affect this path.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -95,8 +96,29 @@ class MemorySweeper:
             swept_ids.extend(episode_ids)
 
         errors: list[str] = []
-        if mode == "exhaustive" and set(swept_ids) != {episode.episode_id for episode in accepted}:
-            errors.append("memory sweep did not cover every accepted episode")
+        if mode == "exhaustive":
+            expected_ids = [episode.episode_id for episode in accepted]
+            expected_counts = Counter(expected_ids)
+            swept_counts = Counter(swept_ids)
+            missing_ids = sorted((expected_counts - swept_counts).elements())
+            duplicate_ids = sorted(
+                episode_id
+                for episode_id, count in swept_counts.items()
+                if count > expected_counts.get(episode_id, 0)
+            )
+            unexpected_ids = sorted(set(swept_counts) - set(expected_counts))
+            if missing_ids:
+                errors.append(
+                    "memory sweep missing accepted episodes: " + ", ".join(missing_ids)
+                )
+            if duplicate_ids:
+                errors.append(
+                    "memory sweep duplicated accepted episodes: " + ", ".join(duplicate_ids)
+                )
+            if unexpected_ids:
+                errors.append(
+                    "memory sweep included unavailable episodes: " + ", ".join(unexpected_ids)
+                )
         return SweepResult(
             accepted_episode_count=len(accepted),
             swept_episode_ids=swept_ids,
