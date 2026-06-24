@@ -22,7 +22,13 @@ from news_scalping_lab.contracts.models import (
     PathType,
     RedTeamArtifact,
 )
-from news_scalping_lab.inference.red_team import apply_red_team_findings, run_red_team_pass
+from news_scalping_lab.inference.red_team import (
+    PROMPT_VERSION as RED_TEAM_PROMPT_VERSION,
+)
+from news_scalping_lab.inference.red_team import (
+    apply_red_team_findings,
+    run_red_team_pass,
+)
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
@@ -54,6 +60,10 @@ class ExhaustiveCoverageError(RuntimeError):
 
 class FutureContextLeakError(RuntimeError):
     """Raised when the active brain context contains future-unavailable research."""
+
+
+DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
+FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
 
 
 class DailyAnalyzer:
@@ -319,7 +329,7 @@ class DailyAnalyzer:
     ) -> str:
         payload = {
             "schema": "nslab.blind_prediction.v1",
-            "prompt_version": "synthesis.final.v1",
+            "prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION,
             "required_inputs": [
                 "current_news",
                 "open_world_first_analysis",
@@ -708,7 +718,12 @@ class DailyAnalyzer:
             provider,
             trace_dir=self.settings.path(self.settings.output_dirs.traces),
             model_config={"provider": type(provider).__name__, "configured": self.settings.llm_provider},
-            default_metadata={"prompt_version": "daily_blind_analysis.v1"},
+            default_metadata={"prompt_version": DAILY_BLIND_PROMPT_VERSION},
+            purpose_metadata={
+                "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
+                "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},
+                "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
+            },
         )
 
     def _make_prediction(

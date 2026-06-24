@@ -24,6 +24,7 @@ class TracingLLMProvider:
         checkpoint_dir: Path | None = None,
         model_config: dict[str, Any] | None = None,
         default_metadata: dict[str, Any] | None = None,
+        purpose_metadata: dict[str, dict[str, Any]] | None = None,
         resume_from_checkpoints: bool = True,
     ) -> None:
         self.provider = provider
@@ -31,6 +32,7 @@ class TracingLLMProvider:
         self.checkpoint_dir = checkpoint_dir or trace_dir.parent / "checkpoints" / "llm"
         self.model_config = model_config or {"provider": type(provider).__name__}
         self.default_metadata = default_metadata or {}
+        self.purpose_metadata = purpose_metadata or {}
         self.resume_from_checkpoints = resume_from_checkpoints
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -286,7 +288,7 @@ class TracingLLMProvider:
             "token_usage": token_usage or {},
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
-            **self.default_metadata,
+            **self._metadata_for(purpose),
         }
         if error is not None:
             payload["error"] = {
@@ -302,6 +304,7 @@ class TracingLLMProvider:
         purpose: str,
         input_payload: dict[str, Any],
     ) -> str:
+        metadata = self._metadata_for(purpose)
         return stable_id(
             "LLMCKPT",
             canonical_json(
@@ -310,7 +313,7 @@ class TracingLLMProvider:
                     "purpose": purpose,
                     "input": input_payload,
                     "model_config": self.model_config,
-                    "metadata": self.default_metadata,
+                    "metadata": metadata,
                 }
             ),
             length=16,
@@ -368,6 +371,7 @@ class TracingLLMProvider:
             purpose=purpose,
             input_payload=input_payload,
         )
+        metadata = self._metadata_for(purpose)
         payload: dict[str, Any] = {
             "checkpoint_id": checkpoint_id,
             "schema_version": "nslab.llm_checkpoint.v1",
@@ -376,7 +380,7 @@ class TracingLLMProvider:
             "status": status,
             "provider": type(self.provider).__name__,
             "model_config": self.model_config,
-            "metadata": self.default_metadata,
+            "metadata": metadata,
             "input": input_payload,
             "input_sha256": sha256_text(canonical_json(input_payload)),
             "output": output,
@@ -390,6 +394,9 @@ class TracingLLMProvider:
             }
         write_json(self.checkpoint_dir / f"{checkpoint_id}.json", payload)
         return checkpoint_id
+
+    def _metadata_for(self, purpose: str) -> dict[str, Any]:
+        return {**self.default_metadata, **self.purpose_metadata.get(purpose, {})}
 
 
 def _estimate_tokens(text: str) -> int:

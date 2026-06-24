@@ -370,6 +370,10 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
+    prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
+    assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
+    assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v1"
+    assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
 
 
 @pytest.mark.asyncio

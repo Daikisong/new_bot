@@ -50,6 +50,7 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
         trace_dir=tmp_path,
         model_config={"provider": "mock", "model": "deterministic"},
         default_metadata={"prompt_version": "test-v1"},
+        purpose_metadata={"trace.structured": {"prompt_version": "structured-v2"}},
     )
 
     text = await provider.generate_text(prompt="hello", purpose="trace.text")
@@ -71,10 +72,12 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
         "embed",
     }
     structured = next(trace for trace in traces if trace["operation"] == "generate_structured")
+    text_trace = next(trace for trace in traces if trace["operation"] == "generate_text")
     assert structured["status"] == "ok"
     assert structured["input"]["response_model"] == "SemanticResearchDraft"
     assert structured["output"]["trade_date"] == "2030-01-10"
-    assert structured["prompt_version"] == "test-v1"
+    assert structured["prompt_version"] == "structured-v2"
+    assert text_trace["prompt_version"] == "test-v1"
     assert structured["model_config"] == {"provider": "mock", "model": "deterministic"}
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
     assert structured["tool_calls"] == []
@@ -128,6 +131,7 @@ async def test_tracing_llm_provider_resumes_successful_structured_checkpoint(tmp
     checkpoints = [read_json(path) for path in sorted((tmp_path / "checkpoints").glob("*.json"))]
     assert len(checkpoints) == 1
     assert checkpoints[0]["status"] == "ok"
+    assert checkpoints[0]["metadata"]["prompt_version"] == "checkpoint-v1"
     traces = sorted(
         [read_json(path) for path in (tmp_path / "traces").glob("TRACE-*.json")],
         key=lambda trace: str(trace["started_at"]),
