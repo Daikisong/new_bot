@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
-from news_scalping_lab.utils import read_json
+from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_json
 
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
@@ -15,9 +15,10 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
     for path in manifest_paths:
         manifest = read_json(path)
         manifest_trade_date = _manifest_trade_date(manifest, fallback=trade_date)
+        manifest_cutoff_at = _manifest_cutoff_at(manifest)
         if manifest_trade_date is None:
             findings.append(f"{path.name}: missing trade_date")
-        if not manifest.get("cutoff_at"):
+        if manifest_cutoff_at is None:
             findings.append(f"{path.name}: missing cutoff_at")
         price_snapshot = manifest.get("price_snapshot", {})
         allowed = price_snapshot.get("allowed_through")
@@ -30,7 +31,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_retrieved_episode_availability(
             path.name,
             manifest,
-            manifest_trade_date,
+            manifest_cutoff_at,
             accepted_episode_available_from,
             findings,
         )
@@ -38,7 +39,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             root,
             path.name,
             manifest,
-            manifest_trade_date,
+            manifest_cutoff_at,
             accepted_episode_available_from,
             findings,
         )
@@ -64,8 +65,18 @@ def _manifest_trade_date(manifest: dict[object, object], *, fallback: date | Non
     return fallback
 
 
-def _accepted_episode_available_from(root: Path) -> dict[str, date]:
-    available_from: dict[str, date] = {}
+def _manifest_cutoff_at(manifest: dict[object, object]) -> datetime | None:
+    raw = manifest.get("cutoff_at")
+    if isinstance(raw, str):
+        try:
+            return parse_datetime(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _accepted_episode_available_from(root: Path) -> dict[str, datetime]:
+    available_from: dict[str, datetime] = {}
     for path in sorted((root / "research" / "accepted").glob("*.json")):
         try:
             episode = read_json(path)
@@ -78,7 +89,7 @@ def _accepted_episode_available_from(root: Path) -> dict[str, date]:
         if not isinstance(episode_id, str) or not isinstance(raw_available_from, str):
             continue
         try:
-            available_from[episode_id] = date.fromisoformat(raw_available_from[:10])
+            available_from[episode_id] = parse_datetime(raw_available_from)
         except ValueError:
             continue
     return available_from
@@ -87,17 +98,17 @@ def _accepted_episode_available_from(root: Path) -> dict[str, date]:
 def _check_retrieved_episode_availability(
     manifest_name: str,
     manifest: dict[object, object],
-    manifest_trade_date: date | None,
-    accepted_episode_available_from: dict[str, date],
+    manifest_cutoff_at: datetime | None,
+    accepted_episode_available_from: dict[str, datetime],
     findings: list[str],
 ) -> None:
-    if manifest_trade_date is None:
+    if manifest_cutoff_at is None:
         return
     retrieved = _string_list(manifest.get("retrieved_episode_ids"))
     excluded = set(_string_list(manifest.get("excluded_retrieved_episode_ids")))
     for episode_id in retrieved:
         available_from = accepted_episode_available_from.get(episode_id)
-        if available_from is not None and available_from > manifest_trade_date:
+        if available_from is not None and not is_available_as_of(available_from, manifest_cutoff_at):
             findings.append(f"{manifest_name}: future retrieved episode not excluded: {episode_id}")
         if episode_id in excluded:
             findings.append(f"{manifest_name}: episode is both retrieved and excluded: {episode_id}")
@@ -107,16 +118,16 @@ def _check_context_files_for_future_episode_ids(
     root: Path,
     manifest_name: str,
     manifest: dict[object, object],
-    manifest_trade_date: date | None,
-    accepted_episode_available_from: dict[str, date],
+    manifest_cutoff_at: datetime | None,
+    accepted_episode_available_from: dict[str, datetime],
     findings: list[str],
 ) -> None:
-    if manifest_trade_date is None:
+    if manifest_cutoff_at is None:
         return
     future_episode_ids = [
         episode_id
         for episode_id, available_from in accepted_episode_available_from.items()
-        if available_from > manifest_trade_date
+        if not is_available_as_of(available_from, manifest_cutoff_at)
     ]
     if not future_episode_ids:
         return

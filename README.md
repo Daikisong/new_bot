@@ -66,7 +66,11 @@ Evaluation loads the sealed blind prediction, reads D-day outcome data only in t
 ## Session Pack
 
 ```bash
-nslab context export-session-pack --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --mode brain
+nslab context export-session-pack \
+  --news docs/csv/news_20260624.csv \
+  --trade-date 2026-06-24 \
+  --cutoff 2026-06-24T08:59:59+09:00 \
+  --mode brain
 ```
 
 This creates a GPT Web session pack under `session_packs/YYYY-MM-DD/`.

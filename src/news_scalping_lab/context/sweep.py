@@ -10,14 +10,14 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import read_json, sha256_text, stable_id, write_json
+from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, stable_id, write_json
 
 
 @dataclass(frozen=True)
@@ -46,11 +46,12 @@ class MemorySweeper:
         *,
         mode: str,
         trade_date: date,
+        cutoff_at: datetime,
         run_id: str,
         current_news_texts: list[str],
         first_pass_mechanisms: list[str],
     ) -> SweepResult:
-        accepted = self._available_episodes(trade_date)
+        accepted = self._available_episodes(cutoff_at)
         if mode == "fast":
             return SweepResult(
                 accepted_episode_count=len(accepted),
@@ -74,13 +75,22 @@ class MemorySweeper:
         for shard_index, shard in enumerate(shards, start=1):
             episode_ids = [episode.episode_id for episode in shard]
             shard_hash = sha256_text("|".join(episode_ids))
-            cache_key = stable_id("SWEEP", brain_version, news_hash, shard_hash, mode, length=16)
+            cache_key = stable_id(
+                "SWEEP",
+                brain_version,
+                news_hash,
+                shard_hash,
+                mode,
+                cutoff_at.isoformat(),
+                length=16,
+            )
             cache_path = self.cache_dir / f"{cache_key}.json"
             cached_payload = self._read_cached_contribution(
                 cache_path=cache_path,
                 cache_key=cache_key,
                 mode=mode,
                 trade_date=trade_date,
+                cutoff_at=cutoff_at,
                 brain_version=brain_version,
                 news_hash=news_hash,
                 shard_hash=shard_hash,
@@ -94,6 +104,7 @@ class MemorySweeper:
                     cache_key=cache_key,
                     mode=mode,
                     trade_date=trade_date,
+                    cutoff_at=cutoff_at,
                     brain_version=brain_version,
                     news_hash=news_hash,
                     shard_hash=shard_hash,
@@ -142,11 +153,11 @@ class MemorySweeper:
             errors=errors,
         )
 
-    def _available_episodes(self, trade_date: date) -> list[ResearchEpisode]:
+    def _available_episodes(self, cutoff_at: datetime) -> list[ResearchEpisode]:
         return [
             episode
             for episode in self.store.list_accepted()
-            if episode.available_from.date() <= trade_date
+            if is_available_as_of(episode.available_from, cutoff_at)
         ]
 
     def _shards(self, episodes: list[ResearchEpisode]) -> list[list[ResearchEpisode]]:
@@ -162,6 +173,7 @@ class MemorySweeper:
         cache_key: str,
         mode: str,
         trade_date: date,
+        cutoff_at: datetime,
         brain_version: str,
         news_hash: str,
         shard_hash: str,
@@ -180,6 +192,7 @@ class MemorySweeper:
             cache_key=cache_key,
             mode=mode,
             trade_date=trade_date,
+            cutoff_at=cutoff_at,
             brain_version=brain_version,
             news_hash=news_hash,
             shard_hash=shard_hash,
@@ -197,6 +210,7 @@ class MemorySweeper:
         cache_key: str,
         mode: str,
         trade_date: date,
+        cutoff_at: datetime,
         brain_version: str,
         news_hash: str,
         shard_hash: str,
@@ -207,6 +221,7 @@ class MemorySweeper:
             and payload.get("cache_key") == cache_key
             and payload.get("mode") == mode
             and payload.get("trade_date") == trade_date.isoformat()
+            and payload.get("cutoff_at") == cutoff_at.isoformat()
             and payload.get("brain_version") == brain_version
             and payload.get("current_news_sha256") == news_hash
             and payload.get("episode_shard_sha256") == shard_hash
@@ -219,6 +234,7 @@ class MemorySweeper:
         cache_key: str,
         mode: str,
         trade_date: date,
+        cutoff_at: datetime,
         brain_version: str,
         news_hash: str,
         shard_hash: str,
@@ -239,6 +255,7 @@ class MemorySweeper:
             "cache_key": cache_key,
             "mode": mode,
             "trade_date": trade_date.isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
             "brain_version": brain_version,
             "current_news_sha256": news_hash,
             "episode_shard_sha256": shard_hash,

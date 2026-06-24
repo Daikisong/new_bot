@@ -8,7 +8,7 @@ from pathlib import Path
 from news_scalping_lab.brain.compiler import current_brain_file_hashes, current_brain_version
 from news_scalping_lab.contracts.models import ContextManifest, PriceSnapshot
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, stable_id
+from news_scalping_lab.utils import file_sha256, is_available_as_of, stable_id
 
 
 class ContextAssembler:
@@ -29,7 +29,7 @@ class ContextAssembler:
         accepted = [
             episode
             for episode in self.store.list_accepted()
-            if episode.available_from.date() <= trade_date
+            if is_available_as_of(episode.available_from, cutoff_at)
         ]
         accepted_ids = [episode.episode_id for episode in accepted]
         counterexample_ids = [

@@ -34,7 +34,15 @@ from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import canonical_json, now_kst, read_json, sha256_text, stable_id, write_json
+from news_scalping_lab.utils import (
+    canonical_json,
+    is_available_as_of,
+    now_kst,
+    read_json,
+    sha256_text,
+    stable_id,
+    write_json,
+)
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
 from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider
@@ -81,7 +89,7 @@ class DailyAnalyzer:
         raw_retrieved_ids = self.retrieval.search(" ".join(web_queries), limit=20)
         retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
-            trade_date=trade_date,
+            cutoff_at=cutoff_at,
         )
         event_ids = [item.event_id for item in batch.items]
         manifest = ContextAssembler(self.root).assemble(
@@ -94,7 +102,7 @@ class DailyAnalyzer:
         )
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
         self._fail_if_brain_context_contains_unavailable_episodes(
-            trade_date=trade_date,
+            cutoff_at=cutoff_at,
             manifest=manifest,
         )
 
@@ -118,6 +126,7 @@ class DailyAnalyzer:
         ).sweep(
             mode=mode,
             trade_date=trade_date,
+            cutoff_at=cutoff_at,
             run_id=manifest.run_id,
             current_news_texts=news_texts,
             first_pass_mechanisms=first_pass_mechanisms,
@@ -225,7 +234,7 @@ class DailyAnalyzer:
         self,
         retrieved_ids: list[str],
         *,
-        trade_date: date,
+        cutoff_at: datetime,
     ) -> tuple[list[str], list[str]]:
         store = ResearchStore(self.root)
         included: list[str] = []
@@ -240,7 +249,7 @@ class DailyAnalyzer:
             except FileNotFoundError:
                 excluded.append(episode_id)
                 continue
-            if episode.available_from.date() <= trade_date:
+            if is_available_as_of(episode.available_from, cutoff_at):
                 included.append(episode_id)
             else:
                 excluded.append(episode_id)
@@ -509,13 +518,13 @@ class DailyAnalyzer:
     def _fail_if_brain_context_contains_unavailable_episodes(
         self,
         *,
-        trade_date: date,
+        cutoff_at: datetime,
         manifest: ContextManifest,
     ) -> None:
         future_episode_ids = [
             episode.episode_id
             for episode in ResearchStore(self.root).list_accepted()
-            if episode.available_from.date() > trade_date
+            if not is_available_as_of(episode.available_from, cutoff_at)
         ]
         leaked_ids = [
             episode_id

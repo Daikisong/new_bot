@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TypeVar
 
 import pytest
@@ -225,6 +225,7 @@ def _retrieval_episode(
     *,
     summary: str,
     available_day: date,
+    available_time: time = time(0, 0, 0),
 ) -> ResearchEpisode:
     trade_day = date(2030, 1, 9)
     return ResearchEpisode(
@@ -238,7 +239,7 @@ def _retrieval_episode(
             summary=summary,
             open_world_mechanisms=["ProviderCo catalyst -> retrieved raw episode context"],
         ),
-        available_from=datetime.combine(available_day, datetime.min.time(), tzinfo=KST),
+        available_from=datetime.combine(available_day, available_time, tzinfo=KST),
     )
 
 
@@ -422,7 +423,8 @@ async def test_retrieved_raw_episodes_are_filtered_by_available_from(tmp_path) -
     future = _retrieval_episode(
         "EP-future-retrieved",
         summary="ProviderCo future unavailable summary must not enter blind context.",
-        available_day=date(2030, 1, 11),
+        available_day=date(2030, 1, 10),
+        available_time=time(9, 30, 0),
     )
     for episode in (available, future):
         store.save_episode(episode)
@@ -466,7 +468,8 @@ async def test_analyze_fails_when_brain_contains_future_unavailable_episode(tmp_
     future = _retrieval_episode(
         "EP-future-brain",
         summary="ProviderCo future brain summary must stop analysis.",
-        available_day=date(2030, 1, 11),
+        available_day=date(2030, 1, 10),
+        available_time=time(9, 30, 0),
     )
     for episode in (available, future):
         store.save_episode(episode)

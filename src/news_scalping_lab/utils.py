@@ -28,6 +28,16 @@ def parse_datetime(value: str) -> datetime:
     return parsed
 
 
+def as_kst(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=KST)
+    return value.astimezone(KST)
+
+
+def is_available_as_of(available_from: datetime, cutoff_at: datetime) -> bool:
+    return as_kst(available_from) <= as_kst(cutoff_at)
+
+
 def combine_kst(day: date, value: str) -> datetime:
     hour, minute, second = (int(part) for part in value.split(":"))
     return datetime.combine(day, time(hour, minute, second), tzinfo=KST)

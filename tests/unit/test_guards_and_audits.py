@@ -313,7 +313,7 @@ def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
         tmp_path / "research" / "accepted" / "EP-future.json",
         {
             "episode_id": "EP-future",
-            "available_from": "2030-01-11T00:00:00+09:00",
+            "available_from": "2030-01-10T09:30:00+09:00",
         },
     )
     (tmp_path / "brain" / "current" / "00_world_model.md").write_text(

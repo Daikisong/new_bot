@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,20 +11,28 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, sha256_text, write_json
+from news_scalping_lab.utils import combine_kst, file_sha256, is_available_as_of, sha256_text, write_json
 
 
-def export_session_pack(settings: Settings, *, news_csv: Path, trade_date: date, mode: str) -> Path:
+def export_session_pack(
+    settings: Settings,
+    *,
+    news_csv: Path,
+    trade_date: date,
+    mode: str,
+    cutoff_at: datetime | None = None,
+) -> Path:
+    cutoff_at = cutoff_at or combine_kst(trade_date, "08:59:59")
     output_dir = settings.path(settings.output_dirs.session_packs) / trade_date.isoformat()
     output_dir.mkdir(parents=True, exist_ok=True)
     batch = load_news_csv(news_csv, trade_date=trade_date)
     store = ResearchStore(settings.project_root)
     all_accepted = store.list_accepted()
     available = [
-        episode for episode in all_accepted if episode.available_from.date() <= trade_date
+        episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)
     ]
     unavailable = [
-        episode for episode in all_accepted if episode.available_from.date() > trade_date
+        episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
     ]
     brain_texts: list[str] = []
     for path in sorted((settings.project_root / "brain" / "current").glob("*.md")):
@@ -79,7 +87,7 @@ def export_session_pack(settings: Settings, *, news_csv: Path, trade_date: date,
         truncations.append(
             {
                 "artifact": "memory_cases.md",
-                "reason": "episode_available_from_after_trade_date",
+                "reason": "episode_available_from_after_cutoff",
                 "omitted_episode_ids": unavailable_ids,
             }
         )
@@ -109,6 +117,7 @@ def export_session_pack(settings: Settings, *, news_csv: Path, trade_date: date,
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
         "trade_date": trade_date.isoformat(),
+        "cutoff_at": cutoff_at.isoformat(),
         "mode": mode,
         "brain_version": current_brain_version(settings.project_root),
         "brain_file_hashes": current_brain_file_hashes(settings.project_root),

@@ -14,6 +14,7 @@ def _episode(
     *,
     summary: str,
     available_day: date,
+    available_time: time = time(0, 0, 0),
 ) -> ResearchEpisode:
     trade_day = date(2030, 1, 9)
     return ResearchEpisode(
@@ -29,7 +30,7 @@ def _episode(
             summary=summary,
             open_world_mechanisms=["current evidence -> open-world path"],
         ),
-        available_from=datetime.combine(available_day, time(0, 0, 0), tzinfo=KST),
+        available_from=datetime.combine(available_day, available_time, tzinfo=KST),
     )
 
 
@@ -51,7 +52,13 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
         available_day=date(2030, 1, 10),
     )
     future = _episode("EP-future", summary="Future postmortem.", available_day=date(2030, 1, 11))
-    for episode in (small, large, future):
+    after_cutoff = _episode(
+        "EP-after-cutoff",
+        summary="Same-day after-cutoff postmortem.",
+        available_day=date(2030, 1, 10),
+        available_time=time(9, 30, 0),
+    )
+    for episode in (small, large, future, after_cutoff):
         store.save_episode(episode)
         store.accept(episode.episode_id)
     shard_dir = tmp_path / "memory" / "shard_brains" / "current"
@@ -69,6 +76,7 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
         settings,
         news_csv=news_csv,
         trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
         mode="brain",
     )
 
@@ -76,7 +84,8 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     memory_cases = (output_dir / "memory_cases.md").read_text(encoding="utf-8")
     research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
 
-    assert manifest["accepted_episode_count"] == 3
+    assert manifest["accepted_episode_count"] == 4
+    assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
     assert manifest["included_episode_ids"] == ["EP-small"]
     assert manifest["shard_brain_count"] == 2
@@ -85,17 +94,22 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
         "memory/shard_brains/current/shard_0002.md",
     }
     assert set(manifest["shard_brain_file_hashes"]) == set(manifest["shard_brain_files"])
-    assert set(manifest["omitted_episode_ids"]) == {"EP-large", "EP-future"}
-    assert manifest["unavailable_episode_ids"] == ["EP-future"]
+    assert set(manifest["omitted_episode_ids"]) == {
+        "EP-large",
+        "EP-future",
+        "EP-after-cutoff",
+    }
+    assert set(manifest["unavailable_episode_ids"]) == {"EP-future", "EP-after-cutoff"}
     assert {item["reason"] for item in manifest["truncations"]} == {
         "session_pack_token_budget_exceeded",
-        "episode_available_from_after_trade_date",
+        "episode_available_from_after_cutoff",
     }
     assert "session pack omitted available episodes due to token budget" in manifest["errors"]
     assert "session pack excluded future-unavailable episodes" in manifest["errors"]
     assert "EP-small" in memory_cases
     assert "EP-large" not in memory_cases
     assert "EP-future" not in memory_cases
+    assert "EP-after-cutoff" not in memory_cases
     assert "# Shard Brain Summaries" in research_brain
     assert "Shard Brain 0001" in research_brain
     assert "Shard Brain 0002" in research_brain

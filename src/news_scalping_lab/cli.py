@@ -233,11 +233,17 @@ def context_inspect(run_id: str) -> None:
 def context_export_session_pack(
     news: Annotated[Path, typer.Option("--news")],
     trade_date: Annotated[str, typer.Option("--trade-date")],
+    cutoff: Annotated[str | None, typer.Option("--cutoff")] = None,
     mode: Annotated[str, typer.Option("--mode")] = "brain",
 ) -> None:
     settings = load_settings()
+    parsed_trade_date = _parse_date(trade_date)
     output = export_session_pack(
-        settings, news_csv=news, trade_date=_parse_date(trade_date), mode=mode
+        settings,
+        news_csv=news,
+        trade_date=parsed_trade_date,
+        cutoff_at=parse_datetime(cutoff) if cutoff else None,
+        mode=mode,
     )
     _echo({"session_pack": output.as_posix()})
 
