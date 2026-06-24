@@ -1,0 +1,10 @@
+default:
+  provider: mock
+  model: deterministic-mock
+  reasoning_effort: low
+  max_output_tokens: 4096
+openai:
+  provider: openai
+  model: gpt-5-mini
+  reasoning_effort: medium
+  max_output_tokens: 8192

@@ -1,0 +1,18 @@
+project_name: news-scalping-lab
+llm_provider: mock
+web_provider: mock
+price_provider: mock
+stock_web_path: null
+default_mode: exhaustive
+timezone: Asia/Seoul
+output_dirs:
+  predictions: predictions
+  reports: reports
+  manifests: runs/manifests
+  traces: runs/traces
+  session_packs: session_packs
+  training_exports: training_exports
+limits:
+  max_concurrency: 4
+  shard_episode_count: 20
+  max_news_items_for_mock: 12

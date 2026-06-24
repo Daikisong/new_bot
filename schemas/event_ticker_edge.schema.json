@@ -1,0 +1,170 @@
+{
+  "$defs": {
+    "ConfidenceLabel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium",
+        "low",
+        "speculative"
+      ],
+      "title": "ConfidenceLabel",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RelationClass": {
+      "enum": [
+        "DIRECT",
+        "FUNDAMENTAL",
+        "MARKET_MEMORY",
+        "CONTINUATION",
+        "INFERRED_NEW"
+      ],
+      "title": "RelationClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "company_name": {
+      "title": "Company Name",
+      "type": "string"
+    },
+    "confidence_label": {
+      "$ref": "#/$defs/ConfidenceLabel",
+      "default": "medium"
+    },
+    "directly_mentioned": {
+      "title": "Directly Mentioned",
+      "type": "boolean"
+    },
+    "edge_id": {
+      "title": "Edge Id",
+      "type": "string"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "fundamental_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Fundamental Evidence",
+      "type": "array"
+    },
+    "market_memory_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Market Memory Evidence",
+      "type": "array"
+    },
+    "narrative_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Narrative Evidence",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "relation_class": {
+      "$ref": "#/$defs/RelationClass"
+    },
+    "relation_explanation": {
+      "title": "Relation Explanation",
+      "type": "string"
+    },
+    "temporal_validity": {
+      "title": "Temporal Validity",
+      "type": "string"
+    },
+    "ticker": {
+      "title": "Ticker",
+      "type": "string"
+    }
+  },
+  "required": [
+    "edge_id",
+    "episode_id",
+    "event_id",
+    "ticker",
+    "company_name",
+    "relation_class",
+    "relation_explanation",
+    "directly_mentioned",
+    "temporal_validity"
+  ],
+  "title": "EventTickerEdge",
+  "type": "object"
+}

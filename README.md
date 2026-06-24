@@ -1,0 +1,135 @@
+# news-scalping-lab
+
+`news-scalping-lab` is a Python CLI system for importing long-running market-news research, compiling it into a versioned research brain, and producing reproducible pre-open analysis reports from a new news CSV.
+
+The implementation is intentionally LLM-native. Production code does not contain domain keyword maps, stock whitelists, ticker lists, or fixed theme score tables. Research knowledge is data in `research/`, `memory/`, and `brain/`.
+
+## Quick Start
+
+```bash
+python -m pip install -e ".[dev]"
+python -m news_scalping_lab.cli init
+python -m news_scalping_lab.cli doctor
+python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv
+python -m news_scalping_lab.cli brain rebuild --mode full
+python -m news_scalping_lab.cli warehouse rebuild
+python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
+```
+
+Outputs:
+
+```text
+predictions/YYYY-MM-DD.json
+reports/YYYY-MM-DD_preopen.md
+runs/manifests/<run_id>.json
+```
+
+## Research Flow
+
+```bash
+nslab research import path/to/research_episode.json
+nslab research validate <episode_id>
+nslab research accept <episode_id>
+nslab brain update --episode <episode_id>
+nslab brain audit
+```
+
+Batch flow:
+
+```bash
+nslab research import-batch data/inbox/research/
+nslab brain rebuild --mode full
+nslab brain audit
+```
+
+## Daily Blind Analysis
+
+```bash
+nslab analyze \
+  --news data/inbox/news/0700_news_20260715.csv \
+  --trade-date 2026-07-15 \
+  --cutoff 2026-07-15T08:59:59+09:00 \
+  --mode exhaustive \
+  --web-search
+```
+
+`exhaustive` mode is the default quality mode. It sweeps every accepted research episode and fails if coverage is incomplete. Retrieval misses are recorded but never used to block open-world candidate generation.
+
+## Evaluation
+
+```bash
+nslab evaluate --trade-date 2026-07-15
+```
+
+Evaluation loads the sealed blind prediction, reads D-day outcome data only in the evaluation phase, labels outcomes, and writes postmortem learning with `available_from` set after the trade date.
+
+## Session Pack
+
+```bash
+nslab context export-session-pack --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --mode brain
+```
+
+This creates a GPT Web session pack under `session_packs/YYYY-MM-DD/`.
+
+## Environment
+
+Copy `.env.example` to `.env` and set values as needed.
+
+```text
+NSLAB_LLM_PROVIDER=mock
+OPENAI_API_KEY=
+NSLAB_STOCK_WEB_PATH=
+```
+
+Without API keys, the deterministic mock providers are used. With API keys and adapter config, provider seams are ready for real calls.
+
+## stock-web Price Source
+
+Set `NSLAB_STOCK_WEB_PATH` to a local checkout or cache of `https://github.com/Songdaiki/stock-web`.
+
+```bash
+set NSLAB_STOCK_WEB_PATH=data/cache/stock-web
+nslab doctor
+```
+
+The adapter reads `atlas/manifest.json` and `atlas/schema.json`, then uses:
+
+```text
+atlas/ohlcv_tradable_by_symbol_year/{prefix}/{code}/{year}.csv
+```
+
+It expects the stock-web shard columns:
+
+```text
+d,o,h,l,c,v,a,mc,s,m
+```
+
+Outcome labels use the previous tradable row for that ticker, not the previous calendar day.
+
+## Quality Gates
+
+```bash
+python -m ruff check .
+python -m mypy src/news_scalping_lab
+python -m pytest
+```
+
+## Warehouse
+
+The warehouse is a derived DuckDB/Parquet projection, not the source of truth.
+Canonical research stays under `research/`, `memory/`, and `brain/`.
+
+```bash
+nslab warehouse rebuild
+nslab warehouse inspect
+```
+
+Generated tables include:
+
+```text
+warehouse/research_episodes.parquet
+warehouse/event_ticker_edges.parquet
+warehouse/predictions.parquet
+warehouse/daily_outcomes.parquet
+warehouse/market_memory.parquet
+```

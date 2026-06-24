@@ -1,0 +1,701 @@
+{
+  "$defs": {
+    "BlindAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded_after_cutoff_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded After Cutoff Source Ids",
+          "type": "array"
+        },
+        "initial_uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Initial Uncertainties",
+          "type": "array"
+        },
+        "open_world_mechanisms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Open World Mechanisms",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "title": "BlindAnalysis",
+      "type": "object"
+    },
+    "BlindPrediction": {
+      "additionalProperties": false,
+      "properties": {
+        "blind_analysis": {
+          "$ref": "#/$defs/BlindAnalysis"
+        },
+        "blind_artifact_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blind Artifact Sha256"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "context_manifest_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Manifest Id"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "cutoff_at": {
+          "format": "date-time",
+          "title": "Cutoff At",
+          "type": "string"
+        },
+        "dominant_sectors": {
+          "items": {
+            "$ref": "#/$defs/DominantSectorHypothesis"
+          },
+          "title": "Dominant Sectors",
+          "type": "array"
+        },
+        "prediction_id": {
+          "title": "Prediction Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "nslab.blind_prediction.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sealed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sealed At"
+        },
+        "trade_date": {
+          "format": "date",
+          "title": "Trade Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prediction_id",
+        "trade_date",
+        "cutoff_at",
+        "created_at",
+        "blind_analysis"
+      ],
+      "title": "BlindPrediction",
+      "type": "object"
+    },
+    "Candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_chain": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Causal Chain",
+          "type": "array"
+        },
+        "company_name": {
+          "title": "Company Name",
+          "type": "string"
+        },
+        "confidence_label": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "counterarguments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Counterarguments",
+          "type": "array"
+        },
+        "direct_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Direct Evidence",
+          "type": "array"
+        },
+        "disconfirming_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Disconfirming Conditions",
+          "type": "array"
+        },
+        "event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Ids",
+          "type": "array"
+        },
+        "evidence_quality": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "inferred_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Inferred Evidence",
+          "type": "array"
+        },
+        "market_memory_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Market Memory Evidence",
+          "type": "array"
+        },
+        "memory_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Episode Ids",
+          "type": "array"
+        },
+        "novel_reasoning": {
+          "default": "",
+          "title": "Novel Reasoning",
+          "type": "string"
+        },
+        "path_type": {
+          "$ref": "#/$defs/PathType"
+        },
+        "prior_negative_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Negative Cases",
+          "type": "array"
+        },
+        "prior_positive_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Positive Cases",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "source_urls": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Urls",
+          "type": "array"
+        },
+        "thesis": {
+          "title": "Thesis",
+          "type": "string"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        },
+        "why_now": {
+          "title": "Why Now",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "ticker",
+        "company_name",
+        "path_type",
+        "thesis",
+        "why_now"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "ConfidenceLabel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium",
+        "low",
+        "speculative"
+      ],
+      "title": "ConfidenceLabel",
+      "type": "string"
+    },
+    "ContextManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_episode_count": {
+          "title": "Accepted Episode Count",
+          "type": "integer"
+        },
+        "brain_file_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Brain File Hashes",
+          "type": "object"
+        },
+        "brain_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Brain Files",
+          "type": "array"
+        },
+        "brain_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Brain Version"
+        },
+        "counterexample_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Counterexample Episode Ids",
+          "type": "array"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "memory_sweep_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Sweep Artifacts",
+          "type": "array"
+        },
+        "memory_sweep_cache_hits": {
+          "default": 0,
+          "title": "Memory Sweep Cache Hits",
+          "type": "integer"
+        },
+        "memory_sweep_shard_count": {
+          "default": 0,
+          "title": "Memory Sweep Shard Count",
+          "type": "integer"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "model_config": {
+          "additionalProperties": true,
+          "title": "Model Config",
+          "type": "object"
+        },
+        "price_snapshot": {
+          "$ref": "#/$defs/PriceSnapshot"
+        },
+        "prompt_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Prompt Hashes",
+          "type": "object"
+        },
+        "retrieved_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retrieved Episode Ids",
+          "type": "array"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "nslab.context_manifest.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "swept_episode_count": {
+          "title": "Swept Episode Count",
+          "type": "integer"
+        },
+        "swept_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Swept Episode Ids",
+          "type": "array"
+        },
+        "token_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Token Counts",
+          "type": "object"
+        },
+        "truncations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Truncations",
+          "type": "array"
+        },
+        "web_queries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Web Queries",
+          "type": "array"
+        },
+        "web_sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Web Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "run_id",
+        "mode",
+        "accepted_episode_count",
+        "swept_episode_count",
+        "price_snapshot"
+      ],
+      "title": "ContextManifest",
+      "type": "object"
+    },
+    "DominantSectorHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "contradicting_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradicting Cases",
+          "type": "array"
+        },
+        "direct_beneficiaries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Direct Beneficiaries",
+          "type": "array"
+        },
+        "expected_breadth": {
+          "title": "Expected Breadth",
+          "type": "string"
+        },
+        "failure_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Conditions",
+          "type": "array"
+        },
+        "formation_mechanism": {
+          "title": "Formation Mechanism",
+          "type": "string"
+        },
+        "indirect_beneficiaries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Indirect Beneficiaries",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "narrative_beneficiaries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Narrative Beneficiaries",
+          "type": "array"
+        },
+        "possible_leaders": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Possible Leaders",
+          "type": "array"
+        },
+        "supporting_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Cases",
+          "type": "array"
+        },
+        "triggering_events": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Triggering Events",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "formation_mechanism",
+        "expected_breadth"
+      ],
+      "title": "DominantSectorHypothesis",
+      "type": "object"
+    },
+    "PathType": {
+      "enum": [
+        "SINGLE_EVENT",
+        "THEME_BENEFICIARY",
+        "CONTINUATION",
+        "HYBRID"
+      ],
+      "title": "PathType",
+      "type": "string"
+    },
+    "PriceSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_through": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allowed Through"
+        },
+        "as_of": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "As Of"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "source_name": {
+          "title": "Source Name",
+          "type": "string"
+        },
+        "source_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Ref"
+        }
+      },
+      "required": [
+        "source_name"
+      ],
+      "title": "PriceSnapshot",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "blind_prediction": {
+      "$ref": "#/$defs/BlindPrediction"
+    },
+    "context_manifest": {
+      "$ref": "#/$defs/ContextManifest"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "mode": {
+      "title": "Mode",
+      "type": "string"
+    },
+    "prediction_path": {
+      "title": "Prediction Path",
+      "type": "string"
+    },
+    "report_path": {
+      "title": "Report Path",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.daily_analysis.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "trade_date",
+    "cutoff_at",
+    "created_at",
+    "mode",
+    "blind_prediction",
+    "context_manifest",
+    "report_path",
+    "prediction_path"
+  ],
+  "title": "DailyAnalysis",
+  "type": "object"
+}

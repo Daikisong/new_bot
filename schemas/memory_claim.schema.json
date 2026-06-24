@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "ClaimStatus": {
+      "enum": [
+        "tentative",
+        "supported",
+        "validated",
+        "disputed",
+        "retired"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ConfidenceLabel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium",
+        "low",
+        "speculative"
+      ],
+      "title": "ConfidenceLabel",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "confidence_label": {
+      "$ref": "#/$defs/ConfidenceLabel",
+      "default": "medium"
+    },
+    "contradiction_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradiction Episode Ids",
+      "type": "array"
+    },
+    "failure_modes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failure Modes",
+      "type": "array"
+    },
+    "first_observed_at": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Observed At"
+    },
+    "last_updated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Updated At"
+    },
+    "mechanism": {
+      "title": "Mechanism",
+      "type": "string"
+    },
+    "near_miss_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Near Miss Episode Ids",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ClaimStatus",
+      "default": "tentative"
+    },
+    "support_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Support Episode Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "claim_id",
+    "statement",
+    "mechanism",
+    "scope",
+    "available_from"
+  ],
+  "title": "MemoryClaim",
+  "type": "object"
+}

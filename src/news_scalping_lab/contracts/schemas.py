@@ -1,0 +1,47 @@
+"""Export JSON schemas for canonical contracts."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import BaseModel
+
+from news_scalping_lab.contracts.models import (
+    BlindPrediction,
+    BrainManifest,
+    Candidate,
+    ContextManifest,
+    DailyAnalysis,
+    EventTickerEdge,
+    MemoryClaim,
+    Postmortem,
+    ResearchEpisode,
+)
+from news_scalping_lab.utils import write_json
+
+SCHEMA_MODELS: dict[str, type[BaseModel]] = {
+    "research_episode.schema.json": ResearchEpisode,
+    "blind_prediction.schema.json": BlindPrediction,
+    "postmortem.schema.json": Postmortem,
+    "memory_claim.schema.json": MemoryClaim,
+    "event_ticker_edge.schema.json": EventTickerEdge,
+    "brain_manifest.schema.json": BrainManifest,
+    "daily_analysis.schema.json": DailyAnalysis,
+    "candidate.schema.json": Candidate,
+    "context_manifest.schema.json": ContextManifest,
+}
+
+
+def export_json_schemas(output_dir: Path) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for filename, model in SCHEMA_MODELS.items():
+        path = output_dir / filename
+        write_json(path, model.model_json_schema())
+        written.append(path)
+    return written
+
+
+if __name__ == "__main__":
+    for schema_path in export_json_schemas(Path("schemas")):
+        print(schema_path)

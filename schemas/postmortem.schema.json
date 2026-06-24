@@ -1,0 +1,137 @@
+{
+  "$defs": {
+    "FailureCode": {
+      "enum": [
+        "INPUT_MISSING",
+        "ENTITY_MISSING",
+        "THEME_MAP_MISSING",
+        "CONTINUATION_MISSING",
+        "RANKING_MISS",
+        "TIMING_IMPOSSIBLE",
+        "NOVELTY_ERROR",
+        "DIRECTNESS_ERROR",
+        "LEADER_SELECTION_MISS",
+        "MARKET_REGIME_MISS",
+        "HINDSIGHT_CONTAMINATION",
+        "UNKNOWN"
+      ],
+      "title": "FailureCode",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "failure_codes": {
+      "items": {
+        "$ref": "#/$defs/FailureCode"
+      },
+      "title": "Failure Codes",
+      "type": "array"
+    },
+    "false_positives": {
+      "items": {
+        "type": "string"
+      },
+      "title": "False Positives",
+      "type": "array"
+    },
+    "hits": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Hits",
+      "type": "array"
+    },
+    "lessons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Lessons",
+      "type": "array"
+    },
+    "misses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Misses",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary"
+  ],
+  "title": "Postmortem",
+  "type": "object"
+}

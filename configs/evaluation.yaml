@@ -1,0 +1,17 @@
+labels:
+  - high_return_5
+  - high_return_10
+  - high_return_15
+  - high_return_20
+  - upper_limit_touched
+  - upper_limit_closed
+metrics:
+  - UpperLimit Recall@5
+  - UpperLimit Recall@10
+  - UpperLimit Recall@20
+  - Precision@5
+  - Precision@10
+  - Theme Recall
+  - Single-event Recall
+  - Beneficiary Recall
+  - Continuation Recall

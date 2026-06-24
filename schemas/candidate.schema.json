@@ -1,0 +1,219 @@
+{
+  "$defs": {
+    "ConfidenceLabel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium",
+        "low",
+        "speculative"
+      ],
+      "title": "ConfidenceLabel",
+      "type": "string"
+    },
+    "PathType": {
+      "enum": [
+        "SINGLE_EVENT",
+        "THEME_BENEFICIARY",
+        "CONTINUATION",
+        "HYBRID"
+      ],
+      "title": "PathType",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "causal_chain": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Causal Chain",
+      "type": "array"
+    },
+    "company_name": {
+      "title": "Company Name",
+      "type": "string"
+    },
+    "confidence_label": {
+      "$ref": "#/$defs/ConfidenceLabel",
+      "default": "medium"
+    },
+    "counterarguments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Counterarguments",
+      "type": "array"
+    },
+    "direct_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Direct Evidence",
+      "type": "array"
+    },
+    "disconfirming_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Disconfirming Conditions",
+      "type": "array"
+    },
+    "event_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Ids",
+      "type": "array"
+    },
+    "evidence_quality": {
+      "$ref": "#/$defs/ConfidenceLabel",
+      "default": "medium"
+    },
+    "inferred_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inferred Evidence",
+      "type": "array"
+    },
+    "market_memory_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Market Memory Evidence",
+      "type": "array"
+    },
+    "memory_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Memory Episode Ids",
+      "type": "array"
+    },
+    "novel_reasoning": {
+      "default": "",
+      "title": "Novel Reasoning",
+      "type": "string"
+    },
+    "path_type": {
+      "$ref": "#/$defs/PathType"
+    },
+    "prior_negative_cases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Negative Cases",
+      "type": "array"
+    },
+    "prior_positive_cases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Positive Cases",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "rank": {
+      "title": "Rank",
+      "type": "integer"
+    },
+    "source_urls": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Urls",
+      "type": "array"
+    },
+    "thesis": {
+      "title": "Thesis",
+      "type": "string"
+    },
+    "ticker": {
+      "title": "Ticker",
+      "type": "string"
+    },
+    "why_now": {
+      "title": "Why Now",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rank",
+    "ticker",
+    "company_name",
+    "path_type",
+    "thesis",
+    "why_now"
+  ],
+  "title": "Candidate",
+  "type": "object"
+}

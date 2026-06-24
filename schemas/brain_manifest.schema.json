@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "accepted_episode_count": {
+      "title": "Accepted Episode Count",
+      "type": "integer"
+    },
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Claim Ids",
+      "type": "array"
+    },
+    "coverage_complete": {
+      "title": "Coverage Complete",
+      "type": "boolean"
+    },
+    "covered_episode_count": {
+      "title": "Covered Episode Count",
+      "type": "integer"
+    },
+    "covered_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Covered Episode Ids",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.brain_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Source Hashes",
+      "type": "object"
+    }
+  },
+  "required": [
+    "brain_version",
+    "created_at",
+    "accepted_episode_count",
+    "covered_episode_count",
+    "coverage_complete"
+  ],
+  "title": "BrainManifest",
+  "type": "object"
+}

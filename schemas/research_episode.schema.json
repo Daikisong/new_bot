@@ -1,0 +1,891 @@
+{
+  "$defs": {
+    "BlindAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded_after_cutoff_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded After Cutoff Source Ids",
+          "type": "array"
+        },
+        "initial_uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Initial Uncertainties",
+          "type": "array"
+        },
+        "open_world_mechanisms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Open World Mechanisms",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "title": "BlindAnalysis",
+      "type": "object"
+    },
+    "Candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_chain": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Causal Chain",
+          "type": "array"
+        },
+        "company_name": {
+          "title": "Company Name",
+          "type": "string"
+        },
+        "confidence_label": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "counterarguments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Counterarguments",
+          "type": "array"
+        },
+        "direct_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Direct Evidence",
+          "type": "array"
+        },
+        "disconfirming_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Disconfirming Conditions",
+          "type": "array"
+        },
+        "event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Ids",
+          "type": "array"
+        },
+        "evidence_quality": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "inferred_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Inferred Evidence",
+          "type": "array"
+        },
+        "market_memory_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Market Memory Evidence",
+          "type": "array"
+        },
+        "memory_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Episode Ids",
+          "type": "array"
+        },
+        "novel_reasoning": {
+          "default": "",
+          "title": "Novel Reasoning",
+          "type": "string"
+        },
+        "path_type": {
+          "$ref": "#/$defs/PathType"
+        },
+        "prior_negative_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Negative Cases",
+          "type": "array"
+        },
+        "prior_positive_cases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Positive Cases",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "source_urls": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Urls",
+          "type": "array"
+        },
+        "thesis": {
+          "title": "Thesis",
+          "type": "string"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        },
+        "why_now": {
+          "title": "Why Now",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "ticker",
+        "company_name",
+        "path_type",
+        "thesis",
+        "why_now"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "tentative",
+        "supported",
+        "validated",
+        "disputed",
+        "retired"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ConfidenceLabel": {
+      "enum": [
+        "very_high",
+        "high",
+        "medium",
+        "low",
+        "speculative"
+      ],
+      "title": "ConfidenceLabel",
+      "type": "string"
+    },
+    "EventTickerEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "company_name": {
+          "title": "Company Name",
+          "type": "string"
+        },
+        "confidence_label": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "directly_mentioned": {
+          "title": "Directly Mentioned",
+          "type": "boolean"
+        },
+        "edge_id": {
+          "title": "Edge Id",
+          "type": "string"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "fundamental_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fundamental Evidence",
+          "type": "array"
+        },
+        "market_memory_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Market Memory Evidence",
+          "type": "array"
+        },
+        "narrative_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Narrative Evidence",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "relation_class": {
+          "$ref": "#/$defs/RelationClass"
+        },
+        "relation_explanation": {
+          "title": "Relation Explanation",
+          "type": "string"
+        },
+        "temporal_validity": {
+          "title": "Temporal Validity",
+          "type": "string"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edge_id",
+        "episode_id",
+        "event_id",
+        "ticker",
+        "company_name",
+        "relation_class",
+        "relation_explanation",
+        "directly_mentioned",
+        "temporal_validity"
+      ],
+      "title": "EventTickerEdge",
+      "type": "object"
+    },
+    "FailureCode": {
+      "enum": [
+        "INPUT_MISSING",
+        "ENTITY_MISSING",
+        "THEME_MAP_MISSING",
+        "CONTINUATION_MISSING",
+        "RANKING_MISS",
+        "TIMING_IMPOSSIBLE",
+        "NOVELTY_ERROR",
+        "DIRECTNESS_ERROR",
+        "LEADER_SELECTION_MISS",
+        "MARKET_REGIME_MISS",
+        "HINDSIGHT_CONTAMINATION",
+        "UNKNOWN"
+      ],
+      "title": "FailureCode",
+      "type": "string"
+    },
+    "MemoryClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "available_from": {
+          "format": "date-time",
+          "title": "Available From",
+          "type": "string"
+        },
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "confidence_label": {
+          "$ref": "#/$defs/ConfidenceLabel",
+          "default": "medium"
+        },
+        "contradiction_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradiction Episode Ids",
+          "type": "array"
+        },
+        "failure_modes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Modes",
+          "type": "array"
+        },
+        "first_observed_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Observed At"
+        },
+        "last_updated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Updated At"
+        },
+        "mechanism": {
+          "title": "Mechanism",
+          "type": "string"
+        },
+        "near_miss_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Near Miss Episode Ids",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "scope": {
+          "title": "Scope",
+          "type": "string"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimStatus",
+          "default": "tentative"
+        },
+        "support_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Support Episode Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claim_id",
+        "statement",
+        "mechanism",
+        "scope",
+        "available_from"
+      ],
+      "title": "MemoryClaim",
+      "type": "object"
+    },
+    "NewsItem": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "title": "Body",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "row_number": {
+          "title": "Row Number",
+          "type": "integer"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "row_number",
+        "published_at",
+        "title",
+        "body",
+        "source_id"
+      ],
+      "title": "NewsItem",
+      "type": "object"
+    },
+    "OutcomeLabels": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Close Return Pct"
+        },
+        "flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "intraday_fields_unavailable": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Intraday Fields Unavailable",
+          "type": "array"
+        },
+        "intraday_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intraday High Return Pct"
+        },
+        "market_cap_previous_close": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market Cap Previous Close"
+        },
+        "one_price_upper_limit": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "One Price Upper Limit"
+        },
+        "open_gap_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Gap Pct"
+        },
+        "turnover_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turnover Ratio"
+        },
+        "upper_limit_closed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper Limit Closed"
+        },
+        "upper_limit_released": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper Limit Released"
+        },
+        "upper_limit_touched": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upper Limit Touched"
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume"
+        }
+      },
+      "title": "OutcomeLabels",
+      "type": "object"
+    },
+    "PathType": {
+      "enum": [
+        "SINGLE_EVENT",
+        "THEME_BENEFICIARY",
+        "CONTINUATION",
+        "HYBRID"
+      ],
+      "title": "PathType",
+      "type": "string"
+    },
+    "Postmortem": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_codes": {
+          "items": {
+            "$ref": "#/$defs/FailureCode"
+          },
+          "title": "Failure Codes",
+          "type": "array"
+        },
+        "false_positives": {
+          "items": {
+            "type": "string"
+          },
+          "title": "False Positives",
+          "type": "array"
+        },
+        "hits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hits",
+          "type": "array"
+        },
+        "lessons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Lessons",
+          "type": "array"
+        },
+        "misses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Misses",
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "title": "Postmortem",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RelationClass": {
+      "enum": [
+        "DIRECT",
+        "FUNDAMENTAL",
+        "MARKET_MEMORY",
+        "CONTINUATION",
+        "INFERRED_NEW"
+      ],
+      "title": "RelationClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "blind_analysis": {
+      "$ref": "#/$defs/BlindAnalysis"
+    },
+    "blind_predictions": {
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      },
+      "title": "Blind Predictions",
+      "type": "array"
+    },
+    "counterexamples": {
+      "items": {
+        "$ref": "#/$defs/MemoryClaim"
+      },
+      "title": "Counterexamples",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "event_ticker_edges": {
+      "items": {
+        "$ref": "#/$defs/EventTickerEdge"
+      },
+      "title": "Event Ticker Edges",
+      "type": "array"
+    },
+    "input_news_files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Input News Files",
+      "type": "array"
+    },
+    "input_news_hashes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Input News Hashes",
+      "type": "array"
+    },
+    "lessons": {
+      "items": {
+        "$ref": "#/$defs/MemoryClaim"
+      },
+      "title": "Lessons",
+      "type": "array"
+    },
+    "misses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Misses",
+      "type": "array"
+    },
+    "observed_events": {
+      "items": {
+        "$ref": "#/$defs/NewsItem"
+      },
+      "title": "Observed Events",
+      "type": "array"
+    },
+    "outcome_labels": {
+      "additionalProperties": {
+        "$ref": "#/$defs/OutcomeLabels"
+      },
+      "title": "Outcome Labels",
+      "type": "object"
+    },
+    "postmortem": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Postmortem"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "price_source_snapshot": {
+      "additionalProperties": true,
+      "title": "Price Source Snapshot",
+      "type": "object"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "research_version": {
+      "title": "Research Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.research_episode.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "episode_id",
+    "trade_date",
+    "cutoff_at",
+    "created_at",
+    "research_version",
+    "blind_analysis",
+    "available_from"
+  ],
+  "title": "ResearchEpisode",
+  "type": "object"
+}

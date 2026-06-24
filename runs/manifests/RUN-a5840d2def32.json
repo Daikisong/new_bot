@@ -1,0 +1,83 @@
+{
+  "accepted_episode_count": 0,
+  "brain_file_hashes": {
+    "brain/current/00_world_model.md": "a6685202c467742d8c2dec7616e75b9dc360c3c91a56171cfbedbafcec9f498b",
+    "brain/current/01_single_event_patterns.md": "71da7911eb36c5189fb1a13e8e93d0aeb9d5bf648b14a0fa38008eb8a0734b60",
+    "brain/current/02_theme_formation_patterns.md": "5561600a907a508799b4d8282cc525671dd4da1588814ea4b7bfd2a1c21bd4a1",
+    "brain/current/03_beneficiary_discovery.md": "9ffc110871fbc0f30064c731e79a486e9c98868f916e0abcbc2df94ece997837",
+    "brain/current/04_leader_selection.md": "f4296996b9b74ea129db88f625c7accf4a433ac39453519b9590670463bc6d16",
+    "brain/current/05_continuation_patterns.md": "5e54ad7ea03bb79c9c0076e0eb3873325cbdeb21dd88caa1e7b69613e4504afd",
+    "brain/current/06_failure_modes.md": "590914c4955e39a96350738ca7c338e2ebf8b4de6a2bf335e77bdcac19e5273d",
+    "brain/current/07_counterexamples.md": "cc59d0359bb5c2c2f0c6b245aa70ffb8c53bedb63709bf8d2b914c2eea4a131f",
+    "brain/current/08_market_memory.md": "83a62ac48853af878e75488e021d07403b52d66483ed63f7eb19520691b4d110",
+    "brain/current/brain_manifest.json": "1bafa77b4571fb3371392026cd4fb947174c1fec59167b034e2888a7c8b33403",
+    "brain/current/claims.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "brain/current/coverage_manifest.json": "5be749ae95db55482acfcb4f633036c848e099057a9bd36f606bda41394e4ae3"
+  },
+  "brain_files": [
+    "brain/current/00_world_model.md",
+    "brain/current/01_single_event_patterns.md",
+    "brain/current/02_theme_formation_patterns.md",
+    "brain/current/03_beneficiary_discovery.md",
+    "brain/current/04_leader_selection.md",
+    "brain/current/05_continuation_patterns.md",
+    "brain/current/06_failure_modes.md",
+    "brain/current/07_counterexamples.md",
+    "brain/current/08_market_memory.md",
+    "brain/current/brain_manifest.json",
+    "brain/current/claims.jsonl",
+    "brain/current/coverage_manifest.json"
+  ],
+  "brain_version": "brain-c035005231",
+  "counterexample_episode_ids": [],
+  "errors": [],
+  "memory_sweep_artifacts": [],
+  "memory_sweep_cache_hits": 0,
+  "memory_sweep_shard_count": 0,
+  "mode": "exhaustive",
+  "model_config": {
+    "mode": "exhaustive",
+    "provider": "mock-compatible"
+  },
+  "price_snapshot": {
+    "allowed_through": "2026-06-23",
+    "as_of": null,
+    "notes": [],
+    "source_name": "blind-guarded",
+    "source_ref": null
+  },
+  "prompt_hashes": {
+    "blind_analysis": "268b6a23c0e4d23b05aeb68d76af598a504e42c7c1a4b57da33534c0e58c1b3d"
+  },
+  "retrieved_episode_ids": [],
+  "run_id": "RUN-a5840d2def32",
+  "schema_version": "nslab.context_manifest.v1",
+  "swept_episode_count": 0,
+  "swept_episode_ids": [],
+  "token_counts": {
+    "current_news": 6278,
+    "memory_sweep": 0
+  },
+  "truncations": [],
+  "web_queries": [
+    "verify listing relationship novelty 넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"",
+    "verify listing relationship novelty “꼭 승리한다”…홍명보호, 남아공전에 32강 진출 명운 건다",
+    "verify listing relationship novelty 제노코, 허성재 CTO 장내매수…KAI 시너지·기업가치 제고",
+    "verify listing relationship novelty 삼성 KODEX 글로벌비만치료제TOP2 Plus증권상장지수투자신탁[주식] ETF 괴리율 초과 발생",
+    "verify listing relationship novelty 오창테크노폴리스 2공구 부분 준공…청주 '첨단산업 벨트' 속도 낸다",
+    "verify listing relationship novelty 기아, 한국지체장애인협회와 맞손…'PV5 WAV'로 교통약자 이동권 확대",
+    "verify listing relationship novelty 큐리옥스, 美·韓 표준화 논의 잇달아 참여…\"자동화 기술 주목\"",
+    "verify listing relationship novelty 키움 KIWOOM 미국성장기업30액티브증권상장지수투자신탁[주식] ETF 괴리율 초과 발생",
+    "verify listing relationship novelty 의대 정원 늘었지만 일반전형은 줄어…비수도권 70% '지역 선발'",
+    "verify listing relationship novelty 키움 KIWOOM 미국나스닥100증권상장지수투자신탁[주식](H) ETF 괴리율 초과 발생",
+    "positive analogs negative analogs near misses counterexamples",
+    "leader selection cases theme formation failures"
+  ],
+  "web_sources": [
+    "mock://web/WEB-668c679c6348",
+    "mock://web/WEB-75a8b538fa36",
+    "mock://web/WEB-acd6dc62ed2e",
+    "mock://web/WEB-e43915243831",
+    "mock://web/WEB-e8da546d35e2"
+  ]
+}

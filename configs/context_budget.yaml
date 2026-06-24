@@ -1,0 +1,12 @@
+exhaustive:
+  include_global_brain: true
+  include_all_accepted_episodes: true
+  include_retrieved_raw_episodes: true
+brain:
+  include_global_brain: true
+  include_all_shard_brains: true
+  include_retrieved_raw_episodes: true
+fast:
+  include_global_brain: true
+  include_all_accepted_episodes: false
+  include_retrieved_raw_episodes: true

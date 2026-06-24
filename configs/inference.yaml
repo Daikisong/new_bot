@@ -1,0 +1,12 @@
+default_mode: exhaustive
+confidence_labels:
+  - very_high
+  - high
+  - medium
+  - low
+  - speculative
+path_types:
+  - SINGLE_EVENT
+  - THEME_BENEFICIARY
+  - CONTINUATION
+  - HYBRID

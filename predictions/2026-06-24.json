@@ -1,0 +1,313 @@
+{
+  "blind_analysis": {
+    "excluded_after_cutoff_source_ids": [],
+    "initial_uncertainties": [
+      "listing and ticker verification",
+      "novelty relative to pre-window information",
+      "directness versus narrative relation",
+      "D-1 market absorption"
+    ],
+    "open_world_mechanisms": [
+      "broad catalyst -> direct beneficiary check -> indirect capacity path",
+      "current evidence -> market narrative expansion -> leader selection uncertainty",
+      "first-order company event -> balance-sheet or contract relevance -> red-team review"
+    ],
+    "provenance": [],
+    "summary": "Open-world blind analysis over current news, followed by memory and web verification hooks."
+  },
+  "blind_artifact_sha256": "62fc27aa2856be72b2096c1efd528a0283b18e3ad0e164ea6f4f9b1b3056be78",
+  "candidates": [
+    {
+      "causal_chain": [
+        "pre-cutoff news event",
+        "direct entity or owner verification",
+        "D-1 market absorption check",
+        "red-team directness review"
+      ],
+      "company_name": "넥스턴앤롤코리아",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status or ticker may be unverified",
+        "news may not be economically attributable to the listed entity"
+      ],
+      "direct_evidence": [
+        "넥스턴앤롤코리아"
+      ],
+      "disconfirming_conditions": [
+        "cutoff-after evidence only",
+        "not a listed security",
+        "event fully reflected before D-1 close"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "created by open-world pass before memory lookup"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate is not required to exist in memory before investigation.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 1,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity is a blind candidate pending listing, novelty, relation, and D-1 absorption checks.",
+      "ticker": "UNKNOWN",
+      "why_now": "It appears in the pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "pre-cutoff news event",
+        "direct entity or owner verification",
+        "D-1 market absorption check",
+        "red-team directness review"
+      ],
+      "company_name": "꼭승리한다홍명보호",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status or ticker may be unverified",
+        "news may not be economically attributable to the listed entity"
+      ],
+      "direct_evidence": [
+        "꼭승리한다홍명보호"
+      ],
+      "disconfirming_conditions": [
+        "cutoff-after evidence only",
+        "not a listed security",
+        "event fully reflected before D-1 close"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "created by open-world pass before memory lookup"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate is not required to exist in memory before investigation.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 2,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity is a blind candidate pending listing, novelty, relation, and D-1 absorption checks.",
+      "ticker": "UNKNOWN",
+      "why_now": "It appears in the pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "pre-cutoff news event",
+        "direct entity or owner verification",
+        "D-1 market absorption check",
+        "red-team directness review"
+      ],
+      "company_name": "제노코",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status or ticker may be unverified",
+        "news may not be economically attributable to the listed entity"
+      ],
+      "direct_evidence": [
+        "제노코"
+      ],
+      "disconfirming_conditions": [
+        "cutoff-after evidence only",
+        "not a listed security",
+        "event fully reflected before D-1 close"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "created by open-world pass before memory lookup"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate is not required to exist in memory before investigation.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 3,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity is a blind candidate pending listing, novelty, relation, and D-1 absorption checks.",
+      "ticker": "UNKNOWN",
+      "why_now": "It appears in the pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "pre-cutoff news event",
+        "direct entity or owner verification",
+        "D-1 market absorption check",
+        "red-team directness review"
+      ],
+      "company_name": "삼성",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status or ticker may be unverified",
+        "news may not be economically attributable to the listed entity"
+      ],
+      "direct_evidence": [
+        "삼성"
+      ],
+      "disconfirming_conditions": [
+        "cutoff-after evidence only",
+        "not a listed security",
+        "event fully reflected before D-1 close"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "created by open-world pass before memory lookup"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate is not required to exist in memory before investigation.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 4,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity is a blind candidate pending listing, novelty, relation, and D-1 absorption checks.",
+      "ticker": "UNKNOWN",
+      "why_now": "It appears in the pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "current catalyst",
+        "beneficiary path discovery",
+        "company verification"
+      ],
+      "company_name": "BENEFICIARY_DISCOVERY_REQUIRED",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "theme breadth may fail",
+        "indirect relation may be too weak"
+      ],
+      "direct_evidence": [],
+      "disconfirming_conditions": [],
+      "event_ids": [
+        "EVT-2120a5a8de37",
+        "EVT-7f6b254c941c",
+        "EVT-0b438e8c2304"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "broad catalyst -> direct beneficiary check -> indirect capacity path",
+        "current evidence -> market narrative expansion -> leader selection uncertainty"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "A new beneficiary can be investigated even when retrieval returns no cases.",
+      "path_type": "THEME_BENEFICIARY",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 5,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Policy, industry, or supply-chain beneficiaries require web/company discovery.",
+      "ticker": "UNKNOWN",
+      "why_now": "Open-world mechanism pass found possible indirect paths before retrieval gating."
+    },
+    {
+      "causal_chain": [
+        "D-1 market memory",
+        "current catalyst overlap",
+        "continuation red-team"
+      ],
+      "company_name": "D_MINUS_ONE_LEADER_REVIEW",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "already exhausted",
+        "no current catalyst overlap"
+      ],
+      "direct_evidence": [],
+      "disconfirming_conditions": [],
+      "event_ids": [],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "requires blind-safe price provider"
+      ],
+      "market_memory_evidence": [
+        "D-day prices are blocked during blind analysis"
+      ],
+      "memory_episode_ids": [],
+      "novel_reasoning": "",
+      "path_type": "CONTINUATION",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [],
+      "rank": 6,
+      "source_urls": [
+        "price://blind-safe-d-minus-one"
+      ],
+      "thesis": "Recent leaders must be checked using only D-1 and earlier market data.",
+      "ticker": "UNKNOWN",
+      "why_now": "Continuation is evaluated separately from current-news directness."
+    }
+  ],
+  "context_manifest_id": null,
+  "created_at": "2026-06-24T19:59:31.909209+09:00",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "dominant_sectors": [
+    {
+      "contradicting_cases": [],
+      "direct_beneficiaries": [
+        "넥스턴앤롤코리아",
+        "꼭승리한다홍명보호",
+        "제노코",
+        "삼성"
+      ],
+      "expected_breadth": "requires web verification and memory comparison",
+      "failure_conditions": [
+        "retrieved counterexamples outweigh support",
+        "web evidence fails listing or relation verification",
+        "D-1 market already absorbed the catalyst"
+      ],
+      "formation_mechanism": "broad catalyst -> direct beneficiary check -> indirect capacity path",
+      "indirect_beneficiaries": [
+        "BENEFICIARY_DISCOVERY_REQUIRED"
+      ],
+      "name": "open-world catalyst cluster",
+      "narrative_beneficiaries": [],
+      "possible_leaders": [
+        "넥스턴앤롤코리아",
+        "꼭승리한다홍명보호",
+        "제노코",
+        "삼성",
+        "BENEFICIARY_DISCOVERY_REQUIRED"
+      ],
+      "supporting_cases": [],
+      "triggering_events": [
+        "EVT-2120a5a8de37",
+        "EVT-7f6b254c941c",
+        "EVT-0b438e8c2304",
+        "EVT-7f4d06a5dcb9",
+        "EVT-9fa6cbb2e995"
+      ]
+    }
+  ],
+  "prediction_id": "PRED-4bd639f1ad87",
+  "schema_version": "nslab.blind_prediction.v1",
+  "sealed_at": "2026-06-24T19:59:31.909234+09:00",
+  "trade_date": "2026-06-24"
+}

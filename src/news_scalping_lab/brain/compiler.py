@@ -1,0 +1,202 @@
+"""Versioned research brain compiler."""
+
+from __future__ import annotations
+
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+from news_scalping_lab.contracts.models import (
+    BrainManifest,
+    ClaimStatus,
+    ConfidenceLabel,
+    MemoryClaim,
+)
+from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.utils import KST, file_sha256, now_kst, stable_id, write_json
+from news_scalping_lab.warehouse import WarehouseStore
+
+BRAIN_FILES = [
+    "00_world_model.md",
+    "01_single_event_patterns.md",
+    "02_theme_formation_patterns.md",
+    "03_beneficiary_discovery.md",
+    "04_leader_selection.md",
+    "05_continuation_patterns.md",
+    "06_failure_modes.md",
+    "07_counterexamples.md",
+    "08_market_memory.md",
+]
+
+
+class BrainCompiler:
+    def __init__(self, root: Path, store: ResearchStore | None = None) -> None:
+        self.root = root
+        self.store = store or ResearchStore(root)
+        self.current_dir = root / "brain" / "current"
+        self.snapshots_dir = root / "brain" / "snapshots"
+        self.diffs_dir = root / "brain" / "diffs"
+        self.claims_dir = root / "memory" / "claims"
+        for directory in (self.current_dir, self.snapshots_dir, self.diffs_dir, self.claims_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def rebuild(self, *, mode: str = "full") -> BrainManifest:
+        if mode != "full":
+            raise ValueError("only full rebuild is currently supported")
+        episodes = self.store.list_accepted()
+        created_at = now_kst()
+        version = stable_id("brain", created_at.isoformat(), len(episodes), length=10)
+        claims = [self._claim_from_episode(episode_id=episode.episode_id) for episode in episodes]
+        covered_ids = [episode.episode_id for episode in episodes]
+        source_hashes = self.store.accepted_hashes()
+        manifest = BrainManifest(
+            brain_version=version,
+            created_at=created_at,
+            accepted_episode_count=len(episodes),
+            covered_episode_count=len(covered_ids),
+            covered_episode_ids=covered_ids,
+            claim_ids=[claim.claim_id for claim in claims],
+            source_hashes=source_hashes,
+            coverage_complete=len(covered_ids) == len(episodes),
+        )
+        self._write_current(manifest, claims)
+        snapshot_dir = self.snapshots_dir / version
+        if snapshot_dir.exists():
+            shutil.rmtree(snapshot_dir)
+        shutil.copytree(self.current_dir, snapshot_dir)
+        (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
+        self._write_diff_stub(version)
+        WarehouseStore(self.root).rebuild_all()
+        return manifest
+
+    def update(self, *, episode_id: str) -> BrainManifest:
+        # The safe incremental implementation is a full replay until drift-aware
+        # merging is calibrated. The command surface stays stable.
+        self.store.get_episode(episode_id)
+        return self.rebuild(mode="full")
+
+    def _claim_from_episode(self, *, episode_id: str) -> MemoryClaim:
+        episode = self.store.get_episode(episode_id)
+        statement = (
+            "Episode contributes an abstract market-mechanism lesson; apply only with "
+            "its conditions, failures, and counterexamples."
+        )
+        mechanism = (
+            "; ".join(episode.blind_analysis.open_world_mechanisms[:3])
+            or episode.blind_analysis.summary
+        )
+        return MemoryClaim(
+            claim_id=stable_id("CL", episode.episode_id, mechanism),
+            statement=statement,
+            mechanism=mechanism,
+            scope="episode-derived abstract mechanism",
+            conditions=[
+                "must be available as of the analysis date",
+                "must be checked against counterexamples",
+            ],
+            failure_modes=["overgeneralization", "hindsight contamination", "directness error"],
+            support_episode_ids=[episode.episode_id],
+            contradiction_episode_ids=[],
+            near_miss_episode_ids=episode.misses,
+            status=ClaimStatus.TENTATIVE,
+            confidence_label=ConfidenceLabel.MEDIUM,
+            first_observed_at=episode.trade_date,
+            last_updated_at=now_kst(),
+            available_from=episode.available_from,
+            provenance=episode.provenance,
+        )
+
+    def _write_current(self, manifest: BrainManifest, claims: list[MemoryClaim]) -> None:
+        self.current_dir.mkdir(parents=True, exist_ok=True)
+        for file_name in BRAIN_FILES:
+            title = file_name.removesuffix(".md").replace("_", " ").title()
+            body = self._brain_file_body(title, manifest, claims)
+            (self.current_dir / file_name).write_text(body, encoding="utf-8")
+        claims_path = self.current_dir / "claims.jsonl"
+        claims_path.write_text(
+            "".join(claim.model_dump_json() + "\n" for claim in claims),
+            encoding="utf-8",
+        )
+        self.claims_dir.mkdir(parents=True, exist_ok=True)
+        (self.claims_dir / "claims.jsonl").write_text(
+            claims_path.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
+        write_json(self.current_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
+
+    def _brain_file_body(
+        self, title: str, manifest: BrainManifest, claims: list[MemoryClaim]
+    ) -> str:
+        lines = [
+            f"# {title}",
+            "",
+            f"Brain version: `{manifest.brain_version}`",
+            f"Accepted episodes covered: {manifest.covered_episode_count}/{manifest.accepted_episode_count}",
+            "",
+            "This file stores abstract mechanisms and cautions. It is not a keyword map, ticker list, or score table.",
+            "",
+        ]
+        if not claims:
+            lines.extend(
+                [
+                    "No accepted research episodes are available yet.",
+                    (
+                        "Daily analysis must still run open-world reasoning from current news "
+                        "and web/company verification."
+                    ),
+                ]
+            )
+        else:
+            for claim in claims:
+                lines.extend(
+                    [
+                        f"## {claim.claim_id}",
+                        "",
+                        claim.statement,
+                        "",
+                        f"- Mechanism: {claim.mechanism}",
+                        f"- Support episodes: {', '.join(claim.support_episode_ids)}",
+                        f"- Available from: {claim.available_from.isoformat()}",
+                        f"- Failure modes: {', '.join(claim.failure_modes)}",
+                        "",
+                    ]
+                )
+        return "\n".join(lines).rstrip() + "\n"
+
+    def _coverage_manifest(self, manifest: BrainManifest) -> dict[str, object]:
+        missing = sorted(set(self.store.accepted_hashes()) - set(manifest.covered_episode_ids))
+        return {
+            "brain_version": manifest.brain_version,
+            "created_at": manifest.created_at.isoformat(),
+            "accepted_episode_count": manifest.accepted_episode_count,
+            "covered_episode_count": manifest.covered_episode_count,
+            "covered_episode_ids": manifest.covered_episode_ids,
+            "missing_episode_ids": missing,
+            "coverage_complete": not missing and manifest.coverage_complete,
+        }
+
+    def _write_diff_stub(self, version: str) -> None:
+        path = self.diffs_dir / f"{version}.md"
+        path.write_text(
+            f"# Brain Diff {version}\n\nFull rebuild generated at {datetime.now(tz=KST).isoformat()}.\n",
+            encoding="utf-8",
+        )
+
+
+def current_brain_version(root: Path) -> str | None:
+    head = root / "brain" / "HEAD"
+    if not head.exists():
+        return None
+    value = head.read_text(encoding="utf-8").strip()
+    return value or None
+
+
+def current_brain_file_hashes(root: Path) -> dict[str, str]:
+    current_dir = root / "brain" / "current"
+    if not current_dir.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(current_dir.glob("*"))
+        if path.is_file()
+    }
