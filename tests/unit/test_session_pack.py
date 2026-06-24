@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
+import pytest
+
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.context.session_pack import export_session_pack
+from news_scalping_lab.context.session_pack import (
+    SessionPackFutureContextError,
+    export_session_pack,
+)
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
@@ -88,6 +93,7 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
     assert manifest["included_episode_ids"] == ["EP-small"]
+    assert manifest["brain_files"] == []
     assert manifest["shard_brain_count"] == 2
     assert set(manifest["shard_brain_files"]) == {
         "memory/shard_brains/current/shard_0001.md",
@@ -124,3 +130,55 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     }
     assert manifest["pack_sha256"]
     assert manifest["token_counts"]["memory_cases.md"] > 0
+
+
+def test_session_pack_blocks_future_episode_in_brain_context(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","PackCo, catalyst","Session pack current news."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    available = _episode(
+        "EP-available",
+        summary="Available lesson.",
+        available_day=date(2030, 1, 10),
+    )
+    future = _episode(
+        "EP-after-cutoff",
+        summary="Future after cutoff lesson.",
+        available_day=date(2030, 1, 10),
+        available_time=time(9, 30, 0),
+    )
+    for episode in (available, future):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    brain_dir = tmp_path / "brain" / "current"
+    brain_dir.mkdir(parents=True, exist_ok=True)
+    (brain_dir / "00_world_model.md").write_text(
+        "Unsafe future context EP-after-cutoff",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SessionPackFutureContextError) as exc_info:
+        export_session_pack(
+            settings,
+            news_csv=news_csv,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="brain",
+        )
+
+    output_dir = tmp_path / "session_packs" / "2030-01-10"
+    manifest = read_json(output_dir / "manifest.json")
+    assert exc_info.value.output_dir == output_dir
+    assert manifest["blocked"] is True
+    assert manifest["brain_files"] == ["brain/current/00_world_model.md"]
+    assert (
+        "session pack context file contains future episode EP-after-cutoff: "
+        "brain/current/00_world_model.md"
+    ) in manifest["errors"]
+    assert not (output_dir / "research_brain.md").exists()

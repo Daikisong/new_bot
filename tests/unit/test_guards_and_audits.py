@@ -371,3 +371,39 @@ def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> N
     assert not result["passed"]
     assert "RUN-missing-time.json: missing trade_date" in result["findings"]
     assert "RUN-missing-time.json: missing cutoff_at" in result["findings"]
+
+
+def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
+    (tmp_path / "session_packs" / "2030-01-10").mkdir(parents=True)
+    (tmp_path / "research" / "accepted").mkdir(parents=True)
+    (tmp_path / "brain" / "current").mkdir(parents=True)
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-after-cutoff.json",
+        {
+            "episode_id": "EP-after-cutoff",
+            "available_from": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    (tmp_path / "brain" / "current" / "00_world_model.md").write_text(
+        "session pack leak EP-after-cutoff",
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "session_packs" / "2030-01-10" / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+            "brain_files": ["brain/current/00_world_model.md"],
+            "shard_brain_files": [],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: context file contains future episode "
+        "EP-after-cutoff: brain/current/00_world_model.md"
+    ) in result["findings"]

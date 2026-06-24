@@ -10,16 +10,20 @@ from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_jso
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
     findings: list[str] = []
-    manifest_paths = sorted((root / "runs" / "manifests").glob("*.json"))
+    manifest_paths = [
+        *sorted((root / "runs" / "manifests").glob("*.json")),
+        *sorted((root / "session_packs").glob("*/manifest.json")),
+    ]
     accepted_episode_available_from = _accepted_episode_available_from(root)
     for path in manifest_paths:
+        manifest_name = _manifest_display_name(root, path)
         manifest = read_json(path)
         manifest_trade_date = _manifest_trade_date(manifest, fallback=trade_date)
         manifest_cutoff_at = _manifest_cutoff_at(manifest)
         if manifest_trade_date is None:
-            findings.append(f"{path.name}: missing trade_date")
+            findings.append(f"{manifest_name}: missing trade_date")
         if manifest_cutoff_at is None:
-            findings.append(f"{path.name}: missing cutoff_at")
+            findings.append(f"{manifest_name}: missing cutoff_at")
         price_snapshot = manifest.get("price_snapshot", {})
         allowed = price_snapshot.get("allowed_through")
         if (
@@ -27,9 +31,9 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             and allowed is not None
             and str(allowed) >= manifest_trade_date.isoformat()
         ):
-            findings.append(f"{path.name}: price allowed_through is not before trade date")
+            findings.append(f"{manifest_name}: price allowed_through is not before trade date")
         _check_retrieved_episode_availability(
-            path.name,
+            manifest_name,
             manifest,
             manifest_cutoff_at,
             accepted_episode_available_from,
@@ -37,7 +41,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         )
         _check_context_files_for_future_episode_ids(
             root,
-            path.name,
+            manifest_name,
             manifest,
             manifest_cutoff_at,
             accepted_episode_available_from,
@@ -47,12 +51,18 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             manifest.get("mode") == "exhaustive"
             and manifest.get("accepted_episode_count") != manifest.get("swept_episode_count")
         ):
-            findings.append(f"{path.name}: exhaustive coverage mismatch")
+            findings.append(f"{manifest_name}: exhaustive coverage mismatch")
     return {
         "passed": not findings,
         "findings": findings,
         "checked_manifests": len(manifest_paths),
     }
+
+
+def _manifest_display_name(root: Path, path: Path) -> str:
+    if path.parent == root / "runs" / "manifests":
+        return path.name
+    return path.relative_to(root).as_posix()
 
 
 def _manifest_trade_date(manifest: dict[object, object], *, fallback: date | None) -> date | None:

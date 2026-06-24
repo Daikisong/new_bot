@@ -18,7 +18,7 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings
-from news_scalping_lab.context.session_pack import export_session_pack
+from news_scalping_lab.context.session_pack import SessionPackFutureContextError, export_session_pack
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostics import build_doctor_report
 from news_scalping_lab.evaluation.evaluator import Evaluator
@@ -238,13 +238,23 @@ def context_export_session_pack(
 ) -> None:
     settings = load_settings()
     parsed_trade_date = _parse_date(trade_date)
-    output = export_session_pack(
-        settings,
-        news_csv=news,
-        trade_date=parsed_trade_date,
-        cutoff_at=parse_datetime(cutoff) if cutoff else None,
-        mode=mode,
-    )
+    try:
+        output = export_session_pack(
+            settings,
+            news_csv=news,
+            trade_date=parsed_trade_date,
+            cutoff_at=parse_datetime(cutoff) if cutoff else None,
+            mode=mode,
+        )
+    except SessionPackFutureContextError as exc:
+        _echo(
+            {
+                "session_pack": exc.output_dir.as_posix(),
+                "manifest": (exc.output_dir / "manifest.json").as_posix(),
+                "errors": exc.errors,
+            }
+        )
+        raise typer.Exit(code=1) from exc
     _echo({"session_pack": output.as_posix()})
 
 

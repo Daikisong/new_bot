@@ -14,6 +14,13 @@ from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import combine_kst, file_sha256, is_available_as_of, sha256_text, write_json
 
 
+class SessionPackFutureContextError(RuntimeError):
+    def __init__(self, output_dir: Path, errors: list[str]) -> None:
+        self.output_dir = output_dir
+        self.errors = errors
+        super().__init__("session pack brain context contains future-unavailable research")
+
+
 def export_session_pack(
     settings: Settings,
     *,
@@ -34,14 +41,15 @@ def export_session_pack(
     unavailable = [
         episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
     ]
-    brain_texts: list[str] = []
-    for path in sorted((settings.project_root / "brain" / "current").glob("*.md")):
-        brain_texts.append(f"\n<!-- {path.name} -->\n{path.read_text(encoding='utf-8')}")
+    brain_text, brain_files = _read_brain_files(
+        settings.project_root / "brain" / "current",
+        root=settings.project_root,
+    )
+    brain_file_hashes = current_brain_file_hashes(settings.project_root)
     shard_brain_text, shard_brain_files, shard_brain_hashes = _read_shard_brains(
         settings.project_root / "memory" / "shard_brains" / "current",
         root=settings.project_root,
     )
-    brain_text = "\n".join(brain_texts)
     brain_text = (
         f"{brain_text.rstrip()}\n\n# Shard Brain Summaries\n\n{shard_brain_text}".strip()
         + "\n"
@@ -96,6 +104,37 @@ def export_session_pack(
         errors.append("session pack omitted available episodes due to token budget")
     if unavailable_ids:
         errors.append("session pack excluded future-unavailable episodes")
+    context_leak_errors = _future_context_leak_errors(
+        root=settings.project_root,
+        relative_paths=[*brain_files, *shard_brain_files],
+        unavailable=unavailable,
+    )
+    errors.extend(context_leak_errors)
+    if context_leak_errors:
+        write_json(
+            output_dir / "manifest.json",
+            {
+                "schema_version": "nslab.session_pack_manifest.v1",
+                "blocked": True,
+                "trade_date": trade_date.isoformat(),
+                "cutoff_at": cutoff_at.isoformat(),
+                "mode": mode,
+                "brain_version": current_brain_version(settings.project_root),
+                "brain_files": brain_files,
+                "brain_file_hashes": brain_file_hashes,
+                "shard_brain_files": shard_brain_files,
+                "shard_brain_file_hashes": shard_brain_hashes,
+                "shard_brain_count": len(shard_brain_files),
+                "news_file": news_csv.as_posix(),
+                "news_sha256": file_sha256(news_csv),
+                "accepted_episode_count": len(all_accepted),
+                "available_episode_count": len(available),
+                "unavailable_episode_ids": unavailable_ids,
+                "truncations": truncations,
+                "errors": errors,
+            },
+        )
+        raise SessionPackFutureContextError(output_dir, context_leak_errors)
 
     (output_dir / "system_instructions.md").write_text(
         fixed_texts["system_instructions.md"],
@@ -120,7 +159,8 @@ def export_session_pack(
         "cutoff_at": cutoff_at.isoformat(),
         "mode": mode,
         "brain_version": current_brain_version(settings.project_root),
-        "brain_file_hashes": current_brain_file_hashes(settings.project_root),
+        "brain_files": brain_files,
+        "brain_file_hashes": brain_file_hashes,
         "shard_brain_files": shard_brain_files,
         "shard_brain_file_hashes": shard_brain_hashes,
         "shard_brain_count": len(shard_brain_files),
@@ -207,6 +247,20 @@ def _read_memory_dir(path: Path) -> str:
     return "\n".join(chunks).strip() + ("\n" if chunks else "")
 
 
+def _read_brain_files(path: Path, *, root: Path) -> tuple[str, list[str]]:
+    if not path.exists():
+        return "", []
+    chunks: list[str] = []
+    files: list[str] = []
+    for file_path in sorted(path.glob("*.md")):
+        if not file_path.is_file():
+            continue
+        relative_path = file_path.relative_to(root).as_posix()
+        files.append(relative_path)
+        chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
+    return "\n".join(chunks).strip() + ("\n" if chunks else ""), files
+
+
 def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[str, str]]:
     if not path.exists():
         return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
@@ -223,6 +277,30 @@ def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[
     if not chunks:
         return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
     return "\n".join(chunks).strip() + "\n", files, hashes
+
+
+def _future_context_leak_errors(
+    *,
+    root: Path,
+    relative_paths: list[str],
+    unavailable: list[ResearchEpisode],
+) -> list[str]:
+    if not unavailable:
+        return []
+    errors: list[str] = []
+    unavailable_ids = [episode.episode_id for episode in unavailable]
+    for relative_path in relative_paths:
+        path = root / relative_path
+        if not path.exists() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for episode_id in unavailable_ids:
+            if episode_id in text:
+                errors.append(
+                    f"session pack context file contains future episode {episode_id}: "
+                    f"{relative_path}"
+                )
+    return errors
 
 
 def _estimate_tokens(text: str) -> int:
