@@ -12,6 +12,12 @@ build/
 data/cache/*
 runs/traces/*
 runs/checkpoints/*
+!runs/checkpoints/red_team/
+!runs/checkpoints/red_team/**
+!runs/checkpoints/brain_context/
+!runs/checkpoints/brain_context/**
+!runs/checkpoints/memory_sweep/
+!runs/checkpoints/memory_sweep/**
 brain/snapshots/*
 brain/diffs/*
 !brain/snapshots/.gitkeep

@@ -1,11 +1,19 @@
 {
-  "accepted_episode_count": 0,
-  "brain_version": "brain-7f053b5ada",
-  "claim_ids": [],
+  "accepted_episode_count": 1,
+  "brain_version": "brain-75addb59ec",
+  "claim_ids": [
+    "CL-45e87b48db82",
+    "CL-b41ce9be7eb2",
+    "CL-f17bbeb03ca3"
+  ],
   "coverage_complete": true,
-  "covered_episode_count": 0,
-  "covered_episode_ids": [],
-  "created_at": "1970-01-01T00:00:00+09:00",
+  "covered_episode_count": 1,
+  "covered_episode_ids": [
+    "EP-5d101eb64102"
+  ],
+  "created_at": "2026-06-25T00:08:25.921660+09:00",
   "schema_version": "nslab.brain_manifest.v1",
-  "source_hashes": {}
+  "source_hashes": {
+    "EP-5d101eb64102": "7aee48bf69855e742283dcb619d1078775e969a9753637b2d50024a085e4feb5"
+  }
 }

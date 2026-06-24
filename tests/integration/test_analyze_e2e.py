@@ -564,6 +564,62 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
 
 
 @pytest.mark.asyncio
+async def test_manifest_brain_context_remains_immutable_after_later_brain_update(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","ProviderCo, new catalyst","Immutable context test."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    available = _retrieval_episode(
+        "EP-before-cutoff",
+        summary="ProviderCo available lesson.",
+        available_day=date(2030, 1, 10),
+    )
+    store.save_episode(available)
+    store.accept(available.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    assert manifest.brain_version is not None
+    assert manifest.brain_version.startswith("brain-")
+    assert all(
+        path.startswith(f"runs/checkpoints/brain_context/{manifest.run_id}/brain/")
+        for path in manifest.brain_files
+    )
+    future = _retrieval_episode(
+        "EP-later-postmortem",
+        summary="ProviderCo future postmortem must not rewrite prior context.",
+        available_day=date(2030, 1, 10),
+        available_time=time(9, 30, 0),
+    )
+    store.save_episode(future)
+    store.accept(future.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    checkpoint_text = "\n".join(
+        (tmp_path / path).read_text(encoding="utf-8")
+        for path in [*manifest.brain_files, *manifest.shard_brain_files]
+    )
+    assert "EP-before-cutoff" in checkpoint_text
+    assert "EP-later-postmortem" not in checkpoint_text
+    assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
+
+
+@pytest.mark.asyncio
 async def test_new_company_candidate_creates_company_memory_candidate(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

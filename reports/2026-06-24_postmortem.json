@@ -1,6 +1,6 @@
 {
-  "blind_prediction_id": "PRED-4bd639f1ad87",
-  "created_at": "2026-06-24T19:40:15.052086+09:00",
+  "blind_prediction_id": "PRED-c5c1a6e9593c",
+  "created_at": "2026-06-25T00:08:25.914762+09:00",
   "outcomes": {
     "BENEFICIARY_DISCOVERY_REQUIRED": {
       "amount": 460000.0,
@@ -97,6 +97,25 @@
       "upper_limit_touched": false,
       "volume": 46000.0
     },
+    "오창테크노폴리스": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
     "제노코": {
       "amount": 460000.0,
       "close_return_pct": 1.0,
@@ -117,6 +136,33 @@
       "volume": 46000.0
     }
   },
+  "performance_metrics": {
+    "average_max_return_top_10": 16.0,
+    "average_max_return_top_20": 16.0,
+    "average_max_return_top_5": 16.0,
+    "beneficiary_recall": null,
+    "candidate_count": 7,
+    "continuation_recall": null,
+    "false_positive_rate": 1.0,
+    "gap_up_hit_rate": 1.0,
+    "high_return_10pct_hit_rate": 1.0,
+    "high_return_15pct_hit_rate": 1.0,
+    "high_return_20pct_hit_rate": 0.0,
+    "high_return_5pct_hit_rate": 1.0,
+    "precision_at_10": 0.0,
+    "precision_at_5": 0.0,
+    "recall_unavailable_reason": "Daily market outcome universe is unavailable; recall requires all upper-limit and high-return symbols, not only predicted candidates.",
+    "single_event_recall": null,
+    "theme_recall": null,
+    "upper_limit_closed_count": 0,
+    "upper_limit_hits_at_10": 0,
+    "upper_limit_hits_at_20": 0,
+    "upper_limit_hits_at_5": 0,
+    "upper_limit_recall_at_10": null,
+    "upper_limit_recall_at_20": null,
+    "upper_limit_recall_at_5": null,
+    "upper_limit_touched_count": 0
+  },
   "postmortem": {
     "failure_codes": [
       "UNKNOWN"
@@ -126,6 +172,7 @@
       "꼭승리한다홍명보호",
       "제노코",
       "삼성",
+      "오창테크노폴리스",
       "BENEFICIARY_DISCOVERY_REQUIRED",
       "D_MINUS_ONE_LEADER_REVIEW"
     ],

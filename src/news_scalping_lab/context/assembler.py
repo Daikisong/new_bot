@@ -122,7 +122,8 @@ class ContextAssembler:
             brain_file_hashes=current_hashes,
             shard_brain_file_hashes=current_shard_hashes,
         ):
-            return BrainContextFiles(
+            return self._write_current_brain_context_checkpoint(
+                run_id=run_id,
                 brain_version=current_brain_version(self.root),
                 brain_file_hashes=current_hashes,
                 shard_brain_file_hashes=current_shard_hashes,
@@ -186,6 +187,35 @@ class ContextAssembler:
             if any(episode_id in text for episode_id in episode_ids):
                 return True
         return False
+
+    def _write_current_brain_context_checkpoint(
+        self,
+        *,
+        run_id: str,
+        brain_version: str | None,
+        brain_file_hashes: dict[str, str],
+        shard_brain_file_hashes: dict[str, str],
+    ) -> BrainContextFiles:
+        root = self.root / "runs" / "checkpoints" / "brain_context" / run_id
+        if root.exists():
+            shutil.rmtree(root)
+        brain_dir = root / "brain"
+        shard_dir = root / "shards"
+        brain_dir.mkdir(parents=True, exist_ok=True)
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        for relative_path in brain_file_hashes:
+            source = self.root / relative_path
+            if source.is_file():
+                shutil.copy2(source, brain_dir / source.name)
+        for relative_path in shard_brain_file_hashes:
+            source = self.root / relative_path
+            if source.is_file():
+                shutil.copy2(source, shard_dir / source.name)
+        return BrainContextFiles(
+            brain_version=brain_version,
+            brain_file_hashes=_file_hashes_relative_to_root(self.root, brain_dir),
+            shard_brain_file_hashes=_file_hashes_relative_to_root(self.root, shard_dir),
+        )
 
     def _write_as_of_brain_context(
         self,

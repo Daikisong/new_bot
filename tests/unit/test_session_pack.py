@@ -2,13 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
-import pytest
-
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.context.session_pack import (
-    SessionPackFutureContextError,
-    export_session_pack,
-)
+from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
@@ -92,15 +87,21 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     assert manifest["accepted_episode_count"] == 4
     assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
-    assert manifest["included_episode_ids"] == ["EP-small"]
-    assert manifest["brain_files"] == []
-    assert manifest["shard_brain_count"] == 2
-    assert set(manifest["shard_brain_files"]) == {
-        "memory/shard_brains/current/shard_0001.md",
-        "memory/shard_brains/current/shard_0002.md",
-    }
+    assert manifest["included_episode_ids"] == []
+    assert manifest["brain_version"].startswith("brain-asof-")
+    assert all(
+        path.startswith("runs/checkpoints/brain_context/SESSION-")
+        for path in manifest["brain_files"]
+    )
+    assert manifest["shard_brain_count"] == 1
+    assert all(
+        path.startswith("runs/checkpoints/brain_context/SESSION-")
+        for path in manifest["shard_brain_files"]
+    )
+    assert set(manifest["brain_file_hashes"]) == set(manifest["brain_files"])
     assert set(manifest["shard_brain_file_hashes"]) == set(manifest["shard_brain_files"])
     assert set(manifest["omitted_episode_ids"]) == {
+        "EP-small",
         "EP-large",
         "EP-future",
         "EP-after-cutoff",
@@ -112,13 +113,13 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     }
     assert "session pack omitted available episodes due to token budget" in manifest["errors"]
     assert "session pack excluded future-unavailable episodes" in manifest["errors"]
-    assert "EP-small" in memory_cases
+    assert "EP-small" not in memory_cases
     assert "EP-large" not in memory_cases
     assert "EP-future" not in memory_cases
     assert "EP-after-cutoff" not in memory_cases
     assert "# Shard Brain Summaries" in research_brain
     assert "Shard Brain 0001" in research_brain
-    assert "Shard Brain 0002" in research_brain
+    assert "EP-small" in research_brain
     assert "EP-large" in research_brain
     assert set(manifest["pack_file_hashes"]) == {
         "system_instructions.md",
@@ -132,7 +133,9 @@ def test_session_pack_manifest_records_omissions_and_hashes(tmp_path) -> None:
     assert manifest["token_counts"]["memory_cases.md"] > 0
 
 
-def test_session_pack_blocks_future_episode_in_brain_context(tmp_path) -> None:
+def test_session_pack_uses_as_of_brain_context_when_current_contains_future_episode(
+    tmp_path,
+) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
     news_csv = tmp_path / "news.csv"
@@ -163,22 +166,22 @@ def test_session_pack_blocks_future_episode_in_brain_context(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(SessionPackFutureContextError) as exc_info:
-        export_session_pack(
-            settings,
-            news_csv=news_csv,
-            trade_date=date(2030, 1, 10),
-            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-            mode="brain",
-        )
+    output_dir = export_session_pack(
+        settings,
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="brain",
+    )
 
-    output_dir = tmp_path / "session_packs" / "2030-01-10"
     manifest = read_json(output_dir / "manifest.json")
-    assert exc_info.value.output_dir == output_dir
-    assert manifest["blocked"] is True
-    assert manifest["brain_files"] == ["brain/current/00_world_model.md"]
-    assert (
-        "session pack context file contains future episode EP-after-cutoff: "
-        "brain/current/00_world_model.md"
-    ) in manifest["errors"]
-    assert not (output_dir / "research_brain.md").exists()
+    research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
+    assert manifest["brain_version"].startswith("brain-asof-")
+    assert all(
+        path.startswith("runs/checkpoints/brain_context/SESSION-")
+        for path in manifest["brain_files"]
+    )
+    assert "session pack excluded future-unavailable episodes" in manifest["errors"]
+    assert "EP-available" in research_brain
+    assert "EP-after-cutoff" not in research_brain
+    assert not any("context file contains future episode" in item for item in manifest["errors"])

@@ -1,4 +1,5 @@
 {
+  "available_from": "2026-06-25T00:00:00+09:00",
   "blind_analysis": {
     "excluded_after_cutoff_source_ids": [],
     "initial_uncertainties": [
@@ -28,12 +29,19 @@
         "source_id": "SRC-7b0697243fd3",
         "source_type": "final_synthesis_blind_analysis",
         "uri": "prompt://final_synthesis/b2eeb6402e720d876ddef49d2d4e1058e1474a25f0b18310261ce89438fc8010"
+      },
+      {
+        "content_sha256": "33724c56be9e09e847dababfa083304e9acd483f64335d21498a1a574bd86c6f",
+        "excerpt": null,
+        "observed_at": "2026-06-25T00:08:12.703225+09:00",
+        "source_id": "SRC-b165db720621",
+        "source_type": "sealed_blind_prediction",
+        "uri": "C:/Users/eorb9/projects/news_bot/predictions/2026-06-24.json"
       }
     ],
     "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data."
   },
-  "blind_artifact_sha256": "32e59953e6bac0e386a43866308c8f609130508d5e6583edb4d764171711628b",
-  "candidates": [
+  "blind_predictions": [
     {
       "causal_chain": [
         "news event observed before cutoff",
@@ -468,46 +476,272 @@
       "why_now": "Continuation is evaluated separately from current-news directness."
     }
   ],
-  "context_manifest_id": "RUN-a5840d2def32",
-  "created_at": "2026-06-25T00:08:12.703174+09:00",
+  "counterexamples": [],
+  "created_at": "2026-06-25T00:08:25.921660+09:00",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
-  "dominant_sectors": [
+  "episode_id": "EP-5d101eb64102",
+  "event_ticker_edges": [],
+  "input_news_files": [],
+  "input_news_hashes": [],
+  "lessons": [
     {
-      "contradicting_cases": [],
-      "direct_beneficiaries": [
-        "넥스턴앤롤코리아",
-        "꼭승리한다홍명보호",
-        "제노코"
+      "available_from": "2026-06-25T00:00:00+09:00",
+      "claim_id": "CL-b41ce9be7eb2",
+      "conditions": [
+        "available only after the evaluated trade date",
+        "compare against the sealed blind prediction before reuse"
       ],
-      "expected_breadth": "unknown until web and memory evidence are compared",
-      "failure_conditions": [
-        "no listed entity relation",
-        "event was already known before the window",
-        "memory counterexamples dominate supporting cases"
+      "confidence_label": "medium",
+      "contradiction_episode_ids": [],
+      "failure_modes": [
+        "UNKNOWN"
       ],
-      "formation_mechanism": "broad catalyst -> direct beneficiary check -> indirect capacity path",
-      "indirect_beneficiaries": [
-        "BENEFICIARY_DISCOVERY_REQUIRED"
+      "first_observed_at": "2026-06-24",
+      "last_updated_at": "2026-06-25T00:08:25.921544+09:00",
+      "mechanism": "postmortem learning from sealed blind prediction and evaluation-only outcomes",
+      "near_miss_episode_ids": [],
+      "provenance": [
+        {
+          "content_sha256": "03cb9e3f6a885acdde24046194db41511a0785174829c78cff78db9ede44ab02",
+          "excerpt": null,
+          "observed_at": "2026-06-25T00:08:25.921544+09:00",
+          "source_id": "SRC-6b3c6caf9d84",
+          "source_type": "evaluation_postmortem",
+          "uri": "C:/Users/eorb9/projects/news_bot/reports/2026-06-24_postmortem.json"
+        }
       ],
-      "name": "open-world catalyst cluster",
-      "narrative_beneficiaries": [],
-      "possible_leaders": [
-        "넥스턴앤롤코리아",
-        "꼭승리한다홍명보호",
-        "제노코"
+      "scope": "postmortem evaluation learning",
+      "statement": "Use postmortem lessons only from the next trading day forward.",
+      "status": "tentative",
+      "support_episode_ids": [
+        "EP-5d101eb64102"
+      ]
+    },
+    {
+      "available_from": "2026-06-25T00:00:00+09:00",
+      "claim_id": "CL-f17bbeb03ca3",
+      "conditions": [
+        "available only after the evaluated trade date",
+        "compare against the sealed blind prediction before reuse"
       ],
-      "supporting_cases": [],
-      "triggering_events": [
-        "EVT-2120a5a8de37",
-        "EVT-7f6b254c941c",
-        "EVT-0b438e8c2304",
-        "EVT-7f4d06a5dcb9",
-        "EVT-9fa6cbb2e995"
+      "confidence_label": "medium",
+      "contradiction_episode_ids": [],
+      "failure_modes": [
+        "UNKNOWN"
+      ],
+      "first_observed_at": "2026-06-24",
+      "last_updated_at": "2026-06-25T00:08:25.921544+09:00",
+      "mechanism": "postmortem learning from sealed blind prediction and evaluation-only outcomes",
+      "near_miss_episode_ids": [],
+      "provenance": [
+        {
+          "content_sha256": "03cb9e3f6a885acdde24046194db41511a0785174829c78cff78db9ede44ab02",
+          "excerpt": null,
+          "observed_at": "2026-06-25T00:08:25.921544+09:00",
+          "source_id": "SRC-6b3c6caf9d84",
+          "source_type": "evaluation_postmortem",
+          "uri": "C:/Users/eorb9/projects/news_bot/reports/2026-06-24_postmortem.json"
+        }
+      ],
+      "scope": "postmortem evaluation learning",
+      "statement": "Do not rewrite sealed blind reasoning after outcomes are known.",
+      "status": "tentative",
+      "support_episode_ids": [
+        "EP-5d101eb64102"
       ]
     }
   ],
-  "prediction_id": "PRED-c5c1a6e9593c",
-  "schema_version": "nslab.blind_prediction.v1",
-  "sealed_at": "2026-06-25T00:08:12.703225+09:00",
+  "misses": [],
+  "observed_events": [],
+  "outcome_labels": {
+    "1:UNKNOWN:넥스턴앤롤코리아": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "2:UNKNOWN:꼭승리한다홍명보호": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "3:UNKNOWN:제노코": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "4:UNKNOWN:삼성": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "5:UNKNOWN:오창테크노폴리스": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "6:UNKNOWN:BENEFICIARY_DISCOVERY_REQUIRED": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    },
+    "7:UNKNOWN:D_MINUS_ONE_LEADER_REVIEW": {
+      "amount": 460000.0,
+      "close_return_pct": 1.0,
+      "flags": [],
+      "intraday_fields_unavailable": [
+        "first_upper_limit_touch_time",
+        "first_one_minute_return",
+        "volatility_interruptions"
+      ],
+      "intraday_high_return_pct": 16.0,
+      "market_cap_previous_close": 46000000.0,
+      "one_price_upper_limit": false,
+      "open_gap_pct": 4.0,
+      "turnover_ratio": 6.0,
+      "upper_limit_closed": false,
+      "upper_limit_released": false,
+      "upper_limit_touched": false,
+      "volume": 46000.0
+    }
+  },
+  "postmortem": {
+    "failure_codes": [
+      "UNKNOWN"
+    ],
+    "false_positives": [
+      "넥스턴앤롤코리아",
+      "꼭승리한다홍명보호",
+      "제노코",
+      "삼성",
+      "오창테크노폴리스",
+      "BENEFICIARY_DISCOVERY_REQUIRED",
+      "D_MINUS_ONE_LEADER_REVIEW"
+    ],
+    "hits": [],
+    "lessons": [
+      "Use postmortem lessons only from the next trading day forward.",
+      "Do not rewrite sealed blind reasoning after outcomes are known."
+    ],
+    "misses": [],
+    "provenance": [
+      {
+        "content_sha256": "03cb9e3f6a885acdde24046194db41511a0785174829c78cff78db9ede44ab02",
+        "excerpt": null,
+        "observed_at": "2026-06-25T00:08:25.921544+09:00",
+        "source_id": "SRC-6b3c6caf9d84",
+        "source_type": "evaluation_postmortem",
+        "uri": "C:/Users/eorb9/projects/news_bot/reports/2026-06-24_postmortem.json"
+      }
+    ],
+    "summary": "Mock postmortem generated from sealed blind prediction and evaluation-only outcomes."
+  },
+  "price_source_snapshot": {
+    "outcome_trade_date": "2026-06-24",
+    "source": "mock-price"
+  },
+  "provenance": [
+    {
+      "content_sha256": "33724c56be9e09e847dababfa083304e9acd483f64335d21498a1a574bd86c6f",
+      "excerpt": null,
+      "observed_at": "2026-06-25T00:08:12.703225+09:00",
+      "source_id": "SRC-b165db720621",
+      "source_type": "sealed_blind_prediction",
+      "uri": "C:/Users/eorb9/projects/news_bot/predictions/2026-06-24.json"
+    },
+    {
+      "content_sha256": "03cb9e3f6a885acdde24046194db41511a0785174829c78cff78db9ede44ab02",
+      "excerpt": null,
+      "observed_at": "2026-06-25T00:08:25.921544+09:00",
+      "source_id": "SRC-6b3c6caf9d84",
+      "source_type": "evaluation_postmortem",
+      "uri": "C:/Users/eorb9/projects/news_bot/reports/2026-06-24_postmortem.json"
+    }
+  ],
+  "research_version": "evaluation-postmortem-v1",
+  "schema_version": "nslab.research_episode.v1",
   "trade_date": "2026-06-24"
 }

@@ -141,6 +141,50 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
     assert "Use postmortem lessons only from the next trading day forward." in claims_text
 
 
+def test_evaluate_uses_stable_episode_id_for_same_sealed_prediction(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+
+    evaluator = Evaluator(tmp_path, price_source=MockPriceSource())
+    first = evaluator.evaluate(trade_date=trade_day)
+    second = evaluator.evaluate(trade_date=trade_day)
+
+    assert second.episode_id == first.episode_id
+    assert second.episode_path == first.episode_path
+    assert [episode.episode_id for episode in ResearchStore(tmp_path).list_episodes()] == [
+        first.episode_id
+    ]
+
+
+def test_brain_update_accepts_evaluation_episode_by_trade_date(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+
+    result = Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+    manifest = BrainCompiler(tmp_path).update(episode_id=trade_day.isoformat())
+
+    assert result.episode_id in manifest.covered_episode_ids
+    assert [episode.episode_id for episode in ResearchStore(tmp_path).list_accepted()] == [
+        result.episode_id
+    ]
+    claims_text = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "Use postmortem lessons only from the next trading day forward." in claims_text
+
+
 def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

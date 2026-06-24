@@ -187,7 +187,11 @@ def brain_rebuild(mode: str = "full") -> None:
 @brain_app.command("update")
 def brain_update(episode: Annotated[str, typer.Option("--episode")]) -> None:
     settings = load_settings()
-    manifest = BrainCompiler(settings.project_root).update(episode_id=episode)
+    try:
+        manifest = BrainCompiler(settings.project_root).update(episode_id=episode)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     _echo(manifest.model_dump(mode="json"))
 
 

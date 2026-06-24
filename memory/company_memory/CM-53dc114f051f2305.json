@@ -1,0 +1,46 @@
+{
+  "aliases": [
+    "삼성"
+  ],
+  "business_descriptions": [
+    "Candidate generated from pre-cutoff news; verify listing, ownership, business, and relation."
+  ],
+  "company_name": "삼성",
+  "contradictory_relations": [
+    "listing status may be unverified",
+    "event may be stale or economically indirect",
+    "ticker or listing status is unverified"
+  ],
+  "customers": [],
+  "known_at": "2026-06-24T08:59:59+09:00",
+  "locations": [],
+  "prior_leader_occurrences": [],
+  "prior_market_narratives": [
+    "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+    "The entity appears in the current pre-cutoff news batch."
+  ],
+  "provenance": [
+    {
+      "content_sha256": "93b4ae4b5970960e72445d615523e52984b39ca94e0311eab173e9a493734ce4",
+      "excerpt": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "observed_at": "2026-06-24T08:59:59+09:00",
+      "source_id": "SRC-53fc58f4b03a",
+      "source_type": "blind_analysis_company_memory_candidate",
+      "uri": "predictions/2026-06-24.json"
+    },
+    {
+      "content_sha256": "33724c56be9e09e847dababfa083304e9acd483f64335d21498a1a574bd86c6f",
+      "excerpt": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "observed_at": "2026-06-24T08:59:59+09:00",
+      "source_id": "SRC-53fc58f4b03a",
+      "source_type": "blind_analysis_company_memory_candidate",
+      "uri": "predictions/2026-06-24.json"
+    }
+  ],
+  "supply_chain_roles": [
+    "news event observed before cutoff",
+    "direct entity relevance investigated",
+    "counterarguments retained for final synthesis"
+  ],
+  "ticker": "UNKNOWN"
+}

@@ -134,7 +134,6 @@ class Evaluator:
             "evaluation",
             trade_date.isoformat(),
             prediction.prediction_id,
-            postmortem_hash,
         )
         evaluation_provenance = Provenance(
             source_id=stable_id("SRC", postmortem_path.as_posix(), postmortem_hash),

@@ -1,0 +1,12 @@
+{
+  "brain_version": "brain-75addb59ec",
+  "covered_episode_ids": [
+    "EP-5d101eb64102"
+  ],
+  "schema_version": "nslab.shard_brain_manifest.v1",
+  "shard_count": 1,
+  "shard_episode_count": 10,
+  "shard_files": [
+    "memory/shard_brains/current/shard_0001.md"
+  ]
+}

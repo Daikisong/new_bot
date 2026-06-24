@@ -6,13 +6,20 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from news_scalping_lab.brain.compiler import current_brain_file_hashes, current_brain_version
 from news_scalping_lab.config import Settings
+from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import combine_kst, file_sha256, is_available_as_of, sha256_text, write_json
+from news_scalping_lab.utils import (
+    combine_kst,
+    file_sha256,
+    is_available_as_of,
+    sha256_text,
+    stable_id,
+    write_json,
+)
 
 
 class SessionPackFutureContextError(RuntimeError):
@@ -35,6 +42,7 @@ def export_session_pack(
     output_dir = settings.path(settings.output_dirs.session_packs) / trade_date.isoformat()
     output_dir.mkdir(parents=True, exist_ok=True)
     batch = load_news_csv(news_csv, trade_date=trade_date)
+    news_sha256 = file_sha256(news_csv)
     store = ResearchStore(settings.project_root)
     all_accepted = store.list_accepted()
     available = [
@@ -43,14 +51,28 @@ def export_session_pack(
     unavailable = [
         episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
     ]
-    brain_text, brain_files = _read_brain_files(
-        settings.project_root / "brain" / "current",
-        root=settings.project_root,
+    context_run_id = stable_id(
+        "SESSION",
+        trade_date.isoformat(),
+        cutoff_at.isoformat(),
+        mode,
+        news_sha256,
     )
-    brain_file_hashes = current_brain_file_hashes(settings.project_root)
-    shard_brain_text, shard_brain_files, shard_brain_hashes = _read_shard_brains(
-        settings.project_root / "memory" / "shard_brains" / "current",
-        root=settings.project_root,
+    brain_context = ContextAssembler(settings.project_root, store=store)._brain_context_files(
+        run_id=context_run_id,
+        cutoff_at=cutoff_at,
+        accepted=available,
+    )
+    brain_files = list(brain_context.brain_file_hashes)
+    brain_file_hashes = brain_context.brain_file_hashes
+    shard_brain_files = list(brain_context.shard_brain_file_hashes)
+    shard_brain_hashes = brain_context.shard_brain_file_hashes
+    brain_text = _read_context_files(settings.project_root, brain_files, suffixes={".md"})
+    shard_brain_text = _read_context_files(
+        settings.project_root,
+        shard_brain_files,
+        suffixes={".md"},
+        empty_message="No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n",
     )
     brain_text = (
         f"{brain_text.rstrip()}\n\n# Shard Brain Summaries\n\n{shard_brain_text}".strip()
@@ -121,14 +143,14 @@ def export_session_pack(
                 "trade_date": trade_date.isoformat(),
                 "cutoff_at": cutoff_at.isoformat(),
                 "mode": mode,
-                "brain_version": current_brain_version(settings.project_root),
+                "brain_version": brain_context.brain_version,
                 "brain_files": brain_files,
                 "brain_file_hashes": brain_file_hashes,
                 "shard_brain_files": shard_brain_files,
                 "shard_brain_file_hashes": shard_brain_hashes,
                 "shard_brain_count": len(shard_brain_files),
                 "news_file": news_csv.as_posix(),
-                "news_sha256": file_sha256(news_csv),
+                "news_sha256": news_sha256,
                 "accepted_episode_count": len(all_accepted),
                 "available_episode_count": len(available),
                 "unavailable_episode_ids": unavailable_ids,
@@ -160,14 +182,14 @@ def export_session_pack(
         "trade_date": trade_date.isoformat(),
         "cutoff_at": cutoff_at.isoformat(),
         "mode": mode,
-        "brain_version": current_brain_version(settings.project_root),
+        "brain_version": brain_context.brain_version,
         "brain_files": brain_files,
         "brain_file_hashes": brain_file_hashes,
         "shard_brain_files": shard_brain_files,
         "shard_brain_file_hashes": shard_brain_hashes,
         "shard_brain_count": len(shard_brain_files),
         "news_file": news_csv.as_posix(),
-        "news_sha256": file_sha256(news_csv),
+        "news_sha256": news_sha256,
         "accepted_episode_count": len(all_accepted),
         "available_episode_count": len(available),
         "included_episode_count": len(included),
@@ -237,6 +259,24 @@ def _episode_block(episode: ResearchEpisode) -> str:
             postmortem.rstrip(),
         ]
     ).strip()
+
+
+def _read_context_files(
+    root: Path,
+    relative_paths: list[str],
+    *,
+    suffixes: set[str],
+    empty_message: str = "",
+) -> str:
+    chunks: list[str] = []
+    for relative_path in sorted(relative_paths):
+        file_path = root / relative_path
+        if not file_path.is_file() or file_path.suffix.lower() not in suffixes:
+            continue
+        chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
+    if not chunks:
+        return empty_message
+    return "\n".join(chunks).strip() + "\n"
 
 
 def _read_memory_dir(path: Path) -> str:

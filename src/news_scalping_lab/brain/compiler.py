@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
@@ -99,14 +99,38 @@ class BrainCompiler:
     def update(self, *, episode_id: str) -> BrainManifest:
         # The safe incremental implementation is a full replay until drift-aware
         # merging is calibrated. The command surface stays stable.
-        self.store.get_episode(episode_id)
+        episode = self._resolve_update_episode(episode_id)
         accepted_ids = {episode.episode_id for episode in self.store.list_accepted()}
-        if episode_id not in accepted_ids:
-            raise ValueError(
-                "brain update requires an accepted episode; run "
-                f"`nslab research accept {episode_id}` first"
-            )
+        if episode.episode_id not in accepted_ids:
+            if episode.research_version == "evaluation-postmortem-v1":
+                self.store.accept(episode.episode_id)
+            else:
+                raise ValueError(
+                    "brain update requires an accepted episode; run "
+                    f"`nslab research accept {episode.episode_id}` first"
+                )
         return self.rebuild(mode="full")
+
+    def _resolve_update_episode(self, identifier: str) -> ResearchEpisode:
+        try:
+            return self.store.get_episode(identifier)
+        except FileNotFoundError as exc:
+            try:
+                trade_date = date.fromisoformat(identifier)
+            except ValueError:
+                raise FileNotFoundError(f"episode not found: {identifier}") from exc
+        matches = [
+            episode
+            for episode in [*self.store.list_accepted(), *self.store.list_episodes()]
+            if episode.trade_date == trade_date
+            and episode.research_version == "evaluation-postmortem-v1"
+        ]
+        if not matches:
+            raise ValueError(
+                "brain update could not resolve a postmortem episode for trade date "
+                f"{identifier}; run `nslab evaluate --trade-date {identifier}` first"
+            )
+        return max(matches, key=lambda episode: (episode.created_at, episode.episode_id))
 
     def _claim_from_episode(self, *, episode_id: str, last_updated_at: datetime) -> MemoryClaim:
         episode = self.store.get_episode(episode_id)
