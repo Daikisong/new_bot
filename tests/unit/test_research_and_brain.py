@@ -148,6 +148,28 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     assert second_claims == first_claims
 
 
+def test_brain_update_requires_accepted_episode(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Unaccepted update note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    compiler = BrainCompiler(tmp_path)
+
+    try:
+        compiler.update(episode_id=episode.episode_id)
+    except ValueError as exc:
+        assert "brain update requires an accepted episode" in str(exc)
+    else:
+        raise AssertionError("brain update should reject unaccepted episodes")
+
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    manifest = compiler.update(episode_id=episode.episode_id)
+
+    assert manifest.accepted_episode_count == 1
+    assert episode.episode_id in manifest.covered_episode_ids
+
+
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:
     source = tmp_path / "freeform_notes.md"
     source.write_text("Free-form research note without a parseable date.", encoding="utf-8")

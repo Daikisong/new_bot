@@ -97,6 +97,12 @@ class BrainCompiler:
         # The safe incremental implementation is a full replay until drift-aware
         # merging is calibrated. The command surface stays stable.
         self.store.get_episode(episode_id)
+        accepted_ids = {episode.episode_id for episode in self.store.list_accepted()}
+        if episode_id not in accepted_ids:
+            raise ValueError(
+                "brain update requires an accepted episode; run "
+                f"`nslab research accept {episode_id}` first"
+            )
         return self.rebuild(mode="full")
 
     def _claim_from_episode(self, *, episode_id: str, last_updated_at: datetime) -> MemoryClaim:
