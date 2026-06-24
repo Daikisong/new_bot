@@ -31,6 +31,9 @@ class ContextAssembler:
             if episode.available_from.date() <= trade_date
         ]
         accepted_ids = [episode.episode_id for episode in accepted]
+        counterexample_ids = [
+            episode.episode_id for episode in accepted if episode.counterexamples
+        ]
         swept_ids = accepted_ids if mode in {"exhaustive", "brain"} else []
         errors: list[str] = []
         if mode == "exhaustive" and len(swept_ids) != len(accepted_ids):
@@ -47,7 +50,7 @@ class ContextAssembler:
             swept_episode_count=len(swept_ids),
             swept_episode_ids=swept_ids,
             retrieved_episode_ids=retrieved_episode_ids or [],
-            counterexample_episode_ids=[],
+            counterexample_episode_ids=counterexample_ids,
             token_counts={},
             truncations=[],
             web_queries=web_queries or [],

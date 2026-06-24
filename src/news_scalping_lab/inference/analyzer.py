@@ -33,6 +33,7 @@ from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
+from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import canonical_json, now_kst, read_json, sha256_text, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
@@ -302,7 +303,7 @@ class DailyAnalyzer:
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
             "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),
             "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
-            "counterexamples": manifest.counterexample_episode_ids,
+            "counterexamples": self._read_counterexample_context(manifest),
             "candidate_research": prediction.model_dump(mode="json"),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
@@ -384,6 +385,28 @@ class DailyAnalyzer:
                 }
             )
         return files
+
+    def _read_counterexample_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        store = ResearchStore(self.root)
+        contexts: list[dict[str, Any]] = []
+        for episode_id in manifest.counterexample_episode_ids:
+            try:
+                episode = store.get_episode(episode_id)
+            except FileNotFoundError:
+                contexts.append({"episode_id": episode_id, "missing": True})
+                continue
+            contexts.append(
+                {
+                    "episode_id": episode.episode_id,
+                    "trade_date": episode.trade_date.isoformat(),
+                    "available_from": episode.available_from.isoformat(),
+                    "counterexamples": [
+                        claim.model_dump(mode="json") for claim in episode.counterexamples
+                    ],
+                    "misses": episode.misses,
+                }
+            )
+        return contexts
 
     def _read_json_artifacts(self, relative_paths: list[str]) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []

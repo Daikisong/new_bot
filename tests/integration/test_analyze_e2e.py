@@ -16,10 +16,14 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     Candidate,
+    ClaimStatus,
+    ConfidenceLabel,
+    MemoryClaim,
     OutcomeLabels,
     PathType,
     RedTeamArtifact,
     RedTeamFinding,
+    ResearchEpisode,
 )
 from news_scalping_lab.inference.analyzer import DailyAnalyzer, ExhaustiveCoverageError
 from news_scalping_lab.prices.base import PriceRecord
@@ -178,6 +182,39 @@ class FutureOnlyWebProvider:
         return result.published_at is None or result.published_at <= cutoff_at
 
 
+def _episode_with_counterexample() -> ResearchEpisode:
+    trade_day = date(2030, 1, 9)
+    available_from = datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST)
+    return ResearchEpisode(
+        episode_id="EP-counterexample",
+        trade_date=trade_day,
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test-v1",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(
+            summary="Counterexample research summary.",
+            open_world_mechanisms=["same-looking catalyst -> weak directness failure"],
+        ),
+        counterexamples=[
+            MemoryClaim(
+                claim_id="CL-counterexample",
+                statement="Same-looking catalyst failed when direct listed-entity ownership was absent.",
+                mechanism="directness failure counterexample",
+                scope="counterexample fixture",
+                conditions=["verify economic ownership before leader selection"],
+                failure_modes=["directness error"],
+                support_episode_ids=["EP-counterexample"],
+                status=ClaimStatus.DISPUTED,
+                confidence_label=ConfidenceLabel.MEDIUM,
+                available_from=available_from,
+            )
+        ],
+        misses=["loose narrative relation"],
+        available_from=available_from,
+    )
+
+
 @pytest.mark.asyncio
 async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
@@ -303,6 +340,38 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
+
+
+@pytest.mark.asyncio
+async def test_final_synthesis_receives_counterexample_context(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","CounterCo, catalyst","Counterexample context should be visible."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    episode = _episode_with_counterexample()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    llm = RecordingBlindLLM()
+
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    final_prompt = str(llm.calls[2]["prompt"])
+    assert analysis.context_manifest.counterexample_episode_ids == ["EP-counterexample"]
+    assert "Same-looking catalyst failed" in final_prompt
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["counterexample_episode_ids"] == ["EP-counterexample"]
 
 
 @pytest.mark.asyncio
