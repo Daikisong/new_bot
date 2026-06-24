@@ -118,6 +118,13 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
     assert episode.postmortem is not None
     assert episode.blind_predictions[0].company_name == "EvaluationCandidate"
     assert len(episode.outcome_labels) == 1
+    assert episode.lessons
+    assert episode.lessons[0].statement == (
+        "Use postmortem lessons only from the next trading day forward."
+    )
+    assert episode.lessons[0].support_episode_ids == [episode.episode_id]
+    assert episode.lessons[0].available_from.date() == date(2030, 1, 11)
+    assert episode.lessons[0].provenance[0].source_type == "evaluation_postmortem"
     assert {item.source_type for item in episode.provenance} == {
         "sealed_blind_prediction",
         "evaluation_postmortem",
@@ -125,8 +132,13 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
 
     store.accept(episode.episode_id)
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    claims_text = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(
+        encoding="utf-8"
+    )
     assert manifest.accepted_episode_count == 1
     assert episode.episode_id in manifest.covered_episode_ids
+    assert episode.lessons[0].claim_id in manifest.claim_ids
+    assert "Use postmortem lessons only from the next trading day forward." in claims_text
 
 
 def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> None:

@@ -10,8 +10,11 @@ from news_scalping_lab.config import Settings, load_settings
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
     Candidate,
+    ClaimStatus,
+    ConfidenceLabel,
     EvaluationMetrics,
     FailureCode,
+    MemoryClaim,
     OutcomeLabels,
     PathType,
     Postmortem,
@@ -148,6 +151,16 @@ class Evaluator:
             observed_at=prediction.sealed_at or prediction.created_at,
         )
         available_from = datetime.combine(next_calendar_day(trade_date), time(0, 0, 0), tzinfo=KST)
+        postmortem_with_provenance = postmortem.model_copy(
+            update={"provenance": [*postmortem.provenance, evaluation_provenance]}
+        )
+        lesson_claims = _postmortem_lesson_claims(
+            episode_id=episode_id,
+            trade_date=trade_date,
+            available_from=available_from,
+            postmortem=postmortem_with_provenance,
+            provenance=evaluation_provenance,
+        )
         return ResearchEpisode(
             episode_id=episode_id,
             trade_date=trade_date,
@@ -170,12 +183,10 @@ class Evaluator:
             ),
             blind_predictions=prediction.candidates,
             outcome_labels=outcome_labels,
-            postmortem=postmortem.model_copy(
-                update={"provenance": [*postmortem.provenance, evaluation_provenance]}
-            ),
+            postmortem=postmortem_with_provenance,
             observed_events=[],
             event_ticker_edges=[],
-            lessons=[],
+            lessons=lesson_claims,
             counterexamples=[],
             misses=postmortem.misses,
             provenance=[prediction_provenance, evaluation_provenance],
@@ -256,6 +267,42 @@ def _build_metrics(
             1 for _, outcome in ranked_outcomes if outcome.upper_limit_closed
         ),
     )
+
+
+def _postmortem_lesson_claims(
+    *,
+    episode_id: str,
+    trade_date: date,
+    available_from: datetime,
+    postmortem: Postmortem,
+    provenance: Provenance,
+) -> list[MemoryClaim]:
+    claims: list[MemoryClaim] = []
+    for index, lesson in enumerate(postmortem.lessons, start=1):
+        claims.append(
+            MemoryClaim(
+                claim_id=stable_id("CL", "evaluation", episode_id, str(index), lesson),
+                statement=lesson,
+                mechanism="postmortem learning from sealed blind prediction and evaluation-only outcomes",
+                scope="postmortem evaluation learning",
+                conditions=[
+                    "available only after the evaluated trade date",
+                    "compare against the sealed blind prediction before reuse",
+                ],
+                failure_modes=[str(code) for code in postmortem.failure_codes]
+                or ["none recorded"],
+                support_episode_ids=[episode_id],
+                contradiction_episode_ids=[],
+                near_miss_episode_ids=postmortem.misses,
+                status=ClaimStatus.TENTATIVE,
+                confidence_label=ConfidenceLabel.MEDIUM,
+                first_observed_at=trade_date,
+                last_updated_at=provenance.observed_at or available_from,
+                available_from=available_from,
+                provenance=[provenance],
+            )
+        )
+    return claims
 
 
 def _upper_limit_hits_at(
