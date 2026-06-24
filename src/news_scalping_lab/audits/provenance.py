@@ -23,13 +23,12 @@ def audit_provenance(root: Path) -> dict[str, object]:
         manifest = _check_context_manifest(root, path, context_manifest_id, findings)
         _check_report_link(root, path, context_manifest_id, findings)
         if manifest is not None:
-            prompt_hashes = manifest.get("prompt_hashes", {})
-            if not isinstance(prompt_hashes, dict) or not prompt_hashes.get("blind_analysis"):
-                findings.append(f"{path.name}: context manifest missing blind_analysis prompt hash")
+            prompt_hashes = _check_manifest_basics(path, prediction, manifest, findings)
             if not isinstance(manifest.get("price_snapshot"), dict):
                 findings.append(f"{path.name}: context manifest missing price_snapshot")
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
+            _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
         for candidate in prediction.get("candidates", []):
             if not isinstance(candidate, dict):
                 findings.append(f"{path.name}: candidate is not an object")
@@ -48,6 +47,36 @@ def audit_provenance(root: Path) -> dict[str, object]:
         "findings": findings,
         "checked_predictions": checked_predictions,
     }
+
+
+def _check_manifest_basics(
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> dict[str, Any]:
+    prompt_hashes = manifest.get("prompt_hashes", {})
+    if not isinstance(prompt_hashes, dict):
+        findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
+        prompt_hashes = {}
+    if not prompt_hashes.get("blind_analysis"):
+        findings.append(f"{prediction_path.name}: context manifest missing blind_analysis prompt hash")
+
+    for field in ("trade_date", "cutoff_at"):
+        prediction_value = prediction.get(field)
+        manifest_value = manifest.get(field)
+        if prediction_value is not None and prediction_value != manifest_value:
+            findings.append(f"{prediction_path.name}: context manifest {field} mismatch")
+
+    token_counts = manifest.get("token_counts", {})
+    final_synthesis_was_run = (
+        "final_synthesis" in prompt_hashes
+        or isinstance(token_counts, dict)
+        and "final_synthesis_prompt" in token_counts
+    )
+    if final_synthesis_was_run and not prompt_hashes.get("final_synthesis"):
+        findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
+    return prompt_hashes
 
 
 def _check_context_manifest(
@@ -69,6 +98,103 @@ def _check_context_manifest(
     if manifest.get("run_id") != context_manifest_id:
         findings.append(f"{prediction_path.name}: context manifest run_id mismatch")
     return manifest
+
+
+def _check_red_team_artifacts(
+    root: Path,
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    manifest: dict[str, Any],
+    prompt_hashes: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_paths = manifest.get("red_team_artifacts", [])
+    if not artifact_paths:
+        return
+    if not isinstance(artifact_paths, list) or not all(
+        isinstance(path, str) and path for path in artifact_paths
+    ):
+        findings.append(f"{prediction_path.name}: context manifest red_team_artifacts is invalid")
+        return
+
+    red_team_prompt_hash = prompt_hashes.get("red_team_candidate_review")
+    if not red_team_prompt_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing red_team_candidate_review prompt hash"
+        )
+    if not prompt_hashes.get("final_synthesis"):
+        findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
+
+    candidates = prediction.get("candidates", [])
+    candidate_count = len(candidates) if isinstance(candidates, list) else None
+    context_manifest_id = manifest.get("run_id")
+    for artifact_ref in artifact_paths:
+        artifact_path = _resolve_manifest_path(root, artifact_ref)
+        if artifact_path is None:
+            findings.append(
+                f"{prediction_path.name}: red-team artifact path escapes project root: {artifact_ref}"
+            )
+            continue
+        if not artifact_path.exists():
+            findings.append(f"{prediction_path.name}: red-team artifact not found: {artifact_ref}")
+            continue
+        artifact = _read_json_object(artifact_path, findings)
+        if artifact is None:
+            continue
+        _check_red_team_artifact(
+            prediction_path,
+            artifact_ref,
+            artifact,
+            context_manifest_id=context_manifest_id,
+            red_team_prompt_hash=red_team_prompt_hash,
+            candidate_count=candidate_count,
+            findings=findings,
+        )
+
+
+def _check_red_team_artifact(
+    prediction_path: Path,
+    artifact_ref: str,
+    artifact: dict[str, Any],
+    *,
+    context_manifest_id: object,
+    red_team_prompt_hash: object,
+    candidate_count: int | None,
+    findings: list[str],
+) -> None:
+    if artifact.get("schema_version") != "nslab.red_team_artifact.v1":
+        findings.append(f"{prediction_path.name}: red-team artifact schema mismatch: {artifact_ref}")
+    if artifact.get("run_id") != context_manifest_id:
+        findings.append(f"{prediction_path.name}: red-team artifact run_id mismatch: {artifact_ref}")
+    if not artifact.get("source_prediction_id"):
+        findings.append(f"{prediction_path.name}: red-team artifact missing source_prediction_id")
+    if red_team_prompt_hash and artifact.get("prompt_sha256") != red_team_prompt_hash:
+        findings.append(f"{prediction_path.name}: red-team artifact prompt hash mismatch: {artifact_ref}")
+    if candidate_count is not None and artifact.get("candidate_count") != candidate_count:
+        findings.append(
+            f"{prediction_path.name}: red-team artifact candidate_count mismatch: {artifact_ref}"
+        )
+    candidate_findings = artifact.get("candidate_findings")
+    if not isinstance(candidate_findings, list):
+        findings.append(f"{prediction_path.name}: red-team artifact candidate_findings is invalid")
+        return
+    if candidate_count is not None and len(candidate_findings) != candidate_count:
+        findings.append(
+            f"{prediction_path.name}: red-team artifact finding count mismatch: {artifact_ref}"
+        )
+
+
+def _resolve_manifest_path(root: Path, artifact_ref: str) -> Path | None:
+    artifact_path = Path(artifact_ref)
+    if artifact_path.is_absolute():
+        return None
+    resolved_root = root.resolve()
+    resolved_path = (root / artifact_path).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return resolved_path
 
 
 def _check_report_link(

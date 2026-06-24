@@ -184,6 +184,124 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     assert result["passed"], result["findings"]
 
 
+def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "prediction_id": "PRED-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "prompt_hashes": {
+                "blind_analysis": "blind-hash",
+                "red_team_candidate_review": "red-team-hash",
+                "final_synthesis": "final-hash",
+            },
+            "token_counts": {"final_synthesis_prompt": 10},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "red_team_artifacts": ["runs/checkpoints/red_team/RUN-linked.json"],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "red_team" / "RUN-linked.json",
+        {
+            "schema_version": "nslab.red_team_artifact.v1",
+            "run_id": "RUN-linked",
+            "source_prediction_id": "PRED-linked",
+            "prompt_version": "red_team.candidate_attack.v1",
+            "prompt_sha256": "red-team-hash",
+            "created_at": "2030-01-10T08:59:59+09:00",
+            "candidate_count": 1,
+            "candidate_findings": [{"candidate_rank": 1, "passed_to_synthesis": True}],
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+
+def test_provenance_audit_flags_red_team_artifact_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "prediction_id": "PRED-linked",
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "blind-hash",
+                "red_team_candidate_review": "red-team-hash",
+                "final_synthesis": "final-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "red_team_artifacts": ["runs/checkpoints/red_team/RUN-linked.json"],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "red_team" / "RUN-linked.json",
+        {
+            "schema_version": "nslab.red_team_artifact.v1",
+            "run_id": "RUN-other",
+            "source_prediction_id": "",
+            "prompt_version": "red_team.candidate_attack.v1",
+            "prompt_sha256": "wrong-hash",
+            "created_at": "2030-01-10T08:59:59+09:00",
+            "candidate_count": 0,
+            "candidate_findings": [],
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: red-team artifact run_id mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: red-team artifact missing source_prediction_id"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: red-team artifact prompt hash mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: red-team artifact candidate_count mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in result["findings"]
+
+
 def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
     tmp_path: Path,
 ) -> None:
