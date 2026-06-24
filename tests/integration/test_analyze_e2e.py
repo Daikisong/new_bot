@@ -274,9 +274,29 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     assert manifest.accepted_episode_count == 2
     assert manifest.swept_episode_count == 2
     assert manifest.memory_sweep_shard_count == 2
+    assert manifest.memory_sweep_cache_hits == 0
     assert len(manifest.memory_sweep_artifacts) == 2
     swept_from_artifacts: set[str] = set()
     for artifact in manifest.memory_sweep_artifacts:
         payload = read_json(tmp_path / artifact)
+        assert payload["cache_key"]
+        assert payload["episode_shard_sha256"]
+        assert payload["from_cache"] is False
         swept_from_artifacts.update(payload["episode_ids"])
     assert swept_from_artifacts == set(manifest.swept_episode_ids)
+
+    repeated = await DailyAnalyzer(settings).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 11),
+        cutoff_at=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    repeated_manifest = repeated.context_manifest
+    assert repeated_manifest.run_id == manifest.run_id
+    assert repeated_manifest.memory_sweep_shard_count == 2
+    assert repeated_manifest.memory_sweep_cache_hits == 2
+    for artifact in repeated_manifest.memory_sweep_artifacts:
+        payload = read_json(tmp_path / artifact)
+        assert payload["from_cache"] is True

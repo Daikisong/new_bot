@@ -7,10 +7,12 @@ misses do not affect this path.
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.contracts.models import ResearchEpisode
@@ -74,16 +76,27 @@ class MemorySweeper:
             shard_hash = sha256_text("|".join(episode_ids))
             cache_key = stable_id("SWEEP", brain_version, news_hash, shard_hash, mode, length=16)
             cache_path = self.cache_dir / f"{cache_key}.json"
-            if cache_path.exists():
-                payload = read_json(cache_path)
-                payload["from_cache"] = True
+            cached_payload = self._read_cached_contribution(
+                cache_path=cache_path,
+                cache_key=cache_key,
+                mode=mode,
+                trade_date=trade_date,
+                brain_version=brain_version,
+                news_hash=news_hash,
+                shard_hash=shard_hash,
+                episode_ids=episode_ids,
+            )
+            if cached_payload is not None:
+                payload = cached_payload
                 cache_hits += 1
             else:
                 payload = self._build_contribution(
+                    cache_key=cache_key,
                     mode=mode,
                     trade_date=trade_date,
                     brain_version=brain_version,
                     news_hash=news_hash,
+                    shard_hash=shard_hash,
                     shard_index=shard_index,
                     episode_count=len(shard),
                     episodes=shard,
@@ -142,13 +155,73 @@ class MemorySweeper:
             for index in range(0, len(episodes), self.shard_episode_count)
         ]
 
-    def _build_contribution(
+    def _read_cached_contribution(
         self,
         *,
+        cache_path: Path,
+        cache_key: str,
         mode: str,
         trade_date: date,
         brain_version: str,
         news_hash: str,
+        shard_hash: str,
+        episode_ids: list[str],
+    ) -> dict[str, object] | None:
+        if not cache_path.exists():
+            return None
+        try:
+            payload = read_json(cache_path)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        if not self._cache_matches(
+            payload,
+            cache_key=cache_key,
+            mode=mode,
+            trade_date=trade_date,
+            brain_version=brain_version,
+            news_hash=news_hash,
+            shard_hash=shard_hash,
+            episode_ids=episode_ids,
+        ):
+            return None
+        cached = {str(key): value for key, value in payload.items()}
+        cached["from_cache"] = True
+        return cached
+
+    def _cache_matches(
+        self,
+        payload: dict[Any, Any],
+        *,
+        cache_key: str,
+        mode: str,
+        trade_date: date,
+        brain_version: str,
+        news_hash: str,
+        shard_hash: str,
+        episode_ids: list[str],
+    ) -> bool:
+        return (
+            payload.get("schema_version") == "nslab.memory_sweep_contribution.v1"
+            and payload.get("cache_key") == cache_key
+            and payload.get("mode") == mode
+            and payload.get("trade_date") == trade_date.isoformat()
+            and payload.get("brain_version") == brain_version
+            and payload.get("current_news_sha256") == news_hash
+            and payload.get("episode_shard_sha256") == shard_hash
+            and payload.get("episode_ids") == episode_ids
+        )
+
+    def _build_contribution(
+        self,
+        *,
+        cache_key: str,
+        mode: str,
+        trade_date: date,
+        brain_version: str,
+        news_hash: str,
+        shard_hash: str,
         shard_index: int,
         episode_count: int,
         episodes: list[ResearchEpisode],
@@ -163,10 +236,12 @@ class MemorySweeper:
         ]
         return {
             "schema_version": "nslab.memory_sweep_contribution.v1",
+            "cache_key": cache_key,
             "mode": mode,
             "trade_date": trade_date.isoformat(),
             "brain_version": brain_version,
             "current_news_sha256": news_hash,
+            "episode_shard_sha256": shard_hash,
             "shard_index": shard_index,
             "episode_count": episode_count,
             "episode_ids": episode_ids,
