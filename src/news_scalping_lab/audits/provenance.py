@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from news_scalping_lab.utils import read_json
+from news_scalping_lab.utils import canonical_json, read_json, sha256_text
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -98,7 +98,7 @@ def _check_prompt_hash_traces(
         "red_team_candidate_review": "red_team_candidate_review",
         "final_synthesis": "final_synthesis",
     }
-    traces_by_purpose = _trace_prompt_hashes_by_purpose(root)
+    traces_by_purpose = _trace_prompt_hashes_by_purpose(root, findings)
     for hash_key, purpose in purpose_by_hash_key.items():
         manifest_hash = prompt_hashes.get(hash_key)
         if not manifest_hash or purpose not in traces_by_purpose:
@@ -130,12 +130,13 @@ def _check_context_manifest(
     return manifest
 
 
-def _trace_prompt_hashes_by_purpose(root: Path) -> dict[str, set[str]]:
+def _trace_prompt_hashes_by_purpose(root: Path, findings: list[str]) -> dict[str, set[str]]:
     traces: dict[str, set[str]] = {}
     for path in sorted((root / "runs" / "traces").glob("*.json")):
-        payload = _read_json_object(path, [])
+        payload = _read_json_object(path, findings)
         if payload is None:
             continue
+        _check_trace_payload(path, payload, findings)
         purpose = payload.get("purpose")
         trace_input = payload.get("input")
         if not isinstance(purpose, str) or not isinstance(trace_input, dict):
@@ -145,6 +146,70 @@ def _trace_prompt_hashes_by_purpose(root: Path) -> dict[str, set[str]]:
             continue
         traces.setdefault(purpose, set()).add(prompt_sha256)
     return traces
+
+
+def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str]) -> None:
+    operation = _string_field(path, payload, "operation", findings)
+    status = _string_field(path, payload, "status", findings)
+    _string_field(path, payload, "trace_id", findings)
+    _string_field(path, payload, "purpose", findings)
+    _string_field(path, payload, "provider", findings)
+    _string_field(path, payload, "started_at", findings)
+    _string_field(path, payload, "finished_at", findings)
+    _string_field(path, payload, "checkpoint_id", findings, required=False)
+    if operation in {"generate_text", "generate_structured"}:
+        _string_field(path, payload, "prompt_version", findings)
+    if not isinstance(payload.get("model_config"), dict) or not payload.get("model_config"):
+        findings.append(f"{path.name}: trace missing model_config")
+    trace_input = payload.get("input")
+    if not isinstance(trace_input, dict):
+        findings.append(f"{path.name}: trace input is not an object")
+    else:
+        expected_input_hash = sha256_text(canonical_json(trace_input))
+        if payload.get("input_sha256") != expected_input_hash:
+            findings.append(f"{path.name}: trace input_sha256 mismatch")
+        if operation in {"generate_text", "generate_structured"} and not isinstance(
+            trace_input.get("prompt_sha256"), str
+        ):
+            findings.append(f"{path.name}: trace input missing prompt_sha256")
+        if operation == "embed" and not isinstance(trace_input.get("texts_sha256"), str):
+            findings.append(f"{path.name}: trace input missing texts_sha256")
+    output = payload.get("output")
+    expected_output_hash = sha256_text(canonical_json(output)) if output is not None else None
+    if payload.get("output_sha256") != expected_output_hash:
+        findings.append(f"{path.name}: trace output_sha256 mismatch")
+    if status in {"ok", "checkpoint_hit"} and output is None:
+        findings.append(f"{path.name}: successful trace missing output")
+    if not isinstance(payload.get("tool_calls"), list):
+        findings.append(f"{path.name}: trace tool_calls is not a list")
+    if not isinstance(payload.get("retries"), int):
+        findings.append(f"{path.name}: trace retries is not an integer")
+    token_usage = payload.get("token_usage")
+    if not isinstance(token_usage, dict):
+        findings.append(f"{path.name}: trace token_usage is not an object")
+    elif status in {"ok", "checkpoint_hit"} and not isinstance(
+        token_usage.get("prompt_tokens_estimate"), int
+    ):
+        findings.append(f"{path.name}: trace missing prompt token estimate")
+    if status == "error" and not isinstance(payload.get("error"), dict):
+        findings.append(f"{path.name}: error trace missing error details")
+
+
+def _string_field(
+    path: Path,
+    payload: dict[str, Any],
+    field: str,
+    findings: list[str],
+    *,
+    required: bool = True,
+) -> str | None:
+    value = payload.get(field)
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or not value:
+        findings.append(f"{path.name}: trace missing {field}")
+        return None
+    return value
 
 
 def _check_red_team_artifacts(

@@ -10,7 +10,7 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.prices.base import BlindPriceAccessError, BlindPriceGuard
 from news_scalping_lab.prices.mock import MockPriceSource
-from news_scalping_lab.utils import KST, write_json
+from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
 from news_scalping_lab.web.provider import TemporalWebGuard, WebSearchResult
 
 
@@ -37,6 +37,34 @@ def _blind_analysis_with_provenance() -> dict[str, object]:
     return {
         "summary": "Test blind analysis.",
         "provenance": _provenance("test_blind_analysis"),
+    }
+
+
+def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
+    trace_input = {
+        "prompt_sha256": prompt_sha256,
+        "prompt_chars": 100,
+        "response_model": "BlindPrediction",
+    }
+    output = {"prediction_id": "PRED-linked"}
+    return {
+        "trace_id": "TRACE-linked",
+        "operation": "generate_structured",
+        "purpose": "daily_blind_analysis",
+        "status": "ok",
+        "provider": "DeterministicMockLLMProvider",
+        "model_config": {"provider": "mock"},
+        "input": trace_input,
+        "input_sha256": sha256_text(canonical_json(trace_input)),
+        "output": output,
+        "output_sha256": sha256_text(canonical_json(output)),
+        "checkpoint_id": "LLMCKPT-linked",
+        "tool_calls": [],
+        "retries": 0,
+        "token_usage": {"prompt_tokens_estimate": 25, "completion_tokens_estimate": 10},
+        "started_at": "2030-01-10T08:59:00+09:00",
+        "finished_at": "2030-01-10T08:59:01+09:00",
+        "prompt_version": "daily_blind_analysis.v1",
     }
 
 
@@ -272,10 +300,7 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
     )
     write_json(
         tmp_path / "runs" / "traces" / "TRACE-daily.json",
-        {
-            "purpose": "daily_blind_analysis",
-            "input": {"prompt_sha256": "different-trace-hash"},
-        },
+        _trace_payload(prompt_sha256="different-trace-hash"),
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
         "Run ID: `RUN-linked`", encoding="utf-8"
@@ -287,6 +312,48 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
     assert (
         "2030-01-10.json: prompt hash has no matching trace for daily_blind_analysis"
     ) in result["findings"]
+
+
+def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    incomplete_trace = _trace_payload(prompt_sha256="blind-hash")
+    incomplete_trace.pop("model_config")
+    incomplete_trace.pop("prompt_version")
+    incomplete_trace["input_sha256"] = "wrong"
+    incomplete_trace["token_usage"] = {}
+    write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", incomplete_trace)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "TRACE-daily.json: trace missing model_config" in result["findings"]
+    assert "TRACE-daily.json: trace missing prompt_version" in result["findings"]
+    assert "TRACE-daily.json: trace input_sha256 mismatch" in result["findings"]
+    assert "TRACE-daily.json: trace missing prompt token estimate" in result["findings"]
 
 
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:
