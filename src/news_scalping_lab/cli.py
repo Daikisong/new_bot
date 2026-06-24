@@ -16,6 +16,7 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_version
+from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.schemas import export_json_schemas
@@ -196,13 +197,10 @@ def brain_audit() -> None:
 
 @brain_app.command("diff")
 def brain_diff(version_a: str, version_b: str) -> None:
-    _echo(
-        {
-            "version_a": version_a,
-            "version_b": version_b,
-            "status": "diff artifacts are generated during rebuild",
-        }
-    )
+    settings = load_settings()
+    diff = build_brain_diff(settings.project_root, version_a, version_b)
+    markdown_path = write_brain_diff_markdown(settings.project_root, diff)
+    _echo({**diff, "markdown_path": markdown_path.as_posix()})
 
 
 @app.command()

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import shutil
-from datetime import datetime
 from pathlib import Path
 
+from news_scalping_lab.brain.diff import write_rebuild_diff
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ClaimStatus,
@@ -13,7 +13,7 @@ from news_scalping_lab.contracts.models import (
     MemoryClaim,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, file_sha256, now_kst, stable_id, write_json
+from news_scalping_lab.utils import file_sha256, now_kst, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 
 BRAIN_FILES = [
@@ -43,6 +43,7 @@ class BrainCompiler:
     def rebuild(self, *, mode: str = "full") -> BrainManifest:
         if mode != "full":
             raise ValueError("only full rebuild is currently supported")
+        previous_version = current_brain_version(self.root)
         episodes = self.store.list_accepted()
         created_at = now_kst()
         version = stable_id("brain", created_at.isoformat(), len(episodes), length=10)
@@ -65,7 +66,11 @@ class BrainCompiler:
             shutil.rmtree(snapshot_dir)
         shutil.copytree(self.current_dir, snapshot_dir)
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
-        self._write_diff_stub(version)
+        write_rebuild_diff(
+            self.root,
+            previous_version if previous_version != version else None,
+            version,
+        )
         WarehouseStore(self.root).rebuild_all()
         return manifest
 
@@ -174,14 +179,6 @@ class BrainCompiler:
             "missing_episode_ids": missing,
             "coverage_complete": not missing and manifest.coverage_complete,
         }
-
-    def _write_diff_stub(self, version: str) -> None:
-        path = self.diffs_dir / f"{version}.md"
-        path.write_text(
-            f"# Brain Diff {version}\n\nFull rebuild generated at {datetime.now(tz=KST).isoformat()}.\n",
-            encoding="utf-8",
-        )
-
 
 def current_brain_version(root: Path) -> str | None:
     head = root / "brain" / "HEAD"

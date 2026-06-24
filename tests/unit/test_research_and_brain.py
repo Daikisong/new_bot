@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
@@ -59,6 +60,40 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert audit["coverage_complete"]
     assert episode.episode_id in manifest.covered_episode_ids
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
+
+
+def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    compiler = BrainCompiler(tmp_path)
+
+    source_a = tmp_path / "research_20300110.md"
+    source_a.write_text("First abstract mechanism note for 2030-01-10.", encoding="utf-8")
+    episode_a = ResearchImporter(tmp_path).import_path(source_a, mode="semantic")
+    store.accept(episode_a.episode_id)
+    manifest_a = compiler.rebuild(mode="full")
+
+    source_b = tmp_path / "research_20300111.md"
+    source_b.write_text("Second abstract mechanism note for 2030-01-11.", encoding="utf-8")
+    episode_b = ResearchImporter(tmp_path).import_path(source_b, mode="semantic")
+    store.accept(episode_b.episode_id)
+    manifest_b = compiler.rebuild(mode="full")
+
+    diff = build_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
+    diff_path = write_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
+
+    assert diff["changed"]
+    assert diff["added_episode_ids"] == [episode_b.episode_id]
+    assert diff["removed_episode_ids"] == []
+    file_changes = diff["file_changes"]
+    assert isinstance(file_changes, list)
+    assert any(
+        isinstance(change, dict) and change["file"] == "brain_manifest.json"
+        for change in file_changes
+    )
+    assert diff_path.exists()
+    assert (tmp_path / "brain" / "diffs" / f"{manifest_b.brain_version}.md").exists()
 
 
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:
