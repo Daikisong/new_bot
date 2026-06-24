@@ -8,7 +8,7 @@ from pathlib import Path
 from news_scalping_lab.brain.compiler import current_brain_file_hashes, current_brain_version
 from news_scalping_lab.contracts.models import ContextManifest, PriceSnapshot
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import stable_id
+from news_scalping_lab.utils import file_sha256, stable_id
 
 
 class ContextAssembler:
@@ -41,6 +41,8 @@ class ContextAssembler:
             brain_version=current_brain_version(self.root),
             brain_files=list(current_brain_file_hashes(self.root).keys()),
             brain_file_hashes=current_brain_file_hashes(self.root),
+            shard_brain_files=list(current_shard_brain_file_hashes(self.root).keys()),
+            shard_brain_file_hashes=current_shard_brain_file_hashes(self.root),
             accepted_episode_count=len(accepted_ids),
             swept_episode_count=len(swept_ids),
             swept_episode_ids=swept_ids,
@@ -61,3 +63,14 @@ class ContextAssembler:
         if mode == "exhaustive" and manifest.swept_episode_count != manifest.accepted_episode_count:
             manifest.errors.append("swept_episode_count must equal accepted_episode_count")
         return manifest
+
+
+def current_shard_brain_file_hashes(root: Path) -> dict[str, str]:
+    shard_dir = root / "memory" / "shard_brains" / "current"
+    if not shard_dir.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(shard_dir.glob("*.md"))
+        if path.is_file()
+    }

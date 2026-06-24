@@ -92,6 +92,7 @@ class RecordingBlindLLM:
         if purpose == "final_synthesis":
             assert "red_team_output" in prompt
             assert "d_minus_one_market_data" in prompt
+            assert "all_shard_brains" in prompt
             assert "all_shard_contributions" in prompt
             prediction = BlindPrediction(
                 prediction_id="PRED-provider-final",
@@ -431,6 +432,9 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     manifest = analysis.context_manifest
     assert manifest.accepted_episode_count == 2
     assert manifest.swept_episode_count == 2
+    assert len(manifest.shard_brain_files) == 1
+    shard_brain_text = (tmp_path / manifest.shard_brain_files[0]).read_text(encoding="utf-8")
+    assert all(episode_id in shard_brain_text for episode_id in manifest.swept_episode_ids)
     assert manifest.memory_sweep_shard_count == 2
     assert manifest.memory_sweep_cache_hits == 0
     assert len(manifest.memory_sweep_artifacts) == 2
@@ -453,6 +457,9 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
 
     repeated_manifest = repeated.context_manifest
     assert repeated_manifest.run_id == manifest.run_id
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json")
+    assert saved_manifest["shard_brain_files"] == manifest.shard_brain_files
+    assert set(saved_manifest["shard_brain_file_hashes"]) == set(manifest.shard_brain_files)
     assert repeated_manifest.memory_sweep_shard_count == 2
     assert repeated_manifest.memory_sweep_cache_hits == 2
     for artifact in repeated_manifest.memory_sweep_artifacts:

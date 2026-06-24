@@ -393,6 +393,20 @@
           "title": "Schema Version",
           "type": "string"
         },
+        "shard_brain_file_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Shard Brain File Hashes",
+          "type": "object"
+        },
+        "shard_brain_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Shard Brain Files",
+          "type": "array"
+        },
         "swept_episode_count": {
           "title": "Swept Episode Count",
           "type": "integer"

@@ -346,6 +346,8 @@ class ContextManifest(StrictModel):
     brain_version: str | None = None
     brain_files: list[str] = Field(default_factory=list)
     brain_file_hashes: dict[str, str] = Field(default_factory=dict)
+    shard_brain_files: list[str] = Field(default_factory=list)
+    shard_brain_file_hashes: dict[str, str] = Field(default_factory=dict)
     accepted_episode_count: int
     swept_episode_count: int
     swept_episode_ids: list[str] = Field(default_factory=list)

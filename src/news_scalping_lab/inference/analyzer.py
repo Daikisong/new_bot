@@ -274,6 +274,7 @@ class DailyAnalyzer:
                 "open_world_first_analysis",
                 "web_research",
                 "global_brain",
+                "all_shard_brains",
                 "all_shard_contributions",
                 "retrieved_raw_episodes",
                 "positive_cases",
@@ -294,6 +295,7 @@ class DailyAnalyzer:
                 "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
             },
             "global_brain": self._read_brain_context(manifest),
+            "all_shard_brains": self._read_shard_brain_context(manifest),
             "all_shard_contributions": self._read_json_artifacts(
                 manifest.memory_sweep_artifacts
             ),
@@ -362,6 +364,22 @@ class DailyAnalyzer:
                 {
                     "path": relative_path,
                     "sha256": manifest.brain_file_hashes.get(relative_path),
+                    "text": path.read_text(encoding="utf-8"),
+                }
+            )
+        return files
+
+    def _read_shard_brain_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        files: list[dict[str, Any]] = []
+        for relative_path in manifest.shard_brain_files:
+            path = self.root / relative_path
+            if not path.exists() or not path.is_file():
+                files.append({"path": relative_path, "missing": True})
+                continue
+            files.append(
+                {
+                    "path": relative_path,
+                    "sha256": manifest.shard_brain_file_hashes.get(relative_path),
                     "text": path.read_text(encoding="utf-8"),
                 }
             )
