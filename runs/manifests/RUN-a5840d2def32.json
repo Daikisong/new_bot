@@ -1,18 +1,18 @@
 {
   "accepted_episode_count": 0,
   "brain_file_hashes": {
-    "brain/current/00_world_model.md": "a6685202c467742d8c2dec7616e75b9dc360c3c91a56171cfbedbafcec9f498b",
-    "brain/current/01_single_event_patterns.md": "71da7911eb36c5189fb1a13e8e93d0aeb9d5bf648b14a0fa38008eb8a0734b60",
-    "brain/current/02_theme_formation_patterns.md": "5561600a907a508799b4d8282cc525671dd4da1588814ea4b7bfd2a1c21bd4a1",
-    "brain/current/03_beneficiary_discovery.md": "9ffc110871fbc0f30064c731e79a486e9c98868f916e0abcbc2df94ece997837",
-    "brain/current/04_leader_selection.md": "f4296996b9b74ea129db88f625c7accf4a433ac39453519b9590670463bc6d16",
-    "brain/current/05_continuation_patterns.md": "5e54ad7ea03bb79c9c0076e0eb3873325cbdeb21dd88caa1e7b69613e4504afd",
-    "brain/current/06_failure_modes.md": "590914c4955e39a96350738ca7c338e2ebf8b4de6a2bf335e77bdcac19e5273d",
-    "brain/current/07_counterexamples.md": "cc59d0359bb5c2c2f0c6b245aa70ffb8c53bedb63709bf8d2b914c2eea4a131f",
-    "brain/current/08_market_memory.md": "83a62ac48853af878e75488e021d07403b52d66483ed63f7eb19520691b4d110",
-    "brain/current/brain_manifest.json": "1bafa77b4571fb3371392026cd4fb947174c1fec59167b034e2888a7c8b33403",
+    "brain/current/00_world_model.md": "ead6f75f86a6b42278b558479a0e4a768546533a7661db8195edc8b113033ae4",
+    "brain/current/01_single_event_patterns.md": "e5c2b247e0c811a708f4e889f919003a5d78de10f4eaf4101820d0cebe71aebc",
+    "brain/current/02_theme_formation_patterns.md": "39af49e6cbaafa220500e8e1d8d8a99c705a20d25a504e8065b69a0dd231a0c9",
+    "brain/current/03_beneficiary_discovery.md": "fd6dd037661d4dac05c5815618ed34eb3d4496defa0815c4701f37f799e25f37",
+    "brain/current/04_leader_selection.md": "d09c2b6659ec0b358c3a7729592ef76cd09151a0c5fe2c3dd3a75404413c0fa4",
+    "brain/current/05_continuation_patterns.md": "848deb1f1a193de5142f1af075343fc71a443595e658c7dd0b633b345590c71b",
+    "brain/current/06_failure_modes.md": "304a5b0a70801af747c8b5094b4777e3390acca3f3fa69754af3621745747b56",
+    "brain/current/07_counterexamples.md": "dd0cb0dd651cd372352129e5106e9b7e232ff360703e69994da49b75b68e7d04",
+    "brain/current/08_market_memory.md": "ed3072701e79ce0f4713c363190a3eab40ef83da7299e67f9c5fc6ccfff84ff3",
+    "brain/current/brain_manifest.json": "9fc46d64f72712c8c87a314b5006864eda77f8811d12185d6c7624d5cf342e3b",
     "brain/current/claims.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "brain/current/coverage_manifest.json": "5be749ae95db55482acfcb4f633036c848e099057a9bd36f606bda41394e4ae3"
+    "brain/current/coverage_manifest.json": "826b97e071af605ce6d84e91b1a3f094535d8c97e2e8c3e3e22028c3aaab5422"
   },
   "brain_files": [
     "brain/current/00_world_model.md",
@@ -28,7 +28,7 @@
     "brain/current/claims.jsonl",
     "brain/current/coverage_manifest.json"
   ],
-  "brain_version": "brain-c035005231",
+  "brain_version": "brain-7f053b5ada",
   "counterexample_episode_ids": [],
   "errors": [],
   "memory_sweep_artifacts": [],
@@ -47,7 +47,7 @@
     "source_ref": null
   },
   "prompt_hashes": {
-    "blind_analysis": "6daf5d7da66fa092ba006244823a6bdf895a02a749a284528d52e3ee497fff33"
+    "blind_analysis": "1edacad84c9253033db08e05b312b08b519bbcbafef785651be47a0963eb8151"
   },
   "retrieved_episode_ids": [],
   "run_id": "RUN-a5840d2def32",

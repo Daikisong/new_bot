@@ -14,7 +14,7 @@
     "provenance": [],
     "summary": "Mock open-world blind analysis produced from current evidence only."
   },
-  "blind_artifact_sha256": "70fe17e3f45cc4bfcba1974a4ddc53ff09ec372a21ceab9db3f184268ba5fc39",
+  "blind_artifact_sha256": "3f9e2a839009bbb764602d0644257cb4c8c6f17204346f6b13592955fcb9c668",
   "candidates": [
     {
       "causal_chain": [
@@ -305,7 +305,7 @@
     }
   ],
   "context_manifest_id": "RUN-a5840d2def32",
-  "created_at": "2026-06-24T20:56:38.356992+09:00",
+  "created_at": "2026-06-24T21:00:08.484846+09:00",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
   "dominant_sectors": [
     {
@@ -342,8 +342,8 @@
       ]
     }
   ],
-  "prediction_id": "PRED-5ea647e8a7e6",
+  "prediction_id": "PRED-45a1afd9e98e",
   "schema_version": "nslab.blind_prediction.v1",
-  "sealed_at": "2026-06-24T20:56:38.357008+09:00",
+  "sealed_at": "2026-06-24T21:00:08.484860+09:00",
   "trade_date": "2026-06-24"
 }

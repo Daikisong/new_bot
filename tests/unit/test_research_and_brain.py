@@ -6,7 +6,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from news_scalping_lab.brain.audit import audit_brain
-from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -94,6 +94,27 @@ def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
     )
     assert diff_path.exists()
     assert (tmp_path / "brain" / "diffs" / f"{manifest_b.brain_version}.md").exists()
+
+
+def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Repeatable mechanism note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+
+    compiler = BrainCompiler(tmp_path)
+    first_manifest = compiler.rebuild(mode="full")
+    first_hashes = current_brain_file_hashes(tmp_path)
+    first_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+    second_manifest = compiler.rebuild(mode="full")
+    second_hashes = current_brain_file_hashes(tmp_path)
+    second_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+
+    assert second_manifest.model_dump(mode="json") == first_manifest.model_dump(mode="json")
+    assert second_hashes == first_hashes
+    assert second_claims == first_claims
 
 
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:

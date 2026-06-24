@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
@@ -11,9 +12,10 @@ from news_scalping_lab.contracts.models import (
     ClaimStatus,
     ConfidenceLabel,
     MemoryClaim,
+    ResearchEpisode,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, now_kst, stable_id, write_json
+from news_scalping_lab.utils import KST, canonical_json, file_sha256, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 
 BRAIN_FILES = [
@@ -27,6 +29,7 @@ BRAIN_FILES = [
     "07_counterexamples.md",
     "08_market_memory.md",
 ]
+EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 
 
 class BrainCompiler:
@@ -45,11 +48,20 @@ class BrainCompiler:
             raise ValueError("only full rebuild is currently supported")
         previous_version = current_brain_version(self.root)
         episodes = self.store.list_accepted()
-        created_at = now_kst()
-        version = stable_id("brain", created_at.isoformat(), len(episodes), length=10)
-        claims = [self._claim_from_episode(episode_id=episode.episode_id) for episode in episodes]
         covered_ids = [episode.episode_id for episode in episodes]
         source_hashes = self.store.accepted_hashes()
+        created_at = _deterministic_rebuild_timestamp(episodes)
+        version = _deterministic_brain_version(
+            covered_episode_ids=covered_ids,
+            source_hashes=source_hashes,
+        )
+        claims = [
+            self._claim_from_episode(
+                episode_id=episode.episode_id,
+                last_updated_at=_episode_content_timestamp(episode),
+            )
+            for episode in episodes
+        ]
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -66,11 +78,8 @@ class BrainCompiler:
             shutil.rmtree(snapshot_dir)
         shutil.copytree(self.current_dir, snapshot_dir)
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
-        write_rebuild_diff(
-            self.root,
-            previous_version if previous_version != version else None,
-            version,
-        )
+        if previous_version != version:
+            write_rebuild_diff(self.root, previous_version, version)
         WarehouseStore(self.root).rebuild_all()
         return manifest
 
@@ -80,7 +89,7 @@ class BrainCompiler:
         self.store.get_episode(episode_id)
         return self.rebuild(mode="full")
 
-    def _claim_from_episode(self, *, episode_id: str) -> MemoryClaim:
+    def _claim_from_episode(self, *, episode_id: str, last_updated_at: datetime) -> MemoryClaim:
         episode = self.store.get_episode(episode_id)
         statement = (
             "Episode contributes an abstract market-mechanism lesson; apply only with "
@@ -106,7 +115,7 @@ class BrainCompiler:
             status=ClaimStatus.TENTATIVE,
             confidence_label=ConfidenceLabel.MEDIUM,
             first_observed_at=episode.trade_date,
-            last_updated_at=now_kst(),
+            last_updated_at=last_updated_at,
             available_from=episode.available_from,
             provenance=episode.provenance,
         )
@@ -179,6 +188,49 @@ class BrainCompiler:
             "missing_episode_ids": missing,
             "coverage_complete": not missing and manifest.coverage_complete,
         }
+
+
+def _deterministic_brain_version(*, covered_episode_ids: list[str], source_hashes: dict[str, str]) -> str:
+    payload = {
+        "brain_files": BRAIN_FILES,
+        "covered_episode_ids": covered_episode_ids,
+        "source_hashes": source_hashes,
+        "schema": "nslab.brain.rebuild.v1",
+    }
+    return stable_id("brain", canonical_json(payload), length=10)
+
+
+def _deterministic_rebuild_timestamp(episodes: list[ResearchEpisode]) -> datetime:
+    if not episodes:
+        return EMPTY_BRAIN_CREATED_AT
+    return max(_episode_content_timestamp(episode) for episode in episodes)
+
+
+def _episode_content_timestamp(episode: ResearchEpisode) -> datetime:
+    timestamps = [
+        _ensure_timezone(episode.created_at),
+        _ensure_timezone(episode.cutoff_at),
+        _ensure_timezone(episode.available_from),
+    ]
+    if episode.postmortem is not None:
+        for provenance in episode.postmortem.provenance:
+            observed_at = _with_timezone(provenance.observed_at)
+            if observed_at is not None:
+                timestamps.append(observed_at)
+    return max(timestamps)
+
+
+def _with_timezone(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return _ensure_timezone(value)
+
+
+def _ensure_timezone(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=KST)
+    return value
+
 
 def current_brain_version(root: Path) -> str | None:
     head = root / "brain" / "HEAD"
