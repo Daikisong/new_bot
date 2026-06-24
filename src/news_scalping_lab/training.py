@@ -52,10 +52,18 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "output_file": path.as_posix(),
             "output_sha256": file_sha256(path),
             "task_counts": _task_counts(rows),
+            "blind_safe_row_count": sum(
+                1 for row in rows if row["hindsight_safe_for_blind_sft"] is True
+            ),
+            "hindsight_row_count": sum(
+                1 for row in rows if row["hindsight_safe_for_blind_sft"] is False
+            ),
+            "source_phase_counts": _source_phase_counts(rows),
             "notes": [
                 "SFT rows use only blind inputs and blind outputs.",
                 "Preference and eval rows may include postmortem/outcome labels.",
                 "Do not train postmortem labels as if they were blind answers.",
+                "Rows with source_phase=POSTMORTEM must not be mixed into blind SFT.",
             ],
         },
     )
@@ -119,9 +127,6 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                         "counterarguments": candidate.counterarguments,
                     }
                     for candidate in episode.blind_predictions
-                ],
-                "event_ticker_edges": [
-                    edge.model_dump(mode="json") for edge in episode.event_ticker_edges
                 ],
             },
             split="sft",
@@ -265,6 +270,7 @@ def _training_row(
         "trade_date": episode.trade_date.isoformat(),
         "available_from": episode.available_from.isoformat(),
         "hindsight_safe_for_blind_sft": hindsight_safe,
+        "source_phase": "BLIND" if hindsight_safe else "POSTMORTEM",
         "input": input_payload,
         "output": output_payload,
         "provenance": [item.model_dump(mode="json") for item in episode.provenance],
@@ -283,9 +289,18 @@ def _outcome_for_candidate(
             return outcome
     return None
 
+
 def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for row in rows:
         task = str(row["task"])
         counts[task] = counts.get(task, 0) + 1
+    return counts
+
+
+def _source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        phase = str(row["source_phase"])
+        counts[phase] = counts.get(phase, 0) + 1
     return counts

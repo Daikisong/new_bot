@@ -8,9 +8,11 @@ import pytest
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     Candidate,
+    EventTickerEdge,
     OutcomeLabels,
     PathType,
     Postmortem,
+    RelationClass,
     ResearchEpisode,
 )
 from news_scalping_lab.storage import ResearchStore
@@ -66,6 +68,19 @@ def _accepted_episode() -> ResearchEpisode:
             failure_codes=["DIRECTNESS_ERROR"],
             lessons=["prefer verified directness over loose theme breadth"],
         ),
+        event_ticker_edges=[
+            EventTickerEdge(
+                edge_id="EDGE-postmortem",
+                episode_id="EP-training",
+                event_id="EVT-postmortem",
+                ticker="111111",
+                company_name="WinnerCo",
+                relation_class=RelationClass.DIRECT,
+                relation_explanation="postmortem-only edge must not enter blind-safe rows",
+                directly_mentioned=True,
+                temporal_validity="validated after outcome",
+            )
+        ],
         available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
     )
 
@@ -105,10 +120,15 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert "prefer verified directness over loose theme breadth" not in blind_row_text
     assert "Winner hit and loser failed." not in blind_row_text
     assert "DIRECTNESS_ERROR" not in blind_row_text
+    assert "postmortem-only edge must not enter blind-safe rows" not in blind_row_text
+    assert all(row["source_phase"] == "BLIND" for row in blind_rows)
     theme_row = next(row for row in blind_rows if row["task"] == "theme_formation")
     assert theme_row["output"]["failure_conditions"] == ["leader selection"]
+    beneficiary_row = next(row for row in blind_rows if row["task"] == "beneficiary_discovery")
+    assert "event_ticker_edges" not in beneficiary_row["output"]
     failure_rows = [row for row in sft_rows if row["task"] == "failure_correction"]
     assert failure_rows[0]["hindsight_safe_for_blind_sft"] is False
+    assert failure_rows[0]["source_phase"] == "POSTMORTEM"
     assert "failure_codes" in failure_rows[0]["output"]
 
     assert preference.row_count == 1
@@ -116,6 +136,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert preference_rows[0]["output"]["chosen"] == "WinnerCo"
     assert preference_rows[0]["output"]["rejected"] == "LoserCo"
     assert preference_rows[0]["hindsight_safe_for_blind_sft"] is False
+    assert preference_rows[0]["source_phase"] == "POSTMORTEM"
 
     assert evals.row_count == 3
     assert {row["task"] for row in eval_rows} == {
@@ -123,10 +144,14 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "failure_code_eval",
     }
     assert all(row["hindsight_safe_for_blind_sft"] is False for row in eval_rows)
+    assert all(row["source_phase"] == "POSTMORTEM" for row in eval_rows)
 
     manifest = read_json(sft.manifest_path)
     assert manifest["row_count"] == sft.row_count
     assert manifest["task_counts"]["blind_reasoning"] == 1
+    assert manifest["blind_safe_row_count"] == 3
+    assert manifest["hindsight_row_count"] == 1
+    assert manifest["source_phase_counts"] == {"BLIND": 3, "POSTMORTEM": 1}
     assert manifest["output_sha256"]
     assert "Do not train postmortem labels as if they were blind answers." in manifest["notes"]
 
