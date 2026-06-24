@@ -18,6 +18,7 @@ from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.utils import read_json
 
 PRIMARY_STOCK_WEB_REMOTE_URL = "https://github.com/Songdaiki/stock-web.git"
+UPPER_LIMIT_RETURN_THRESHOLD_PCT = 29.0
 
 
 class GitRunner(Protocol):
@@ -106,8 +107,24 @@ class StockWebPriceSource:
             None if snapshot.close is None else (snapshot.close / previous_close - 1) * 100
         )
         open_gap = None if snapshot.open is None else (snapshot.open / previous_close - 1) * 100
-        touched = high_return is not None and high_return >= 29
-        closed = close_return is not None and close_return >= 29
+        low_return = None if snapshot.low is None else (snapshot.low / previous_close - 1) * 100
+        touched = (
+            high_return is not None and high_return >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
+        )
+        closed = (
+            close_return is not None and close_return >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
+        )
+        one_price = all(
+            value is not None and value >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
+            for value in (open_gap, high_return, low_return, close_return)
+        )
+        turnover_ratio = (
+            snapshot.volume / snapshot.listed_shares * 100
+            if snapshot.volume is not None
+            and snapshot.listed_shares is not None
+            and snapshot.listed_shares > 0
+            else None
+        )
         return OutcomeLabels(
             open_gap_pct=open_gap,
             intraday_high_return_pct=high_return,
@@ -115,9 +132,10 @@ class StockWebPriceSource:
             upper_limit_touched=touched,
             upper_limit_closed=closed,
             upper_limit_released=touched and not closed,
-            one_price_upper_limit=False,
+            one_price_upper_limit=one_price,
             volume=snapshot.volume,
             amount=snapshot.amount,
+            turnover_ratio=turnover_ratio,
             market_cap_previous_close=previous.market_cap,
             intraday_fields_unavailable=[
                 "first_upper_limit_touch_time",
