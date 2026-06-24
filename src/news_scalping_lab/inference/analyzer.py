@@ -515,16 +515,31 @@ class DailyAnalyzer:
         for item in items[:10]:
             title = getattr(item, "title", "")
             if title:
-                queries.append(f"verify listing relationship novelty {title[:80]}")
+                snippet = title[:80]
+                queries.extend(
+                    [
+                        f"verify listing ticker novelty direct relation {snippet}",
+                        f"beneficiary supply chain infrastructure relationship {snippet}",
+                        f"D-1 absorption continuation leader review {snippet}",
+                    ]
+                )
         if not queries:
             queries.append("open-world market catalyst company discovery")
         queries.extend(
             [
+                "causal mechanism analogs for current catalyst",
+                "market narrative propagation analogs and breadth formation",
+                "direct company news versus policy-derived beneficiary cases",
+                "successful analog cases with strong pre-open evidence",
+                "failed analog cases false positives directness novelty absorption",
+                "near misses candidates not selected as leaders",
+                "counterexamples superficially similar opposite outcome",
+                "unexpected leader selection in first-seen policy or industry event",
                 "positive analogs negative analogs near misses counterexamples",
                 "leader selection cases theme formation failures",
             ]
         )
-        return queries
+        return _unique_preserving_order(queries)
 
     def _fail_if_brain_context_contains_unavailable_episodes(
         self,
@@ -945,3 +960,14 @@ def _append_unique_provenance(
     if item.source_id in seen:
         return existing
     return [*existing, item]
+
+
+def _unique_preserving_order(values: Sequence[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
