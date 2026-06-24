@@ -162,6 +162,7 @@ class DailyAnalyzer:
             news_texts=news_texts,
             event_ids=event_ids,
             retrieved_episode_ids=retrieved_ids,
+            counterexample_episode_ids=manifest.counterexample_episode_ids,
             excluded_source_ids=web_guard.excluded_source_ids,
             first_pass_mechanisms=first_pass_mechanisms,
             context_payload={
@@ -172,6 +173,7 @@ class DailyAnalyzer:
                 "swept_episode_ids": manifest.swept_episode_ids,
                 "retrieved_episode_ids": manifest.retrieved_episode_ids,
                 "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
+                "counterexample_episode_ids": manifest.counterexample_episode_ids,
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
@@ -308,6 +310,8 @@ class DailyAnalyzer:
             excluded_source_ids=excluded_source_ids,
             prompt=prompt,
             purpose="final_synthesis",
+            default_positive_case_ids=manifest.retrieved_episode_ids[:3],
+            default_negative_case_ids=manifest.counterexample_episode_ids[:3],
         )
         normalized = normalized.model_copy(update={"context_manifest_id": manifest.run_id})
         if not normalized.blind_analysis.open_world_mechanisms:
@@ -608,6 +612,7 @@ class DailyAnalyzer:
         news_texts: list[str],
         event_ids: list[str],
         retrieved_episode_ids: list[str],
+        counterexample_episode_ids: list[str],
         excluded_source_ids: list[str],
         first_pass_mechanisms: list[str],
         context_payload: dict[str, Any],
@@ -618,6 +623,7 @@ class DailyAnalyzer:
             news_texts=news_texts,
             event_ids=event_ids,
             retrieved_episode_ids=retrieved_episode_ids,
+            counterexample_episode_ids=counterexample_episode_ids,
             excluded_source_ids=excluded_source_ids,
             first_pass_mechanisms=first_pass_mechanisms,
             context_payload=context_payload,
@@ -634,6 +640,7 @@ class DailyAnalyzer:
                 news_texts=news_texts,
                 event_ids=event_ids,
                 retrieved_episode_ids=retrieved_episode_ids,
+                counterexample_episode_ids=counterexample_episode_ids,
                 excluded_source_ids=excluded_source_ids,
                 first_pass_mechanisms=first_pass_mechanisms,
             )
@@ -645,6 +652,8 @@ class DailyAnalyzer:
             excluded_source_ids=excluded_source_ids,
             prompt=prompt,
             purpose="daily_blind_analysis",
+            default_positive_case_ids=retrieved_episode_ids[:3],
+            default_negative_case_ids=counterexample_episode_ids[:3],
         )
         return normalized, sha256_text(prompt), max(1, len(prompt) // 4)
 
@@ -656,6 +665,7 @@ class DailyAnalyzer:
         news_texts: list[str],
         event_ids: list[str],
         retrieved_episode_ids: list[str],
+        counterexample_episode_ids: list[str],
         excluded_source_ids: list[str],
         first_pass_mechanisms: list[str],
         context_payload: dict[str, Any],
@@ -666,6 +676,7 @@ class DailyAnalyzer:
             "cutoff_at": cutoff_at.isoformat(),
             "event_ids": event_ids,
             "retrieved_episode_ids": retrieved_episode_ids,
+            "counterexample_episode_ids": counterexample_episode_ids,
             "excluded_after_cutoff_source_ids": excluded_source_ids,
             "first_pass_mechanisms": first_pass_mechanisms,
             "context": context_payload,
@@ -691,9 +702,17 @@ class DailyAnalyzer:
         excluded_source_ids: list[str],
         prompt: str,
         purpose: str,
+        default_positive_case_ids: Sequence[str] | None = None,
+        default_negative_case_ids: Sequence[str] | None = None,
     ) -> BlindPrediction:
         prompt_hash = sha256_text(prompt)
         observed_at = now_kst()
+        fallback_positive_case_ids = _unique_preserving_order(
+            list(default_positive_case_ids or [])
+        )[:3]
+        fallback_negative_case_ids = _unique_preserving_order(
+            list(default_negative_case_ids or [])
+        )[:3]
         analysis_provenance = _append_unique_provenance(
             prediction.blind_analysis.provenance,
             Provenance(
@@ -716,9 +735,34 @@ class DailyAnalyzer:
                 "provenance": analysis_provenance,
             }
         )
+        normalized_sectors = []
+        for sector in prediction.dominant_sectors:
+            normalized_sectors.append(
+                sector.model_copy(
+                    update={
+                        "supporting_cases": sector.supporting_cases
+                        or fallback_positive_case_ids,
+                        "contradicting_cases": sector.contradicting_cases
+                        or fallback_negative_case_ids,
+                    }
+                )
+            )
         normalized_candidates = []
         for index, candidate in enumerate(prediction.candidates, start=1):
             candidate_event_ids = candidate.event_ids or event_ids[:1]
+            prior_positive_cases = (
+                candidate.prior_positive_cases or fallback_positive_case_ids
+            )
+            prior_negative_cases = (
+                candidate.prior_negative_cases or fallback_negative_case_ids
+            )
+            memory_episode_ids = _unique_preserving_order(
+                [
+                    *candidate.memory_episode_ids,
+                    *prior_positive_cases,
+                    *prior_negative_cases,
+                ]
+            )
             candidate_provenance = _append_unique_provenance(
                 candidate.provenance,
                 Provenance(
@@ -742,6 +786,9 @@ class DailyAnalyzer:
                     update={
                         "rank": index,
                         "event_ids": candidate_event_ids,
+                        "prior_positive_cases": prior_positive_cases,
+                        "prior_negative_cases": prior_negative_cases,
+                        "memory_episode_ids": memory_episode_ids,
                         "provenance": candidate_provenance,
                     }
                 )
@@ -761,6 +808,7 @@ class DailyAnalyzer:
                 "sealed_at": None,
                 "blind_artifact_sha256": None,
                 "blind_analysis": analysis,
+                "dominant_sectors": normalized_sectors,
                 "candidates": normalized_candidates,
             }
         )
@@ -791,12 +839,18 @@ class DailyAnalyzer:
         news_texts: list[str],
         event_ids: list[str],
         retrieved_episode_ids: list[str],
+        counterexample_episode_ids: list[str],
         excluded_source_ids: list[str],
         first_pass_mechanisms: list[str] | None = None,
     ) -> BlindPrediction:
         joined = "\n---NEWS---\n".join(news_texts)
         mechanisms = first_pass_mechanisms or self.fallback_llm.infer_mechanisms(joined)
         mentions = self.fallback_llm.extract_company_mentions(news_texts, limit=6)
+        prior_positive_cases = _unique_preserving_order(retrieved_episode_ids)[:3]
+        prior_negative_cases = _unique_preserving_order(counterexample_episode_ids)[:3]
+        memory_case_ids = _unique_preserving_order(
+            [*prior_positive_cases, *prior_negative_cases]
+        )
         candidates: list[Candidate] = []
         for rank, company in enumerate(mentions[:4], start=1):
             candidates.append(
@@ -820,8 +874,8 @@ class DailyAnalyzer:
                     direct_evidence=[company],
                     inferred_evidence=["created by open-world pass before memory lookup"],
                     market_memory_evidence=[],
-                    prior_positive_cases=retrieved_episode_ids[:3],
-                    prior_negative_cases=[],
+                    prior_positive_cases=prior_positive_cases,
+                    prior_negative_cases=prior_negative_cases,
                     novel_reasoning="Candidate is not required to exist in memory before investigation.",
                     counterarguments=[
                         "listing status or ticker may be unverified",
@@ -835,7 +889,7 @@ class DailyAnalyzer:
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
                     source_urls=[f"news://{event_ids[0]}" if event_ids else "news://current-batch"],
-                    memory_episode_ids=retrieved_episode_ids[:3],
+                    memory_episode_ids=memory_case_ids,
                 )
             )
 
@@ -857,13 +911,14 @@ class DailyAnalyzer:
                 direct_evidence=[],
                 inferred_evidence=mechanisms[:2],
                 market_memory_evidence=[],
-                prior_positive_cases=retrieved_episode_ids[:3],
+                prior_positive_cases=prior_positive_cases,
+                prior_negative_cases=prior_negative_cases,
                 novel_reasoning="A new beneficiary can be investigated even when retrieval returns no cases.",
                 counterarguments=["theme breadth may fail", "indirect relation may be too weak"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=[f"news://{event_ids[0]}" if event_ids else "news://current-batch"],
-                memory_episode_ids=retrieved_episode_ids[:3],
+                memory_episode_ids=memory_case_ids,
             )
         )
         candidates.append(
@@ -883,10 +938,13 @@ class DailyAnalyzer:
                 direct_evidence=[],
                 inferred_evidence=["requires blind-safe price provider"],
                 market_memory_evidence=["D-day prices are blocked during blind analysis"],
+                prior_positive_cases=prior_positive_cases,
+                prior_negative_cases=prior_negative_cases,
                 counterarguments=["already exhausted", "no current catalyst overlap"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=["price://blind-safe-d-minus-one"],
+                memory_episode_ids=memory_case_ids,
             )
         )
 
@@ -908,8 +966,8 @@ class DailyAnalyzer:
                 "web evidence fails listing or relation verification",
                 "D-1 market already absorbed the catalyst",
             ],
-            supporting_cases=retrieved_episode_ids[:5],
-            contradicting_cases=[],
+            supporting_cases=_unique_preserving_order(retrieved_episode_ids)[:5],
+            contradicting_cases=_unique_preserving_order(counterexample_episode_ids)[:5],
         )
         return BlindPrediction(
             prediction_id=stable_id("PRED", trade_date.isoformat(), cutoff_at.isoformat(), joined),

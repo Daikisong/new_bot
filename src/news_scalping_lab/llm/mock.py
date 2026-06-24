@@ -94,6 +94,15 @@ class DeterministicMockLLMProvider:
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or created_at
         current_news = self._payload_string_list(payload, "current_news")
         event_ids = self._payload_string_list(payload, "event_ids")
+        prior_positive_cases = self._dedupe_strings(
+            self._payload_string_list(payload, "retrieved_episode_ids")
+        )[:3]
+        prior_negative_cases = self._dedupe_strings(
+            self._payload_string_list(payload, "counterexample_episode_ids")
+        )[:3]
+        memory_case_ids = self._dedupe_strings(
+            [*prior_positive_cases, *prior_negative_cases]
+        )
         mechanisms = self._payload_string_list(payload, "first_pass_mechanisms")
         if not mechanisms:
             mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
@@ -121,6 +130,8 @@ class DeterministicMockLLMProvider:
                     direct_evidence=[f"current-news mention: {company}"],
                     inferred_evidence=["mock provider requests web and memory verification"],
                     market_memory_evidence=[],
+                    prior_positive_cases=prior_positive_cases,
+                    prior_negative_cases=prior_negative_cases,
                     novel_reasoning="Candidate was generated from current evidence, not from a static list.",
                     counterarguments=[
                         "listing status may be unverified",
@@ -134,6 +145,7 @@ class DeterministicMockLLMProvider:
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
                     source_urls=[event_anchor],
+                    memory_episode_ids=memory_case_ids,
                 )
             )
         if not candidates:
@@ -149,9 +161,12 @@ class DeterministicMockLLMProvider:
                     causal_chain=["news catalyst", "mechanism inference", "company discovery"],
                     direct_evidence=[],
                     inferred_evidence=["retrieval miss does not block candidate discovery"],
+                    prior_positive_cases=prior_positive_cases,
+                    prior_negative_cases=prior_negative_cases,
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
                     source_urls=[event_anchor],
+                    memory_episode_ids=memory_case_ids,
                 )
             )
         discovery_rank = len(candidates) + 1
@@ -166,11 +181,14 @@ class DeterministicMockLLMProvider:
                 why_now="Open-world mechanisms indicate indirect paths before any retrieval gate.",
                 causal_chain=["current catalyst", "beneficiary path discovery", "company verification"],
                 inferred_evidence=mechanisms[:2],
+                prior_positive_cases=prior_positive_cases,
+                prior_negative_cases=prior_negative_cases,
                 novel_reasoning="A new beneficiary can be investigated even when memory has no exact precedent.",
                 counterarguments=["theme breadth may fail", "indirect relation may be too weak"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=[event_anchor],
+                memory_episode_ids=memory_case_ids,
             )
         )
         candidates.append(
@@ -185,10 +203,13 @@ class DeterministicMockLLMProvider:
                 causal_chain=["D-1 market memory", "current catalyst overlap", "continuation red-team"],
                 inferred_evidence=["requires blind-safe price provider"],
                 market_memory_evidence=["D-day prices are blocked during blind analysis"],
+                prior_positive_cases=prior_positive_cases,
+                prior_negative_cases=prior_negative_cases,
                 counterarguments=["already exhausted", "no current catalyst overlap"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=["price://blind-safe-d-minus-one"],
+                memory_episode_ids=memory_case_ids,
             )
         )
 
@@ -208,6 +229,8 @@ class DeterministicMockLLMProvider:
                 "event was already known before the window",
                 "memory counterexamples dominate supporting cases",
             ],
+            supporting_cases=prior_positive_cases,
+            contradicting_cases=prior_negative_cases,
         )
         return BlindPrediction(
             prediction_id=stable_id("PRED", prompt, created_at.isoformat()),

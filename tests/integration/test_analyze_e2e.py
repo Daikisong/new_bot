@@ -427,9 +427,63 @@ async def test_final_synthesis_receives_counterexample_context(tmp_path) -> None
 
     final_prompt = str(llm.calls[2]["prompt"])
     assert analysis.context_manifest.counterexample_episode_ids == ["EP-counterexample"]
+    assert '"negative_cases":["EP-counterexample"]' in final_prompt
     assert "Same-looking catalyst failed" in final_prompt
+    assert analysis.blind_prediction.candidates[0].prior_negative_cases == [
+        "EP-counterexample"
+    ]
+    assert "EP-counterexample" in analysis.blind_prediction.candidates[0].memory_episode_ids
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["counterexample_episode_ids"] == ["EP-counterexample"]
+
+
+@pytest.mark.asyncio
+async def test_counterexample_cases_reach_candidates_sectors_and_report(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","CounterCo, catalyst","Counterexample context should be visible."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    episode = _episode_with_counterexample()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    analysis = await DailyAnalyzer(
+        settings,
+        retrieval=LocalRetrievalStore(tmp_path, force_empty=True),
+    ).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    assert analysis.context_manifest.counterexample_episode_ids == ["EP-counterexample"]
+    assert analysis.blind_prediction.candidates
+    assert all(
+        candidate.prior_negative_cases == ["EP-counterexample"]
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert all(
+        "EP-counterexample" in candidate.memory_episode_ids
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert analysis.blind_prediction.dominant_sectors
+    assert all(
+        sector.contradicting_cases == ["EP-counterexample"]
+        for sector in analysis.blind_prediction.dominant_sectors
+    )
+    saved_prediction = read_json(tmp_path / analysis.prediction_path)
+    assert saved_prediction["candidates"][0]["prior_negative_cases"] == ["EP-counterexample"]
+    assert saved_prediction["dominant_sectors"][0]["contradicting_cases"] == ["EP-counterexample"]
+    report = (tmp_path / analysis.report_path).read_text(encoding="utf-8")
+    assert "Prior negative cases: EP-counterexample" in report
 
 
 @pytest.mark.asyncio
