@@ -43,6 +43,10 @@ def looks_like_bundle(path: Path) -> bool:
 
 def import_bundle_episode(path: Path) -> ResearchEpisode:
     parsed = parse_bundle(path)
+    if not parsed.validation["blind_hash_verified"]:
+        raise BundleImportError(
+            "blind_prediction.json hash does not match bundle_manifest.json"
+        )
     if "research_episode.json" not in parsed.json_blocks:
         raise BundleImportError("bundle is missing research_episode.json")
     try:
@@ -63,6 +67,7 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
 
 def parse_bundle(path: Path) -> BundleParseResult:
     text = path.read_text(encoding="utf-8", errors="replace")
+    _validate_required_marker_counts(text)
     blocks = _extract_blocks(text)
     missing = sorted(REQUIRED_BUNDLE_BLOCKS - set(blocks))
     if missing:
@@ -90,6 +95,18 @@ def parse_bundle(path: Path) -> BundleParseResult:
         jsonl_blocks=jsonl_blocks,
         validation=validation,
     )
+
+
+def _validate_required_marker_counts(text: str) -> None:
+    for name in sorted(REQUIRED_BUNDLE_BLOCKS):
+        begin_marker = f"<!-- NSLAB:BEGIN {name} -->"
+        end_marker = f"<!-- NSLAB:END {name} -->"
+        begin_count = text.count(begin_marker)
+        end_count = text.count(end_marker)
+        if begin_count != 1 or end_count != 1:
+            raise BundleImportError(
+                f"bundle block {name} must have exactly one BEGIN and one END marker"
+            )
 
 
 def _extract_blocks(text: str) -> dict[str, str]:
@@ -167,7 +184,7 @@ def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
         return False
     candidate = dict(blind)
     observed = candidate.get("blind_artifact_sha256")
-    if observed == expected:
-        return True
+    if observed is not None and observed != expected:
+        return False
     candidate["blind_artifact_sha256"] = None
     return sha256_text(canonical_json(candidate)) == expected

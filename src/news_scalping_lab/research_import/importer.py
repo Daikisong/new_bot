@@ -9,7 +9,6 @@ from pathlib import Path
 
 from news_scalping_lab.contracts.models import BlindAnalysis, Provenance, ResearchEpisode
 from news_scalping_lab.research_import.bundle import (
-    BundleImportError,
     import_bundle_episode,
     looks_like_bundle,
 )
@@ -36,13 +35,8 @@ class ResearchImporter:
             raise ValueError("mode must be auto, strict, semantic, or bundle")
         resolved = path.resolve()
         preserved = self._preserve_raw(resolved)
-        if mode == "bundle":
+        if mode == "bundle" or (mode == "auto" and looks_like_bundle(preserved)):
             episode = import_bundle_episode(preserved)
-        elif mode == "auto" and looks_like_bundle(preserved):
-            try:
-                episode = import_bundle_episode(preserved)
-            except BundleImportError:
-                episode = self._semantic_import(preserved)
         elif mode == "strict" or (mode == "auto" and resolved.suffix.lower() == ".json"):
             episode = self._strict_import(preserved)
         else:
