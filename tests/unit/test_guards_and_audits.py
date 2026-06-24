@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
+from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.prices.base import BlindPriceAccessError, BlindPriceGuard
 from news_scalping_lab.prices.mock import MockPriceSource
@@ -181,3 +182,74 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+
+def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "research" / "accepted").mkdir(parents=True)
+    (tmp_path / "brain" / "current").mkdir(parents=True)
+    (tmp_path / "memory" / "shard_brains" / "current").mkdir(parents=True)
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-future.json",
+        {
+            "episode_id": "EP-future",
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+    (tmp_path / "brain" / "current" / "00_world_model.md").write_text(
+        "future context leak EP-future",
+        encoding="utf-8",
+    )
+    (tmp_path / "memory" / "shard_brains" / "current" / "shard_0001.md").write_text(
+        "future shard leak EP-future",
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-lookahead.json",
+        {
+            "run_id": "RUN-lookahead",
+            "mode": "brain",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "retrieved_episode_ids": ["EP-future"],
+            "excluded_retrieved_episode_ids": [],
+            "brain_files": ["brain/current/00_world_model.md"],
+            "shard_brain_files": ["memory/shard_brains/current/shard_0001.md"],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-lookahead.json: future retrieved episode not excluded: EP-future" in findings
+    assert (
+        "RUN-lookahead.json: context file contains future episode EP-future: "
+        "brain/current/00_world_model.md"
+    ) in findings
+    assert (
+        "RUN-lookahead.json: context file contains future episode EP-future: "
+        "memory/shard_brains/current/shard_0001.md"
+    ) in findings
+
+
+def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-missing-time.json",
+        {
+            "run_id": "RUN-missing-time",
+            "mode": "brain",
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert "RUN-missing-time.json: missing trade_date" in result["findings"]
+    assert "RUN-missing-time.json: missing cutoff_at" in result["findings"]

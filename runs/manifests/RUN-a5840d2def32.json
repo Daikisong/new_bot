@@ -30,6 +30,7 @@
   ],
   "brain_version": "brain-7f053b5ada",
   "counterexample_episode_ids": [],
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
   "errors": [],
   "memory_sweep_artifacts": [],
   "memory_sweep_cache_hits": 0,
@@ -58,6 +59,7 @@
     "current_news": 6278,
     "memory_sweep": 0
   },
+  "trade_date": "2026-06-24",
   "truncations": [],
   "web_queries": [
     "verify listing relationship novelty 넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"",
