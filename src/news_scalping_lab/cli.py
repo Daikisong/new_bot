@@ -15,16 +15,16 @@ from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
-from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_version
+from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.schemas import export_json_schemas
+from news_scalping_lab.diagnostics import build_doctor_report
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
-from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
@@ -71,23 +71,7 @@ def init() -> None:
 @app.command()
 def doctor() -> None:
     settings = load_settings()
-    store = ResearchStore(settings.project_root)
-    stock_web_schema = None
-    if settings.stock_web_path is not None and settings.stock_web_path.exists():
-        stock_web_schema = StockWebPriceSource(settings.stock_web_path).inspect_atlas_schema()
-    payload = {
-        "project_root": settings.project_root.as_posix(),
-        "llm_provider": settings.llm_provider,
-        "web_provider": settings.web_provider,
-        "price_provider": settings.price_provider,
-        "stock_web_path": settings.stock_web_path.as_posix() if settings.stock_web_path else None,
-        "brain_head": current_brain_version(settings.project_root),
-        "accepted_episode_count": len(store.list_accepted()),
-        "schema_dir_exists": settings.path("schemas").exists(),
-        "stock_web_schema": stock_web_schema,
-        "warehouse": WarehouseStore(settings.project_root).counts(),
-    }
-    _echo(payload)
+    _echo(build_doctor_report(settings))
 
 
 @news_app.command("inspect")

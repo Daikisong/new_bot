@@ -128,7 +128,10 @@ async def test_tracing_llm_provider_resumes_successful_structured_checkpoint(tmp
     checkpoints = [read_json(path) for path in sorted((tmp_path / "checkpoints").glob("*.json"))]
     assert len(checkpoints) == 1
     assert checkpoints[0]["status"] == "ok"
-    traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
+    traces = sorted(
+        [read_json(path) for path in (tmp_path / "traces").glob("TRACE-*.json")],
+        key=lambda trace: str(trace["started_at"]),
+    )
     assert [trace["status"] for trace in traces] == ["ok", "checkpoint_hit"]
     assert traces[1]["checkpoint_id"] == checkpoints[0]["checkpoint_id"]
 
