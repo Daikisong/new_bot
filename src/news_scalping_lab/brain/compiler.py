@@ -64,13 +64,16 @@ class BrainCompiler:
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
         )
-        claims = [
-            self._claim_from_episode(
-                episode_id=episode.episode_id,
-                last_updated_at=_episode_content_timestamp(episode),
-            )
-            for episode in episodes
-        ]
+        claims = _dedupe_claims(
+            [
+                claim
+                for episode in episodes
+                for claim in self._claims_from_episode(
+                    episode=episode,
+                    last_updated_at=_episode_content_timestamp(episode),
+                )
+            ]
+        )
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -135,6 +138,27 @@ class BrainCompiler:
             available_from=episode.available_from,
             provenance=episode.provenance,
         )
+
+    def _claims_from_episode(
+        self,
+        *,
+        episode: ResearchEpisode,
+        last_updated_at: datetime,
+    ) -> list[MemoryClaim]:
+        return [
+            self._claim_from_episode(
+                episode_id=episode.episode_id,
+                last_updated_at=last_updated_at,
+            ),
+            *[
+                _claim_with_episode_defaults(
+                    claim,
+                    episode=episode,
+                    last_updated_at=last_updated_at,
+                )
+                for claim in [*episode.lessons, *episode.counterexamples]
+            ],
+        ]
 
     def _write_current(self, manifest: BrainManifest, claims: list[MemoryClaim]) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +332,33 @@ def _episode_shards(episodes: list[ResearchEpisode]) -> list[list[ResearchEpisod
         episodes[index : index + SHARD_BRAIN_EPISODE_COUNT]
         for index in range(0, len(episodes), SHARD_BRAIN_EPISODE_COUNT)
     ]
+
+
+def _claim_with_episode_defaults(
+    claim: MemoryClaim,
+    *,
+    episode: ResearchEpisode,
+    last_updated_at: datetime,
+) -> MemoryClaim:
+    return claim.model_copy(
+        update={
+            "support_episode_ids": claim.support_episode_ids or [episode.episode_id],
+            "first_observed_at": claim.first_observed_at or episode.trade_date,
+            "last_updated_at": claim.last_updated_at or last_updated_at,
+            "provenance": claim.provenance or episode.provenance,
+        }
+    )
+
+
+def _dedupe_claims(claims: list[MemoryClaim]) -> list[MemoryClaim]:
+    deduped: list[MemoryClaim] = []
+    seen: set[str] = set()
+    for claim in claims:
+        if claim.claim_id in seen:
+            continue
+        seen.add(claim.claim_id)
+        deduped.append(claim)
+    return deduped
 
 
 def _deterministic_rebuild_timestamp(episodes: list[ResearchEpisode]) -> datetime:

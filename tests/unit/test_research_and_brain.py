@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time
 from typing import TypeVar
 
@@ -129,6 +130,75 @@ def test_brain_rebuild_uses_accepted_snapshot_when_canonical_episode_changes(tmp
     assert changed_mechanism not in claims_text
     assert episode.blind_analysis.open_world_mechanisms[0] in claims_text
     assert episode.episode_id in manifest.covered_episode_ids
+
+
+def test_brain_rebuild_includes_imported_lessons_and_counterexamples_as_claims(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Imported lesson and counterexample note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    provenance = Provenance(
+        source_id="SRC-imported-claim-test",
+        source_type="test_research",
+        uri="test://imported-claim",
+        content_sha256=sha256_text("imported-claim"),
+    )
+    lesson = MemoryClaim(
+        claim_id="CL-imported-lesson",
+        statement="Imported lesson must become a brain claim.",
+        mechanism="strict research lesson -> brain claim",
+        scope="test",
+        support_episode_ids=[],
+        contradiction_episode_ids=[episode.episode_id],
+        available_from=episode.available_from,
+        provenance=[],
+    )
+    counterexample = MemoryClaim(
+        claim_id="CL-imported-counterexample",
+        statement="Imported counterexample must remain available to synthesis.",
+        mechanism="counterexample preservation",
+        scope="test",
+        support_episode_ids=[episode.episode_id],
+        contradiction_episode_ids=[episode.episode_id],
+        available_from=episode.available_from,
+        provenance=[provenance],
+    )
+    enriched_episode = episode.model_copy(
+        update={
+            "lessons": [lesson],
+            "counterexamples": [counterexample],
+            "provenance": [provenance],
+        }
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(enriched_episode)
+    store.accept(enriched_episode.episode_id)
+
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    claims = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line
+    ]
+    claims_by_id = {claim["claim_id"]: claim for claim in claims}
+
+    assert "CL-imported-lesson" in manifest.claim_ids
+    assert "CL-imported-counterexample" in manifest.claim_ids
+    assert claims_by_id["CL-imported-lesson"]["support_episode_ids"] == [
+        enriched_episode.episode_id
+    ]
+    assert claims_by_id["CL-imported-lesson"]["provenance"][0]["source_id"] == (
+        "SRC-imported-claim-test"
+    )
+    assert claims_by_id["CL-imported-counterexample"]["contradiction_episode_ids"] == [
+        enriched_episode.episode_id
+    ]
+    assert audit_brain(tmp_path)["passed"] is True
 
 
 def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
