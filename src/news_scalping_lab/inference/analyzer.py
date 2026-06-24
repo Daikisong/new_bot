@@ -20,6 +20,7 @@ from news_scalping_lab.contracts.models import (
     DominantSectorHypothesis,
     NewsItem,
     PathType,
+    Provenance,
     RedTeamArtifact,
 )
 from news_scalping_lab.inference.red_team import (
@@ -673,6 +674,19 @@ class DailyAnalyzer:
         prompt: str,
         purpose: str,
     ) -> BlindPrediction:
+        prompt_hash = sha256_text(prompt)
+        observed_at = now_kst()
+        analysis_provenance = _append_unique_provenance(
+            prediction.blind_analysis.provenance,
+            Provenance(
+                source_id=stable_id("SRC", purpose, "blind_analysis", prompt_hash),
+                source_type=f"{purpose}_blind_analysis",
+                uri=f"prompt://{purpose}/{prompt_hash}",
+                content_sha256=prompt_hash,
+                excerpt="; ".join(event_ids[:5]) or None,
+                observed_at=observed_at,
+            ),
+        )
         analysis = prediction.blind_analysis.model_copy(
             update={
                 "excluded_after_cutoff_source_ids": sorted(
@@ -680,14 +694,39 @@ class DailyAnalyzer:
                         *prediction.blind_analysis.excluded_after_cutoff_source_ids,
                         *excluded_source_ids,
                     }
-                )
+                ),
+                "provenance": analysis_provenance,
             }
         )
         normalized_candidates = []
         for index, candidate in enumerate(prediction.candidates, start=1):
             candidate_event_ids = candidate.event_ids or event_ids[:1]
+            candidate_provenance = _append_unique_provenance(
+                candidate.provenance,
+                Provenance(
+                    source_id=stable_id(
+                        "SRC",
+                        purpose,
+                        "candidate",
+                        str(index),
+                        candidate.company_name,
+                        prompt_hash,
+                    ),
+                    source_type=f"{purpose}_candidate",
+                    uri=f"candidate://{purpose}/{trade_date.isoformat()}/{index}",
+                    content_sha256=prompt_hash,
+                    excerpt="; ".join(candidate_event_ids[:5]) or None,
+                    observed_at=observed_at,
+                ),
+            )
             normalized_candidates.append(
-                candidate.model_copy(update={"rank": index, "event_ids": candidate_event_ids})
+                candidate.model_copy(
+                    update={
+                        "rank": index,
+                        "event_ids": candidate_event_ids,
+                        "provenance": candidate_provenance,
+                    }
+                )
             )
         return prediction.model_copy(
             update={
@@ -895,3 +934,13 @@ def _candidate_case_refs(prediction: BlindPrediction, field_name: str) -> list[s
             seen.add(item)
             refs.append(item)
     return refs
+
+
+def _append_unique_provenance(
+    existing: list[Provenance],
+    item: Provenance,
+) -> list[Provenance]:
+    seen = {entry.source_id for entry in existing}
+    if item.source_id in seen:
+        return existing
+    return [*existing, item]

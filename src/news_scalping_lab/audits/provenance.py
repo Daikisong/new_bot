@@ -30,10 +30,17 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
             _check_prompt_hash_traces(root, path, prompt_hashes, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
+        blind_analysis = prediction.get("blind_analysis", {})
+        if not isinstance(blind_analysis, dict) or not blind_analysis.get("provenance"):
+            findings.append(f"{path.name}: blind_analysis missing provenance")
         for candidate in prediction.get("candidates", []):
             if not isinstance(candidate, dict):
                 findings.append(f"{path.name}: candidate is not an object")
                 continue
+            if not candidate.get("provenance"):
+                findings.append(
+                    f"{path.name}: candidate missing provenance: {candidate.get('company_name')}"
+                )
             has_anchor = (
                 candidate.get("event_ids")
                 or candidate.get("memory_episode_ids")

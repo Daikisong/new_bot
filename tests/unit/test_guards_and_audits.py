@@ -14,6 +14,32 @@ from news_scalping_lab.utils import KST, write_json
 from news_scalping_lab.web.provider import TemporalWebGuard, WebSearchResult
 
 
+def _provenance(source_type: str = "test") -> list[dict[str, str]]:
+    return [
+        {
+            "source_id": f"SRC-{source_type}",
+            "source_type": source_type,
+            "uri": f"test://{source_type}",
+            "content_sha256": "a" * 64,
+        }
+    ]
+
+
+def _candidate_with_provenance() -> dict[str, object]:
+    return {
+        "company_name": "CandidateCo",
+        "event_ids": ["EVT-1"],
+        "provenance": _provenance("test_candidate"),
+    }
+
+
+def _blind_analysis_with_provenance() -> dict[str, object]:
+    return {
+        "summary": "Test blind analysis.",
+        "provenance": _provenance("test_blind_analysis"),
+    }
+
+
 def test_blind_price_guard_blocks_d_day() -> None:
     trade_day = date(2030, 1, 10)
     guard = BlindPriceGuard(MockPriceSource(), trade_date=trade_day)
@@ -141,7 +167,8 @@ def test_provenance_audit_requires_prediction_context_manifest(tmp_path: Path) -
         tmp_path / "predictions" / "2030-01-10.json",
         {
             "blind_artifact_sha256": "abc123",
-            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
@@ -163,7 +190,8 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
         {
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
-            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
         },
     )
     write_json(
@@ -184,6 +212,41 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     assert result["passed"], result["findings"]
 
 
+def test_provenance_audit_requires_blind_and_candidate_provenance(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": {"summary": "No provenance."},
+            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "2030-01-10.json: blind_analysis missing provenance" in result["findings"]
+    assert (
+        "2030-01-10.json: candidate missing provenance: CandidateCo"
+    ) in result["findings"]
+
+
 def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
@@ -194,7 +257,8 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
         {
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
-            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
         },
     )
     write_json(
@@ -237,7 +301,8 @@ def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> Non
             "cutoff_at": "2030-01-10T08:59:59+09:00",
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
-            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
         },
     )
     write_json(
@@ -289,7 +354,8 @@ def test_provenance_audit_flags_red_team_artifact_mismatch(tmp_path: Path) -> No
             "prediction_id": "PRED-linked",
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
-            "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
         },
     )
     write_json(

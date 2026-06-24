@@ -277,6 +277,13 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert analysis.blind_prediction.context_manifest_id == analysis.context_manifest.run_id
     saved_prediction = read_json(tmp_path / analysis.prediction_path)
     assert saved_prediction["context_manifest_id"] == analysis.context_manifest.run_id
+    assert saved_prediction["blind_analysis"]["provenance"][0]["source_type"].endswith(
+        "_blind_analysis"
+    )
+    assert all(candidate["provenance"] for candidate in saved_prediction["candidates"])
+    assert {
+        candidate["provenance"][-1]["source_type"] for candidate in saved_prediction["candidates"]
+    } == {"final_synthesis_candidate"}
     assert len(analysis.context_manifest.red_team_artifacts) == 1
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["trade_date"] == "2030-01-10"
@@ -377,6 +384,8 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     assert analysis.blind_prediction.candidates[0].rank == 1
     assert analysis.blind_prediction.candidates[0].event_ids
+    assert analysis.blind_prediction.blind_analysis.provenance
+    assert analysis.blind_prediction.candidates[0].provenance
     assert analysis.blind_prediction.blind_analysis.summary == "Provider final synthesis."
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
     assert analysis.blind_prediction.blind_artifact_sha256

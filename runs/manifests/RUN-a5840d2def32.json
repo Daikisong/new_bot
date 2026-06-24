@@ -50,9 +50,9 @@
     "source_ref": null
   },
   "prompt_hashes": {
-    "blind_analysis": "6c7f396f694375e3b02e3b355b962d27b43cfea4f01793c5591369265f47fe68",
-    "final_synthesis": "b3f75e00a7bf6625db9bb893eb654f2dfb1fd1654da4c3290de08e33d380c7da",
-    "red_team_candidate_review": "b6f2e7e07de0f9050226875cd64afcbf005631aa9a0ab9630592ec0b84ab171b"
+    "blind_analysis": "bc833e5cfdb69f54cbf7033f52d8ce4c8eb9347b783caf14d4ee8889120755c2",
+    "final_synthesis": "44d0b36e5d254e180d2b3682631bbf14dd908871d050cd537c1a7d764c9903fd",
+    "red_team_candidate_review": "124ccd21a84777fc9696f8fa00badf115528bc3991b8965066b322636bbfb3db"
   },
   "red_team_artifacts": [
     "runs/checkpoints/red_team/RUN-a5840d2def32.json"
@@ -65,11 +65,11 @@
   "swept_episode_count": 0,
   "swept_episode_ids": [],
   "token_counts": {
-    "blind_analysis_prompt": 12457,
+    "blind_analysis_prompt": 12419,
     "current_news": 6278,
-    "final_synthesis_prompt": 12430,
+    "final_synthesis_prompt": 13023,
     "memory_sweep": 0,
-    "red_team_prompt": 2133
+    "red_team_prompt": 2621
   },
   "trade_date": "2026-06-24",
   "truncations": [],
@@ -87,11 +87,5 @@
     "positive analogs negative analogs near misses counterexamples",
     "leader selection cases theme formation failures"
   ],
-  "web_sources": [
-    "mock://web/WEB-668c679c6348",
-    "mock://web/WEB-75a8b538fa36",
-    "mock://web/WEB-acd6dc62ed2e",
-    "mock://web/WEB-e43915243831",
-    "mock://web/WEB-e8da546d35e2"
-  ]
+  "web_sources": []
 }
