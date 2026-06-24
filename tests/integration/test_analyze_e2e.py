@@ -8,11 +8,36 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.contracts.models import OutcomeLabels
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
+
+
+class OutcomeTrapPriceSource:
+    source_name = "outcome-trap"
+
+    def __init__(self) -> None:
+        self.outcome_calls: list[tuple[str, date]] = []
+
+    def get_history(self, ticker: str, *, through: date) -> list[PriceRecord]:
+        return [
+            PriceRecord(
+                ticker=ticker,
+                trade_date=through,
+                close=100.0,
+            )
+        ]
+
+    def get_snapshot(self, ticker: str, *, as_of: date) -> PriceRecord | None:
+        return PriceRecord(ticker=ticker, trade_date=as_of, close=100.0)
+
+    def get_outcome(self, ticker: str, *, trade_date: date) -> OutcomeLabels:
+        self.outcome_calls.append((ticker, trade_date))
+        raise AssertionError("blind analysis must not request D-day outcome labels")
 
 
 @pytest.mark.asyncio
@@ -44,6 +69,32 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert (tmp_path / analysis.prediction_path).exists()
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert audit_provenance(tmp_path)["passed"]
+
+
+@pytest.mark.asyncio
+async def test_blind_analyze_does_not_request_d_day_outcomes(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","SampleCo, preopen event","Outcome access is forbidden."\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    price_source = OutcomeTrapPriceSource()
+
+    analysis = await DailyAnalyzer(settings, price_source=price_source).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    assert price_source.outcome_calls == []
+    assert analysis.context_manifest.price_snapshot.source_name == "outcome-trap"
+    assert analysis.context_manifest.price_snapshot.allowed_through == date(2030, 1, 9)
 
 
 @pytest.mark.asyncio

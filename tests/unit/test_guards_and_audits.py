@@ -17,7 +17,12 @@ def test_blind_price_guard_blocks_d_day() -> None:
     guard = BlindPriceGuard(MockPriceSource(), trade_date=trade_day)
     with pytest.raises(BlindPriceAccessError):
         guard.get_snapshot("UNKNOWN", as_of=trade_day)
+    with pytest.raises(BlindPriceAccessError):
+        guard.get_history("UNKNOWN", through=trade_day)
+    with pytest.raises(BlindPriceAccessError):
+        guard.get_outcome("UNKNOWN", trade_date=trade_day)
     assert guard.get_snapshot("UNKNOWN", as_of=date(2030, 1, 9)) is not None
+    assert guard.get_history("UNKNOWN", through=date(2030, 1, 9))
 
 
 class FutureOnlyProvider:

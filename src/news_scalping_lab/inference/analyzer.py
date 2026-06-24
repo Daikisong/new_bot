@@ -21,7 +21,7 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
-from news_scalping_lab.prices.base import BlindPriceGuard
+from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -37,11 +37,13 @@ class DailyAnalyzer:
         *,
         llm: DeterministicMockLLMProvider | None = None,
         retrieval: LocalRetrievalStore | None = None,
+        price_source: PriceSource | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
         self.llm = llm or DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
+        self.price_source = price_source or create_price_source(self.settings)
 
     async def analyze(
         self,
@@ -70,8 +72,8 @@ class DailyAnalyzer:
                 results = await web_guard.search(query, cutoff_at=cutoff_at)
                 manifest.web_sources.extend(result.url for result in results)
 
-        price_guard = BlindPriceGuard(create_price_source(self.settings), trade_date=trade_date)
-        _ = price_guard.source_name
+        price_guard = BlindPriceGuard(self.price_source, trade_date=trade_date)
+        manifest.price_snapshot.source_name = price_guard.source_name
 
         news_texts = [
             item.combined_text for item in batch.items[: self.settings.limits.max_news_items_for_mock]
