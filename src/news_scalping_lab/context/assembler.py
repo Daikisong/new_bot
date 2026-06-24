@@ -19,6 +19,7 @@ from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ContextManifest,
+    MemoryClaim,
     PriceSnapshot,
     ResearchEpisode,
 )
@@ -216,13 +217,16 @@ class ContextAssembler:
             length=10,
         )
         compiler = BrainCompiler(self.root, store=self.store)
-        claims = [
-            compiler._claim_from_episode(
-                episode_id=episode.episode_id,
-                last_updated_at=episode.available_from,
-            )
-            for episode in accepted
-        ]
+        claims = _dedupe_claims(
+            [
+                claim
+                for episode in accepted
+                for claim in compiler._claims_from_episode(
+                    episode=episode,
+                    last_updated_at=episode.available_from,
+                )
+            ]
+        )
         manifest = BrainManifest(
             brain_version=version,
             created_at=cutoff_at,
@@ -301,3 +305,14 @@ def _file_hashes_relative_to_root(root: Path, directory: Path) -> dict[str, str]
         for path in sorted(directory.glob("*"))
         if path.is_file()
     }
+
+
+def _dedupe_claims(claims: list[MemoryClaim]) -> list[MemoryClaim]:
+    deduped: list[MemoryClaim] = []
+    seen: set[str] = set()
+    for claim in claims:
+        if claim.claim_id in seen:
+            continue
+        seen.add(claim.claim_id)
+        deduped.append(claim)
+    return deduped

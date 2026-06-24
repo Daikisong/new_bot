@@ -495,6 +495,22 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
         summary="ProviderCo available brain summary.",
         available_day=date(2030, 1, 10),
     )
+    available = available.model_copy(
+        update={
+            "lessons": [
+                MemoryClaim(
+                    claim_id="CL-available-asof-lesson",
+                    statement="Available imported lesson must enter as-of brain context.",
+                    mechanism="available imported lesson -> as-of brain",
+                    scope="as-of context fixture",
+                    support_episode_ids=[],
+                    status=ClaimStatus.TENTATIVE,
+                    confidence_label=ConfidenceLabel.MEDIUM,
+                    available_from=available.available_from,
+                )
+            ]
+        }
+    )
     future = _retrieval_episode(
         "EP-future-brain",
         summary="ProviderCo future brain summary must stop analysis.",
@@ -535,8 +551,11 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
     )
     assert "EP-available-brain" in context_text
     assert "EP-future-brain" not in context_text
+    assert "CL-available-asof-lesson" in context_text
+    assert "Available imported lesson must enter as-of brain context." in context_text
     final_prompt = str(llm.calls[2]["prompt"])
     assert "ProviderCo available brain summary" in final_prompt
+    assert "Available imported lesson must enter as-of brain context." in final_prompt
     assert "ProviderCo future brain summary must stop analysis" not in final_prompt
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["brain_version"].startswith("brain-asof-")
