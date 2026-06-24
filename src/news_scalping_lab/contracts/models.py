@@ -352,6 +352,7 @@ class ContextManifest(StrictModel):
     swept_episode_count: int
     swept_episode_ids: list[str] = Field(default_factory=list)
     retrieved_episode_ids: list[str] = Field(default_factory=list)
+    excluded_retrieved_episode_ids: list[str] = Field(default_factory=list)
     counterexample_episode_ids: list[str] = Field(default_factory=list)
     memory_sweep_artifacts: list[str] = Field(default_factory=list)
     memory_sweep_shard_count: int = 0

@@ -44,6 +44,10 @@ class ExhaustiveCoverageError(RuntimeError):
     """Raised when exhaustive mode fails to sweep every accepted episode exactly once."""
 
 
+class FutureContextLeakError(RuntimeError):
+    """Raised when the active brain context contains future-unavailable research."""
+
+
 class DailyAnalyzer:
     def __init__(
         self,
@@ -74,7 +78,11 @@ class DailyAnalyzer:
         batch = load_news_csv(news_csv, trade_date=trade_date).before_or_at(cutoff_at)
         run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
         web_queries = self._build_web_queries(batch.items)
-        retrieved_ids = self.retrieval.search(" ".join(web_queries), limit=20)
+        raw_retrieved_ids = self.retrieval.search(" ".join(web_queries), limit=20)
+        retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
+            raw_retrieved_ids,
+            trade_date=trade_date,
+        )
         event_ids = [item.event_id for item in batch.items]
         manifest = ContextAssembler(self.root).assemble(
             mode=mode,
@@ -82,6 +90,11 @@ class DailyAnalyzer:
             run_seed=run_seed,
             retrieved_episode_ids=retrieved_ids,
             web_queries=web_queries,
+        )
+        manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
+        self._fail_if_brain_context_contains_unavailable_episodes(
+            trade_date=trade_date,
+            manifest=manifest,
         )
 
         web_guard = TemporalWebGuard(self.web_provider)
@@ -133,6 +146,8 @@ class DailyAnalyzer:
                 "accepted_episode_count": manifest.accepted_episode_count,
                 "swept_episode_count": manifest.swept_episode_count,
                 "swept_episode_ids": manifest.swept_episode_ids,
+                "retrieved_episode_ids": manifest.retrieved_episode_ids,
+                "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
@@ -204,6 +219,31 @@ class DailyAnalyzer:
             report_path=report_path.relative_to(self.root).as_posix(),
             prediction_path=prediction_path.relative_to(self.root).as_posix(),
         )
+
+    def _filter_retrieved_ids_available_as_of(
+        self,
+        retrieved_ids: list[str],
+        *,
+        trade_date: date,
+    ) -> tuple[list[str], list[str]]:
+        store = ResearchStore(self.root)
+        included: list[str] = []
+        excluded: list[str] = []
+        seen: set[str] = set()
+        for episode_id in retrieved_ids:
+            if episode_id in seen:
+                continue
+            seen.add(episode_id)
+            try:
+                episode = store.get_episode(episode_id)
+            except FileNotFoundError:
+                excluded.append(episode_id)
+                continue
+            if episode.available_from.date() <= trade_date:
+                included.append(episode_id)
+            else:
+                excluded.append(episode_id)
+        return included, excluded
 
     async def _run_final_synthesis(
         self,
@@ -301,6 +341,8 @@ class DailyAnalyzer:
                 manifest.memory_sweep_artifacts
             ),
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
+            "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
+            "retrieved_raw_episodes": self._read_retrieved_episode_context(manifest),
             "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),
             "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
             "counterexamples": self._read_counterexample_context(manifest),
@@ -386,6 +428,25 @@ class DailyAnalyzer:
             )
         return files
 
+    def _read_retrieved_episode_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        store = ResearchStore(self.root)
+        contexts: list[dict[str, Any]] = []
+        for episode_id in manifest.retrieved_episode_ids:
+            try:
+                episode = store.get_episode(episode_id)
+            except FileNotFoundError:
+                contexts.append({"episode_id": episode_id, "missing": True})
+                continue
+            contexts.append(
+                {
+                    "episode_id": episode.episode_id,
+                    "trade_date": episode.trade_date.isoformat(),
+                    "available_from": episode.available_from.isoformat(),
+                    "episode": episode.model_dump(mode="json"),
+                }
+            )
+        return contexts
+
     def _read_counterexample_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
         store = ResearchStore(self.root)
         contexts: list[dict[str, Any]] = []
@@ -443,6 +504,46 @@ class DailyAnalyzer:
             ]
         )
         return queries
+
+    def _fail_if_brain_context_contains_unavailable_episodes(
+        self,
+        *,
+        trade_date: date,
+        manifest: ContextManifest,
+    ) -> None:
+        future_episode_ids = [
+            episode.episode_id
+            for episode in ResearchStore(self.root).list_accepted()
+            if episode.available_from.date() > trade_date
+        ]
+        leaked_ids = [
+            episode_id
+            for episode_id in future_episode_ids
+            if self._context_files_contain_episode_id(manifest, episode_id)
+        ]
+        if not leaked_ids:
+            return
+        manifest.errors.append(
+            "brain context contains future-unavailable episodes: " + ", ".join(leaked_ids)
+        )
+        manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
+        manifest_path = manifest_dir / f"{manifest.run_id}.json"
+        write_json(manifest_path, manifest.model_dump(mode="json"))
+        raise FutureContextLeakError(
+            "brain context contains future-unavailable episodes; see "
+            f"{manifest_path.relative_to(self.root).as_posix()}"
+        )
+
+    def _context_files_contain_episode_id(
+        self,
+        manifest: ContextManifest,
+        episode_id: str,
+    ) -> bool:
+        for relative_path in [*manifest.brain_files, *manifest.shard_brain_files]:
+            path = self.root / relative_path
+            if path.exists() and path.is_file() and episode_id in path.read_text(encoding="utf-8"):
+                return True
+        return False
 
     def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
         if manifest.mode != "exhaustive":

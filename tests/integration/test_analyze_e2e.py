@@ -25,7 +25,11 @@ from news_scalping_lab.contracts.models import (
     RedTeamFinding,
     ResearchEpisode,
 )
-from news_scalping_lab.inference.analyzer import DailyAnalyzer, ExhaustiveCoverageError
+from news_scalping_lab.inference.analyzer import (
+    DailyAnalyzer,
+    ExhaustiveCoverageError,
+    FutureContextLeakError,
+)
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -96,6 +100,7 @@ class RecordingBlindLLM:
         if purpose == "final_synthesis":
             assert "red_team_output" in prompt
             assert "d_minus_one_market_data" in prompt
+            assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
             assert "all_shard_contributions" in prompt
             prediction = BlindPrediction(
@@ -212,6 +217,28 @@ def _episode_with_counterexample() -> ResearchEpisode:
         ],
         misses=["loose narrative relation"],
         available_from=available_from,
+    )
+
+
+def _retrieval_episode(
+    episode_id: str,
+    *,
+    summary: str,
+    available_day: date,
+) -> ResearchEpisode:
+    trade_day = date(2030, 1, 9)
+    return ResearchEpisode(
+        episode_id=episode_id,
+        trade_date=trade_day,
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test-v1",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(
+            summary=summary,
+            open_world_mechanisms=["ProviderCo catalyst -> retrieved raw episode context"],
+        ),
+        available_from=datetime.combine(available_day, datetime.min.time(), tzinfo=KST),
     )
 
 
@@ -372,6 +399,94 @@ async def test_final_synthesis_receives_counterexample_context(tmp_path) -> None
     assert "Same-looking catalyst failed" in final_prompt
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["counterexample_episode_ids"] == ["EP-counterexample"]
+
+
+@pytest.mark.asyncio
+async def test_retrieved_raw_episodes_are_filtered_by_available_from(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","ProviderCo, catalyst","Retrieved raw episode context should be visible."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    available = _retrieval_episode(
+        "EP-retrieved",
+        summary="ProviderCo retrieved raw summary available before the run.",
+        available_day=date(2030, 1, 10),
+    )
+    future = _retrieval_episode(
+        "EP-future-retrieved",
+        summary="ProviderCo future unavailable summary must not enter blind context.",
+        available_day=date(2030, 1, 11),
+    )
+    for episode in (available, future):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    llm = RecordingBlindLLM()
+
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    final_prompt = str(llm.calls[2]["prompt"])
+    assert analysis.context_manifest.retrieved_episode_ids == ["EP-retrieved"]
+    assert analysis.context_manifest.excluded_retrieved_episode_ids == ["EP-future-retrieved"]
+    assert "ProviderCo retrieved raw summary available before the run" in final_prompt
+    assert "ProviderCo future unavailable summary must not enter blind context" not in final_prompt
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["retrieved_episode_ids"] == ["EP-retrieved"]
+    assert saved_manifest["excluded_retrieved_episode_ids"] == ["EP-future-retrieved"]
+
+
+@pytest.mark.asyncio
+async def test_analyze_fails_when_brain_contains_future_unavailable_episode(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","ProviderCo, catalyst","Future brain context must stop the run."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    available = _retrieval_episode(
+        "EP-available-brain",
+        summary="ProviderCo available brain summary.",
+        available_day=date(2030, 1, 10),
+    )
+    future = _retrieval_episode(
+        "EP-future-brain",
+        summary="ProviderCo future brain summary must stop analysis.",
+        available_day=date(2030, 1, 11),
+    )
+    for episode in (available, future):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    with pytest.raises(FutureContextLeakError, match="future-unavailable episodes"):
+        await DailyAnalyzer(settings).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="exhaustive",
+            web_search=False,
+        )
+
+    manifests = list((tmp_path / "runs" / "manifests").glob("RUN-*.json"))
+    assert len(manifests) == 1
+    manifest = read_json(manifests[0])
+    assert "brain context contains future-unavailable episodes: EP-future-brain" in manifest[
+        "errors"
+    ]
+    assert not (tmp_path / "predictions" / "2030-01-10.json").exists()
 
 
 @pytest.mark.asyncio

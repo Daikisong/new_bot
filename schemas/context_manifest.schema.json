@@ -106,6 +106,13 @@
       "title": "Errors",
       "type": "array"
     },
+    "excluded_retrieved_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Excluded Retrieved Episode Ids",
+      "type": "array"
+    },
     "excluded_web_source_ids": {
       "items": {
         "type": "string"
