@@ -1709,6 +1709,235 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
     ) in findings
 
 
+def test_provenance_audit_validates_candidate_verification_artifact(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    artifact_dir = (
+        tmp_path / "runs" / "checkpoints" / "candidate_verifications" / "RUN-linked"
+    )
+    artifact_dir.mkdir(parents=True)
+    artifact_path = artifact_dir / "candidate_verification.json"
+    required_dimensions = [
+        "listed_security_and_exact_ticker",
+        "recent_disclosures_and_news",
+    ]
+    payload = {
+        "schema_version": "nslab.candidate_verification.v1",
+        "run_id": "RUN-linked",
+        "required_dimensions": required_dimensions,
+        "subject_count": 2,
+        "findings": [
+            {
+                "subject_type": "final_candidate",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "query": "candidate verification",
+                "source_count": 1,
+                "excluded_source_count": 0,
+                "accepted_source_ids": ["WEB-1"],
+                "excluded_source_ids": [],
+                "verification_dimensions": [
+                    {
+                        "name": "listed_security_and_exact_ticker",
+                        "status": "source_collected",
+                        "evidence_source_ids": ["WEB-1"],
+                    },
+                    {
+                        "name": "recent_disclosures_and_news",
+                        "status": "needs_company_discovery",
+                        "evidence_source_ids": [],
+                    },
+                ],
+                "d_minus_one_market_data_only": False,
+                "uncertainties": [],
+            },
+            {
+                "subject_type": "candidate_expansion",
+                "candidate_rank": 0,
+                "candidate_ticker": "",
+                "candidate_company_name": "ExpansionCo",
+                "candidate_path_type": "CONTINUATION",
+                "query": "candidate verification expansion",
+                "source_count": 0,
+                "excluded_source_count": 1,
+                "accepted_source_ids": [],
+                "excluded_source_ids": ["WEB-X"],
+                "verification_dimensions": [
+                    {
+                        "name": "listed_security_and_exact_ticker",
+                        "status": "no_cutoff_safe_source",
+                        "evidence_source_ids": [],
+                    },
+                    {
+                        "name": "recent_disclosures_and_news",
+                        "status": "no_cutoff_safe_source",
+                        "evidence_source_ids": [],
+                    },
+                ],
+                "d_minus_one_market_data_only": True,
+                "uncertainties": [],
+            },
+        ],
+    }
+    artifact_text = canonical_json(payload)
+    artifact_path.write_text(artifact_text, encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "candidate_web_check_count": 1,
+            "candidate_web_source_ids": ["WEB-1"],
+            "excluded_candidate_web_check_count": 1,
+            "excluded_candidate_web_source_ids": ["WEB-X"],
+            "candidate_verification_artifact": artifact_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "candidate_verification_sha256": sha256_text(artifact_text),
+            "candidate_verification_count": 2,
+            "candidate_verification_summary": {
+                "required_dimensions": required_dimensions,
+                "finding_count": 2,
+                "subject_count": 2,
+                "status_counts": {
+                    "source_collected": 1,
+                    "needs_company_discovery": 1,
+                    "no_cutoff_safe_source": 2,
+                },
+                "candidate_expansion_subject_count": 1,
+                "d_minus_one_only_subject_count": 1,
+            },
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_payload = {
+        **payload,
+        "schema_version": "bad.candidate_verification",
+        "run_id": "RUN-other",
+        "required_dimensions": ["listed_security_and_exact_ticker"],
+        "subject_count": 1,
+        "findings": [
+            {
+                **payload["findings"][0],
+                "source_count": 2,
+                "excluded_source_count": 1,
+                "accepted_source_ids": ["WEB-Z"],
+                "excluded_source_ids": ["WEB-Y"],
+                "verification_dimensions": [
+                    {
+                        "name": "wrong_dimension",
+                        "status": "unexpected_status",
+                        "evidence_source_ids": [],
+                    }
+                ],
+                "d_minus_one_market_data_only": True,
+            }
+        ],
+    }
+    bad_artifact_text = canonical_json(bad_payload)
+    artifact_path.write_text(bad_artifact_text, encoding="utf-8")
+    manifest = read_json(manifest_path)
+    manifest["candidate_verification_sha256"] = "0" * 64
+    manifest["candidate_verification_count"] = 2
+    manifest["candidate_verification_summary"] = {
+        "required_dimensions": required_dimensions,
+        "finding_count": 2,
+        "subject_count": 2,
+        "status_counts": {"source_collected": 1},
+        "candidate_expansion_subject_count": 1,
+        "d_minus_one_only_subject_count": 0,
+    }
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest candidate_verification_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "schema_version mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification run_id mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "required_dimensions mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "subject_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "dimension_coverage mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "status_counts mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "source_counts mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "accepted_source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "excluded_source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification:1 "
+        "accepted_source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification:1 "
+        "excluded_source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "candidate_expansion_subject_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "d_minus_one_only_subject_count mismatch"
+    ) in findings
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

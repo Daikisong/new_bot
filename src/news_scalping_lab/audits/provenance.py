@@ -1907,6 +1907,7 @@ def _check_manifest_output_artifacts(
         )
     _check_candidate_expansion_artifact(root, prediction_path, manifest, findings)
     _check_candidate_web_check_artifacts(root, prediction_path, manifest, findings)
+    _check_candidate_verification_artifact(root, prediction_path, manifest, findings)
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
@@ -2885,6 +2886,249 @@ def _check_candidate_web_check_summary(
         )
 
 
+def _check_candidate_verification_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("candidate_verification_artifact")
+    expected_hash = manifest.get("candidate_verification_sha256")
+    candidate_count = _non_bool_int(manifest.get("candidate_verification_count"))
+    has_contract = (
+        artifact_ref is not None
+        or expected_hash is not None
+        or bool(candidate_count)
+        or bool(manifest.get("candidate_verification_summary"))
+    )
+    if not has_contract:
+        return
+
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="candidate_verification_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing "
+            "candidate_verification_sha256"
+        )
+    elif sha256_text(text) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "candidate_verification_sha256 mismatch"
+        )
+
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification invalid JSON"
+        )
+        return
+    if not isinstance(payload, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "is not an object"
+        )
+        return
+
+    if payload.get("schema_version") != "nslab.candidate_verification.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "schema_version mismatch"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "run_id mismatch"
+        )
+
+    expected_dimensions = _candidate_verification_required_dimensions(manifest)
+    if not expected_dimensions or _string_list(
+        payload.get("required_dimensions")
+    ) != expected_dimensions:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "required_dimensions mismatch"
+        )
+
+    candidate_findings = payload.get("findings")
+    if not isinstance(candidate_findings, list) or not all(
+        isinstance(finding, dict) for finding in candidate_findings
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "findings invalid"
+        )
+        return
+
+    summary = manifest.get("candidate_verification_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "candidate_verification_summary invalid"
+        )
+        return
+
+    expected_count = _non_bool_int(manifest.get("candidate_verification_count"))
+    summary_count = _non_bool_int(summary.get("finding_count"))
+    if (
+        expected_count is None
+        or expected_count != len(candidate_findings)
+        or summary_count != len(candidate_findings)
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "count mismatch"
+        )
+
+    if (
+        _non_bool_int(payload.get("subject_count")) != len(candidate_findings)
+        or _non_bool_int(summary.get("subject_count")) != len(candidate_findings)
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "subject_count mismatch"
+        )
+
+    if not expected_dimensions or any(
+        _candidate_verification_dimension_names(finding) != expected_dimensions
+        for finding in candidate_findings
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "dimension_coverage mismatch"
+        )
+
+    observed_status_counts = _candidate_verification_status_counts(candidate_findings)
+    if summary.get("status_counts") != observed_status_counts:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "status_counts mismatch"
+        )
+
+    _check_candidate_verification_sources(
+        prediction_path,
+        manifest,
+        candidate_findings,
+        findings,
+    )
+    _check_candidate_verification_summary_counts(
+        prediction_path,
+        summary,
+        candidate_findings,
+        findings,
+    )
+
+
+def _check_candidate_verification_sources(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    candidate_findings: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    source_count = sum(
+        _non_bool_int(finding.get("source_count")) or 0
+        for finding in candidate_findings
+    )
+    excluded_source_count = sum(
+        _non_bool_int(finding.get("excluded_source_count")) or 0
+        for finding in candidate_findings
+    )
+    if (
+        source_count != _non_bool_int(manifest.get("candidate_web_check_count"))
+        or excluded_source_count
+        != _non_bool_int(manifest.get("excluded_candidate_web_check_count"))
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "source_counts mismatch"
+        )
+
+    expected_accepted_ids = _string_list(manifest.get("candidate_web_source_ids"))
+    expected_excluded_ids = _string_list(
+        manifest.get("excluded_candidate_web_source_ids")
+    )
+    accepted_ids = _unique_strings(
+        source_id
+        for finding in candidate_findings
+        for source_id in _string_list(finding.get("accepted_source_ids"))
+    )
+    excluded_ids = _unique_strings(
+        source_id
+        for finding in candidate_findings
+        for source_id in _string_list(finding.get("excluded_source_ids"))
+    )
+    if accepted_ids != expected_accepted_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "accepted_source_ids mismatch"
+        )
+    if excluded_ids != expected_excluded_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "excluded_source_ids mismatch"
+        )
+
+    accepted_id_set = set(expected_accepted_ids)
+    excluded_id_set = set(expected_excluded_ids)
+    for index, finding in enumerate(candidate_findings, start=1):
+        if any(
+            source_id not in accepted_id_set
+            for source_id in _string_list(finding.get("accepted_source_ids"))
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} accepted_source_ids mismatch"
+            )
+        if any(
+            source_id not in excluded_id_set
+            for source_id in _string_list(finding.get("excluded_source_ids"))
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} excluded_source_ids mismatch"
+            )
+
+
+def _check_candidate_verification_summary_counts(
+    prediction_path: Path,
+    summary: dict[str, Any],
+    candidate_findings: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    expansion_count = sum(
+        1
+        for finding in candidate_findings
+        if finding.get("subject_type") == "candidate_expansion"
+    )
+    if _non_bool_int(summary.get("candidate_expansion_subject_count")) != expansion_count:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "candidate_expansion_subject_count mismatch"
+        )
+
+    d_minus_one_count = sum(
+        1
+        for finding in candidate_findings
+        if finding.get("d_minus_one_market_data_only") is True
+    )
+    if _non_bool_int(summary.get("d_minus_one_only_subject_count")) != d_minus_one_count:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "d_minus_one_only_subject_count mismatch"
+        )
+
+
 def _manifest_prompt_hash(manifest: dict[str, Any], key: str) -> str | None:
     prompt_hashes = manifest.get("prompt_hashes")
     if not isinstance(prompt_hashes, dict):
@@ -2898,6 +3142,50 @@ def _semantic_retrieval_required_categories(manifest: dict[str, Any]) -> list[st
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("required_categories"))
+
+
+def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("candidate_web_check_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("verification_focus"))
+
+
+def _candidate_verification_required_dimensions(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("candidate_verification_summary")
+    if isinstance(summary, dict):
+        required_dimensions = _string_list(summary.get("required_dimensions"))
+        if required_dimensions:
+            return required_dimensions
+    return _candidate_web_verification_focus(manifest)
+
+
+def _candidate_verification_dimension_names(finding: dict[str, Any]) -> list[str]:
+    dimensions = finding.get("verification_dimensions")
+    if not isinstance(dimensions, list):
+        return []
+    return [
+        str(dimension["name"])
+        for dimension in dimensions
+        if isinstance(dimension, dict) and isinstance(dimension.get("name"), str)
+    ]
+
+
+def _candidate_verification_status_counts(
+    candidate_findings: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for finding in candidate_findings:
+        dimensions = finding.get("verification_dimensions")
+        if not isinstance(dimensions, list):
+            continue
+        for dimension in dimensions:
+            if not isinstance(dimension, dict) or not isinstance(
+                dimension.get("status"), str
+            ):
+                continue
+            counts[str(dimension["status"])] += 1
+    return dict(counts)
 
 
 def _string_list(value: Any) -> list[str]:
