@@ -19,6 +19,7 @@ from news_scalping_lab.contracts.models import (
     FailureCode,
     MechanismMemory,
     PathType,
+    RelationClass,
 )
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
@@ -43,6 +44,7 @@ ALLOWED_CONFIDENCE_LABELS = {label.value for label in ConfidenceLabel}
 ALLOWED_CANDIDATE_PATH_TYPES = {path_type.value for path_type in PathType}
 ALLOWED_FAILURE_CODES = {code.value for code in FailureCode}
 ALLOWED_CLAIM_STATUSES = {status.value for status in ClaimStatus}
+ALLOWED_RELATION_CLASSES = {relation_class.value for relation_class in RelationClass}
 PREDICTION_STRING_SEQUENCE_FIELDS = (
     "event_ids",
     "causal_chain",
@@ -68,6 +70,11 @@ MEMORY_CLAIM_STRING_SEQUENCE_FIELDS = (
     "support_episode_ids",
     "contradiction_episode_ids",
     "near_miss_episode_ids",
+)
+RELATION_EVIDENCE_SEQUENCE_FIELDS = (
+    "fundamental_evidence",
+    "narrative_evidence",
+    "market_memory_evidence",
 )
 
 
@@ -423,6 +430,10 @@ def _check_research_episode_nested_list_provenance(
             findings,
             kind=f"{kind} {index}",
         )
+        if field_name == "observed_events":
+            _check_research_episode_observed_event_shape(label, item, findings, index=index)
+        if field_name == "event_ticker_edges":
+            _check_research_episode_relation_edge_shape(label, item, findings, index=index)
         if field_name in {"lessons", "counterexamples"}:
             _check_research_episode_memory_claim_shape(label, item, findings, kind=kind, index=index)
             _check_research_episode_claim_available_from(
@@ -457,6 +468,63 @@ def _check_research_episode_blind_analysis_shape(
         findings.append(
             f"{label}: research episode blind_analysis initial_uncertainties invalid"
         )
+
+
+def _check_research_episode_observed_event_shape(
+    label: str,
+    event: dict[str, Any],
+    findings: list[str],
+    *,
+    index: int,
+) -> None:
+    prefix = f"{label}: research episode observed event {index}"
+    for field_name in ("event_id", "title", "body", "source_id"):
+        value = event.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            findings.append(f"{prefix} {field_name} missing or invalid")
+    row_number = event.get("row_number")
+    if not isinstance(row_number, int) or row_number < 1:
+        findings.append(f"{prefix} row_number missing or invalid")
+    if _parse_optional_datetime(event.get("published_at")) is None:
+        findings.append(f"{prefix} published_at missing or invalid")
+    collected_at = event.get("collected_at")
+    if collected_at is not None and _parse_optional_datetime(collected_at) is None:
+        findings.append(f"{prefix} collected_at invalid")
+
+
+def _check_research_episode_relation_edge_shape(
+    label: str,
+    edge: dict[str, Any],
+    findings: list[str],
+    *,
+    index: int,
+) -> None:
+    prefix = f"{label}: research episode event ticker edge {index}"
+    for field_name in (
+        "edge_id",
+        "episode_id",
+        "event_id",
+        "ticker",
+        "company_name",
+        "relation_explanation",
+        "temporal_validity",
+    ):
+        value = edge.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            findings.append(f"{prefix} {field_name} missing or invalid")
+    relation_class = edge.get("relation_class")
+    if not isinstance(relation_class, str) or relation_class not in ALLOWED_RELATION_CLASSES:
+        findings.append(f"{prefix} relation_class missing or invalid")
+    if not isinstance(edge.get("directly_mentioned"), bool):
+        findings.append(f"{prefix} directly_mentioned missing or invalid")
+    confidence_label = edge.get("confidence_label")
+    if (
+        not isinstance(confidence_label, str)
+        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
+    ):
+        findings.append(f"{prefix} confidence_label missing or invalid")
+    for field_name in RELATION_EVIDENCE_SEQUENCE_FIELDS:
+        _check_string_list_field(prefix, field_name, edge.get(field_name), findings)
 
 
 def _check_research_episode_blind_prediction_shape(

@@ -1347,6 +1347,8 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         price_source_snapshot: dict[str, object] | None = None,
         blind_predictions: list[dict[str, object]] | None = None,
         postmortem: dict[str, object] | None = None,
+        observed_events: list[dict[str, object]] | None = None,
+        event_ticker_edges: list[dict[str, object]] | None = None,
         lessons: list[dict[str, object]] | None = None,
         counterexamples: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
@@ -1375,8 +1377,8 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
                 ],
             },
             "blind_predictions": [] if blind_predictions is None else blind_predictions,
-            "observed_events": [],
-            "event_ticker_edges": [],
+            "observed_events": [] if observed_events is None else observed_events,
+            "event_ticker_edges": [] if event_ticker_edges is None else event_ticker_edges,
             "lessons": [] if lessons is None else lessons,
             "counterexamples": [] if counterexamples is None else counterexamples,
             "misses": [],
@@ -1690,6 +1692,119 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "research/accepted/EP-identity.json: research episode lesson 1 "
         "last_updated_at invalid"
     ) in lesson_shape_failed["findings"]
+
+    valid_event = {
+        "event_id": "EVT-identity",
+        "row_number": 1,
+        "published_at": "2030-01-10T08:00:00+09:00",
+        "collected_at": "2030-01-10T08:01:00+09:00",
+        "title": "Accepted observed event",
+        "body": "Observed before cutoff.",
+        "source_id": "SRC-observed-event",
+        "provenance": [
+            {
+                "source_id": "SRC-observed-event",
+                "source_type": "accepted_observed_event",
+                "uri": "prompt://observed_event/test",
+            }
+        ],
+    }
+    valid_edge = {
+        "edge_id": "EDGE-identity",
+        "episode_id": "EP-identity",
+        "event_id": "EVT-identity",
+        "ticker": "UNKNOWN",
+        "company_name": "CandidateCo",
+        "relation_class": "DIRECT",
+        "relation_explanation": "The edge records an observed direct relation.",
+        "directly_mentioned": True,
+        "fundamental_evidence": ["current event relation"],
+        "narrative_evidence": [],
+        "market_memory_evidence": [],
+        "temporal_validity": "pre-cutoff",
+        "confidence_label": "medium",
+        "provenance": [
+            {
+                "source_id": "SRC-edge",
+                "source_type": "accepted_event_ticker_edge",
+                "uri": "prompt://edge/test",
+            }
+        ],
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            observed_events=[valid_event],
+            event_ticker_edges=[valid_edge],
+        ),
+    )
+    valid_event_edge_result = audit_provenance(tmp_path)
+
+    assert valid_event_edge_result["passed"], valid_event_edge_result["findings"]
+
+    invalid_event = {
+        **valid_event,
+        "event_id": "",
+        "row_number": 0,
+        "published_at": "not-a-datetime",
+        "collected_at": "not-a-datetime",
+    }
+    invalid_edge = {
+        **valid_edge,
+        "edge_id": "",
+        "relation_class": "STATIC_MAP",
+        "directly_mentioned": "yes",
+        "confidence_label": "certain",
+        "fundamental_evidence": ["valid", 1],
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            observed_events=[invalid_event],
+            event_ticker_edges=[invalid_edge],
+        ),
+    )
+    event_edge_shape_failed = audit_provenance(tmp_path)
+
+    assert not event_edge_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode observed event 1 "
+        "event_id missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode observed event 1 "
+        "row_number missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode observed event 1 "
+        "published_at missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode observed event 1 "
+        "collected_at invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode event ticker edge 1 "
+        "edge_id missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode event ticker edge 1 "
+        "relation_class missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode event ticker edge 1 "
+        "directly_mentioned missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode event ticker edge 1 "
+        "confidence_label missing or invalid"
+    ) in event_edge_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode event ticker edge 1 "
+        "fundamental_evidence missing or invalid"
+    ) in event_edge_shape_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(
