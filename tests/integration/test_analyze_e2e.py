@@ -1798,6 +1798,23 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
         payload = read_json(tmp_path / artifact)
         assert payload["cache_key"]
         assert payload["episode_shard_sha256"]
+        source_hashes = payload["episode_shard_source_hashes"]
+        assert sorted(source_hashes) == sorted(payload["episode_ids"])
+        assert payload["episode_shard_sha256"] == sha256_text(
+            canonical_json(
+                [
+                    {
+                        "episode_id": episode_id,
+                        "source_sha256": source_hash,
+                    }
+                    for episode_id, source_hash in sorted(source_hashes.items())
+                ]
+            )
+        )
+        for episode_id in payload["episode_ids"]:
+            assert source_hashes[episode_id] == file_sha256(
+                tmp_path / "research" / "accepted" / f"{episode_id}.json"
+            )
         assert payload["from_cache"] is False
         swept_from_artifacts.update(payload["episode_ids"])
     assert swept_from_artifacts == set(manifest.swept_episode_ids)

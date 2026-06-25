@@ -3206,10 +3206,13 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         "schema_mismatches": [],
         "metadata_mismatches": [],
         "episode_count_mismatches": [],
+        "source_hash_mismatches": [],
+        "shard_hash_mismatches": [],
         "path_within_project": None,
         "exists_verified": None,
         "hashes_verified": None,
         "metadata_verified": None,
+        "source_hashes_verified": None,
         "shard_count_verified": None,
         "cache_hits_verified": None,
         "swept_episode_ids_verified": None,
@@ -3253,6 +3256,7 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
     trade_date = manifest.get("trade_date")
     cutoff_at = manifest.get("cutoff_at")
     brain_version = manifest.get("brain_version")
+    accepted_hashes = ResearchStore(root).accepted_hashes()
     for artifact_ref in artifact_refs:
         artifact_path = _resolve_project_artifact(root, artifact_ref)
         if artifact_path is None:
@@ -3297,6 +3301,29 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         observed_episode_ids.extend(episode_ids)
         if payload.get("episode_count") != len(episode_ids):
             status["episode_count_mismatches"].append(artifact_ref)
+        source_hashes = _memory_sweep_source_hashes(
+            payload.get("episode_shard_source_hashes"),
+            episode_ids,
+        )
+        if source_hashes is None:
+            status["source_hash_mismatches"].append(
+                {"path": artifact_ref, "reason": "invalid_or_missing_source_hashes"}
+            )
+        else:
+            expected_shard_hash = _memory_sweep_shard_hash(source_hashes)
+            if payload.get("episode_shard_sha256") != expected_shard_hash:
+                status["shard_hash_mismatches"].append(artifact_ref)
+            for episode_id, recorded_hash in sorted(source_hashes.items()):
+                actual_hash = accepted_hashes.get(episode_id)
+                if actual_hash != recorded_hash:
+                    status["source_hash_mismatches"].append(
+                        {
+                            "path": artifact_ref,
+                            "episode_id": episode_id,
+                            "expected": recorded_hash,
+                            "actual": actual_hash,
+                        }
+                    )
         if payload.get("from_cache") is True:
             status["observed_cache_hits"] += 1
 
@@ -3316,6 +3343,13 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         and not status["schema_mismatches"]
         and not status["metadata_mismatches"]
         and not status["episode_count_mismatches"]
+        and not status["source_hash_mismatches"]
+        and not status["shard_hash_mismatches"]
+    )
+    status["source_hashes_verified"] = (
+        status["exists_verified"]
+        and not status["source_hash_mismatches"]
+        and not status["shard_hash_mismatches"]
     )
     status["shard_count_verified"] = expected_shard_count == status["artifact_count"]
     status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
@@ -3350,6 +3384,10 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         status["errors"].append("memory_sweep_artifact_metadata_mismatches")
     if status["episode_count_mismatches"]:
         status["errors"].append("memory_sweep_artifact_episode_count_mismatches")
+    if status["source_hash_mismatches"]:
+        status["errors"].append("memory_sweep_artifact_source_hash_mismatches")
+    if status["shard_hash_mismatches"]:
+        status["errors"].append("memory_sweep_artifact_shard_hash_mismatches")
     if not status["shard_count_verified"]:
         status["errors"].append("memory_sweep_shard_count_mismatch")
     if not status["cache_hits_verified"]:
@@ -3358,6 +3396,31 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         status["errors"].append("memory_sweep_swept_episode_ids_mismatch")
     status["passed"] = _memory_sweep_status_passed(status)
     return status
+
+
+def _memory_sweep_source_hashes(
+    value: object,
+    episode_ids: list[str],
+) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+        return None
+    hashes = {str(key): str(item) for key, item in value.items()}
+    if sorted(hashes) != sorted(episode_ids):
+        return None
+    return hashes
+
+
+def _memory_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"episode_id": episode_id, "source_sha256": source_hash}
+                for episode_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
 
 
 _CONTEXT_PROMPT_TRACE_PURPOSES = {
@@ -4207,6 +4270,7 @@ def _memory_sweep_status_passed(status: dict[str, Any]) -> bool:
         and status.get("exists_verified")
         and status.get("hashes_verified")
         and status.get("metadata_verified")
+        and status.get("source_hashes_verified")
         and status.get("shard_count_verified")
         and status.get("cache_hits_verified")
         and status.get("swept_episode_ids_verified")

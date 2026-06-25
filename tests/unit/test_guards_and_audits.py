@@ -49,6 +49,17 @@ def _provenance(source_type: str = "test") -> list[dict[str, str]]:
     ]
 
 
+def _sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"episode_id": episode_id, "source_sha256": source_hash}
+                for episode_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
+
+
 def _candidate_with_provenance() -> dict[str, object]:
     return {
         "company_name": "CandidateCo",
@@ -3073,6 +3084,37 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    news_path = tmp_path / "data" / "raw" / "news" / "sweep_news.csv"
+    news_path.parent.mkdir(parents=True)
+    news_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-08","08:00:00","SweepCo event","Source fixture."\n',
+        encoding="utf-8",
+    )
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True)
+    for episode_id, summary in (
+        ("EP-sweep-1", "Sweep source one."),
+        ("EP-sweep-2", "Sweep source two."),
+    ):
+        episode = ResearchEpisode(
+            episode_id=episode_id,
+            trade_date=date(2030, 1, 8),
+            cutoff_at=datetime(2030, 1, 8, 8, 59, 59, tzinfo=KST),
+            created_at=datetime(2030, 1, 8, 16, 0, 0, tzinfo=KST),
+            research_version="memory-sweep-provenance-test-v1",
+            input_news_files=[news_path.relative_to(tmp_path).as_posix()],
+            input_news_hashes=[file_sha256(news_path)],
+            price_source_snapshot={"source": "provenance-test"},
+            blind_analysis=BlindAnalysis(
+                summary=summary,
+                open_world_mechanisms=["sweep source hash -> reproducible context"],
+                provenance=_provenance("sweep_blind_analysis"),
+            ),
+            provenance=_provenance("sweep_episode"),
+            available_from=datetime(2030, 1, 9, 0, 0, 0, tzinfo=KST),
+        )
+        write_json(accepted_dir / f"{episode_id}.json", episode.model_dump(mode="json"))
     sweep_path = (
         tmp_path
         / "runs"
@@ -3082,6 +3124,10 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         / "shard_0001.json"
     )
     sweep_ref = sweep_path.relative_to(tmp_path).as_posix()
+    source_hashes = {
+        "EP-sweep-1": file_sha256(accepted_dir / "EP-sweep-1.json"),
+        "EP-sweep-2": file_sha256(accepted_dir / "EP-sweep-2.json"),
+    }
     sweep_payload = {
         "schema_version": "nslab.memory_sweep_contribution.v1",
         "cache_key": "SWEEP-linked",
@@ -3089,6 +3135,8 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "trade_date": "2030-01-10",
         "cutoff_at": "2030-01-10T08:59:59+09:00",
         "brain_version": "brain-linked",
+        "episode_shard_sha256": _sweep_shard_hash(source_hashes),
+        "episode_shard_source_hashes": source_hashes,
         "episode_count": 2,
         "episode_ids": ["EP-sweep-1", "EP-sweep-2"],
         "from_cache": False,
@@ -3154,8 +3202,35 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         f"{sweep_ref}"
     ) in findings
     assert (
+        "2030-01-10.json: memory sweep artifact source hashes invalid: "
+        f"{sweep_ref}"
+    ) in findings
+    assert (
         "2030-01-10.json: context manifest memory_sweep swept episode ids mismatch"
     ) in findings
+
+    tampered_sweep = {
+        **sweep_payload,
+        "episode_shard_sha256": "0" * 64,
+        "episode_shard_source_hashes": {
+            **source_hashes,
+            "EP-sweep-2": "1" * 64,
+        },
+    }
+    write_json(sweep_path, tampered_sweep)
+
+    failed_hashes = audit_provenance(tmp_path)
+
+    assert not failed_hashes["passed"]
+    hash_findings = failed_hashes["findings"]
+    assert (
+        "2030-01-10.json: memory sweep artifact episode_shard_sha256 mismatch: "
+        f"{sweep_ref}"
+    ) in hash_findings
+    assert (
+        "2030-01-10.json: memory sweep artifact source hash mismatch: "
+        f"{sweep_ref}#EP-sweep-2"
+    ) in hash_findings
 
 
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:

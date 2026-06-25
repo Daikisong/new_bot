@@ -1995,6 +1995,7 @@ def _check_manifest_memory_sweep_artifacts(
     expected_brain_version = manifest.get("brain_version")
     observed_episode_ids: list[str] = []
     observed_cache_hits = 0
+    accepted_hashes = _accepted_episode_hashes(root)
     for artifact_ref in artifact_refs:
         artifact_path = _resolve_manifest_path(root, artifact_ref)
         if artifact_path is None:
@@ -2049,6 +2050,28 @@ def _check_manifest_memory_sweep_artifacts(
                 f"{prediction_path.name}: memory sweep artifact episode_count mismatch: "
                 f"{artifact_ref}"
             )
+        source_hashes = _memory_sweep_source_hashes(
+            payload.get("episode_shard_source_hashes"),
+            episode_ids,
+        )
+        if source_hashes is None:
+            findings.append(
+                f"{prediction_path.name}: memory sweep artifact source hashes invalid: "
+                f"{artifact_ref}"
+            )
+        else:
+            expected_shard_hash = _memory_sweep_shard_hash(source_hashes)
+            if payload.get("episode_shard_sha256") != expected_shard_hash:
+                findings.append(
+                    f"{prediction_path.name}: memory sweep artifact "
+                    f"episode_shard_sha256 mismatch: {artifact_ref}"
+                )
+            for episode_id, recorded_hash in sorted(source_hashes.items()):
+                if accepted_hashes.get(episode_id) != recorded_hash:
+                    findings.append(
+                        f"{prediction_path.name}: memory sweep artifact source hash "
+                        f"mismatch: {artifact_ref}#{episode_id}"
+                    )
         if payload.get("from_cache") is True:
             observed_cache_hits += 1
 
@@ -2068,6 +2091,31 @@ def _check_manifest_memory_sweep_artifacts(
             )
     else:
         findings.append(f"{prediction_path.name}: context manifest swept_episode_ids is invalid")
+
+
+def _memory_sweep_source_hashes(
+    value: object,
+    episode_ids: list[str],
+) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+        return None
+    hashes = {str(key): str(item) for key, item in value.items()}
+    if sorted(hashes) != sorted(episode_ids):
+        return None
+    return hashes
+
+
+def _memory_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"episode_id": episode_id, "source_sha256": source_hash}
+                for episode_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
 
 
 def _check_manifest_output_artifacts(
