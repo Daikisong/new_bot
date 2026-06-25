@@ -39,6 +39,9 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
 
     assert RUNNER.invoke(app, ["init"]).exit_code == 0
     _assert_ok("doctor", RUNNER.invoke(app, ["doctor"]))
+    doctor_strict = RUNNER.invoke(app, ["doctor", "--strict"])
+    _assert_ok("doctor --strict", doctor_strict)
+    assert json.loads(doctor_strict.output)["readiness"]["passed"] is True
     inspected_news = RUNNER.invoke(app, ["news", "inspect", str(news_csv)])
     _assert_ok("news inspect", inspected_news)
     inspected_news_payload = json.loads(inspected_news.output)
@@ -131,6 +134,14 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert context_payload["run_id"] == run_id
     inspection = context_payload["inspection"]
     assert inspection["reproducibility_checks_passed"] is True
+    inspected_context_strict = RUNNER.invoke(
+        app,
+        ["context", "inspect", run_id, "--strict"],
+    )
+    _assert_ok("context inspect --strict", inspected_context_strict)
+    strict_context_payload = json.loads(inspected_context_strict.output)
+    assert strict_context_payload["run_id"] == run_id
+    assert strict_context_payload["inspection"]["reproducibility_checks_passed"] is True
     news_input = inspection["news_input"]
     assert news_input["hash_verified"] is True
     assert news_input["expected_sha256"] == file_sha256(news_csv)
@@ -523,6 +534,18 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
+    analysis_bundle = RUNNER.invoke(
+        app,
+        ["context", "export-analysis-bundle", "--run-id", run_id],
+    )
+    _assert_ok("context export-analysis-bundle", analysis_bundle)
+    analysis_bundle_payload = json.loads(analysis_bundle.output)
+    assert analysis_bundle_payload["run_id"] == run_id
+    analysis_bundle_file = tmp_path / analysis_bundle_payload["bundle"]
+    assert analysis_bundle_file.exists()
+    analysis_bundle_text = analysis_bundle_file.read_text(encoding="utf-8")
+    assert "schema_version: nslab.research_bundle.v1" in analysis_bundle_text
+    assert run_id in analysis_bundle_text
     manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
     prediction_file = tmp_path / context_payload["prediction_artifact"]
     original_prediction = read_json(prediction_file)
@@ -541,6 +564,19 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     tampered_prediction_context = RUNNER.invoke(app, ["context", "inspect", run_id])
     _assert_ok("context inspect tampered prediction", tampered_prediction_context)
+    tampered_prediction_context_strict = RUNNER.invoke(
+        app,
+        ["context", "inspect", run_id, "--strict"],
+    )
+    assert tampered_prediction_context_strict.exit_code == 1, (
+        tampered_prediction_context_strict.output
+    )
+    assert (
+        json.loads(tampered_prediction_context_strict.output)["inspection"][
+            "reproducibility_checks_passed"
+        ]
+        is False
+    )
     tampered_prediction_inspection = json.loads(
         tampered_prediction_context.output
     )["inspection"]
@@ -2161,7 +2197,11 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         "audit lookahead",
         RUNNER.invoke(app, ["audit", "lookahead", "--trade-date", "2030-01-12"]),
     )
-    _assert_ok("audit provenance", RUNNER.invoke(app, ["audit", "provenance"]))
+    provenance = RUNNER.invoke(app, ["audit", "provenance"])
+    _assert_ok("audit provenance", provenance)
+    provenance_payload = json.loads(provenance.output)
+    assert provenance_payload["checked_analysis_bundles"] >= 1
+    assert provenance_payload["checked_session_pack_manifests"] >= 1
     _assert_ok("audit coverage", RUNNER.invoke(app, ["audit", "coverage"]))
 
     _assert_ok("training export-sft", RUNNER.invoke(app, ["training", "export-sft"]))
