@@ -36,10 +36,29 @@ def inspect_preopen_report_sections(report_text: str) -> dict[str, Any]:
         if (position := positions[heading]) >= 0
     ]
     ordered = observed_positions == sorted(observed_positions)
+    empty = [
+        heading
+        for heading in PREOPEN_REPORT_SECTION_HEADINGS
+        if positions[heading] >= 0 and not _section_body(report_text, positions, heading)
+    ]
     return {
         "required_count": len(PREOPEN_REPORT_SECTION_HEADINGS),
         "present_count": len(PREOPEN_REPORT_SECTION_HEADINGS) - len(missing),
         "missing": missing,
+        "empty": empty,
         "ordered": ordered,
-        "passed": not missing and ordered,
+        "passed": not missing and not empty and ordered,
     }
+
+
+def _section_body(
+    report_text: str,
+    positions: dict[str, int],
+    heading: str,
+) -> str:
+    start = positions[heading] + len(heading)
+    later_heading_positions = [
+        position for position in positions.values() if position > positions[heading]
+    ]
+    end = min(later_heading_positions) if later_heading_positions else len(report_text)
+    return report_text[start:end].strip()

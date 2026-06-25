@@ -93,6 +93,7 @@ def _preopen_report_text(
     *,
     run_id: str = "RUN-linked",
     omit_heading: str | None = None,
+    empty_heading: str | None = None,
 ) -> str:
     lines = [
         "# Pre-Open Research Report: 2030-01-10",
@@ -102,7 +103,8 @@ def _preopen_report_text(
     for heading in PREOPEN_REPORT_SECTION_HEADINGS:
         if heading == omit_heading:
             continue
-        lines.extend(["", heading, "", "section body"])
+        section_body = "" if heading == empty_heading else "section body"
+        lines.extend(["", heading, "", section_body])
     return "\n".join(lines) + "\n"
 
 
@@ -2183,6 +2185,52 @@ def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     assert (
         "2030-01-10.json: context manifest report_artifact missing required "
         "sections: ## 13. Memory Coverage"
+    ) in result["findings"]
+
+
+def test_provenance_audit_rejects_empty_report_sections(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(
+        _preopen_report_text(empty_heading=PREOPEN_REPORT_SECTION_HEADINGS[3]),
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: context manifest report_artifact empty required "
+        "sections: ## 4. Dominant Sector Hypotheses"
     ) in result["findings"]
 
 

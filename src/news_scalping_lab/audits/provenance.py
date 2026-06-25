@@ -3679,6 +3679,12 @@ def _check_manifest_report_artifact(
             f"{prediction_path.name}: context manifest report_artifact missing "
             f"required sections: {missing}"
         )
+    if section_status["empty"]:
+        empty = ", ".join(section_status["empty"])
+        findings.append(
+            f"{prediction_path.name}: context manifest report_artifact empty "
+            f"required sections: {empty}"
+        )
     if not section_status["ordered"]:
         findings.append(
             f"{prediction_path.name}: context manifest report_artifact required "

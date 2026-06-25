@@ -240,6 +240,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         "required_count": 13,
         "present_count": 13,
         "missing": [],
+        "empty": [],
         "ordered": True,
         "passed": True,
     }
@@ -389,3 +390,36 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "Counterexample episode ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report
+
+
+def test_preopen_report_section_inspector_rejects_empty_required_sections() -> None:
+    report = "\n".join(
+        [
+            "## 1. Execution Info",
+            "run details",
+            "## 2. Research Brain Version",
+            "",
+            "## 3. News Range And Cutoff",
+            "cutoff details",
+        ]
+    )
+
+    assert inspect_preopen_report_sections(report) == {
+        "required_count": 13,
+        "present_count": 3,
+        "missing": [
+            "## 4. Dominant Sector Hypotheses",
+            "## 5. Single-News Upper-Limit Candidates",
+            "## 6. Theme Beneficiary Upper-Limit Candidates",
+            "## 7. Prior-Leader Continuation Candidates",
+            "## 8. All Pre-Open Watchlist Candidates",
+            "## 9. Excluded But Watch",
+            "## 10. Key Counterexamples And Uncertainty",
+            "## 11. Used Past Research Cases",
+            "## 12. Additional Web Sources",
+            "## 13. Memory Coverage",
+        ],
+        "empty": ["## 2. Research Brain Version"],
+        "ordered": True,
+        "passed": False,
+    }
