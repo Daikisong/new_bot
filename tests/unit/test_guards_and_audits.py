@@ -1797,6 +1797,92 @@ def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path
     assert f"{label}: training export hindsight_row_count mismatch" in findings
 
 
+def test_provenance_audit_verifies_training_export_source_hashes(
+    tmp_path: Path,
+) -> None:
+    export_dir = tmp_path / "training_exports" / "sft"
+    export_dir.mkdir(parents=True)
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True)
+    write_json(
+        accepted_dir / "EP-training.json",
+        {
+            "episode_id": "EP-training",
+            "source": "accepted episode body",
+        },
+    )
+    output_path = export_dir / "sft.jsonl"
+    fake_hash = "0" * 64
+    row = {
+        "schema_version": "nslab.training_example.v1",
+        "task": "blind_reasoning",
+        "training_category": "blind_reasoning_examples",
+        "episode_id": "EP-training",
+        "hindsight_safe_for_blind_sft": True,
+        "source_phase": "BLIND",
+        "input": {},
+        "output": {},
+        "provenance": [
+            {
+                "source_id": "EP-training:accepted_episode",
+                "source_type": "accepted_research_episode",
+                "uri": "research/accepted/EP-training.json",
+                "content_sha256": fake_hash,
+            }
+        ],
+    }
+    output_path.write_text(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    write_json(
+        export_dir / "manifest.json",
+        {
+            "schema_version": "nslab.training_export_manifest.v1",
+            "kind": "sft",
+            "output_file": output_path.relative_to(tmp_path).as_posix(),
+            "output_sha256": file_sha256(output_path),
+            "row_count": 1,
+            "task_counts": {"blind_reasoning": 1},
+            "required_training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "positive_vs_negative_candidate_preferences",
+                "failure_correction_examples",
+            ],
+            "training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "category_counts": {
+                "blind_reasoning_examples": 1,
+                "theme_formation_examples": 0,
+                "beneficiary_discovery_examples": 0,
+                "leader_selection_comparisons": 0,
+                "failure_correction_examples": 0,
+            },
+            "missing_training_categories": [
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "blind_safe_row_count": 1,
+            "hindsight_row_count": 0,
+            "source_phase_counts": {"BLIND": 1},
+            "source_hashes": {"EP-training": fake_hash},
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    label = "training_exports/sft/manifest.json"
+    assert f"{label}: training export source_hash mismatch: EP-training" in result["findings"]
+
+
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

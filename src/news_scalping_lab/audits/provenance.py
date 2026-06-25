@@ -1685,7 +1685,7 @@ def _check_training_export_manifest(
     if not output_path.exists():
         findings.append(f"{label}: training export output_file not found")
         return
-    source_hashes = _training_export_source_hashes(label, manifest, findings)
+    source_hashes = _training_export_source_hashes(root, label, manifest, findings)
     expected_sha = manifest.get("output_sha256")
     if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
         findings.append(f"{label}: training export output_sha256 mismatch")
@@ -1702,6 +1702,7 @@ def _check_training_export_manifest(
 
 
 def _training_export_source_hashes(
+    root: Path,
     label: str,
     manifest: dict[str, Any],
     findings: list[str],
@@ -1713,7 +1714,17 @@ def _training_export_source_hashes(
     ):
         findings.append(f"{label}: training export source_hashes invalid")
         return {}
-    return dict(raw)
+    source_hashes = dict(raw)
+    for episode_id, expected_hash in source_hashes.items():
+        accepted_path = root / "research" / "accepted" / f"{episode_id}.json"
+        if not accepted_path.exists():
+            findings.append(
+                f"{label}: training export source episode not found: {episode_id}"
+            )
+            continue
+        if file_sha256(accepted_path) != expected_hash:
+            findings.append(f"{label}: training export source_hash mismatch: {episode_id}")
+    return source_hashes
 
 
 def _resolve_training_export_output_path(root: Path, output_file: str) -> Path | None:
