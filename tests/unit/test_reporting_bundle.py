@@ -144,6 +144,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["blind_hash_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
+    assert parsed.validation["source_ledger_entry_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
@@ -154,6 +155,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["blind_seal_receipt_sha256"]
     assert manifest["validation"]["research_episode_hash_verified"] is True
     assert manifest["validation"]["brain_delta_hash_verified"] is True
+    assert manifest["validation"]["source_ledger_entry_count_verified"] is True
     assert manifest["validation"]["id_reference_integrity_verified"] is True
     episode = parsed.json_blocks["research_episode.json"]
     assert isinstance(episode, dict)

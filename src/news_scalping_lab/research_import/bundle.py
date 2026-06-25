@@ -22,6 +22,23 @@ REQUIRED_BUNDLE_BLOCKS = {
     "bundle_manifest.json",
 }
 
+SOURCE_LEDGER_REQUIRED_FIELDS = {
+    "source_id",
+    "source_type",
+    "title",
+    "publisher",
+    "url",
+    "published_at",
+    "retrieved_at",
+    "time_verified",
+    "available_before_cutoff",
+    "usage_phase",
+    "input_row_ids",
+    "content_sha256",
+    "notes",
+}
+SOURCE_LEDGER_USAGE_PHASES = {"BLIND", "OUTCOME", "POSTMORTEM"}
+
 
 class BundleImportError(ValueError):
     """Raised when a Markdown bundle is present but structurally invalid."""
@@ -54,6 +71,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         )
     if not parsed.validation["source_ledger_hash_verified"]:
         raise BundleImportError("source_ledger.jsonl hash does not match bundle_manifest.json")
+    if not parsed.validation["source_ledger_entry_count_verified"]:
+        raise BundleImportError(
+            "source_ledger.jsonl entry count does not match bundle_manifest.json"
+        )
     if not parsed.validation["research_episode_hash_verified"]:
         raise BundleImportError(
             "research_episode.json hash does not match bundle_manifest.json"
@@ -120,6 +141,12 @@ def parse_bundle(path: Path) -> BundleParseResult:
             payload_blocks,
             block_name="source_ledger.jsonl",
             manifest_field="source_ledger_sha256",
+        ),
+        "source_ledger_entry_count_verified": _verify_jsonl_entry_count(
+            json_blocks,
+            jsonl_blocks,
+            block_name="source_ledger.jsonl",
+            manifest_field="source_ledger_entry_count",
         ),
         "research_episode_hash_verified": _verify_canonical_json_hash(
             json_blocks,
@@ -230,9 +257,47 @@ def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> 
     for index, row in enumerate(jsonl_blocks.get("brain_delta.jsonl", []), start=1):
         if "record_type" not in row:
             raise BundleImportError(f"brain_delta.jsonl:{index} missing record_type")
+    source_ids: list[str] = []
     for index, row in enumerate(jsonl_blocks.get("source_ledger.jsonl", []), start=1):
-        if "source_id" not in row:
-            raise BundleImportError(f"source_ledger.jsonl:{index} missing source_id")
+        missing = sorted(SOURCE_LEDGER_REQUIRED_FIELDS - set(row))
+        if missing:
+            raise BundleImportError(
+                f"source_ledger.jsonl:{index} missing fields: {', '.join(missing)}"
+            )
+        if "body" in row or "content" in row:
+            raise BundleImportError(
+                f"source_ledger.jsonl:{index} must not duplicate body/content"
+            )
+        source_id = row.get("source_id")
+        if not isinstance(source_id, str) or not source_id:
+            raise BundleImportError(f"source_ledger.jsonl:{index} invalid source_id")
+        source_ids.append(source_id)
+        usage_phase = row.get("usage_phase")
+        if usage_phase not in SOURCE_LEDGER_USAGE_PHASES:
+            raise BundleImportError(f"source_ledger.jsonl:{index} invalid usage_phase")
+        if not isinstance(row.get("available_before_cutoff"), bool):
+            raise BundleImportError(
+                f"source_ledger.jsonl:{index} invalid available_before_cutoff"
+            )
+        if not isinstance(row.get("time_verified"), bool):
+            raise BundleImportError(f"source_ledger.jsonl:{index} invalid time_verified")
+        if usage_phase == "BLIND" and row.get("available_before_cutoff") is not True:
+            raise BundleImportError(f"source_ledger.jsonl:{index} BLIND source after cutoff")
+        if usage_phase == "BLIND" and row.get("time_verified") is not True:
+            raise BundleImportError(
+                f"source_ledger.jsonl:{index} BLIND source without verified time"
+            )
+        input_row_ids = row.get("input_row_ids")
+        if (
+            not isinstance(input_row_ids, list)
+            or not input_row_ids
+            or any(not isinstance(row_id, int) for row_id in input_row_ids)
+        ):
+            raise BundleImportError(
+                f"source_ledger.jsonl:{index} input_row_ids must be non-empty integers"
+            )
+    if len(source_ids) != len(set(source_ids)):
+        raise BundleImportError("source_ledger.jsonl duplicate source_id")
 
 
 def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
@@ -266,6 +331,23 @@ def _verify_payload_hash(
     if not isinstance(expected, str) or not expected or payload is None:
         return False
     return sha256_text(payload) == expected or sha256_text(f"{payload}\n") == expected
+
+
+def _verify_jsonl_entry_count(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+    *,
+    block_name: str,
+    manifest_field: str,
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return False
+    expected = manifest.get(manifest_field)
+    rows = jsonl_blocks.get(block_name)
+    if not isinstance(expected, int) or rows is None:
+        return False
+    return expected == len(rows)
 
 
 def _verify_canonical_json_hash(

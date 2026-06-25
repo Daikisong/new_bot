@@ -51,6 +51,7 @@ def _bundle_text(
     tamper_research_hash: bool = False,
     tamper_brain_hash: bool = False,
     tamper_seal_hash: bool = False,
+    source_ledger_entry_count: int | None = None,
 ) -> str:
     blind = BlindPrediction(
         prediction_id="BP-bundle-20300110",
@@ -82,29 +83,30 @@ def _bundle_text(
         json.dumps(row, ensure_ascii=False)
         for row in (brain_rows or [{"record_type": "memory_claim", "claim_id": "CLM-1"}])
     )
+    source_payload_rows = (
+        source_rows
+        or [
+            {
+                "source_id": "SRC-1",
+                "source_type": "news_csv_row",
+                "title": "source title",
+                "publisher": None,
+                "url": "file://news.csv#row=1",
+                "published_at": "2030-01-10T08:00:00+09:00",
+                "retrieved_at": "2030-01-10T08:00:01+09:00",
+                "time_verified": True,
+                "available_before_cutoff": True,
+                "usage_phase": "BLIND",
+                "input_row_ids": [1],
+                "event_ids": ["EVT-1"],
+                "content_sha256": "abc",
+                "notes": "test source",
+            }
+        ]
+    )
     source_jsonl = "\n".join(
         json.dumps(row, ensure_ascii=False)
-        for row in (
-            source_rows
-            or [
-                {
-                    "source_id": "SRC-1",
-                    "source_type": "news_csv_row",
-                    "title": "source title",
-                    "publisher": None,
-                    "url": "file://news.csv#row=1",
-                    "published_at": "2030-01-10T08:00:00+09:00",
-                    "retrieved_at": "2030-01-10T08:00:01+09:00",
-                    "time_verified": True,
-                    "available_before_cutoff": True,
-                    "usage_phase": "BLIND",
-                    "input_row_ids": [1],
-                    "event_ids": ["EVT-1"],
-                    "content_sha256": "abc",
-                    "notes": "test source",
-                }
-            ]
-        )
+        for row in source_payload_rows
     )
     episode_payload = json.loads(episode.model_dump_json())
     manifest = {
@@ -113,6 +115,11 @@ def _bundle_text(
         "blind_artifact_sha256": blind_hash,
         "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
         "source_ledger_sha256": sha256_text(source_jsonl),
+        "source_ledger_entry_count": (
+            len(source_payload_rows)
+            if source_ledger_entry_count is None
+            else source_ledger_entry_count
+        ),
         "research_episode_sha256": (
             "0" * 64 if tamper_research_hash else sha256_text(canonical_json(episode_payload))
         ),
@@ -186,6 +193,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["blind_hash_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
+    assert parsed.validation["source_ledger_entry_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
@@ -261,6 +269,20 @@ def test_bundle_import_rejects_mismatched_blind_seal_receipt_hash(tmp_path) -> N
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
+def test_bundle_import_rejects_mismatched_source_ledger_entry_count(tmp_path) -> None:
+    source = tmp_path / "tampered_source_count_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), source_ledger_entry_count=99),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["source_ledger_entry_count_verified"]
+    with pytest.raises(BundleImportError, match="source_ledger.jsonl entry count"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
 def test_bundle_import_rejects_invalid_id_references(tmp_path) -> None:
     source = tmp_path / "bad_references_bundle.md"
     source.write_text(
@@ -293,6 +315,48 @@ def test_bundle_import_rejects_invalid_id_references(tmp_path) -> None:
     assert not parsed.validation["id_reference_integrity_verified"]
     with pytest.raises(BundleImportError, match="ID reference integrity"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_source_ledger_rejects_missing_required_fields(tmp_path) -> None:
+    source = tmp_path / "bad_source_ledger_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), source_rows=[{"source_id": "SRC-1"}]),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleImportError, match="source_ledger.jsonl:1 missing fields"):
+        parse_bundle(source)
+
+
+def test_bundle_source_ledger_rejects_raw_body_duplication(tmp_path) -> None:
+    source = tmp_path / "duplicated_source_body_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            source_rows=[
+                {
+                    "source_id": "SRC-1",
+                    "source_type": "news_csv_row",
+                    "title": "source title",
+                    "publisher": None,
+                    "url": "file://news.csv#row=1",
+                    "published_at": "2030-01-10T08:00:00+09:00",
+                    "retrieved_at": "2030-01-10T08:00:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [1],
+                    "content_sha256": "abc",
+                    "notes": "test source",
+                    "body": "raw body must stay in the input artifact",
+                }
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleImportError, match="must not duplicate body/content"):
+        parse_bundle(source)
 
 
 def test_bundle_row_disposition_rejects_raw_title_body(tmp_path) -> None:

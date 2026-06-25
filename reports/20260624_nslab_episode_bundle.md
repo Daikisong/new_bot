@@ -2589,6 +2589,7 @@ Excluded after-cutoff web source ids:
     "phase_state_recorded": true,
     "research_episode_hash_verified": true,
     "row_disposition_hash_verified": true,
+    "source_ledger_entry_count_verified": true,
     "source_ledger_hash_verified": true
   }
 }
