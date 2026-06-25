@@ -7128,6 +7128,7 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
     )
     for file_name in pack_files:
         (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    (pack_dir / "omission_report.md").write_text("No omissions.\n", encoding="utf-8")
     pack_file_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
     token_counts = {
         file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
@@ -7168,6 +7169,10 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
         "available_episode_ids": ["EP-available-a"],
         "included_episode_count": 1,
         "included_episode_ids": ["EP-available-a"],
+        "budget_omitted_episode_count": 0,
+        "budget_omitted_episode_ids": [],
+        "available_coverage_complete": True,
+        "unavailable_episode_count": 1,
         "omitted_episode_ids": ["EP-future"],
         "unavailable_episode_ids": ["EP-future"],
         "pack_files": list(pack_files),
@@ -7192,6 +7197,14 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
         "session_packs/2030-01-10/manifest.json: session pack available_episode_ids mismatch"
         in result["findings"]
     )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack budget_omitted_episode_ids mismatch"
+        in result["findings"]
+    )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack available_coverage_complete mismatch"
+        in result["findings"]
+    )
 
     write_json(
         pack_dir / "manifest.json",
@@ -7200,6 +7213,9 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
             "available_episode_ids": ["EP-available-a", "EP-available-b"],
             "included_episode_count": 2,
             "included_episode_ids": ["EP-available-a", "EP-available-b"],
+            "budget_omitted_episode_count": 0,
+            "budget_omitted_episode_ids": [],
+            "available_coverage_complete": True,
         },
     )
 
@@ -7221,6 +7237,7 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
     )
     for file_name in pack_files:
         (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    (pack_dir / "omission_report.md").write_text("No omissions.\n", encoding="utf-8")
     pack_file_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
     token_counts = {
         file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
@@ -7240,6 +7257,8 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
             "pack_sha256": sha256_text(
                 "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
             ),
+            "omission_report_file": "omission_report.md",
+            "omission_report_sha256": file_sha256(pack_dir / "omission_report.md"),
             "token_counts": token_counts,
             "token_count_total": sum(token_counts.values()),
         },
@@ -7257,6 +7276,16 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
     assert (
         "session_packs/2030-01-10/manifest.json: token_count_total mismatch"
         in bad_token_total["findings"]
+    )
+    write_json(pack_dir / "manifest.json", manifest)
+
+    write_json(pack_dir / "manifest.json", {**manifest, "omission_report_sha256": "bad"})
+    bad_omission_report = audit_lookahead(tmp_path)
+
+    assert not bad_omission_report["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: omission_report_sha256 mismatch"
+        in bad_omission_report["findings"]
     )
     write_json(pack_dir / "manifest.json", manifest)
 

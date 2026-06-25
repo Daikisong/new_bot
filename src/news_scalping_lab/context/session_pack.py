@@ -75,7 +75,6 @@ def export_session_pack(
     available = [
         episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)
     ]
-    available_ids = [episode.episode_id for episode in available]
     unavailable = [
         episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
     ]
@@ -197,6 +196,25 @@ def export_session_pack(
         unavailable=unavailable,
     )
     errors.extend(context_leak_errors)
+    episode_scope_fields = _episode_scope_manifest_fields(
+        all_accepted=all_accepted,
+        available=available,
+        included=included,
+        budget_omitted=omitted_budget,
+        unavailable=unavailable,
+    )
+    omission_report_fields = _write_omission_report(
+        output_dir,
+        trade_date=trade_date,
+        cutoff_at=cutoff_at,
+        mode=mode,
+        token_budget=token_budget,
+        memory_budget=memory_budget,
+        fixed_tokens=fixed_tokens,
+        episode_scope=episode_scope_fields,
+        required_context_over_budget=False,
+        context_leak_errors=context_leak_errors,
+    )
     if context_leak_errors:
         write_json(
             output_dir / "manifest.json",
@@ -222,14 +240,12 @@ def export_session_pack(
                 "excluded_news_row_count": full_batch.row_count - batch.row_count,
                 "current_news_event_ids": included_news_event_ids,
                 "excluded_news_event_ids": excluded_news_event_ids,
-                "accepted_episode_count": len(all_accepted),
-                "available_episode_count": len(available),
-                "available_episode_ids": available_ids,
-                "unavailable_episode_ids": unavailable_ids,
+                **episode_scope_fields,
                 "included_company_memory_files": company_memory.included_paths,
                 "omitted_company_memory_files": company_memory.omitted,
                 "included_market_context_files": market_context.included_paths,
                 "omitted_market_context_files": market_context.omitted,
+                **omission_report_fields,
                 "truncations": truncations,
                 "errors": errors,
             },
@@ -269,6 +285,25 @@ def export_session_pack(
             }
         )
         errors.append("session pack required context exceeds token budget")
+    episode_scope_fields = _episode_scope_manifest_fields(
+        all_accepted=all_accepted,
+        available=available,
+        included=included,
+        budget_omitted=omitted_budget,
+        unavailable=unavailable,
+    )
+    omission_report_fields = _write_omission_report(
+        output_dir,
+        trade_date=trade_date,
+        cutoff_at=cutoff_at,
+        mode=mode,
+        token_budget=token_budget,
+        memory_budget=memory_budget,
+        fixed_tokens=fixed_tokens,
+        episode_scope=episode_scope_fields,
+        required_context_over_budget=required_context_over_budget,
+        context_leak_errors=[],
+    )
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
         "blocked": bool(omitted_ids or required_context_over_budget),
@@ -291,17 +326,12 @@ def export_session_pack(
         "excluded_news_row_count": full_batch.row_count - batch.row_count,
         "current_news_event_ids": included_news_event_ids,
         "excluded_news_event_ids": excluded_news_event_ids,
-        "accepted_episode_count": len(all_accepted),
-        "available_episode_count": len(available),
-        "available_episode_ids": available_ids,
-        "included_episode_count": len(included),
-        "included_episode_ids": [episode.episode_id for episode in included],
-        "omitted_episode_ids": [*omitted_ids, *unavailable_ids],
-        "unavailable_episode_ids": unavailable_ids,
+        **episode_scope_fields,
         "included_company_memory_files": company_memory.included_paths,
         "omitted_company_memory_files": company_memory.omitted,
         "included_market_context_files": market_context.included_paths,
         "omitted_market_context_files": market_context.omitted,
+        **omission_report_fields,
         "token_budget": token_budget,
         "token_counts": token_counts,
         "token_count_total": token_count_total,
@@ -320,6 +350,123 @@ def export_session_pack(
     if omitted_ids or required_context_over_budget:
         raise SessionPackBudgetExceededError(output_dir, errors)
     return output_dir
+
+
+def _episode_scope_manifest_fields(
+    *,
+    all_accepted: list[ResearchEpisode],
+    available: list[ResearchEpisode],
+    included: list[ResearchEpisode],
+    budget_omitted: list[ResearchEpisode],
+    unavailable: list[ResearchEpisode],
+) -> dict[str, object]:
+    included_ids = [episode.episode_id for episode in included]
+    budget_omitted_ids = [episode.episode_id for episode in budget_omitted]
+    unavailable_ids = [episode.episode_id for episode in unavailable]
+    return {
+        "accepted_episode_count": len(all_accepted),
+        "available_episode_count": len(available),
+        "available_episode_ids": [episode.episode_id for episode in available],
+        "included_episode_count": len(included),
+        "included_episode_ids": included_ids,
+        "budget_omitted_episode_count": len(budget_omitted),
+        "budget_omitted_episode_ids": budget_omitted_ids,
+        "unavailable_episode_count": len(unavailable),
+        "unavailable_episode_ids": unavailable_ids,
+        "omitted_episode_ids": [*budget_omitted_ids, *unavailable_ids],
+        "available_coverage_complete": not budget_omitted_ids,
+    }
+
+
+def _write_omission_report(
+    output_dir: Path,
+    *,
+    trade_date: date,
+    cutoff_at: datetime,
+    mode: str,
+    token_budget: int,
+    memory_budget: int,
+    fixed_tokens: int,
+    episode_scope: dict[str, object],
+    required_context_over_budget: bool,
+    context_leak_errors: list[str],
+) -> dict[str, object]:
+    path = output_dir / "omission_report.md"
+    path.write_text(
+        _render_omission_report(
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            mode=mode,
+            token_budget=token_budget,
+            memory_budget=memory_budget,
+            fixed_tokens=fixed_tokens,
+            episode_scope=episode_scope,
+            required_context_over_budget=required_context_over_budget,
+            context_leak_errors=context_leak_errors,
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "omission_report_file": path.name,
+        "omission_report_sha256": file_sha256(path),
+    }
+
+
+def _render_omission_report(
+    *,
+    trade_date: date,
+    cutoff_at: datetime,
+    mode: str,
+    token_budget: int,
+    memory_budget: int,
+    fixed_tokens: int,
+    episode_scope: dict[str, object],
+    required_context_over_budget: bool,
+    context_leak_errors: list[str],
+) -> str:
+    budget_ids = list(_string_sequence(episode_scope.get("budget_omitted_episode_ids")))
+    unavailable_ids = list(_string_sequence(episode_scope.get("unavailable_episode_ids")))
+    included_ids = list(_string_sequence(episode_scope.get("included_episode_ids")))
+    lines = [
+        "# Session Pack Omissions",
+        "",
+        f"- Trade date: {trade_date.isoformat()}",
+        f"- Cutoff: {cutoff_at.isoformat()}",
+        f"- Mode: {mode}",
+        f"- Token budget: {token_budget}",
+        f"- Fixed context tokens: {fixed_tokens}",
+        f"- Memory case token budget: {memory_budget}",
+        f"- Accepted episodes: {episode_scope['accepted_episode_count']}",
+        f"- Available episodes: {episode_scope['available_episode_count']}",
+        f"- Included available episodes: {episode_scope['included_episode_count']}",
+        f"- Budget-omitted available episodes: {episode_scope['budget_omitted_episode_count']}",
+        f"- Future-unavailable episodes: {episode_scope['unavailable_episode_count']}",
+        f"- Required context over budget: {str(required_context_over_budget).lower()}",
+        "",
+        "## Included Available Episodes",
+        *_id_lines(included_ids),
+        "",
+        "## Budget-Omitted Available Episodes",
+        *_id_lines(budget_ids),
+        "",
+        "## Future-Unavailable Episodes",
+        *_id_lines(unavailable_ids),
+    ]
+    if context_leak_errors:
+        lines.extend(["", "## Context Leak Errors", *_id_lines(context_leak_errors)])
+    return "\n".join(lines) + "\n"
+
+
+def _id_lines(values: list[str]) -> list[str]:
+    if not values:
+        return ["- none"]
+    return [f"- {value}" for value in values]
+
+
+def _string_sequence(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _build_memory_cases(

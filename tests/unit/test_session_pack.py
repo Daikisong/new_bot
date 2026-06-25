@@ -92,6 +92,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     manifest = read_json(output_dir / "manifest.json")
     memory_cases = (output_dir / "memory_cases.md").read_text(encoding="utf-8")
     research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
+    omission_report = (output_dir / "omission_report.md").read_text(encoding="utf-8")
 
     assert manifest["blocked"] is True
     assert manifest["accepted_episode_count"] == 4
@@ -99,7 +100,11 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     assert manifest["as_of"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
     assert manifest["available_episode_ids"] == ["EP-large", "EP-small"]
+    assert manifest["unavailable_episode_count"] == 2
     assert manifest["included_episode_ids"] == []
+    assert manifest["budget_omitted_episode_count"] == 2
+    assert manifest["budget_omitted_episode_ids"] == ["EP-large", "EP-small"]
+    assert manifest["available_coverage_complete"] is False
     assert manifest["brain_version"].startswith("brain-asof-")
     assert all(
         path.startswith("runs/checkpoints/brain_context/SESSION-")
@@ -119,6 +124,14 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
         "EP-after-cutoff",
     }
     assert set(manifest["unavailable_episode_ids"]) == {"EP-future", "EP-after-cutoff"}
+    assert manifest["omission_report_file"] == "omission_report.md"
+    assert manifest["omission_report_sha256"]
+    assert "## Budget-Omitted Available Episodes" in omission_report
+    assert "## Future-Unavailable Episodes" in omission_report
+    assert "- EP-large" in omission_report
+    assert "- EP-small" in omission_report
+    assert "- EP-future" in omission_report
+    assert "- EP-after-cutoff" in omission_report
     assert {item["reason"] for item in manifest["truncations"]} == {
         "session_pack_token_budget_exceeded",
         "episode_available_from_after_cutoff",
@@ -256,8 +269,15 @@ def test_session_pack_blocks_when_required_context_exceeds_budget(tmp_path) -> N
     assert manifest["blocked"] is True
     assert manifest["included_episode_ids"] == []
     assert manifest["available_episode_ids"] == []
+    assert manifest["budget_omitted_episode_ids"] == []
+    assert manifest["budget_omitted_episode_count"] == 0
+    assert manifest["unavailable_episode_count"] == 0
     assert manifest["omitted_episode_ids"] == []
     assert manifest["token_count_total"] > manifest["token_budget"]
+    assert manifest["omission_report_file"] == "omission_report.md"
+    assert "Required context over budget: true" in (
+        exc_info.value.output_dir / "omission_report.md"
+    ).read_text(encoding="utf-8")
     assert "session pack required context exceeds token budget" in manifest["errors"]
     assert "session pack required context exceeds token budget" in exc_info.value.errors
     assert {
@@ -312,6 +332,9 @@ def test_session_pack_uses_as_of_brain_context_when_current_contains_future_epis
     manifest = read_json(output_dir / "manifest.json")
     research_brain = (output_dir / "research_brain.md").read_text(encoding="utf-8")
     assert manifest["brain_version"].startswith("brain-asof-")
+    assert manifest["budget_omitted_episode_ids"] == []
+    assert manifest["unavailable_episode_count"] == 1
+    assert manifest["available_coverage_complete"] is True
     assert all(
         path.startswith("runs/checkpoints/brain_context/SESSION-")
         for path in manifest["brain_files"]

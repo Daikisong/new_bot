@@ -371,6 +371,9 @@ def _check_session_pack_episode_scope(
         findings.append(f"{manifest_name}: session pack unavailable_episode_ids invalid")
     elif set(manifest_unavailable_ids) != unavailable_ids:
         findings.append(f"{manifest_name}: session pack unavailable_episode_ids mismatch")
+    unavailable_count = _non_bool_int(manifest.get("unavailable_episode_count"))
+    if unavailable_count is not None and unavailable_count != len(unavailable_ids):
+        findings.append(f"{manifest_name}: session pack unavailable_episode_count mismatch")
 
     included_ids = _string_list_or_none(manifest.get("included_episode_ids"))
     if included_ids is None:
@@ -406,6 +409,27 @@ def _check_session_pack_episode_scope(
         if not set(omitted_ids) <= accepted_ids:
             findings.append(f"{manifest_name}: session pack omitted_episode_ids unknown")
 
+    budget_omitted_ids = _string_list_or_none(manifest.get("budget_omitted_episode_ids"))
+    if budget_omitted_ids is not None:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "budget_omitted_episode_ids",
+            budget_omitted_ids,
+            findings,
+        )
+        budget_omitted_set = set(budget_omitted_ids)
+        if not budget_omitted_set <= available_ids:
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_episode_ids mismatch"
+            )
+        budget_omitted_count = _non_bool_int(manifest.get("budget_omitted_episode_count"))
+        if budget_omitted_count is not None and budget_omitted_count != len(
+            budget_omitted_ids
+        ):
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_episode_count mismatch"
+            )
+
     blocked = manifest.get("blocked")
     if not isinstance(blocked, bool):
         findings.append(f"{manifest_name}: session pack blocked invalid")
@@ -416,6 +440,22 @@ def _check_session_pack_episode_scope(
     omitted_set = set(omitted_ids)
     if included_set & omitted_set:
         findings.append(f"{manifest_name}: session pack included omitted episode overlap")
+    if budget_omitted_ids is not None:
+        expected_budget_omitted = available_ids - included_set
+        budget_omitted_set = set(budget_omitted_ids)
+        if budget_omitted_set != expected_budget_omitted:
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_episode_ids mismatch"
+            )
+        if omitted_set != budget_omitted_set | unavailable_ids:
+            findings.append(f"{manifest_name}: session pack omitted_episode_ids mismatch")
+        coverage_complete = manifest.get("available_coverage_complete")
+        if isinstance(coverage_complete, bool) and coverage_complete != (
+            not expected_budget_omitted
+        ):
+            findings.append(
+                f"{manifest_name}: session pack available_coverage_complete mismatch"
+            )
     if blocked is False:
         if included_set != available_ids:
             findings.append(f"{manifest_name}: session pack available episode coverage mismatch")
@@ -676,6 +716,8 @@ def _check_session_pack_hashes(
     elif pack_file_count != len(SESSION_PACK_FILES):
         findings.append(f"{manifest_name}: pack_file_count mismatch")
 
+    _check_session_pack_omission_report(root, manifest_path, manifest_name, manifest, findings)
+
     pack_hashes = manifest.get("pack_file_hashes")
     if pack_hashes is None and manifest.get("pack_sha256") is None:
         if requires_pack_reproducibility:
@@ -721,6 +763,34 @@ def _check_session_pack_hashes(
     )
     if observed_pack_sha != expected_pack_sha:
         findings.append(f"{manifest_name}: pack_sha256 mismatch")
+
+
+def _check_session_pack_omission_report(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    report_file = manifest.get("omission_report_file")
+    report_sha = manifest.get("omission_report_sha256")
+    if report_file is None and report_sha is None:
+        return
+    if not isinstance(report_file, str) or not report_file:
+        findings.append(f"{manifest_name}: omission_report_file invalid")
+        return
+    report_path = (manifest_path.parent / report_file).resolve()
+    try:
+        report_path.relative_to(root.resolve())
+        report_path.relative_to(manifest_path.parent.resolve())
+    except ValueError:
+        findings.append(f"{manifest_name}: omission_report_file escapes session pack")
+        return
+    if not report_path.is_file():
+        findings.append(f"{manifest_name}: omission_report_file missing")
+        return
+    if not isinstance(report_sha, str) or file_sha256(report_path) != report_sha:
+        findings.append(f"{manifest_name}: omission_report_sha256 mismatch")
 
 
 def _check_session_pack_news_window(

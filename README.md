@@ -209,7 +209,10 @@ the export writes a blocked manifest and exits non-zero instead of producing an 
 If the token budget would omit currently available research episodes, the command also
 writes a blocked manifest and exits non-zero so coverage loss is not missed silently.
 The pack manifest records the required Markdown file list, per-file hashes, per-file
-token estimates, and total token count. `nslab audit lookahead` recomputes those
+token estimates, total token count, `budget_omitted_episode_ids`, and
+`unavailable_episode_ids`. It also writes `omission_report.md` so budget omissions
+and cutoff-after exclusions are readable without opening the JSON manifest.
+`nslab audit lookahead` recomputes those
 values and scans pack Markdown for cutoff-after episode references so copied GPT Web
 context drift is detected.
 
