@@ -114,6 +114,17 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["vector_index"]["embedding_method"] == "deterministic_hashing_v1"
     assert report["schemas"]["file_count"] >= 12
     assert report["schemas"]["versions"]["research_episode"] == "nslab.research_episode.v1"
+    assert report["schemas"]["files"]["status"] == "ok"
+    assert report["schemas"]["files"]["expected_file_count"] >= 12
+    assert report["schemas"]["files"]["missing_files"] == []
+    assert report["schemas"]["files"]["stale_files"] == []
+    research_schema = report["schemas"]["files"]["files"]["research_episode.schema.json"]
+    assert research_schema == {
+        "exists": True,
+        "expected_schema_version": "nslab.research_episode.v1",
+        "schema_version": "nslab.research_episode.v1",
+        "status": "ok",
+    }
 
 
 def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
@@ -148,6 +159,35 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
         "covered_episode_count": 1,
         "missing_episode_ids": [],
         "status": "complete",
+    }
+
+
+def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    (tmp_path / "schemas" / "blind_prediction.schema.json").unlink()
+    write_json(
+        tmp_path / "schemas" / "research_episode.schema.json",
+        {
+            "properties": {
+                "schema_version": {"default": "nslab.research_episode.v0"}
+            }
+        },
+    )
+
+    report = build_doctor_report(settings)
+
+    schema_status = report["schemas"]["files"]
+    assert schema_status["status"] == "attention"
+    assert schema_status["missing_files"] == ["blind_prediction.schema.json"]
+    assert schema_status["stale_files"] == ["research_episode.schema.json"]
+    assert schema_status["files"]["blind_prediction.schema.json"]["status"] == "missing"
+    assert schema_status["files"]["research_episode.schema.json"] == {
+        "exists": True,
+        "expected_schema_version": "nslab.research_episode.v1",
+        "schema_version": "nslab.research_episode.v0",
+        "status": "stale",
     }
 
 

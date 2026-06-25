@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import (
     DailyAnalysis,
     ResearchEpisode,
 )
+from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
@@ -116,6 +117,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "exists": schema_dir.exists(),
             "file_count": _file_count(schema_dir, suffix=".json"),
             "versions": _schema_versions(),
+            "files": _schema_file_status(schema_dir),
         },
     }
 
@@ -245,3 +247,65 @@ def _schema_versions() -> dict[str, str]:
         "context_manifest": str(ContextManifest.model_fields["schema_version"].default),
         "daily_analysis": str(DailyAnalysis.model_fields["schema_version"].default),
     }
+
+
+def _schema_file_status(schema_dir: Path) -> dict[str, Any]:
+    files: dict[str, dict[str, Any]] = {}
+    missing: list[str] = []
+    invalid: list[str] = []
+    stale: list[str] = []
+    for filename, model in sorted(SCHEMA_MODELS.items()):
+        expected_version = _model_schema_version(model)
+        path = schema_dir / filename
+        status: dict[str, Any] = {
+            "exists": path.exists(),
+            "expected_schema_version": expected_version,
+            "schema_version": None,
+            "status": "missing",
+        }
+        if not path.exists():
+            missing.append(filename)
+            files[filename] = status
+            continue
+        try:
+            payload = _read_json_object(path)
+        except ValueError:
+            invalid.append(filename)
+            status["status"] = "invalid"
+            files[filename] = status
+            continue
+        observed_version = _schema_version_default(payload)
+        status["schema_version"] = observed_version
+        if expected_version is not None and observed_version != expected_version:
+            stale.append(filename)
+            status["status"] = "stale"
+        else:
+            status["status"] = "ok"
+        files[filename] = status
+    return {
+        "expected_file_count": len(SCHEMA_MODELS),
+        "missing_files": missing,
+        "invalid_files": invalid,
+        "stale_files": stale,
+        "status": "ok" if not missing and not invalid and not stale else "attention",
+        "files": files,
+    }
+
+
+def _model_schema_version(model: type[Any]) -> str | None:
+    field = getattr(model, "model_fields", {}).get("schema_version")
+    if field is None:
+        return None
+    default = getattr(field, "default", None)
+    return str(default) if default is not None else None
+
+
+def _schema_version_default(payload: dict[str, Any]) -> str | None:
+    properties = payload.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    schema_version = properties.get("schema_version")
+    if not isinstance(schema_version, dict):
+        return None
+    default = schema_version.get("default")
+    return str(default) if default is not None else None
