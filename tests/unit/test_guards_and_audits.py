@@ -1330,6 +1330,193 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
     )
 
 
+def test_provenance_audit_validates_candidate_expansion_artifact(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    artifact_dir = tmp_path / "runs" / "checkpoints" / "candidate_expansion" / "RUN-linked"
+    artifact_dir.mkdir(parents=True)
+    artifact_path = artifact_dir / "candidate_expansion.json"
+    required_paths = ["SINGLE_EVENT", "CONTINUATION"]
+    payload = {
+        "schema_version": "nslab.candidate_expansion.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "candidate-expansion-hash",
+        "required_paths": required_paths,
+        "findings": [
+            {
+                "path": "SINGLE_EVENT",
+                "hypothesis": "Direct catalyst route.",
+                "candidate_names": ["DirectCandidate"],
+                "sector_hypotheses": ["direct sector"],
+                "investigation_questions": ["verify directness"],
+                "evidence_source_ids": ["SRC-1"],
+                "related_cluster_ids": ["EVCL-1"],
+                "memory_episode_ids": [],
+                "requires_web_company_discovery": True,
+                "d_minus_one_market_data_only": False,
+                "uncertainties": ["needs web check"],
+            },
+            {
+                "path": "CONTINUATION",
+                "hypothesis": "D-1 continuation route.",
+                "candidate_names": ["ContinuationCandidate"],
+                "sector_hypotheses": ["continuation sector"],
+                "investigation_questions": ["verify D-1 only"],
+                "evidence_source_ids": [],
+                "related_cluster_ids": ["EVCL-2"],
+                "memory_episode_ids": ["EP-1"],
+                "requires_web_company_discovery": False,
+                "d_minus_one_market_data_only": True,
+                "uncertainties": [],
+            },
+        ],
+    }
+    write_json(artifact_path, payload)
+    artifact_text = artifact_path.read_text(encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "def456",
+                "candidate_expansion": "candidate-expansion-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "candidate_expansion_artifact": artifact_path.relative_to(tmp_path).as_posix(),
+            "candidate_expansion_sha256": sha256_text(artifact_text),
+            "candidate_expansion_count": 2,
+            "candidate_expansion_summary": {
+                "required_paths": required_paths,
+                "path_counts": {"SINGLE_EVENT": 1, "CONTINUATION": 1},
+                "finding_count": 2,
+                "candidate_name_count": 2,
+                "requires_web_company_discovery_count": 1,
+                "continuation_d_minus_one_only_verified": True,
+            },
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_payload = {
+        **payload,
+        "schema_version": "bad.candidate_expansion",
+        "run_id": "RUN-other",
+        "prompt_sha256": "bad-prompt",
+        "required_paths": ["SINGLE_EVENT"],
+        "findings": [
+            {
+                "path": "SINGLE_EVENT",
+                "hypothesis": "",
+                "candidate_names": ["DirectCandidate", 1],
+                "sector_hypotheses": ["direct sector"],
+                "investigation_questions": "not-a-list",
+                "evidence_source_ids": [],
+                "related_cluster_ids": [],
+                "memory_episode_ids": [],
+                "requires_web_company_discovery": "yes",
+                "d_minus_one_market_data_only": "no",
+                "uncertainties": [],
+            }
+        ],
+    }
+    write_json(artifact_path, bad_payload)
+    manifest = read_json(manifest_path)
+    manifest["candidate_expansion_sha256"] = "0" * 64
+    manifest["candidate_expansion_count"] = 2
+    manifest["candidate_expansion_summary"] = {
+        "required_paths": required_paths,
+        "path_counts": {"SINGLE_EVENT": 1, "CONTINUATION": 1},
+        "finding_count": 2,
+        "candidate_name_count": 2,
+        "requires_web_company_discovery_count": 1,
+        "continuation_d_minus_one_only_verified": True,
+    }
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion schema_version mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion run_id mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion prompt_hash mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion required_paths mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest candidate_expansion finding_count mismatch" in findings
+    assert "2030-01-10.json: context manifest candidate_expansion count mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion path coverage mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest candidate_expansion path_counts mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion candidate_name_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion "
+        "requires_web_company_discovery_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion "
+        "continuation_d_minus_one mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 candidate_names invalid"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "investigation_questions invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 hypothesis invalid"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "requires_web_company_discovery invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "d_minus_one_market_data_only invalid"
+    ) in findings
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

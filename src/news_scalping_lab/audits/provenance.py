@@ -1905,6 +1905,7 @@ def _check_manifest_output_artifacts(
             semantic_retrieval_rows,
             findings,
         )
+    _check_candidate_expansion_artifact(root, prediction_path, manifest, findings)
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
@@ -2493,6 +2494,209 @@ def _check_semantic_retrieval_row(
         findings.append(
             f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
             "excluded_count mismatch"
+        )
+
+
+def _check_candidate_expansion_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("candidate_expansion_artifact")
+    expected_hash = manifest.get("candidate_expansion_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="candidate_expansion_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing candidate_expansion_sha256"
+        )
+    elif sha256_text(text) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion_sha256 mismatch"
+        )
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.candidate_expansion.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "schema_version mismatch"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion run_id mismatch"
+        )
+    prompt_hash = _manifest_prompt_hash(manifest, "candidate_expansion")
+    if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "prompt_hash mismatch"
+        )
+    _check_candidate_expansion_counts(prediction_path, manifest, payload, findings)
+
+
+def _check_candidate_expansion_counts(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("candidate_expansion_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion_summary invalid"
+        )
+        return
+    required_paths = _string_list(summary.get("required_paths"))
+    observed_required_paths = _string_list(payload.get("required_paths"))
+    if required_paths and observed_required_paths != required_paths:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "required_paths mismatch"
+        )
+    findings_rows = payload.get("findings")
+    if not isinstance(findings_rows, list) or not all(
+        isinstance(item, dict) for item in findings_rows
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion findings invalid"
+        )
+        return
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "finding_count",
+        len(findings_rows),
+        label="candidate_expansion",
+        findings=findings,
+    )
+    manifest_count = manifest.get("candidate_expansion_count")
+    manifest_count_int = _non_bool_int(manifest_count)
+    if manifest_count_int is not None and manifest_count_int != len(findings_rows):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion count mismatch"
+        )
+    elif manifest_count is not None and manifest_count_int is None:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion_count invalid"
+        )
+    observed_paths = [
+        path for row in findings_rows if isinstance(path := row.get("path"), str) and path
+    ]
+    if len(observed_paths) != len(findings_rows):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion path invalid"
+        )
+    if required_paths and set(observed_paths) != set(required_paths):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "path coverage mismatch"
+        )
+    observed_path_counts = dict(Counter(observed_paths))
+    expected_path_counts = summary.get("path_counts")
+    if isinstance(expected_path_counts, dict):
+        expected_counts = {
+            key: value
+            for key, value in expected_path_counts.items()
+            if isinstance(key, str) and _non_bool_int(value) is not None
+        }
+        if len(expected_counts) != len(expected_path_counts) or observed_path_counts != expected_counts:
+            findings.append(
+                f"{prediction_path.name}: context manifest candidate_expansion "
+                "path_counts mismatch"
+            )
+    else:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "path_counts invalid"
+        )
+    candidate_names = {
+        candidate
+        for row in findings_rows
+        for candidate in _string_list(row.get("candidate_names"))
+    }
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "candidate_name_count",
+        len(candidate_names),
+        label="candidate_expansion",
+        findings=findings,
+    )
+    web_discovery_count = sum(
+        1 for row in findings_rows if row.get("requires_web_company_discovery") is True
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "requires_web_company_discovery_count",
+        web_discovery_count,
+        label="candidate_expansion",
+        findings=findings,
+    )
+    continuation_rows = [
+        row for row in findings_rows if row.get("path") == "CONTINUATION"
+    ]
+    continuation_verified = bool(continuation_rows) and all(
+        row.get("d_minus_one_market_data_only") is True for row in continuation_rows
+    )
+    if summary.get("continuation_d_minus_one_only_verified") != continuation_verified:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion "
+            "continuation_d_minus_one mismatch"
+        )
+    for index, row in enumerate(findings_rows, start=1):
+        _check_candidate_expansion_row(prediction_path, index, row, findings)
+
+
+def _check_candidate_expansion_row(
+    prediction_path: Path,
+    index: int,
+    row: dict[str, Any],
+    findings: list[str],
+) -> None:
+    for field in (
+        "candidate_names",
+        "sector_hypotheses",
+        "investigation_questions",
+        "evidence_source_ids",
+        "related_cluster_ids",
+        "memory_episode_ids",
+        "uncertainties",
+    ):
+        if not isinstance(row.get(field), list) or any(
+            not isinstance(item, str) for item in row.get(field, [])
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest candidate_expansion:{index} "
+                f"{field} invalid"
+            )
+    if not isinstance(row.get("hypothesis"), str) or not row.get("hypothesis"):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion:{index} "
+            "hypothesis invalid"
+        )
+    if not isinstance(row.get("requires_web_company_discovery"), bool):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion:{index} "
+            "requires_web_company_discovery invalid"
+        )
+    if not isinstance(row.get("d_minus_one_market_data_only"), bool):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_expansion:{index} "
+            "d_minus_one_market_data_only invalid"
         )
 
 
