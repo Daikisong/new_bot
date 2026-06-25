@@ -891,6 +891,216 @@ def test_provenance_audit_validates_manifest_supporting_jsonl_artifacts(
     assert "2030-01-10.json: context manifest source_ledger count mismatch" in findings
 
 
+def test_provenance_audit_validates_event_cluster_and_novelty_artifacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    event_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "event_clusters"
+        / "RUN-linked"
+        / "event_clusters.jsonl"
+    )
+    novelty_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "news_novelty_reviews"
+        / "RUN-linked"
+        / "news_novelty_review.json"
+    )
+    event_path.parent.mkdir(parents=True)
+    novelty_path.parent.mkdir(parents=True)
+    event_text = (
+        canonical_json(
+            {
+                "schema_version": "nslab.news_event_cluster.v1",
+                "run_id": "RUN-linked",
+                "cluster_id": "EVCL-1",
+                "cluster_index": 1,
+                "cluster_method": "exact_test_v1",
+                "row_numbers": [1, 2],
+                "event_ids": ["EVT-1", "EVT-2"],
+                "source_ids": ["SRC-1", "SRC-2"],
+                "row_count": 2,
+                "exact_duplicate_count": 1,
+            }
+        )
+        + "\n"
+    )
+    event_path.write_text(event_text, encoding="utf-8")
+    novelty_payload = {
+        "schema_version": "nslab.news_novelty_review.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "novelty-hash",
+        "cluster_count": 1,
+        "reviewed_cluster_count": 1,
+        "findings": [
+            {
+                "cluster_id": "EVCL-1",
+                "cluster_index": 1,
+                "novelty": "new",
+                "time_verified": True,
+            }
+        ],
+        "excluded_after_cutoff_source_ids": [],
+    }
+    write_json(novelty_path, novelty_payload)
+    novelty_text = novelty_path.read_text(encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "def456",
+                "news_novelty_review": "novelty-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "event_cluster_artifact": event_path.relative_to(tmp_path).as_posix(),
+            "event_cluster_sha256": sha256_text(event_text),
+            "event_cluster_count": 1,
+            "event_cluster_summary": {
+                "cluster_count": 1,
+                "source_row_count": 2,
+                "exact_duplicate_count": 1,
+                "exact_duplicate_cluster_count": 1,
+                "cluster_method": "exact_test_v1",
+            },
+            "news_novelty_review_artifact": novelty_path.relative_to(tmp_path).as_posix(),
+            "news_novelty_review_sha256": sha256_text(novelty_text),
+            "news_novelty_review_count": 1,
+            "news_novelty_review_summary": {
+                "cluster_count": 1,
+                "reviewed_cluster_count": 1,
+                "novelty_counts": {"new": 1, "unclear": 0},
+                "time_verified_count": 1,
+                "excluded_after_cutoff_source_count": 0,
+            },
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_event_text = (
+        canonical_json(
+            {
+                "schema_version": "bad.event",
+                "run_id": "RUN-other",
+                "cluster_id": "EVCL-1",
+                "cluster_index": 1,
+                "cluster_method": "exact_test_v1",
+                "row_numbers": [1],
+                "event_ids": ["EVT-1"],
+                "source_ids": ["SRC-1"],
+                "row_count": 1,
+                "exact_duplicate_count": 0,
+            }
+        )
+        + "\n"
+    )
+    event_path.write_text(bad_event_text, encoding="utf-8")
+    write_json(
+        novelty_path,
+        {
+            **novelty_payload,
+            "schema_version": "bad.review",
+            "run_id": "RUN-other",
+            "prompt_sha256": "bad-prompt",
+            "cluster_count": 2,
+            "reviewed_cluster_count": 2,
+            "findings": [
+                {
+                    "cluster_id": "EVCL-1",
+                    "cluster_index": 1,
+                    "novelty": "unclear",
+                    "time_verified": False,
+                }
+            ],
+            "excluded_after_cutoff_source_ids": ["SRC-after"],
+        },
+    )
+    manifest = read_json(manifest_path)
+    manifest["event_cluster_sha256"] = "0" * 64
+    manifest["event_cluster_count"] = 2
+    manifest["news_novelty_review_sha256"] = "1" * 64
+    manifest["news_novelty_review_count"] = 2
+    manifest["news_novelty_review_summary"] = {
+        "cluster_count": 1,
+        "reviewed_cluster_count": 2,
+        "novelty_counts": {"new": 1},
+        "time_verified_count": 1,
+        "excluded_after_cutoff_source_count": 0,
+    }
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert "2030-01-10.json: context manifest event_cluster_sha256 mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest event_cluster:1 schema_version mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest event_cluster:1 run_id mismatch" in findings
+    assert "2030-01-10.json: context manifest event_cluster count mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest event_cluster source_row_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest event_cluster exact_duplicate_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review schema_version mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review run_id mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review prompt_hash mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review "
+        "reviewed_cluster_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest news_novelty_review novelty_counts mismatch"
+        in findings
+    )
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

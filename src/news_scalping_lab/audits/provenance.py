@@ -1867,6 +1867,25 @@ def _check_manifest_output_artifacts(
         label="source_ledger",
         findings=findings,
     )
+    event_cluster_rows = _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="event_cluster_artifact",
+        sha_field="event_cluster_sha256",
+        count_field="event_cluster_count",
+        expected_schema="nslab.news_event_cluster.v1",
+        label="event_cluster",
+        findings=findings,
+    )
+    if event_cluster_rows is not None:
+        _check_event_cluster_artifact_summary(
+            prediction_path,
+            manifest,
+            event_cluster_rows,
+            findings,
+        )
+    _check_news_novelty_review_artifact(root, prediction_path, manifest, findings)
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
@@ -1881,11 +1900,11 @@ def _check_manifest_jsonl_artifact(
     expected_schema: str,
     label: str,
     findings: list[str],
-) -> None:
+) -> list[dict[str, Any]] | None:
     artifact_ref = manifest.get(artifact_field)
     expected_hash = manifest.get(sha_field)
     if artifact_ref is None and expected_hash is None:
-        return
+        return None
     artifact_path = _resolve_required_manifest_artifact(
         root,
         prediction_path,
@@ -1894,7 +1913,7 @@ def _check_manifest_jsonl_artifact(
         findings=findings,
     )
     if artifact_path is None:
-        return
+        return None
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
         findings.append(f"{prediction_path.name}: context manifest missing {sha_field}")
@@ -1956,6 +1975,331 @@ def _check_manifest_jsonl_artifact(
                     f"{prediction_path.name}: context manifest row_disposition "
                     "count mismatch"
                 )
+    return rows
+
+
+def _check_event_cluster_artifact_summary(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("event_cluster_summary")
+    if summary is None:
+        return
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest event_cluster_summary invalid"
+        )
+        return
+
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "cluster_count",
+        len(rows),
+        label="event_cluster",
+        findings=findings,
+    )
+    source_row_count = sum(_non_bool_int(row.get("row_count")) or 0 for row in rows)
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "source_row_count",
+        source_row_count,
+        label="event_cluster",
+        findings=findings,
+    )
+    exact_duplicate_count = sum(
+        _non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "exact_duplicate_count",
+        exact_duplicate_count,
+        label="event_cluster",
+        findings=findings,
+    )
+    exact_duplicate_cluster_count = sum(
+        1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "exact_duplicate_cluster_count",
+        exact_duplicate_cluster_count,
+        label="event_cluster",
+        findings=findings,
+    )
+    methods = {
+        method
+        for row in rows
+        if isinstance(method := row.get("cluster_method"), str) and method
+    }
+    summary_method = summary.get("cluster_method")
+    if isinstance(summary_method, str) and methods and methods != {summary_method}:
+        findings.append(
+            f"{prediction_path.name}: context manifest event_cluster "
+            "cluster_method mismatch"
+        )
+    for index, row in enumerate(rows, start=1):
+        row_count = _non_bool_int(row.get("row_count"))
+        if row_count is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest event_cluster:{index} "
+                "row_count invalid"
+            )
+            continue
+        for field in ("row_numbers", "event_ids", "source_ids"):
+            value = row.get(field)
+            if isinstance(value, list) and len(value) != row_count:
+                findings.append(
+                    f"{prediction_path.name}: context manifest event_cluster:{index} "
+                    f"{field} count mismatch"
+                )
+
+
+def _check_news_novelty_review_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("news_novelty_review_artifact")
+    expected_hash = manifest.get("news_novelty_review_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="news_novelty_review_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing "
+            "news_novelty_review_sha256"
+        )
+    elif sha256_text(text) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "news_novelty_review_sha256 mismatch"
+        )
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.news_novelty_review.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "schema_version mismatch"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "run_id mismatch"
+        )
+    prompt_hash = _manifest_prompt_hash(manifest, "news_novelty_review")
+    if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "prompt_hash mismatch"
+        )
+    _check_news_novelty_review_counts(prediction_path, manifest, payload, findings)
+
+
+def _check_news_novelty_review_counts(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    findings_rows = payload.get("findings")
+    if not isinstance(findings_rows, list) or not all(
+        isinstance(item, dict) for item in findings_rows
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "findings invalid"
+        )
+        return
+    manifest_count = manifest.get("news_novelty_review_count")
+    manifest_count_int = _non_bool_int(manifest_count)
+    if manifest_count_int is not None and manifest_count_int != len(findings_rows):
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "count mismatch"
+        )
+    elif manifest_count is not None and manifest_count_int is None:
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review_count "
+            "invalid"
+        )
+    _check_payload_int(
+        prediction_path,
+        payload,
+        "reviewed_cluster_count",
+        len(findings_rows),
+        label="news_novelty_review",
+        findings=findings,
+    )
+    event_cluster_count = manifest.get("event_cluster_count")
+    if isinstance(event_cluster_count, int) and not isinstance(event_cluster_count, bool):
+        _check_payload_int(
+            prediction_path,
+            payload,
+            "cluster_count",
+            event_cluster_count,
+            label="news_novelty_review",
+            findings=findings,
+        )
+    summary = manifest.get("news_novelty_review_summary")
+    if summary is None:
+        return
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "news_novelty_review_summary invalid"
+        )
+        return
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "cluster_count",
+        _non_bool_int(payload.get("cluster_count")),
+        label="news_novelty_review",
+        findings=findings,
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "reviewed_cluster_count",
+        len(findings_rows),
+        label="news_novelty_review",
+        findings=findings,
+    )
+    time_verified_count = sum(
+        1 for item in findings_rows if item.get("time_verified") is True
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "time_verified_count",
+        time_verified_count,
+        label="news_novelty_review",
+        findings=findings,
+    )
+    excluded_ids = payload.get("excluded_after_cutoff_source_ids")
+    if isinstance(excluded_ids, list):
+        _check_summary_int(
+            prediction_path,
+            summary,
+            "excluded_after_cutoff_source_count",
+            len(excluded_ids),
+            label="news_novelty_review",
+            findings=findings,
+        )
+    _check_news_novelty_counts_summary(
+        prediction_path,
+        summary,
+        findings_rows,
+        findings,
+    )
+
+
+def _check_news_novelty_counts_summary(
+    prediction_path: Path,
+    summary: dict[str, Any],
+    findings_rows: list[Any],
+    findings: list[str],
+) -> None:
+    summary_counts = summary.get("novelty_counts")
+    if summary_counts is None:
+        return
+    if not isinstance(summary_counts, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "novelty_counts invalid"
+        )
+        return
+    observed_counts = Counter(
+        novelty
+        for item in findings_rows
+        if isinstance(item, dict)
+        and isinstance(novelty := item.get("novelty"), str)
+        and novelty
+    )
+    invalid_count = False
+    for novelty, expected_count in summary_counts.items():
+        if not isinstance(novelty, str) or _non_bool_int(expected_count) is None:
+            invalid_count = True
+            break
+        if int(expected_count) != observed_counts.get(novelty, 0):
+            findings.append(
+                f"{prediction_path.name}: context manifest news_novelty_review "
+                "novelty_counts mismatch"
+            )
+            return
+    if invalid_count or any(novelty not in summary_counts for novelty in observed_counts):
+        findings.append(
+            f"{prediction_path.name}: context manifest news_novelty_review "
+            "novelty_counts mismatch"
+        )
+
+
+def _manifest_prompt_hash(manifest: dict[str, Any], key: str) -> str | None:
+    prompt_hashes = manifest.get("prompt_hashes")
+    if not isinstance(prompt_hashes, dict):
+        return None
+    value = prompt_hashes.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _check_payload_int(
+    prediction_path: Path,
+    payload: dict[str, Any],
+    field: str,
+    expected: int | None,
+    *,
+    label: str,
+    findings: list[str],
+) -> None:
+    if expected is None:
+        return
+    observed = _non_bool_int(payload.get(field))
+    if observed is None or observed != expected:
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} {field} mismatch"
+        )
+
+
+def _check_summary_int(
+    prediction_path: Path,
+    summary: dict[str, Any],
+    field: str,
+    expected: int | None,
+    *,
+    label: str,
+    findings: list[str],
+) -> None:
+    if expected is None or field not in summary:
+        return
+    observed = _non_bool_int(summary.get(field))
+    if observed is None or observed != expected:
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} {field} mismatch"
+        )
+
+
+def _non_bool_int(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
 
 
 def _check_manifest_prediction_artifact(
