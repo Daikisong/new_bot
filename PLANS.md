@@ -12,7 +12,7 @@ This repository is being built as `news-scalping-lab`: an LLM-native research-me
 6. Implement brain rebuild, incremental update, and coverage audit with 100% accepted episode coverage checks.
 7. Implement exhaustive context assembly that sweeps every accepted episode and never treats retrieval misses as candidate blockers.
 8. Implement daily blind analysis outputs: `predictions/YYYY-MM-DD.json`, `reports/YYYY-MM-DD_preopen.md`, and `runs/manifests/<run_id>.json`.
-9. Implement evaluation, hardcoding audit, lookahead audit, provenance audit, session pack export, and training export stubs with real files.
+9. Implement evaluation, hardcoding audit, lookahead audit, provenance audit, session pack export, and training export with real JSONL and manifest files.
 10. Add unit, integration, and metamorphic tests, then run `ruff`, `mypy`, and `pytest`.
 
 ## Non-Negotiables

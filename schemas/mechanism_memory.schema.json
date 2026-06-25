@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "boundary_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Boundary Conditions",
+      "type": "array"
+    },
+    "causal_chain": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Causal Chain",
+      "type": "array"
+    },
+    "failed_cases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failed Cases",
+      "type": "array"
+    },
+    "leader_selection_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Leader Selection Notes",
+      "type": "array"
+    },
+    "mechanism_id": {
+      "title": "Mechanism Id",
+      "type": "string"
+    },
+    "natural_language_description": {
+      "title": "Natural Language Description",
+      "type": "string"
+    },
+    "observed_variations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Observed Variations",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "successful_cases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Successful Cases",
+      "type": "array"
+    }
+  },
+  "required": [
+    "mechanism_id",
+    "natural_language_description"
+  ],
+  "title": "MechanismMemory",
+  "type": "object"
+}

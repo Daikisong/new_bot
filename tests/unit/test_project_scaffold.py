@@ -11,8 +11,23 @@ from news_scalping_lab.config import (
     load_settings,
     write_default_config_files,
 )
-from news_scalping_lab.contracts.schemas import export_json_schemas
+from news_scalping_lab.contracts.schemas import SCHEMA_MODELS, export_json_schemas
 from news_scalping_lab.utils import read_json
+
+EXPECTED_SCHEMA_FILES = {
+    "blind_prediction.schema.json",
+    "brain_manifest.schema.json",
+    "candidate.schema.json",
+    "company_memory.schema.json",
+    "context_manifest.schema.json",
+    "daily_analysis.schema.json",
+    "event_ticker_edge.schema.json",
+    "mechanism_memory.schema.json",
+    "memory_claim.schema.json",
+    "postmortem.schema.json",
+    "red_team_artifact.schema.json",
+    "research_episode.schema.json",
+}
 
 
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
@@ -105,6 +120,7 @@ def test_tracked_json_schemas_match_contract_export(tmp_path) -> None:
         path.name: read_json(path)
         for path in sorted((repo_root / "schemas").glob("*.schema.json"))
     }
+    assert set(SCHEMA_MODELS) == EXPECTED_SCHEMA_FILES
     assert sorted(set(generated) - set(tracked)) == []
     assert sorted(set(tracked) - set(generated)) == []
     assert sorted(name for name in generated if generated[name] != tracked[name]) == []

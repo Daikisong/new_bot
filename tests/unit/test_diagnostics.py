@@ -59,5 +59,5 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert "research_episodes.parquet" in report["warehouse"]["counts"]
     assert report["vector_index"]["exists"] is True
     assert report["vector_index"]["file_count"] == 1
-    assert report["schemas"]["file_count"] >= 8
+    assert report["schemas"]["file_count"] >= 12
     assert report["schemas"]["versions"]["research_episode"] == "nslab.research_episode.v1"

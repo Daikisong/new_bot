@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_type": {
+          "title": "Source Type",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_type",
+        "uri"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "business_descriptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Business Descriptions",
+      "type": "array"
+    },
+    "company_name": {
+      "title": "Company Name",
+      "type": "string"
+    },
+    "contradictory_relations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradictory Relations",
+      "type": "array"
+    },
+    "customers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Customers",
+      "type": "array"
+    },
+    "known_at": {
+      "format": "date-time",
+      "title": "Known At",
+      "type": "string"
+    },
+    "locations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Locations",
+      "type": "array"
+    },
+    "prior_leader_occurrences": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Leader Occurrences",
+      "type": "array"
+    },
+    "prior_market_narratives": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Market Narratives",
+      "type": "array"
+    },
+    "provenance": {
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "title": "Provenance",
+      "type": "array"
+    },
+    "supply_chain_roles": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supply Chain Roles",
+      "type": "array"
+    },
+    "ticker": {
+      "title": "Ticker",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ticker",
+    "company_name",
+    "known_at"
+  ],
+  "title": "CompanyMemory",
+  "type": "object"
+}
