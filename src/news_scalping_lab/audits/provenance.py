@@ -1058,10 +1058,17 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
     token_usage = payload.get("token_usage")
     if not isinstance(token_usage, dict):
         findings.append(f"{path.name}: trace token_usage is not an object")
-    elif status in {"ok", "checkpoint_hit"} and not isinstance(
-        token_usage.get("prompt_tokens_estimate"), int
-    ):
-        findings.append(f"{path.name}: trace missing prompt token estimate")
+    else:
+        if status in {"ok", "checkpoint_hit"} and not isinstance(
+            token_usage.get("prompt_tokens_estimate"), int
+        ):
+            findings.append(f"{path.name}: trace missing prompt token estimate")
+        if (
+            status in {"ok", "checkpoint_hit"}
+            and operation in {"generate_text", "generate_structured"}
+            and not isinstance(token_usage.get("completion_tokens_estimate"), int)
+        ):
+            findings.append(f"{path.name}: trace missing completion token estimate")
     if status == "error" and not isinstance(payload.get("error"), dict):
         findings.append(f"{path.name}: error trace missing error details")
 

@@ -954,10 +954,17 @@ def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
     token_usage = payload.get("token_usage")
     if not isinstance(token_usage, dict):
         errors.append("token_usage_not_object")
-    elif status in {"ok", "checkpoint_hit"} and not isinstance(
-        token_usage.get("prompt_tokens_estimate"), int
-    ):
-        errors.append("prompt_token_estimate_missing")
+    else:
+        if status in {"ok", "checkpoint_hit"} and not isinstance(
+            token_usage.get("prompt_tokens_estimate"), int
+        ):
+            errors.append("prompt_token_estimate_missing")
+        if (
+            status in {"ok", "checkpoint_hit"}
+            and operation in {"generate_text", "generate_structured"}
+            and not isinstance(token_usage.get("completion_tokens_estimate"), int)
+        ):
+            errors.append("completion_token_estimate_missing")
     if status == "error" and not isinstance(payload.get("error"), dict):
         errors.append("error_trace_missing_error_details")
     return errors

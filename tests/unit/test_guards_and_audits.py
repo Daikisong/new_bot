@@ -1039,6 +1039,7 @@ def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) ->
     assert "TRACE-daily.json: trace metadata prompt_version mismatch" in result["findings"]
     assert "TRACE-daily.json: trace input_sha256 mismatch" in result["findings"]
     assert "TRACE-daily.json: trace missing prompt token estimate" in result["findings"]
+    assert "TRACE-daily.json: trace missing completion token estimate" in result["findings"]
 
 
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:

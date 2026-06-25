@@ -83,6 +83,8 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert text_trace["prompt_version"] == "test-v1"
     assert structured["model_config"] == {"provider": "mock", "model": "deterministic"}
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
+    assert structured["token_usage"]["completion_tokens_estimate"] > 0
+    assert text_trace["token_usage"]["completion_tokens_estimate"] > 0
     assert structured["tool_calls"] == []
     assert structured["retries"] == 0
 
