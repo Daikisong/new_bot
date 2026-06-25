@@ -383,6 +383,10 @@ class ContextManifest(StrictModel):
     row_disposition_sha256: str | None = None
     row_disposition_coverage_ratio: float = 0.0
     row_disposition_summary: dict[str, Any] = Field(default_factory=dict)
+    source_ledger_artifact: str | None = None
+    source_ledger_sha256: str | None = None
+    source_ledger_entry_count: int = 0
+    source_ledger_summary: dict[str, Any] = Field(default_factory=dict)
     red_team_artifacts: list[str] = Field(default_factory=list)
     token_counts: dict[str, int] = Field(default_factory=dict)
     truncations: list[str] = Field(default_factory=list)

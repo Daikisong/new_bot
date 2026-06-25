@@ -666,6 +666,68 @@ def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) 
     assert "RUN-row.json: row_disposition coverage ratio must be 1.0" in findings
 
 
+def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    artifact_dir = tmp_path / "runs" / "checkpoints" / "source_ledger" / "RUN-ledger"
+    artifact_dir.mkdir(parents=True)
+    artifact = artifact_dir / "source_ledger.jsonl"
+    artifact.write_text(
+        canonical_json(
+            {
+                "source_id": "SRC-1",
+                "source_type": "news_csv_row",
+                "title": "source one",
+                "publisher": None,
+                "url": "news://one",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "retrieved_at": "2030-01-10T10:00:00+09:00",
+                "time_verified": True,
+                "available_before_cutoff": False,
+                "usage_phase": "BLIND",
+                "input_row_ids": [1],
+                "content_sha256": "abc",
+                "notes": "bad",
+                "body": "must not be duplicated",
+            }
+        )
+        + "\n"
+        + canonical_json({"source_id": "SRC-1", "usage_phase": "NOPE"})
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-ledger.json",
+        {
+            "run_id": "RUN-ledger",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "source_ledger_artifact": artifact.relative_to(tmp_path).as_posix(),
+            "source_ledger_sha256": "wrong",
+            "source_ledger_entry_count": 3,
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-ledger.json: source_ledger_sha256 mismatch" in findings
+    assert "RUN-ledger.json: source_ledger:1 must not duplicate body/content" in findings
+    assert "RUN-ledger.json: source_ledger:1 BLIND source after cutoff" in findings
+    assert any(
+        finding.startswith("RUN-ledger.json: source_ledger:2 missing fields:")
+        for finding in findings
+    )
+    assert "RUN-ledger.json: source_ledger:2 invalid usage_phase" in findings
+    assert "RUN-ledger.json: source_ledger duplicate source_id" in findings
+    assert "RUN-ledger.json: source_ledger entry_count mismatch" in findings
+
+
 def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
     (tmp_path / "session_packs" / "2030-01-10").mkdir(parents=True)
     (tmp_path / "research" / "accepted").mkdir(parents=True)

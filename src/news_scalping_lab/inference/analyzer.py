@@ -138,9 +138,8 @@ class DailyAnalyzer:
 
         manifest.price_snapshot.source_name = self._blind_price_source_name()
 
-        news_texts = [
-            item.combined_text for item in batch.items[: self.settings.limits.max_news_items_for_mock]
-        ]
+        blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
+        news_texts = [item.combined_text for item in blind_news_items]
         first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
         sweep = MemorySweeper(
             self.root,
@@ -217,6 +216,12 @@ class DailyAnalyzer:
             )
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
+        self._write_source_ledger_artifact(
+            news_items=batch.items,
+            prediction=prediction,
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
         manifest.token_counts["final_synthesis_prompt"] = final_synthesis_prompt_tokens
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
@@ -314,6 +319,81 @@ class DailyAnalyzer:
         manifest.row_disposition_summary = {
             **summary,
             "coverage_ratio": coverage_ratio,
+        }
+
+    def _write_source_ledger_artifact(
+        self,
+        *,
+        news_items: list[NewsItem],
+        prediction: BlindPrediction,
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> None:
+        item_by_event_id = {item.event_id: item for item in news_items}
+        used_event_ids: list[str] = []
+        for sector in prediction.dominant_sectors:
+            used_event_ids.extend(sector.triggering_events)
+        for candidate in prediction.candidates:
+            used_event_ids.extend(candidate.event_ids)
+            used_event_ids.extend(
+                url.removeprefix("news://")
+                for url in candidate.source_urls
+                if url.startswith("news://")
+            )
+        used_event_ids = _unique_preserving_order(
+            [event_id for event_id in used_event_ids if event_id in item_by_event_id]
+        )
+        if not used_event_ids and news_items:
+            used_event_ids = [news_items[0].event_id]
+
+        retrieved_at = now_kst()
+        rows: list[dict[str, Any]] = []
+        for event_id in used_event_ids:
+            item = item_by_event_id[event_id]
+            provenance = item.provenance[0] if item.provenance else None
+            rows.append(
+                {
+                    "schema_version": "nslab.source_ledger.v1",
+                    "run_id": manifest.run_id,
+                    "source_id": item.source_id,
+                    "source_type": "news_csv_row",
+                    "title": item.title,
+                    "publisher": None,
+                    "url": provenance.uri if provenance else f"news://{item.event_id}",
+                    "published_at": item.published_at.isoformat(),
+                    "retrieved_at": retrieved_at.isoformat(),
+                    "time_verified": True,
+                    "available_before_cutoff": item.published_at <= cutoff_at,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [item.row_number],
+                    "event_ids": [item.event_id],
+                    "content_sha256": sha256_text(item.combined_text),
+                    "notes": (
+                        "NEWS_ONLY_STRICT blind source; full body remains in the input CSV "
+                        "and is not duplicated in source_ledger."
+                    ),
+                }
+            )
+
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "source_ledger"
+            / manifest.run_id
+            / "source_ledger.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        manifest.source_ledger_artifact = artifact_relative.as_posix()
+        manifest.source_ledger_sha256 = sha256_text(payload)
+        manifest.source_ledger_entry_count = len(rows)
+        manifest.source_ledger_summary = {
+            "total_sources": len(rows),
+            "blind_sources": sum(1 for row in rows if row["usage_phase"] == "BLIND"),
+            "outcome_sources": 0,
+            "postmortem_sources": 0,
         }
 
     def _filter_retrieved_ids_available_as_of(

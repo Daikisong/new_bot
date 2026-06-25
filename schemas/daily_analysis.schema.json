@@ -483,6 +483,40 @@
           "title": "Shard Brain Files",
           "type": "array"
         },
+        "source_ledger_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Ledger Artifact"
+        },
+        "source_ledger_entry_count": {
+          "default": 0,
+          "title": "Source Ledger Entry Count",
+          "type": "integer"
+        },
+        "source_ledger_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Ledger Sha256"
+        },
+        "source_ledger_summary": {
+          "additionalProperties": true,
+          "title": "Source Ledger Summary",
+          "type": "object"
+        },
         "swept_episode_count": {
           "title": "Swept Episode Count",
           "type": "integer"

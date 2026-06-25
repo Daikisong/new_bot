@@ -327,6 +327,26 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert "body" not in row_dispositions[0]
     assert row_dispositions[0]["title_sha256"]
     assert row_dispositions[0]["body_sha256"]
+    assert saved_manifest["source_ledger_artifact"]
+    assert saved_manifest["source_ledger_entry_count"] == 1
+    assert saved_manifest["source_ledger_summary"] == {
+        "blind_sources": 1,
+        "outcome_sources": 0,
+        "postmortem_sources": 0,
+        "total_sources": 1,
+    }
+    source_ledger_path = tmp_path / saved_manifest["source_ledger_artifact"]
+    source_ledger_text = source_ledger_path.read_text(encoding="utf-8")
+    source_ledger_rows = [
+        json.loads(line) for line in source_ledger_text.splitlines() if line.strip()
+    ]
+    assert sha256_text(source_ledger_text) == saved_manifest["source_ledger_sha256"]
+    assert len(source_ledger_rows) == 1
+    assert source_ledger_rows[0]["source_type"] == "news_csv_row"
+    assert source_ledger_rows[0]["usage_phase"] == "BLIND"
+    assert source_ledger_rows[0]["available_before_cutoff"] is True
+    assert source_ledger_rows[0]["input_row_ids"] == [1]
+    assert "body" not in source_ledger_rows[0]
     assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]

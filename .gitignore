@@ -20,6 +20,8 @@ runs/checkpoints/*
 !runs/checkpoints/memory_sweep/**
 !runs/checkpoints/row_disposition/
 !runs/checkpoints/row_disposition/**
+!runs/checkpoints/source_ledger/
+!runs/checkpoints/source_ledger/**
 brain/snapshots/*
 brain/diffs/*
 !brain/snapshots/.gitkeep

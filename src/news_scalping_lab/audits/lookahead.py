@@ -54,6 +54,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         ):
             findings.append(f"{manifest_name}: exhaustive coverage mismatch")
         _check_row_disposition(root, manifest_name, manifest, findings)
+        _check_source_ledger(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
         "passed": not findings,
@@ -225,6 +226,76 @@ def _check_row_disposition(
     coverage_ratio = manifest.get("row_disposition_coverage_ratio")
     if isinstance(coverage_ratio, (int, float)) and float(coverage_ratio) != 1.0:
         findings.append(f"{manifest_name}: row_disposition coverage ratio must be 1.0")
+
+
+def _check_source_ledger(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    relative_path = manifest.get("source_ledger_artifact")
+    if not isinstance(relative_path, str):
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: source_ledger_artifact missing: {relative_path}")
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("source_ledger_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: source_ledger_sha256 mismatch")
+    rows: list[dict[str, object]] = []
+    required = {
+        "source_id",
+        "source_type",
+        "title",
+        "publisher",
+        "url",
+        "published_at",
+        "retrieved_at",
+        "time_verified",
+        "available_before_cutoff",
+        "usage_phase",
+        "input_row_ids",
+        "content_sha256",
+        "notes",
+    }
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_name}: source_ledger:{line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_name}: source_ledger:{line_number} must be object")
+            continue
+        missing = sorted(required - set(row))
+        if missing:
+            findings.append(
+                f"{manifest_name}: source_ledger:{line_number} missing fields: "
+                f"{', '.join(missing)}"
+            )
+        if "body" in row or "content" in row:
+            findings.append(
+                f"{manifest_name}: source_ledger:{line_number} must not duplicate body/content"
+            )
+        usage_phase = row.get("usage_phase")
+        if usage_phase not in {"BLIND", "OUTCOME", "POSTMORTEM"}:
+            findings.append(f"{manifest_name}: source_ledger:{line_number} invalid usage_phase")
+        if usage_phase == "BLIND" and row.get("available_before_cutoff") is not True:
+            findings.append(
+                f"{manifest_name}: source_ledger:{line_number} BLIND source after cutoff"
+            )
+        rows.append(row)
+    source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
+    if len(source_ids) != len(set(source_ids)):
+        findings.append(f"{manifest_name}: source_ledger duplicate source_id")
+    entry_count = manifest.get("source_ledger_entry_count")
+    if isinstance(entry_count, int) and entry_count != len(rows):
+        findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
 
 
 def _string_list(value: object) -> list[str]:
