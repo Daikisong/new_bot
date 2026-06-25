@@ -1299,3 +1299,48 @@ def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> No
         "session_packs/2030-01-10/manifest.json: context file contains future episode "
         "EP-after-cutoff: brain/current/00_world_model.md"
     ) in result["findings"]
+
+
+def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    company_dir = tmp_path / "memory" / "company_memory"
+    company_dir.mkdir(parents=True)
+    market_dir = tmp_path / "memory" / "market_memory"
+    market_dir.mkdir(parents=True)
+    write_json(
+        company_dir / "CM-future.json",
+        {
+            "ticker": "100001",
+            "company_name": "FutureMemoryCo",
+            "known_at": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    (market_dir / "claims.jsonl").write_text(
+        '{"claim_id":"M-future","available_from":"2030-01-10T09:30:00+09:00",'
+        '"statement":"future market context"}\n',
+        encoding="utf-8",
+    )
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+            "included_company_memory_files": ["memory/company_memory/CM-future.json"],
+            "included_market_context_files": ["memory/market_memory/claims.jsonl#L1"],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: included future company memory: "
+        "memory/company_memory/CM-future.json"
+    ) in result["findings"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: included future market_context memory: "
+        "memory/market_memory/claims.jsonl#L1"
+    ) in result["findings"]

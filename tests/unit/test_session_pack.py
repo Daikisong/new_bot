@@ -10,7 +10,7 @@ from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.session_pack import SessionPackBudgetExceededError, export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, read_json, write_json
 
 RUNNER = CliRunner()
 
@@ -243,3 +243,97 @@ def test_session_pack_uses_as_of_brain_context_when_current_contains_future_epis
     assert "EP-available" in research_brain
     assert "EP-after-cutoff" not in research_brain
     assert not any("context file contains future episode" in item for item in manifest["errors"])
+
+
+def test_session_pack_filters_company_and_market_memory_by_cutoff(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","PackCo, catalyst","Session pack current news."\n',
+        encoding="utf-8",
+    )
+    store = ResearchStore(tmp_path)
+    episode = _episode(
+        "EP-available",
+        summary="Available lesson.",
+        available_day=date(2030, 1, 10),
+    )
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    company_dir = tmp_path / "memory" / "company_memory"
+    company_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        company_dir / "CM-safe.json",
+        {
+            "ticker": "100001",
+            "company_name": "SafeMemoryCo",
+            "aliases": ["SafeMemoryCo"],
+            "business_descriptions": ["Known before cutoff."],
+            "locations": [],
+            "customers": [],
+            "supply_chain_roles": [],
+            "prior_market_narratives": [],
+            "prior_leader_occurrences": [],
+            "contradictory_relations": [],
+            "known_at": "2030-01-10T08:00:00+09:00",
+            "provenance": [],
+        },
+    )
+    write_json(
+        company_dir / "CM-future.json",
+        {
+            "ticker": "100002",
+            "company_name": "FutureMemoryCo",
+            "aliases": ["FutureMemoryCo"],
+            "business_descriptions": ["Known after cutoff."],
+            "locations": [],
+            "customers": [],
+            "supply_chain_roles": [],
+            "prior_market_narratives": [],
+            "prior_leader_occurrences": [],
+            "contradictory_relations": [],
+            "known_at": "2030-01-10T09:30:00+09:00",
+            "provenance": [],
+        },
+    )
+    market_dir = tmp_path / "memory" / "market_memory"
+    market_dir.mkdir(parents=True, exist_ok=True)
+    (market_dir / "claims.jsonl").write_text(
+        '{"claim_id":"M-safe","available_from":"2030-01-10T08:00:00+09:00",'
+        '"statement":"safe market context"}\n'
+        '{"claim_id":"M-future","available_from":"2030-01-10T09:30:00+09:00",'
+        '"statement":"future market context"}\n'
+        '{"claim_id":"M-unscoped","statement":"unscoped market context"}\n',
+        encoding="utf-8",
+    )
+
+    output_dir = export_session_pack(
+        settings,
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="brain",
+    )
+
+    manifest = read_json(output_dir / "manifest.json")
+    company_memory = (output_dir / "company_memory.md").read_text(encoding="utf-8")
+    market_context = (output_dir / "market_context.md").read_text(encoding="utf-8")
+
+    assert "SafeMemoryCo" in company_memory
+    assert "FutureMemoryCo" not in company_memory
+    assert "safe market context" in market_context
+    assert "future market context" not in market_context
+    assert "unscoped market context" not in market_context
+    assert manifest["included_company_memory_files"] == ["memory/company_memory/CM-safe.json"]
+    assert manifest["included_market_context_files"] == ["memory/market_memory/claims.jsonl#L1"]
+    assert {
+        item["reason"] for item in manifest["omitted_company_memory_files"]
+    } == {"company_memory_known_after_cutoff"}
+    assert {item["reason"] for item in manifest["omitted_market_context_files"]} == {
+        "available_from_after_cutoff",
+        "missing_temporal_scope",
+    }
+    assert "session pack excluded future company memory" in "\n".join(manifest["errors"])
+    assert "session pack omitted unscoped market_context memory" in "\n".join(manifest["errors"])

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+from typing import cast
 
 from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_json, sha256_text
 
@@ -46,6 +47,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             manifest,
             manifest_cutoff_at,
             accepted_episode_available_from,
+            findings,
+        )
+        _check_session_pack_temporal_memory_refs(
+            root,
+            manifest_name,
+            manifest,
+            manifest_cutoff_at,
             findings,
         )
         if (
@@ -161,6 +169,114 @@ def _check_context_files_for_future_episode_ids(
                     f"{manifest_name}: context file contains future episode {episode_id}: "
                     f"{relative_path}"
                 )
+
+
+def _check_session_pack_temporal_memory_refs(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_cutoff_at: datetime | None,
+    findings: list[str],
+) -> None:
+    if manifest_cutoff_at is None:
+        return
+    for relative_ref in _string_list(manifest.get("included_company_memory_files")):
+        payload = _read_json_ref(root, manifest_name, relative_ref, findings)
+        if payload is None:
+            continue
+        if not isinstance(payload, dict):
+            findings.append(f"{manifest_name}: included company memory must be object: {relative_ref}")
+            continue
+        _check_payload_available_as_of(
+            manifest_name,
+            relative_ref,
+            payload,
+            manifest_cutoff_at,
+            label="company memory",
+            timestamp_fields=("known_at",),
+            findings=findings,
+        )
+    for relative_ref in _string_list(manifest.get("included_market_context_files")):
+        payload = _read_json_ref(root, manifest_name, relative_ref, findings)
+        if payload is None:
+            continue
+        if not isinstance(payload, dict):
+            findings.append(f"{manifest_name}: included market context must be object: {relative_ref}")
+            continue
+        _check_payload_available_as_of(
+            manifest_name,
+            relative_ref,
+            payload,
+            manifest_cutoff_at,
+            label="market_context memory",
+            timestamp_fields=("available_from", "known_at"),
+            findings=findings,
+        )
+
+
+def _read_json_ref(
+    root: Path,
+    manifest_name: str,
+    relative_ref: str,
+    findings: list[str],
+) -> object | None:
+    relative_path, marker = _split_artifact_ref(relative_ref)
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: referenced memory artifact missing: {relative_ref}")
+        return None
+    try:
+        if marker is None:
+            return cast(object, json.loads(path.read_text(encoding="utf-8-sig")))
+        if marker.startswith("L"):
+            line_number = int(marker[1:])
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
+            if line_number < 1 or line_number > len(lines):
+                findings.append(f"{manifest_name}: referenced memory line missing: {relative_ref}")
+                return None
+            return cast(object, json.loads(lines[line_number - 1]))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        if isinstance(payload, list):
+            index = int(marker)
+            return cast(object, payload[index])
+    except (ValueError, IndexError, json.JSONDecodeError):
+        findings.append(f"{manifest_name}: referenced memory artifact invalid JSON: {relative_ref}")
+        return None
+    findings.append(f"{manifest_name}: unsupported memory artifact ref: {relative_ref}")
+    return None
+
+
+def _split_artifact_ref(relative_ref: str) -> tuple[str, str | None]:
+    if "#" not in relative_ref:
+        return relative_ref, None
+    relative_path, marker = relative_ref.rsplit("#", 1)
+    return relative_path, marker
+
+
+def _check_payload_available_as_of(
+    manifest_name: str,
+    relative_ref: str,
+    payload: dict[object, object],
+    manifest_cutoff_at: datetime,
+    *,
+    label: str,
+    timestamp_fields: tuple[str, ...],
+    findings: list[str],
+) -> None:
+    for field in timestamp_fields:
+        raw_value = payload.get(field)
+        if not isinstance(raw_value, str):
+            continue
+        try:
+            timestamp = parse_datetime(raw_value)
+        except ValueError:
+            findings.append(f"{manifest_name}: included {label} invalid {field}: {relative_ref}")
+            return
+        if not is_available_as_of(timestamp, manifest_cutoff_at):
+            findings.append(f"{manifest_name}: included future {label}: {relative_ref}")
+        return
+    fields = ", ".join(timestamp_fields)
+    findings.append(f"{manifest_name}: included {label} missing temporal field {fields}: {relative_ref}")
 
 
 def _check_news_only_blind_protocol(

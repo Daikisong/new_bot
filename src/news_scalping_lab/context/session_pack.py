@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -9,17 +11,27 @@ from typing import Any
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.modes import normalize_analysis_mode
-from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.contracts.models import CompanyMemory, ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
+    canonical_json,
     combine_kst,
     file_sha256,
     is_available_as_of,
+    read_json,
     sha256_text,
     stable_id,
     write_json,
 )
+
+
+@dataclass(frozen=True)
+class TemporalMemoryContext:
+    text: str
+    included_paths: list[str]
+    omitted: list[dict[str, str]]
+    errors: list[str]
 
 
 class SessionPackFutureContextError(RuntimeError):
@@ -88,8 +100,15 @@ def export_session_pack(
     news_text = "\n\n".join(
         f"## {item.event_id}\n{item.title}\n\n{item.body}" for item in batch.items
     )
-    company_memory_text = _read_memory_dir(settings.project_root / "memory" / "company_memory")
-    market_context_text = _read_memory_dir(settings.project_root / "memory" / "market_memory")
+    company_memory = _read_company_memory_as_of(settings.project_root, cutoff_at)
+    market_context = _read_temporal_memory_dir_as_of(
+        settings.project_root,
+        settings.project_root / "memory" / "market_memory",
+        cutoff_at,
+        label="market_context",
+    )
+    company_memory_text = company_memory.text
+    market_context_text = market_context.text
     if not company_memory_text:
         company_memory_text = (
             "Company memory is data-driven and may be empty. New entities must be investigated.\n"
@@ -130,11 +149,29 @@ def export_session_pack(
                 "omitted_episode_ids": unavailable_ids,
             }
         )
+    if company_memory.omitted:
+        truncations.append(
+            {
+                "artifact": "company_memory.md",
+                "reason": "temporal_company_memory_omitted",
+                "omitted": company_memory.omitted,
+            }
+        )
+    if market_context.omitted:
+        truncations.append(
+            {
+                "artifact": "market_context.md",
+                "reason": "temporal_market_context_omitted",
+                "omitted": market_context.omitted,
+            }
+        )
     errors: list[str] = []
     if omitted_ids:
         errors.append("session pack omitted available episodes due to token budget")
     if unavailable_ids:
         errors.append("session pack excluded future-unavailable episodes")
+    errors.extend(company_memory.errors)
+    errors.extend(market_context.errors)
     context_leak_errors = _future_context_leak_errors(
         root=settings.project_root,
         relative_paths=[*brain_files, *shard_brain_files],
@@ -161,6 +198,10 @@ def export_session_pack(
                 "accepted_episode_count": len(all_accepted),
                 "available_episode_count": len(available),
                 "unavailable_episode_ids": unavailable_ids,
+                "included_company_memory_files": company_memory.included_paths,
+                "omitted_company_memory_files": company_memory.omitted,
+                "included_market_context_files": market_context.included_paths,
+                "omitted_market_context_files": market_context.omitted,
                 "truncations": truncations,
                 "errors": errors,
             },
@@ -204,6 +245,10 @@ def export_session_pack(
         "included_episode_ids": [episode.episode_id for episode in included],
         "omitted_episode_ids": [*omitted_ids, *unavailable_ids],
         "unavailable_episode_ids": unavailable_ids,
+        "included_company_memory_files": company_memory.included_paths,
+        "omitted_company_memory_files": company_memory.omitted,
+        "included_market_context_files": market_context.included_paths,
+        "omitted_market_context_files": market_context.omitted,
         "token_budget": token_budget,
         "token_counts": {
             file_name: _estimate_tokens((output_dir / file_name).read_text(encoding="utf-8"))
@@ -299,6 +344,231 @@ def _read_memory_dir(path: Path) -> str:
     return "\n".join(chunks).strip() + ("\n" if chunks else "")
 
 
+def _read_company_memory_as_of(root: Path, cutoff_at: datetime) -> TemporalMemoryContext:
+    directory = root / "memory" / "company_memory"
+    if not directory.exists():
+        return TemporalMemoryContext(text="", included_paths=[], omitted=[], errors=[])
+    chunks: list[str] = []
+    included_paths: list[str] = []
+    omitted: list[dict[str, str]] = []
+    errors: list[str] = []
+    for file_path in sorted(directory.glob("*.json")):
+        relative_path = _relative_to_root(file_path, root)
+        try:
+            memory = CompanyMemory.model_validate(read_json(file_path))
+        except Exception:
+            omitted.append({"path": relative_path, "reason": "invalid_company_memory_schema"})
+            errors.append(f"session pack omitted invalid company memory: {relative_path}")
+            continue
+        if not is_available_as_of(memory.known_at, cutoff_at):
+            omitted.append(
+                {
+                    "path": relative_path,
+                    "reason": "company_memory_known_after_cutoff",
+                    "known_at": memory.known_at.isoformat(),
+                }
+            )
+            errors.append(f"session pack excluded future company memory: {relative_path}")
+            continue
+        included_paths.append(relative_path)
+        chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
+    return TemporalMemoryContext(
+        text="\n".join(chunks).strip() + ("\n" if chunks else ""),
+        included_paths=included_paths,
+        omitted=omitted,
+        errors=errors,
+    )
+
+
+def _read_temporal_memory_dir_as_of(
+    root: Path,
+    directory: Path,
+    cutoff_at: datetime,
+    *,
+    label: str,
+) -> TemporalMemoryContext:
+    if not directory.exists():
+        return TemporalMemoryContext(text="", included_paths=[], omitted=[], errors=[])
+    chunks: list[str] = []
+    included_paths: list[str] = []
+    omitted: list[dict[str, str]] = []
+    errors: list[str] = []
+    for file_path in sorted(directory.glob("*")):
+        if not file_path.is_file():
+            continue
+        relative_path = _relative_to_root(file_path, root)
+        if file_path.suffix.lower() == ".jsonl":
+            included_lines, line_included_paths, line_omitted, line_errors = (
+                _read_temporal_jsonl_as_of(
+                    file_path,
+                    relative_path=relative_path,
+                    cutoff_at=cutoff_at,
+                    label=label,
+                )
+            )
+            included_paths.extend(line_included_paths)
+            omitted.extend(line_omitted)
+            errors.extend(line_errors)
+            if included_lines:
+                chunks.append(f"\n<!-- {relative_path} -->\n" + "\n".join(included_lines))
+            continue
+        if file_path.suffix.lower() == ".json":
+            try:
+                payload = json.loads(file_path.read_text(encoding="utf-8-sig"))
+            except json.JSONDecodeError:
+                omitted.append({"path": relative_path, "reason": "invalid_json"})
+                errors.append(f"session pack omitted invalid {label} memory: {relative_path}")
+                continue
+            included_payload, payload_omitted, payload_errors = _filter_temporal_json_payload(
+                payload,
+                relative_path=relative_path,
+                cutoff_at=cutoff_at,
+                label=label,
+            )
+            omitted.extend(payload_omitted)
+            errors.extend(payload_errors)
+            if included_payload is not None:
+                included_paths.append(relative_path)
+                chunks.append(
+                    f"\n<!-- {relative_path} -->\n"
+                    + json.dumps(
+                        included_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+            continue
+        if file_path.suffix.lower() in {".md", ".txt"}:
+            omitted.append({"path": relative_path, "reason": "missing_temporal_scope"})
+            errors.append(f"session pack omitted unscoped {label} memory: {relative_path}")
+    return TemporalMemoryContext(
+        text="\n".join(chunks).strip() + ("\n" if chunks else ""),
+        included_paths=included_paths,
+        omitted=omitted,
+        errors=errors,
+    )
+
+
+def _read_temporal_jsonl_as_of(
+    path: Path,
+    *,
+    relative_path: str,
+    cutoff_at: datetime,
+    label: str,
+) -> tuple[list[str], list[str], list[dict[str, str]], list[str]]:
+    included_lines: list[str] = []
+    included_paths: list[str] = []
+    omitted: list[dict[str, str]] = []
+    errors: list[str] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+        if not line.strip():
+            continue
+        entry_path = f"{relative_path}#L{line_number}"
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            omitted.append({"path": entry_path, "reason": "invalid_jsonl"})
+            errors.append(f"session pack omitted invalid {label} memory: {entry_path}")
+            continue
+        if not isinstance(payload, dict):
+            omitted.append({"path": entry_path, "reason": "non_object_jsonl"})
+            errors.append(f"session pack omitted non-object {label} memory: {entry_path}")
+            continue
+        timestamp, reason = _payload_temporal_scope(payload)
+        if timestamp is None:
+            omitted.append({"path": entry_path, "reason": reason})
+            errors.append(f"session pack omitted unscoped {label} memory: {entry_path}")
+            continue
+        if not is_available_as_of(timestamp, cutoff_at):
+            omitted.append(
+                {
+                    "path": entry_path,
+                    "reason": f"{reason}_after_cutoff",
+                    "available_at": timestamp.isoformat(),
+                }
+            )
+            errors.append(f"session pack excluded future {label} memory: {entry_path}")
+            continue
+        included_lines.append(canonical_json(payload))
+        included_paths.append(entry_path)
+    return included_lines, included_paths, omitted, errors
+
+
+def _filter_temporal_json_payload(
+    payload: object,
+    *,
+    relative_path: str,
+    cutoff_at: datetime,
+    label: str,
+) -> tuple[object | None, list[dict[str, str]], list[str]]:
+    if isinstance(payload, dict):
+        timestamp, reason = _payload_temporal_scope(payload)
+        if timestamp is None:
+            return (
+                None,
+                [{"path": relative_path, "reason": reason}],
+                [f"session pack omitted unscoped {label} memory: {relative_path}"],
+            )
+        if not is_available_as_of(timestamp, cutoff_at):
+            return (
+                None,
+                [
+                    {
+                        "path": relative_path,
+                        "reason": f"{reason}_after_cutoff",
+                        "available_at": timestamp.isoformat(),
+                    }
+                ],
+                [f"session pack excluded future {label} memory: {relative_path}"],
+            )
+        return payload, [], []
+    if isinstance(payload, list):
+        included: list[object] = []
+        omitted: list[dict[str, str]] = []
+        errors: list[str] = []
+        for index, item in enumerate(payload):
+            entry_path = f"{relative_path}#{index}"
+            if not isinstance(item, dict):
+                omitted.append({"path": entry_path, "reason": "non_object_json"})
+                errors.append(f"session pack omitted non-object {label} memory: {entry_path}")
+                continue
+            timestamp, reason = _payload_temporal_scope(item)
+            if timestamp is None:
+                omitted.append({"path": entry_path, "reason": reason})
+                errors.append(f"session pack omitted unscoped {label} memory: {entry_path}")
+                continue
+            if not is_available_as_of(timestamp, cutoff_at):
+                omitted.append(
+                    {
+                        "path": entry_path,
+                        "reason": f"{reason}_after_cutoff",
+                        "available_at": timestamp.isoformat(),
+                    }
+                )
+                errors.append(f"session pack excluded future {label} memory: {entry_path}")
+                continue
+            included.append(item)
+        return (included if included else None), omitted, errors
+    return (
+        None,
+        [{"path": relative_path, "reason": "unsupported_json_payload"}],
+        [f"session pack omitted unsupported {label} memory: {relative_path}"],
+    )
+
+
+def _payload_temporal_scope(payload: dict[str, object]) -> tuple[datetime | None, str]:
+    for field in ("available_from", "known_at"):
+        raw_value = payload.get(field)
+        if not isinstance(raw_value, str):
+            continue
+        try:
+            return datetime.fromisoformat(raw_value), field
+        except ValueError:
+            return None, f"invalid_{field}"
+    return None, "missing_temporal_scope"
+
+
 def _read_brain_files(path: Path, *, root: Path) -> tuple[str, list[str]]:
     if not path.exists():
         return "", []
@@ -357,3 +627,10 @@ def _future_context_leak_errors(
 
 def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4) if text else 0
+
+
+def _relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
