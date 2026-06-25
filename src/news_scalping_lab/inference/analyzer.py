@@ -445,6 +445,7 @@ class DailyAnalyzer:
             "available_before_cutoff": published_at is not None and published_at <= cutoff_at,
             "content_sha256": sha256_text(content_fingerprint),
             "opened_text_sha256": sha256_text(opened_text),
+            "opened_text_excerpt": _excerpt(opened_text),
         }
 
     def _excluded_web_source_row(
@@ -948,6 +949,7 @@ class DailyAnalyzer:
                     "published_at": row.get("published_at"),
                     "time_verified": row.get("time_verified"),
                     "content_sha256": row.get("content_sha256"),
+                    "opened_text_excerpt": row.get("opened_text_excerpt"),
                 }
             )
         return sources
@@ -1552,3 +1554,10 @@ def _unique_preserving_order(values: Sequence[str]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _excerpt(text: str, *, limit: int = 1200) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."

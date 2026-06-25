@@ -66,8 +66,9 @@ class OutcomeTrapPriceSource:
 
 
 class RecordingBlindLLM:
-    def __init__(self) -> None:
+    def __init__(self, *, expected_final_prompt_substring: str | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.expected_final_prompt_substring = expected_final_prompt_substring
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         raise AssertionError("daily analyzer should request structured output")
@@ -106,6 +107,8 @@ class RecordingBlindLLM:
             assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
             assert "all_shard_contributions" in prompt
+            if self.expected_final_prompt_substring is not None:
+                assert self.expected_final_prompt_substring in prompt
             prediction = BlindPrediction(
                 prediction_id="PRED-provider-final",
                 trade_date=date(1999, 1, 1),
@@ -197,7 +200,7 @@ class MixedTemporalWebProvider:
 
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         self.open_calls.append(url)
-        return url
+        return f"cutoff-safe opened verification text for {url} at {cutoff_at.isoformat()}"
 
     async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
         return result.published_at is None or result.published_at <= cutoff_at
@@ -475,6 +478,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     ]
     assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
     assert all(row["available_before_cutoff"] is True for row in web_source_rows)
+    assert all("cutoff-safe opened verification text" in row["opened_text_excerpt"] for row in web_source_rows)
     excluded_web_source_path = tmp_path / saved_manifest["excluded_web_source_artifact"]
     excluded_web_source_rows = [
         json.loads(line)
@@ -509,14 +513,17 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
-    llm = RecordingBlindLLM()
+    llm = RecordingBlindLLM(
+        expected_final_prompt_substring="cutoff-safe opened verification text"
+    )
+    web_provider = MixedTemporalWebProvider()
 
-    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+    analysis = await DailyAnalyzer(settings, llm=llm, web_provider=web_provider).analyze(
         news_csv=csv_path,
         trade_date=date(2030, 1, 10),
         cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
         mode="exhaustive",
-        web_search=False,
+        web_search=True,
     )
 
     assert len(llm.calls) == 3
