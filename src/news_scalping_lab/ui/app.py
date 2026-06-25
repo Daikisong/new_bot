@@ -55,8 +55,10 @@ def main() -> None:
                     web_search=web_search,
                 )
             )
+            view = build_analysis_view_model(settings.project_root, analysis)
+            _render_run_progress_summary(view, st)
             status.update(label=f"Run complete: {analysis.run_id}", state="complete")
-        _render_analysis(build_analysis_view_model(settings.project_root, analysis), st)
+        _render_analysis(view, st)
 
 
 def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
@@ -68,24 +70,7 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     st.caption(f"Memory sweep cache hits: {view.memory_sweep_cache_hits}")
     if view.coverage_errors:
         st.error("; ".join(view.coverage_errors))
-    if view.memory_sweep_shards:
-        st.subheader("Memory Sweep Shards")
-        st.dataframe(
-            [
-                {
-                    "shard": shard.shard_index,
-                    "status": shard.status,
-                    "episodes": shard.episode_count,
-                    "from_cache": shard.from_cache,
-                    "episode_ids": ", ".join(shard.episode_ids),
-                    "artifact": shard.artifact_path.as_posix(),
-                    "error": shard.error or "",
-                }
-                for shard in view.memory_sweep_shards
-            ],
-            hide_index=True,
-            use_container_width=True,
-        )
+    _render_memory_sweep_shards(view, st, heading=True)
 
     st.subheader("Dominant Sector Hypotheses")
     if not view.dominant_sectors:
@@ -203,6 +188,49 @@ def _render_candidate(candidate: CandidateEvidenceView, st: Any) -> None:
                 "source_urls": candidate.source_urls,
             }
         )
+
+
+def _render_run_progress_summary(view: AnalysisViewModel, st: Any) -> None:
+    st.write(
+        {
+            "run_id": view.run_id,
+            "mode": view.mode,
+            "brain_version": view.brain_version,
+            "memory_coverage": f"{view.swept_episode_count}/{view.accepted_episode_count}",
+            "memory_sweep_shard_count": view.memory_sweep_shard_count,
+            "memory_sweep_cache_hits": view.memory_sweep_cache_hits,
+        }
+    )
+    if view.coverage_errors:
+        st.error("; ".join(view.coverage_errors))
+    _render_memory_sweep_shards(view, st, heading=False)
+
+
+def _render_memory_sweep_shards(view: AnalysisViewModel, st: Any, *, heading: bool) -> None:
+    if not view.memory_sweep_shards:
+        return
+    if heading:
+        st.subheader("Memory Sweep Shards")
+    st.dataframe(
+        _memory_sweep_rows(view),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+def _memory_sweep_rows(view: AnalysisViewModel) -> list[dict[str, object]]:
+    return [
+        {
+            "shard": shard.shard_index,
+            "status": shard.status,
+            "episodes": shard.episode_count,
+            "from_cache": shard.from_cache,
+            "episode_ids": ", ".join(shard.episode_ids),
+            "artifact": shard.artifact_path.as_posix(),
+            "error": shard.error or "",
+        }
+        for shard in view.memory_sweep_shards
+    ]
 
 
 def _download_if_exists(st: Any, label: str, path: Path) -> None:

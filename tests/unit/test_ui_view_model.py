@@ -13,8 +13,14 @@ from news_scalping_lab.contracts.models import (
     PathType,
     PriceSnapshot,
 )
-from news_scalping_lab.ui.app import _render_candidate
-from news_scalping_lab.ui.view_model import CandidateEvidenceView, build_analysis_view_model
+from news_scalping_lab.ui.app import _render_candidate, _render_run_progress_summary
+from news_scalping_lab.ui.view_model import (
+    AnalysisViewModel,
+    ArtifactLinks,
+    CandidateEvidenceView,
+    SweepShardStatus,
+    build_analysis_view_model,
+)
 from news_scalping_lab.utils import KST, write_json
 
 
@@ -31,6 +37,8 @@ class _FakeStreamlit:
         self.writes: list[object] = []
         self.markdowns: list[str] = []
         self.captions: list[str] = []
+        self.errors: list[str] = []
+        self.dataframes: list[list[dict[str, object]]] = []
 
     def markdown(self, value: str) -> None:
         self.markdowns.append(value)
@@ -40,6 +48,20 @@ class _FakeStreamlit:
 
     def caption(self, value: str) -> None:
         self.captions.append(value)
+
+    def error(self, value: str) -> None:
+        self.errors.append(value)
+
+    def dataframe(
+        self,
+        value: list[dict[str, object]],
+        *,
+        hide_index: bool,
+        use_container_width: bool,
+    ) -> None:
+        assert hide_index is True
+        assert use_container_width is True
+        self.dataframes.append(value)
 
     def expander(self, _label: str) -> _FakeExpander:
         return _FakeExpander()
@@ -289,3 +311,80 @@ def test_render_candidate_includes_full_evidence_and_objection_payload() -> None
         "memory_episode_ids": ["EP-positive", "EP-negative"],
         "source_urls": ["https://example.test/source"],
     }
+
+
+def test_render_run_progress_summary_includes_coverage_and_shard_status(tmp_path) -> None:
+    fake_st = _FakeStreamlit()
+    view = AnalysisViewModel(
+        run_id="RUN-progress",
+        mode="exhaustive",
+        brain_version="brain-progress",
+        accepted_episode_count=3,
+        swept_episode_count=2,
+        memory_sweep_shard_count=2,
+        memory_sweep_cache_hits=1,
+        memory_sweep_shards=[
+            SweepShardStatus(
+                shard_index=1,
+                status="completed",
+                episode_count=1,
+                episode_ids=["EP-1"],
+                from_cache=False,
+                artifact_path=tmp_path / "runs" / "shard_0001.json",
+            ),
+            SweepShardStatus(
+                shard_index=2,
+                status="cached",
+                episode_count=1,
+                episode_ids=["EP-2"],
+                from_cache=True,
+                artifact_path=tmp_path / "runs" / "shard_0002.json",
+            ),
+        ],
+        coverage_errors=["exhaustive mode requires swept_episode_count == accepted_episode_count"],
+        dominant_sectors=[],
+        all_watchlist_candidates=[],
+        excluded_but_watch=[],
+        candidates_by_path={},
+        artifacts=ArtifactLinks(
+            prediction_json=tmp_path / "prediction.json",
+            report_markdown=tmp_path / "report.md",
+            context_manifest_json=tmp_path / "manifest.json",
+        ),
+    )
+
+    _render_run_progress_summary(view, fake_st)
+
+    assert fake_st.writes[0] == {
+        "run_id": "RUN-progress",
+        "mode": "exhaustive",
+        "brain_version": "brain-progress",
+        "memory_coverage": "2/3",
+        "memory_sweep_shard_count": 2,
+        "memory_sweep_cache_hits": 1,
+    }
+    assert fake_st.errors == [
+        "exhaustive mode requires swept_episode_count == accepted_episode_count"
+    ]
+    assert fake_st.dataframes == [
+        [
+            {
+                "shard": 1,
+                "status": "completed",
+                "episodes": 1,
+                "from_cache": False,
+                "episode_ids": "EP-1",
+                "artifact": (tmp_path / "runs" / "shard_0001.json").as_posix(),
+                "error": "",
+            },
+            {
+                "shard": 2,
+                "status": "cached",
+                "episodes": 1,
+                "from_cache": True,
+                "episode_ids": "EP-2",
+                "artifact": (tmp_path / "runs" / "shard_0002.json").as_posix(),
+                "error": "",
+            },
+        ]
+    ]
