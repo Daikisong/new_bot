@@ -78,6 +78,40 @@ app.add_typer(audit_app, name="audit")
 app.add_typer(training_app, name="training")
 app.add_typer(warehouse_app, name="warehouse")
 
+WEB_SOURCE_REQUIRED_FIELDS = {
+    "schema_version",
+    "source_id",
+    "query",
+    "title",
+    "url",
+    "source_url",
+    "snippet",
+    "published_at",
+    "retrieved_at",
+    "cutoff_at",
+    "time_verified",
+    "available_before_cutoff",
+    "content_sha256",
+    "opened_text_sha256",
+    "opened_text_excerpt",
+}
+EXCLUDED_WEB_SOURCE_REQUIRED_FIELDS = {
+    "schema_version",
+    "source_id",
+    "query",
+    "title",
+    "url",
+    "source_url",
+    "snippet",
+    "published_at",
+    "retrieved_at",
+    "cutoff_at",
+    "exclusion_reason",
+    "time_verified",
+    "available_before_cutoff",
+    "content_sha256",
+}
+
 
 def _echo(data: object) -> None:
     typer.echo(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True))
@@ -513,6 +547,10 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         root, manifest
     )
     statuses["source_ledger"] = _inspect_source_ledger_artifact(root, manifest)
+    statuses["web_source"] = _inspect_web_source_artifact(root, manifest)
+    statuses["excluded_web_source"] = _inspect_excluded_web_source_artifact(
+        root, manifest
+    )
     statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(
         root, manifest
     )
@@ -1061,7 +1099,7 @@ def _inspect_source_ledger_artifact(
         status["errors"].append("source_ledger_duplicate_source_id")
 
     status["source_url_verified"] = all(
-        _source_ledger_source_url_valid(row) for row in rows
+        _source_url_valid(row) for row in rows
     )
     if not status["source_url_verified"]:
         status["errors"].append("source_ledger_source_url_mismatch")
@@ -1093,6 +1131,224 @@ def _inspect_source_ledger_artifact(
         status["errors"].append("source_ledger_timestamp_precision_invalid")
 
     status["passed"] = _source_ledger_status_passed(status)
+    return status
+
+
+def _inspect_web_source_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(
+        manifest.get("web_source_artifact") or _string_list(manifest.get("web_sources"))
+    )
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="web_source_artifact",
+        hash_field="web_source_sha256",
+        required=required,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "source_ids_verified": None,
+            "duplicate_source_ids_absent": None,
+            "required_fields_verified": None,
+            "source_url_verified": None,
+            "raw_content_absent_verified": None,
+            "cutoff_verified": None,
+            "timestamp_precision_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _web_source_status_passed(status)
+        return status
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("web_source_artifact"),
+        status,
+        label="web_source",
+    )
+    if rows is None:
+        status["passed"] = _web_source_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.web_source.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("web_source_schema_version_mismatch")
+
+    source_ids = [
+        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
+    ]
+    unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
+    expected_source_ids = _string_list(manifest.get("web_sources"))
+    status["source_ids"] = unique_source_ids
+    status["source_ids_verified"] = (
+        len(expected_source_ids) == len(set(expected_source_ids))
+        and set(unique_source_ids) == set(expected_source_ids)
+    )
+    if not status["source_ids_verified"]:
+        status["errors"].append("web_source_source_ids_mismatch")
+    status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
+    if not status["duplicate_source_ids_absent"]:
+        status["errors"].append("web_source_duplicate_source_id")
+
+    status["required_fields_verified"] = all(
+        set(row) >= WEB_SOURCE_REQUIRED_FIELDS for row in rows
+    )
+    if not status["required_fields_verified"]:
+        status["errors"].append("web_source_required_fields_missing")
+
+    status["source_url_verified"] = all(_source_url_valid(row) for row in rows)
+    if not status["source_url_verified"]:
+        status["errors"].append("web_source_source_url_mismatch")
+
+    status["raw_content_absent_verified"] = all(
+        "body" not in row and "content" not in row and "opened_text" not in row
+        for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("web_source_raw_content_present")
+
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status["cutoff_verified"] = all(
+        _web_source_cutoff_valid(row, cutoff_at) for row in rows
+    )
+    if not status["cutoff_verified"]:
+        status["errors"].append("web_source_cutoff_not_verified")
+
+    status["timestamp_precision_verified"] = all(
+        _web_timestamp_precision_valid(row) for row in rows
+    )
+    if not status["timestamp_precision_verified"]:
+        status["errors"].append("web_source_timestamp_precision_invalid")
+
+    status["passed"] = _web_source_status_passed(status)
+    return status
+
+
+def _inspect_excluded_web_source_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(
+        manifest.get("excluded_web_source_artifact")
+        or _string_list(manifest.get("excluded_web_source_ids"))
+        or _optional_int(manifest.get("excluded_web_source_count"))
+    )
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="excluded_web_source_artifact",
+        hash_field="excluded_web_source_sha256",
+        required=required,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "entry_count_verified": None,
+            "source_ids_verified": None,
+            "duplicate_source_ids_absent": None,
+            "not_included_verified": None,
+            "required_fields_verified": None,
+            "source_url_verified": None,
+            "exclusion_reason_verified": None,
+            "raw_content_absent_verified": None,
+            "cutoff_exclusion_verified": None,
+            "timestamp_precision_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _excluded_web_source_status_passed(status)
+        return status
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("excluded_web_source_artifact"),
+        status,
+        label="excluded_web_source",
+    )
+    if rows is None:
+        status["passed"] = _excluded_web_source_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.excluded_web_source.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("excluded_web_source_schema_version_mismatch")
+
+    expected_count = manifest.get("excluded_web_source_count")
+    status["entry_count_verified"] = not isinstance(expected_count, int) or len(
+        rows
+    ) == expected_count
+    if not status["entry_count_verified"]:
+        status["errors"].append("excluded_web_source_count_mismatch")
+
+    source_ids = [
+        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
+    ]
+    unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
+    expected_source_ids = _string_list(manifest.get("excluded_web_source_ids"))
+    status["source_ids"] = unique_source_ids
+    status["source_ids_verified"] = (
+        len(expected_source_ids) == len(set(expected_source_ids))
+        and set(unique_source_ids) == set(expected_source_ids)
+    )
+    if not status["source_ids_verified"]:
+        status["errors"].append("excluded_web_source_source_ids_mismatch")
+    status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
+    if not status["duplicate_source_ids_absent"]:
+        status["errors"].append("excluded_web_source_duplicate_source_id")
+
+    included_source_ids = set(_string_list(manifest.get("web_sources")))
+    status["not_included_verified"] = all(
+        source_id not in included_source_ids for source_id in unique_source_ids
+    )
+    if not status["not_included_verified"]:
+        status["errors"].append("excluded_web_source_also_included")
+
+    status["required_fields_verified"] = all(
+        set(row) >= EXCLUDED_WEB_SOURCE_REQUIRED_FIELDS for row in rows
+    )
+    if not status["required_fields_verified"]:
+        status["errors"].append("excluded_web_source_required_fields_missing")
+
+    status["source_url_verified"] = all(_source_url_valid(row) for row in rows)
+    if not status["source_url_verified"]:
+        status["errors"].append("excluded_web_source_source_url_mismatch")
+
+    status["exclusion_reason_verified"] = all(
+        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason"))
+        for row in rows
+    )
+    if not status["exclusion_reason_verified"]:
+        status["errors"].append("excluded_web_source_exclusion_reason_missing")
+
+    status["raw_content_absent_verified"] = all(
+        "body" not in row and "content" not in row and "opened_text" not in row
+        for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("excluded_web_source_raw_content_present")
+
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status["cutoff_exclusion_verified"] = all(
+        _excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows
+    )
+    if not status["cutoff_exclusion_verified"]:
+        status["errors"].append("excluded_web_source_cutoff_exclusion_invalid")
+
+    status["timestamp_precision_verified"] = all(
+        _web_timestamp_precision_valid(row) for row in rows
+    )
+    if not status["timestamp_precision_verified"]:
+        status["errors"].append("excluded_web_source_timestamp_precision_invalid")
+
+    status["passed"] = _excluded_web_source_status_passed(status)
     return status
 
 
@@ -3186,6 +3442,41 @@ def _source_ledger_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _web_source_status_passed(status: dict[str, Any]) -> bool:
+    if not status.get("configured"):
+        return not status.get("required") and not status.get("errors")
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("source_ids_verified")
+        and status.get("duplicate_source_ids_absent")
+        and status.get("required_fields_verified")
+        and status.get("source_url_verified")
+        and status.get("raw_content_absent_verified")
+        and status.get("cutoff_verified")
+        and status.get("timestamp_precision_verified")
+    )
+
+
+def _excluded_web_source_status_passed(status: dict[str, Any]) -> bool:
+    if not status.get("configured"):
+        return not status.get("required") and not status.get("errors")
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("entry_count_verified")
+        and status.get("source_ids_verified")
+        and status.get("duplicate_source_ids_absent")
+        and status.get("not_included_verified")
+        and status.get("required_fields_verified")
+        and status.get("source_url_verified")
+        and status.get("exclusion_reason_verified")
+        and status.get("raw_content_absent_verified")
+        and status.get("cutoff_exclusion_verified")
+        and status.get("timestamp_precision_verified")
+    )
+
+
 def _candidate_verification_status_passed(status: dict[str, Any]) -> bool:
     if not status.get("configured"):
         return not status.get("required") and not status.get("errors")
@@ -3364,7 +3655,7 @@ def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:
     return _string_list(summary.get("verification_focus"))
 
 
-def _source_ledger_source_url_valid(row: dict[str, Any]) -> bool:
+def _source_url_valid(row: dict[str, Any]) -> bool:
     source_url = row.get("source_url")
     if not isinstance(source_url, str) or not source_url:
         return False
@@ -3392,6 +3683,41 @@ def _source_ledger_blind_cutoff_valid(
     except ValueError:
         return False
     return published_at <= cutoff_at
+
+
+def _web_source_cutoff_valid(
+    row: dict[str, Any],
+    cutoff_at: datetime | None,
+) -> bool:
+    if row.get("available_before_cutoff") is not True:
+        return False
+    if row.get("time_verified") is not True:
+        return False
+    if cutoff_at is None:
+        return True
+    raw_cutoff_at = row.get("cutoff_at")
+    if raw_cutoff_at != cutoff_at.isoformat():
+        return False
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        return False
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        return False
+    return published_at <= cutoff_at
+
+
+def _excluded_web_source_cutoff_valid(
+    row: dict[str, Any],
+    cutoff_at: datetime | None,
+) -> bool:
+    if row.get("available_before_cutoff") is True and row.get("time_verified") is True:
+        return False
+    if cutoff_at is None:
+        return True
+    raw_cutoff_at = row.get("cutoff_at")
+    return raw_cutoff_at == cutoff_at.isoformat()
 
 
 def _web_timestamp_precision_valid(row: dict[str, Any]) -> bool:

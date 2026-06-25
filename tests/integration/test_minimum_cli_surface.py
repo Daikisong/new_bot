@@ -183,6 +183,27 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_expansion"]["path_counts_verified"] is True
     assert supporting["candidate_expansion"]["manifest_count_verified"] is True
     assert supporting["candidate_expansion"]["continuation_d_minus_one_verified"] is True
+    assert supporting["web_source"]["hash_verified"] is True
+    assert supporting["web_source"]["schema_version_verified"] is True
+    assert supporting["web_source"]["source_ids_verified"] is True
+    assert supporting["web_source"]["duplicate_source_ids_absent"] is True
+    assert supporting["web_source"]["required_fields_verified"] is True
+    assert supporting["web_source"]["source_url_verified"] is True
+    assert supporting["web_source"]["raw_content_absent_verified"] is True
+    assert supporting["web_source"]["cutoff_verified"] is True
+    assert supporting["web_source"]["timestamp_precision_verified"] is True
+    assert supporting["excluded_web_source"]["hash_verified"] is True
+    assert supporting["excluded_web_source"]["schema_version_verified"] is True
+    assert supporting["excluded_web_source"]["entry_count_verified"] is True
+    assert supporting["excluded_web_source"]["source_ids_verified"] is True
+    assert supporting["excluded_web_source"]["duplicate_source_ids_absent"] is True
+    assert supporting["excluded_web_source"]["not_included_verified"] is True
+    assert supporting["excluded_web_source"]["required_fields_verified"] is True
+    assert supporting["excluded_web_source"]["source_url_verified"] is True
+    assert supporting["excluded_web_source"]["exclusion_reason_verified"] is True
+    assert supporting["excluded_web_source"]["raw_content_absent_verified"] is True
+    assert supporting["excluded_web_source"]["cutoff_exclusion_verified"] is True
+    assert supporting["excluded_web_source"]["timestamp_precision_verified"] is True
     assert supporting["candidate_web_check"]["hash_verified"] is True
     assert supporting["candidate_web_check"]["schema_version_verified"] is True
     assert supporting["candidate_web_check"]["run_id_verified"] is True
@@ -450,6 +471,42 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     write_json(candidate_expansion_file, original_candidate_expansion)
     write_json(manifest_file, original_manifest_for_candidate_expansion)
+    web_source_file = tmp_path / context_payload["web_source_artifact"]
+    original_web_source = web_source_file.read_text(encoding="utf-8")
+    original_manifest_for_web_source = read_json(manifest_file)
+    tampered_web_source_rows = [
+        json.loads(line) for line in original_web_source.splitlines() if line.strip()
+    ]
+    tampered_web_source_rows[0] = {
+        **tampered_web_source_rows[0],
+        "available_before_cutoff": False,
+    }
+    tampered_web_source_payload = "".join(
+        canonical_json(row) + "\n" for row in tampered_web_source_rows
+    )
+    web_source_file.write_text(tampered_web_source_payload, encoding="utf-8")
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_web_source,
+            "web_source_sha256": sha256_text(tampered_web_source_payload),
+        },
+    )
+    tampered_web_source_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered web source", tampered_web_source_context)
+    tampered_web_source_inspection = json.loads(
+        tampered_web_source_context.output
+    )["inspection"]
+    assert tampered_web_source_inspection["reproducibility_checks_passed"] is False
+    tampered_web_source_status = tampered_web_source_inspection[
+        "supporting_artifacts"
+    ]["web_source"]
+    assert tampered_web_source_status["hash_verified"] is True
+    assert tampered_web_source_status["cutoff_verified"] is False
+    assert "web_source_cutoff_not_verified" in tampered_web_source_status["errors"]
+    web_source_file.write_text(original_web_source, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_web_source)
+
     candidate_web_check_file = tmp_path / context_payload["candidate_web_check_artifact"]
     original_candidate_web_check = candidate_web_check_file.read_text(encoding="utf-8")
     original_manifest_for_candidate_web_check = read_json(manifest_file)
