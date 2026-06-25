@@ -610,6 +610,7 @@ def _check_manifest_basics(
     manifest: dict[str, Any],
     findings: list[str],
 ) -> dict[str, Any]:
+    _check_manifest_reproducibility_fields(prediction_path, manifest, findings)
     prompt_hashes = manifest.get("prompt_hashes", {})
     if not isinstance(prompt_hashes, dict):
         findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
@@ -633,6 +634,40 @@ def _check_manifest_basics(
     if final_synthesis_was_run and not prompt_hashes.get("final_synthesis"):
         findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
     return prompt_hashes
+
+
+def _check_manifest_reproducibility_fields(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if manifest.get("schema_version") != "nslab.context_manifest.v1":
+        return
+    if "model_config" not in manifest:
+        findings.append(f"{prediction_path.name}: context manifest missing model_config")
+    _check_manifest_token_counts(prediction_path, manifest, findings)
+    for field in ("truncations", "web_queries", "web_sources"):
+        value = manifest.get(field)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
+
+
+def _check_manifest_token_counts(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    value = manifest.get("token_counts")
+    if not isinstance(value, dict) or not value:
+        findings.append(f"{prediction_path.name}: context manifest token_counts is invalid")
+        return
+    for key, count in value.items():
+        if not isinstance(key, str) or not key:
+            findings.append(f"{prediction_path.name}: context manifest token_counts is invalid")
+            return
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            findings.append(f"{prediction_path.name}: context manifest token_counts is invalid")
+            return
 
 
 def _check_manifest_blind_hash(

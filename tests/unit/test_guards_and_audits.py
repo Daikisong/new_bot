@@ -128,6 +128,17 @@ def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
     }
 
 
+def _manifest_reproducibility_fields() -> dict[str, object]:
+    return {
+        "schema_version": "nslab.context_manifest.v1",
+        "model_config": {"provider": "mock"},
+        "token_counts": {"current_news": 1},
+        "truncations": [],
+        "web_queries": [],
+        "web_sources": [],
+    }
+
+
 class RecordingPriceSource:
     source_name = "recording-price"
 
@@ -401,6 +412,58 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+
+def test_provenance_audit_validates_context_manifest_reproducibility_fields(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    manifest = {
+        **_manifest_reproducibility_fields(),
+        "run_id": "RUN-linked",
+        "prompt_hashes": {"blind_analysis": "def456"},
+        "price_snapshot": {"allowed_through": "2030-01-09"},
+        "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+    }
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(manifest_path, manifest)
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_manifest = {
+        **manifest,
+        "token_counts": {"current_news": "1"},
+        "truncations": ["ok", 1],
+        "web_queries": "not-a-list",
+        "web_sources": [1],
+    }
+    del bad_manifest["model_config"]
+    write_json(manifest_path, bad_manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert "2030-01-10.json: context manifest missing model_config" in findings
+    assert "2030-01-10.json: context manifest token_counts is invalid" in findings
+    assert "2030-01-10.json: context manifest truncations is invalid" in findings
+    assert "2030-01-10.json: context manifest web_queries is invalid" in findings
+    assert "2030-01-10.json: context manifest web_sources is invalid" in findings
 
 
 def test_provenance_audit_validates_manifest_news_input_hash(tmp_path: Path) -> None:
