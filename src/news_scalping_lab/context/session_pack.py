@@ -75,6 +75,7 @@ def export_session_pack(
     available = [
         episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)
     ]
+    available_ids = [episode.episode_id for episode in available]
     unavailable = [
         episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
     ]
@@ -223,6 +224,7 @@ def export_session_pack(
                 "excluded_news_event_ids": excluded_news_event_ids,
                 "accepted_episode_count": len(all_accepted),
                 "available_episode_count": len(available),
+                "available_episode_ids": available_ids,
                 "unavailable_episode_ids": unavailable_ids,
                 "included_company_memory_files": company_memory.included_paths,
                 "omitted_company_memory_files": company_memory.omitted,
@@ -291,6 +293,7 @@ def export_session_pack(
         "excluded_news_event_ids": excluded_news_event_ids,
         "accepted_episode_count": len(all_accepted),
         "available_episode_count": len(available),
+        "available_episode_ids": available_ids,
         "included_episode_count": len(included),
         "included_episode_ids": [episode.episode_id for episode in included],
         "omitted_episode_ids": [*omitted_ids, *unavailable_ids],

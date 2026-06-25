@@ -6501,6 +6501,7 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
         "mode": "brain",
         "accepted_episode_count": 3,
         "available_episode_count": 2,
+        "available_episode_ids": ["EP-available-a"],
         "included_episode_count": 1,
         "included_episode_ids": ["EP-available-a"],
         "omitted_episode_ids": ["EP-future"],
@@ -6523,11 +6524,16 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
         "session_packs/2030-01-10/manifest.json: session pack available episode coverage mismatch"
         in result["findings"]
     )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack available_episode_ids mismatch"
+        in result["findings"]
+    )
 
     write_json(
         pack_dir / "manifest.json",
         {
             **manifest,
+            "available_episode_ids": ["EP-available-a", "EP-available-b"],
             "included_episode_count": 2,
             "included_episode_ids": ["EP-available-a", "EP-available-b"],
         },
@@ -6597,6 +6603,7 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
             "blocked": False,
             "accepted_episode_count": 0,
             "available_episode_count": 0,
+            "available_episode_ids": [],
             "included_episode_count": 0,
             "included_episode_ids": [],
             "omitted_episode_ids": [],

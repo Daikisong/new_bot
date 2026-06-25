@@ -270,6 +270,7 @@ def _check_session_pack_episode_scope(
         "blocked",
         "accepted_episode_count",
         "available_episode_count",
+        "available_episode_ids",
         "included_episode_count",
         "included_episode_ids",
         "omitted_episode_ids",
@@ -298,6 +299,19 @@ def _check_session_pack_episode_scope(
         findings.append(f"{manifest_name}: session pack available_episode_count invalid")
     elif available_count != len(available_ids):
         findings.append(f"{manifest_name}: session pack available_episode_count mismatch")
+
+    manifest_available_ids = _string_list_or_none(manifest.get("available_episode_ids"))
+    if manifest_available_ids is None:
+        findings.append(f"{manifest_name}: session pack available_episode_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "available_episode_ids",
+            manifest_available_ids,
+            findings,
+        )
+        if set(manifest_available_ids) != available_ids:
+            findings.append(f"{manifest_name}: session pack available_episode_ids mismatch")
 
     manifest_unavailable_ids = _string_list_or_none(manifest.get("unavailable_episode_ids"))
     if manifest_unavailable_ids is None:

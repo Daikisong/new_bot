@@ -98,6 +98,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert manifest["as_of"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
+    assert manifest["available_episode_ids"] == ["EP-large", "EP-small"]
     assert manifest["included_episode_ids"] == []
     assert manifest["brain_version"].startswith("brain-asof-")
     assert all(
@@ -254,6 +255,7 @@ def test_session_pack_blocks_when_required_context_exceeds_budget(tmp_path) -> N
 
     assert manifest["blocked"] is True
     assert manifest["included_episode_ids"] == []
+    assert manifest["available_episode_ids"] == []
     assert manifest["omitted_episode_ids"] == []
     assert manifest["token_count_total"] > manifest["token_budget"]
     assert "session pack required context exceeds token budget" in manifest["errors"]
