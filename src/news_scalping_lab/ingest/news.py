@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import shutil
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from news_scalping_lab.contracts.models import NewsItem, Provenance
 from news_scalping_lab.utils import KST, combine_kst, file_sha256, parse_datetime, stable_id
 
 NEWS_CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr")
+REQUIRED_NEWS_COLUMNS = ("date", "time", "title")
 
 
 @dataclass(frozen=True)
@@ -36,10 +38,9 @@ class NewsBatch:
 
 def _detect_trade_date(rows: list[dict[str, str]]) -> date:
     observed_dates: list[date] = []
-    for row in rows:
-        value = row.get("date")
-        if value:
-            observed_dates.append(date.fromisoformat(value.strip().strip('"')))
+    for row_number, row in enumerate(rows, start=1):
+        value = _required_cell(row, "date", row_number)
+        observed_dates.append(_parse_row_date(value, row_number=row_number, column="date"))
     if not observed_dates:
         raise ValueError("CSV has no date column values")
     return max(observed_dates)
@@ -53,20 +54,23 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
     content_hash = file_sha256(resolved)
     items: list[NewsItem] = []
     for index, row in enumerate(rows, start=1):
-        row_date = date.fromisoformat(row.get("date", str(detected_trade_date)))
-        row_time = row.get("time", "00:00:00")
-        published_at = combine_kst(row_date, row_time)
+        raw_date = _required_cell(row, "date", index)
+        row_date = _parse_row_date(raw_date, row_number=index, column="date")
+        row_time = _required_cell(row, "time", index)
+        published_at = _parse_row_datetime(row_date, row_time, row_number=index)
+        title = _required_cell(row, "title", index)
+        body = _optional_cell(row, "body")
         collected_at = _parse_collected_at(row)
         source_id = stable_id("SRC", resolved.as_posix(), index, content_hash)
         event_id = stable_id(
-            "EVT", row.get("title", ""), row.get("body", ""), published_at.isoformat()
+            "EVT", title, body, published_at.isoformat()
         )
         provenance = Provenance(
             source_id=source_id,
             source_type="news_csv_row",
             uri=f"{resolved.as_posix()}#row={index}",
             content_sha256=content_hash,
-            excerpt=row.get("title", ""),
+            excerpt=title,
             observed_at=datetime.now(tz=KST),
         )
         items.append(
@@ -75,8 +79,8 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
                 row_number=index,
                 published_at=published_at,
                 collected_at=collected_at,
-                title=row.get("title", "").strip(),
-                body=row.get("body", "").strip(),
+                title=title,
+                body=body,
                 source_id=source_id,
                 provenance=[provenance],
             )
@@ -92,6 +96,7 @@ def _read_news_csv_rows(path: Path) -> list[dict[str, str]]:
         try:
             with path.open("r", encoding=encoding, newline="") as handle:
                 reader = csv.DictReader(handle)
+                _validate_news_csv_columns(reader.fieldnames)
                 return [dict(row) for row in reader]
         except UnicodeDecodeError as exc:
             last_error = exc
@@ -101,6 +106,40 @@ def _read_news_csv_rows(path: Path) -> list[dict[str, str]]:
             + ", ".join(NEWS_CSV_ENCODINGS)
         ) from last_error
     return []
+
+
+def _validate_news_csv_columns(fieldnames: Sequence[str] | None) -> None:
+    observed = set(fieldnames or [])
+    missing = [column for column in REQUIRED_NEWS_COLUMNS if column not in observed]
+    if missing:
+        raise ValueError("CSV missing required columns: " + ", ".join(missing))
+
+
+def _required_cell(row: dict[str, str], column: str, row_number: int) -> str:
+    value = row.get(column)
+    cleaned = value.strip().strip('"') if value is not None else ""
+    if not cleaned:
+        raise ValueError(f"CSV row {row_number} missing required {column}")
+    return cleaned
+
+
+def _optional_cell(row: dict[str, str], column: str) -> str:
+    value = row.get(column)
+    return value.strip().strip('"') if value is not None else ""
+
+
+def _parse_row_date(value: str, *, row_number: int, column: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"CSV row {row_number} has invalid {column}: {value}") from exc
+
+
+def _parse_row_datetime(row_date: date, row_time: str, *, row_number: int) -> datetime:
+    try:
+        return combine_kst(row_date, row_time)
+    except ValueError as exc:
+        raise ValueError(f"CSV row {row_number} has invalid time: {row_time}") from exc
 
 
 def _parse_collected_at(row: dict[str, str]) -> datetime | None:

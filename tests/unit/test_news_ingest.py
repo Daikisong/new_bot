@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import pytest
+
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.utils import KST, default_news_window_start
 
@@ -107,3 +109,58 @@ def test_load_news_csv_accepts_cp949_korean_input(tmp_path) -> None:
     assert batch.trade_date == date(2030, 1, 10)
     assert batch.items[0].title == "가상회사, 신규 시설 검토"
     assert batch.items[0].body == "한국어 본문이 깨지지 않아야 한다"
+
+
+def test_load_news_csv_rejects_missing_required_columns(tmp_path) -> None:
+    csv_path = tmp_path / "missing_required.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "page,row,date,body",
+                '1,1,"2030-01-10","body without time and title"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="CSV missing required columns: time, title"):
+        load_news_csv(csv_path)
+
+
+def test_load_news_csv_rejects_blank_required_values_with_row_number(tmp_path) -> None:
+    csv_path = tmp_path / "blank_required.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "page,row,date,time,title,body",
+                '1,1,"2030-01-10","08:30:00","Valid title","body"',
+                '1,2,"2030-01-10","08:31:00","","blank title"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="CSV row 2 missing required title"):
+        load_news_csv(csv_path)
+
+
+def test_load_news_csv_allows_missing_optional_body_column(tmp_path) -> None:
+    csv_path = tmp_path / "title_only.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "page,row,date,time,title",
+                '1,1,"2030-01-10","08:30:00","Title-only catalyst"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = load_news_csv(csv_path)
+
+    assert batch.trade_date == date(2030, 1, 10)
+    assert batch.items[0].title == "Title-only catalyst"
+    assert batch.items[0].body == ""
