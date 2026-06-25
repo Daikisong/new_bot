@@ -1026,8 +1026,24 @@ def _check_manifest_prediction_artifact(
         findings.append(
             f"{prediction_path.name}: context manifest prediction_artifact run_id mismatch"
         )
+    if payload.get("schema_version") != "nslab.blind_prediction.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest prediction_artifact "
+            "schema_version mismatch"
+        )
+    sealed_at = payload.get("sealed_at")
+    if not isinstance(sealed_at, str) or not sealed_at:
+        findings.append(
+            f"{prediction_path.name}: context manifest prediction_artifact "
+            "sealed_at missing"
+        )
     artifact_blind_hash = payload.get("blind_artifact_sha256")
-    if isinstance(payload.get("sealed_at"), str) and isinstance(artifact_blind_hash, str):
+    if not isinstance(artifact_blind_hash, str) or not artifact_blind_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest prediction_artifact "
+            "missing blind_artifact_sha256"
+        )
+    else:
         expected_blind_hash = sha256_text(
             canonical_json({**payload, "blind_artifact_sha256": None})
         )

@@ -376,13 +376,7 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
-    prediction = {
-        "blind_artifact_sha256": "abc123",
-        "context_manifest_id": "RUN-linked",
-        "blind_analysis": _blind_analysis_with_provenance(),
-        "dominant_sectors": [_sector_with_provenance()],
-        "candidates": [_candidate_with_provenance()],
-    }
+    prediction = _sealed_prediction_payload()
     write_json(
         tmp_path / "predictions" / "2030-01-10.json",
         prediction,
@@ -396,6 +390,9 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
         tmp_path / "runs" / "manifests" / "RUN-linked.json",
         {
             "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
             "prompt_hashes": {"blind_analysis": "def456"},
             "price_snapshot": {"allowed_through": "2030-01-09"},
             "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
@@ -995,6 +992,53 @@ def test_provenance_audit_verifies_manifest_prediction_artifact_blind_hash(
     assert (
         "2030-01-10.json: context manifest prediction_artifact "
         "manifest blind_artifact_sha256 mismatch"
+    ) in result["findings"]
+
+
+def test_provenance_audit_requires_manifest_prediction_artifact_schema_and_seal(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = _sealed_prediction_payload()
+    prediction_path = tmp_path / "predictions" / "2030-01-10.json"
+    write_json(prediction_path, prediction)
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    incomplete_run_prediction = {
+        key: value
+        for key, value in prediction.items()
+        if key not in {"schema_version", "sealed_at"}
+    }
+    write_json(run_prediction_path, incomplete_run_prediction)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: context manifest prediction_artifact "
+        "schema_version mismatch"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: context manifest prediction_artifact sealed_at missing"
     ) in result["findings"]
 
 
