@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import difflib
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
-from news_scalping_lab.utils import file_sha256, now_kst, read_json
+from news_scalping_lab.utils import file_sha256, read_json
+
+DEFAULT_DIFF_GENERATED_AT = "1970-01-01T00:00:00+09:00"
 
 
 def build_brain_diff(root: Path, version_a: str, version_b: str) -> dict[str, object]:
@@ -33,7 +36,7 @@ def build_brain_diff(root: Path, version_a: str, version_b: str) -> dict[str, ob
     return {
         "version_a": label_a,
         "version_b": label_b,
-        "generated_at": now_kst().isoformat(),
+        "generated_at": _diff_generated_at(manifest_a, manifest_b),
         "changed": bool(
             file_changes
             or added_episode_ids
@@ -73,10 +76,13 @@ def write_brain_diff(root: Path, version_a: str, version_b: str, *, output_name:
 def write_rebuild_diff(root: Path, previous_version: str | None, new_version: str) -> Path:
     output_name = f"{_safe_filename(new_version)}.md"
     if previous_version is None:
+        new_manifest = _read_json_object(
+            root / "brain" / "snapshots" / new_version / "brain_manifest.json"
+        )
         diff = {
             "version_a": "none",
             "version_b": new_version,
-            "generated_at": now_kst().isoformat(),
+            "generated_at": _diff_generated_at(new_manifest),
             "changed": True,
             "file_change_counts": {"added": 0, "removed": 0, "changed": 0, "unchanged": 0},
             "file_changes": [],
@@ -274,6 +280,26 @@ def _mapping_status(key: str, old: dict[str, str], new: dict[str, str]) -> str:
     if key not in new:
         return "removed"
     return "changed"
+
+
+def _diff_generated_at(*manifests: dict[str, object]) -> str:
+    raw_values: list[str] = []
+    parsed_values: list[tuple[datetime, str]] = []
+    for manifest in manifests:
+        for key in ("created_at", "last_full_rebuild_at"):
+            value = manifest.get(key)
+            if not isinstance(value, str) or not value:
+                continue
+            raw_values.append(value)
+            try:
+                parsed_values.append((datetime.fromisoformat(value), value))
+            except ValueError:
+                continue
+    if parsed_values:
+        return max(parsed_values, key=lambda item: item[0])[1]
+    if raw_values:
+        return max(raw_values)
+    return DEFAULT_DIFF_GENERATED_AT
 
 
 def _bullet_list(label: str, values: list[str]) -> str:

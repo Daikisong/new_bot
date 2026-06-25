@@ -414,7 +414,16 @@ def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
 
     diff = build_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
     diff_path = write_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
+    diff_hash = file_sha256(diff_path)
+    second_diff = build_brain_diff(
+        tmp_path, manifest_a.brain_version, manifest_b.brain_version
+    )
+    second_diff_path = write_brain_diff(
+        tmp_path, manifest_a.brain_version, manifest_b.brain_version
+    )
 
+    assert second_diff == diff
+    assert diff["generated_at"] == manifest_b.created_at.isoformat()
     assert diff["changed"]
     assert diff["added_episode_ids"] == [episode_b.episode_id]
     assert diff["removed_episode_ids"] == []
@@ -425,6 +434,8 @@ def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
         for change in file_changes
     )
     assert diff_path.exists()
+    assert second_diff_path == diff_path
+    assert file_sha256(second_diff_path) == diff_hash
     assert (tmp_path / "brain" / "diffs" / f"{manifest_b.brain_version}.md").exists()
 
 
