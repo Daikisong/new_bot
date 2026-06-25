@@ -22,6 +22,39 @@ from news_scalping_lab.utils import file_sha256, now_kst, stable_id, write_json
 
 VALID_KINDS = {"sft", "preference", "evals"}
 
+TASK_TRAINING_CATEGORY = {
+    "blind_reasoning": "blind_reasoning_examples",
+    "theme_formation": "theme_formation_examples",
+    "beneficiary_discovery": "beneficiary_discovery_examples",
+    "leader_selection_comparison": "leader_selection_comparisons",
+    "positive_vs_negative_candidate_preference": "positive_vs_negative_candidate_preferences",
+    "postmortem_preference_summary": "positive_vs_negative_candidate_preferences",
+    "failure_correction": "failure_correction_examples",
+    "candidate_outcome_eval": "evaluation_examples",
+    "failure_code_eval": "evaluation_examples",
+}
+
+REQUIRED_TRAINING_CATEGORIES = [
+    "blind_reasoning_examples",
+    "theme_formation_examples",
+    "beneficiary_discovery_examples",
+    "leader_selection_comparisons",
+    "positive_vs_negative_candidate_preferences",
+    "failure_correction_examples",
+]
+
+KIND_TRAINING_CATEGORIES = {
+    "sft": [
+        "blind_reasoning_examples",
+        "theme_formation_examples",
+        "beneficiary_discovery_examples",
+        "leader_selection_comparisons",
+        "failure_correction_examples",
+    ],
+    "preference": ["positive_vs_negative_candidate_preferences"],
+    "evals": ["evaluation_examples"],
+}
+
 
 @dataclass(frozen=True)
 class TrainingExportResult:
@@ -61,6 +94,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "output_file": path.as_posix(),
             "output_sha256": file_sha256(path),
             "task_counts": _task_counts(rows),
+            "required_training_categories": REQUIRED_TRAINING_CATEGORIES,
+            "training_categories": KIND_TRAINING_CATEGORIES[kind],
+            "category_counts": _category_counts(rows, kind=kind),
+            "missing_training_categories": _missing_training_categories(rows, kind=kind),
             "blind_safe_row_count": sum(
                 1 for row in rows if row["hindsight_safe_for_blind_sft"] is True
             ),
@@ -330,6 +367,7 @@ def _training_row(
         "schema_version": "nslab.training_example.v1",
         "example_id": stable_id("TRN", split, task, episode.episode_id, input_payload),
         "task": task,
+        "training_category": _training_category_for_task(task),
         "split": split,
         "episode_id": episode.episode_id,
         "trade_date": episode.trade_date.isoformat(),
@@ -429,12 +467,33 @@ def _required_eligibility_for_task(task: str) -> list[str]:
     return []
 
 
+def _training_category_for_task(task: str) -> str:
+    return TASK_TRAINING_CATEGORY.get(task, "other")
+
+
 def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for row in rows:
         task = str(row["task"])
         counts[task] = counts.get(task, 0) + 1
     return counts
+
+
+def _category_counts(rows: list[dict[str, Any]], *, kind: str) -> dict[str, int]:
+    counts = dict.fromkeys(KIND_TRAINING_CATEGORIES[kind], 0)
+    for row in rows:
+        category = str(row["training_category"])
+        counts[category] = counts.get(category, 0) + 1
+    return counts
+
+
+def _missing_training_categories(rows: list[dict[str, Any]], *, kind: str) -> list[str]:
+    counts = _category_counts(rows, kind=kind)
+    return [
+        category
+        for category in KIND_TRAINING_CATEGORIES[kind]
+        if counts.get(category, 0) == 0
+    ]
 
 
 def _source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

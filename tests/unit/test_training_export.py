@@ -114,6 +114,13 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     eval_rows = _jsonl(evals.path)
 
     assert sft.row_count == 5
+    assert {row["training_category"] for row in sft_rows} == {
+        "blind_reasoning_examples",
+        "theme_formation_examples",
+        "beneficiary_discovery_examples",
+        "leader_selection_comparisons",
+        "failure_correction_examples",
+    }
     assert {row["task"] for row in sft_rows} == {
         "blind_reasoning",
         "theme_formation",
@@ -163,6 +170,10 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
 
     assert preference.row_count == 1
     assert preference_rows[0]["task"] == "positive_vs_negative_candidate_preference"
+    assert (
+        preference_rows[0]["training_category"]
+        == "positive_vs_negative_candidate_preferences"
+    )
     assert preference_rows[0]["output"]["chosen"] == "WinnerCo"
     assert preference_rows[0]["output"]["rejected"] == "LoserCo"
     assert preference_rows[0]["hindsight_safe_for_blind_sft"] is False
@@ -172,6 +183,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     ]
 
     assert evals.row_count == 3
+    assert {row["training_category"] for row in eval_rows} == {"evaluation_examples"}
     assert {row["task"] for row in eval_rows} == {
         "candidate_outcome_eval",
         "failure_code_eval",
@@ -196,6 +208,29 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert manifest["row_count"] == sft.row_count
     assert manifest["task_counts"]["blind_reasoning"] == 1
     assert manifest["task_counts"]["leader_selection_comparison"] == 1
+    assert manifest["required_training_categories"] == [
+        "blind_reasoning_examples",
+        "theme_formation_examples",
+        "beneficiary_discovery_examples",
+        "leader_selection_comparisons",
+        "positive_vs_negative_candidate_preferences",
+        "failure_correction_examples",
+    ]
+    assert manifest["training_categories"] == [
+        "blind_reasoning_examples",
+        "theme_formation_examples",
+        "beneficiary_discovery_examples",
+        "leader_selection_comparisons",
+        "failure_correction_examples",
+    ]
+    assert manifest["category_counts"] == {
+        "blind_reasoning_examples": 1,
+        "theme_formation_examples": 1,
+        "beneficiary_discovery_examples": 1,
+        "leader_selection_comparisons": 1,
+        "failure_correction_examples": 1,
+    }
+    assert manifest["missing_training_categories"] == []
     assert manifest["blind_safe_row_count"] == 4
     assert manifest["hindsight_row_count"] == 1
     assert manifest["eligible_episode_count"] == 1
@@ -204,6 +239,14 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
     assert manifest["output_sha256"]
     assert "Do not train postmortem labels as if they were blind answers." in manifest["notes"]
+    preference_manifest = read_json(preference.manifest_path)
+    evals_manifest = read_json(evals.manifest_path)
+    assert preference_manifest["category_counts"] == {
+        "positive_vs_negative_candidate_preferences": 1
+    }
+    assert preference_manifest["missing_training_categories"] == []
+    assert evals_manifest["category_counts"] == {"evaluation_examples": 3}
+    assert evals_manifest["missing_training_categories"] == []
 
 
 def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
@@ -240,12 +283,34 @@ def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
     preference_manifest = read_json(preference.manifest_path)
     evals_manifest = read_json(evals.manifest_path)
     assert sft_manifest["skipped_episode_count"] == 1
+    assert sft_manifest["category_counts"] == {
+        "blind_reasoning_examples": 0,
+        "theme_formation_examples": 0,
+        "beneficiary_discovery_examples": 0,
+        "leader_selection_comparisons": 0,
+        "failure_correction_examples": 0,
+    }
+    assert sft_manifest["missing_training_categories"] == [
+        "blind_reasoning_examples",
+        "theme_formation_examples",
+        "beneficiary_discovery_examples",
+        "leader_selection_comparisons",
+        "failure_correction_examples",
+    ]
     assert sft_manifest["skipped_episodes"][0]["missing_eligibility"] == [
         "forecast_evaluation_eligible"
+    ]
+    assert preference_manifest["category_counts"] == {
+        "positive_vs_negative_candidate_preferences": 0
+    }
+    assert preference_manifest["missing_training_categories"] == [
+        "positive_vs_negative_candidate_preferences"
     ]
     assert preference_manifest["skipped_episodes"][0]["missing_eligibility"] == [
         "leader_pair_training_eligible"
     ]
+    assert evals_manifest["category_counts"] == {"evaluation_examples": 0}
+    assert evals_manifest["missing_training_categories"] == ["evaluation_examples"]
     assert evals_manifest["skipped_episodes"][0]["missing_eligibility"] == [
         "direct_supervised_cases_eligible"
     ]

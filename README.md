@@ -106,6 +106,20 @@ Evaluation loads the sealed blind prediction, reads D-day outcome data only in t
 When the price source exposes a full D-day outcome universe, evaluation also fills UpperLimit Recall@5/10/20.
 Without that universe it leaves recall empty with an explicit unavailable reason instead of faking recall from predicted candidates only.
 
+## Training Exports
+
+```bash
+nslab training export-sft
+nslab training export-preference
+nslab training export-evals
+```
+
+Each export writes JSONL rows plus a manifest under `training_exports/<kind>/`.
+Rows carry `training_category`, and manifests include `required_training_categories`,
+`category_counts`, and `missing_training_categories` so blind reasoning, theme formation,
+beneficiary discovery, leader comparison, preference, and failure-correction examples
+stay separated and auditable.
+
 ## Session Pack
 
 ```bash
