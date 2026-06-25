@@ -1972,6 +1972,28 @@ def test_provenance_audit_flags_training_export_episode_coverage_gap(
     assert f"{label}: training export episode coverage mismatch" in result["findings"]
 
 
+def test_provenance_audit_checks_analysis_bundle_integrity(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    (reports_dir / "20300110_nslab_episode_bundle.md").write_text(
+        "<!-- NSLAB:BEGIN research_report.md -->\n"
+        "# incomplete bundle\n"
+        "<!-- NSLAB:END research_report.md -->\n",
+        encoding="utf-8",
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert result["checked_analysis_bundles"] == 1
+    assert any(
+        finding.startswith(
+            "reports/20300110_nslab_episode_bundle.md: analysis bundle invalid:"
+        )
+        for finding in result["findings"]
+    )
+
+
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

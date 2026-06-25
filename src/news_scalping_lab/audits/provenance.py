@@ -15,6 +15,7 @@ from news_scalping_lab.context.final_synthesis import final_synthesis_input_summ
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
+from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
 from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
 from news_scalping_lab.utils import (
     KST,
@@ -108,6 +109,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
     checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
     checked_training_export_manifests = _check_training_export_provenance(root, findings)
+    checked_analysis_bundles = _check_analysis_bundle_provenance(root, findings)
     return {
         "passed": not findings,
         "findings": findings,
@@ -117,6 +119,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
         "checked_company_memory_files": checked_company_memory_files,
         "checked_mechanism_memory_records": checked_mechanism_memory_records,
         "checked_training_export_manifests": checked_training_export_manifests,
+        "checked_analysis_bundles": checked_analysis_bundles,
     }
 
 
@@ -1651,6 +1654,32 @@ def _check_training_export_provenance(root: Path, findings: list[str]) -> int:
             continue
         checked += 1
         _check_training_export_manifest(root, manifest_path, manifest, findings)
+    return checked
+
+
+def _check_analysis_bundle_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for bundle_path in sorted((root / "reports").glob("*_nslab_episode_bundle.md")):
+        checked += 1
+        label = _display_path(root, bundle_path)
+        try:
+            parsed = parse_bundle(bundle_path)
+        except BundleImportError as exc:
+            findings.append(f"{label}: analysis bundle invalid: {exc}")
+            continue
+        failed_validations = sorted(
+            key for key, value in parsed.validation.items() if value is not True
+        )
+        for key in failed_validations:
+            findings.append(f"{label}: analysis bundle validation failed: {key}")
+        manifest = parsed.json_blocks.get("bundle_manifest.json")
+        if not isinstance(manifest, dict):
+            findings.append(f"{label}: analysis bundle manifest missing")
+            continue
+        if manifest.get("schema_version") != "nslab.bundle_manifest.v1":
+            findings.append(f"{label}: analysis bundle manifest schema_version invalid")
+        if not isinstance(manifest.get("run_id"), str) or not manifest.get("run_id"):
+            findings.append(f"{label}: analysis bundle manifest run_id missing")
     return checked
 
 
