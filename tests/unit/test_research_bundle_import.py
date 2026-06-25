@@ -51,6 +51,7 @@ def _bundle_text(
     tamper_research_hash: bool = False,
     tamper_brain_hash: bool = False,
     tamper_seal_hash: bool = False,
+    row_disposition_coverage_ratio: float = 1.0,
     source_ledger_entry_count: int | None = None,
 ) -> str:
     blind = BlindPrediction(
@@ -114,6 +115,7 @@ def _bundle_text(
         "trade_date": episode.trade_date.isoformat(),
         "blind_artifact_sha256": blind_hash,
         "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
+        "row_disposition_coverage_ratio": row_disposition_coverage_ratio,
         "source_ledger_sha256": sha256_text(source_jsonl),
         "source_ledger_entry_count": (
             len(source_payload_rows)
@@ -192,6 +194,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
 
     assert parsed.validation["blind_hash_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
+    assert parsed.validation["row_disposition_coverage_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
     assert parsed.validation["source_ledger_entry_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
@@ -233,6 +236,20 @@ def test_bundle_import_rejects_mismatched_row_disposition_hash(tmp_path) -> None
 
     assert not parsed.validation["row_disposition_hash_verified"]
     with pytest.raises(BundleImportError, match="row_disposition.jsonl hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_incomplete_row_disposition_coverage(tmp_path) -> None:
+    source = tmp_path / "incomplete_row_coverage_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), row_disposition_coverage_ratio=0.5),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["row_disposition_coverage_verified"]
+    with pytest.raises(BundleImportError, match="row_disposition coverage ratio"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

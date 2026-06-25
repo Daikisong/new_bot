@@ -69,6 +69,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "row_disposition.jsonl hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["row_disposition_coverage_verified"]:
+        raise BundleImportError("row_disposition coverage ratio must be 1.0")
     if not parsed.validation["source_ledger_hash_verified"]:
         raise BundleImportError("source_ledger.jsonl hash does not match bundle_manifest.json")
     if not parsed.validation["source_ledger_entry_count_verified"]:
@@ -135,6 +137,10 @@ def parse_bundle(path: Path) -> BundleParseResult:
             payload_blocks,
             block_name="row_disposition.jsonl",
             manifest_field="row_disposition_sha256",
+        ),
+        "row_disposition_coverage_verified": _verify_row_disposition_coverage(
+            json_blocks,
+            jsonl_blocks,
         ),
         "source_ledger_hash_verified": _verify_payload_hash(
             json_blocks,
@@ -331,6 +337,36 @@ def _verify_payload_hash(
     if not isinstance(expected, str) or not expected or payload is None:
         return False
     return sha256_text(payload) == expected or sha256_text(f"{payload}\n") == expected
+
+
+def _verify_row_disposition_coverage(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return False
+    coverage_ratio = manifest.get("row_disposition_coverage_ratio")
+    if not isinstance(coverage_ratio, (int, float)) or float(coverage_ratio) != 1.0:
+        return False
+
+    rows = jsonl_blocks.get("row_disposition.jsonl", [])
+    episode = json_blocks.get("research_episode.json", {})
+    if isinstance(episode, dict):
+        input_audit = episode.get("input_audit")
+        if isinstance(input_audit, dict):
+            episode_ratio = input_audit.get("row_disposition_coverage_ratio")
+            if isinstance(episode_ratio, (int, float)) and float(episode_ratio) != 1.0:
+                return False
+        summary = episode.get("row_disposition_summary")
+        if isinstance(summary, dict):
+            total_rows = summary.get("total_rows")
+            if isinstance(total_rows, int) and total_rows != len(rows):
+                return False
+            summary_ratio = summary.get("coverage_ratio")
+            if isinstance(summary_ratio, (int, float)) and float(summary_ratio) != 1.0:
+                return False
+    return True
 
 
 def _verify_jsonl_entry_count(
