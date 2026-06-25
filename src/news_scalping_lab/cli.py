@@ -19,6 +19,7 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
+from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.context.session_pack import (
     SessionPackBudgetExceededError,
     SessionPackFutureContextError,
@@ -440,6 +441,9 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         )
         for label, artifact_field, hash_field, required in specs
     }
+    statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
+        root, manifest
+    )
     statuses["red_team"] = _inspect_red_team_artifacts(root, manifest)
     return statuses
 
@@ -475,6 +479,101 @@ def _inspect_text_hashed_artifact(
     if not isinstance(expected_hash, str) or not expected_hash:
         status["errors"].append(f"{hash_field}_missing")
     status["passed"] = _text_hashed_artifact_status_passed(status)
+    return status
+
+
+def _inspect_final_synthesis_context_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="final_synthesis_context_artifact",
+        hash_field="final_synthesis_context_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "payload_hash_verified": None,
+            "required_inputs_verified": None,
+            "input_summary_verified": None,
+            "manifest_summary_verified": None,
+        }
+    )
+    if not (
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists")
+    ):
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+    artifact_ref = manifest.get("final_synthesis_context_artifact")
+    if not isinstance(artifact_ref, str):
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+    artifact_path = _resolve_project_artifact(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+    try:
+        payload = read_json(artifact_path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        status["errors"].append("final_synthesis_context_invalid_json")
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+    if not isinstance(payload, dict):
+        status["errors"].append("final_synthesis_context_not_object")
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.final_synthesis_context.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("final_synthesis_context_schema_version_mismatch")
+
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("final_synthesis_context_run_id_mismatch")
+
+    context_payload = payload.get("payload")
+    if not isinstance(context_payload, dict):
+        status["errors"].append("final_synthesis_context_payload_invalid")
+        status["passed"] = _final_synthesis_context_status_passed(status)
+        return status
+
+    status["payload_hash_verified"] = payload.get("payload_sha256") == sha256_text(
+        canonical_json(context_payload)
+    )
+    if not status["payload_hash_verified"]:
+        status["errors"].append("final_synthesis_context_payload_sha256_mismatch")
+
+    required_inputs = context_payload.get("required_inputs")
+    status["required_inputs_verified"] = (
+        isinstance(required_inputs, list)
+        and all(isinstance(item, str) for item in required_inputs)
+        and payload.get("required_inputs") == required_inputs
+    )
+    if not status["required_inputs_verified"]:
+        status["errors"].append("final_synthesis_context_required_inputs_mismatch")
+
+    expected_summary = final_synthesis_input_summary(context_payload)
+    status["input_summary_verified"] = payload.get("input_summary") == expected_summary
+    if not status["input_summary_verified"]:
+        status["errors"].append("final_synthesis_context_input_summary_mismatch")
+
+    manifest_summary = manifest.get("final_synthesis_context_summary")
+    status["manifest_summary_verified"] = (
+        manifest_summary is not None and manifest_summary == payload.get("input_summary")
+    )
+    if not status["manifest_summary_verified"]:
+        status["errors"].append("final_synthesis_context_manifest_summary_mismatch")
+
+    status["passed"] = _final_synthesis_context_status_passed(status)
     return status
 
 
@@ -1442,6 +1541,18 @@ def _text_hashed_artifact_status_passed(status: dict[str, Any]) -> bool:
         and status.get("exists")
         and status.get("hash_verified")
         and not status.get("errors")
+    )
+
+
+def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("payload_hash_verified")
+        and status.get("required_inputs_verified")
+        and status.get("input_summary_verified")
+        and status.get("manifest_summary_verified")
     )
 
 

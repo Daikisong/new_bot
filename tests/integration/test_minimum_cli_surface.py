@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.utils import KST, file_sha256, read_json, write_json
+from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text, write_json
 
 RUNNER = CliRunner()
 
@@ -155,6 +155,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_web_check"]["hash_verified"] is True
     assert supporting["candidate_verification"]["hash_verified"] is True
     assert supporting["final_synthesis_context"]["hash_verified"] is True
+    assert supporting["final_synthesis_context"]["schema_version_verified"] is True
+    assert supporting["final_synthesis_context"]["run_id_verified"] is True
+    assert supporting["final_synthesis_context"]["payload_hash_verified"] is True
+    assert supporting["final_synthesis_context"]["required_inputs_verified"] is True
+    assert supporting["final_synthesis_context"]["input_summary_verified"] is True
+    assert supporting["final_synthesis_context"]["manifest_summary_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
@@ -221,6 +227,39 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is False
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+    final_context_file = tmp_path / context_payload["final_synthesis_context_artifact"]
+    manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
+    original_final_context = read_json(final_context_file)
+    original_manifest = read_json(manifest_file)
+    tampered_final_context = {
+        **original_final_context,
+        "input_summary": {"current_news_count": 999},
+    }
+    write_json(final_context_file, tampered_final_context)
+    tampered_manifest = {
+        **original_manifest,
+        "final_synthesis_context_sha256": sha256_text(
+            final_context_file.read_text(encoding="utf-8")
+        ),
+    }
+    write_json(manifest_file, tampered_manifest)
+    tampered_final_context_result = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered final synthesis context", tampered_final_context_result)
+    tampered_final_context_inspection = json.loads(
+        tampered_final_context_result.output
+    )["inspection"]
+    assert tampered_final_context_inspection["reproducibility_checks_passed"] is False
+    tampered_final_context_status = tampered_final_context_inspection[
+        "supporting_artifacts"
+    ]["final_synthesis_context"]
+    assert tampered_final_context_status["hash_verified"] is True
+    assert tampered_final_context_status["input_summary_verified"] is False
+    assert tampered_final_context_status["manifest_summary_verified"] is False
+    assert "final_synthesis_context_input_summary_mismatch" in (
+        tampered_final_context_status["errors"]
+    )
+    write_json(final_context_file, original_final_context)
+    write_json(manifest_file, original_manifest)
     memory_sweep_file = tmp_path / context_payload["memory_sweep_artifacts"][0]
     original_memory_sweep = memory_sweep_file.read_text(encoding="utf-8")
     memory_sweep_file.write_text(

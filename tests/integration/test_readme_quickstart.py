@@ -139,6 +139,10 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert supporting["semantic_retrieval"]["hash_verified"] is True
     assert supporting["candidate_expansion"]["hash_verified"] is True
     assert supporting["final_synthesis_context"]["hash_verified"] is True
+    assert supporting["final_synthesis_context"]["schema_version_verified"] is True
+    assert supporting["final_synthesis_context"]["payload_hash_verified"] is True
+    assert supporting["final_synthesis_context"]["input_summary_verified"] is True
+    assert supporting["final_synthesis_context"]["manifest_summary_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
