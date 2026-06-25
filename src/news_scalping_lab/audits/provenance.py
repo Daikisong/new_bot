@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.contracts.models import (
+    ClaimStatus,
     CompanyMemory,
     ConfidenceLabel,
     FailureCode,
@@ -41,6 +42,7 @@ STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
 ALLOWED_CONFIDENCE_LABELS = {label.value for label in ConfidenceLabel}
 ALLOWED_CANDIDATE_PATH_TYPES = {path_type.value for path_type in PathType}
 ALLOWED_FAILURE_CODES = {code.value for code in FailureCode}
+ALLOWED_CLAIM_STATUSES = {status.value for status in ClaimStatus}
 PREDICTION_STRING_SEQUENCE_FIELDS = (
     "event_ids",
     "causal_chain",
@@ -59,6 +61,13 @@ POSTMORTEM_STRING_SEQUENCE_FIELDS = (
     "misses",
     "false_positives",
     "lessons",
+)
+MEMORY_CLAIM_STRING_SEQUENCE_FIELDS = (
+    "conditions",
+    "failure_modes",
+    "support_episode_ids",
+    "contradiction_episode_ids",
+    "near_miss_episode_ids",
 )
 
 
@@ -415,6 +424,7 @@ def _check_research_episode_nested_list_provenance(
             kind=f"{kind} {index}",
         )
         if field_name in {"lessons", "counterexamples"}:
+            _check_research_episode_memory_claim_shape(label, item, findings, kind=kind, index=index)
             _check_research_episode_claim_available_from(
                 label,
                 item,
@@ -547,6 +557,43 @@ def _check_research_episode_claim_available_from(
         claim_available_from,
     ):
         findings.append(f"{label}: {kind} {index} available_from precedes episode")
+
+
+def _check_research_episode_memory_claim_shape(
+    label: str,
+    claim: dict[str, Any],
+    findings: list[str],
+    *,
+    kind: str,
+    index: int,
+) -> None:
+    prefix = f"{label}: {kind} {index}"
+    for field_name in ("claim_id", "statement", "mechanism", "scope"):
+        value = claim.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            findings.append(f"{prefix} {field_name} missing or invalid")
+    for field_name in MEMORY_CLAIM_STRING_SEQUENCE_FIELDS:
+        _check_string_list_field(prefix, field_name, claim.get(field_name), findings)
+    status = claim.get("status")
+    if not isinstance(status, str) or status not in ALLOWED_CLAIM_STATUSES:
+        findings.append(f"{prefix} status missing or invalid")
+    confidence_label = claim.get("confidence_label")
+    if (
+        not isinstance(confidence_label, str)
+        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
+    ):
+        findings.append(f"{prefix} confidence_label missing or invalid")
+    first_observed_at = claim.get("first_observed_at")
+    if first_observed_at is not None:
+        try:
+            if not isinstance(first_observed_at, str):
+                raise ValueError
+            date.fromisoformat(first_observed_at)
+        except ValueError:
+            findings.append(f"{prefix} first_observed_at invalid")
+    last_updated_at = claim.get("last_updated_at")
+    if last_updated_at is not None and _parse_optional_datetime(last_updated_at) is None:
+        findings.append(f"{prefix} last_updated_at invalid")
 
 
 def _parse_optional_datetime(value: Any) -> datetime | None:

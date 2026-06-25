@@ -1347,6 +1347,8 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         price_source_snapshot: dict[str, object] | None = None,
         blind_predictions: list[dict[str, object]] | None = None,
         postmortem: dict[str, object] | None = None,
+        lessons: list[dict[str, object]] | None = None,
+        counterexamples: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "schema_version": schema_version,
@@ -1375,8 +1377,8 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
             "blind_predictions": [] if blind_predictions is None else blind_predictions,
             "observed_events": [],
             "event_ticker_edges": [],
-            "lessons": [],
-            "counterexamples": [],
+            "lessons": [] if lessons is None else lessons,
+            "counterexamples": [] if counterexamples is None else counterexamples,
             "misses": [],
             "provenance": [
                 {
@@ -1611,6 +1613,83 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "research/accepted/EP-identity.json: research episode postmortem "
         "failure_codes invalid"
     ) in postmortem_shape_failed["findings"]
+
+    valid_lesson = {
+        "claim_id": "CL-identity",
+        "statement": "Use the lesson only after evaluation availability.",
+        "mechanism": "postmortem learning from sealed blind prediction",
+        "scope": "postmortem evaluation learning",
+        "conditions": ["available only after the evaluated trade date"],
+        "failure_modes": ["UNKNOWN"],
+        "support_episode_ids": ["EP-identity"],
+        "contradiction_episode_ids": [],
+        "near_miss_episode_ids": [],
+        "status": "tentative",
+        "confidence_label": "medium",
+        "first_observed_at": "2030-01-10",
+        "last_updated_at": "2030-01-11T00:00:00+09:00",
+        "available_from": "2030-01-11T00:00:00+09:00",
+        "provenance": [
+            {
+                "source_id": "SRC-lesson",
+                "source_type": "evaluation_postmortem",
+                "uri": "prompt://lesson/test",
+            }
+        ],
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", lessons=[valid_lesson]),
+    )
+    valid_lesson_result = audit_provenance(tmp_path)
+
+    assert valid_lesson_result["passed"], valid_lesson_result["findings"]
+
+    invalid_lesson = {
+        **valid_lesson,
+        "claim_id": "",
+        "statement": "",
+        "conditions": ["valid", 1],
+        "status": "unsupported",
+        "confidence_label": "90%",
+        "first_observed_at": "not-a-date",
+        "last_updated_at": "not-a-datetime",
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", lessons=[invalid_lesson]),
+    )
+    lesson_shape_failed = audit_provenance(tmp_path)
+
+    assert not lesson_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "claim_id missing or invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "statement missing or invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "conditions missing or invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "status missing or invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "confidence_label missing or invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "first_observed_at invalid"
+    ) in lesson_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode lesson 1 "
+        "last_updated_at invalid"
+    ) in lesson_shape_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(
