@@ -137,6 +137,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "candidate_verification.json finding count does not match bundle_manifest.json"
         )
+    if not parsed.validation.get("candidate_verification_contract_verified", True):
+        raise BundleImportError(
+            "candidate_verification.json content does not match candidate web checks"
+        )
     if not parsed.validation.get("final_synthesis_context_hash_verified", True):
         raise BundleImportError(
             "final_synthesis_context.json hash does not match bundle_manifest.json"
@@ -302,6 +306,10 @@ def parse_bundle(path: Path) -> BundleParseResult:
         hash_key="candidate_verification_hash_verified",
         count_key="candidate_verification_count_verified",
     )
+    if "candidate_verification.json" in json_blocks:
+        validation["candidate_verification_contract_verified"] = (
+            _verify_candidate_verification_contract(json_blocks, jsonl_blocks)
+        )
     if "final_synthesis_context.json" in payload_blocks:
         validation["final_synthesis_context_hash_verified"] = _verify_payload_hash(
             json_blocks,
@@ -876,6 +884,71 @@ def _verify_final_synthesis_context_contract(json_blocks: dict[str, Any]) -> boo
     return manifest_summary is None or manifest_summary == expected_summary
 
 
+def _verify_candidate_verification_contract(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    verification = json_blocks.get("candidate_verification.json")
+    if not isinstance(manifest, dict) or not isinstance(verification, dict):
+        return False
+    if verification.get("schema_version") != "nslab.candidate_verification.v1":
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and verification.get("run_id") != manifest_run_id:
+        return False
+    findings = verification.get("findings")
+    if not isinstance(findings, list) or not all(
+        isinstance(finding, dict) for finding in findings
+    ):
+        return False
+    if verification.get("subject_count") != len(findings):
+        return False
+    expected_count = manifest.get("candidate_verification_count")
+    if isinstance(expected_count, int) and expected_count != len(findings):
+        return False
+    required_dimensions = _string_list(verification.get("required_dimensions"))
+    if not required_dimensions:
+        return False
+    accepted_rows = jsonl_blocks.get("candidate_web_checks.jsonl", [])
+    excluded_rows = jsonl_blocks.get("excluded_candidate_web_checks.jsonl", [])
+    accepted_source_ids = _row_string_values(accepted_rows, "source_id")
+    excluded_source_ids = _row_string_values(excluded_rows, "source_id")
+    finding_accepted_ids: set[str] = set()
+    finding_excluded_ids: set[str] = set()
+    total_source_count = 0
+    total_excluded_source_count = 0
+    for finding in findings:
+        if _verification_dimension_names(finding) != required_dimensions:
+            return False
+        accepted_ids = set(_string_list(finding.get("accepted_source_ids")))
+        excluded_ids = set(_string_list(finding.get("excluded_source_ids")))
+        if not isinstance(finding.get("source_count"), int):
+            return False
+        if not isinstance(finding.get("excluded_source_count"), int):
+            return False
+        if finding["source_count"] != len(accepted_ids):
+            return False
+        if finding["excluded_source_count"] != len(excluded_ids):
+            return False
+        finding_accepted_ids.update(accepted_ids)
+        finding_excluded_ids.update(excluded_ids)
+        total_source_count += finding["source_count"]
+        total_excluded_source_count += finding["excluded_source_count"]
+    if finding_accepted_ids != accepted_source_ids:
+        return False
+    if finding_excluded_ids != excluded_source_ids:
+        return False
+    if isinstance(manifest.get("candidate_web_check_count"), int) and (
+        total_source_count != manifest["candidate_web_check_count"]
+    ):
+        return False
+    expected_excluded_count = manifest.get("excluded_candidate_web_check_count")
+    return not isinstance(expected_excluded_count, int) or (
+        total_excluded_source_count == expected_excluded_count
+    )
+
+
 def _verify_blind_seal_receipt_contract(json_blocks: dict[str, Any]) -> bool:
     manifest = json_blocks.get("bundle_manifest.json", {})
     episode = json_blocks.get("research_episode.json", {})
@@ -1008,6 +1081,17 @@ def _prediction_event_ids(payload: Any, *, field_name: str = "candidates") -> se
             if source_url.startswith("news://"):
                 event_ids.add(source_url.removeprefix("news://"))
     return event_ids
+
+
+def _verification_dimension_names(finding: dict[str, Any]) -> list[str]:
+    dimensions = finding.get("verification_dimensions")
+    if not isinstance(dimensions, list):
+        return []
+    return [
+        str(dimension["name"])
+        for dimension in dimensions
+        if isinstance(dimension, dict) and isinstance(dimension.get("name"), str)
+    ]
 
 
 def _row_string_values(rows: list[dict[str, Any]], field_name: str) -> set[str]:

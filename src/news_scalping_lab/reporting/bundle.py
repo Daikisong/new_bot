@@ -435,6 +435,7 @@ def _build_bundle_manifest(
         )
         validation["candidate_verification_hash_verified"] = True
         validation["candidate_verification_count_verified"] = True
+        validation["candidate_verification_contract_verified"] = True
     if final_synthesis_context is not None:
         payload["final_synthesis_context_sha256"] = sha256_text(
             final_synthesis_context

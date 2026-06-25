@@ -92,6 +92,8 @@ def _bundle_text(
     tamper_receipt_contract: bool = False,
     tamper_phase_hash: bool = False,
     tamper_phase_contract: bool = False,
+    include_candidate_verification: bool = False,
+    tamper_candidate_verification_contract: bool = False,
     include_final_synthesis_context: bool = False,
     tamper_final_synthesis_context_contract: bool = False,
     phase_state_payload: dict[str, object] | None = None,
@@ -254,6 +256,127 @@ def _bundle_text(
         "phase_state_sha256": "0" * 64 if tamper_phase_hash else sha256_text(phase_state_json),
         "validation": manifest_validation,
     }
+    candidate_blocks = ""
+    if include_candidate_verification:
+        candidate_web_checks = json.dumps(
+            {
+                "schema_version": "nslab.candidate_web_check.v1",
+                "run_id": "RUN-bundle-test",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "source_id": "WEB-CANDIDATE-1",
+                "query": "candidate verification",
+                "title": "candidate source",
+                "url": "https://example.test/candidate",
+                "source_url": "https://example.test/candidate",
+                "published_at": "2030-01-10T08:30:00+09:00",
+                "retrieved_at": "2030-01-10T08:31:00+09:00",
+                "cutoff_at": episode.cutoff_at.isoformat(),
+                "time_verified": True,
+                "available_before_cutoff": True,
+                "content_sha256": "candidate-hash",
+            },
+            ensure_ascii=False,
+        )
+        excluded_candidate_web_checks = json.dumps(
+            {
+                "schema_version": "nslab.excluded_candidate_web_check.v1",
+                "run_id": "RUN-bundle-test",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "source_id": "WEB-CANDIDATE-EXCLUDED",
+                "query": "candidate verification",
+                "title": "excluded candidate source",
+                "url": "https://example.test/excluded",
+                "source_url": "https://example.test/excluded",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "retrieved_at": "2030-01-10T09:31:00+09:00",
+                "cutoff_at": episode.cutoff_at.isoformat(),
+                "exclusion_reason": "after_cutoff",
+            },
+            ensure_ascii=False,
+        )
+        candidate_verification = json.dumps(
+            {
+                "schema_version": "nslab.candidate_verification.v1",
+                "run_id": "RUN-bundle-test",
+                "created_at": episode.created_at.isoformat(),
+                "cutoff_at": episode.cutoff_at.isoformat(),
+                "required_dimensions": ["listed_security_and_exact_ticker"],
+                "subject_count": 1,
+                "findings": [
+                    {
+                        "subject_type": "final_candidate",
+                        "candidate_rank": 1,
+                        "candidate_ticker": "UNKNOWN",
+                        "candidate_company_name": "CandidateCo",
+                        "candidate_path_type": "SINGLE_EVENT",
+                        "query": "candidate verification",
+                        "source_count": 1,
+                        "excluded_source_count": 1,
+                        "accepted_source_ids": [
+                            (
+                                "WEB-CANDIDATE-OTHER"
+                                if tamper_candidate_verification_contract
+                                else "WEB-CANDIDATE-1"
+                            )
+                        ],
+                        "excluded_source_ids": ["WEB-CANDIDATE-EXCLUDED"],
+                        "verification_dimensions": [
+                            {
+                                "name": "listed_security_and_exact_ticker",
+                                "status": "source_collected",
+                                "evidence_source_ids": ["WEB-CANDIDATE-1"],
+                                "notes": ["cutoff-safe source collected"],
+                            }
+                        ],
+                        "d_minus_one_market_data_only": False,
+                        "uncertainties": [],
+                    }
+                ],
+                "notes": ["test verification"],
+            },
+            ensure_ascii=False,
+        )
+        manifest["candidate_web_check_sha256"] = sha256_text(candidate_web_checks)
+        manifest["candidate_web_check_count"] = 1
+        manifest["excluded_candidate_web_check_sha256"] = sha256_text(
+            excluded_candidate_web_checks
+        )
+        manifest["excluded_candidate_web_check_count"] = 1
+        manifest["candidate_verification_sha256"] = sha256_text(candidate_verification)
+        manifest["candidate_verification_count"] = 1
+        manifest_validation["candidate_web_check_hash_verified"] = True
+        manifest_validation["candidate_web_check_count_verified"] = True
+        manifest_validation["excluded_candidate_web_check_hash_verified"] = True
+        manifest_validation["excluded_candidate_web_check_count_verified"] = True
+        manifest_validation["candidate_verification_hash_verified"] = True
+        manifest_validation["candidate_verification_count_verified"] = True
+        manifest_validation["candidate_verification_contract_verified"] = True
+        candidate_blocks = f"""
+<!-- NSLAB:BEGIN candidate_web_checks.jsonl -->
+```jsonl
+{candidate_web_checks}
+```
+<!-- NSLAB:END candidate_web_checks.jsonl -->
+
+<!-- NSLAB:BEGIN candidate_verification.json -->
+```json
+{candidate_verification}
+```
+<!-- NSLAB:END candidate_verification.json -->
+
+<!-- NSLAB:BEGIN excluded_candidate_web_checks.jsonl -->
+```jsonl
+{excluded_candidate_web_checks}
+```
+<!-- NSLAB:END excluded_candidate_web_checks.jsonl -->
+
+"""
     final_context_block = ""
     if include_final_synthesis_context:
         final_context_payload = _final_synthesis_payload()
@@ -333,6 +456,7 @@ Blind report body.
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
+{candidate_blocks}
 {final_context_block}
 <!-- NSLAB:BEGIN phase_state.json -->
 ```json
@@ -412,6 +536,48 @@ def test_bundle_import_rejects_final_synthesis_context_contract_mismatch(
     assert parsed.validation["final_synthesis_context_hash_verified"]
     assert not parsed.validation["final_synthesis_context_contract_verified"]
     with pytest.raises(BundleImportError, match="final_synthesis_context.json content"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_accepts_candidate_verification_contract(tmp_path) -> None:
+    source = tmp_path / "candidate_verification_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), include_candidate_verification=True),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+    imported = ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+    assert parsed.validation["candidate_web_check_hash_verified"]
+    assert parsed.validation["candidate_web_check_count_verified"]
+    assert parsed.validation["excluded_candidate_web_check_hash_verified"]
+    assert parsed.validation["excluded_candidate_web_check_count_verified"]
+    assert parsed.validation["candidate_verification_hash_verified"]
+    assert parsed.validation["candidate_verification_count_verified"]
+    assert parsed.validation["candidate_verification_contract_verified"]
+    assert imported.episode_id == _episode().episode_id
+
+
+def test_bundle_import_rejects_candidate_verification_contract_mismatch(
+    tmp_path,
+) -> None:
+    source = tmp_path / "bad_candidate_verification_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_candidate_verification=True,
+            tamper_candidate_verification_contract=True,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["candidate_verification_hash_verified"]
+    assert parsed.validation["candidate_verification_count_verified"]
+    assert not parsed.validation["candidate_verification_contract_verified"]
+    with pytest.raises(BundleImportError, match="candidate_verification.json content"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

@@ -121,9 +121,9 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
                     "candidate_path_type": "SINGLE_EVENT",
                     "query": "candidate verification",
                     "source_count": 1,
-                    "excluded_source_count": 0,
+                    "excluded_source_count": 1,
                     "accepted_source_ids": ["WEB-CANDIDATE-1"],
-                    "excluded_source_ids": [],
+                    "excluded_source_ids": ["WEB-CANDIDATE-EXCLUDED"],
                     "verification_dimensions": [
                         {
                             "name": "listed_security_and_exact_ticker",
@@ -349,6 +349,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["candidate_web_check_count_verified"]
     assert parsed.validation["candidate_verification_hash_verified"]
     assert parsed.validation["candidate_verification_count_verified"]
+    assert parsed.validation["candidate_verification_contract_verified"]
     assert parsed.validation["final_synthesis_context_hash_verified"]
     assert parsed.validation["final_synthesis_context_contract_verified"]
     assert parsed.validation["excluded_candidate_web_check_hash_verified"]
@@ -376,6 +377,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["candidate_web_check_count_verified"] is True
     assert manifest["validation"]["candidate_verification_hash_verified"] is True
     assert manifest["validation"]["candidate_verification_count_verified"] is True
+    assert manifest["validation"]["candidate_verification_contract_verified"] is True
     assert manifest["validation"]["final_synthesis_context_hash_verified"] is True
     assert manifest["validation"]["final_synthesis_context_contract_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_hash_verified"] is True
