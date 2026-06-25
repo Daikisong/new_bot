@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import TypeVar
 
 import pytest
@@ -56,6 +57,30 @@ from news_scalping_lab.utils import (
 from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _write_minimal_stock_web_atlas(root: Path) -> None:
+    atlas = root / "atlas"
+    (atlas / "ohlcv_tradable_by_symbol_year").mkdir(parents=True)
+    write_json(
+        atlas / "manifest.json",
+        {
+            "source_name": "stock-web-integration-test",
+            "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year",
+        },
+    )
+    write_json(
+        atlas / "schema.json",
+        {
+            "tradable_shard_columns": {
+                "d": "date",
+                "o": "open",
+                "h": "high",
+                "l": "low",
+                "c": "close",
+            }
+        },
+    )
 
 
 class OutcomeTrapPriceSource:
@@ -1734,7 +1759,7 @@ def test_d_minus_one_market_data_uses_blind_price_guard(tmp_path) -> None:
 
 def test_daily_analyzer_uses_configured_stock_web_price_source(tmp_path) -> None:
     stock_web_path = tmp_path / "stock-web"
-    (stock_web_path / "atlas").mkdir(parents=True)
+    _write_minimal_stock_web_atlas(stock_web_path)
     settings = Settings(
         project_root=tmp_path,
         price_provider="stock-web",

@@ -11,6 +11,34 @@ from news_scalping_lab.prices.mock import MockPriceSource
 from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock_web_cache
 
 
+def _write_minimal_stock_web_atlas(root: Path) -> None:
+    atlas = root / "atlas"
+    (atlas / "ohlcv_tradable_by_symbol_year").mkdir(parents=True)
+    (atlas / "manifest.json").write_text(
+        """
+{
+  "source_name": "stock-web-minimal-test",
+  "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "schema.json").write_text(
+        """
+{
+  "tradable_shard_columns": {
+    "d": "date",
+    "o": "open",
+    "h": "high",
+    "l": "low",
+    "c": "close"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+
 def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> None:
     atlas = tmp_path / "atlas"
     (atlas / "ohlcv_tradable_by_symbol_year" / "005" / "005930").mkdir(parents=True)
@@ -335,7 +363,7 @@ def test_price_factory_can_prepare_stock_web_cache(
 
     def fake_ensure_stock_web_cache(cache_path: Path, *, remote_url: str) -> Path:
         calls.append((cache_path, remote_url))
-        (cache_path / "atlas").mkdir(parents=True)
+        _write_minimal_stock_web_atlas(cache_path)
         return cache_path
 
     monkeypatch.setattr(
@@ -354,6 +382,19 @@ def test_price_factory_can_prepare_stock_web_cache(
 
     assert isinstance(source, StockWebPriceSource)
     assert calls == [(tmp_path / "cache" / "stock-web", "https://example.test/stock-web.git")]
+
+
+def test_price_factory_rejects_incomplete_stock_web_atlas(tmp_path) -> None:
+    stock_web_path = tmp_path / "stock-web"
+    (stock_web_path / "atlas").mkdir(parents=True)
+    settings = Settings(
+        project_root=tmp_path,
+        price_provider="stock-web",
+        stock_web_path=stock_web_path,
+    )
+
+    with pytest.raises(ValueError, match="stock-web price provider atlas is incomplete"):
+        create_price_source(settings)
 
 
 def test_price_factory_uses_mock_when_provider_is_mock_even_with_stock_web_path(

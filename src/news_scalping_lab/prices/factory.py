@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from news_scalping_lab.config import Settings
 from news_scalping_lab.prices.base import PriceSource
 from news_scalping_lab.prices.mock import MockPriceSource
@@ -17,13 +19,28 @@ def create_price_source(settings: Settings) -> PriceSource:
     if settings.stock_web_path is not None:
         stock_web_path = settings.path(settings.stock_web_path)
         if stock_web_path.exists():
-            return StockWebPriceSource(stock_web_path)
+            return _validated_stock_web_source(stock_web_path)
     if settings.stock_web_cache_enabled:
         cache_path = ensure_stock_web_cache(
             settings.path(settings.stock_web_cache_path),
             remote_url=settings.stock_web_remote_url,
         )
         if cache_path.exists():
-            return StockWebPriceSource(cache_path)
+            return _validated_stock_web_source(cache_path)
     details = "set NSLAB_STOCK_WEB_PATH or enable NSLAB_STOCK_WEB_CACHE=1"
     raise ValueError(f"stock-web price provider is configured but unavailable; {details}")
+
+
+def _validated_stock_web_source(path: Path) -> StockWebPriceSource:
+    source = StockWebPriceSource(path)
+    status = source.inspect_atlas_status()
+    if status.get("status") == "ok":
+        return source
+    missing_fields = status.get("missing_required_fields")
+    readable_root = status.get("has_readable_shard_root")
+    raise ValueError(
+        "stock-web price provider atlas is incomplete; "
+        f"path={source.root.as_posix()}; "
+        f"missing_required_fields={missing_fields}; "
+        f"has_readable_shard_root={readable_root}"
+    )
