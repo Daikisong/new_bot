@@ -30,6 +30,63 @@ EXPECTED_SCHEMA_FILES = {
 }
 
 
+def test_repository_agent_guidance_stays_short_and_operational() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    guidance = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+
+    required_rules = [
+        "LLM-native news scalping research system",
+        "Do not hardcode stocks, tickers, themes, regions, or beneficiary mappings",
+        "Store research knowledge in `research/`, `memory/`, and `brain/`",
+        "Exact keyword retrieval is only supporting evidence",
+        "Candidate generation always starts with an open-world pass",
+        "New research must be incorporated without source-code changes",
+        "Blind inference must not access D-day prices or information after the cutoff",
+        "Every output must include provenance and a context manifest",
+        "Completion requires `ruff`, `mypy`, and `pytest` to pass",
+    ]
+
+    assert all(rule in guidance for rule in required_rules)
+    assert len([line for line in guidance.splitlines() if line.startswith("- ")]) == len(
+        required_rules
+    )
+    assert "episode_id" not in guidance
+    assert "ticker:" not in guidance.lower()
+
+
+def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memory() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    skill = (repo_root / ".agents" / "skills" / "news-scalping-lab" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    required_fragments = [
+        "research episode import",
+        "brain update or full rebuild",
+        "daily blind analysis",
+        "postmortem evaluation",
+        "lookahead leak audit",
+        "Do not add stocks, tickers, themes, regions, or beneficiary mappings to source code.",
+        "Research knowledge belongs in `research/`, `memory/`, and `brain/`.",
+        "Exact keyword retrieval is never a candidate gate.",
+        "Blind inference cannot use D-day prices or cutoff-after evidence.",
+        "Exhaustive mode must include every accepted episode in the context manifest.",
+        "nslab research import path/to/research.md",
+        "nslab brain rebuild --mode full",
+        "nslab analyze --news path/to/news.csv --trade-date YYYY-MM-DD",
+        "nslab evaluate --trade-date YYYY-MM-DD",
+        "nslab audit hardcoding",
+        "`predictions/YYYY-MM-DD.json`",
+        "`runs/manifests/<run_id>.json`",
+        "If `brain audit` fails, run `nslab brain rebuild --mode full`.",
+        "If lookahead audit fails, inspect the manifest `price_snapshot.allowed_through`",
+    ]
+
+    assert all(fragment in skill for fragment in required_fragments)
+    assert "THEME_MAP" not in skill
+    assert "000000" not in skill
+
+
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
