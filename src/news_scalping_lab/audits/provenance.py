@@ -3456,6 +3456,19 @@ def _check_final_synthesis_embedded_artifacts(
             "candidate_verification mismatch"
         )
 
+    candidate_web_checks = _read_candidate_web_check_context_rows(
+        root,
+        manifest.get("candidate_web_check_artifact"),
+    )
+    if (
+        candidate_web_checks is not None
+        and context_payload.get("candidate_web_checks") != candidate_web_checks
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "candidate_web_checks mismatch"
+        )
+
     red_team_artifacts = manifest.get("red_team_artifacts")
     if not (
         isinstance(red_team_artifacts, list)
@@ -3482,6 +3495,58 @@ def _read_optional_manifest_object(root: Path, artifact_ref: object) -> dict[str
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _read_candidate_web_check_context_rows(
+    root: Path,
+    artifact_ref: object,
+) -> list[dict[str, Any]] | None:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return None
+    artifact_path = _resolve_manifest_path(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = artifact_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(row, dict):
+            return None
+        rows.append(_candidate_web_check_context_row(row))
+    return rows
+
+
+def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_rank": row.get("candidate_rank"),
+        "candidate_ticker": row.get("candidate_ticker"),
+        "candidate_company_name": row.get("candidate_company_name"),
+        "candidate_path_type": row.get("candidate_path_type"),
+        "candidate_subject_type": row.get("candidate_subject_type"),
+        "candidate_expansion_path": row.get("candidate_expansion_path"),
+        "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
+        "candidate_investigation_questions": row.get(
+            "candidate_investigation_questions"
+        ),
+        "verification_focus": row.get("verification_focus"),
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
 
 
 def _resolve_required_manifest_artifact(

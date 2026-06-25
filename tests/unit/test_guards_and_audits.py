@@ -2097,6 +2097,58 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     write_json(run_prediction_path, prediction)
     run_report_path.write_text(report_text, encoding="utf-8")
 
+    candidate_web_check = {
+        "schema_version": "nslab.candidate_web_check.v1",
+        "run_id": "RUN-linked",
+        "candidate_rank": 1,
+        "candidate_ticker": "UNKNOWN",
+        "candidate_company_name": "CandidateCo",
+        "candidate_path_type": "SINGLE_EVENT",
+        "candidate_subject_type": "final_candidate",
+        "verification_focus": ["listed_security_and_exact_ticker"],
+        "source_id": "WEB-1",
+        "source_url": "https://example.test/source",
+        "url": "https://example.test/source",
+        "query": "candidate verification",
+        "title": "Candidate source",
+        "snippet": "Candidate verification source.",
+        "published_at": "2030-01-10T08:30:00+09:00",
+        "time_verified": True,
+        "content_sha256": "c" * 64,
+        "opened_text_excerpt": "excerpt",
+    }
+    candidate_web_context = {
+        "candidate_rank": 1,
+        "candidate_ticker": "UNKNOWN",
+        "candidate_company_name": "CandidateCo",
+        "candidate_path_type": "SINGLE_EVENT",
+        "candidate_subject_type": "final_candidate",
+        "candidate_expansion_path": None,
+        "candidate_expansion_hypothesis": None,
+        "candidate_investigation_questions": None,
+        "verification_focus": ["listed_security_and_exact_ticker"],
+        "source_id": "WEB-1",
+        "query": "candidate verification",
+        "title": "Candidate source",
+        "url": "https://example.test/source",
+        "snippet": "Candidate verification source.",
+        "published_at": "2030-01-10T08:30:00+09:00",
+        "time_verified": True,
+        "content_sha256": "c" * 64,
+        "opened_text_excerpt": "excerpt",
+    }
+    candidate_web_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_web_checks"
+        / "RUN-linked"
+        / "candidate_web_checks.jsonl"
+    )
+    candidate_web_text = canonical_json(candidate_web_check) + "\n"
+    candidate_web_path.parent.mkdir(parents=True)
+    candidate_web_path.write_text(candidate_web_text, encoding="utf-8")
+
     candidate_verification = {
         "schema_version": "nslab.candidate_verification.v1",
         "run_id": "RUN-linked",
@@ -2169,6 +2221,7 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
         "current_news": ["pre-cutoff news"],
         "candidate_research": {"candidates": prediction["candidates"]},
+        "candidate_web_checks": [candidate_web_context],
         "candidate_verification": candidate_verification,
         "red_team_output": red_team,
     }
@@ -2216,10 +2269,19 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "prediction_sha256": file_sha256(run_prediction_path),
             "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
             "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "candidate_web_check_artifact": candidate_web_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "candidate_web_check_sha256": sha256_text(candidate_web_text),
             "candidate_web_check_count": 1,
             "candidate_web_source_ids": ["WEB-1"],
             "excluded_candidate_web_check_count": 0,
             "excluded_candidate_web_source_ids": [],
+            "candidate_web_check_summary": {
+                "source_count": 1,
+                "excluded_source_count": 0,
+                "verification_focus": ["listed_security_and_exact_ticker"],
+            },
             "candidate_verification_artifact": verification_path.relative_to(
                 tmp_path
             ).as_posix(),
@@ -2256,6 +2318,7 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     assert result["passed"], result["findings"]
 
     bad_payload = json.loads(canonical_json(final_payload))
+    bad_payload["candidate_web_checks"] = []
     bad_payload["candidate_verification"] = {
         **candidate_verification,
         "findings": [],
@@ -2276,6 +2339,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
 
     assert not failed["passed"]
     findings = failed["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context candidate_web_checks mismatch"
+        in findings
+    )
     assert (
         "2030-01-10.json: final_synthesis_context "
         "candidate_verification mismatch"
