@@ -5,6 +5,7 @@ import json
 from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
+from news_scalping_lab.research_import.bundle import parse_bundle
 from news_scalping_lab.utils import read_json
 
 RUNNER = CliRunner()
@@ -73,3 +74,39 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{run_id}.json")
     assert saved_manifest["mode"] == "exhaustive"
     assert saved_manifest["accepted_episode_count"] == saved_manifest["swept_episode_count"]
+
+    inspected_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    session_pack = RUNNER.invoke(
+        app,
+        [
+            "context",
+            "export-session-pack",
+            "--news",
+            "docs/csv/news_20260624.csv",
+            "--trade-date",
+            "2026-06-24",
+            "--cutoff",
+            "2026-06-24T08:59:59+09:00",
+            "--mode",
+            "brain",
+        ],
+    )
+    analysis_bundle = RUNNER.invoke(
+        app,
+        ["context", "export-analysis-bundle", "--run-id", run_id],
+    )
+
+    assert inspected_context.exit_code == 0, inspected_context.output
+    assert session_pack.exit_code == 0, session_pack.output
+    assert analysis_bundle.exit_code == 0, analysis_bundle.output
+
+    context_payload = json.loads(inspected_context.output)
+    assert context_payload["run_id"] == run_id
+    pack_payload = json.loads(session_pack.output)
+    pack_dir = tmp_path / pack_payload["session_pack"]
+    assert read_json(pack_dir / "manifest.json")["blocked"] is False
+    bundle_payload = json.loads(analysis_bundle.output)
+    bundle_path = tmp_path / bundle_payload["bundle"]
+    parsed_bundle = parse_bundle(bundle_path)
+    assert parsed_bundle.validation["blind_hash_verified"]
+    assert parsed_bundle.validation["manifest_validation_self_consistent_verified"]
