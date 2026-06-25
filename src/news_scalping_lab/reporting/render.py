@@ -13,35 +13,40 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
     def list_text(values: list[str]) -> str:
         return ", ".join(values) if values else "none"
 
-    def section_for(path_type: PathType) -> str:
-        rows = [candidate for candidate in candidates if candidate.path_type == path_type]
+    def candidate_lines(candidate: Candidate) -> list[str]:
+        return [
+            f"### {candidate.rank}. {candidate.company_name} ({candidate.ticker})",
+            "",
+            f"- Path type: `{candidate.path_type}`",
+            f"- Confidence: `{candidate.confidence_label}`",
+            f"- Evidence quality: `{candidate.evidence_quality}`",
+            f"- Thesis: {candidate.thesis}",
+            f"- Why now: {candidate.why_now}",
+            f"- Causal chain: {list_text(candidate.causal_chain)}",
+            f"- Direct evidence: {list_text(candidate.direct_evidence)}",
+            f"- Inferred evidence: {list_text(candidate.inferred_evidence)}",
+            f"- Market-memory evidence: {list_text(candidate.market_memory_evidence)}",
+            f"- Prior positive cases: {list_text(candidate.prior_positive_cases)}",
+            f"- Prior negative cases: {list_text(candidate.prior_negative_cases)}",
+            f"- Counterarguments: {'; '.join(candidate.counterarguments) or 'none recorded'}",
+            f"- Disconfirming conditions: {list_text(candidate.disconfirming_conditions)}",
+            f"- Memory episodes: {list_text(candidate.memory_episode_ids)}",
+            f"- Source URLs: {list_text(candidate.source_urls)}",
+            f"- Provenance sources: {list_text([item.source_id for item in candidate.provenance])}",
+            "",
+        ]
+
+    def candidate_section(rows: list[Candidate]) -> str:
         if not rows:
             return "No candidates in this path.\n"
         lines: list[str] = []
         for candidate in rows:
-            lines.extend(
-                [
-                    f"### {candidate.rank}. {candidate.company_name} ({candidate.ticker})",
-                    "",
-                    f"- Confidence: `{candidate.confidence_label}`",
-                    f"- Evidence quality: `{candidate.evidence_quality}`",
-                    f"- Thesis: {candidate.thesis}",
-                    f"- Why now: {candidate.why_now}",
-                    f"- Causal chain: {list_text(candidate.causal_chain)}",
-                    f"- Direct evidence: {list_text(candidate.direct_evidence)}",
-                    f"- Inferred evidence: {list_text(candidate.inferred_evidence)}",
-                    f"- Market-memory evidence: {list_text(candidate.market_memory_evidence)}",
-                    f"- Prior positive cases: {list_text(candidate.prior_positive_cases)}",
-                    f"- Prior negative cases: {list_text(candidate.prior_negative_cases)}",
-                    f"- Counterarguments: {'; '.join(candidate.counterarguments) or 'none recorded'}",
-                    f"- Disconfirming conditions: {list_text(candidate.disconfirming_conditions)}",
-                    f"- Memory episodes: {list_text(candidate.memory_episode_ids)}",
-                    f"- Source URLs: {list_text(candidate.source_urls)}",
-                    f"- Provenance sources: {list_text([item.source_id for item in candidate.provenance])}",
-                    "",
-                ]
-            )
+            lines.extend(candidate_lines(candidate))
         return "\n".join(lines)
+
+    def section_for(path_type: PathType) -> str:
+        rows = [candidate for candidate in candidates if candidate.path_type == path_type]
+        return candidate_section(rows)
 
     sector_lines: list[str] = []
     for sector in prediction.dominant_sectors:
@@ -98,10 +103,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             section_for(PathType.CONTINUATION),
             "## 8. All Pre-Open Watchlist Candidates",
             "",
-            "\n".join(
-                f"- {candidate.rank}. {candidate.company_name} [{candidate.path_type}]"
-                for candidate in candidates
-            ),
+            candidate_section(candidates),
             "",
             "## 9. Excluded But Watch",
             "",

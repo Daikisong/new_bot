@@ -72,7 +72,36 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                         uri="test://candidate",
                     )
                 ],
-            )
+            ),
+            Candidate(
+                rank=2,
+                ticker="UNKNOWN",
+                company_name="HybridReportCo",
+                path_type=PathType.HYBRID,
+                event_ids=["EVT-report"],
+                thesis="Hybrid report candidate.",
+                why_now="Current catalyst may create both direct and beneficiary paths.",
+                causal_chain=["current catalyst", "direct path", "beneficiary path"],
+                direct_evidence=["direct path still needs confirmation"],
+                inferred_evidence=["beneficiary channel requires verification"],
+                market_memory_evidence=["hybrid prior market narrative"],
+                prior_positive_cases=["EP-hybrid-positive"],
+                prior_negative_cases=["EP-hybrid-negative"],
+                novel_reasoning="Hybrid path should not lose detailed report evidence.",
+                counterarguments=["hybrid relation may be too diffuse"],
+                disconfirming_conditions=["no direct or indirect tie"],
+                confidence_label=ConfidenceLabel.SPECULATIVE,
+                evidence_quality=ConfidenceLabel.LOW,
+                source_urls=["news://EVT-report-hybrid"],
+                memory_episode_ids=["EP-hybrid-positive", "EP-hybrid-negative"],
+                provenance=[
+                    Provenance(
+                        source_id="SRC-report-hybrid",
+                        source_type="test",
+                        uri="test://hybrid-candidate",
+                    )
+                ],
+            ),
         ],
     )
     manifest = ContextManifest(
@@ -102,6 +131,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     report = render_preopen_report(prediction, manifest)
 
     assert "- Causal chain: current catalyst, listed entity verification" in report
+    assert "- Path type: `SINGLE_EVENT`" in report
     assert "- Direct evidence: direct company mention" in report
     assert "- Inferred evidence: economic attribution check" in report
     assert "- Market-memory evidence: D-1 absorption check" in report
@@ -110,6 +140,17 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Disconfirming conditions: not listed" in report
     assert "- Source URLs: news://EVT-report" in report
     assert "- Provenance sources: SRC-report-candidate" in report
+    assert "HybridReportCo" in report
+    assert "- Path type: `HYBRID`" in report
+    assert "- Thesis: Hybrid report candidate." in report
+    assert "- Direct evidence: direct path still needs confirmation" in report
+    assert "- Inferred evidence: beneficiary channel requires verification" in report
+    assert "- Market-memory evidence: hybrid prior market narrative" in report
+    assert "- Counterarguments: hybrid relation may be too diffuse" in report
+    assert "- Disconfirming conditions: no direct or indirect tie" in report
+    assert "- Memory episodes: EP-hybrid-positive, EP-hybrid-negative" in report
+    assert "- Source URLs: news://EVT-report-hybrid" in report
+    assert "- Provenance sources: SRC-report-hybrid" in report
     assert "- Provenance sources: SRC-report-sector" in report
     assert "- Total input rows: 2" in report
     assert "- Included pre-cutoff rows: 1" in report
