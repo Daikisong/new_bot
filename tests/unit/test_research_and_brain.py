@@ -22,10 +22,13 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BrainManifest,
     CompanyMemory,
+    EventTickerEdge,
     MechanismMemory,
     MemoryClaim,
+    NewsItem,
     Postmortem,
     Provenance,
+    RelationClass,
     ResearchEpisode,
 )
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -763,6 +766,118 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     )
     assert (
         "warehouse: mechanism_memory.parquet count 3 != source mechanism memory records count 1"
+        in failed["findings"]
+    )
+
+
+def test_coverage_audit_requires_accepted_episode_projection_counts(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    observed_at = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    provenance = Provenance(
+        source_id="SRC-warehouse-derived",
+        source_type="news_csv_row",
+        uri="news.csv#row=1",
+        content_sha256="d" * 64,
+        excerpt="Derived projection source.",
+        observed_at=observed_at,
+    )
+    episode = ResearchEpisode(
+        episode_id="EP-derived-projection",
+        trade_date=trade_day,
+        cutoff_at=datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST),
+        created_at=datetime.combine(trade_day, time(16, 0, 0), tzinfo=KST),
+        research_version="derived-projection-test-v1",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(
+            summary="Accepted episode projection coverage.",
+            open_world_mechanisms=["event -> edge -> memory projection"],
+        ),
+        observed_events=[
+            NewsItem(
+                event_id="EVT-derived",
+                row_number=1,
+                published_at=observed_at,
+                title="Projection event",
+                body="Accepted episode event should project into warehouse.",
+                source_id=provenance.source_id,
+                provenance=[provenance],
+            )
+        ],
+        event_ticker_edges=[
+            EventTickerEdge(
+                edge_id="EDGE-derived",
+                episode_id="EP-derived-projection",
+                event_id="EVT-derived",
+                ticker="999997",
+                company_name="Derived Projection Co",
+                relation_class=RelationClass.DIRECT,
+                relation_explanation="Direct fixture relation.",
+                directly_mentioned=True,
+                temporal_validity="known before cutoff",
+                provenance=[provenance],
+            )
+        ],
+        lessons=[
+            MemoryClaim(
+                claim_id="CL-derived",
+                statement="Derived projection claims should sync to market memory parquet.",
+                mechanism="warehouse projection coverage",
+                scope="coverage audit",
+                support_episode_ids=["EP-derived-projection"],
+                available_from=available_from,
+                provenance=[provenance],
+            )
+        ],
+        available_from=available_from,
+        provenance=[provenance],
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    passed = audit_coverage(tmp_path)
+
+    assert passed["passed"] is True
+    assert passed["warehouse_projection_synced"] is True
+    assert passed["warehouse_expected_source_counts"]["events.parquet"]["expected"] == 1
+    assert passed["warehouse_expected_source_counts"]["event_sources.parquet"]["expected"] == 1
+    assert passed["warehouse_expected_source_counts"]["event_ticker_edges.parquet"]["expected"] == 1
+    assert passed["warehouse_expected_source_counts"]["market_memory.parquet"]["expected"] == 1
+
+    warehouse = WarehouseStore(tmp_path)
+    warehouse.write_empty("events.parquet")
+    warehouse.write_empty("event_sources.parquet")
+    warehouse.write_empty("event_ticker_edges.parquet")
+    warehouse.write_empty("market_memory.parquet")
+
+    failed = audit_coverage(tmp_path)
+
+    assert failed["passed"] is False
+    assert failed["warehouse_projection_synced"] is False
+    assert failed["warehouse_count_mismatches"] == {
+        "event_sources.parquet": {"actual": 0, "expected": 1},
+        "event_ticker_edges.parquet": {"actual": 0, "expected": 1},
+        "events.parquet": {"actual": 0, "expected": 1},
+        "market_memory.parquet": {"actual": 0, "expected": 1},
+    }
+    assert (
+        "warehouse: events.parquet count 0 != accepted observed events count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: event_sources.parquet count 0 != accepted event sources count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: event_ticker_edges.parquet count 0 != accepted event ticker edges count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: market_memory.parquet count 0 != accepted market memory claims count 1"
         in failed["findings"]
     )
 

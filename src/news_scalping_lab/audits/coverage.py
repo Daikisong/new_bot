@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from news_scalping_lab.brain.audit import audit_brain
+from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.retrieval.store import inspect_vector_index
+from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
@@ -103,7 +105,24 @@ def _int_value(value: object) -> int:
 
 
 def _warehouse_expected_source_counts(root: Path) -> dict[str, dict[str, int | str]]:
+    accepted_counts = _accepted_episode_projection_counts(ResearchStore(root).list_accepted())
     return {
+        "events.parquet": {
+            "expected": accepted_counts["events"],
+            "source_label": "accepted observed events",
+        },
+        "event_sources.parquet": {
+            "expected": accepted_counts["event_sources"],
+            "source_label": "accepted event sources",
+        },
+        "event_ticker_edges.parquet": {
+            "expected": accepted_counts["event_ticker_edges"],
+            "source_label": "accepted event ticker edges",
+        },
+        "market_memory.parquet": {
+            "expected": accepted_counts["market_memory"],
+            "source_label": "accepted market memory claims",
+        },
         "predictions.parquet": {
             "expected": len(list((root / "predictions").glob("*.json"))),
             "source_label": "source predictions",
@@ -122,6 +141,25 @@ def _warehouse_expected_source_counts(root: Path) -> dict[str, dict[str, int | s
             ),
             "source_label": "source mechanism memory records",
         },
+    }
+
+
+def _accepted_episode_projection_counts(episodes: list[ResearchEpisode]) -> dict[str, int]:
+    event_sources: set[tuple[str, str, str, str]] = set()
+    for episode in episodes:
+        for event in episode.observed_events:
+            for source in event.provenance:
+                event_sources.add(
+                    (episode.episode_id, event.event_id, source.source_id, source.uri)
+                )
+    return {
+        "events": sum(len(episode.observed_events) for episode in episodes),
+        "event_sources": len(event_sources),
+        "event_ticker_edges": sum(len(episode.event_ticker_edges) for episode in episodes),
+        "market_memory": sum(
+            len(episode.lessons) + len(episode.counterexamples)
+            for episode in episodes
+        ),
     }
 
 
