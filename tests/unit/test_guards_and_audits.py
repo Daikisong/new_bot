@@ -3462,6 +3462,21 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
 def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> None:
     pack_dir = tmp_path / "session_packs" / "2030-01-10"
     pack_dir.mkdir(parents=True)
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    for file_name in pack_files:
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    pack_file_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
+    token_counts = {
+        file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
+        for file_name in pack_files
+    }
     accepted_dir = tmp_path / "research" / "accepted"
     accepted_dir.mkdir(parents=True)
     write_json(
@@ -3498,6 +3513,14 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
         "included_episode_ids": ["EP-available-a"],
         "omitted_episode_ids": ["EP-future"],
         "unavailable_episode_ids": ["EP-future"],
+        "pack_files": list(pack_files),
+        "pack_file_count": len(pack_files),
+        "pack_file_hashes": pack_file_hashes,
+        "pack_sha256": sha256_text(
+            "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
+        ),
+        "token_counts": token_counts,
+        "token_count_total": sum(token_counts.values()),
     }
     write_json(pack_dir / "manifest.json", manifest)
 
@@ -3587,6 +3610,45 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
         "current_news.md"
     ) in findings
     assert "session_packs/2030-01-10/manifest.json: pack_sha256 mismatch" in findings
+
+
+def test_lookahead_audit_requires_session_pack_reproducibility_hashes(
+    tmp_path: Path,
+) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    for file_name in (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    ):
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "blocked": False,
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "session_packs/2030-01-10/manifest.json: pack_files missing" in findings
+    assert "session_packs/2030-01-10/manifest.json: pack_file_count missing" in findings
+    assert (
+        "session_packs/2030-01-10/manifest.json: pack_file_hashes is invalid"
+        in findings
+    )
+    assert "session_packs/2030-01-10/manifest.json: missing pack_sha256" in findings
 
 
 def test_lookahead_audit_checks_session_pack_news_window(tmp_path: Path) -> None:

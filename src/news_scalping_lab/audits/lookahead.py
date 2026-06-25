@@ -589,6 +589,10 @@ def _check_session_pack_hashes(
     if manifest_path.parent.parent != root / "session_packs":
         return
     pack_files = manifest.get("pack_files")
+    pack_files_present = any(
+        (manifest_path.parent / file_name).is_file() for file_name in SESSION_PACK_FILES
+    )
+    requires_pack_reproducibility = pack_files_present or manifest.get("blocked") is False
     if pack_files is not None:
         if not isinstance(pack_files, list) or not all(
             isinstance(item, str) for item in pack_files
@@ -596,12 +600,20 @@ def _check_session_pack_hashes(
             findings.append(f"{manifest_name}: pack_files is invalid")
         elif pack_files != list(SESSION_PACK_FILES):
             findings.append(f"{manifest_name}: pack_files mismatch")
+    elif requires_pack_reproducibility:
+        findings.append(f"{manifest_name}: pack_files missing")
     pack_file_count = manifest.get("pack_file_count")
-    if pack_file_count is not None and pack_file_count != len(SESSION_PACK_FILES):
+    if pack_file_count is None:
+        if requires_pack_reproducibility:
+            findings.append(f"{manifest_name}: pack_file_count missing")
+    elif pack_file_count != len(SESSION_PACK_FILES):
         findings.append(f"{manifest_name}: pack_file_count mismatch")
 
     pack_hashes = manifest.get("pack_file_hashes")
     if pack_hashes is None and manifest.get("pack_sha256") is None:
+        if requires_pack_reproducibility:
+            findings.append(f"{manifest_name}: pack_file_hashes is invalid")
+            findings.append(f"{manifest_name}: missing pack_sha256")
         return
     if not isinstance(pack_hashes, dict):
         findings.append(f"{manifest_name}: pack_file_hashes is invalid")
