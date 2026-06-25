@@ -105,6 +105,12 @@ def _bundle_text(
     no_d_outcome_exposed: bool = True,
     source_ledger_entry_count: int | None = None,
     manifest_validation_overrides: dict[str, bool] | None = None,
+    blind_trade_date: str | None = None,
+    blind_cutoff_at: str | None = None,
+    episode_trade_date: str | None = None,
+    episode_cutoff_at: str | None = None,
+    candidate_web_run_id: str = "RUN-bundle-test",
+    candidate_web_cutoff_at: str | None = None,
 ) -> str:
     blind = BlindPrediction(
         prediction_id="BP-bundle-20300110",
@@ -114,6 +120,10 @@ def _bundle_text(
         sealed_at=episode.created_at,
         blind_analysis=episode.blind_analysis,
     ).model_dump(mode="json")
+    if blind_trade_date is not None:
+        blind["trade_date"] = blind_trade_date
+    if blind_cutoff_at is not None:
+        blind["cutoff_at"] = blind_cutoff_at
     blind_hash = sha256_text(canonical_json(blind))
     blind["blind_artifact_sha256"] = "0" * 64 if tamper_blind_hash else blind_hash
 
@@ -189,6 +199,10 @@ def _bundle_text(
     }
     if tamper_receipt_contract:
         episode_payload["blind_seal_receipt"]["blind_artifact_sha256"] = "0" * 64
+    if episode_trade_date is not None:
+        episode_payload["trade_date"] = episode_trade_date
+    if episode_cutoff_at is not None:
+        episode_payload["cutoff_at"] = episode_cutoff_at
     receipt_sha = sha256_text(_write_json_text(episode_payload["blind_seal_receipt"]))
     phase_state = phase_state_payload or {
         "schema_version": "nslab.phase_state.v1",
@@ -258,10 +272,11 @@ def _bundle_text(
     }
     candidate_blocks = ""
     if include_candidate_verification:
+        candidate_cutoff_at = candidate_web_cutoff_at or episode.cutoff_at.isoformat()
         candidate_web_checks = json.dumps(
             {
                 "schema_version": "nslab.candidate_web_check.v1",
-                "run_id": "RUN-bundle-test",
+                "run_id": candidate_web_run_id,
                 "candidate_rank": 1,
                 "candidate_ticker": "UNKNOWN",
                 "candidate_company_name": "CandidateCo",
@@ -273,7 +288,7 @@ def _bundle_text(
                 "source_url": "https://example.test/candidate",
                 "published_at": "2030-01-10T08:30:00+09:00",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
-                "cutoff_at": episode.cutoff_at.isoformat(),
+                "cutoff_at": candidate_cutoff_at,
                 "time_verified": True,
                 "available_before_cutoff": True,
                 "content_sha256": "candidate-hash",
@@ -283,7 +298,7 @@ def _bundle_text(
         excluded_candidate_web_checks = json.dumps(
             {
                 "schema_version": "nslab.excluded_candidate_web_check.v1",
-                "run_id": "RUN-bundle-test",
+                "run_id": candidate_web_run_id,
                 "candidate_rank": 1,
                 "candidate_ticker": "UNKNOWN",
                 "candidate_company_name": "CandidateCo",
@@ -295,7 +310,7 @@ def _bundle_text(
                 "source_url": "https://example.test/excluded",
                 "published_at": "2030-01-10T09:30:00+09:00",
                 "retrieved_at": "2030-01-10T09:31:00+09:00",
-                "cutoff_at": episode.cutoff_at.isoformat(),
+                "cutoff_at": candidate_cutoff_at,
                 "exclusion_reason": "after_cutoff",
             },
             ensure_ascii=False,
@@ -581,6 +596,42 @@ def test_bundle_import_rejects_candidate_verification_contract_mismatch(
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
+def test_bundle_candidate_web_checks_reject_run_id_mismatch(tmp_path) -> None:
+    source = tmp_path / "candidate_web_run_id_mismatch_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_candidate_verification=True,
+            candidate_web_run_id="RUN-other",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="candidate_web_checks.jsonl:1 run_id mismatch",
+    ):
+        parse_bundle(source)
+
+
+def test_bundle_candidate_web_checks_reject_cutoff_mismatch(tmp_path) -> None:
+    source = tmp_path / "candidate_web_cutoff_mismatch_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_candidate_verification=True,
+            candidate_web_cutoff_at="2030-01-10T08:00:00+09:00",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="candidate_web_checks.jsonl:1 cutoff_at mismatch",
+    ):
+        parse_bundle(source)
+
+
 def test_bundle_jsonl_contract_requires_record_type(tmp_path) -> None:
     source = tmp_path / "broken_bundle.md"
     source.write_text(_bundle_text(_episode(), brain_rows=[{"claim_id": "CLM-1"}]), encoding="utf-8")
@@ -598,6 +649,40 @@ def test_bundle_import_rejects_mismatched_blind_hash(tmp_path) -> None:
     assert not parsed.validation["blind_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_prediction.json hash"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_blind_prediction_identity_mismatch(tmp_path) -> None:
+    source = tmp_path / "tampered_blind_identity_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            blind_cutoff_at="2030-01-10T08:00:00+09:00",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="blind_prediction.json cutoff_at mismatch",
+    ):
+        parse_bundle(source)
+
+
+def test_bundle_import_rejects_research_episode_identity_mismatch(tmp_path) -> None:
+    source = tmp_path / "tampered_episode_identity_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            episode_cutoff_at="2030-01-10T09:30:00+09:00",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="research_episode.json cutoff_at mismatch",
+    ):
+        parse_bundle(source)
 
 
 def test_bundle_import_rejects_blind_execution_guard_violation(tmp_path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -230,6 +230,7 @@ def parse_bundle(path: Path) -> BundleParseResult:
         elif name.endswith(".jsonl"):
             jsonl_blocks[name] = _parse_jsonl(name, payload)
 
+    _validate_bundle_identity_contract(json_blocks)
     _validate_jsonl_contracts(json_blocks, jsonl_blocks)
     validation = {
         "markers_complete": True,
@@ -424,6 +425,8 @@ def _validate_jsonl_contracts(
     jsonl_blocks: dict[str, list[dict[str, Any]]],
 ) -> None:
     bundle_cutoff_at = _bundle_manifest_cutoff_at(json_blocks)
+    bundle_run_id = _bundle_manifest_string(json_blocks, "run_id")
+    bundle_cutoff_at_raw = _bundle_manifest_string(json_blocks, "cutoff_at")
     for index, row in enumerate(jsonl_blocks.get("row_disposition.jsonl", []), start=1):
         if "row_number" not in row:
             raise BundleImportError(f"row_disposition.jsonl:{index} missing row_number")
@@ -493,6 +496,8 @@ def _validate_jsonl_contracts(
             row=row,
             required_fields=CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
             expected_schema_version="nslab.candidate_web_check.v1",
+            expected_run_id=bundle_run_id,
+            expected_cutoff_at=bundle_cutoff_at_raw,
         )
         if row.get("time_verified") is not True:
             raise BundleImportError(
@@ -519,6 +524,8 @@ def _validate_jsonl_contracts(
             row=row,
             required_fields=EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
             expected_schema_version="nslab.excluded_candidate_web_check.v1",
+            expected_run_id=bundle_run_id,
+            expected_cutoff_at=bundle_cutoff_at_raw,
         )
     candidate_verification = json_blocks.get("candidate_verification.json")
     if isinstance(candidate_verification, dict):
@@ -545,6 +552,33 @@ def _validate_jsonl_contracts(
             )
 
 
+def _validate_bundle_identity_contract(json_blocks: dict[str, Any]) -> None:
+    manifest = json_blocks.get("bundle_manifest.json")
+    if not isinstance(manifest, dict):
+        raise BundleImportError("bundle_manifest.json must be an object")
+    if manifest.get("schema_version") != "nslab.bundle_manifest.v1":
+        raise BundleImportError("bundle_manifest.json invalid schema_version")
+    for field_name in ("run_id", "trade_date", "cutoff_at"):
+        if not isinstance(manifest.get(field_name), str) or not manifest.get(field_name):
+            raise BundleImportError(f"bundle_manifest.json missing {field_name}")
+    try:
+        date.fromisoformat(str(manifest["trade_date"]))
+    except ValueError as exc:
+        raise BundleImportError("bundle_manifest.json invalid trade_date") from exc
+    try:
+        parse_datetime(str(manifest["cutoff_at"]))
+    except ValueError as exc:
+        raise BundleImportError("bundle_manifest.json invalid cutoff_at") from exc
+
+    for block_name in ("blind_prediction.json", "research_episode.json"):
+        payload = json_blocks.get(block_name)
+        if not isinstance(payload, dict):
+            raise BundleImportError(f"{block_name} must be an object")
+        for field_name in ("trade_date", "cutoff_at"):
+            if payload.get(field_name) != manifest[field_name]:
+                raise BundleImportError(f"{block_name} {field_name} mismatch")
+
+
 def _bundle_manifest_cutoff_at(json_blocks: dict[str, Any]) -> datetime | None:
     manifest = json_blocks.get("bundle_manifest.json")
     if not isinstance(manifest, dict):
@@ -556,6 +590,14 @@ def _bundle_manifest_cutoff_at(json_blocks: dict[str, Any]) -> datetime | None:
         return parse_datetime(raw_cutoff)
     except ValueError:
         return None
+
+
+def _bundle_manifest_string(json_blocks: dict[str, Any], field_name: str) -> str | None:
+    manifest = json_blocks.get("bundle_manifest.json")
+    if not isinstance(manifest, dict):
+        return None
+    value = manifest.get(field_name)
+    return value if isinstance(value, str) and value else None
 
 
 def _validate_blind_published_at_before_cutoff(
@@ -788,6 +830,8 @@ def _validate_candidate_web_check_row(
     row: dict[str, Any],
     required_fields: set[str],
     expected_schema_version: str,
+    expected_run_id: str | None = None,
+    expected_cutoff_at: str | None = None,
 ) -> None:
     missing = sorted(required_fields - set(row))
     if missing:
@@ -797,6 +841,10 @@ def _validate_candidate_web_check_row(
     _validate_source_url(block_name=block_name, index=index, row=row)
     if row.get("schema_version") != expected_schema_version:
         raise BundleImportError(f"{block_name}:{index} invalid schema_version")
+    if expected_run_id is not None and row.get("run_id") != expected_run_id:
+        raise BundleImportError(f"{block_name}:{index} run_id mismatch")
+    if expected_cutoff_at is not None and row.get("cutoff_at") != expected_cutoff_at:
+        raise BundleImportError(f"{block_name}:{index} cutoff_at mismatch")
     if "opened_text" in row or "body" in row or "content" in row:
         raise BundleImportError(
             f"{block_name}:{index} must not duplicate opened/body/content"
@@ -950,6 +998,12 @@ def _verify_candidate_verification_contract(
         return False
     manifest_run_id = manifest.get("run_id")
     if isinstance(manifest_run_id, str) and verification.get("run_id") != manifest_run_id:
+        return False
+    manifest_cutoff_at = manifest.get("cutoff_at")
+    if (
+        isinstance(manifest_cutoff_at, str)
+        and verification.get("cutoff_at") != manifest_cutoff_at
+    ):
         return False
     findings = verification.get("findings")
     if not isinstance(findings, list) or not all(
