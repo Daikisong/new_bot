@@ -136,6 +136,35 @@ def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
     }
 
 
+def _write_trace_checkpoint(root: Path, trace_payload: dict[str, object]) -> None:
+    checkpoint_id = trace_payload.get("checkpoint_id")
+    if not isinstance(checkpoint_id, str) or not checkpoint_id:
+        raise AssertionError("test trace payload missing checkpoint_id")
+    checkpoint_dir = root / "runs" / "checkpoints" / "llm"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    trace_status = trace_payload.get("status")
+    checkpoint_status = "ok" if trace_status == "checkpoint_hit" else trace_status
+    write_json(
+        checkpoint_dir / f"{checkpoint_id}.json",
+        {
+            "checkpoint_id": checkpoint_id,
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "operation": trace_payload.get("operation"),
+            "purpose": trace_payload.get("purpose"),
+            "status": checkpoint_status,
+            "provider": trace_payload.get("provider"),
+            "model_config": trace_payload.get("model_config"),
+            "metadata": trace_payload.get("metadata"),
+            "input": trace_payload.get("input"),
+            "input_sha256": trace_payload.get("input_sha256"),
+            "output": trace_payload.get("output"),
+            "output_sha256": trace_payload.get("output_sha256"),
+            "retries": trace_payload.get("retries"),
+            "updated_at": "2030-01-10T08:59:01+09:00",
+        },
+    )
+
+
 def _manifest_reproducibility_fields() -> dict[str, object]:
     return {
         "schema_version": "nslab.context_manifest.v1",
@@ -537,11 +566,18 @@ def test_provenance_audit_validates_context_manifest_reproducibility_fields(
         **_manifest_reproducibility_fields(),
         "run_id": "RUN-linked",
         "prompt_hashes": {"blind_analysis": "def456"},
+        "token_counts": {"current_news": 1, "blind_analysis_prompt": 25},
         "price_snapshot": {"allowed_through": "2030-01-09"},
         "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
     }
     manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
     write_json(manifest_path, manifest)
+    trace_payload = _trace_payload(prompt_sha256="def456")
+    write_json(
+        tmp_path / "runs" / "traces" / "TRACE-daily.json",
+        trace_payload,
+    )
+    _write_trace_checkpoint(tmp_path, trace_payload)
 
     result = audit_provenance(tmp_path)
 
@@ -4689,6 +4725,59 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
     ) in result["findings"]
 
 
+def test_provenance_audit_flags_current_manifest_missing_pre_analysis_trace(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-linked",
+            "model_config": {"provider": "mock"},
+            "prompt_hashes": {
+                "blind_analysis": "blind-hash",
+                "news_novelty_review": "novelty-hash",
+            },
+            "token_counts": {
+                "blind_analysis_prompt": 25,
+                "news_novelty_review_prompt": 25,
+            },
+            "truncations": [],
+            "web_queries": [],
+            "web_sources": [],
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "traces" / "TRACE-daily.json",
+        _trace_payload(prompt_sha256="blind-hash"),
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: prompt hash has no matching trace for news_novelty_review"
+    ) in result["findings"]
+
+
 def test_provenance_audit_flags_trace_model_config_mismatch(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
@@ -4779,6 +4868,50 @@ def test_provenance_audit_flags_trace_prompt_token_count_mismatch(
     assert (
         "2030-01-10.json: trace prompt token count mismatch for "
         "daily_blind_analysis: TRACE-daily.json"
+    ) in result["findings"]
+
+
+def test_provenance_audit_flags_pre_analysis_trace_prompt_token_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"news_novelty_review": "novelty-hash"},
+            "token_counts": {"news_novelty_review_prompt": 26},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    novelty_trace = _trace_payload(prompt_sha256="novelty-hash")
+    novelty_trace["purpose"] = "news_novelty_review"
+    novelty_trace["metadata"] = {"prompt_version": "news_novelty_review.v1"}
+    novelty_trace["prompt_version"] = "news_novelty_review.v1"
+    write_json(tmp_path / "runs" / "traces" / "TRACE-novelty.json", novelty_trace)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: trace prompt token count mismatch for "
+        "news_novelty_review: TRACE-novelty.json"
     ) in result["findings"]
 
 

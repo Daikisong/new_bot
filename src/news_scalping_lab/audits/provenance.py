@@ -4148,19 +4148,32 @@ def _check_prompt_hash_traces(
     findings: list[str],
 ) -> None:
     purpose_by_hash_key = {
+        "news_novelty_review": "news_novelty_review",
+        "semantic_retrieval_plan": "semantic_retrieval_plan",
+        "candidate_expansion": "candidate_expansion",
         "blind_analysis": "daily_blind_analysis",
         "red_team_candidate_review": "red_team_candidate_review",
         "final_synthesis": "final_synthesis",
     }
     token_key_by_hash_key = {
+        "news_novelty_review": "news_novelty_review_prompt",
+        "semantic_retrieval_plan": "semantic_retrieval_plan_prompt",
+        "candidate_expansion": "candidate_expansion_prompt",
         "blind_analysis": "blind_analysis_prompt",
         "red_team_candidate_review": "red_team_prompt",
         "final_synthesis": "final_synthesis_prompt",
     }
     traces_by_purpose = _trace_metadata_by_purpose(root, findings)
+    requires_current_traces = manifest.get("schema_version") == "nslab.context_manifest.v1"
     for hash_key, purpose in purpose_by_hash_key.items():
         manifest_hash = prompt_hashes.get(hash_key)
-        if not manifest_hash or purpose not in traces_by_purpose:
+        if not manifest_hash:
+            continue
+        if purpose not in traces_by_purpose:
+            if requires_current_traces:
+                findings.append(
+                    f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
+                )
             continue
         trace_metadata = traces_by_purpose[purpose]
         prompt_hashes_for_purpose = trace_metadata["prompt_hashes"]
