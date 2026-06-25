@@ -213,6 +213,7 @@ class TemporalWebGuard:
         self.provider = provider
         self.excluded_source_ids: list[str] = []
         self.excluded_sources: list[WebSearchExclusion] = []
+        self._accepted_results_by_url: dict[str, WebSearchResult] = {}
 
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
         results = await self.provider.search(query, cutoff_at=cutoff_at)
@@ -225,10 +226,21 @@ class TemporalWebGuard:
                     WebSearchExclusion(result=result, reason=exclusion_reason)
                 )
                 continue
+            self._accepted_results_by_url[result.url] = result
             kept.append(result)
         return kept
 
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        result = self._accepted_results_by_url.get(url)
+        if result is None:
+            raise ValueError(
+                f"Cannot open unverified web source before cutoff search acceptance: {url}"
+            )
+        exclusion_reason = await self._exclusion_reason(result, cutoff_at=cutoff_at)
+        if exclusion_reason is not None:
+            raise ValueError(
+                f"Cannot open cutoff-unsafe web source {result.source_id}: {exclusion_reason}"
+            )
         return await self.provider.open(url, cutoff_at=cutoff_at)
 
     async def _exclusion_reason(

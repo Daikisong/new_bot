@@ -237,6 +237,36 @@ class ProviderTimestampRejectsUnknown:
         return False
 
 
+class MixedTemporalProvider:
+    def __init__(self) -> None:
+        self.open_calls: list[str] = []
+
+    async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
+        return [
+            WebSearchResult(
+                source_id="WEB-SAFE",
+                title=f"{query} safe",
+                url="mock://safe",
+                snippet="safe before cutoff",
+                published_at=cutoff_at - timedelta(minutes=1),
+            ),
+            WebSearchResult(
+                source_id="WEB-FUTURE",
+                title=f"{query} future",
+                url="mock://future",
+                snippet="future-only",
+                published_at=cutoff_at + timedelta(seconds=1),
+            ),
+        ]
+
+    async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        self.open_calls.append(url)
+        return url
+
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return result.published_at is not None and result.published_at <= cutoff_at
+
+
 @pytest.mark.asyncio
 async def test_temporal_web_guard_excludes_cutoff_after_sources() -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
@@ -254,6 +284,38 @@ async def test_temporal_web_guard_uses_provider_timestamp_verification() -> None
     assert await guard.search("query", cutoff_at=cutoff) == []
     assert guard.excluded_source_ids == ["WEB-UNVERIFIED"]
     assert guard.excluded_sources[0].reason == "missing_published_at"
+
+
+@pytest.mark.asyncio
+async def test_temporal_web_guard_only_opens_search_accepted_sources() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    provider = MixedTemporalProvider()
+    guard = TemporalWebGuard(provider)
+
+    kept = await guard.search("query", cutoff_at=cutoff)
+
+    assert [result.source_id for result in kept] == ["WEB-SAFE"]
+    assert await guard.open("mock://safe", cutoff_at=cutoff) == "mock://safe"
+    with pytest.raises(ValueError, match="unverified web source"):
+        await guard.open("mock://unseen", cutoff_at=cutoff)
+    with pytest.raises(ValueError, match="unverified web source"):
+        await guard.open("mock://future", cutoff_at=cutoff)
+    assert provider.open_calls == ["mock://safe"]
+
+
+@pytest.mark.asyncio
+async def test_temporal_web_guard_rechecks_cutoff_before_opening() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    earlier_cutoff = cutoff - timedelta(minutes=2)
+    provider = MixedTemporalProvider()
+    guard = TemporalWebGuard(provider)
+
+    kept = await guard.search("query", cutoff_at=cutoff)
+
+    assert [result.source_id for result in kept] == ["WEB-SAFE"]
+    with pytest.raises(ValueError, match="cutoff-unsafe web source"):
+        await guard.open("mock://safe", cutoff_at=earlier_cutoff)
+    assert provider.open_calls == []
 
 
 def test_hardcoding_audit_passes_current_source() -> None:
