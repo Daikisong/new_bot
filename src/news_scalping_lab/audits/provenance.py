@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
@@ -45,7 +46,13 @@ def audit_provenance(root: Path) -> dict[str, object]:
         manifest = _check_context_manifest(root, path, context_manifest_id, findings)
         _check_report_link(root, path, context_manifest_id, findings)
         if manifest is not None:
-            prompt_hashes = _check_manifest_basics(path, prediction, manifest, findings)
+            prompt_hashes = _check_manifest_basics(
+                root,
+                path,
+                prediction,
+                manifest,
+                findings,
+            )
             if not isinstance(manifest.get("price_snapshot"), dict):
                 findings.append(f"{path.name}: context manifest missing price_snapshot")
             if not isinstance(manifest.get("brain_file_hashes"), dict):
@@ -605,12 +612,13 @@ def _display_path(root: Path, path: Path) -> str:
 
 
 def _check_manifest_basics(
+    root: Path,
     prediction_path: Path,
     prediction: dict[str, Any],
     manifest: dict[str, Any],
     findings: list[str],
 ) -> dict[str, Any]:
-    _check_manifest_reproducibility_fields(prediction_path, manifest, findings)
+    _check_manifest_reproducibility_fields(root, prediction_path, manifest, findings)
     prompt_hashes = manifest.get("prompt_hashes", {})
     if not isinstance(prompt_hashes, dict):
         findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
@@ -709,6 +717,7 @@ def _check_current_manifest_required_contract(
 
 
 def _check_manifest_reproducibility_fields(
+    root: Path,
     prediction_path: Path,
     manifest: dict[str, Any],
     findings: list[str],
@@ -722,6 +731,10 @@ def _check_manifest_reproducibility_fields(
         value = manifest.get(field)
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
+    episode_scope = inspect_manifest_episode_scope(root, manifest)
+    for error in episode_scope.get("errors", []):
+        if isinstance(error, str):
+            findings.append(f"{prediction_path.name}: context manifest episode scope {error}")
 
 
 def _check_manifest_token_counts(

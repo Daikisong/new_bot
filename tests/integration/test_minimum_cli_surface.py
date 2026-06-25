@@ -548,11 +548,27 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert manifest_reproducibility["truncations_valid"] is True
     assert manifest_reproducibility["web_queries_valid"] is True
     assert manifest_reproducibility["web_sources_valid"] is True
+    assert manifest_reproducibility["episode_scope_valid"] is True
+    assert manifest_reproducibility["episode_scope"][
+        "accepted_episode_count_verified"
+    ] is True
+    assert manifest_reproducibility["episode_scope"][
+        "total_accepted_episode_count_verified"
+    ] is True
+    assert manifest_reproducibility["episode_scope"][
+        "available_episode_count_verified"
+    ] is True
+    assert manifest_reproducibility["episode_scope"][
+        "unavailable_episode_ids_verified"
+    ] is True
     original_manifest_for_reproducibility = read_json(manifest_file)
     tampered_manifest_reproducibility = {
         **original_manifest_for_reproducibility,
         "token_counts": {"current_news": -1},
         "web_queries": "tampered",
+        "available_episode_count": (
+            original_manifest_for_reproducibility["available_episode_count"] + 1
+        ),
     }
     write_json(manifest_file, tampered_manifest_reproducibility)
     tampered_manifest_context = RUNNER.invoke(app, ["context", "inspect", run_id])
@@ -564,8 +580,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     tampered_manifest_status = tampered_manifest_inspection["manifest_reproducibility"]
     assert tampered_manifest_status["token_counts_valid"] is False
     assert tampered_manifest_status["web_queries_valid"] is False
+    assert tampered_manifest_status["episode_scope_valid"] is False
     assert "token_counts_missing_or_invalid" in tampered_manifest_status["errors"]
     assert "web_queries_missing_or_invalid" in tampered_manifest_status["errors"]
+    assert "available_episode_count_mismatch" in tampered_manifest_status[
+        "episode_scope"
+    ]["errors"]
     write_json(manifest_file, original_manifest_for_reproducibility)
     brain_context_file = tmp_path / context_payload["brain_files"][0]
     original_brain_context = brain_context_file.read_text(encoding="utf-8")

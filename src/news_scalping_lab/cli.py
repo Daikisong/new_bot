@@ -20,6 +20,7 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
+from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
     final_synthesis_input_summary,
@@ -335,7 +336,7 @@ def _inspect_context_manifest(
     supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
     memory_sweep = _inspect_memory_sweep_artifacts(root, manifest)
     llm_traces = _inspect_llm_traces(root, manifest)
-    manifest_reproducibility = _inspect_manifest_reproducibility_fields(manifest)
+    manifest_reproducibility = _inspect_manifest_reproducibility_fields(root, manifest)
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
@@ -369,7 +370,11 @@ def _inspect_context_manifest(
     }
 
 
-def _inspect_manifest_reproducibility_fields(manifest: dict[str, Any]) -> dict[str, Any]:
+def _inspect_manifest_reproducibility_fields(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    episode_scope = inspect_manifest_episode_scope(root, manifest)
     status: dict[str, Any] = {
         "schema_version": manifest.get("schema_version"),
         "configured": manifest.get("schema_version") == "nslab.context_manifest.v1",
@@ -378,6 +383,8 @@ def _inspect_manifest_reproducibility_fields(manifest: dict[str, Any]) -> dict[s
         "truncations_valid": False,
         "web_queries_valid": False,
         "web_sources_valid": False,
+        "episode_scope_valid": bool(episode_scope.get("passed")),
+        "episode_scope": episode_scope,
         "errors": [],
     }
     if not status["configured"]:
@@ -396,6 +403,8 @@ def _inspect_manifest_reproducibility_fields(manifest: dict[str, Any]) -> dict[s
         status[f"{field}_valid"] = valid
         if not valid:
             status["errors"].append(f"{field}_missing_or_invalid")
+    if not status["episode_scope_valid"]:
+        status["errors"].append("episode_scope_invalid")
     return status
 
 
@@ -2505,6 +2514,7 @@ def _manifest_reproducibility_status_passed(status: dict[str, Any]) -> bool:
         and status.get("truncations_valid")
         and status.get("web_queries_valid")
         and status.get("web_sources_valid")
+        and status.get("episode_scope_valid")
         and not status.get("errors")
     )
 

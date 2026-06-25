@@ -132,6 +132,12 @@ def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
 def _manifest_reproducibility_fields() -> dict[str, object]:
     return {
         "schema_version": "nslab.context_manifest.v1",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "accepted_episode_count": 0,
+        "total_accepted_episode_count": 0,
+        "available_episode_count": 0,
+        "unavailable_episode_count": 0,
+        "unavailable_episode_ids": [],
         "model_config": {"provider": "mock"},
         "token_counts": {"current_news": 1},
         "truncations": [],
@@ -449,6 +455,9 @@ def test_provenance_audit_validates_context_manifest_reproducibility_fields(
         "truncations": ["ok", 1],
         "web_queries": "not-a-list",
         "web_sources": [1],
+        "total_accepted_episode_count": 1,
+        "available_episode_count": 1,
+        "unavailable_episode_ids": ["EP-missing"],
     }
     del bad_manifest["model_config"]
     write_json(manifest_path, bad_manifest)
@@ -462,6 +471,18 @@ def test_provenance_audit_validates_context_manifest_reproducibility_fields(
     assert "2030-01-10.json: context manifest truncations is invalid" in findings
     assert "2030-01-10.json: context manifest web_queries is invalid" in findings
     assert "2030-01-10.json: context manifest web_sources is invalid" in findings
+    assert (
+        "2030-01-10.json: context manifest episode scope "
+        "total_accepted_episode_count_mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest episode scope "
+        "available_episode_count_mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest episode scope "
+        "unavailable_episode_ids_mismatch"
+    ) in findings
 
 
 def test_provenance_audit_requires_current_manifest_artifact_contract(

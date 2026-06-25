@@ -1,5 +1,11 @@
 {
   "accepted_episode_count": 0,
+  "total_accepted_episode_count": 1,
+  "available_episode_count": 0,
+  "unavailable_episode_count": 1,
+  "unavailable_episode_ids": [
+    "EP-f56c790fe2fc"
+  ],
   "as_of": "2026-06-24T08:59:59+09:00",
   "blind_artifact_sha256": "3962660d3f4caa515ec31ef2e0089b244a98c4e18717df5fb37c970262d44d09",
   "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
