@@ -585,7 +585,7 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
             "prompt_version": "synthesis.final.v1",
             "required_inputs": ["wrong_input"],
             "payload_sha256": "bad-payload-hash",
-            "input_summary": {},
+            "input_summary": {"current_news_count": 99},
             "payload": {
                 "required_inputs": ["current_news"],
                 "current_news": ["pre-cutoff news"],
@@ -607,6 +607,7 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
                 tmp_path
             ).as_posix(),
             "final_synthesis_context_sha256": "0" * 64,
+            "final_synthesis_context_summary": {"current_news_count": 1},
         },
     )
 
@@ -625,6 +626,14 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
     )
     assert (
         "2030-01-10.json: final_synthesis_context required_inputs mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: final_synthesis_context input_summary mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest final_synthesis_context_summary mismatch"
         in findings
     )
 

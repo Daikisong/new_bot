@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
@@ -954,6 +955,17 @@ def _check_manifest_final_synthesis_context_artifact(
     elif payload.get("required_inputs") != required_inputs:
         findings.append(
             f"{prediction_path.name}: final_synthesis_context required_inputs mismatch"
+        )
+    expected_summary = final_synthesis_input_summary(context_payload)
+    if payload.get("input_summary") != expected_summary:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context input_summary mismatch"
+        )
+    manifest_summary = manifest.get("final_synthesis_context_summary")
+    if manifest_summary is not None and manifest_summary != payload.get("input_summary"):
+        findings.append(
+            f"{prediction_path.name}: context manifest final_synthesis_context_summary "
+            "mismatch"
         )
 
 

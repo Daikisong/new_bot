@@ -143,7 +143,8 @@ artifacts, their hashes, cache-hit count, swept episode coverage, and required
 pre-open report sections.
 Final synthesis inputs are also checkpointed as
 `final_synthesis_context.json`, including the exact payload hash and input
-summary that the synthesis prompt used.
+summary that the synthesis prompt used; provenance audit recomputes that summary
+from the stored payload and compares it with the manifest.
 
 ## Evaluation
 

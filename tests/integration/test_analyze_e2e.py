@@ -12,6 +12,7 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.context.sweep import SweepResult
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
@@ -510,6 +511,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert final_context["input_summary"]["current_news_count"] == 1
     assert final_context["input_summary"]["candidate_count"] >= 1
     assert final_context["input_summary"]["red_team_finding_count"] >= 1
+    assert final_context["input_summary"] == final_synthesis_input_summary(
+        final_context["payload"]
+    )
     assert (
         saved_manifest["final_synthesis_context_summary"]
         == final_context["input_summary"]
