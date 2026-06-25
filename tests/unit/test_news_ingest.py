@@ -48,3 +48,20 @@ def test_news_import_uses_detected_latest_trade_date_in_raw_filename(tmp_path) -
 
     assert batch.trade_date == date(2030, 1, 10)
     assert batch.path.name.startswith("2030-01-10_")
+
+
+def test_load_news_csv_accepts_cp949_korean_input(tmp_path) -> None:
+    csv_path = tmp_path / "korean_cp949.csv"
+    text = "\n".join(
+        [
+            "page,row,date,time,title,body",
+            '1,1,"2030-01-10","08:30:00","가상회사, 신규 시설 검토","한국어 본문이 깨지지 않아야 한다"',
+        ]
+    )
+    csv_path.write_bytes(text.encode("cp949"))
+
+    batch = load_news_csv(csv_path)
+
+    assert batch.trade_date == date(2030, 1, 10)
+    assert batch.items[0].title == "가상회사, 신규 시설 검토"
+    assert batch.items[0].body == "한국어 본문이 깨지지 않아야 한다"

@@ -11,6 +11,8 @@ from pathlib import Path
 from news_scalping_lab.contracts.models import NewsItem, Provenance
 from news_scalping_lab.utils import KST, combine_kst, file_sha256, stable_id
 
+NEWS_CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr")
+
 
 @dataclass(frozen=True)
 class NewsBatch:
@@ -41,9 +43,7 @@ def _detect_trade_date(rows: list[dict[str, str]]) -> date:
 
 def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
     resolved = path.resolve()
-    with resolved.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        rows = [dict(row) for row in reader]
+    rows = _read_news_csv_rows(resolved)
 
     detected_trade_date = trade_date or _detect_trade_date(rows)
     content_hash = file_sha256(resolved)
@@ -78,6 +78,23 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
     return NewsBatch(
         path=resolved, sha256=content_hash, trade_date=detected_trade_date, items=items
     )
+
+
+def _read_news_csv_rows(path: Path) -> list[dict[str, str]]:
+    last_error: UnicodeDecodeError | None = None
+    for encoding in NEWS_CSV_ENCODINGS:
+        try:
+            with path.open("r", encoding=encoding, newline="") as handle:
+                reader = csv.DictReader(handle)
+                return [dict(row) for row in reader]
+        except UnicodeDecodeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise ValueError(
+            "could not decode news CSV with supported encodings: "
+            + ", ".join(NEWS_CSV_ENCODINGS)
+        ) from last_error
+    return []
 
 
 def import_news_csv(path: Path, raw_news_dir: Path, trade_date: date | None = None) -> NewsBatch:
