@@ -502,6 +502,13 @@ def _validate_jsonl_contracts(
             raise BundleImportError(
                 f"candidate_web_checks.jsonl:{index} must be before cutoff"
             )
+        if bundle_cutoff_at is not None:
+            _validate_blind_published_at_before_cutoff(
+                "candidate_web_checks.jsonl",
+                index,
+                row,
+                bundle_cutoff_at,
+            )
     for index, row in enumerate(
         jsonl_blocks.get("excluded_candidate_web_checks.jsonl", []),
         start=1,
