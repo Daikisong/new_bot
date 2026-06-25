@@ -1346,6 +1346,7 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         created_at: str = "2030-01-11T00:00:00+09:00",
         research_version: str = "identity-test-v1",
         price_source_snapshot: dict[str, object] | None = None,
+        execution_protocol_version: object | None = None,
         blind_predictions: list[dict[str, object]] | None = None,
         outcome_labels: dict[str, object] | None = None,
         postmortem: dict[str, object] | None = None,
@@ -1354,6 +1355,10 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         lessons: list[dict[str, object]] | None = None,
         counterexamples: list[dict[str, object]] | None = None,
         misses: list[object] | None = None,
+        eligibility_matrix: object | None = None,
+        outcome_coverage_status: object | None = None,
+        blind_integrity: object | None = None,
+        blind_seal_receipt: object | None = None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "schema_version": schema_version,
@@ -1395,6 +1400,16 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
             ],
             "available_from": "2030-01-11T00:00:00+09:00",
         }
+        if execution_protocol_version is not None:
+            payload["execution_protocol_version"] = execution_protocol_version
+        if eligibility_matrix is not None:
+            payload["eligibility_matrix"] = eligibility_matrix
+        if outcome_coverage_status is not None:
+            payload["outcome_coverage_status"] = outcome_coverage_status
+        if blind_integrity is not None:
+            payload["blind_integrity"] = blind_integrity
+        if blind_seal_receipt is not None:
+            payload["blind_seal_receipt"] = blind_seal_receipt
         if postmortem is not None:
             payload["postmortem"] = postmortem
         return payload
@@ -1622,6 +1637,123 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
     valid_outcome_result = audit_provenance(tmp_path)
 
     assert valid_outcome_result["passed"], valid_outcome_result["findings"]
+
+    valid_eligibility_matrix = {
+        "forecast_evaluation_eligible": True,
+        "direct_supervised_cases_eligible": False,
+        "theme_supervised_cases_eligible": False,
+        "leader_pair_training_eligible": False,
+        "retrospective_memory_eligible": True,
+        "brain_eligible": True,
+        "reasons": {
+            "direct_supervised_cases_eligible": "candidate outcomes are unresolved",
+        },
+    }
+    valid_blind_integrity = {
+        "blind_context_mode": "NEWS_ONLY_STRICT",
+        "blind_web_search_call_count": 0,
+        "blind_price_repository_access_count": 0,
+        "blind_current_price_access_count": 0,
+        "no_d_outcome_exposed": True,
+    }
+    valid_blind_seal_receipt = {
+        "schema_version": "nslab.blind_seal_receipt.v1",
+        "phase": "BLIND_SEALED",
+        "blind_artifact_sha256": "a" * 64,
+        "no_d_outcome_exposed": True,
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            execution_protocol_version="nslab.exhaustive_news_blind_full_market.v5",
+            eligibility_matrix=valid_eligibility_matrix,
+            outcome_coverage_status="PREDICTED_CANDIDATES_ONLY",
+            blind_integrity=valid_blind_integrity,
+            blind_seal_receipt=valid_blind_seal_receipt,
+        ),
+    )
+    valid_execution_metadata_result = audit_provenance(tmp_path)
+
+    assert (
+        valid_execution_metadata_result["passed"]
+    ), valid_execution_metadata_result["findings"]
+
+    invalid_eligibility_matrix = {
+        "forecast_evaluation_eligible": "yes",
+        "reasons": {"": ""},
+    }
+    invalid_blind_integrity = {
+        "blind_context_mode": "",
+        "blind_web_search_call_count": -1,
+        "blind_price_repository_access_count": True,
+        "blind_current_price_access_count": 1,
+        "no_d_outcome_exposed": False,
+    }
+    invalid_blind_seal_receipt = {
+        "schema_version": "bad.version",
+        "phase": "POSTMORTEM",
+        "blind_artifact_sha256": "",
+        "no_d_outcome_exposed": False,
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            execution_protocol_version="",
+            eligibility_matrix=invalid_eligibility_matrix,
+            outcome_coverage_status="",
+            blind_integrity=invalid_blind_integrity,
+            blind_seal_receipt=invalid_blind_seal_receipt,
+        ),
+    )
+    execution_metadata_failed = audit_provenance(tmp_path)
+
+    assert not execution_metadata_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "execution_protocol_version invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "outcome_coverage_status invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode eligibility_matrix "
+        "forecast_evaluation_eligible invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode eligibility_matrix "
+        "reasons invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_integrity "
+        "blind_context_mode invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_integrity "
+        "blind_current_price_access_count must be zero"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_integrity "
+        "no_d_outcome_exposed must be true"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_seal_receipt "
+        "schema_version invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_seal_receipt "
+        "phase invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_seal_receipt "
+        "blind_artifact_sha256 invalid"
+    ) in execution_metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind_seal_receipt "
+        "no_d_outcome_exposed must be true"
+    ) in execution_metadata_failed["findings"]
 
     invalid_outcome_labels = {
         "": {},

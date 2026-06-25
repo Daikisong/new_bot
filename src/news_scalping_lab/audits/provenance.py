@@ -95,6 +95,19 @@ OUTCOME_STRING_SEQUENCE_FIELDS = (
     "intraday_fields_unavailable",
     "flags",
 )
+ELIGIBILITY_BOOLEAN_FIELDS = (
+    "forecast_evaluation_eligible",
+    "direct_supervised_cases_eligible",
+    "theme_supervised_cases_eligible",
+    "leader_pair_training_eligible",
+    "retrospective_memory_eligible",
+    "brain_eligible",
+)
+BLIND_INTEGRITY_COUNT_FIELDS = (
+    "blind_web_search_call_count",
+    "blind_price_repository_access_count",
+    "blind_current_price_access_count",
+)
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -408,6 +421,7 @@ def _check_research_episode_blind_decision_provenance(
                 findings,
                 kind="research episode postmortem",
             )
+    _check_research_episode_execution_metadata_shape(label, episode, findings)
     _check_research_episode_outcome_labels_shape(label, episode.get("outcome_labels"), findings)
     _check_string_list_field(
         f"{label}: research episode",
@@ -583,6 +597,133 @@ def _check_research_episode_outcome_labels_shape(
                 findings.append(f"{prefix} {field_name} invalid")
         for field_name in OUTCOME_STRING_SEQUENCE_FIELDS:
             _check_string_list_field(prefix, field_name, outcome.get(field_name), findings)
+
+
+def _check_research_episode_execution_metadata_shape(
+    label: str,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    execution_protocol_version = episode.get("execution_protocol_version")
+    if execution_protocol_version is not None and (
+        not isinstance(execution_protocol_version, str)
+        or not execution_protocol_version.strip()
+    ):
+        findings.append(
+            f"{label}: research episode execution_protocol_version invalid"
+        )
+
+    outcome_coverage_status = episode.get("outcome_coverage_status")
+    if outcome_coverage_status is not None and (
+        not isinstance(outcome_coverage_status, str)
+        or not outcome_coverage_status.strip()
+    ):
+        findings.append(f"{label}: research episode outcome_coverage_status invalid")
+
+    eligibility_matrix = episode.get("eligibility_matrix")
+    if eligibility_matrix is not None:
+        _check_research_episode_eligibility_matrix_shape(
+            label,
+            eligibility_matrix,
+            findings,
+        )
+
+    blind_integrity = episode.get("blind_integrity")
+    if blind_integrity is not None:
+        _check_research_episode_blind_integrity_shape(label, blind_integrity, findings)
+
+    blind_seal_receipt = episode.get("blind_seal_receipt")
+    if blind_seal_receipt is not None:
+        _check_research_episode_blind_seal_receipt_shape(
+            label,
+            blind_seal_receipt,
+            findings,
+        )
+
+
+def _check_research_episode_eligibility_matrix_shape(
+    label: str,
+    eligibility_matrix: Any,
+    findings: list[str],
+) -> None:
+    if not isinstance(eligibility_matrix, dict):
+        findings.append(f"{label}: research episode eligibility_matrix invalid")
+        return
+    for field_name in ELIGIBILITY_BOOLEAN_FIELDS:
+        if not isinstance(eligibility_matrix.get(field_name), bool):
+            findings.append(
+                f"{label}: research episode eligibility_matrix {field_name} invalid"
+            )
+    reasons = eligibility_matrix.get("reasons")
+    if not isinstance(reasons, dict) or not all(
+        isinstance(key, str)
+        and key
+        and isinstance(value, str)
+        and value
+        for key, value in reasons.items()
+    ):
+        findings.append(f"{label}: research episode eligibility_matrix reasons invalid")
+
+
+def _check_research_episode_blind_integrity_shape(
+    label: str,
+    blind_integrity: Any,
+    findings: list[str],
+) -> None:
+    if not isinstance(blind_integrity, dict):
+        findings.append(f"{label}: research episode blind_integrity invalid")
+        return
+    if not blind_integrity:
+        return
+    mode = blind_integrity.get("blind_context_mode")
+    if not isinstance(mode, str) or not mode.strip():
+        findings.append(
+            f"{label}: research episode blind_integrity blind_context_mode invalid"
+        )
+    for field_name in BLIND_INTEGRITY_COUNT_FIELDS:
+        value = blind_integrity.get(field_name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            findings.append(
+                f"{label}: research episode blind_integrity {field_name} invalid"
+            )
+    if blind_integrity.get("blind_current_price_access_count") != 0:
+        findings.append(
+            f"{label}: research episode blind_integrity blind_current_price_access_count "
+            "must be zero"
+        )
+    if blind_integrity.get("no_d_outcome_exposed") is not True:
+        findings.append(
+            f"{label}: research episode blind_integrity no_d_outcome_exposed "
+            "must be true"
+        )
+
+
+def _check_research_episode_blind_seal_receipt_shape(
+    label: str,
+    blind_seal_receipt: Any,
+    findings: list[str],
+) -> None:
+    if not isinstance(blind_seal_receipt, dict):
+        findings.append(f"{label}: research episode blind_seal_receipt invalid")
+        return
+    if not blind_seal_receipt:
+        return
+    if blind_seal_receipt.get("schema_version") != "nslab.blind_seal_receipt.v1":
+        findings.append(
+            f"{label}: research episode blind_seal_receipt schema_version invalid"
+        )
+    if blind_seal_receipt.get("phase") != "BLIND_SEALED":
+        findings.append(f"{label}: research episode blind_seal_receipt phase invalid")
+    blind_hash = blind_seal_receipt.get("blind_artifact_sha256")
+    if not isinstance(blind_hash, str) or not blind_hash.strip():
+        findings.append(
+            f"{label}: research episode blind_seal_receipt blind_artifact_sha256 invalid"
+        )
+    if blind_seal_receipt.get("no_d_outcome_exposed") is not True:
+        findings.append(
+            f"{label}: research episode blind_seal_receipt no_d_outcome_exposed "
+            "must be true"
+        )
 
 
 def _check_research_episode_blind_prediction_shape(
