@@ -671,6 +671,8 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert passed["coverage_complete"] is True
     assert passed["vector_index_current"] is True
     assert passed["warehouse_synced"] is True
+    assert passed["warehouse_projection_synced"] is True
+    assert passed["warehouse_count_mismatches"] == {}
     assert passed["warehouse_research_episode_count"] == 1
     assert passed["warehouse_missing_files"] == []
     assert passed["warehouse_unreadable_files"] == []
@@ -686,6 +688,14 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
         "not a parquet file",
         encoding="utf-8",
     )
+    (tmp_path / "predictions" / "2030-01-10.json").write_text(
+        json.dumps({"prediction_id": "PRED-unsynced"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (tmp_path / "reports" / "2030-01-10_postmortem.json").write_text(
+        json.dumps({"trade_date": "2030-01-10"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     failed = audit_coverage(tmp_path)
 
@@ -693,6 +703,11 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert failed["coverage_complete"] is True
     assert failed["vector_index_current"] is False
     assert failed["warehouse_synced"] is False
+    assert failed["warehouse_projection_synced"] is False
+    assert failed["warehouse_count_mismatches"] == {
+        "daily_outcomes.parquet": {"actual": 0, "expected": 1},
+        "predictions.parquet": {"actual": 0, "expected": 1},
+    }
     assert failed["warehouse_required_files_present"] is False
     assert failed["warehouse_missing_files"] == ["events.parquet"]
     assert failed["warehouse_unreadable_files"] == ["event_sources.parquet"]
@@ -704,6 +719,14 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert "warehouse: missing required parquet file: events.parquet" in failed["findings"]
     assert (
         "warehouse: unreadable required parquet file: event_sources.parquet"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: predictions.parquet count 0 != source predictions count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: daily_outcomes.parquet count 0 != source postmortem reports count 1"
         in failed["findings"]
     )
 
