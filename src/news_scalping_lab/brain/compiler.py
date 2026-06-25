@@ -18,7 +18,14 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, file_sha256, stable_id, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    stable_id,
+    write_json,
+)
 from news_scalping_lab.warehouse import WarehouseStore
 
 BRAIN_FILES = [
@@ -115,8 +122,6 @@ class BrainCompiler:
         return manifest
 
     def update(self, *, episode_id: str) -> BrainManifest:
-        # The safe incremental implementation is a full replay until drift-aware
-        # merging is calibrated. The command surface stays stable.
         episode = self._resolve_update_episode(episode_id)
         accepted_ids = {episode.episode_id for episode in self.store.list_accepted()}
         if episode.episode_id not in accepted_ids:
@@ -127,7 +132,85 @@ class BrainCompiler:
                     "brain update requires an accepted episode; run "
                     f"`nslab research accept {episode.episode_id}` first"
                 )
-        return self.rebuild(mode="full")
+        episodes = self.store.list_accepted()
+        source_hashes = self.store.accepted_hashes()
+        try:
+            current_manifest = self._read_current_manifest()
+        except ValueError:
+            current_manifest = None
+        if current_manifest is None or not _can_incrementally_update(
+            current_manifest=current_manifest,
+            episode_id=episode.episode_id,
+            episodes=episodes,
+            source_hashes=source_hashes,
+        ):
+            return self.rebuild(mode="full")
+
+        covered_ids = [accepted_episode.episode_id for accepted_episode in episodes]
+        if (
+            current_manifest.covered_episode_ids == covered_ids
+            and current_manifest.source_hashes == source_hashes
+        ):
+            LocalRetrievalStore(self.root).rebuild_index()
+            WarehouseStore(self.root).rebuild_all()
+            return current_manifest
+
+        previous_version = current_manifest.brain_version
+        created_at = _deterministic_rebuild_timestamp(episodes)
+        version = _deterministic_brain_version(
+            covered_episode_ids=covered_ids,
+            source_hashes=source_hashes,
+        )
+        try:
+            claims = _sort_claims_by_episode_order(
+                _dedupe_claims(
+                    [
+                        *self._read_current_claims(),
+                        *self._claims_from_episode(
+                            episode=episode,
+                            last_updated_at=_episode_content_timestamp(episode),
+                        ),
+                    ]
+                ),
+                covered_ids,
+            )
+            mechanisms = _sort_mechanisms_by_episode_order(
+                _dedupe_mechanisms(
+                    [
+                        *self._read_current_mechanisms(),
+                        *self._mechanisms_from_episode(
+                            episode=episode,
+                            source_hash=source_hashes.get(episode.episode_id),
+                        ),
+                    ]
+                ),
+                covered_ids,
+            )
+        except ValueError:
+            return self.rebuild(mode="full")
+        manifest = BrainManifest(
+            brain_version=version,
+            created_at=created_at,
+            accepted_episode_count=len(episodes),
+            covered_episode_count=len(covered_ids),
+            covered_episode_ids=covered_ids,
+            claim_ids=[claim.claim_id for claim in claims],
+            source_hashes=source_hashes,
+            coverage_complete=len(covered_ids) == len(episodes),
+        )
+        self._write_current(manifest, claims)
+        self._write_mechanism_memory(manifest, mechanisms)
+        self._write_shard_brains(manifest, episodes)
+        snapshot_dir = self.snapshots_dir / version
+        if snapshot_dir.exists():
+            shutil.rmtree(snapshot_dir)
+        shutil.copytree(self.current_dir, snapshot_dir)
+        (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
+        if previous_version != version:
+            write_rebuild_diff(self.root, previous_version, version)
+        LocalRetrievalStore(self.root).rebuild_index()
+        WarehouseStore(self.root).rebuild_all()
+        return manifest
 
     def _resolve_update_episode(self, identifier: str) -> ResearchEpisode:
         try:
@@ -321,6 +404,18 @@ class BrainCompiler:
             shutil.rmtree(versioned_dir)
         shutil.copytree(self.current_shard_brains_dir, versioned_dir)
 
+    def _read_current_manifest(self) -> BrainManifest | None:
+        path = self.current_dir / "brain_manifest.json"
+        if not path.exists():
+            return None
+        return BrainManifest.model_validate(read_json(path))
+
+    def _read_current_claims(self) -> list[MemoryClaim]:
+        return _read_claim_jsonl(self.current_dir / "claims.jsonl")
+
+    def _read_current_mechanisms(self) -> list[MechanismMemory]:
+        return _read_mechanism_jsonl(self.current_mechanisms_dir / "mechanisms.jsonl")
+
     def _shard_brain_body(
         self,
         *,
@@ -439,6 +534,89 @@ def _episode_shards(episodes: list[ResearchEpisode]) -> list[list[ResearchEpisod
         episodes[index : index + SHARD_BRAIN_EPISODE_COUNT]
         for index in range(0, len(episodes), SHARD_BRAIN_EPISODE_COUNT)
     ]
+
+
+def _can_incrementally_update(
+    *,
+    current_manifest: BrainManifest,
+    episode_id: str,
+    episodes: list[ResearchEpisode],
+    source_hashes: dict[str, str],
+) -> bool:
+    if not current_manifest.coverage_complete:
+        return False
+    covered_ids = [episode.episode_id for episode in episodes]
+    if (
+        current_manifest.covered_episode_ids == covered_ids
+        and current_manifest.source_hashes == source_hashes
+    ):
+        return True
+    previous_ids = [current_id for current_id in covered_ids if current_id != episode_id]
+    if current_manifest.covered_episode_ids != previous_ids:
+        return False
+    previous_hashes = {
+        previous_id: source_hashes[previous_id]
+        for previous_id in previous_ids
+        if previous_id in source_hashes
+    }
+    return len(previous_hashes) == len(previous_ids) and current_manifest.source_hashes == previous_hashes
+
+
+def _read_claim_jsonl(path: Path) -> list[MemoryClaim]:
+    if not path.exists():
+        raise ValueError(f"missing current claims file: {path}")
+    claims: list[MemoryClaim] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            claims.append(MemoryClaim.model_validate_json(line))
+    return claims
+
+
+def _read_mechanism_jsonl(path: Path) -> list[MechanismMemory]:
+    if not path.exists():
+        raise ValueError(f"missing current mechanisms file: {path}")
+    mechanisms: list[MechanismMemory] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            mechanisms.append(MechanismMemory.model_validate_json(line))
+    return mechanisms
+
+
+def _sort_claims_by_episode_order(
+    claims: list[MemoryClaim],
+    covered_episode_ids: list[str],
+) -> list[MemoryClaim]:
+    order = _episode_order(covered_episode_ids)
+    return sorted(claims, key=lambda claim: (_claim_episode_order(claim, order), claim.claim_id))
+
+
+def _sort_mechanisms_by_episode_order(
+    mechanisms: list[MechanismMemory],
+    covered_episode_ids: list[str],
+) -> list[MechanismMemory]:
+    order = _episode_order(covered_episode_ids)
+    return sorted(
+        mechanisms,
+        key=lambda mechanism: (_mechanism_episode_order(mechanism, order), mechanism.mechanism_id),
+    )
+
+
+def _episode_order(covered_episode_ids: list[str]) -> dict[str, int]:
+    return {episode_id: index for index, episode_id in enumerate(covered_episode_ids)}
+
+
+def _claim_episode_order(claim: MemoryClaim, order: dict[str, int]) -> int:
+    episode_ids = [
+        *claim.support_episode_ids,
+        *claim.contradiction_episode_ids,
+        *claim.near_miss_episode_ids,
+    ]
+    return min((order[episode_id] for episode_id in episode_ids if episode_id in order), default=len(order))
+
+
+def _mechanism_episode_order(mechanism: MechanismMemory, order: dict[str, int]) -> int:
+    episode_ids = [*mechanism.successful_cases, *mechanism.failed_cases]
+    return min((order[episode_id] for episode_id in episode_ids if episode_id in order), default=len(order))
 
 
 def _claim_with_episode_defaults(

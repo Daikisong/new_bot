@@ -59,6 +59,11 @@ nslab brain audit
 updates the brain immediately. Use `--no-accept` when you want to stage episodes
 for manual validation first.
 
+`brain update --episode` performs a safe incremental merge when the current brain
+already covers the prior accepted set exactly. If the current manifest is missing
+or drift is detected, it falls back to `brain rebuild --mode full`; full rebuilds
+remain reproducible from accepted source episodes.
+
 `brain rebuild` also refreshes `memory/vector_index/manifest.json` and
 `memory/vector_index/episodes.jsonl`. The local index is a deterministic
 embedding-style projection of accepted episodes; it supports retrieval but is never

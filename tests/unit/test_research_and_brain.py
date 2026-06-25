@@ -20,6 +20,7 @@ from news_scalping_lab.cli import brain_audit as cli_brain_audit
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
+    BrainManifest,
     MechanismMemory,
     MemoryClaim,
     Provenance,
@@ -683,6 +684,65 @@ def test_brain_update_requires_accepted_episode(tmp_path) -> None:
 
     assert manifest.accepted_episode_count == 1
     assert episode.episode_id in manifest.covered_episode_ids
+
+
+def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    compiler = BrainCompiler(tmp_path)
+
+    source_a = tmp_path / "research_20300110.md"
+    source_a.write_text("First incremental update note for 2030-01-10.", encoding="utf-8")
+    episode_a = ResearchImporter(tmp_path).import_path(source_a, mode="semantic")
+    store.accept(episode_a.episode_id)
+    first_manifest = compiler.rebuild(mode="full")
+
+    source_b = tmp_path / "research_20300111.md"
+    source_b.write_text("Second incremental update note for 2030-01-11.", encoding="utf-8")
+    episode_b = ResearchImporter(tmp_path).import_path(source_b, mode="semantic")
+    store.accept(episode_b.episode_id)
+
+    def fail_rebuild(self: BrainCompiler, *, mode: str = "full") -> BrainManifest:
+        raise AssertionError("brain update should not fall back to full rebuild")
+
+    monkeypatch.setattr(BrainCompiler, "rebuild", fail_rebuild)
+
+    updated = compiler.update(episode_id=episode_b.episode_id)
+
+    assert updated.brain_version != first_manifest.brain_version
+    assert updated.accepted_episode_count == 2
+    assert updated.covered_episode_ids == [
+        episode_a.episode_id,
+        episode_b.episode_id,
+    ]
+    assert updated.coverage_complete is True
+    assert (tmp_path / "brain" / "HEAD").read_text(encoding="utf-8").strip() == updated.brain_version
+    assert (tmp_path / "brain" / "snapshots" / updated.brain_version).exists()
+    assert (tmp_path / "memory" / "mechanisms" / updated.brain_version).exists()
+    assert (tmp_path / "memory" / "shard_brains" / updated.brain_version).exists()
+    claims_payload = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(
+        encoding="utf-8"
+    )
+    mechanisms_payload = (
+        tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    ).read_text(encoding="utf-8")
+    shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
+    coverage = audit_coverage(tmp_path)
+
+    assert episode_b.episode_id in claims_payload
+    assert episode_b.episode_id in mechanisms_payload
+    assert shard_manifest["covered_episode_ids"] == [
+        episode_a.episode_id,
+        episode_b.episode_id,
+    ]
+    assert coverage["passed"] is True
+    assert coverage["vector_index_current"] is True
+    assert coverage["warehouse_synced"] is True
+    assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 2
 
 
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:
