@@ -1845,7 +1845,117 @@ def _check_manifest_output_artifacts(
 ) -> None:
     _check_manifest_prediction_artifact(root, prediction_path, manifest, findings)
     _check_manifest_report_artifact(root, prediction_path, manifest, findings)
+    _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="row_disposition_artifact",
+        sha_field="row_disposition_sha256",
+        count_field=None,
+        expected_schema="nslab.row_disposition.v1",
+        label="row_disposition",
+        findings=findings,
+    )
+    _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="source_ledger_artifact",
+        sha_field="source_ledger_sha256",
+        count_field="source_ledger_entry_count",
+        expected_schema="nslab.source_ledger.v1",
+        label="source_ledger",
+        findings=findings,
+    )
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
+
+
+def _check_manifest_jsonl_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    *,
+    artifact_field: str,
+    sha_field: str,
+    count_field: str | None,
+    expected_schema: str,
+    label: str,
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get(artifact_field)
+    expected_hash = manifest.get(sha_field)
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label=artifact_field,
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest missing {sha_field}")
+    elif sha256_text(text) != expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest {sha_field} mismatch")
+
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{line_number} invalid JSON"
+            )
+            continue
+        if not isinstance(row, dict):
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{line_number} "
+                "is not an object"
+            )
+            continue
+        rows.append(row)
+        if row.get("schema_version") != expected_schema:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{line_number} "
+                "schema_version mismatch"
+            )
+        run_id = manifest.get("run_id")
+        if isinstance(run_id, str) and row.get("run_id") != run_id:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{line_number} "
+                "run_id mismatch"
+            )
+
+    if count_field is not None:
+        expected_count = manifest.get(count_field)
+        if isinstance(expected_count, int) and not isinstance(expected_count, bool):
+            if expected_count != len(rows):
+                findings.append(
+                    f"{prediction_path.name}: context manifest {label} count mismatch"
+                )
+        elif expected_count is not None:
+            findings.append(
+                f"{prediction_path.name}: context manifest {count_field} invalid"
+            )
+
+    if label == "row_disposition":
+        row_summary = manifest.get("row_disposition_summary")
+        if isinstance(row_summary, dict):
+            total_rows = row_summary.get("total_rows")
+            if (
+                isinstance(total_rows, int)
+                and not isinstance(total_rows, bool)
+                and total_rows != len(rows)
+            ):
+                findings.append(
+                    f"{prediction_path.name}: context manifest row_disposition "
+                    "count mismatch"
+                )
 
 
 def _check_manifest_prediction_artifact(

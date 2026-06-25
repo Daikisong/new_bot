@@ -752,6 +752,145 @@ def test_provenance_audit_validates_manifest_output_artifacts(tmp_path: Path) ->
     assert "2030-01-10.json: context manifest report_artifact missing run id" in findings
 
 
+def test_provenance_audit_validates_manifest_supporting_jsonl_artifacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    row_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "row_disposition"
+        / "RUN-linked"
+        / "row_disposition.jsonl"
+    )
+    source_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "source_ledger"
+        / "RUN-linked"
+        / "source_ledger.jsonl"
+    )
+    row_path.parent.mkdir(parents=True)
+    source_path.parent.mkdir(parents=True)
+    row_text = (
+        canonical_json(
+            {
+                "schema_version": "nslab.row_disposition.v1",
+                "run_id": "RUN-linked",
+                "row_number": 1,
+            }
+        )
+        + "\n"
+    )
+    source_text = (
+        canonical_json(
+            {
+                "schema_version": "nslab.source_ledger.v1",
+                "run_id": "RUN-linked",
+                "source_id": "SRC-news",
+                "source_type": "news_csv_row",
+            }
+        )
+        + "\n"
+    )
+    row_path.write_text(row_text, encoding="utf-8")
+    source_path.write_text(source_text, encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "row_disposition_artifact": row_path.relative_to(tmp_path).as_posix(),
+            "row_disposition_sha256": sha256_text(row_text),
+            "row_disposition_summary": {"total_rows": 1},
+            "source_ledger_artifact": source_path.relative_to(tmp_path).as_posix(),
+            "source_ledger_sha256": sha256_text(source_text),
+            "source_ledger_entry_count": 1,
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_row_text = (
+        canonical_json(
+            {
+                "schema_version": "bad.row",
+                "run_id": "RUN-other",
+                "row_number": 1,
+            }
+        )
+        + "\n"
+        + "not-json\n"
+    )
+    bad_source_text = (
+        canonical_json(
+            {
+                "schema_version": "bad.source",
+                "run_id": "RUN-other",
+                "source_id": "SRC-news",
+            }
+        )
+        + "\n"
+    )
+    row_path.write_text(bad_row_text, encoding="utf-8")
+    source_path.write_text(bad_source_text, encoding="utf-8")
+    manifest = read_json(manifest_path)
+    manifest["row_disposition_sha256"] = "0" * 64
+    manifest["row_disposition_summary"] = {"total_rows": 2}
+    manifest["source_ledger_sha256"] = "1" * 64
+    manifest["source_ledger_entry_count"] = 2
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert "2030-01-10.json: context manifest row_disposition_sha256 mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest row_disposition:1 schema_version mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest row_disposition:1 run_id mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest row_disposition:2 invalid JSON"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest row_disposition count mismatch" in findings
+    assert "2030-01-10.json: context manifest source_ledger_sha256 mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest source_ledger:1 schema_version mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest source_ledger:1 run_id mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest source_ledger count mismatch" in findings
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
