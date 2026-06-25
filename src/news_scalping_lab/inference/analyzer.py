@@ -109,7 +109,16 @@ class DailyAnalyzer:
         full_batch = load_news_csv(news_csv, trade_date=trade_date)
         batch = full_batch.before_or_at(cutoff_at)
         run_seed = sha256_text(
-            f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}|web={web_search}"
+            canonical_json(
+                {
+                    "analysis_mode": mode,
+                    "cutoff_at": cutoff_at.isoformat(),
+                    "llm_model_config": self.llm_model_config,
+                    "news_sha256": batch.sha256,
+                    "trade_date": trade_date.isoformat(),
+                    "web_search": web_search,
+                }
+            )
         )
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)

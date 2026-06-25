@@ -526,6 +526,44 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_run_id_changes_when_llm_model_config_changes(tmp_path) -> None:
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","ProviderCo, catalyst","Run ids include model config."\n',
+        encoding="utf-8",
+    )
+    settings_a = Settings(project_root=tmp_path)
+    settings_a.llm_provider = "mock-a"
+    ensure_project_dirs(settings_a)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    first = await DailyAnalyzer(settings_a, llm=RecordingBlindLLM()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    settings_b = Settings(project_root=tmp_path)
+    settings_b.llm_provider = "mock-b"
+    second = await DailyAnalyzer(settings_b, llm=RecordingBlindLLM()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    assert first.run_id != second.run_id
+    first_manifest = read_json(tmp_path / "runs" / "manifests" / f"{first.run_id}.json")
+    second_manifest = read_json(tmp_path / "runs" / "manifests" / f"{second.run_id}.json")
+    assert first_manifest["model_config"]["configured_provider"] == "mock-a"
+    assert second_manifest["model_config"]["configured_provider"] == "mock-b"
+
+
+@pytest.mark.asyncio
 async def test_final_synthesis_receives_counterexample_context(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
