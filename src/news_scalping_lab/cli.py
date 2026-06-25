@@ -1199,6 +1199,11 @@ def _inspect_final_synthesis_context_artifact(
             "web_research_sources_verified": None,
             "web_research_excluded_ids_verified": None,
             "web_research_verified": None,
+            "candidate_verification_context_verified": None,
+            "candidate_web_checks_context_verified": None,
+            "news_novelty_review_context_verified": None,
+            "candidate_expansion_context_verified": None,
+            "red_team_output_context_verified": None,
         }
     )
     if not (
@@ -1304,6 +1309,18 @@ def _inspect_final_synthesis_context_artifact(
         status,
     )
     _inspect_final_synthesis_web_research_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
+    _inspect_final_synthesis_candidate_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
+    _inspect_final_synthesis_review_context(
         root,
         manifest,
         context_payload,
@@ -1443,6 +1460,146 @@ def _inspect_final_synthesis_web_research_context(
     )
 
 
+def _inspect_final_synthesis_candidate_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    _check_final_synthesis_object_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+        artifact_field="candidate_verification_artifact",
+        payload_key="candidate_verification",
+        status_key="candidate_verification_context_verified",
+        label="candidate_verification",
+        missing_expected={},
+    )
+
+    candidate_web_rows = (
+        []
+        if not isinstance(manifest.get("candidate_web_check_artifact"), str)
+        and not _string_list(manifest.get("candidate_web_source_ids"))
+        else _read_candidate_web_check_context_rows(
+            root,
+            manifest.get("candidate_web_check_artifact"),
+            status,
+        )
+    )
+    status["candidate_web_checks_context_verified"] = (
+        context_payload.get("candidate_web_checks") == candidate_web_rows
+    )
+    if not status["candidate_web_checks_context_verified"]:
+        status["errors"].append("final_synthesis_context_candidate_web_checks_mismatch")
+
+
+def _inspect_final_synthesis_review_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    _check_final_synthesis_object_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+        artifact_field="news_novelty_review_artifact",
+        payload_key="news_novelty_review",
+        status_key="news_novelty_review_context_verified",
+        label="news_novelty_review",
+    )
+    _check_final_synthesis_object_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+        artifact_field="candidate_expansion_artifact",
+        payload_key="open_world_candidate_expansion",
+        status_key="candidate_expansion_context_verified",
+        label="candidate_expansion",
+    )
+
+    red_team_payload = _read_final_synthesis_red_team_context_object(
+        root,
+        manifest,
+        status,
+    )
+    status["red_team_output_context_verified"] = (
+        context_payload.get("red_team_output") == red_team_payload
+    )
+    if not status["red_team_output_context_verified"]:
+        status["errors"].append("final_synthesis_context_red_team_output_mismatch")
+
+
+def _check_final_synthesis_object_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+    *,
+    artifact_field: str,
+    payload_key: str,
+    status_key: str,
+    label: str,
+    missing_expected: dict[str, Any] | None = None,
+) -> None:
+    artifact_ref = manifest.get(artifact_field)
+    expected = (
+        missing_expected
+        if not isinstance(artifact_ref, str) and missing_expected is not None
+        else _read_final_synthesis_json_context_object(
+            root,
+            artifact_ref,
+            status,
+            label=label,
+        )
+    )
+    status[status_key] = context_payload.get(payload_key) == expected
+    if not status[status_key]:
+        status["errors"].append(f"final_synthesis_context_{label}_mismatch")
+
+
+def _read_final_synthesis_json_context_object(
+    root: Path,
+    artifact_ref: object,
+    status: dict[str, Any],
+    *,
+    label: str,
+) -> dict[str, Any]:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return {}
+    payload = _read_artifact_object(root, artifact_ref, status)
+    if payload is None:
+        status["errors"].append(f"final_synthesis_context_{label}_unavailable")
+        return {}
+    return payload
+
+
+def _read_final_synthesis_red_team_context_object(
+    root: Path,
+    manifest: dict[str, Any],
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    artifact_refs = manifest.get("red_team_artifacts")
+    if not (
+        isinstance(artifact_refs, list)
+        and len(artifact_refs) == 1
+        and isinstance(artifact_refs[0], str)
+        and artifact_refs[0]
+    ):
+        status["errors"].append("final_synthesis_context_red_team_artifact_unavailable")
+        return {}
+    return _read_final_synthesis_json_context_object(
+        root,
+        artifact_refs[0],
+        status,
+        label="red_team_output",
+    )
+
+
 def _read_final_synthesis_jsonl_context_rows(
     root: Path,
     artifact_ref: object,
@@ -1455,6 +1612,52 @@ def _read_final_synthesis_jsonl_context_rows(
         status["errors"].append(f"final_synthesis_context_{label}_rows_unavailable")
         return []
     return rows
+
+
+def _read_candidate_web_check_context_rows(
+    root: Path,
+    artifact_ref: object,
+    status: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return []
+    rows = _read_artifact_jsonl_rows(
+        root,
+        artifact_ref,
+        status,
+        label="candidate_web_check",
+    )
+    if rows is None:
+        status["errors"].append(
+            "final_synthesis_context_candidate_web_check_rows_unavailable"
+        )
+        return []
+    return [_candidate_web_check_context_row(row) for row in rows]
+
+
+def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_rank": row.get("candidate_rank"),
+        "candidate_ticker": row.get("candidate_ticker"),
+        "candidate_company_name": row.get("candidate_company_name"),
+        "candidate_path_type": row.get("candidate_path_type"),
+        "candidate_subject_type": row.get("candidate_subject_type"),
+        "candidate_expansion_path": row.get("candidate_expansion_path"),
+        "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
+        "candidate_investigation_questions": row.get(
+            "candidate_investigation_questions"
+        ),
+        "verification_focus": row.get("verification_focus"),
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
 
 
 def _read_web_source_context_rows(
@@ -2886,6 +3089,11 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("event_clusters_verified")
         and status.get("semantic_retrieval_context_verified")
         and status.get("web_research_verified")
+        and status.get("candidate_verification_context_verified")
+        and status.get("candidate_web_checks_context_verified")
+        and status.get("news_novelty_review_context_verified")
+        and status.get("candidate_expansion_context_verified")
+        and status.get("red_team_output_context_verified")
     )
 
 

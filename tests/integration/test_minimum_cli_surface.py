@@ -264,6 +264,32 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is True
     )
     assert supporting["final_synthesis_context"]["web_research_verified"] is True
+    assert (
+        supporting["final_synthesis_context"][
+            "candidate_verification_context_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
+            "candidate_web_checks_context_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
+            "news_novelty_review_context_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["candidate_expansion_context_verified"]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["red_team_output_context_verified"]
+        is True
+    )
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["schema_version_verified"] is True
@@ -935,6 +961,95 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert "final_synthesis_context_web_research_sources_mismatch" in (
         tampered_web_status["errors"]
     )
+    write_json(final_context_file, original_final_context)
+    write_json(manifest_file, original_manifest)
+    original_candidate_web_checks = original_final_context["payload"][
+        "candidate_web_checks"
+    ]
+    assert original_candidate_web_checks
+    tampered_candidate_web_checks = [
+        (
+            {**row, "title": f"{row['title']} tampered"}
+            if index == 0
+            else row
+        )
+        for index, row in enumerate(original_candidate_web_checks)
+    ]
+    tampered_embedded_payload = {
+        **original_final_context["payload"],
+        "candidate_verification": {
+            **original_final_context["payload"]["candidate_verification"],
+            "notes": ["tampered candidate verification"],
+        },
+        "candidate_web_checks": tampered_candidate_web_checks,
+        "news_novelty_review": {
+            **original_final_context["payload"]["news_novelty_review"],
+            "notes": ["tampered novelty review"],
+        },
+        "open_world_candidate_expansion": {
+            **original_final_context["payload"]["open_world_candidate_expansion"],
+            "notes": ["tampered candidate expansion"],
+        },
+        "red_team_output": {
+            **original_final_context["payload"]["red_team_output"],
+            "notes": ["tampered red team"],
+        },
+    }
+    tampered_embedded_summary = final_synthesis_input_summary(
+        tampered_embedded_payload
+    )
+    tampered_embedded_context = {
+        **original_final_context,
+        "payload_sha256": sha256_text(canonical_json(tampered_embedded_payload)),
+        "input_summary": tampered_embedded_summary,
+        "payload": tampered_embedded_payload,
+    }
+    write_json(final_context_file, tampered_embedded_context)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest,
+            "final_synthesis_context_sha256": sha256_text(
+                final_context_file.read_text(encoding="utf-8")
+            ),
+            "final_synthesis_context_summary": tampered_embedded_summary,
+        },
+    )
+    tampered_embedded_context_result = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered final synthesis embedded artifacts",
+        tampered_embedded_context_result,
+    )
+    tampered_embedded_inspection = json.loads(
+        tampered_embedded_context_result.output
+    )["inspection"]
+    assert tampered_embedded_inspection["reproducibility_checks_passed"] is False
+    tampered_embedded_status = tampered_embedded_inspection["supporting_artifacts"][
+        "final_synthesis_context"
+    ]
+    assert tampered_embedded_status["hash_verified"] is True
+    assert tampered_embedded_status["payload_hash_verified"] is True
+    assert tampered_embedded_status["input_summary_verified"] is True
+    assert tampered_embedded_status["manifest_summary_verified"] is True
+    assert tampered_embedded_status["manifest_counts_verified"] is True
+    assert (
+        tampered_embedded_status["candidate_verification_context_verified"]
+        is False
+    )
+    assert tampered_embedded_status["candidate_web_checks_context_verified"] is False
+    assert tampered_embedded_status["news_novelty_review_context_verified"] is False
+    assert tampered_embedded_status["candidate_expansion_context_verified"] is False
+    assert tampered_embedded_status["red_team_output_context_verified"] is False
+    for error in (
+        "final_synthesis_context_candidate_verification_mismatch",
+        "final_synthesis_context_candidate_web_checks_mismatch",
+        "final_synthesis_context_news_novelty_review_mismatch",
+        "final_synthesis_context_candidate_expansion_mismatch",
+        "final_synthesis_context_red_team_output_mismatch",
+    ):
+        assert error in tampered_embedded_status["errors"]
     write_json(final_context_file, original_final_context)
     write_json(manifest_file, original_manifest)
     tampered_final_context = {
