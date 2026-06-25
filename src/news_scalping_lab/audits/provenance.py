@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
+from news_scalping_lab.research_import.semantic import SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
 from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
 from news_scalping_lab.utils import (
     KST,
@@ -554,6 +555,16 @@ def _check_semantic_output_sources(
         for entry in _iter_provenance_entries(episode)
         if isinstance(entry.get("source_id"), str)
     }
+    missing_required_fields = [
+        field_name
+        for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
+        if field_name not in output_field_source_ids
+    ]
+    if missing_required_fields:
+        findings.append(
+            f"{label}: semantic_import output_field_source_ids missing required fields: "
+            f"{', '.join(missing_required_fields)}"
+        )
     for field_name, source_ids in output_field_source_ids.items():
         if not isinstance(field_name, str) or not field_name:
             findings.append(f"{label}: semantic_import output field name invalid")

@@ -17,6 +17,7 @@ from news_scalping_lab.research_import.bundle import (
 )
 from news_scalping_lab.research_import.semantic import (
     SEMANTIC_IMPORT_PROMPT_VERSION,
+    SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
     SemanticResearchDraft,
     build_semantic_import_prompt,
 )
@@ -129,9 +130,8 @@ class ResearchImporter:
                 "source_segments_sha256": sha256_text(canonical_json(source_segments)),
                 "source_segments": source_segments,
                 "output_field_source_ids": {
-                    "blind_analysis.summary": [provenance.source_id],
-                    "blind_analysis.open_world_mechanisms": [provenance.source_id],
-                    "blind_analysis.initial_uncertainties": [provenance.source_id],
+                    field_name: [provenance.source_id]
+                    for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
                 },
             }
         }

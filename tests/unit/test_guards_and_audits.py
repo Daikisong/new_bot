@@ -19,6 +19,7 @@ from news_scalping_lab.prices.base import (
     PriceRecord,
 )
 from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
+from news_scalping_lab.research_import.semantic import SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -1258,53 +1259,67 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
         "uri": raw_path.as_posix(),
         "content_sha256": source_hash,
     }
-    episode_path = tmp_path / "research" / "accepted" / "EP-semantic.json"
-    write_json(
-        episode_path,
-        {
-            "episode_id": "EP-semantic",
-            "trade_date": "2030-01-10",
-            "cutoff_at": "2030-01-10T08:59:59+09:00",
-            "created_at": "2030-01-10T09:00:00+09:00",
-            "research_version": "semantic-test",
-            "input_news_files": [],
-            "input_news_hashes": [],
-            "input_audit": {
-                "semantic_import": {
-                    "prompt_version": "semantic_import.v1",
-                    "source_path": raw_path.as_posix(),
-                    "source_sha256": source_hash,
-                    "source_text_sha256": sha256_text(raw_text),
-                    "source_segment_count": len(source_segments),
-                    "source_segments_sha256": sha256_text(canonical_json(source_segments)),
-                    "source_segments": source_segments,
-                    "output_field_source_ids": {
-                        "blind_analysis.summary": [source_id],
-                    },
-                }
-            },
-            "price_source_snapshot": {"source": "test"},
-            "blind_analysis": {
-                "summary": "Imported from source.",
-                "open_world_mechanisms": [],
-                "initial_uncertainties": [],
-                "provenance": [provenance],
-            },
-            "blind_predictions": [],
-            "observed_events": [],
-            "event_ticker_edges": [],
-            "lessons": [],
-            "counterexamples": [],
-            "misses": [],
-            "provenance": [provenance],
-            "available_from": "2030-01-11T00:00:00+09:00",
+    semantic_audit = {
+        "prompt_version": "semantic_import.v1",
+        "source_path": raw_path.as_posix(),
+        "source_sha256": source_hash,
+        "source_text_sha256": sha256_text(raw_text),
+        "source_segment_count": len(source_segments),
+        "source_segments_sha256": sha256_text(canonical_json(source_segments)),
+        "source_segments": source_segments,
+        "output_field_source_ids": {
+            field_name: [source_id]
+            for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
         },
-    )
+    }
+    episode = {
+        "episode_id": "EP-semantic",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "created_at": "2030-01-10T09:00:00+09:00",
+        "research_version": "semantic-test",
+        "input_news_files": [],
+        "input_news_hashes": [],
+        "input_audit": {"semantic_import": semantic_audit},
+        "price_source_snapshot": {"source": "test"},
+        "blind_analysis": {
+            "summary": "Imported from source.",
+            "open_world_mechanisms": [],
+            "initial_uncertainties": [],
+            "provenance": [provenance],
+        },
+        "blind_predictions": [],
+        "observed_events": [],
+        "event_ticker_edges": [],
+        "lessons": [],
+        "counterexamples": [],
+        "misses": [],
+        "provenance": [provenance],
+        "available_from": "2030-01-11T00:00:00+09:00",
+    }
+    episode_path = tmp_path / "research" / "accepted" / "EP-semantic.json"
+    write_json(episode_path, episode)
 
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
     assert result["checked_research_episode_files"] == 1
+
+    missing_field = read_json(episode_path)
+    del missing_field["input_audit"]["semantic_import"]["output_field_source_ids"][
+        "cutoff_at"
+    ]
+    write_json(episode_path, missing_field)
+
+    missing_field_result = audit_provenance(tmp_path)
+
+    assert not missing_field_result["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import "
+        "output_field_source_ids missing required fields: cutoff_at"
+    ) in missing_field_result["findings"]
+
+    write_json(episode_path, episode)
 
     tampered = read_json(episode_path)
     tampered["input_audit"]["semantic_import"]["source_segments"][0]["text_sha256"] = "0" * 64

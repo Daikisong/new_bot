@@ -27,7 +27,10 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.research_import.importer import ResearchImporter
-from news_scalping_lab.research_import.semantic import SemanticResearchDraft
+from news_scalping_lab.research_import.semantic import (
+    SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
+    SemanticResearchDraft,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, file_sha256, next_trading_day, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
@@ -877,9 +880,8 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert first_segment["excerpt"] == "Free-form research note without a parseable date."
     assert first_segment["text_sha256"] == sha256_text(str(first_segment["excerpt"]))
     assert semantic_audit["output_field_source_ids"] == {
-        "blind_analysis.summary": [episode.provenance[0].source_id],
-        "blind_analysis.open_world_mechanisms": [episode.provenance[0].source_id],
-        "blind_analysis.initial_uncertainties": [episode.provenance[0].source_id],
+        field_name: [episode.provenance[0].source_id]
+        for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
     }
 
     traces = list((tmp_path / "runs" / "traces").glob("TRACE-*.json"))

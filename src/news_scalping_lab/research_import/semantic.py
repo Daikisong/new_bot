@@ -12,6 +12,18 @@ from news_scalping_lab.contracts.models import StrictModel
 from news_scalping_lab.utils import canonical_json, sha256_text
 
 SEMANTIC_IMPORT_PROMPT_VERSION = "semantic_import.v1"
+SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS = (
+    "trade_date",
+    "cutoff_at",
+    "research_version",
+    "input_news_files",
+    "input_news_hashes",
+    "price_source_snapshot",
+    "available_from",
+    "blind_analysis.summary",
+    "blind_analysis.open_world_mechanisms",
+    "blind_analysis.initial_uncertainties",
+)
 
 
 class SemanticResearchDraft(StrictModel):
