@@ -322,6 +322,11 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["trade_date"] == "2030-01-10"
     assert saved_manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
+    assert saved_manifest["news_file"] == "news.csv"
+    assert saved_manifest["news_sha256"] == file_sha256(csv_path)
+    assert saved_manifest["news_row_count"] == 2
+    assert saved_manifest["included_news_row_count"] == 1
+    assert saved_manifest["excluded_news_row_count"] == 1
     assert saved_manifest["model_config"] == {
         "analysis_mode": "exhaustive",
         "configured_provider": "mock",

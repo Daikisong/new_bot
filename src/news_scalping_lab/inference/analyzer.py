@@ -144,6 +144,11 @@ class DailyAnalyzer:
             retrieved_episode_ids=retrieved_ids,
             web_queries=web_queries,
         )
+        manifest.news_file = relative_to_root(full_batch.path, self.root)
+        manifest.news_sha256 = full_batch.sha256
+        manifest.news_row_count = full_batch.row_count
+        manifest.included_news_row_count = batch.row_count
+        manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
         manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
         self._write_row_disposition_artifact(

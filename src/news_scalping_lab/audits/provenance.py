@@ -38,6 +38,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
+            _check_manifest_news_input(root, path, manifest, findings)
             _check_prompt_hash_traces(root, path, prompt_hashes, manifest, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
         blind_analysis = prediction.get("blind_analysis", {})
@@ -509,6 +510,64 @@ def _check_manifest_model_config(
         not isinstance(model_config, dict) or not model_config
     ):
         findings.append(f"{prediction_path.name}: context manifest model_config is invalid")
+
+
+def _check_manifest_news_input(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    has_news_fields = "news_file" in manifest or "news_sha256" in manifest
+    if not has_news_fields:
+        return
+    news_file = manifest.get("news_file")
+    news_sha256 = manifest.get("news_sha256")
+    if not isinstance(news_file, str) or not news_file:
+        findings.append(f"{prediction_path.name}: context manifest missing news_file")
+        return
+    news_path = _resolve_manifest_path(root, news_file)
+    if news_path is None:
+        findings.append(
+            f"{prediction_path.name}: context manifest news_file path escapes project root: "
+            f"{news_file}"
+        )
+        return
+    if not news_path.exists():
+        findings.append(f"{prediction_path.name}: context manifest news_file not found: {news_file}")
+        return
+    if not isinstance(news_sha256, str) or not news_sha256:
+        findings.append(f"{prediction_path.name}: context manifest missing news_sha256")
+    elif file_sha256(news_path) != news_sha256:
+        findings.append(f"{prediction_path.name}: context manifest news_sha256 mismatch")
+
+    _check_manifest_news_row_counts(prediction_path, manifest, findings)
+
+
+def _check_manifest_news_row_counts(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    row_fields = (
+        "news_row_count",
+        "included_news_row_count",
+        "excluded_news_row_count",
+    )
+    if not any(field in manifest for field in row_fields):
+        return
+    values: dict[str, int] = {}
+    for field in row_fields:
+        value = manifest.get(field)
+        if not isinstance(value, int) or value < 0:
+            findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
+            return
+        values[field] = value
+    if (
+        values["included_news_row_count"] + values["excluded_news_row_count"]
+        != values["news_row_count"]
+    ):
+        findings.append(f"{prediction_path.name}: context manifest news row counts mismatch")
 
 
 def _check_manifest_context_file_hashes(

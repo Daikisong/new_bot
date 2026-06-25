@@ -354,6 +354,60 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     assert result["passed"], result["findings"]
 
 
+def test_provenance_audit_validates_manifest_news_input_hash(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    news_path = tmp_path / "data" / "inbox" / "news" / "20300110.csv"
+    news_path.parent.mkdir(parents=True)
+    news_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","NewsCo, catalyst","Original input."\n'
+        '1,2,"2030-01-10","09:30:00","After cutoff","Excluded input."\n',
+        encoding="utf-8",
+    )
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "news_file": news_path.relative_to(tmp_path).as_posix(),
+            "news_sha256": file_sha256(news_path),
+            "news_row_count": 2,
+            "included_news_row_count": 1,
+            "excluded_news_row_count": 1,
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    news_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","NewsCo, catalyst","Tampered input."\n',
+        encoding="utf-8",
+    )
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    assert "2030-01-10.json: context manifest news_sha256 mismatch" in failed["findings"]
+
+
 def test_provenance_audit_validates_manifest_output_artifacts(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

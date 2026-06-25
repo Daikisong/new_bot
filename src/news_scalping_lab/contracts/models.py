@@ -364,6 +364,11 @@ class ContextManifest(StrictModel):
     mode: str
     trade_date: date
     cutoff_at: datetime
+    news_file: str | None = None
+    news_sha256: str | None = None
+    news_row_count: int = 0
+    included_news_row_count: int = 0
+    excluded_news_row_count: int = 0
     blind_context_mode: str = "NEWS_ONLY_STRICT"
     blind_web_search_call_count: int = 0
     blind_price_repository_access_count: int = 0
