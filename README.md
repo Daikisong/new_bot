@@ -162,7 +162,8 @@ the export writes a blocked manifest and exits non-zero instead of producing an 
 If the token budget would omit currently available research episodes, the command also
 writes a blocked manifest and exits non-zero so coverage loss is not missed silently.
 The pack manifest records hashes for every Markdown artifact, and `nslab audit lookahead`
-verifies those hashes so copied GPT Web context drift is detected.
+verifies those hashes and scans pack Markdown for cutoff-after episode references so
+copied GPT Web context drift is detected.
 
 ## Analysis Bundle
 

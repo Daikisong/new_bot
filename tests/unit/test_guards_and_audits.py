@@ -1831,6 +1831,41 @@ def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> No
     ) in result["findings"]
 
 
+def test_lookahead_audit_checks_session_pack_markdown_files(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    (tmp_path / "research" / "accepted").mkdir(parents=True)
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-after-cutoff.json",
+        {
+            "episode_id": "EP-after-cutoff",
+            "available_from": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    (pack_dir / "memory_cases.md").write_text(
+        "unsafe copied memory case EP-after-cutoff",
+        encoding="utf-8",
+    )
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack file contains future "
+        "episode EP-after-cutoff: memory_cases.md"
+    ) in result["findings"]
+
+
 def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path) -> None:
     pack_dir = tmp_path / "session_packs" / "2030-01-10"
     pack_dir.mkdir(parents=True)

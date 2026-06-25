@@ -73,6 +73,14 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             accepted_episode_available_from,
             findings,
         )
+        _check_session_pack_files_for_future_episode_ids(
+            root,
+            path,
+            manifest_name,
+            manifest_cutoff_at,
+            accepted_episode_available_from,
+            findings,
+        )
         _check_session_pack_temporal_memory_refs(
             root,
             manifest_name,
@@ -212,6 +220,36 @@ def _check_context_files_for_future_episode_ids(
                 findings.append(
                     f"{manifest_name}: context file contains future episode {episode_id}: "
                     f"{relative_path}"
+                )
+
+
+def _check_session_pack_files_for_future_episode_ids(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest_cutoff_at: datetime | None,
+    accepted_episode_available_from: dict[str, datetime],
+    findings: list[str],
+) -> None:
+    if manifest_path.parent.parent != root / "session_packs" or manifest_cutoff_at is None:
+        return
+    future_episode_ids = [
+        episode_id
+        for episode_id, available_from in accepted_episode_available_from.items()
+        if not is_available_as_of(available_from, manifest_cutoff_at)
+    ]
+    if not future_episode_ids:
+        return
+    for file_name in SESSION_PACK_FILES:
+        path = manifest_path.parent / file_name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for episode_id in future_episode_ids:
+            if episode_id in text:
+                findings.append(
+                    f"{manifest_name}: session pack file contains future episode "
+                    f"{episode_id}: {file_name}"
                 )
 
 
