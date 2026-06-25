@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TypeVar
 
 import pytest
@@ -167,14 +168,28 @@ async def test_tracing_llm_provider_resumes_successful_structured_checkpoint(tmp
     assert second.model_dump(mode="json") == first.model_dump(mode="json")
     checkpoints = [read_json(path) for path in sorted((tmp_path / "checkpoints").glob("*.json"))]
     assert len(checkpoints) == 1
-    assert checkpoints[0]["status"] == "ok"
-    assert checkpoints[0]["metadata"]["prompt_version"] == "checkpoint-v1"
+    checkpoint = checkpoints[0]
+    assert checkpoint["schema_version"] == "nslab.llm_checkpoint.v1"
+    assert checkpoint["status"] == "ok"
+    assert checkpoint["model_config"] == {"provider": "CountingProvider"}
+    assert checkpoint["metadata"]["prompt_version"] == "checkpoint-v1"
+    assert checkpoint["input_sha256"] == sha256_text(canonical_json(checkpoint["input"]))
+    assert checkpoint["output_sha256"] == sha256_text(canonical_json(checkpoint["output"]))
+    assert checkpoint["token_usage"]["prompt_tokens_estimate"] > 0
+    assert checkpoint["token_usage"]["completion_tokens_estimate"] > 0
+    assert datetime.fromisoformat(checkpoint["updated_at"])
     traces = sorted(
         [read_json(path) for path in (tmp_path / "traces").glob("TRACE-*.json")],
         key=lambda trace: str(trace["started_at"]),
     )
     assert [trace["status"] for trace in traces] == ["ok", "checkpoint_hit"]
-    assert traces[1]["checkpoint_id"] == checkpoints[0]["checkpoint_id"]
+    assert traces[0]["checkpoint_id"] == checkpoint["checkpoint_id"]
+    assert traces[0]["input_sha256"] == checkpoint["input_sha256"]
+    assert traces[0]["output_sha256"] == checkpoint["output_sha256"]
+    assert traces[0]["token_usage"] == checkpoint["token_usage"]
+    assert datetime.fromisoformat(traces[0]["started_at"])
+    assert datetime.fromisoformat(traces[0]["finished_at"])
+    assert traces[1]["checkpoint_id"] == checkpoint["checkpoint_id"]
 
 
 @pytest.mark.asyncio
@@ -190,11 +205,18 @@ async def test_tracing_llm_provider_writes_error_checkpoint(tmp_path) -> None:
 
     checkpoints = [read_json(path) for path in sorted((tmp_path / "checkpoints").glob("*.json"))]
     assert len(checkpoints) == 1
-    assert checkpoints[0]["status"] == "error"
-    assert checkpoints[0]["error"]["message"] == "text failed"
+    checkpoint = checkpoints[0]
+    assert checkpoint["status"] == "error"
+    assert checkpoint["error"]["message"] == "text failed"
+    assert checkpoint["output"] is None
+    assert checkpoint["output_sha256"] is None
+    assert checkpoint["input_sha256"] == sha256_text(canonical_json(checkpoint["input"]))
+    assert checkpoint["token_usage"]["prompt_tokens_estimate"] > 0
+    assert datetime.fromisoformat(checkpoint["updated_at"])
     traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
     assert traces[0]["status"] == "error"
-    assert traces[0]["checkpoint_id"] == checkpoints[0]["checkpoint_id"]
+    assert traces[0]["checkpoint_id"] == checkpoint["checkpoint_id"]
+    assert traces[0]["token_usage"] == checkpoint["token_usage"]
 
 
 @pytest.mark.asyncio
@@ -228,6 +250,7 @@ async def test_tracing_llm_provider_records_successful_retry_count(tmp_path) -> 
     checkpoint = read_json(next((tmp_path / "checkpoints").glob("LLMCKPT-*.json")))
     assert checkpoint["retries"] == 2
     assert checkpoint["retry_errors"] == traces[0]["retry_errors"]
+    assert checkpoint["token_usage"] == traces[0]["token_usage"]
 
 
 @pytest.mark.asyncio

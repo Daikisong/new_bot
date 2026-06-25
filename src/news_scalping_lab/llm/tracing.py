@@ -85,6 +85,7 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
+                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -107,6 +108,10 @@ class TracingLLMProvider:
             status="ok",
             input_payload=input_payload,
             output=provider_output,
+            token_usage={
+                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "completion_tokens_estimate": _estimate_tokens(provider_output),
+            },
             retries=retries,
             retry_errors=retry_errors,
         )
@@ -176,6 +181,7 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
+                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -199,6 +205,10 @@ class TracingLLMProvider:
             status="ok",
             input_payload=input_payload,
             output=json_output,
+            token_usage={
+                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "completion_tokens_estimate": _estimate_tokens(canonical_json(json_output)),
+            },
             retries=retries,
             retry_errors=retry_errors,
         )
@@ -259,6 +269,9 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
+                token_usage={
+                    "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
+                },
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -284,6 +297,9 @@ class TracingLLMProvider:
             status="ok",
             input_payload=input_payload,
             output=provider_output,
+            token_usage={
+                "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
+            },
             retries=retries,
             retry_errors=retry_errors,
         )
@@ -435,6 +451,7 @@ class TracingLLMProvider:
         input_payload: dict[str, Any],
         output: Any | None = None,
         error: Exception | None = None,
+        token_usage: dict[str, int] | None = None,
         retries: int = 0,
         retry_errors: list[dict[str, str]] | None = None,
     ) -> str:
@@ -457,6 +474,7 @@ class TracingLLMProvider:
             "input_sha256": sha256_text(canonical_json(input_payload)),
             "output": output,
             "output_sha256": sha256_text(canonical_json(output)) if output is not None else None,
+            "token_usage": token_usage or {},
             "retries": retries,
             "retry_errors": retry_errors or [],
             "updated_at": now_kst().isoformat(),
