@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
-from news_scalping_lab.prices.base import BlindPriceAccessError, BlindPriceGuard
-from news_scalping_lab.prices.mock import MockPriceSource
+from news_scalping_lab.prices.base import (
+    BlindPriceAccessError,
+    BlindPriceGuard,
+    PriceRecord,
+)
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -103,17 +107,55 @@ def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
     }
 
 
+class RecordingPriceSource:
+    source_name = "recording-price"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, date]] = []
+
+    def get_history(self, ticker: str, *, through: date) -> list[PriceRecord]:
+        self.calls.append(("history", ticker, through))
+        return [PriceRecord(ticker=ticker, trade_date=through, close=1000.0)]
+
+    def get_snapshot(self, ticker: str, *, as_of: date) -> PriceRecord | None:
+        self.calls.append(("snapshot", ticker, as_of))
+        return PriceRecord(ticker=ticker, trade_date=as_of, close=1000.0)
+
+    def get_outcome(self, ticker: str, *, trade_date: date) -> NoReturn:
+        self.calls.append(("outcome", ticker, trade_date))
+        raise AssertionError("blind guard must not delegate outcome access")
+
+
 def test_blind_price_guard_blocks_d_day() -> None:
     trade_day = date(2030, 1, 10)
-    guard = BlindPriceGuard(MockPriceSource(), trade_date=trade_day)
+    prior_day = date(2030, 1, 9)
+    future_day = date(2030, 1, 11)
+    source = RecordingPriceSource()
+    guard = BlindPriceGuard(source, trade_date=trade_day)
+
+    assert guard.source_name == "recording-price"
+    assert guard.get_snapshot("UNKNOWN", as_of=prior_day) is not None
+    assert guard.get_history("UNKNOWN", through=prior_day)
+    assert source.calls == [
+        ("snapshot", "UNKNOWN", prior_day),
+        ("history", "UNKNOWN", prior_day),
+    ]
+
     with pytest.raises(BlindPriceAccessError):
         guard.get_snapshot("UNKNOWN", as_of=trade_day)
     with pytest.raises(BlindPriceAccessError):
         guard.get_history("UNKNOWN", through=trade_day)
     with pytest.raises(BlindPriceAccessError):
+        guard.get_snapshot("UNKNOWN", as_of=future_day)
+    with pytest.raises(BlindPriceAccessError):
+        guard.get_history("UNKNOWN", through=future_day)
+    with pytest.raises(BlindPriceAccessError):
         guard.get_outcome("UNKNOWN", trade_date=trade_day)
-    assert guard.get_snapshot("UNKNOWN", as_of=date(2030, 1, 9)) is not None
-    assert guard.get_history("UNKNOWN", through=date(2030, 1, 9))
+
+    assert source.calls == [
+        ("snapshot", "UNKNOWN", prior_day),
+        ("history", "UNKNOWN", prior_day),
+    ]
 
 
 class FutureOnlyProvider:
