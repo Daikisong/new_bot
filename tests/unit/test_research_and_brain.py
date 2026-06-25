@@ -926,6 +926,95 @@ def test_coverage_audit_requires_warehouse_prediction_id_set_to_match_source(
     ) in audit["findings"]
 
 
+def test_coverage_audit_requires_file_backed_warehouse_identity_sets(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("File-backed warehouse identity audit note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    report_path = tmp_path / "reports" / "2030-01-10_postmortem.json"
+    company_path = tmp_path / "memory" / "company_memory" / "CM-identity.json"
+    mechanism_path = tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    mechanism_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_company = CompanyMemory(
+        ticker="999990",
+        company_name="Stale Identity Co",
+        known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    source_company = CompanyMemory(
+        ticker="999991",
+        company_name="Source Identity Co",
+        known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    stale_mechanism = MechanismMemory(
+        mechanism_id="MM-stale-identity",
+        natural_language_description="Stale mechanism identity.",
+    )
+    source_mechanism = MechanismMemory(
+        mechanism_id="MM-source-identity",
+        natural_language_description="Source mechanism identity.",
+    )
+    write_json(
+        report_path,
+        {
+            "trade_date": "2030-01-10",
+            "blind_prediction_id": "PRED-stale-outcome",
+            "outcomes": {},
+            "postmortem": {},
+        },
+    )
+    write_json(company_path, stale_company.model_dump(mode="json"))
+    mechanism_path.write_text(stale_mechanism.model_dump_json() + "\n", encoding="utf-8")
+    WarehouseStore(tmp_path).rebuild_all()
+    write_json(
+        report_path,
+        {
+            "trade_date": "2030-01-10",
+            "blind_prediction_id": "PRED-source-outcome",
+            "outcomes": {},
+            "postmortem": {},
+        },
+    )
+    write_json(company_path, source_company.model_dump(mode="json"))
+    mechanism_path.write_text(source_mechanism.model_dump_json() + "\n", encoding="utf-8")
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["warehouse_projection_synced"] is False
+    assert audit["warehouse_count_mismatches"] == {}
+    assert audit["warehouse_identity_mismatches"] == {
+        "company_memory.parquet": {
+            "extra": ["999990|Stale Identity Co"],
+            "missing": ["999991|Source Identity Co"],
+        },
+        "daily_outcomes.parquet": {
+            "extra": ["2030-01-10|PRED-stale-outcome"],
+            "missing": ["2030-01-10|PRED-source-outcome"],
+        },
+        "mechanism_memory.parquet": {
+            "extra": ["MM-stale-identity"],
+            "missing": ["MM-source-identity"],
+        },
+    }
+    assert (
+        "warehouse: daily_outcomes.parquet ids mismatch; missing source postmortem "
+        "report ids: 2030-01-10|PRED-source-outcome; extra projected ids: "
+        "2030-01-10|PRED-stale-outcome"
+    ) in audit["findings"]
+    assert (
+        "warehouse: company_memory.parquet ids mismatch; missing source company "
+        "memory ids: 999991|Source Identity Co; extra projected ids: "
+        "999990|Stale Identity Co"
+    ) in audit["findings"]
+    assert (
+        "warehouse: mechanism_memory.parquet ids mismatch; missing source mechanism "
+        "memory ids: MM-source-identity; extra projected ids: MM-stale-identity"
+    ) in audit["findings"]
+
+
 def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

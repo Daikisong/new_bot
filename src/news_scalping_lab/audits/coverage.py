@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -223,6 +224,21 @@ def _warehouse_identity_expectations(
             "expected": _source_prediction_ids(root),
             "source_label": "source predictions",
         },
+        "daily_outcomes.parquet": {
+            "columns": ("trade_date", "blind_prediction_id"),
+            "expected": _source_daily_outcome_ids(root),
+            "source_label": "source postmortem report ids",
+        },
+        "company_memory.parquet": {
+            "columns": ("ticker", "company_name"),
+            "expected": _source_company_memory_ids(root),
+            "source_label": "source company memory ids",
+        },
+        "mechanism_memory.parquet": {
+            "columns": ("mechanism_id",),
+            "expected": _source_mechanism_memory_ids(root),
+            "source_label": "source mechanism memory ids",
+        },
     }
 
 
@@ -272,6 +288,46 @@ def _source_prediction_ids(root: Path) -> list[str]:
         if isinstance(prediction_id, str) and prediction_id:
             prediction_ids.append(prediction_id)
     return sorted(prediction_ids)
+
+
+def _source_daily_outcome_ids(root: Path) -> list[str]:
+    outcome_ids: list[str] = []
+    for path in sorted((root / "reports").glob("*_postmortem.json")):
+        data = read_json(path)
+        trade_date = data.get("trade_date")
+        prediction_id = data.get("blind_prediction_id")
+        if isinstance(trade_date, str) and isinstance(prediction_id, str):
+            outcome_ids.append(_identity(trade_date, prediction_id))
+    return sorted(outcome_ids)
+
+
+def _source_company_memory_ids(root: Path) -> list[str]:
+    company_ids: list[str] = []
+    for path in sorted((root / "memory" / "company_memory").glob("*.json")):
+        data = read_json(path)
+        ticker = data.get("ticker")
+        company_name = data.get("company_name")
+        if isinstance(ticker, str) and isinstance(company_name, str):
+            company_ids.append(_identity(ticker, company_name))
+    return sorted(company_ids)
+
+
+def _source_mechanism_memory_ids(root: Path) -> list[str]:
+    path = root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    if not path.exists():
+        return []
+    mechanism_ids: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        mechanism_id = data.get("mechanism_id") if isinstance(data, dict) else None
+        if isinstance(mechanism_id, str) and mechanism_id:
+            mechanism_ids.append(mechanism_id)
+    return sorted(mechanism_ids)
 
 
 def _identity(*parts: object) -> str:
