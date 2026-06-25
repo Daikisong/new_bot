@@ -1134,6 +1134,7 @@ def _check_evaluation_episode_sources(
         )
     if evaluation_report is not None:
         _check_evaluation_report_payload(
+            root,
             label,
             evaluation_report,
             episode,
@@ -1144,6 +1145,7 @@ def _check_evaluation_episode_sources(
 
 
 def _check_evaluation_report_payload(
+    root: Path,
     label: str,
     report: dict[str, Any],
     episode: dict[str, Any],
@@ -1176,6 +1178,7 @@ def _check_evaluation_report_payload(
         findings.append(f"{label}: evaluation report outcome_coverage_status mismatch")
     _check_evaluation_report_outcomes(label, report, episode, findings)
     _check_evaluation_report_metrics(label, report, episode, findings)
+    _check_evaluation_postmortem_trace(root, label, report, findings)
 
 
 def _check_evaluation_sealed_prediction_payload(
@@ -1254,6 +1257,50 @@ def _check_evaluation_report_metrics(
     candidate_count = metrics.get("candidate_count")
     if candidate_count != len(blind_predictions):
         findings.append(f"{label}: evaluation report candidate_count mismatch")
+
+
+def _check_evaluation_postmortem_trace(
+    root: Path,
+    label: str,
+    report: dict[str, Any],
+    findings: list[str],
+) -> None:
+    prompt_sha256 = report.get("postmortem_prompt_sha256")
+    if prompt_sha256 is None:
+        return
+    if not isinstance(prompt_sha256, str) or not prompt_sha256:
+        findings.append(f"{label}: evaluation postmortem_prompt_sha256 invalid")
+        return
+    prompt_version = report.get("postmortem_prompt_version")
+    if prompt_version != "evaluation_postmortem.v1":
+        findings.append(f"{label}: evaluation postmortem_prompt_version invalid")
+    traces_by_purpose = _trace_metadata_by_purpose(root, findings)
+    trace_metadata = traces_by_purpose.get("evaluation_postmortem")
+    if trace_metadata is None:
+        findings.append(f"{label}: evaluation postmortem prompt hash has no matching trace")
+        return
+    matching_trace_records = [
+        trace_record
+        for trace_record in trace_metadata["trace_records"]
+        if trace_record.get("prompt_sha256") == prompt_sha256
+    ]
+    if not matching_trace_records:
+        findings.append(f"{label}: evaluation postmortem prompt hash has no matching trace")
+        return
+    report_model_config = report.get("postmortem_model_config")
+    for trace_record in matching_trace_records:
+        trace_path = trace_record["path"]
+        trace_payload = trace_record["payload"]
+        _check_trace_checkpoint(root, trace_path, trace_payload, findings)
+        trace_input = trace_payload.get("input")
+        if isinstance(trace_input, dict) and trace_input.get("response_model") != "Postmortem":
+            findings.append(f"{label}: evaluation postmortem trace response_model mismatch")
+        if trace_payload.get("prompt_version") != prompt_version:
+            findings.append(f"{label}: evaluation postmortem trace prompt_version mismatch")
+        if isinstance(report_model_config, dict) and report_model_config:
+            trace_model_config = trace_payload.get("model_config")
+            if trace_model_config != report_model_config:
+                findings.append(f"{label}: evaluation postmortem trace model_config mismatch")
 
 
 def _top_level_provenance_entries(episode: dict[str, Any]) -> list[dict[str, Any]]:

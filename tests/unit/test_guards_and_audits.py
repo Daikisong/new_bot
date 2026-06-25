@@ -122,34 +122,44 @@ def _preopen_report_text(
     return "\n".join(lines) + "\n"
 
 
-def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
+def _trace_payload(
+    *,
+    prompt_sha256: str = "blind-hash",
+    purpose: str = "daily_blind_analysis",
+    response_model: str = "BlindPrediction",
+    prompt_version: str = "daily_blind_analysis.v1",
+    model_config: dict[str, object] | None = None,
+    output: dict[str, object] | None = None,
+    checkpoint_id: str = "LLMCKPT-linked",
+    trace_id: str = "TRACE-linked",
+) -> dict[str, object]:
     trace_input = {
         "prompt_sha256": prompt_sha256,
         "prompt_chars": 100,
-        "response_model": "BlindPrediction",
+        "response_model": response_model,
     }
-    output = {"prediction_id": "PRED-linked"}
+    trace_output = output or {"prediction_id": "PRED-linked"}
     return {
         "schema_version": "nslab.llm_trace.v1",
-        "trace_id": "TRACE-linked",
+        "trace_id": trace_id,
         "operation": "generate_structured",
-        "purpose": "daily_blind_analysis",
+        "purpose": purpose,
         "status": "ok",
         "provider": "DeterministicMockLLMProvider",
-        "model_config": {"provider": "mock"},
-        "metadata": {},
+        "model_config": model_config or {"provider": "mock"},
+        "metadata": {"prompt_version": prompt_version},
         "input": trace_input,
         "input_sha256": sha256_text(canonical_json(trace_input)),
-        "output": output,
-        "output_sha256": sha256_text(canonical_json(output)),
-        "checkpoint_id": "LLMCKPT-linked",
+        "output": trace_output,
+        "output_sha256": sha256_text(canonical_json(trace_output)),
+        "checkpoint_id": checkpoint_id,
         "tool_calls": [],
         "retries": 0,
         "retry_errors": [],
         "token_usage": {"prompt_tokens_estimate": 25, "completion_tokens_estimate": 10},
         "started_at": "2030-01-10T08:59:00+09:00",
         "finished_at": "2030-01-10T08:59:01+09:00",
-        "prompt_version": "daily_blind_analysis.v1",
+        "prompt_version": prompt_version,
     }
 
 
@@ -4768,6 +4778,11 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
         "brain_eligible": True,
         "reasons": {},
     }
+    postmortem_prompt_sha256 = "evaluation-postmortem-hash"
+    postmortem_model_config = {
+        "configured_provider": "mock",
+        "provider_class": "DeterministicMockLLMProvider",
+    }
     write_json(
         report_path,
         {
@@ -4779,10 +4794,27 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
             "outcome_coverage_status": "PREDICTED_CANDIDATES_ONLY",
             "outcomes": {},
             "performance_metrics": {"candidate_count": 0},
+            "postmortem_prompt_version": "evaluation_postmortem.v1",
+            "postmortem_prompt_sha256": postmortem_prompt_sha256,
+            "postmortem_model_config": postmortem_model_config,
             "postmortem": postmortem,
             "eligibility_matrix": eligibility,
         },
     )
+    trace_payload = _trace_payload(
+        prompt_sha256=postmortem_prompt_sha256,
+        purpose="evaluation_postmortem",
+        response_model="Postmortem",
+        prompt_version="evaluation_postmortem.v1",
+        model_config=postmortem_model_config,
+        output=postmortem,
+        checkpoint_id="LLMCKPT-evaluation-postmortem",
+        trace_id="TRACE-evaluation-postmortem",
+    )
+    trace_dir = tmp_path / "runs" / "traces"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    write_json(trace_dir / "TRACE-evaluation-postmortem.json", trace_payload)
+    _write_trace_checkpoint(tmp_path, trace_payload)
     evaluation_provenance = {
         "source_id": "SRC-evaluation",
         "source_type": "evaluation_postmortem",
@@ -4847,6 +4879,18 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
     ) in failed["findings"]
 
     write_json(report_path, read_json(report_path) | {"postmortem": postmortem})
+    report = read_json(report_path)
+    report["postmortem_prompt_sha256"] = "missing-evaluation-trace-hash"
+    write_json(report_path, report)
+    failed_trace = audit_provenance(tmp_path)
+
+    assert (
+        "research/episodes/EP-evaluation.json: evaluation postmortem prompt hash "
+        "has no matching trace"
+    ) in failed_trace["findings"]
+
+    report["postmortem_prompt_sha256"] = postmortem_prompt_sha256
+    write_json(report_path, report)
     episode = read_json(episode_path)
     episode["available_from"] = "2030-01-10T00:00:00+09:00"
     write_json(episode_path, episode)
