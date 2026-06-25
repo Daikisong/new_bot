@@ -4588,6 +4588,13 @@ def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> Non
             "price_snapshot": {"allowed_through": "2030-01-09"},
             "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
             "red_team_artifacts": ["runs/checkpoints/red_team/RUN-linked.json"],
+            "red_team_summary": {
+                "candidate_count": 1,
+                "required_attack_checks": ["novelty_not_recycled"],
+                "required_attack_check_count": 1,
+                "finding_count": 1,
+                "all_findings_passed_to_synthesis": True,
+            },
         },
     )
     write_json(
@@ -4692,6 +4699,98 @@ def test_provenance_audit_flags_red_team_artifact_mismatch(tmp_path: Path) -> No
         "2030-01-10.json: red-team artifact required_attack_checks is invalid: "
         "runs/checkpoints/red_team/RUN-linked.json"
     ) in result["findings"]
+
+
+def test_provenance_audit_validates_red_team_summary_contract(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "prediction_id": "PRED-linked",
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "blind-hash",
+                "red_team_candidate_review": "red-team-hash",
+                "final_synthesis": "final-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "red_team_artifacts": ["runs/checkpoints/red_team/RUN-linked.json"],
+            "red_team_summary": {
+                "candidate_count": 2,
+                "required_attack_checks": ["wrong_check"],
+                "required_attack_check_count": 2,
+                "finding_count": 2,
+                "all_findings_passed_to_synthesis": True,
+            },
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "red_team" / "RUN-linked.json",
+        {
+            "schema_version": "nslab.red_team_artifact.v1",
+            "run_id": "RUN-linked",
+            "source_prediction_id": "PRED-linked",
+            "prompt_version": "red_team.candidate_attack.v2",
+            "prompt_sha256": "red-team-hash",
+            "created_at": "2030-01-10T08:59:59+09:00",
+            "candidate_count": 1,
+            "required_attack_checks": ["novelty_not_recycled"],
+            "candidate_findings": [
+                {
+                    "candidate_rank": 1,
+                    "passed_to_synthesis": False,
+                    "attack_checks": [
+                        {
+                            "name": "novelty_not_recycled",
+                            "status": "needs_synthesis_review",
+                            "passed_to_synthesis": True,
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert (
+        "2030-01-10.json: red-team artifact summary candidate_count mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in findings
+    assert (
+        "2030-01-10.json: red-team artifact summary finding_count mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in findings
+    assert (
+        "2030-01-10.json: red-team artifact summary required_attack_checks mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in findings
+    assert (
+        "2030-01-10.json: red-team artifact summary "
+        "all_findings_passed_to_synthesis mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in findings
+    assert (
+        "2030-01-10.json: red-team artifact finding 1 not passed to synthesis: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in findings
 
 
 def test_lookahead_audit_flags_future_retrieved_episode_and_context_file(

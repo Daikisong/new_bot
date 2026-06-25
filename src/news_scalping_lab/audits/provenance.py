@@ -4321,6 +4321,7 @@ def _check_red_team_artifacts(
     candidates = prediction.get("candidates", [])
     candidate_count = len(candidates) if isinstance(candidates, list) else None
     context_manifest_id = manifest.get("run_id")
+    red_team_summary = manifest.get("red_team_summary")
     for artifact_ref in artifact_paths:
         artifact_path = _resolve_manifest_path(root, artifact_ref)
         if artifact_path is None:
@@ -4341,6 +4342,7 @@ def _check_red_team_artifacts(
             context_manifest_id=context_manifest_id,
             red_team_prompt_hash=red_team_prompt_hash,
             candidate_count=candidate_count,
+            red_team_summary=red_team_summary,
             findings=findings,
         )
 
@@ -4353,6 +4355,7 @@ def _check_red_team_artifact(
     context_manifest_id: object,
     red_team_prompt_hash: object,
     candidate_count: int | None,
+    red_team_summary: object,
     findings: list[str],
 ) -> None:
     if artifact.get("schema_version") != "nslab.red_team_artifact.v1":
@@ -4387,6 +4390,15 @@ def _check_red_team_artifact(
             f"{artifact_ref}"
         )
         return
+    _check_red_team_summary(
+        prediction_path,
+        artifact_ref,
+        artifact,
+        candidate_findings,
+        required_attack_checks,
+        red_team_summary,
+        findings,
+    )
     for index, item in enumerate(candidate_findings, start=1):
         if not isinstance(item, dict):
             findings.append(
@@ -4419,6 +4431,69 @@ def _check_red_team_artifact(
                 f"{prediction_path.name}: red-team artifact finding {index} "
                 f"attack_checks not passed to synthesis: {artifact_ref}"
             )
+        if item.get("passed_to_synthesis") is not True:
+            findings.append(
+                f"{prediction_path.name}: red-team artifact finding {index} "
+                f"not passed to synthesis: {artifact_ref}"
+            )
+
+
+def _check_red_team_summary(
+    prediction_path: Path,
+    artifact_ref: str,
+    artifact: dict[str, Any],
+    candidate_findings: list[Any],
+    required_attack_checks: list[Any],
+    red_team_summary: object,
+    findings: list[str],
+) -> None:
+    if not isinstance(red_team_summary, dict):
+        findings.append(f"{prediction_path.name}: context manifest red_team_summary is invalid")
+        return
+    artifact_candidate_count = _non_bool_int(artifact.get("candidate_count"))
+    if (
+        _non_bool_int(red_team_summary.get("candidate_count")) != artifact_candidate_count
+        or artifact_candidate_count != len(candidate_findings)
+    ):
+        findings.append(
+            f"{prediction_path.name}: red-team artifact summary candidate_count "
+            f"mismatch: {artifact_ref}"
+        )
+    if _non_bool_int(red_team_summary.get("finding_count")) != len(candidate_findings):
+        findings.append(
+            f"{prediction_path.name}: red-team artifact summary finding_count "
+            f"mismatch: {artifact_ref}"
+        )
+
+    summary_checks = _string_list(red_team_summary.get("required_attack_checks"))
+    if (
+        not summary_checks
+        or summary_checks != required_attack_checks
+        or _non_bool_int(red_team_summary.get("required_attack_check_count"))
+        != len(required_attack_checks)
+    ):
+        findings.append(
+            f"{prediction_path.name}: red-team artifact summary "
+            f"required_attack_checks mismatch: {artifact_ref}"
+        )
+
+    all_passed = True
+    for item in candidate_findings:
+        if not isinstance(item, dict) or item.get("passed_to_synthesis") is not True:
+            all_passed = False
+            break
+        attack_checks = item.get("attack_checks")
+        if not isinstance(attack_checks, list) or any(
+            not isinstance(check, dict) or check.get("passed_to_synthesis") is not True
+            for check in attack_checks
+        ):
+            all_passed = False
+            break
+    if red_team_summary.get("all_findings_passed_to_synthesis") is not all_passed:
+        findings.append(
+            f"{prediction_path.name}: red-team artifact summary "
+            f"all_findings_passed_to_synthesis mismatch: {artifact_ref}"
+        )
 
 
 def _resolve_manifest_path(root: Path, artifact_ref: str) -> Path | None:
