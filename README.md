@@ -138,7 +138,8 @@ a separate manifest/checkpoint namespace instead of overwriting a prior run.
 The same audit verifies listed brain and shard-brain context files against their
 manifest hashes so replay context drift is detected. `context inspect` also checks
 the news CSV hash, row counts, blind news-window inclusion counts, memory-sweep shard
-artifacts, their hashes, cache-hit count, and swept episode coverage.
+artifacts, their hashes, cache-hit count, swept episode coverage, and required
+pre-open report sections.
 
 ## Evaluation
 

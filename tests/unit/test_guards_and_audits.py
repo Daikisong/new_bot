@@ -14,6 +14,7 @@ from news_scalping_lab.prices.base import (
     BlindPriceGuard,
     PriceRecord,
 )
+from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -77,6 +78,23 @@ def _sealed_prediction_payload(*, context_manifest_id: str = "RUN-linked") -> di
     }
     payload["blind_artifact_sha256"] = sha256_text(canonical_json(payload))
     return payload
+
+
+def _preopen_report_text(
+    *,
+    run_id: str = "RUN-linked",
+    omit_heading: str | None = None,
+) -> str:
+    lines = [
+        "# Pre-Open Research Report: 2030-01-10",
+        "",
+        f"- Run ID: `{run_id}`",
+    ]
+    for heading in PREOPEN_REPORT_SECTION_HEADINGS:
+        if heading == omit_heading:
+            continue
+        lines.extend(["", heading, "", "section body"])
+    return "\n".join(lines) + "\n"
 
 
 def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
@@ -303,7 +321,7 @@ def test_provenance_audit_requires_prediction_context_manifest(tmp_path: Path) -
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
-        "Run ID: `RUN-missing`", encoding="utf-8"
+        _preopen_report_text(run_id="RUN-missing"), encoding="utf-8"
     )
 
     result = audit_provenance(tmp_path)
@@ -331,7 +349,7 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     run_prediction_path = run_output_dir / "blind_prediction.json"
     run_report_path = run_output_dir / "preopen_report.md"
     write_json(run_prediction_path, prediction)
-    run_report_path.write_text("Run ID: `RUN-linked`", encoding="utf-8")
+    run_report_path.write_text(_preopen_report_text(), encoding="utf-8")
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-linked.json",
         {
@@ -346,7 +364,7 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
-        "Run ID: `RUN-linked`", encoding="utf-8"
+        _preopen_report_text(), encoding="utf-8"
     )
 
     result = audit_provenance(tmp_path)
@@ -375,7 +393,7 @@ def test_provenance_audit_validates_manifest_news_input_hash(tmp_path: Path) -> 
     }
     write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
-        "Run ID: `RUN-linked`", encoding="utf-8"
+        _preopen_report_text(), encoding="utf-8"
     )
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-linked.json",
@@ -448,14 +466,14 @@ def test_provenance_audit_validates_manifest_output_artifacts(tmp_path: Path) ->
     }
     write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
-        "Run ID: `RUN-linked`", encoding="utf-8"
+        _preopen_report_text(), encoding="utf-8"
     )
     run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
     run_prediction_path = run_output_dir / "blind_prediction.json"
     run_report_path = run_output_dir / "preopen_report.md"
     bad_run_prediction = {**prediction, "context_manifest_id": "RUN-other"}
     write_json(run_prediction_path, bad_run_prediction)
-    run_report_path.write_text("Run ID: `RUN-other`", encoding="utf-8")
+    run_report_path.write_text(_preopen_report_text(run_id="RUN-other"), encoding="utf-8")
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-linked.json",
         {
@@ -481,6 +499,52 @@ def test_provenance_audit_validates_manifest_output_artifacts(tmp_path: Path) ->
     )
     assert "2030-01-10.json: context manifest report_sha256 mismatch" in findings
     assert "2030-01-10.json: context manifest report_artifact missing run id" in findings
+
+
+def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(
+        _preopen_report_text(omit_heading=PREOPEN_REPORT_SECTION_HEADINGS[-1]),
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: context manifest report_artifact missing required "
+        "sections: ## 13. Memory Coverage"
+    ) in result["findings"]
 
 
 def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> None:

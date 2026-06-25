@@ -14,6 +14,7 @@ from news_scalping_lab.contracts.models import (
     Provenance,
 )
 from news_scalping_lab.reporting.render import render_preopen_report
+from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.utils import KST
 
 
@@ -224,6 +225,13 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
 
     report = render_preopen_report(prediction, manifest)
 
+    assert inspect_preopen_report_sections(report) == {
+        "required_count": 13,
+        "present_count": 13,
+        "missing": [],
+        "ordered": True,
+        "passed": True,
+    }
     assert "- Causal chain: current catalyst, listed entity verification" in report
     assert "- Path type: `SINGLE_EVENT`" in report
     assert "- Event IDs: EVT-report" in report

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from news_scalping_lab.contracts.models import BlindPrediction, Candidate, ContextManifest, PathType
+from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
 
 
 def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest) -> str:
@@ -84,17 +85,17 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
         [
             f"# Pre-Open Research Report: {prediction.trade_date.isoformat()}",
             "",
-            "## 1. Execution Info",
+            PREOPEN_REPORT_SECTION_HEADINGS[0],
             "",
             f"- Run ID: `{manifest.run_id}`",
             f"- Mode: `{manifest.mode}`",
             f"- Cutoff: `{prediction.cutoff_at.isoformat()}`",
             "",
-            "## 2. Research Brain Version",
+            PREOPEN_REPORT_SECTION_HEADINGS[1],
             "",
             f"- Brain version: `{manifest.brain_version or 'none'}`",
             "",
-            "## 3. News Range And Cutoff",
+            PREOPEN_REPORT_SECTION_HEADINGS[2],
             "",
             "Only news rows inside the configured blind news window are eligible for blind evidence.",
             f"- News window start: {news_window_start}",
@@ -108,24 +109,24 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Row disposition artifact: {manifest.row_disposition_artifact or 'none'}",
             f"- Row disposition SHA256: {manifest.row_disposition_sha256 or 'none'}",
             "",
-            "## 4. Dominant Sector Hypotheses",
+            PREOPEN_REPORT_SECTION_HEADINGS[3],
             "",
             "\n".join(sector_lines) or "No sector hypotheses.",
             "",
-            "## 5. Single-News Upper-Limit Candidates",
+            PREOPEN_REPORT_SECTION_HEADINGS[4],
             "",
             section_for(PathType.SINGLE_EVENT),
-            "## 6. Theme Beneficiary Upper-Limit Candidates",
+            PREOPEN_REPORT_SECTION_HEADINGS[5],
             "",
             section_for(PathType.THEME_BENEFICIARY),
-            "## 7. Prior-Leader Continuation Candidates",
+            PREOPEN_REPORT_SECTION_HEADINGS[6],
             "",
             section_for(PathType.CONTINUATION),
-            "## 8. All Pre-Open Watchlist Candidates",
+            PREOPEN_REPORT_SECTION_HEADINGS[7],
             "",
             candidate_section(candidates),
             "",
-            "## 9. Excluded But Watch",
+            PREOPEN_REPORT_SECTION_HEADINGS[8],
             "",
             "No automatic exclusions. Red-team objections are retained with each candidate.",
             f"Red-team artifacts: {', '.join(manifest.red_team_artifacts) or 'none'}",
@@ -138,7 +139,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"{manifest.red_team_summary.get('all_findings_passed_to_synthesis', False)}"
             ),
             "",
-            "## 10. Key Counterexamples And Uncertainty",
+            PREOPEN_REPORT_SECTION_HEADINGS[9],
             "",
             "\n".join(f"- {item}" for item in prediction.blind_analysis.initial_uncertainties),
             "",
@@ -151,7 +152,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "",
             "\n".join(f"- {path}" for path in manifest.red_team_artifacts) or "- none",
             "",
-            "## 11. Used Past Research Cases",
+            PREOPEN_REPORT_SECTION_HEADINGS[10],
             "",
             "\n".join(f"- {episode_id}" for episode_id in manifest.swept_episode_ids) or "- none",
             "",
@@ -170,7 +171,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "\n".join(f"- {case}" for case in _candidate_case_refs(candidates, "prior_negative_cases"))
             or "- none",
             "",
-            "## 12. Additional Web Sources",
+            PREOPEN_REPORT_SECTION_HEADINGS[11],
             "",
             "\n".join(f"- {source}" for source in manifest.web_sources)
             or "- mock/no external web sources",
@@ -265,7 +266,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)
             or "- none",
             "",
-            "## 13. Memory Coverage",
+            PREOPEN_REPORT_SECTION_HEADINGS[12],
             "",
             f"- Accepted episodes: {manifest.accepted_episode_count}",
             f"- Swept episodes: {manifest.swept_episode_count}",

@@ -171,6 +171,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     )
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
+    assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
     pack_payload = json.loads(session_pack.output)
     pack_dir = tmp_path / pack_payload["session_pack"]
     assert read_json(pack_dir / "manifest.json")["blocked"] is False

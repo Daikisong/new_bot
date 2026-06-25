@@ -188,6 +188,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
+    assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
     brain_context_file = tmp_path / context_payload["brain_files"][0]
     original_brain_context = brain_context_file.read_text(encoding="utf-8")
     brain_context_file.write_text(

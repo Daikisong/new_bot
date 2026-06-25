@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.utils import (
     canonical_json,
     default_news_window_start,
@@ -877,6 +878,18 @@ def _check_manifest_report_artifact(
     if isinstance(run_id, str) and run_id not in report_text:
         findings.append(
             f"{prediction_path.name}: context manifest report_artifact missing run id"
+        )
+    section_status = inspect_preopen_report_sections(report_text)
+    if section_status["missing"]:
+        missing = ", ".join(section_status["missing"])
+        findings.append(
+            f"{prediction_path.name}: context manifest report_artifact missing "
+            f"required sections: {missing}"
+        )
+    if not section_status["ordered"]:
+        findings.append(
+            f"{prediction_path.name}: context manifest report_artifact required "
+            "sections out of order"
         )
 
 

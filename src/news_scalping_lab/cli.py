@@ -31,6 +31,7 @@ from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
+from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
@@ -1288,6 +1289,10 @@ def _inspect_report_artifact(root: Path, manifest: dict[str, Any]) -> dict[str, 
     status["hash_verified"] = observed_hash == expected_hash
     run_id = manifest.get("run_id")
     status["contains_run_id"] = isinstance(run_id, str) and run_id in report_text
+    required_sections = inspect_preopen_report_sections(report_text)
+    status["required_sections"] = required_sections
+    if not required_sections["passed"]:
+        status["errors"].append("required_report_sections_failed")
     return status
 
 
