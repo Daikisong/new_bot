@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
+
+ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class OutputDirs(BaseModel):
@@ -190,6 +193,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 def load_settings(project_root: Path | None = None) -> Settings:
     root = (project_root or Path.cwd()).resolve()
+    _load_dotenv(root / ".env")
     data = _read_yaml(root / "configs" / "default.yaml")
     if "stock_web_path" in data and data["stock_web_path"] is not None:
         data["stock_web_path"] = Path(str(data["stock_web_path"]))
@@ -222,6 +226,31 @@ def load_settings(project_root: Path | None = None) -> Settings:
     if max_concurrency:
         settings.limits.max_concurrency = int(max_concurrency)
     return settings
+
+
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        if "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not ENV_KEY_RE.match(key) or key in os.environ:
+            continue
+        os.environ[key] = _dotenv_value(raw_value)
+
+
+def _dotenv_value(raw_value: str) -> str:
+    value = raw_value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value
 
 
 def ensure_project_dirs(settings: Settings) -> None:

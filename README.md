@@ -131,6 +131,7 @@ JSONL, phase state JSON, and bundle manifest blocks with machine-verified hashes
 ## Environment
 
 Copy `.env.example` to `.env` and set values as needed.
+CLI commands automatically load `.env` from the project root without overwriting already-set shell environment variables.
 
 ```text
 NSLAB_LLM_PROVIDER=mock

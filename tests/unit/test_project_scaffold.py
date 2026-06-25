@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import yaml
 
-from news_scalping_lab.config import Settings, ensure_project_dirs, write_default_config_files
+from news_scalping_lab.config import (
+    Settings,
+    ensure_project_dirs,
+    load_settings,
+    write_default_config_files,
+)
 
 
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
@@ -82,3 +90,53 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     assert models["default"]["provider"] == "mock"
     assert models["openai"]["model"] == "gpt-5-mini"
     assert inference["default_mode"] == "exhaustive"
+
+
+def test_load_settings_reads_project_dotenv_without_overriding_environment(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("NSLAB_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("NSLAB_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("NSLAB_STOCK_WEB_PATH", raising=False)
+    monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE", raising=False)
+    monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE_PATH", raising=False)
+    monkeypatch.delenv("NSLAB_STOCK_WEB_REMOTE_URL", raising=False)
+    monkeypatch.delenv("NSLAB_MAX_CONCURRENCY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "# local secrets and runtime settings",
+                "NSLAB_LLM_PROVIDER=openai",
+                "NSLAB_WEB_PROVIDER=mock",
+                "NSLAB_STOCK_WEB_PATH='data/cache/stock-web'",
+                "NSLAB_STOCK_WEB_CACHE=1",
+                "NSLAB_STOCK_WEB_CACHE_PATH=data/cache/custom-stock-web",
+                "NSLAB_STOCK_WEB_REMOTE_URL=https://example.test/stock-web.git",
+                "NSLAB_MAX_CONCURRENCY=7",
+                "OPENAI_API_KEY=secret-from-dotenv",
+                "MALFORMED LINE",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(tmp_path)
+
+    assert settings.llm_provider == "openai"
+    assert settings.web_provider == "mock"
+    assert settings.price_provider == "stock-web"
+    assert settings.stock_web_path == Path("data/cache/stock-web")
+    assert settings.stock_web_cache_enabled is True
+    assert settings.stock_web_cache_path == Path("data/cache/custom-stock-web")
+    assert settings.stock_web_remote_url == "https://example.test/stock-web.git"
+    assert settings.limits.max_concurrency == 7
+    assert settings.path(settings.stock_web_cache_path) == (
+        tmp_path / "data/cache/custom-stock-web"
+    )
+    assert settings.path(settings.stock_web_path) == tmp_path / "data/cache/stock-web"
+    assert os.getenv("OPENAI_API_KEY") == "secret-from-dotenv"
+
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "mock")
+    assert load_settings(tmp_path).llm_provider == "mock"
