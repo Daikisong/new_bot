@@ -1620,6 +1620,52 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
     ) in result["findings"]
 
 
+def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    for file_name in pack_files:
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    pack_file_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+            "pack_file_hashes": pack_file_hashes,
+            "pack_sha256": sha256_text(
+                "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
+            ),
+        },
+    )
+
+    clean = audit_lookahead(tmp_path)
+
+    assert clean["passed"], clean["findings"]
+
+    (pack_dir / "current_news.md").write_text("tampered current news\n", encoding="utf-8")
+
+    tampered = audit_lookahead(tmp_path)
+
+    assert not tampered["passed"]
+    findings = tampered["findings"]
+    assert isinstance(findings, list)
+    assert (
+        "session_packs/2030-01-10/manifest.json: pack_file_hashes mismatch: "
+        "current_news.md"
+    ) in findings
+    assert "session_packs/2030-01-10/manifest.json: pack_sha256 mismatch" in findings
+
+
 def test_lookahead_audit_checks_daily_manifest_company_memory_refs(tmp_path: Path) -> None:
     manifest_dir = tmp_path / "runs" / "manifests"
     manifest_dir.mkdir(parents=True)

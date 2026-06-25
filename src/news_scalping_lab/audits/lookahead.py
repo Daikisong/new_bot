@@ -7,7 +7,22 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
-from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_json, sha256_text
+from news_scalping_lab.utils import (
+    file_sha256,
+    is_available_as_of,
+    parse_datetime,
+    read_json,
+    sha256_text,
+)
+
+SESSION_PACK_FILES = (
+    "system_instructions.md",
+    "research_brain.md",
+    "memory_cases.md",
+    "current_news.md",
+    "company_memory.md",
+    "market_context.md",
+)
 
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
@@ -56,6 +71,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             manifest_cutoff_at,
             findings,
         )
+        _check_session_pack_hashes(root, path, manifest_name, manifest, findings)
         if (
             manifest.get("mode") == "exhaustive"
             and manifest.get("accepted_episode_count") != manifest.get("swept_episode_count")
@@ -279,6 +295,51 @@ def _check_payload_available_as_of(
         return
     fields = ", ".join(timestamp_fields)
     findings.append(f"{manifest_name}: included {label} missing temporal field {fields}: {relative_ref}")
+
+
+def _check_session_pack_hashes(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    if manifest_path.parent.parent != root / "session_packs":
+        return
+    pack_hashes = manifest.get("pack_file_hashes")
+    if pack_hashes is None and manifest.get("pack_sha256") is None:
+        return
+    if not isinstance(pack_hashes, dict):
+        findings.append(f"{manifest_name}: pack_file_hashes is invalid")
+        return
+    observed_hashes: dict[str, str] = {}
+    for file_name in SESSION_PACK_FILES:
+        expected_hash = pack_hashes.get(file_name)
+        if not isinstance(expected_hash, str):
+            findings.append(f"{manifest_name}: missing pack_file_hashes: {file_name}")
+            continue
+        path = manifest_path.parent / file_name
+        if not path.is_file():
+            findings.append(f"{manifest_name}: session pack file missing: {file_name}")
+            continue
+        observed_hash = file_sha256(path)
+        observed_hashes[file_name] = observed_hash
+        if observed_hash != expected_hash:
+            findings.append(f"{manifest_name}: pack_file_hashes mismatch: {file_name}")
+    extra_hashes = sorted(str(key) for key in pack_hashes if key not in SESSION_PACK_FILES)
+    if extra_hashes:
+        findings.append(f"{manifest_name}: unlisted pack_file_hashes: {', '.join(extra_hashes)}")
+    expected_pack_sha = manifest.get("pack_sha256")
+    if not isinstance(expected_pack_sha, str):
+        findings.append(f"{manifest_name}: missing pack_sha256")
+        return
+    if set(observed_hashes) != set(SESSION_PACK_FILES):
+        return
+    observed_pack_sha = sha256_text(
+        "\n".join(observed_hashes[file_name] for file_name in SESSION_PACK_FILES)
+    )
+    if observed_pack_sha != expected_pack_sha:
+        findings.append(f"{manifest_name}: pack_sha256 mismatch")
 
 
 def _check_news_only_blind_protocol(

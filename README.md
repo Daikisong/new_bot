@@ -135,6 +135,8 @@ If the selected brain or shard-brain context contains cutoff-after episode IDs,
 the export writes a blocked manifest and exits non-zero instead of producing an unsafe pack.
 If the token budget would omit currently available research episodes, the command also
 writes a blocked manifest and exits non-zero so coverage loss is not missed silently.
+The pack manifest records hashes for every Markdown artifact, and `nslab audit lookahead`
+verifies those hashes so copied GPT Web context drift is detected.
 
 ## Analysis Bundle
 
