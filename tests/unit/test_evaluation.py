@@ -13,8 +13,10 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     ConfidenceLabel,
     DominantSectorHypothesis,
+    FailureCode,
     OutcomeLabels,
     PathType,
+    Postmortem,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.prices.base import PriceRecord
@@ -94,6 +96,37 @@ class UniverseMetricsPriceSource(MetricsPriceSource):
             "T4": OutcomeLabels(upper_limit_touched=True, upper_limit_closed=False),
             "T5": OutcomeLabels(upper_limit_touched=False, upper_limit_closed=False),
         }
+
+
+class RecordingPostmortemLLM:
+    model = "recording-postmortem"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, type[object], str]] = []
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        return "unused"
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[object],
+        purpose: str,
+    ) -> object:
+        self.calls.append((purpose, response_model, prompt))
+        assert response_model is Postmortem
+        return Postmortem(
+            summary="Provider-generated evaluation postmortem.",
+            hits=["ProviderWrongHit"],
+            misses=["ProviderWrongMiss"],
+            false_positives=["ProviderWrongFalsePositive"],
+            failure_codes=[FailureCode.HINDSIGHT_CONTAMINATION],
+            lessons=["Provider-generated lesson from evaluation labels."],
+        )
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return [[0.0] for _ in texts]
 
 
 def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path) -> None:
@@ -375,6 +408,75 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     assert episode.misses == ["T4"]
     assert episode.postmortem is not None
     assert episode.postmortem.misses == ["T4"]
+
+
+def test_evaluate_generates_postmortem_through_llm_provider_and_traces(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    prediction = prediction.model_copy(
+        update={
+            "candidates": [
+                Candidate(
+                    rank=1,
+                    ticker="T1",
+                    company_name="HitCandidate",
+                    path_type=PathType.SINGLE_EVENT,
+                    thesis="Candidate expected to touch upper limit.",
+                    why_now="Pre-cutoff catalyst.",
+                    causal_chain=["news", "direct relevance"],
+                ),
+                Candidate(
+                    rank=2,
+                    ticker="T2",
+                    company_name="FalsePositiveCandidate",
+                    path_type=PathType.CONTINUATION,
+                    thesis="Candidate expected to continue.",
+                    why_now="D-1 continuation review.",
+                    causal_chain=["market memory", "continuation"],
+                ),
+            ]
+        }
+    )
+    resealed = prediction.model_copy(update={"blind_artifact_sha256": None})
+    prediction = resealed.model_copy(
+        update={"blind_artifact_sha256": sha256_text(canonical_json(resealed.model_dump(mode="json")))}
+    )
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+    llm = RecordingPostmortemLLM()
+
+    result = Evaluator(tmp_path, price_source=MetricsPriceSource(), llm=llm).evaluate(
+        trade_date=trade_day
+    )
+
+    report = read_json(result.report_path)
+    postmortem = report["postmortem"]
+    assert llm.calls
+    assert llm.calls[0][0] == "evaluation_postmortem"
+    assert "---EVALUATION_POSTMORTEM_PAYLOAD---" in llm.calls[0][2]
+    assert report["postmortem_prompt_version"] == "evaluation_postmortem.v1"
+    assert report["postmortem_prompt_sha256"] == sha256_text(llm.calls[0][2])
+    assert report["postmortem_model_config"]["provider_class"] == "RecordingPostmortemLLM"
+    assert postmortem["summary"] == "Provider-generated evaluation postmortem."
+    assert postmortem["hits"] == ["HitCandidate"]
+    assert postmortem["misses"] == []
+    assert postmortem["false_positives"] == ["FalsePositiveCandidate"]
+    assert postmortem["failure_codes"] == ["UNKNOWN"]
+    assert postmortem["lessons"] == ["Provider-generated lesson from evaluation labels."]
+    traces = [
+        read_json(path)
+        for path in (tmp_path / "runs" / "traces").glob("*.json")
+    ]
+    assert any(
+        trace["purpose"] == "evaluation_postmortem"
+        and trace["metadata"]["prompt_version"] == "evaluation_postmortem.v1"
+        and trace["input"]["prompt_sha256"] == report["postmortem_prompt_sha256"]
+        for trace in traces
+    )
 
 
 def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:

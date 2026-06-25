@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
+from typing import Any
 
 from news_scalping_lab.config import Settings, load_settings
 from news_scalping_lab.contracts.models import (
@@ -22,6 +24,9 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.prices.base import OutcomeUniversePriceSource, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.storage import ResearchStore
@@ -40,6 +45,7 @@ from news_scalping_lab.utils import (
 from news_scalping_lab.warehouse import WarehouseStore
 
 EVALUATION_PROTOCOL_VERSION = "nslab.exhaustive_news_blind_full_market.v5"
+EVALUATION_POSTMORTEM_PROMPT_VERSION = "evaluation_postmortem.v1"
 
 
 @dataclass(frozen=True)
@@ -49,15 +55,39 @@ class EvaluationResult:
     episode_path: Path
 
 
+@dataclass(frozen=True)
+class GeneratedPostmortem:
+    postmortem: Postmortem
+    prompt_sha256: str
+
+
 class Evaluator:
-    def __init__(self, root: Path, price_source: PriceSource | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        price_source: PriceSource | None = None,
+        llm: LLMProvider | None = None,
+    ) -> None:
         self.root = root
         settings = load_settings(root)
-        self.price_source = price_source or create_price_source(
+        self.settings = (
             settings if settings.project_root == root.resolve() else Settings(project_root=root)
+        )
+        self.price_source = price_source or create_price_source(
+            self.settings
+        )
+        base_llm = llm or create_llm_provider(self.settings)
+        self.llm_model_config = _llm_model_config(self.settings, base_llm)
+        self.llm = _trace_evaluation_llm(
+            base_llm,
+            settings=self.settings,
+            model_config=self.llm_model_config,
         )
 
     def evaluate(self, *, trade_date: date) -> EvaluationResult:
+        return asyncio.run(self.evaluate_async(trade_date=trade_date))
+
+    async def evaluate_async(self, *, trade_date: date) -> EvaluationResult:
         prediction_path = self.root / "predictions" / f"{trade_date.isoformat()}.json"
         if not prediction_path.exists():
             raise FileNotFoundError(f"blind prediction not found: {prediction_path}")
@@ -101,17 +131,18 @@ class Evaluator:
         metrics = _build_metrics(ranked_outcomes, outcome_universe=outcome_universe)
         outcome_coverage_status = _outcome_coverage_status(outcome_universe)
         misses = _upper_limit_misses(prediction.candidates, outcome_universe)
-        postmortem = Postmortem(
-            summary="Mock postmortem generated from sealed blind prediction and evaluation-only outcomes.",
+        generated_postmortem = await self._generate_postmortem(
+            trade_date=trade_date,
+            prediction=prediction,
+            ranked_outcomes=ranked_outcomes,
+            outcome_universe=outcome_universe,
+            metrics=metrics,
+            outcome_coverage_status=outcome_coverage_status,
             hits=hits,
             misses=misses,
             false_positives=false_positives,
-            failure_codes=_failure_codes(false_positives=false_positives, misses=misses),
-            lessons=[
-                "Use postmortem lessons only from the next trading day forward.",
-                "Do not rewrite sealed blind reasoning after outcomes are known.",
-            ],
         )
+        postmortem = generated_postmortem.postmortem
         eligibility_matrix = _build_eligibility_matrix(
             prediction=prediction,
             ranked_outcomes=ranked_outcomes,
@@ -130,6 +161,9 @@ class Evaluator:
             "outcome_coverage_status": outcome_coverage_status,
             "outcomes": outcomes,
             "performance_metrics": metrics.model_dump(mode="json"),
+            "postmortem_prompt_version": EVALUATION_POSTMORTEM_PROMPT_VERSION,
+            "postmortem_prompt_sha256": generated_postmortem.prompt_sha256,
+            "postmortem_model_config": self.llm_model_config,
             "postmortem": postmortem.model_dump(mode="json"),
             "eligibility_matrix": eligibility_matrix.model_dump(mode="json"),
         }
@@ -151,6 +185,49 @@ class Evaluator:
             report_path=target,
             episode_id=episode.episode_id,
             episode_path=episode_path,
+        )
+
+    async def _generate_postmortem(
+        self,
+        *,
+        trade_date: date,
+        prediction: BlindPrediction,
+        ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+        outcome_universe: dict[str, OutcomeLabels] | None,
+        metrics: EvaluationMetrics,
+        outcome_coverage_status: str,
+        hits: list[str],
+        misses: list[str],
+        false_positives: list[str],
+    ) -> GeneratedPostmortem:
+        failure_codes = _failure_codes(false_positives=false_positives, misses=misses)
+        prompt = _build_evaluation_postmortem_prompt(
+            trade_date=trade_date,
+            prediction=prediction,
+            ranked_outcomes=ranked_outcomes,
+            outcome_universe=outcome_universe,
+            metrics=metrics,
+            outcome_coverage_status=outcome_coverage_status,
+            hits=hits,
+            misses=misses,
+            false_positives=false_positives,
+            failure_codes=failure_codes,
+        )
+        generated = await self.llm.generate_structured(
+            prompt=prompt,
+            response_model=Postmortem,
+            purpose="evaluation_postmortem",
+        )
+        postmortem = _merge_postmortem_with_computed_labels(
+            generated,
+            hits=hits,
+            misses=misses,
+            false_positives=false_positives,
+            failure_codes=failure_codes,
+        )
+        return GeneratedPostmortem(
+            postmortem=postmortem,
+            prompt_sha256=sha256_text(prompt),
         )
 
     def _build_research_episode(
@@ -255,6 +332,170 @@ class Evaluator:
         write_json(prediction_snapshot_path, read_json(prediction_path))
         write_json(postmortem_snapshot_path, read_json(postmortem_path))
         return prediction_snapshot_path, postmortem_snapshot_path
+
+
+def _trace_evaluation_llm(
+    provider: LLMProvider,
+    *,
+    settings: Settings,
+    model_config: dict[str, Any],
+) -> LLMProvider:
+    if isinstance(provider, TracingLLMProvider):
+        return provider
+    return TracingLLMProvider(
+        provider,
+        trace_dir=settings.path(settings.output_dirs.traces),
+        model_config=model_config,
+        default_metadata={"prompt_version": EVALUATION_POSTMORTEM_PROMPT_VERSION},
+        purpose_metadata={
+            "evaluation_postmortem": {
+                "prompt_version": EVALUATION_POSTMORTEM_PROMPT_VERSION
+            }
+        },
+        max_retries=settings.llm.max_retries,
+    )
+
+
+def _llm_model_config(settings: Settings, provider: LLMProvider) -> dict[str, Any]:
+    if isinstance(provider, TracingLLMProvider):
+        return dict(provider.model_config)
+    config: dict[str, Any] = {
+        "configured_provider": settings.llm_provider,
+        "provider_class": type(provider).__name__,
+    }
+    model = getattr(provider, "model", None)
+    if isinstance(model, str) and model:
+        config["model"] = model
+    embedding_model = getattr(provider, "embedding_model", None)
+    if isinstance(embedding_model, str) and embedding_model:
+        config["embedding_model"] = embedding_model
+    reasoning_effort = getattr(provider, "reasoning_effort", None)
+    if isinstance(reasoning_effort, str) and reasoning_effort:
+        config["reasoning_effort"] = reasoning_effort
+    max_output_tokens = getattr(provider, "max_output_tokens", None)
+    if isinstance(max_output_tokens, int):
+        config["max_output_tokens"] = max_output_tokens
+    config["max_retries"] = settings.llm.max_retries
+    return config
+
+
+def _build_evaluation_postmortem_prompt(
+    *,
+    trade_date: date,
+    prediction: BlindPrediction,
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    metrics: EvaluationMetrics,
+    outcome_coverage_status: str,
+    hits: list[str],
+    misses: list[str],
+    false_positives: list[str],
+    failure_codes: list[FailureCode],
+) -> str:
+    payload = {
+        "schema_version": "nslab.evaluation_postmortem_prompt_payload.v1",
+        "prompt_version": EVALUATION_POSTMORTEM_PROMPT_VERSION,
+        "trade_date": trade_date.isoformat(),
+        "sealed_blind_prediction": {
+            "prediction_id": prediction.prediction_id,
+            "trade_date": prediction.trade_date.isoformat(),
+            "cutoff_at": prediction.cutoff_at.isoformat(),
+            "sealed_at": prediction.sealed_at.isoformat() if prediction.sealed_at else None,
+            "blind_artifact_sha256": prediction.blind_artifact_sha256,
+            "blind_analysis": prediction.blind_analysis.model_dump(mode="json"),
+            "dominant_sectors": [
+                item.model_dump(mode="json") for item in prediction.dominant_sectors
+            ],
+        },
+        "candidate_outcomes": [
+            {
+                "candidate": _candidate_prompt_payload(candidate),
+                "outcome": outcome.model_dump(mode="json"),
+            }
+            for candidate, outcome in ranked_outcomes
+        ],
+        "outcome_universe": (
+            {
+                ticker: outcome.model_dump(mode="json")
+                for ticker, outcome in sorted(outcome_universe.items())
+            }
+            if outcome_universe is not None
+            else None
+        ),
+        "outcome_coverage_status": outcome_coverage_status,
+        "performance_metrics": metrics.model_dump(mode="json"),
+        "computed_labels": {
+            "hits": hits,
+            "misses": misses,
+            "false_positives": false_positives,
+            "failure_codes": [str(code) for code in failure_codes],
+        },
+        "instructions": [
+            "Use only the sealed blind prediction and evaluation-only D outcome labels.",
+            "Do not rewrite or improve the sealed blind reasoning.",
+            "Explain structural miss and false-positive causes for future postmortem learning.",
+            "Lessons must be reusable only from the next trading day forward.",
+            "Keep computed hit, miss, false-positive, and failure-code labels unchanged.",
+        ],
+    }
+    return (
+        "Create a structured postmortem for a sealed blind pre-open prediction. "
+        "Return only the Postmortem schema.\n"
+        "---EVALUATION_POSTMORTEM_PAYLOAD---\n"
+        f"{canonical_json(payload)}"
+    )
+
+
+def _candidate_prompt_payload(candidate: Candidate) -> dict[str, Any]:
+    return {
+        "rank": candidate.rank,
+        "ticker": candidate.ticker,
+        "company_name": candidate.company_name,
+        "path_type": str(candidate.path_type),
+        "event_ids": candidate.event_ids,
+        "thesis": candidate.thesis,
+        "why_now": candidate.why_now,
+        "causal_chain": candidate.causal_chain,
+        "direct_evidence": candidate.direct_evidence,
+        "inferred_evidence": candidate.inferred_evidence,
+        "market_memory_evidence": candidate.market_memory_evidence,
+        "prior_positive_cases": candidate.prior_positive_cases,
+        "prior_negative_cases": candidate.prior_negative_cases,
+        "novel_reasoning": candidate.novel_reasoning,
+        "counterarguments": candidate.counterarguments,
+        "disconfirming_conditions": candidate.disconfirming_conditions,
+        "confidence_label": str(candidate.confidence_label),
+        "evidence_quality": str(candidate.evidence_quality),
+        "source_urls": candidate.source_urls,
+        "memory_episode_ids": candidate.memory_episode_ids,
+    }
+
+
+def _merge_postmortem_with_computed_labels(
+    generated: Postmortem,
+    *,
+    hits: list[str],
+    misses: list[str],
+    false_positives: list[str],
+    failure_codes: list[FailureCode],
+) -> Postmortem:
+    lessons = [lesson for lesson in generated.lessons if lesson.strip()]
+    if not lessons:
+        lessons = [
+            "Use postmortem lessons only from the next trading day forward.",
+            "Do not rewrite sealed blind reasoning after outcomes are known.",
+        ]
+    return generated.model_copy(
+        update={
+            "summary": generated.summary.strip()
+            or "LLM postmortem generated from sealed blind prediction and evaluation-only outcomes.",
+            "hits": hits,
+            "misses": misses,
+            "false_positives": false_positives,
+            "failure_codes": failure_codes,
+            "lessons": lessons,
+        }
+    )
 
 
 def _validate_sealed_blind_prediction(

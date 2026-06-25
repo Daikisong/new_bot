@@ -23,10 +23,12 @@ from news_scalping_lab.contracts.models import (
     CandidateExpansionReview,
     ConfidenceLabel,
     DominantSectorHypothesis,
+    FailureCode,
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
     PathType,
+    Postmortem,
     RedTeamArtifact,
     RedTeamAttackCheck,
     RedTeamFinding,
@@ -63,6 +65,9 @@ class DeterministicMockLLMProvider:
         if response_model is BlindPrediction and purpose == "final_synthesis":
             prediction = self._final_synthesis_prediction(prompt)
             return prediction  # type: ignore[return-value]
+        if response_model is Postmortem and purpose == "evaluation_postmortem":
+            postmortem = self._evaluation_postmortem(prompt)
+            return postmortem  # type: ignore[return-value]
         if response_model is BlindPrediction:
             prediction = self._blind_prediction(prompt)
             return prediction  # type: ignore[return-value]
@@ -281,6 +286,57 @@ class DeterministicMockLLMProvider:
 
     def _blind_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---BLIND_ANALYSIS_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _evaluation_postmortem(self, prompt: str) -> Postmortem:
+        payload = self._evaluation_postmortem_payload(prompt)
+        labels = payload.get("computed_labels", {})
+        if not isinstance(labels, dict):
+            labels = {}
+        hits = self._payload_string_list(labels, "hits")
+        misses = self._payload_string_list(labels, "misses")
+        false_positives = self._payload_string_list(labels, "false_positives")
+        failure_codes = [
+            FailureCode(item)
+            for item in self._payload_string_list(labels, "failure_codes")
+            if item in {code.value for code in FailureCode}
+        ]
+        coverage = str(payload.get("outcome_coverage_status") or "UNKNOWN")
+        metrics = payload.get("performance_metrics", {})
+        candidate_count = (
+            metrics.get("candidate_count", 0) if isinstance(metrics, dict) else 0
+        )
+        summary = (
+            "Mock LLM evaluation postmortem compared the sealed blind prediction "
+            f"with D-day outcome labels for {candidate_count} candidates "
+            f"under {coverage} coverage."
+        )
+        lessons = [
+            "Use postmortem lessons only from the next trading day forward.",
+            "Do not rewrite sealed blind reasoning after outcomes are known.",
+        ]
+        if misses:
+            lessons.append("Ranking misses require future comparison against the full outcome universe.")
+        if false_positives:
+            lessons.append("False positives require stricter directness, novelty, and absorption review.")
+        return Postmortem(
+            summary=summary,
+            hits=hits,
+            misses=misses,
+            false_positives=false_positives,
+            failure_codes=failure_codes,
+            lessons=self._dedupe_strings(lessons),
+        )
+
+    def _evaluation_postmortem_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---EVALUATION_POSTMORTEM_PAYLOAD---"
         if marker not in prompt:
             return {}
         payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
