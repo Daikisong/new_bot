@@ -3481,6 +3481,27 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
             text=raw_text,
         )
     )
+    output_text_provenance = [
+        {
+            "field_name": "blind_analysis.summary",
+            "sentence_index": 1,
+            "text_sha256": sha256_text("Imported from source."),
+            "excerpt": "Imported from source.",
+            "source_ids": [source_id],
+            "source_segment_indices": [1, 2],
+        },
+        {
+            "field_name": "blind_analysis.open_world_mechanisms",
+            "item_index": 1,
+            "sentence_index": 1,
+            "text_sha256": sha256_text(
+                "current evidence -> open-world blind mechanism"
+            ),
+            "excerpt": "current evidence -> open-world blind mechanism",
+            "source_ids": [source_id],
+            "source_segment_indices": [1, 2],
+        },
+    ]
     semantic_audit = {
         "prompt_version": "semantic_import.v1",
         "prompt_sha256": prompt_sha256,
@@ -3490,6 +3511,11 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
         "source_segment_count": len(source_segments),
         "source_segments_sha256": sha256_text(canonical_json(source_segments)),
         "source_segments": source_segments,
+        "output_text_provenance_count": len(output_text_provenance),
+        "output_text_provenance_sha256": sha256_text(
+            canonical_json(output_text_provenance)
+        ),
+        "output_text_provenance": output_text_provenance,
         "output_field_source_ids": {
             field_name: [source_id]
             for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
@@ -3555,6 +3581,29 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
 
     assert result["passed"], result["findings"]
     assert result["checked_research_episode_files"] == 1
+
+    missing_sentence = read_json(episode_path)
+    reduced_output_text_provenance = output_text_provenance[:1]
+    missing_sentence["input_audit"]["semantic_import"][
+        "output_text_provenance"
+    ] = reduced_output_text_provenance
+    missing_sentence["input_audit"]["semantic_import"][
+        "output_text_provenance_count"
+    ] = len(reduced_output_text_provenance)
+    missing_sentence["input_audit"]["semantic_import"][
+        "output_text_provenance_sha256"
+    ] = sha256_text(canonical_json(reduced_output_text_provenance))
+    write_json(episode_path, missing_sentence)
+
+    missing_sentence_result = audit_provenance(tmp_path)
+
+    assert not missing_sentence_result["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import "
+        "output text provenance missing: blind_analysis.open_world_mechanisms"
+    ) in missing_sentence_result["findings"]
+
+    write_json(episode_path, episode)
 
     trace_path.unlink()
     missing_trace_result = audit_provenance(tmp_path)

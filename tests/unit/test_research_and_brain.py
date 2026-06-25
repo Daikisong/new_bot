@@ -1328,6 +1328,39 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
         field_name: [episode.provenance[0].source_id]
         for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
     }
+    output_text_provenance = semantic_audit["output_text_provenance"]
+    assert semantic_audit["output_text_provenance_count"] == len(output_text_provenance)
+    assert semantic_audit["output_text_provenance_sha256"] == sha256_text(
+        canonical_json(output_text_provenance)
+    )
+    assert output_text_provenance == [
+        {
+            "field_name": "blind_analysis.summary",
+            "sentence_index": 1,
+            "text_sha256": sha256_text("Structured import supplied by the LLM provider."),
+            "excerpt": "Structured import supplied by the LLM provider.",
+            "source_ids": [episode.provenance[0].source_id],
+            "source_segment_indices": [1, 2],
+        },
+        {
+            "field_name": "blind_analysis.open_world_mechanisms",
+            "item_index": 1,
+            "sentence_index": 1,
+            "text_sha256": sha256_text("free-form source -> structured episode draft"),
+            "excerpt": "free-form source -> structured episode draft",
+            "source_ids": [episode.provenance[0].source_id],
+            "source_segment_indices": [1, 2],
+        },
+        {
+            "field_name": "blind_analysis.initial_uncertainties",
+            "item_index": 1,
+            "sentence_index": 1,
+            "text_sha256": sha256_text("review raw source before acceptance"),
+            "excerpt": "review raw source before acceptance",
+            "source_ids": [episode.provenance[0].source_id],
+            "source_segment_indices": [1, 2],
+        },
+    ]
 
     traces = list((tmp_path / "runs" / "traces").glob("TRACE-*.json"))
     assert len(traces) == 1

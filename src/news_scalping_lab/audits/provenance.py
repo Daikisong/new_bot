@@ -1497,6 +1497,7 @@ def _check_semantic_import_audit(
     _check_semantic_provenance_entries(root, label, semantic, source_hash, provenance_entries, findings)
     _check_semantic_source_segments(label, semantic, source_text, findings)
     _check_semantic_output_sources(label, episode, semantic, findings)
+    _check_semantic_output_text_provenance(label, episode, semantic, findings)
     if prompt_sha256 is not None:
         _check_semantic_import_trace(root, label, episode, semantic, prompt_sha256, findings)
 
@@ -1757,6 +1758,249 @@ def _check_semantic_output_sources(
                 findings.append(
                     f"{label}: semantic_import output field source id unknown: {field_name}"
                 )
+
+
+def _check_semantic_output_text_provenance(
+    label: str,
+    episode: dict[str, Any],
+    semantic: dict[str, Any],
+    findings: list[str],
+) -> None:
+    records = semantic.get("output_text_provenance")
+    if not isinstance(records, list) or not records:
+        findings.append(f"{label}: semantic_import output_text_provenance missing")
+        return
+    if semantic.get("output_text_provenance_count") != len(records):
+        findings.append(f"{label}: semantic_import output_text_provenance_count mismatch")
+    if semantic.get("output_text_provenance_sha256") != sha256_text(canonical_json(records)):
+        findings.append(f"{label}: semantic_import output_text_provenance_sha256 mismatch")
+
+    known_source_ids = {
+        entry.get("source_id")
+        for entry in _iter_provenance_entries(episode)
+        if isinstance(entry.get("source_id"), str)
+    }
+    source_segment_indices = _semantic_source_segment_indices(semantic)
+    expected_records = _expected_semantic_output_text_records(episode)
+    expected_by_key = {_semantic_output_text_key(record): record for record in expected_records}
+    seen_keys: set[tuple[str, int | None, int]] = set()
+
+    for position, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            findings.append(
+                f"{label}: semantic_import output text provenance {position} is invalid"
+            )
+            continue
+        key = _semantic_output_text_key(record)
+        field_name, item_index, sentence_index = key
+        if (
+            not isinstance(field_name, str)
+            or not field_name
+            or not isinstance(sentence_index, int)
+            or isinstance(sentence_index, bool)
+            or sentence_index < 1
+        ):
+            findings.append(
+                f"{label}: semantic_import output text provenance {position} key invalid"
+            )
+            continue
+        if item_index is not None and (
+            not isinstance(item_index, int) or isinstance(item_index, bool) or item_index < 1
+        ):
+            findings.append(
+                f"{label}: semantic_import output text provenance {position} item_index invalid"
+            )
+            continue
+        if key in seen_keys:
+            findings.append(
+                f"{label}: semantic_import output text provenance duplicate: {field_name}"
+            )
+        seen_keys.add(key)
+        expected = expected_by_key.get(key)
+        if expected is None:
+            findings.append(
+                f"{label}: semantic_import output text provenance unexpected: {field_name}"
+            )
+            continue
+        if record.get("text_sha256") != expected.get("text_sha256"):
+            findings.append(
+                f"{label}: semantic_import output text provenance {field_name} "
+                "text_sha256 mismatch"
+            )
+        if record.get("excerpt") != expected.get("excerpt"):
+            findings.append(
+                f"{label}: semantic_import output text provenance {field_name} "
+                "excerpt mismatch"
+            )
+        _check_semantic_output_text_sources(
+            label,
+            field_name,
+            record,
+            known_source_ids=known_source_ids,
+            source_segment_indices=source_segment_indices,
+            findings=findings,
+        )
+
+    for expected in expected_records:
+        key = _semantic_output_text_key(expected)
+        if key not in seen_keys:
+            findings.append(
+                f"{label}: semantic_import output text provenance missing: "
+                f"{expected['field_name']}"
+            )
+
+
+def _check_semantic_output_text_sources(
+    label: str,
+    field_name: str,
+    record: dict[str, Any],
+    *,
+    known_source_ids: set[object],
+    source_segment_indices: set[int],
+    findings: list[str],
+) -> None:
+    source_ids = record.get("source_ids")
+    if not isinstance(source_ids, list) or not source_ids:
+        findings.append(
+            f"{label}: semantic_import output text provenance {field_name} "
+            "source_ids invalid"
+        )
+    else:
+        for source_id in source_ids:
+            if not isinstance(source_id, str) or source_id not in known_source_ids:
+                findings.append(
+                    f"{label}: semantic_import output text provenance {field_name} "
+                    "source_id unknown"
+                )
+    referenced_segments = record.get("source_segment_indices")
+    if not isinstance(referenced_segments, list) or not referenced_segments:
+        findings.append(
+            f"{label}: semantic_import output text provenance {field_name} "
+            "source_segment_indices invalid"
+        )
+        return
+    for segment_index in referenced_segments:
+        if (
+            not isinstance(segment_index, int)
+            or isinstance(segment_index, bool)
+            or segment_index not in source_segment_indices
+        ):
+            findings.append(
+                f"{label}: semantic_import output text provenance {field_name} "
+                "source_segment_index unknown"
+            )
+
+
+def _expected_semantic_output_text_records(episode: dict[str, Any]) -> list[dict[str, object]]:
+    blind_analysis = episode.get("blind_analysis")
+    blind_analysis = blind_analysis if isinstance(blind_analysis, dict) else {}
+    records: list[dict[str, object]] = []
+    summary = blind_analysis.get("summary")
+    if isinstance(summary, str):
+        records.extend(
+            _semantic_text_records_for_field(
+                field_name="blind_analysis.summary",
+                text=summary,
+            )
+        )
+    mechanisms = blind_analysis.get("open_world_mechanisms")
+    if isinstance(mechanisms, list):
+        for item_index, mechanism in enumerate(mechanisms, start=1):
+            if isinstance(mechanism, str):
+                records.extend(
+                    _semantic_text_records_for_field(
+                        field_name="blind_analysis.open_world_mechanisms",
+                        text=mechanism,
+                        item_index=item_index,
+                    )
+                )
+    uncertainties = blind_analysis.get("initial_uncertainties")
+    if isinstance(uncertainties, list):
+        for item_index, uncertainty in enumerate(uncertainties, start=1):
+            if isinstance(uncertainty, str):
+                records.extend(
+                    _semantic_text_records_for_field(
+                        field_name="blind_analysis.initial_uncertainties",
+                        text=uncertainty,
+                        item_index=item_index,
+                    )
+                )
+    return records
+
+
+def _semantic_text_records_for_field(
+    *,
+    field_name: str,
+    text: str,
+    item_index: int | None = None,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for sentence_index, segment in enumerate(_semantic_text_segments(text), start=1):
+        record: dict[str, object] = {
+            "field_name": field_name,
+            "sentence_index": sentence_index,
+            "text_sha256": segment["text_sha256"],
+            "excerpt": segment["excerpt"],
+        }
+        if item_index is not None:
+            record["item_index"] = item_index
+        records.append(record)
+    return records
+
+
+def _semantic_text_segments(text: str) -> list[dict[str, object]]:
+    segments: list[dict[str, object]] = []
+    start = 0
+    sentence_endings = {".", "?", "!", "。", "？", "！"}
+    for position, character in enumerate(text):
+        if character not in sentence_endings and character not in {"\n", "\r"}:
+            continue
+        next_position = position + 1
+        segment = text[start:next_position].strip()
+        if segment:
+            segments.append(
+                {
+                    "text_sha256": sha256_text(segment),
+                    "excerpt": segment[:240],
+                }
+            )
+        start = next_position
+    tail = text[start:].strip()
+    if tail:
+        segments.append(
+            {
+                "text_sha256": sha256_text(tail),
+                "excerpt": tail[:240],
+            }
+        )
+    return segments
+
+
+def _semantic_source_segment_indices(semantic: dict[str, Any]) -> set[int]:
+    source_segments = semantic.get("source_segments")
+    if not isinstance(source_segments, list):
+        return set()
+    indices: set[int] = set()
+    for segment in source_segments:
+        if not isinstance(segment, dict):
+            continue
+        index = segment.get("index")
+        if isinstance(index, int) and not isinstance(index, bool):
+            indices.add(index)
+    return indices
+
+
+def _semantic_output_text_key(record: dict[str, Any]) -> tuple[str, int | None, int]:
+    field_name = record.get("field_name")
+    item_index = record.get("item_index")
+    sentence_index = record.get("sentence_index")
+    return (
+        field_name if isinstance(field_name, str) else "",
+        item_index if isinstance(item_index, int) and not isinstance(item_index, bool) else None,
+        sentence_index
+        if isinstance(sentence_index, int) and not isinstance(sentence_index, bool)
+        else 0,
+    )
 
 
 def _iter_provenance_entries(value: Any) -> list[dict[str, Any]]:

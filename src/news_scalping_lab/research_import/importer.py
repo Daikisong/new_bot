@@ -174,6 +174,11 @@ class ResearchImporter:
             observed_at=now_kst(),
         )
         source_segments = _source_segments(text)
+        output_text_provenance = _output_text_provenance(
+            draft,
+            source_id=provenance.source_id,
+            source_segments=source_segments,
+        )
         input_audit = {
             "semantic_import": {
                 "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
@@ -184,6 +189,11 @@ class ResearchImporter:
                 "source_segment_count": len(source_segments),
                 "source_segments_sha256": sha256_text(canonical_json(source_segments)),
                 "source_segments": source_segments,
+                "output_text_provenance_count": len(output_text_provenance),
+                "output_text_provenance_sha256": sha256_text(
+                    canonical_json(output_text_provenance)
+                ),
+                "output_text_provenance": output_text_provenance,
                 "output_field_source_ids": {
                     field_name: [provenance.source_id]
                     for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
@@ -218,6 +228,73 @@ class ResearchImporter:
             provenance=[provenance],
             available_from=available_from,
         )
+
+
+def _output_text_provenance(
+    draft: SemanticResearchDraft,
+    *,
+    source_id: str,
+    source_segments: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    source_segment_indices: list[int] = []
+    for segment in source_segments:
+        index = segment.get("index")
+        if isinstance(index, int) and not isinstance(index, bool):
+            source_segment_indices.append(index)
+    records: list[dict[str, object]] = []
+    records.extend(
+        _output_text_field_provenance(
+            field_name="blind_analysis.summary",
+            text=draft.summary,
+            source_id=source_id,
+            source_segment_indices=source_segment_indices,
+        )
+    )
+    for item_index, mechanism in enumerate(draft.open_world_mechanisms, start=1):
+        records.extend(
+            _output_text_field_provenance(
+                field_name="blind_analysis.open_world_mechanisms",
+                text=mechanism,
+                source_id=source_id,
+                source_segment_indices=source_segment_indices,
+                item_index=item_index,
+            )
+        )
+    for item_index, uncertainty in enumerate(draft.initial_uncertainties, start=1):
+        records.extend(
+            _output_text_field_provenance(
+                field_name="blind_analysis.initial_uncertainties",
+                text=uncertainty,
+                source_id=source_id,
+                source_segment_indices=source_segment_indices,
+                item_index=item_index,
+            )
+        )
+    return records
+
+
+def _output_text_field_provenance(
+    *,
+    field_name: str,
+    text: str,
+    source_id: str,
+    source_segment_indices: list[int],
+    item_index: int | None = None,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for sentence_index, segment in enumerate(_source_segments(text), start=1):
+        record: dict[str, object] = {
+            "field_name": field_name,
+            "sentence_index": sentence_index,
+            "text_sha256": segment["text_sha256"],
+            "excerpt": segment["excerpt"],
+            "source_ids": [source_id],
+            "source_segment_indices": source_segment_indices,
+        }
+        if item_index is not None:
+            record["item_index"] = item_index
+        records.append(record)
+    return records
 
 
 def _source_segments(text: str) -> list[dict[str, object]]:
