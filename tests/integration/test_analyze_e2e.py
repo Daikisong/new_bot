@@ -1058,3 +1058,62 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
         assert payload["from_cache"] is False
         assert payload["prompt_version"] == "memory_sweep.shard_analysis.v1"
         assert payload["model_config_sha256"]
+
+
+@pytest.mark.asyncio
+async def test_exhaustive_analyze_sweeps_one_hundred_accepted_episodes(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.shard_episode_count = 10
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    for index in range(100):
+        episode = ResearchEpisode(
+            episode_id=f"EP-scale-{index:03d}",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+            research_version="scale-coverage-test-v1",
+            price_source_snapshot={"source": "scale-test"},
+            blind_analysis=BlindAnalysis(
+                summary=f"Scale coverage lesson {index:03d}.",
+                open_world_mechanisms=[
+                    f"EP-scale-{index:03d} -> exhaustive sweep coverage path"
+                ],
+            ),
+            available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+        )
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-12","08:00:00","ScaleCo, catalyst",'
+        '"Every accepted episode must be swept in exhaustive mode."\n',
+        encoding="utf-8",
+    )
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 12),
+        cutoff_at=datetime(2030, 1, 12, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    expected_ids = {f"EP-scale-{index:03d}" for index in range(100)}
+    assert manifest.accepted_episode_count == 100
+    assert manifest.swept_episode_count == 100
+    assert set(manifest.swept_episode_ids) == expected_ids
+    assert manifest.memory_sweep_shard_count == 10
+    assert len(manifest.memory_sweep_artifacts) == 10
+    swept_from_artifacts: set[str] = set()
+    for artifact in manifest.memory_sweep_artifacts:
+        payload = read_json(tmp_path / artifact)
+        assert payload["episode_count"] == 10
+        swept_from_artifacts.update(payload["episode_ids"])
+    assert swept_from_artifacts == expected_ids
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json")
+    assert saved_manifest["accepted_episode_count"] == 100
+    assert saved_manifest["swept_episode_count"] == 100
