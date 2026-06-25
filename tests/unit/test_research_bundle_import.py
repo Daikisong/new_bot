@@ -25,6 +25,12 @@ def _episode() -> ResearchEpisode:
         research_version="bundle-test-v1",
         input_news_files=["news_20300110.csv"],
         input_news_hashes=["f" * 64],
+        blind_artifact_sha256="bundle-test-hash",
+        blind_seal_receipt={
+            "schema_version": "nslab.blind_seal_receipt.v1",
+            "phase": "BLIND_SEALED",
+            "blind_artifact_sha256": "bundle-test-hash",
+        },
         price_source_snapshot={"source": "mock", "allowed_through": "2030-01-09"},
         blind_analysis=BlindAnalysis(
             summary="Open-world blind analysis before D-day prices.",
@@ -42,6 +48,9 @@ def _bundle_text(
     source_rows: list[dict[str, object]] | None = None,
     tamper_blind_hash: bool = False,
     tamper_row_hash: bool = False,
+    tamper_research_hash: bool = False,
+    tamper_brain_hash: bool = False,
+    tamper_seal_hash: bool = False,
 ) -> str:
     blind = BlindPrediction(
         prediction_id="BP-bundle-20300110",
@@ -94,12 +103,22 @@ def _bundle_text(
             ]
         )
     )
+    episode_payload = json.loads(episode.model_dump_json())
     manifest = {
         "schema_version": "nslab.bundle_manifest.v1",
         "trade_date": episode.trade_date.isoformat(),
         "blind_artifact_sha256": blind_hash,
         "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
         "source_ledger_sha256": sha256_text(source_jsonl),
+        "research_episode_sha256": (
+            "0" * 64 if tamper_research_hash else sha256_text(canonical_json(episode_payload))
+        ),
+        "brain_delta_sha256": "0" * 64 if tamper_brain_hash else sha256_text(brain_jsonl),
+        "blind_seal_receipt_sha256": (
+            "0" * 64
+            if tamper_seal_hash
+            else sha256_text(_write_json_text(episode_payload["blind_seal_receipt"]))
+        ),
     }
     return f"""---
 schema_version: nslab.research_bundle.v1
@@ -164,6 +183,9 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["blind_hash_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
+    assert parsed.validation["research_episode_hash_verified"]
+    assert parsed.validation["brain_delta_hash_verified"]
+    assert parsed.validation["blind_seal_receipt_hash_verified"]
     assert parsed.jsonl_blocks["row_disposition.jsonl"][0]["row_number"] == 1
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "memory_claim"
     assert imported.episode_id == episode.episode_id
@@ -202,6 +224,39 @@ def test_bundle_import_rejects_mismatched_row_disposition_hash(tmp_path) -> None
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
+def test_bundle_import_rejects_mismatched_research_episode_hash(tmp_path) -> None:
+    source = tmp_path / "tampered_research_bundle.md"
+    source.write_text(_bundle_text(_episode(), tamper_research_hash=True), encoding="utf-8")
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["research_episode_hash_verified"]
+    with pytest.raises(BundleImportError, match="research_episode.json hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_mismatched_brain_delta_hash(tmp_path) -> None:
+    source = tmp_path / "tampered_brain_bundle.md"
+    source.write_text(_bundle_text(_episode(), tamper_brain_hash=True), encoding="utf-8")
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["brain_delta_hash_verified"]
+    with pytest.raises(BundleImportError, match="brain_delta.jsonl hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_mismatched_blind_seal_receipt_hash(tmp_path) -> None:
+    source = tmp_path / "tampered_seal_bundle.md"
+    source.write_text(_bundle_text(_episode(), tamper_seal_hash=True), encoding="utf-8")
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["blind_seal_receipt_hash_verified"]
+    with pytest.raises(BundleImportError, match="blind_seal_receipt hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
 def test_bundle_row_disposition_rejects_raw_title_body(tmp_path) -> None:
     source = tmp_path / "bad_row_bundle.md"
     source.write_text(
@@ -221,3 +276,7 @@ def test_auto_mode_rejects_invalid_bundle_instead_of_semantic_fallback(tmp_path)
         ResearchImporter(tmp_path).import_path(source, mode="auto")
 
     assert not list((tmp_path / "research" / "episodes").glob("*.json"))
+
+
+def _write_json_text(payload: object) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"

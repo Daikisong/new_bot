@@ -141,10 +141,15 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["blind_hash_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
+    assert parsed.validation["research_episode_hash_verified"]
+    assert parsed.validation["brain_delta_hash_verified"]
+    assert parsed.validation["blind_seal_receipt_hash_verified"]
     manifest = parsed.json_blocks["bundle_manifest.json"]
     assert isinstance(manifest, dict)
     assert manifest["bundle_incomplete"] is True
     assert manifest["blind_seal_receipt_sha256"]
+    assert manifest["validation"]["research_episode_hash_verified"] is True
+    assert manifest["validation"]["brain_delta_hash_verified"] is True
     episode = parsed.json_blocks["research_episode.json"]
     assert isinstance(episode, dict)
     assert episode["blind_seal_receipt"]["phase"] == "BLIND_SEALED"

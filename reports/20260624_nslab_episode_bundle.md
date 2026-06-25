@@ -2581,10 +2581,12 @@ Excluded after-cutoff web source ids:
   "validation": {
     "blind_hash_verified": true,
     "blind_seal_receipt_hash_verified": true,
+    "brain_delta_hash_verified": true,
     "json_valid": true,
     "jsonl_valid": true,
     "markers_complete": true,
     "phase_state_recorded": true,
+    "research_episode_hash_verified": true,
     "row_disposition_hash_verified": true,
     "source_ledger_hash_verified": true
   }

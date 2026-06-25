@@ -54,6 +54,16 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         )
     if not parsed.validation["source_ledger_hash_verified"]:
         raise BundleImportError("source_ledger.jsonl hash does not match bundle_manifest.json")
+    if not parsed.validation["research_episode_hash_verified"]:
+        raise BundleImportError(
+            "research_episode.json hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation["brain_delta_hash_verified"]:
+        raise BundleImportError("brain_delta.jsonl hash does not match bundle_manifest.json")
+    if not parsed.validation["blind_seal_receipt_hash_verified"]:
+        raise BundleImportError(
+            "blind_seal_receipt hash does not match bundle_manifest.json"
+        )
     if "research_episode.json" not in parsed.json_blocks:
         raise BundleImportError("bundle is missing research_episode.json")
     try:
@@ -108,6 +118,23 @@ def parse_bundle(path: Path) -> BundleParseResult:
             payload_blocks,
             block_name="source_ledger.jsonl",
             manifest_field="source_ledger_sha256",
+        ),
+        "research_episode_hash_verified": _verify_canonical_json_hash(
+            json_blocks,
+            block_name="research_episode.json",
+            manifest_field="research_episode_sha256",
+        ),
+        "brain_delta_hash_verified": _verify_payload_hash(
+            json_blocks,
+            payload_blocks,
+            block_name="brain_delta.jsonl",
+            manifest_field="brain_delta_sha256",
+        ),
+        "blind_seal_receipt_hash_verified": _verify_embedded_write_json_hash(
+            json_blocks,
+            block_name="research_episode.json",
+            embedded_field="blind_seal_receipt",
+            manifest_field="blind_seal_receipt_sha256",
         ),
     }
     return BundleParseResult(
@@ -233,3 +260,43 @@ def _verify_payload_hash(
     if not isinstance(expected, str) or not expected or payload is None:
         return False
     return sha256_text(payload) == expected or sha256_text(f"{payload}\n") == expected
+
+
+def _verify_canonical_json_hash(
+    json_blocks: dict[str, Any],
+    *,
+    block_name: str,
+    manifest_field: str,
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    payload = json_blocks.get(block_name)
+    if not isinstance(manifest, dict):
+        return False
+    expected = manifest.get(manifest_field)
+    if not isinstance(expected, str) or not expected or payload is None:
+        return False
+    return sha256_text(canonical_json(payload)) == expected
+
+
+def _verify_embedded_write_json_hash(
+    json_blocks: dict[str, Any],
+    *,
+    block_name: str,
+    embedded_field: str,
+    manifest_field: str,
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    payload = json_blocks.get(block_name)
+    if not isinstance(manifest, dict) or not isinstance(payload, dict):
+        return False
+    expected = manifest.get(manifest_field)
+    embedded = payload.get(embedded_field)
+    if not isinstance(expected, str) or not expected or embedded is None:
+        return False
+    write_json_text = json.dumps(
+        embedded,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    return sha256_text(write_json_text) == expected

@@ -240,6 +240,8 @@ def _build_bundle_manifest(
             "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
             "row_disposition_hash_verified": True,
             "source_ledger_hash_verified": True,
+            "research_episode_hash_verified": True,
+            "brain_delta_hash_verified": True,
             "blind_seal_receipt_hash_verified": True,
             "phase_state_recorded": bool(manifest.get("phase_state_artifact")),
         },
