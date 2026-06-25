@@ -175,6 +175,8 @@ Rows carry `training_category`, and manifests include `required_training_categor
 `category_counts`, and `missing_training_categories` so blind reasoning, theme formation,
 beneficiary discovery, leader comparison, preference, and failure-correction examples
 stay separated and auditable.
+`nslab audit provenance` recomputes export hashes, row counts, category counts, and
+BLIND/POSTMORTEM phase consistency from the JSONL rows.
 
 ## Session Pack
 

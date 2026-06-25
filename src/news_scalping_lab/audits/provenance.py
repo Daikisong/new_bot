@@ -14,6 +14,7 @@ from news_scalping_lab.context.final_synthesis import final_synthesis_input_summ
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
+from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -99,6 +100,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
     )
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
     checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
+    checked_training_export_manifests = _check_training_export_provenance(root, findings)
     return {
         "passed": not findings,
         "findings": findings,
@@ -107,6 +109,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
         "checked_evaluation_episode_files": checked_evaluation_episode_files,
         "checked_company_memory_files": checked_company_memory_files,
         "checked_mechanism_memory_records": checked_mechanism_memory_records,
+        "checked_training_export_manifests": checked_training_export_manifests,
     }
 
 
@@ -1474,6 +1477,180 @@ def _checkpoint_metadata_matches_trace(
     if isinstance(trace_metadata, dict):
         return checkpoint_metadata == trace_metadata
     return all(trace_payload.get(key) == value for key, value in checkpoint_metadata.items())
+
+
+def _check_training_export_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for manifest_path in sorted((root / "training_exports").glob("*/manifest.json")):
+        manifest = _read_json_object(manifest_path, findings)
+        if manifest is None:
+            continue
+        checked += 1
+        _check_training_export_manifest(root, manifest_path, manifest, findings)
+    return checked
+
+
+def _check_training_export_manifest(
+    root: Path,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, manifest_path)
+    kind = manifest_path.parent.name
+    allowed_categories = KIND_TRAINING_CATEGORIES.get(kind)
+    if manifest.get("schema_version") != "nslab.training_export_manifest.v1":
+        findings.append(f"{label}: training export schema_version invalid")
+    if manifest.get("kind") != kind:
+        findings.append(f"{label}: training export kind mismatch")
+    if allowed_categories is None:
+        findings.append(f"{label}: training export kind unknown")
+        return
+    if manifest.get("required_training_categories") != REQUIRED_TRAINING_CATEGORIES:
+        findings.append(f"{label}: training export required_training_categories mismatch")
+    if manifest.get("training_categories") != allowed_categories:
+        findings.append(f"{label}: training export training_categories mismatch")
+    output_file = manifest.get("output_file")
+    if not isinstance(output_file, str) or not output_file:
+        findings.append(f"{label}: training export output_file missing")
+        return
+    output_path = _resolve_training_export_output_path(root, output_file)
+    if output_path is None:
+        findings.append(f"{label}: training export output_file escapes project root")
+        return
+    if not output_path.exists():
+        findings.append(f"{label}: training export output_file not found")
+        return
+    expected_sha = manifest.get("output_sha256")
+    if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
+        findings.append(f"{label}: training export output_sha256 mismatch")
+    rows = _read_training_export_rows(output_path, label, findings)
+    _check_training_export_rows(label, kind, allowed_categories, rows, findings)
+    _check_training_export_manifest_counts(label, kind, manifest, rows, findings)
+
+
+def _resolve_training_export_output_path(root: Path, output_file: str) -> Path | None:
+    path = Path(output_file)
+    resolved_root = root.resolve()
+    resolved_path = path.resolve() if path.is_absolute() else (root / path).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return resolved_path
+
+
+def _read_training_export_rows(
+    output_path: Path,
+    manifest_label: str,
+    findings: list[str],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(output_path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_label}: training export row {line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_label}: training export row {line_number} is not object")
+            continue
+        rows.append(row)
+    return rows
+
+
+def _check_training_export_rows(
+    label: str,
+    kind: str,
+    allowed_categories: list[str],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    for index, row in enumerate(rows, start=1):
+        if row.get("schema_version") != "nslab.training_example.v1":
+            findings.append(f"{label}: training export row {index} schema_version invalid")
+        category = row.get("training_category")
+        if category not in allowed_categories:
+            findings.append(f"{label}: training export row {index} category invalid")
+        source_phase = row.get("source_phase")
+        hindsight_safe = row.get("hindsight_safe_for_blind_sft")
+        if source_phase not in {"BLIND", "POSTMORTEM"}:
+            findings.append(f"{label}: training export row {index} source_phase invalid")
+        if not isinstance(hindsight_safe, bool):
+            findings.append(f"{label}: training export row {index} hindsight flag invalid")
+            continue
+        expected_phase = "BLIND" if hindsight_safe else "POSTMORTEM"
+        if source_phase != expected_phase:
+            findings.append(f"{label}: training export row {index} source_phase mismatch")
+        if kind in {"preference", "evals"} and hindsight_safe:
+            findings.append(f"{label}: training export row {index} must be postmortem-only")
+        if (
+            kind == "sft"
+            and source_phase == "POSTMORTEM"
+            and category != "failure_correction_examples"
+        ):
+            findings.append(f"{label}: training export row {index} mixes postmortem into blind SFT")
+
+
+def _check_training_export_manifest_counts(
+    label: str,
+    kind: str,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    if manifest.get("row_count") != len(rows):
+        findings.append(f"{label}: training export row_count mismatch")
+    if manifest.get("task_counts") != _training_task_counts(rows):
+        findings.append(f"{label}: training export task_counts mismatch")
+    if manifest.get("category_counts") != _training_category_counts(rows, kind=kind):
+        findings.append(f"{label}: training export category_counts mismatch")
+    if manifest.get("missing_training_categories") != _training_missing_categories(
+        rows, kind=kind
+    ):
+        findings.append(f"{label}: training export missing_training_categories mismatch")
+    if manifest.get("source_phase_counts") != _training_source_phase_counts(rows):
+        findings.append(f"{label}: training export source_phase_counts mismatch")
+    blind_safe_count = sum(1 for row in rows if row.get("hindsight_safe_for_blind_sft") is True)
+    hindsight_count = sum(1 for row in rows if row.get("hindsight_safe_for_blind_sft") is False)
+    if manifest.get("blind_safe_row_count") != blind_safe_count:
+        findings.append(f"{label}: training export blind_safe_row_count mismatch")
+    if manifest.get("hindsight_row_count") != hindsight_count:
+        findings.append(f"{label}: training export hindsight_row_count mismatch")
+
+
+def _training_task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        task = row.get("task")
+        if isinstance(task, str):
+            counts[task] = counts.get(task, 0) + 1
+    return counts
+
+
+def _training_category_counts(rows: list[dict[str, Any]], *, kind: str) -> dict[str, int]:
+    counts = dict.fromkeys(KIND_TRAINING_CATEGORIES[kind], 0)
+    for row in rows:
+        category = row.get("training_category")
+        if isinstance(category, str):
+            counts[category] = counts.get(category, 0) + 1
+    return counts
+
+
+def _training_missing_categories(rows: list[dict[str, Any]], *, kind: str) -> list[str]:
+    counts = _training_category_counts(rows, kind=kind)
+    return [category for category in KIND_TRAINING_CATEGORIES[kind] if counts.get(category, 0) == 0]
+
+
+def _training_source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        source_phase = row.get("source_phase")
+        if isinstance(source_phase, str):
+            counts[source_phase] = counts.get(source_phase, 0) + 1
+    return counts
 
 
 def _string_field(

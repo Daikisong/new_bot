@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NoReturn
@@ -1416,6 +1417,73 @@ def test_provenance_audit_flags_llm_checkpoint_mismatch(tmp_path: Path) -> None:
     assert not result["passed"]
     assert "TRACE-daily.json: trace checkpoint output mismatch" in result["findings"]
     assert "TRACE-daily.json: trace checkpoint output_sha256 mismatch" in result["findings"]
+
+
+def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path) -> None:
+    export_dir = tmp_path / "training_exports" / "sft"
+    export_dir.mkdir(parents=True)
+    output_path = export_dir / "sft.jsonl"
+    rows = [
+        {
+            "schema_version": "nslab.training_example.v1",
+            "task": "blind_reasoning",
+            "training_category": "blind_reasoning_examples",
+            "episode_id": "EP-training",
+            "hindsight_safe_for_blind_sft": True,
+            "source_phase": "POSTMORTEM",
+            "input": {},
+            "output": {},
+        },
+        {
+            "schema_version": "nslab.training_example.v1",
+            "task": "theme_formation",
+            "training_category": "theme_formation_examples",
+            "episode_id": "EP-training",
+            "hindsight_safe_for_blind_sft": False,
+            "source_phase": "POSTMORTEM",
+            "input": {},
+            "output": {},
+        },
+    ]
+    output_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    write_json(
+        export_dir / "manifest.json",
+        {
+            "schema_version": "nslab.training_export_manifest.v1",
+            "kind": "sft",
+            "output_file": output_path.relative_to(tmp_path).as_posix(),
+            "output_sha256": "bad",
+            "row_count": 99,
+            "task_counts": {},
+            "required_training_categories": ["bad"],
+            "training_categories": ["bad"],
+            "category_counts": {},
+            "missing_training_categories": ["bad"],
+            "blind_safe_row_count": 0,
+            "hindsight_row_count": 0,
+            "source_phase_counts": {},
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert result["checked_training_export_manifests"] == 1
+    findings = result["findings"]
+    label = "training_exports/sft/manifest.json"
+    assert f"{label}: training export required_training_categories mismatch" in findings
+    assert f"{label}: training export training_categories mismatch" in findings
+    assert f"{label}: training export output_sha256 mismatch" in findings
+    assert f"{label}: training export row 1 source_phase mismatch" in findings
+    assert f"{label}: training export row 2 mixes postmortem into blind SFT" in findings
+    assert f"{label}: training export row_count mismatch" in findings
+    assert f"{label}: training export category_counts mismatch" in findings
+    assert f"{label}: training export source_phase_counts mismatch" in findings
+    assert f"{label}: training export blind_safe_row_count mismatch" in findings
+    assert f"{label}: training export hindsight_row_count mismatch" in findings
 
 
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:
