@@ -3709,8 +3709,11 @@ def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
         errors.append("successful_trace_missing_output")
     if not isinstance(payload.get("tool_calls"), list):
         errors.append("tool_calls_not_list")
-    if not isinstance(payload.get("retries"), int):
+    retries = payload.get("retries")
+    if not isinstance(retries, int) or isinstance(retries, bool):
         errors.append("retries_not_integer")
+        retries = None
+    errors.extend(_retry_error_history_errors(payload.get("retry_errors"), retries))
     token_usage = payload.get("token_usage")
     if not isinstance(token_usage, dict):
         errors.append("token_usage_not_object")
@@ -3727,6 +3730,27 @@ def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
             errors.append("completion_token_estimate_missing")
     if status == "error" and not isinstance(payload.get("error"), dict):
         errors.append("error_trace_missing_error_details")
+    return errors
+
+
+def _retry_error_history_errors(value: object, retries: int | None) -> list[str]:
+    errors: list[str] = []
+    if value is None:
+        if retries and retries > 0:
+            errors.append("retry_errors_missing")
+        return errors
+    if not isinstance(value, list):
+        return ["retry_errors_not_list"]
+    if retries is not None and retries > 0 and len(value) != retries:
+        errors.append("retry_errors_count_mismatch")
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            errors.append(f"retry_errors_{index}_not_object")
+            continue
+        if not isinstance(item.get("type"), str) or not item.get("type"):
+            errors.append(f"retry_errors_{index}_type_missing")
+        if not isinstance(item.get("message"), str):
+            errors.append(f"retry_errors_{index}_message_missing")
     return errors
 
 

@@ -4521,8 +4521,16 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
         findings.append(f"{path.name}: successful trace missing output")
     if not isinstance(payload.get("tool_calls"), list):
         findings.append(f"{path.name}: trace tool_calls is not a list")
-    if not isinstance(payload.get("retries"), int):
+    retries = payload.get("retries")
+    if not isinstance(retries, int) or isinstance(retries, bool):
         findings.append(f"{path.name}: trace retries is not an integer")
+        retries = None
+    for error in _retry_error_history_findings(
+        label=f"{path.name}: trace retry_errors",
+        value=payload.get("retry_errors"),
+        retries=retries,
+    ):
+        findings.append(error)
     token_usage = payload.get("token_usage")
     if not isinstance(token_usage, dict):
         findings.append(f"{path.name}: trace token_usage is not an object")
@@ -4582,6 +4590,33 @@ def _check_trace_checkpoint(
         and checkpoint.get("retries") != trace_payload.get("retries")
     ):
         findings.append(f"{trace_path.name}: trace checkpoint retries mismatch")
+    checkpoint_retries = checkpoint.get("retries")
+    normalized_checkpoint_retries = (
+        checkpoint_retries
+        if isinstance(checkpoint_retries, int) and not isinstance(checkpoint_retries, bool)
+        else None
+    )
+    for error in _retry_error_history_findings(
+        label=f"{trace_path.name}: trace checkpoint retry_errors",
+        value=checkpoint.get("retry_errors"),
+        retries=normalized_checkpoint_retries,
+    ):
+        findings.append(error)
+    trace_retries = trace_payload.get("retries")
+    trace_retry_count = (
+        trace_retries
+        if isinstance(trace_retries, int) and not isinstance(trace_retries, bool)
+        else None
+    )
+    if (
+        (
+            "retry_errors" in checkpoint
+            or "retry_errors" in trace_payload
+            or (trace_retry_count is not None and trace_retry_count > 0)
+        )
+        and checkpoint.get("retry_errors") != trace_payload.get("retry_errors", [])
+    ):
+        findings.append(f"{trace_path.name}: trace checkpoint retry_errors mismatch")
     checkpoint_input = checkpoint.get("input")
     if isinstance(checkpoint_input, dict):
         expected_input_hash = sha256_text(canonical_json(checkpoint_input))
@@ -4626,6 +4661,32 @@ def _checkpoint_metadata_matches_trace(
     if isinstance(trace_metadata, dict):
         return checkpoint_metadata == trace_metadata
     return all(trace_payload.get(key) == value for key, value in checkpoint_metadata.items())
+
+
+def _retry_error_history_findings(
+    *,
+    label: str,
+    value: object,
+    retries: int | None,
+) -> list[str]:
+    findings: list[str] = []
+    if value is None:
+        if retries and retries > 0:
+            findings.append(f"{label} missing")
+        return findings
+    if not isinstance(value, list):
+        return [f"{label} is not a list"]
+    if retries is not None and retries > 0 and len(value) != retries:
+        findings.append(f"{label} count mismatch")
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            findings.append(f"{label} item {index} is not an object")
+            continue
+        if not isinstance(item.get("type"), str) or not item.get("type"):
+            findings.append(f"{label} item {index} missing type")
+        if not isinstance(item.get("message"), str):
+            findings.append(f"{label} item {index} missing message")
+    return findings
 
 
 def _check_training_export_provenance(root: Path, findings: list[str]) -> int:
