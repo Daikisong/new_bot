@@ -107,6 +107,28 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert read_json(tmp_path / "runs" / "manifests" / f"{run_id}.json")[
         "blind_context_mode"
     ] == "CUTOFF_SAFE_WEB_BLIND"
+    inspected_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect", inspected_context)
+    assert json.loads(inspected_context.output)["run_id"] == run_id
+
+    session_pack = RUNNER.invoke(
+        app,
+        [
+            "context",
+            "export-session-pack",
+            "--news",
+            str(news_csv),
+            "--trade-date",
+            "2030-01-12",
+            "--cutoff",
+            "2030-01-12T08:59:59+09:00",
+            "--mode",
+            "brain",
+        ],
+    )
+    _assert_ok("context export-session-pack", session_pack)
+    session_pack_dir = tmp_path / json.loads(session_pack.output)["session_pack"]
+    assert read_json(session_pack_dir / "manifest.json")["blocked"] is False
 
     _assert_ok("audit hardcoding", RUNNER.invoke(app, ["audit", "hardcoding"]))
     _assert_ok(
@@ -122,9 +144,20 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         RUNNER.invoke(app, ["training", "export-preference"]),
     )
     _assert_ok("training export-evals", RUNNER.invoke(app, ["training", "export-evals"]))
+    evaluated = RUNNER.invoke(app, ["evaluate", "--trade-date", "2030-01-12"])
+    _assert_ok("evaluate", evaluated)
+    evaluation_payload = json.loads(evaluated.output)
+    evaluation_episode_id = evaluation_payload["research_episode_id"]
+    assert (tmp_path / evaluation_payload["postmortem"]).exists()
+    assert (tmp_path / evaluation_payload["research_episode_path"]).exists()
+
+    postmortem_update = RUNNER.invoke(app, ["brain", "update", "--episode", "2030-01-12"])
+    _assert_ok("brain update postmortem", postmortem_update)
+    assert evaluation_episode_id in json.loads(postmortem_update.output)["covered_episode_ids"]
+
     warehouse = RUNNER.invoke(app, ["warehouse", "inspect"])
     _assert_ok("warehouse inspect", warehouse)
-    assert json.loads(warehouse.output)["research_episodes.parquet"] == 2
+    assert json.loads(warehouse.output)["research_episodes.parquet"] == 3
 
 
 def _episode(episode_id: str, summary: str) -> ResearchEpisode:
