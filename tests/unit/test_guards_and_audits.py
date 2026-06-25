@@ -5959,6 +5959,60 @@ def test_lookahead_audit_flags_manifest_as_of_after_cutoff(tmp_path: Path) -> No
     assert "RUN-as-of-leak.json: as_of is after cutoff_at" in result["findings"]
 
 
+def test_lookahead_audit_validates_price_snapshot_contract(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    base_manifest = {
+        "schema_version": "nslab.context_manifest.v1",
+        "mode": "brain",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "as_of": "2030-01-10T08:59:59+09:00",
+        "accepted_episode_count": 0,
+        "total_accepted_episode_count": 0,
+        "available_episode_count": 0,
+        "unavailable_episode_count": 0,
+        "unavailable_episode_ids": [],
+        "swept_episode_count": 0,
+        "swept_episode_ids": [],
+    }
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-missing-price.json",
+        {**base_manifest, "run_id": "RUN-missing-price"},
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-invalid-price-date.json",
+        {
+            **base_manifest,
+            "run_id": "RUN-invalid-price-date",
+            "price_snapshot": {"allowed_through": "2030/01/09"},
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-future-price-snapshot.json",
+        {
+            **base_manifest,
+            "run_id": "RUN-future-price-snapshot",
+            "price_snapshot": {
+                "allowed_through": "2030-01-09",
+                "as_of": "2030-01-10T09:00:00+09:00",
+            },
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "RUN-missing-price.json: missing price_snapshot" in findings
+    assert (
+        "RUN-invalid-price-date.json: price allowed_through invalid" in findings
+    )
+    assert (
+        "RUN-future-price-snapshot.json: price snapshot as_of is after cutoff_at"
+        in findings
+    )
+
+
 def test_lookahead_audit_validates_context_manifest_episode_scope(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
     (tmp_path / "research" / "accepted").mkdir(parents=True)

@@ -74,14 +74,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             and manifest_as_of > manifest_cutoff_at
         ):
             findings.append(f"{manifest_name}: as_of is after cutoff_at")
-        price_snapshot = manifest.get("price_snapshot", {})
-        allowed = price_snapshot.get("allowed_through")
-        if (
-            manifest_trade_date is not None
-            and allowed is not None
-            and str(allowed) >= manifest_trade_date.isoformat()
-        ):
-            findings.append(f"{manifest_name}: price allowed_through is not before trade date")
+        _check_price_snapshot_contract(
+            manifest_name,
+            manifest,
+            manifest_trade_date,
+            manifest_cutoff_at,
+            findings,
+        )
         _check_retrieved_episode_availability(
             manifest_name,
             manifest,
@@ -183,6 +182,55 @@ def _requires_as_of(manifest: dict[object, object]) -> bool:
         "nslab.context_manifest.v1",
         "nslab.session_pack_manifest.v1",
     }
+
+
+def _check_price_snapshot_contract(
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_trade_date: date | None,
+    manifest_cutoff_at: datetime | None,
+    findings: list[str],
+) -> None:
+    raw_snapshot = manifest.get("price_snapshot")
+    requires_snapshot = manifest.get("schema_version") == "nslab.context_manifest.v1"
+    if raw_snapshot is None:
+        if requires_snapshot:
+            findings.append(f"{manifest_name}: missing price_snapshot")
+        return
+    if not isinstance(raw_snapshot, dict):
+        findings.append(f"{manifest_name}: price_snapshot invalid")
+        return
+
+    raw_allowed = raw_snapshot.get("allowed_through")
+    if raw_allowed is None:
+        if requires_snapshot:
+            findings.append(f"{manifest_name}: price allowed_through missing")
+    elif not isinstance(raw_allowed, str):
+        findings.append(f"{manifest_name}: price allowed_through invalid")
+    else:
+        try:
+            allowed_through = date.fromisoformat(raw_allowed)
+        except ValueError:
+            findings.append(f"{manifest_name}: price allowed_through invalid")
+        else:
+            if manifest_trade_date is not None and allowed_through >= manifest_trade_date:
+                findings.append(
+                    f"{manifest_name}: price allowed_through is not before trade date"
+                )
+
+    raw_as_of = raw_snapshot.get("as_of")
+    if raw_as_of is None:
+        return
+    if not isinstance(raw_as_of, str):
+        findings.append(f"{manifest_name}: price snapshot as_of invalid")
+        return
+    try:
+        snapshot_as_of = parse_datetime(raw_as_of)
+    except ValueError:
+        findings.append(f"{manifest_name}: price snapshot as_of invalid")
+        return
+    if manifest_cutoff_at is not None and snapshot_as_of > manifest_cutoff_at:
+        findings.append(f"{manifest_name}: price snapshot as_of is after cutoff_at")
 
 
 def _check_context_manifest_episode_scope(
