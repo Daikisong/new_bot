@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     Candidate,
+    CompanyMemory,
     ConfidenceLabel,
     ContextManifest,
     DailyAnalysis,
@@ -48,6 +49,7 @@ from news_scalping_lab.utils import (
     is_available_as_of,
     now_kst,
     read_json,
+    relative_to_root,
     sha256_text,
     stable_id,
     write_json,
@@ -228,6 +230,10 @@ class DailyAnalyzer:
             candidates=prediction.candidates,
             manifest=manifest,
         )
+        company_memory_context = self._collect_company_memory_context(
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
         prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = (
             await self._run_final_synthesis(
                 prediction=prediction,
@@ -239,6 +245,7 @@ class DailyAnalyzer:
                 first_pass_mechanisms=first_pass_mechanisms,
                 red_team_artifact=red_team.artifact,
                 d_minus_one_market_data=d_minus_one_market_data,
+                company_memory_context=company_memory_context,
             )
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
@@ -705,6 +712,7 @@ class DailyAnalyzer:
         first_pass_mechanisms: list[str],
         red_team_artifact: RedTeamArtifact,
         d_minus_one_market_data: dict[str, Any],
+        company_memory_context: list[dict[str, Any]],
     ) -> tuple[BlindPrediction, str, int]:
         prompt = self._build_final_synthesis_prompt(
             prediction=prediction,
@@ -713,6 +721,7 @@ class DailyAnalyzer:
             first_pass_mechanisms=first_pass_mechanisms,
             red_team_artifact=red_team_artifact,
             d_minus_one_market_data=d_minus_one_market_data,
+            company_memory_context=company_memory_context,
         )
         prompt_sha256 = sha256_text(prompt)
         try:
@@ -756,6 +765,7 @@ class DailyAnalyzer:
         first_pass_mechanisms: list[str],
         red_team_artifact: RedTeamArtifact,
         d_minus_one_market_data: dict[str, Any],
+        company_memory_context: list[dict[str, Any]],
     ) -> str:
         payload = {
             "schema": "nslab.blind_prediction.v1",
@@ -774,6 +784,7 @@ class DailyAnalyzer:
                 "candidate_research",
                 "red_team_output",
                 "d_minus_one_market_data",
+                "company_memory",
             ],
             "run_id": manifest.run_id,
             "trade_date": prediction.trade_date.isoformat(),
@@ -800,16 +811,59 @@ class DailyAnalyzer:
             "candidate_research": prediction.model_dump(mode="json"),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
+            "company_memory": company_memory_context,
         }
         return (
             f"{self._load_synthesis_prompt().strip()}\n"
             "Return the final BlindPrediction. Keep qualitative confidence only, "
             "preserve red-team objections in candidate counterarguments, use only "
-            "timestamp-verified web_research.sources, and do not use D-day prices, "
-            "outcomes, unverified web results, or cutoff-after sources during BLIND.\n"
+            "timestamp-verified web_research.sources and cutoff-safe company_memory, "
+            "and do not use D-day prices, outcomes, unverified web results, or "
+            "cutoff-after sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
+
+    def _collect_company_memory_context(
+        self,
+        *,
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> list[dict[str, Any]]:
+        directory = self.root / "memory" / "company_memory"
+        if not directory.exists():
+            return []
+        contexts: list[dict[str, Any]] = []
+        included: list[str] = []
+        omitted: list[dict[str, str]] = []
+        for path in sorted(directory.glob("*.json")):
+            relative_path = relative_to_root(path, self.root)
+            try:
+                memory = CompanyMemory.model_validate(read_json(path))
+            except Exception:
+                omitted.append({"path": relative_path, "reason": "invalid_company_memory_schema"})
+                manifest.errors.append(f"company memory omitted due to invalid schema: {relative_path}")
+                continue
+            if not is_available_as_of(memory.known_at, cutoff_at):
+                omitted.append(
+                    {
+                        "path": relative_path,
+                        "reason": "company_memory_known_after_cutoff",
+                        "known_at": memory.known_at.isoformat(),
+                    }
+                )
+                continue
+            included.append(relative_path)
+            contexts.append(
+                {
+                    "path": relative_path,
+                    "sha256": sha256_text(canonical_json(memory.model_dump(mode="json"))),
+                    "memory": memory.model_dump(mode="json"),
+                }
+            )
+        manifest.included_company_memory_files = included
+        manifest.omitted_company_memory_files = omitted
+        return contexts
 
     def _collect_d_minus_one_market_data(
         self,

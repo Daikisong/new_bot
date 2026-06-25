@@ -34,7 +34,7 @@ from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json, sha256_text
+from news_scalping_lab.utils import KST, read_json, sha256_text, write_json
 from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
@@ -66,9 +66,15 @@ class OutcomeTrapPriceSource:
 
 
 class RecordingBlindLLM:
-    def __init__(self, *, expected_final_prompt_substring: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        expected_final_prompt_substring: str | None = None,
+        forbidden_final_prompt_substrings: list[str] | None = None,
+    ) -> None:
         self.calls: list[dict[str, object]] = []
         self.expected_final_prompt_substring = expected_final_prompt_substring
+        self.forbidden_final_prompt_substrings = forbidden_final_prompt_substrings or []
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         raise AssertionError("daily analyzer should request structured output")
@@ -109,6 +115,8 @@ class RecordingBlindLLM:
             assert "all_shard_contributions" in prompt
             if self.expected_final_prompt_substring is not None:
                 assert self.expected_final_prompt_substring in prompt
+            for forbidden in self.forbidden_final_prompt_substrings:
+                assert forbidden not in prompt
             prediction = BlindPrediction(
                 prediction_id="PRED-provider-final",
                 trade_date=date(1999, 1, 1),
@@ -513,8 +521,45 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
+    company_dir = tmp_path / "memory" / "company_memory"
+    company_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        company_dir / "CM-safe-provider.json",
+        {
+            "ticker": "100001",
+            "company_name": "SafeMemoryCo",
+            "aliases": ["SafeMemoryCo"],
+            "business_descriptions": ["Known before cutoff and available to synthesis."],
+            "locations": [],
+            "customers": [],
+            "supply_chain_roles": ["existing safe company memory"],
+            "prior_market_narratives": ["safe pre-cutoff memory"],
+            "prior_leader_occurrences": [],
+            "contradictory_relations": [],
+            "known_at": "2030-01-10T08:00:00+09:00",
+            "provenance": [],
+        },
+    )
+    write_json(
+        company_dir / "CM-future-provider.json",
+        {
+            "ticker": "100002",
+            "company_name": "FutureMemoryCo",
+            "aliases": ["FutureMemoryCo"],
+            "business_descriptions": ["Known after cutoff and unsafe for synthesis."],
+            "locations": [],
+            "customers": [],
+            "supply_chain_roles": ["future company memory"],
+            "prior_market_narratives": ["future post-cutoff memory"],
+            "prior_leader_occurrences": [],
+            "contradictory_relations": [],
+            "known_at": "2030-01-10T09:30:00+09:00",
+            "provenance": [],
+        },
+    )
     llm = RecordingBlindLLM(
-        expected_final_prompt_substring="cutoff-safe opened verification text"
+        expected_final_prompt_substring="cutoff-safe opened verification text",
+        forbidden_final_prompt_substrings=["FutureMemoryCo"],
     )
     web_provider = MixedTemporalWebProvider()
 
@@ -541,6 +586,22 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert analysis.blind_prediction.candidates[0].provenance
     assert analysis.blind_prediction.blind_analysis.summary == "Provider final synthesis."
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
+    final_prompt = str(llm.calls[2]["prompt"])
+    assert "company_memory" in final_prompt
+    assert "SafeMemoryCo" in final_prompt
+    assert "FutureMemoryCo" not in final_prompt
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    assert saved_manifest["included_company_memory_files"] == [
+        "memory/company_memory/CM-safe-provider.json"
+    ]
+    assert saved_manifest["omitted_company_memory_files"] == [
+        {
+            "path": "memory/company_memory/CM-future-provider.json",
+            "reason": "company_memory_known_after_cutoff",
+            "known_at": "2030-01-10T09:30:00+09:00",
+        }
+    ]
+    assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert analysis.blind_prediction.blind_artifact_sha256
     assert analysis.context_manifest.red_team_artifacts
     assert analysis.context_manifest.prompt_hashes["final_synthesis"]

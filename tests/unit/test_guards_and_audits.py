@@ -1451,3 +1451,37 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
         "session_packs/2030-01-10/manifest.json: included future market_context memory: "
         "memory/market_memory/claims.jsonl#L1"
     ) in result["findings"]
+
+
+def test_lookahead_audit_checks_daily_manifest_company_memory_refs(tmp_path: Path) -> None:
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    company_dir = tmp_path / "memory" / "company_memory"
+    company_dir.mkdir(parents=True)
+    write_json(
+        company_dir / "CM-future.json",
+        {
+            "ticker": "100001",
+            "company_name": "FutureMemoryCo",
+            "known_at": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    write_json(
+        manifest_dir / "RUN-company-memory.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-company-memory",
+            "mode": "brain",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "included_company_memory_files": ["memory/company_memory/CM-future.json"],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "RUN-company-memory.json: included future company memory: "
+        "memory/company_memory/CM-future.json"
+    ) in result["findings"]

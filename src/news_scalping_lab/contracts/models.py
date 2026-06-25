@@ -408,6 +408,8 @@ class ContextManifest(StrictModel):
     excluded_web_source_artifact: str | None = None
     excluded_web_source_sha256: str | None = None
     excluded_web_source_count: int = 0
+    included_company_memory_files: list[str] = Field(default_factory=list)
+    omitted_company_memory_files: list[dict[str, str]] = Field(default_factory=list)
     price_snapshot: PriceSnapshot
     llm_model_config: dict[str, Any] = Field(default_factory=dict, alias="model_config")
     prompt_hashes: dict[str, str] = Field(default_factory=dict)
