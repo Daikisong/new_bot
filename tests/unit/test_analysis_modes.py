@@ -111,6 +111,54 @@ def test_context_run_id_changes_when_available_research_changes(tmp_path) -> Non
     assert with_unavailable.swept_episode_ids == ["EP-available"]
 
 
+def test_context_assembler_filters_future_and_unknown_retrieved_episode_ids(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    store = ResearchStore(tmp_path)
+    available = ResearchEpisode(
+        episode_id="EP-available",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Available lesson."),
+        available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+    )
+    future = ResearchEpisode(
+        episode_id="EP-future",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 10, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Future lesson."),
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    for episode in (available, future):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+
+    manifest = ContextAssembler(tmp_path).assemble(
+        mode="fast",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="same-news-and-model",
+        retrieved_episode_ids=[
+            "EP-available",
+            "EP-future",
+            "EP-missing",
+            "EP-available",
+        ],
+    )
+
+    assert manifest.retrieved_episode_ids == ["EP-available"]
+    assert manifest.excluded_retrieved_episode_ids == ["EP-future", "EP-missing"]
+    assert manifest.unavailable_episode_ids == ["EP-future"]
+
+
 @pytest.mark.asyncio
 async def test_daily_analyzer_rejects_unknown_analysis_mode_before_writing_outputs(
     tmp_path,

@@ -57,7 +57,7 @@ class ContextAssembler:
         web_queries: list[str] | None = None,
     ) -> ContextManifest:
         mode = normalize_analysis_mode(mode)
-        retrieved_ids = retrieved_episode_ids or []
+        raw_retrieved_ids = retrieved_episode_ids or []
         web_query_list = web_queries or []
         all_accepted = self.store.list_accepted()
         accepted = [
@@ -72,6 +72,11 @@ class ContextAssembler:
         ]
         accepted_ids = [episode.episode_id for episode in accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
+        retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
+            raw_retrieved_ids,
+            accepted=accepted,
+            unavailable=unavailable,
+        )
         accepted_hashes = self._accepted_hashes_for(accepted_ids)
         run_id = stable_id(
             "RUN",
@@ -80,6 +85,7 @@ class ContextAssembler:
                     "accepted_episode_hashes": accepted_hashes,
                     "accepted_episode_ids": accepted_ids,
                     "cutoff_at": cutoff_at.isoformat(),
+                    "excluded_retrieved_episode_ids": excluded_retrieved_ids,
                     "mode": mode,
                     "retrieved_episode_ids": retrieved_ids,
                     "run_seed": run_seed,
@@ -121,6 +127,7 @@ class ContextAssembler:
             swept_episode_count=len(swept_ids),
             swept_episode_ids=swept_ids,
             retrieved_episode_ids=retrieved_ids,
+            excluded_retrieved_episode_ids=excluded_retrieved_ids,
             counterexample_episode_ids=counterexample_ids,
             token_counts={},
             truncations=[],
@@ -393,3 +400,25 @@ def _dedupe_claims(claims: list[MemoryClaim]) -> list[MemoryClaim]:
         seen.add(claim.claim_id)
         deduped.append(claim)
     return deduped
+
+
+def _filter_retrieved_ids_available_as_of(
+    retrieved_ids: list[str],
+    *,
+    accepted: list[ResearchEpisode],
+    unavailable: list[ResearchEpisode],
+) -> tuple[list[str], list[str]]:
+    available_ids = {episode.episode_id for episode in accepted}
+    unavailable_ids = {episode.episode_id for episode in unavailable}
+    included: list[str] = []
+    excluded: list[str] = []
+    seen: set[str] = set()
+    for episode_id in retrieved_ids:
+        if episode_id in seen:
+            continue
+        seen.add(episode_id)
+        if episode_id in available_ids:
+            included.append(episode_id)
+        elif episode_id in unavailable_ids or episode_id:
+            excluded.append(episode_id)
+    return included, excluded
