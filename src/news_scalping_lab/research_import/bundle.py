@@ -732,19 +732,31 @@ def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
         return False
 
     mode = manifest.get("blind_context_mode")
-    if mode not in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"}:
+    if mode not in {
+        "NEWS_ONLY_STRICT",
+        "CUTOFF_SAFE_WEB_BLIND",
+        "D_MINUS_ONE_PRICE_BLIND",
+        "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND",
+    }:
         return False
-    price_guard_fields = {
-        "blind_price_repository_access_count": 0,
-        "blind_current_price_access_count": 0,
-    }
-    for field_name, expected in price_guard_fields.items():
-        if manifest.get(field_name) != expected:
-            return False
+    price_repository_count = manifest.get("blind_price_repository_access_count")
+    if (
+        not isinstance(price_repository_count, int)
+        or isinstance(price_repository_count, bool)
+        or price_repository_count < 0
+    ):
+        return False
+    if mode in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"} and price_repository_count != 0:
+        return False
+    if manifest.get("blind_current_price_access_count") != 0:
+        return False
     manifest_web_calls = manifest.get("blind_web_search_call_count")
-    if mode == "NEWS_ONLY_STRICT" and manifest_web_calls != 0:
+    if mode in {"NEWS_ONLY_STRICT", "D_MINUS_ONE_PRICE_BLIND"} and manifest_web_calls != 0:
         return False
-    if mode == "CUTOFF_SAFE_WEB_BLIND" and not isinstance(manifest_web_calls, int):
+    if mode in {
+        "CUTOFF_SAFE_WEB_BLIND",
+        "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND",
+    } and not isinstance(manifest_web_calls, int):
         return False
     if manifest.get("no_d_outcome_exposed") is not True:
         return False
@@ -756,9 +768,10 @@ def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
         return False
     if blind_integrity.get("no_d_outcome_exposed") is not True:
         return False
-    for field_name, expected in price_guard_fields.items():
-        if blind_integrity.get(field_name) != expected:
-            return False
+    if blind_integrity.get("blind_price_repository_access_count") != price_repository_count:
+        return False
+    if blind_integrity.get("blind_current_price_access_count") != 0:
+        return False
     if blind_integrity.get("blind_web_search_call_count") != manifest_web_calls:
         return False
 

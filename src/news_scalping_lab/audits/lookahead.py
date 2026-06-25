@@ -928,8 +928,24 @@ def _check_news_only_blind_protocol(
             "blind_price_repository_access_count",
             "blind_current_price_access_count",
         ]
+    elif mode == "D_MINUS_ONE_PRICE_BLIND":
+        expected_zero_fields = [
+            "blind_web_search_call_count",
+            "blind_current_price_access_count",
+        ]
+    elif mode == "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND":
+        expected_zero_fields = ["blind_current_price_access_count"]
     else:
         return
+    if mode in {
+        "D_MINUS_ONE_PRICE_BLIND",
+        "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND",
+    }:
+        access_count = manifest.get("blind_price_repository_access_count")
+        if not isinstance(access_count, int) or isinstance(access_count, bool) or access_count < 0:
+            findings.append(
+                f"{manifest_name}: blind_price_repository_access_count invalid in {mode}"
+            )
     for field in expected_zero_fields:
         if manifest.get(field) != 0:
             findings.append(f"{manifest_name}: {field} must be 0 in {mode}")

@@ -23,12 +23,14 @@ from news_scalping_lab.contracts.models import (
     CandidateExpansionReview,
     ClaimStatus,
     ConfidenceLabel,
+    ContextManifest,
     MemoryClaim,
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
     OutcomeLabels,
     PathType,
+    PriceSnapshot,
     RedTeamArtifact,
     RedTeamFinding,
     ResearchEpisode,
@@ -1665,6 +1667,80 @@ async def test_blind_analyze_does_not_request_d_day_outcomes(tmp_path) -> None:
         2030, 1, 10, 8, 59, 59, tzinfo=KST
     )
     assert analysis.context_manifest.price_snapshot.allowed_through == date(2030, 1, 9)
+
+
+def test_d_minus_one_market_data_uses_blind_price_guard(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    price_source = OutcomeTrapPriceSource()
+    analyzer = DailyAnalyzer(settings, price_source=price_source)
+    trade_day = date(2030, 1, 10)
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    manifest = ContextManifest(
+        run_id="RUN-price-guard",
+        mode="exhaustive",
+        trade_date=trade_day,
+        cutoff_at=cutoff,
+        as_of=cutoff,
+        accepted_episode_count=0,
+        swept_episode_count=0,
+        price_snapshot=PriceSnapshot(
+            source_name="outcome-trap",
+            as_of=cutoff,
+            allowed_through=date(2030, 1, 9),
+        ),
+    )
+    candidates = [
+        Candidate(
+            rank=1,
+            ticker="123456",
+            company_name="DMinusOneCo",
+            path_type=PathType.CONTINUATION,
+            thesis="Continuation candidate.",
+            why_now="D-1 snapshot should be allowed.",
+            causal_chain=["D-1 market data", "continuation check"],
+            confidence_label=ConfidenceLabel.LOW,
+        )
+    ]
+
+    market_data = analyzer._collect_d_minus_one_market_data(
+        candidates=candidates,
+        manifest=manifest,
+    )
+
+    assert price_source.outcome_calls == []
+    assert price_source.snapshot_calls == [("123456", date(2030, 1, 9))]
+    assert manifest.blind_context_mode == "D_MINUS_ONE_PRICE_BLIND"
+    assert manifest.blind_price_repository_access_count == 1
+    assert manifest.blind_current_price_access_count == 0
+    assert market_data["status"] == "D_MINUS_ONE_PRICE_SNAPSHOTS"
+    assert market_data["blind_context_mode"] == "D_MINUS_ONE_PRICE_BLIND"
+    assert market_data["blind_price_repository_access_count"] == 1
+    assert market_data["blind_current_price_access_count"] == 0
+    assert market_data["snapshots"] == [
+        {
+            "ticker": "123456",
+            "trade_date": "2030-01-09",
+            "open": None,
+            "high": None,
+            "low": None,
+            "close": 100.0,
+            "volume": None,
+            "amount": None,
+            "market_cap": None,
+            "listed_shares": None,
+        }
+    ]
+
+
+def test_daily_analyzer_uses_configured_stock_web_price_source(tmp_path) -> None:
+    stock_web_path = tmp_path / "stock-web"
+    (stock_web_path / "atlas").mkdir(parents=True)
+    settings = Settings(project_root=tmp_path, stock_web_path=stock_web_path)
+
+    analyzer = DailyAnalyzer(settings)
+
+    assert analyzer.price_source is not None
+    assert analyzer.price_source.source_name == "stock-web"
 
 
 @pytest.mark.asyncio

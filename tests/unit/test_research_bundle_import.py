@@ -933,6 +933,34 @@ def test_bundle_import_accepts_cutoff_safe_web_blind_sources(tmp_path) -> None:
     assert parsed.validation["id_reference_integrity_verified"]
 
 
+def test_bundle_import_accepts_d_minus_one_price_blind_access(tmp_path) -> None:
+    episode = _episode().model_copy(
+        update={
+            "blind_integrity": {
+                "blind_context_mode": "D_MINUS_ONE_PRICE_BLIND",
+                "blind_web_search_call_count": 0,
+                "blind_price_repository_access_count": 2,
+                "blind_current_price_access_count": 0,
+                "no_d_outcome_exposed": True,
+            }
+        }
+    )
+    source = tmp_path / "d_minus_one_price_bundle.md"
+    source.write_text(
+        _bundle_text(
+            episode,
+            blind_context_mode="D_MINUS_ONE_PRICE_BLIND",
+            blind_price_repository_access_count=2,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["blind_execution_guard_verified"]
+    assert parsed.validation["id_reference_integrity_verified"]
+
+
 def test_bundle_import_rejects_mismatched_row_disposition_hash(tmp_path) -> None:
     source = tmp_path / "tampered_row_bundle.md"
     source.write_text(_bundle_text(_episode(), tamper_row_hash=True), encoding="utf-8")

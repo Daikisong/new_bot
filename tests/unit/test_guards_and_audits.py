@@ -6133,6 +6133,48 @@ def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Pat
     assert "RUN-news-only-violation.json: no_d_outcome_exposed must be true" in findings
 
 
+def test_lookahead_audit_allows_d_minus_one_price_repository_access(
+    tmp_path: Path,
+) -> None:
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    base_manifest = {
+        "run_id": "RUN-d-minus-one-price",
+        "mode": "exhaustive",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "blind_context_mode": "D_MINUS_ONE_PRICE_BLIND",
+        "blind_web_search_call_count": 0,
+        "blind_price_repository_access_count": 3,
+        "blind_current_price_access_count": 0,
+        "no_d_outcome_exposed": True,
+        "accepted_episode_count": 0,
+        "swept_episode_count": 0,
+        "price_snapshot": {
+            "source_name": "test-price",
+            "allowed_through": "2030-01-09",
+            "as_of": "2030-01-10T08:59:59+09:00",
+        },
+    }
+    write_json(manifest_dir / "RUN-d-minus-one-price.json", base_manifest)
+
+    clean = audit_lookahead(tmp_path)
+
+    assert clean["passed"], clean["findings"]
+
+    write_json(
+        manifest_dir / "RUN-d-minus-one-price.json",
+        {**base_manifest, "blind_current_price_access_count": 1},
+    )
+    current_price_access = audit_lookahead(tmp_path)
+
+    assert not current_price_access["passed"]
+    assert (
+        "RUN-d-minus-one-price.json: blind_current_price_access_count must be 0 "
+        "in D_MINUS_ONE_PRICE_BLIND"
+    ) in current_price_access["findings"]
+
+
 def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
     tmp_path: Path,
 ) -> None:

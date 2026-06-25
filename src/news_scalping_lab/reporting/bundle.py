@@ -578,13 +578,28 @@ def _brain_delta_jsonl(*, run_id: str, reason: str) -> str:
 
 def _blind_execution_guard_verified(manifest: dict[str, Any]) -> bool:
     mode = manifest.get("blind_context_mode")
-    if mode not in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"}:
+    if mode not in {
+        "NEWS_ONLY_STRICT",
+        "CUTOFF_SAFE_WEB_BLIND",
+        "D_MINUS_ONE_PRICE_BLIND",
+        "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND",
+    }:
         return False
-    if mode == "NEWS_ONLY_STRICT" and manifest.get("blind_web_search_call_count", 0) != 0:
+    if mode in {"NEWS_ONLY_STRICT", "D_MINUS_ONE_PRICE_BLIND"} and manifest.get(
+        "blind_web_search_call_count", 0
+    ) != 0:
+        return False
+    price_access_count = manifest.get("blind_price_repository_access_count", 0)
+    if (
+        not isinstance(price_access_count, int)
+        or isinstance(price_access_count, bool)
+        or price_access_count < 0
+    ):
+        return False
+    if mode in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"} and price_access_count != 0:
         return False
     return (
-        manifest.get("blind_price_repository_access_count", 0) == 0
-        and manifest.get("blind_current_price_access_count", 0) == 0
+        manifest.get("blind_current_price_access_count", 0) == 0
         and manifest.get("no_d_outcome_exposed") is True
     )
 

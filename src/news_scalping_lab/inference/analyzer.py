@@ -58,7 +58,13 @@ from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory import MemoryStore
 from news_scalping_lab.memory.company import CompanyMemoryStore
-from news_scalping_lab.prices.base import PriceSource
+from news_scalping_lab.prices.base import (
+    BlindPriceAccessError,
+    BlindPriceGuard,
+    PriceRecord,
+    PriceSource,
+)
+from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
@@ -157,8 +163,16 @@ class DailyAnalyzer:
         self.llm = self._trace_llm(base_llm)
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
-        self.price_source = price_source
+        self.price_source = price_source or self._configured_blind_price_source(settings)
         self.web_provider = web_provider or create_web_provider(self.settings)
+
+    def _configured_blind_price_source(self, settings: Settings) -> PriceSource | None:
+        if settings.stock_web_path is None and not settings.stock_web_cache_enabled:
+            return None
+        source = create_price_source(settings)
+        if source.source_name == "mock-price":
+            return None
+        return source
 
     def _blind_price_source_name(self) -> str:
         if self.price_source is not None:
@@ -2659,6 +2673,25 @@ class DailyAnalyzer:
             "snapshots": [],
             "skipped_tickers": [],
         }
+        if self.price_source is None:
+            for candidate in candidates:
+                ticker = candidate.ticker.strip().upper()
+                if not ticker or ticker in {"UNKNOWN", "UNVERIFIED"}:
+                    payload["skipped_tickers"].append(
+                        {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
+                    )
+                    continue
+                payload["skipped_tickers"].append(
+                    {"ticker": ticker, "reason": "news_only_blind_price_access_disabled"}
+                )
+            return payload
+        if allowed_through is None:
+            payload["status"] = "D_MINUS_ONE_PRICE_SNAPSHOT_UNAVAILABLE"
+            payload["errors"] = ["price_snapshot_allowed_through_missing"]
+            return payload
+
+        payload["status"] = "D_MINUS_ONE_PRICE_SNAPSHOTS"
+        guard = BlindPriceGuard(self.price_source, trade_date=manifest.trade_date)
         seen: set[str] = set()
         for candidate in candidates:
             ticker = candidate.ticker.strip().upper()
@@ -2670,10 +2703,35 @@ class DailyAnalyzer:
                     {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
                 )
                 continue
-            payload["skipped_tickers"].append(
-                {"ticker": ticker, "reason": "news_only_blind_price_access_disabled"}
-            )
+            self._mark_d_minus_one_price_access(manifest)
+            manifest.blind_price_repository_access_count += 1
+            try:
+                snapshot = guard.get_snapshot(ticker, as_of=allowed_through)
+            except BlindPriceAccessError as exc:
+                manifest.blind_current_price_access_count += 1
+                payload.setdefault("errors", []).append(str(exc))
+                payload["skipped_tickers"].append(
+                    {"ticker": ticker, "reason": "blind_price_guard_rejected_access"}
+                )
+                continue
+            if snapshot is None:
+                payload["skipped_tickers"].append(
+                    {"ticker": ticker, "reason": "d_minus_one_snapshot_unavailable"}
+                )
+                continue
+            payload["snapshots"].append(_price_record_payload(snapshot))
+        payload["blind_context_mode"] = manifest.blind_context_mode
+        payload["blind_price_repository_access_count"] = (
+            manifest.blind_price_repository_access_count
+        )
+        payload["blind_current_price_access_count"] = manifest.blind_current_price_access_count
         return payload
+
+    def _mark_d_minus_one_price_access(self, manifest: ContextManifest) -> None:
+        if manifest.blind_context_mode == "NEWS_ONLY_STRICT":
+            manifest.blind_context_mode = "D_MINUS_ONE_PRICE_BLIND"
+        elif manifest.blind_context_mode == "CUTOFF_SAFE_WEB_BLIND":
+            manifest.blind_context_mode = "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND"
 
     def _read_brain_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
         files: list[dict[str, Any]] = []
@@ -3449,6 +3507,21 @@ def _optional_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     return parse_datetime(value)
+
+
+def _price_record_payload(record: PriceRecord) -> dict[str, Any]:
+    return {
+        "ticker": record.ticker,
+        "trade_date": record.trade_date.isoformat(),
+        "open": record.open,
+        "high": record.high,
+        "low": record.low,
+        "close": record.close,
+        "volume": record.volume,
+        "amount": record.amount,
+        "market_cap": record.market_cap,
+        "listed_shares": record.listed_shares,
+    }
 
 
 def _normalize_semantic_retrieval_category(value: str) -> str | None:

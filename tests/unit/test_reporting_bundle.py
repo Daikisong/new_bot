@@ -11,7 +11,10 @@ from news_scalping_lab.context.final_synthesis import (
     final_synthesis_input_summary,
 )
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction
-from news_scalping_lab.reporting.bundle import export_analysis_bundle
+from news_scalping_lab.reporting.bundle import (
+    _blind_execution_guard_verified,
+    export_analysis_bundle,
+)
 from news_scalping_lab.research_import.bundle import parse_bundle
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text, write_json
 
@@ -42,6 +45,45 @@ def _candidate_web_context_row(row: dict[str, object]) -> dict[str, object]:
     if "timestamp_precision" in row:
         context_row["timestamp_precision"] = row.get("timestamp_precision")
     return context_row
+
+
+def test_blind_execution_guard_allows_d_minus_one_price_access_only() -> None:
+    assert _blind_execution_guard_verified(
+        {
+            "blind_context_mode": "D_MINUS_ONE_PRICE_BLIND",
+            "blind_web_search_call_count": 0,
+            "blind_price_repository_access_count": 3,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+        }
+    )
+    assert _blind_execution_guard_verified(
+        {
+            "blind_context_mode": "CUTOFF_SAFE_WEB_AND_D_MINUS_ONE_PRICE_BLIND",
+            "blind_web_search_call_count": 2,
+            "blind_price_repository_access_count": 3,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+        }
+    )
+    assert not _blind_execution_guard_verified(
+        {
+            "blind_context_mode": "D_MINUS_ONE_PRICE_BLIND",
+            "blind_web_search_call_count": 1,
+            "blind_price_repository_access_count": 3,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+        }
+    )
+    assert not _blind_execution_guard_verified(
+        {
+            "blind_context_mode": "D_MINUS_ONE_PRICE_BLIND",
+            "blind_web_search_call_count": 0,
+            "blind_price_repository_access_count": 3,
+            "blind_current_price_access_count": 1,
+            "no_d_outcome_exposed": True,
+        }
+    )
 
 
 def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:

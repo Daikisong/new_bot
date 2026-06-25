@@ -105,8 +105,9 @@ not call web providers or price repositories. With `--web-search`, the BLIND pha
 uses `CUTOFF_SAFE_WEB_BLIND`: every web result is timestamp-filtered by the temporal
 guard, cutoff-after or unverified sources are excluded, and admitted web evidence is
 recorded in the manifest and source ledger with `source_url`, `published_at`,
-`time_verified`, and `retrieved_at`. Price repositories and D-day outcomes remain
-unavailable during BLIND in both modes.
+`time_verified`, and `retrieved_at`. D-day outcomes and D-day/current price fields
+remain unavailable during BLIND. When a stock-web price source is configured, the
+final synthesis context may include candidate snapshots only through D-1.
 The context manifest records the LLM provider/model settings used for the run, and
 `nslab audit provenance` cross-checks those settings against persisted LLM traces.
 It also records `trade_date`, `cutoff_at`, and the execution `as_of` timestamp used
@@ -304,6 +305,8 @@ d,o,h,l,c,v,a,mc,s,m
 ```
 
 Outcome labels use the previous tradable row for that ticker, not the previous calendar day.
+During blind analysis, configured stock-web data is wrapped by `BlindPriceGuard` and
+only D-1-or-earlier snapshots can be passed into final synthesis.
 
 ## Quality Gates
 
