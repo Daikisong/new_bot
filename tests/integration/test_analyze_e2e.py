@@ -171,7 +171,7 @@ class BrokenMemorySweeper:
         )
 
 
-class FutureOnlyWebProvider:
+class MixedTemporalWebProvider:
     def __init__(self) -> None:
         self.search_calls: list[tuple[str, datetime]] = []
 
@@ -179,7 +179,14 @@ class FutureOnlyWebProvider:
         self.search_calls.append((query, cutoff_at))
         return [
             WebSearchResult(
-                source_id="WEB-FUTURE-PIPELINE",
+                source_id=f"WEB-SAFE-{len(self.search_calls)}",
+                title=f"safe {query}",
+                url="mock://safe-pipeline",
+                snippet="Published before cutoff and may enter blind evidence.",
+                published_at=cutoff_at - timedelta(minutes=1),
+            ),
+            WebSearchResult(
+                source_id=f"WEB-FUTURE-{len(self.search_calls)}",
                 title=query,
                 url="mock://future-pipeline",
                 snippet="Published after cutoff and must not enter blind evidence.",
@@ -268,7 +275,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         trade_date=date(2030, 1, 10),
         cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
         mode="exhaustive",
-        web_search=True,
+        web_search=False,
     )
 
     assert (
@@ -392,7 +399,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_news_only_blind_defers_web_search_even_when_requested(
+async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     tmp_path,
 ) -> None:
     settings = Settings(project_root=tmp_path)
@@ -405,7 +412,7 @@ async def test_news_only_blind_defers_web_search_even_when_requested(
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
-    web_provider = FutureOnlyWebProvider()
+    web_provider = MixedTemporalWebProvider()
 
     analysis = await DailyAnalyzer(settings, web_provider=web_provider).analyze(
         news_csv=csv_path,
@@ -415,21 +422,41 @@ async def test_news_only_blind_defers_web_search_even_when_requested(
         web_search=True,
     )
 
-    assert web_provider.search_calls == []
-    assert analysis.context_manifest.blind_context_mode == "NEWS_ONLY_STRICT"
-    assert analysis.context_manifest.blind_web_search_call_count == 0
-    assert analysis.context_manifest.web_sources == []
-    assert analysis.context_manifest.excluded_web_source_ids == []
-    assert analysis.blind_prediction.blind_analysis.excluded_after_cutoff_source_ids == []
+    assert len(web_provider.search_calls) == len(analysis.context_manifest.web_queries)
+    assert analysis.context_manifest.blind_context_mode == "CUTOFF_SAFE_WEB_BLIND"
+    assert analysis.context_manifest.blind_web_search_call_count == len(
+        analysis.context_manifest.web_queries
+    )
+    assert analysis.context_manifest.web_sources
+    assert all(
+        source_id.startswith("WEB-SAFE-")
+        for source_id in analysis.context_manifest.web_sources
+    )
+    assert analysis.context_manifest.excluded_web_source_ids
+    assert all(
+        source_id.startswith("WEB-FUTURE-")
+        for source_id in analysis.context_manifest.excluded_web_source_ids
+    )
     manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
     saved_manifest = read_json(manifest_path)
-    assert saved_manifest["blind_context_mode"] == "NEWS_ONLY_STRICT"
-    assert saved_manifest["blind_web_search_call_count"] == 0
-    assert saved_manifest["web_sources"] == []
-    assert saved_manifest["excluded_web_source_ids"] == []
-    assert "web_search_requested_but_deferred_by_news_only_blind" in saved_manifest[
-        "truncations"
+    assert saved_manifest["blind_context_mode"] == "CUTOFF_SAFE_WEB_BLIND"
+    assert saved_manifest["blind_web_search_call_count"] == len(saved_manifest["web_queries"])
+    assert saved_manifest["web_sources"] == analysis.context_manifest.web_sources
+    assert saved_manifest["excluded_web_source_ids"] == (
+        analysis.context_manifest.excluded_web_source_ids
+    )
+    web_source_path = tmp_path / saved_manifest["web_source_artifact"]
+    web_source_rows = [
+        json.loads(line) for line in web_source_path.read_text(encoding="utf-8").splitlines()
     ]
+    assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
+    assert all(row["available_before_cutoff"] is True for row in web_source_rows)
+    source_ledger = (
+        tmp_path / saved_manifest["source_ledger_artifact"]
+    ).read_text(encoding="utf-8")
+    source_ledger_rows = [json.loads(line) for line in source_ledger.splitlines()]
+    assert any(row["source_type"] == "web_search_result" for row in source_ledger_rows)
+    assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
 
 
 @pytest.mark.asyncio

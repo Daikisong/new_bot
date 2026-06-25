@@ -168,16 +168,23 @@ def _check_news_only_blind_protocol(
     manifest: dict[object, object],
     findings: list[str],
 ) -> None:
-    if manifest.get("blind_context_mode") != "NEWS_ONLY_STRICT":
+    mode = manifest.get("blind_context_mode")
+    if mode == "NEWS_ONLY_STRICT":
+        expected_zero_fields = [
+            "blind_web_search_call_count",
+            "blind_price_repository_access_count",
+            "blind_current_price_access_count",
+        ]
+    elif mode == "CUTOFF_SAFE_WEB_BLIND":
+        expected_zero_fields = [
+            "blind_price_repository_access_count",
+            "blind_current_price_access_count",
+        ]
+    else:
         return
-    expected_zero_fields = [
-        "blind_web_search_call_count",
-        "blind_price_repository_access_count",
-        "blind_current_price_access_count",
-    ]
     for field in expected_zero_fields:
         if manifest.get(field) != 0:
-            findings.append(f"{manifest_name}: {field} must be 0 in NEWS_ONLY_STRICT")
+            findings.append(f"{manifest_name}: {field} must be 0 in {mode}")
     if manifest.get("no_d_outcome_exposed") is not True:
         findings.append(f"{manifest_name}: no_d_outcome_exposed must be true")
 
@@ -297,6 +304,61 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+    _check_web_source_artifact(root, manifest_name, manifest, findings)
+
+
+def _check_web_source_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    web_sources = set(_string_list(manifest.get("web_sources")))
+    excluded = set(_string_list(manifest.get("excluded_web_source_ids")))
+    if web_sources & excluded:
+        findings.append(f"{manifest_name}: web source is both included and excluded")
+    relative_path = manifest.get("web_source_artifact")
+    if not isinstance(relative_path, str):
+        if web_sources:
+            findings.append(f"{manifest_name}: web_source_artifact missing")
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: web_source_artifact missing: {relative_path}")
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("web_source_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: web_source_sha256 mismatch")
+    manifest_cutoff_at = _manifest_cutoff_at(manifest)
+    row_source_ids: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_name}: web_source:{line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_name}: web_source:{line_number} must be object")
+            continue
+        source_id = row.get("source_id")
+        if isinstance(source_id, str):
+            row_source_ids.add(source_id)
+        if row.get("available_before_cutoff") is not True or row.get("time_verified") is not True:
+            findings.append(f"{manifest_name}: web_source:{line_number} is not cutoff verified")
+        raw_published_at = row.get("published_at")
+        if isinstance(raw_published_at, str) and manifest_cutoff_at is not None:
+            try:
+                published_at = parse_datetime(raw_published_at)
+            except ValueError:
+                findings.append(f"{manifest_name}: web_source:{line_number} invalid published_at")
+                continue
+            if not is_available_as_of(published_at, manifest_cutoff_at):
+                findings.append(f"{manifest_name}: web_source:{line_number} after cutoff")
+    if web_sources and web_sources != row_source_ids:
+        findings.append(f"{manifest_name}: web_sources do not match web_source_artifact")
 
 
 def _check_blind_seal(

@@ -22,6 +22,8 @@ runs/checkpoints/*
 !runs/checkpoints/row_disposition/**
 !runs/checkpoints/source_ledger/
 !runs/checkpoints/source_ledger/**
+!runs/checkpoints/web_sources/
+!runs/checkpoints/web_sources/**
 !runs/checkpoints/blind_seal/
 !runs/checkpoints/blind_seal/**
 !runs/checkpoints/phase_state/

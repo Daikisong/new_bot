@@ -207,13 +207,7 @@ def _build_bundle_manifest(
     observed_blind_hash = prediction.blind_artifact_sha256
     prediction_payload["blind_artifact_sha256"] = None
     blind_hash = sha256_text(canonical_json(prediction_payload))
-    blind_execution_guard_verified = (
-        manifest.get("blind_context_mode") == "NEWS_ONLY_STRICT"
-        and manifest.get("blind_web_search_call_count", 0) == 0
-        and manifest.get("blind_price_repository_access_count", 0) == 0
-        and manifest.get("blind_current_price_access_count", 0) == 0
-        and manifest.get("no_d_outcome_exposed") is True
-    )
+    blind_execution_guard_verified = _blind_execution_guard_verified(manifest)
     return {
         "schema_version": "nslab.bundle_manifest.v1",
         "execution_protocol_version": EXECUTION_PROTOCOL_VERSION,
@@ -277,6 +271,19 @@ def _brain_delta_jsonl(*, run_id: str, reason: str) -> str:
         "eligible_for_brain_update": False,
     }
     return canonical_json(row) + "\n"
+
+
+def _blind_execution_guard_verified(manifest: dict[str, Any]) -> bool:
+    mode = manifest.get("blind_context_mode")
+    if mode not in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"}:
+        return False
+    if mode == "NEWS_ONLY_STRICT" and manifest.get("blind_web_search_call_count", 0) != 0:
+        return False
+    return (
+        manifest.get("blind_price_repository_access_count", 0) == 0
+        and manifest.get("blind_current_price_access_count", 0) == 0
+        and manifest.get("no_d_outcome_exposed") is True
+    )
 
 
 def _render_bundle(

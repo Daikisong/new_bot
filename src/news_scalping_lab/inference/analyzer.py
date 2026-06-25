@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -53,7 +54,7 @@ from news_scalping_lab.utils import (
 )
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
-from news_scalping_lab.web.provider import WebResearchProvider
+from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider, WebSearchResult
 
 
 class ExhaustiveCoverageError(RuntimeError):
@@ -105,7 +106,9 @@ class DailyAnalyzer:
         mode = normalize_analysis_mode(mode)
         full_batch = load_news_csv(news_csv, trade_date=trade_date)
         batch = full_batch.before_or_at(cutoff_at)
-        run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
+        run_seed = sha256_text(
+            f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}|web={web_search}"
+        )
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
         retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
@@ -134,7 +137,11 @@ class DailyAnalyzer:
         )
 
         if web_search:
-            manifest.truncations.append("web_search_requested_but_deferred_by_news_only_blind")
+            manifest.blind_context_mode = "CUTOFF_SAFE_WEB_BLIND"
+            await self._collect_cutoff_safe_web_sources(
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
 
         manifest.price_snapshot.source_name = self._blind_price_source_name()
 
@@ -185,6 +192,7 @@ class DailyAnalyzer:
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
+                "web_source_artifact": manifest.web_source_artifact,
             },
         )
         manifest.token_counts["blind_analysis_prompt"] = blind_prompt_tokens
@@ -326,6 +334,78 @@ class DailyAnalyzer:
             "coverage_ratio": coverage_ratio,
         }
 
+    async def _collect_cutoff_safe_web_sources(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> None:
+        guard = TemporalWebGuard(self.web_provider)
+        rows: list[dict[str, Any]] = []
+        for query in manifest.web_queries:
+            manifest.blind_web_search_call_count += 1
+            for result in await guard.search(query, cutoff_at=cutoff_at):
+                rows.append(
+                    self._web_source_row(
+                        result,
+                        query=query,
+                        cutoff_at=cutoff_at,
+                        opened_text=await guard.open(result.url, cutoff_at=cutoff_at),
+                    )
+                )
+        manifest.excluded_web_source_ids = _unique_preserving_order(
+            [*manifest.excluded_web_source_ids, *guard.excluded_source_ids]
+        )
+        manifest.web_sources = _unique_preserving_order(
+            [row["source_id"] for row in rows if isinstance(row.get("source_id"), str)]
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "web_sources"
+            / manifest.run_id
+            / "web_sources.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        manifest.web_source_artifact = artifact_relative.as_posix()
+        manifest.web_source_sha256 = sha256_text(payload)
+
+    def _web_source_row(
+        self,
+        result: WebSearchResult,
+        *,
+        query: str,
+        cutoff_at: datetime,
+        opened_text: str,
+    ) -> dict[str, Any]:
+        published_at = result.published_at
+        content_fingerprint = canonical_json(
+            {
+                "title": result.title,
+                "url": result.url,
+                "snippet": result.snippet,
+                "opened_text": opened_text,
+            }
+        )
+        return {
+            "schema_version": "nslab.web_source.v1",
+            "source_id": result.source_id,
+            "query": query,
+            "title": result.title,
+            "url": result.url,
+            "snippet": result.snippet,
+            "published_at": published_at.isoformat() if published_at else None,
+            "retrieved_at": now_kst().isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
+            "time_verified": published_at is not None and published_at <= cutoff_at,
+            "available_before_cutoff": published_at is not None and published_at <= cutoff_at,
+            "content_sha256": sha256_text(content_fingerprint),
+            "opened_text_sha256": sha256_text(opened_text),
+        }
+
     def _write_source_ledger_artifact(
         self,
         *,
@@ -374,11 +454,12 @@ class DailyAnalyzer:
                     "event_ids": [item.event_id],
                     "content_sha256": sha256_text(item.combined_text),
                     "notes": (
-                        "NEWS_ONLY_STRICT blind source; full body remains in the input CSV "
+                        "Cutoff-safe blind news source; full body remains in the input CSV "
                         "and is not duplicated in source_ledger."
                     ),
                 }
             )
+        rows.extend(self._web_source_ledger_rows(manifest, retrieved_at=retrieved_at))
 
         artifact_relative = (
             Path("runs")
@@ -400,6 +481,47 @@ class DailyAnalyzer:
             "outcome_sources": 0,
             "postmortem_sources": 0,
         }
+
+    def _web_source_ledger_rows(
+        self,
+        manifest: ContextManifest,
+        *,
+        retrieved_at: datetime,
+    ) -> list[dict[str, Any]]:
+        if not manifest.web_source_artifact:
+            return []
+        artifact_path = self.root / manifest.web_source_artifact
+        if not artifact_path.exists():
+            return []
+        rows: list[dict[str, Any]] = []
+        for line in artifact_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            rows.append(
+                {
+                    "schema_version": "nslab.source_ledger.v1",
+                    "run_id": manifest.run_id,
+                    "source_id": payload["source_id"],
+                    "source_type": "web_search_result",
+                    "title": payload["title"],
+                    "publisher": None,
+                    "url": payload["url"],
+                    "published_at": payload["published_at"],
+                    "retrieved_at": retrieved_at.isoformat(),
+                    "time_verified": payload["time_verified"],
+                    "available_before_cutoff": payload["available_before_cutoff"],
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [],
+                    "event_ids": [],
+                    "content_sha256": payload["content_sha256"],
+                    "notes": (
+                        "Cutoff-safe web source admitted by TemporalWebGuard; body/content "
+                        "is represented only by hashes in the source ledger."
+                    ),
+                }
+            )
+        return rows
 
     def _write_blind_seal_artifacts(
         self,
@@ -457,7 +579,7 @@ class DailyAnalyzer:
             "schema_version": "nslab.phase_state.v1",
             "run_id": manifest.run_id,
             "phase": "BLIND_SEALED",
-            "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+            "completed_phases": [f"PHASE_A_{manifest.blind_context_mode}"],
             "trade_date": prediction.trade_date.isoformat(),
             "cutoff_at": prediction.cutoff_at.isoformat(),
             "sealed_at": prediction.sealed_at.isoformat(),
@@ -585,6 +707,7 @@ class DailyAnalyzer:
             "web_research": {
                 "queries": manifest.web_queries,
                 "included_sources": manifest.web_sources,
+                "sources": self._read_web_source_context(manifest),
                 "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
             },
             "global_brain": self._read_brain_context(manifest),
@@ -605,9 +728,9 @@ class DailyAnalyzer:
         return (
             f"{self._load_synthesis_prompt().strip()}\n"
             "Return the final BlindPrediction. Keep qualitative confidence only, "
-            "preserve red-team objections in candidate counterarguments, and do not use "
-            "D-day prices, D-1 price repository data, outcomes, web search results, "
-            "or cutoff-after sources during NEWS_ONLY_STRICT BLIND.\n"
+            "preserve red-team objections in candidate counterarguments, use only "
+            "timestamp-verified web_research.sources, and do not use D-day prices, "
+            "outcomes, unverified web results, or cutoff-after sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -729,14 +852,39 @@ class DailyAnalyzer:
             artifacts.append({"path": relative_path, "payload": payload})
         return artifacts
 
+    def _read_web_source_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        if not manifest.web_source_artifact:
+            return []
+        path = self.root / manifest.web_source_artifact
+        if not path.exists() or not path.is_file():
+            return [{"path": manifest.web_source_artifact, "missing": True}]
+        sources: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            sources.append(
+                {
+                    "source_id": row.get("source_id"),
+                    "query": row.get("query"),
+                    "title": row.get("title"),
+                    "url": row.get("url"),
+                    "snippet": row.get("snippet"),
+                    "published_at": row.get("published_at"),
+                    "time_verified": row.get("time_verified"),
+                    "content_sha256": row.get("content_sha256"),
+                }
+            )
+        return sources
+
     def _load_synthesis_prompt(self) -> str:
         path = self.root / "prompts" / "synthesis" / "final.md"
         if path.exists():
             return path.read_text(encoding="utf-8")
         return (
             "Synthesize current news, global brain, swept memory, counterexamples, "
-            "candidate research, and red-team objections. In NEWS_ONLY_STRICT BLIND, "
-            "web and price repository access must remain unavailable."
+            "candidate research, cutoff-verified web evidence, and red-team objections. "
+            "In BLIND, D-day prices and cutoff-after evidence must remain unavailable."
         )
 
     def _build_web_queries(self, items: Sequence[NewsItem]) -> list[str]:

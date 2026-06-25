@@ -62,6 +62,7 @@ def _bundle_text(
     tamper_phase_hash: bool = False,
     phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
+    blind_context_mode: str = "NEWS_ONLY_STRICT",
     blind_web_search_call_count: int = 0,
     blind_price_repository_access_count: int = 0,
     blind_current_price_access_count: int = 0,
@@ -130,7 +131,7 @@ def _bundle_text(
         "schema_version": "nslab.phase_state.v1",
         "run_id": "RUN-bundle-test",
         "phase": "BLIND_SEALED",
-        "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+        "completed_phases": [f"PHASE_A_{blind_context_mode}"],
         "trade_date": episode.trade_date.isoformat(),
         "cutoff_at": episode.cutoff_at.isoformat(),
         "sealed_at": episode.created_at.isoformat(),
@@ -160,7 +161,7 @@ def _bundle_text(
         "schema_version": "nslab.bundle_manifest.v1",
         "run_id": "RUN-bundle-test",
         "trade_date": episode.trade_date.isoformat(),
-        "blind_context_mode": "NEWS_ONLY_STRICT",
+        "blind_context_mode": blind_context_mode,
         "blind_web_search_call_count": blind_web_search_call_count,
         "blind_price_repository_access_count": blind_price_repository_access_count,
         "blind_current_price_access_count": blind_current_price_access_count,
@@ -308,6 +309,68 @@ def test_bundle_import_rejects_blind_execution_guard_violation(tmp_path) -> None
     assert not parsed.validation["blind_execution_guard_verified"]
     with pytest.raises(BundleImportError, match="blind execution guard"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_accepts_cutoff_safe_web_blind_sources(tmp_path) -> None:
+    episode = _episode().model_copy(
+        update={
+            "blind_integrity": {
+                "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+                "blind_web_search_call_count": 2,
+                "blind_price_repository_access_count": 0,
+                "blind_current_price_access_count": 0,
+                "no_d_outcome_exposed": True,
+            }
+        }
+    )
+    source = tmp_path / "cutoff_safe_web_bundle.md"
+    source.write_text(
+        _bundle_text(
+            episode,
+            blind_context_mode="CUTOFF_SAFE_WEB_BLIND",
+            blind_web_search_call_count=2,
+            source_rows=[
+                {
+                    "source_id": "SRC-1",
+                    "source_type": "news_csv_row",
+                    "title": "source title",
+                    "publisher": None,
+                    "url": "file://news.csv#row=1",
+                    "published_at": "2030-01-10T08:00:00+09:00",
+                    "retrieved_at": "2030-01-10T08:00:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [1],
+                    "event_ids": ["EVT-1"],
+                    "content_sha256": "abc",
+                    "notes": "test source",
+                },
+                {
+                    "source_id": "WEB-1",
+                    "source_type": "web_search_result",
+                    "title": "safe web source",
+                    "publisher": None,
+                    "url": "https://example.test/safe",
+                    "published_at": "2030-01-10T08:30:00+09:00",
+                    "retrieved_at": "2030-01-10T08:31:00+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [],
+                    "event_ids": [],
+                    "content_sha256": "def",
+                    "notes": "cutoff-safe web source",
+                },
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["blind_execution_guard_verified"]
+    assert parsed.validation["id_reference_integrity_verified"]
 
 
 def test_bundle_import_rejects_mismatched_row_disposition_hash(tmp_path) -> None:

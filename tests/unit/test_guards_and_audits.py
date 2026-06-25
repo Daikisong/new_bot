@@ -627,6 +627,73 @@ def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Pat
     assert "RUN-news-only-violation.json: no_d_outcome_exposed must be true" in findings
 
 
+def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    source_dir = tmp_path / "runs" / "checkpoints" / "source_ledger" / "RUN-web"
+    web_dir = tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web"
+    source_dir.mkdir(parents=True)
+    web_dir.mkdir(parents=True)
+    web_artifact = web_dir / "web_sources.jsonl"
+    web_payload = (
+        canonical_json(
+            {
+                "schema_version": "nslab.web_source.v1",
+                "source_id": "WEB-FUTURE",
+                "query": "future leak",
+                "title": "future source",
+                "url": "https://example.test/future",
+                "snippet": "future",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "retrieved_at": "2030-01-10T09:31:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "time_verified": False,
+                "available_before_cutoff": False,
+                "content_sha256": "abc",
+                "opened_text_sha256": "def",
+            }
+        )
+        + "\n"
+    )
+    web_artifact.write_text(web_payload, encoding="utf-8")
+    source_artifact = source_dir / "source_ledger.jsonl"
+    source_artifact.write_text("", encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-web.json",
+        {
+            "run_id": "RUN-web",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+            "blind_web_search_call_count": 1,
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "source_ledger_artifact": source_artifact.relative_to(tmp_path).as_posix(),
+            "source_ledger_sha256": sha256_text(""),
+            "source_ledger_entry_count": 0,
+            "web_sources": ["WEB-FUTURE"],
+            "excluded_web_source_ids": ["WEB-FUTURE"],
+            "web_source_artifact": web_artifact.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": sha256_text(web_payload),
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-web.json: web source is both included and excluded" in findings
+    assert "RUN-web.json: web_source:1 is not cutoff verified" in findings
+    assert "RUN-web.json: web_source:1 after cutoff" in findings
+
+
 def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
     artifact_dir = tmp_path / "runs" / "checkpoints" / "row_disposition" / "RUN-row"

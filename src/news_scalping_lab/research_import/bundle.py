@@ -318,13 +318,15 @@ def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> 
                 f"source_ledger.jsonl:{index} BLIND source without verified time"
             )
         input_row_ids = row.get("input_row_ids")
-        if (
-            not isinstance(input_row_ids, list)
-            or not input_row_ids
-            or any(not isinstance(row_id, int) for row_id in input_row_ids)
+        source_type = row.get("source_type")
+        input_row_ids_valid = isinstance(input_row_ids, list) and not any(
+            not isinstance(row_id, int) for row_id in input_row_ids
+        )
+        if not input_row_ids_valid or (
+            source_type == "news_csv_row" and not input_row_ids
         ):
             raise BundleImportError(
-                f"source_ledger.jsonl:{index} input_row_ids must be non-empty integers"
+                f"source_ledger.jsonl:{index} input_row_ids invalid for source_type"
             )
     if len(source_ids) != len(set(source_ids)):
         raise BundleImportError("source_ledger.jsonl duplicate source_id")
@@ -353,15 +355,20 @@ def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
         return False
 
     mode = manifest.get("blind_context_mode")
-    guard_fields = {
-        "blind_web_search_call_count": 0,
+    if mode not in {"NEWS_ONLY_STRICT", "CUTOFF_SAFE_WEB_BLIND"}:
+        return False
+    price_guard_fields = {
         "blind_price_repository_access_count": 0,
         "blind_current_price_access_count": 0,
     }
-    if mode == "NEWS_ONLY_STRICT":
-        for field_name, expected in guard_fields.items():
-            if manifest.get(field_name) != expected:
-                return False
+    for field_name, expected in price_guard_fields.items():
+        if manifest.get(field_name) != expected:
+            return False
+    manifest_web_calls = manifest.get("blind_web_search_call_count")
+    if mode == "NEWS_ONLY_STRICT" and manifest_web_calls != 0:
+        return False
+    if mode == "CUTOFF_SAFE_WEB_BLIND" and not isinstance(manifest_web_calls, int):
+        return False
     if manifest.get("no_d_outcome_exposed") is not True:
         return False
 
@@ -372,9 +379,11 @@ def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
         return False
     if blind_integrity.get("no_d_outcome_exposed") is not True:
         return False
-    for field_name, expected in guard_fields.items():
+    for field_name, expected in price_guard_fields.items():
         if blind_integrity.get(field_name) != expected:
             return False
+    if blind_integrity.get("blind_web_search_call_count") != manifest_web_calls:
+        return False
 
     receipt = episode.get("blind_seal_receipt")
     if not isinstance(receipt, dict):
@@ -546,8 +555,13 @@ def _verify_id_reference_integrity(
         return False
 
     for source in source_ledger:
+        source_type = source.get("source_type")
         input_row_ids = source.get("input_row_ids")
-        if not isinstance(input_row_ids, list) or not input_row_ids:
+        if not isinstance(input_row_ids, list):
+            return False
+        if source_type != "news_csv_row" and not input_row_ids:
+            continue
+        if not input_row_ids:
             return False
         if any(row_id not in row_numbers for row_id in input_row_ids):
             return False

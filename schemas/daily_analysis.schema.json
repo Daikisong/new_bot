@@ -614,6 +614,30 @@
           "title": "Web Queries",
           "type": "array"
         },
+        "web_source_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Web Source Artifact"
+        },
+        "web_source_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Web Source Sha256"
+        },
         "web_sources": {
           "items": {
             "type": "string"
