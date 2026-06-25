@@ -392,6 +392,58 @@ def test_hardcoding_audit_passes_current_source() -> None:
     assert result["passed"], result["findings"]
 
 
+def test_hardcoding_audit_flags_known_company_literals_from_memory(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "src" / "news_scalping_lab"
+    source_dir.mkdir(parents=True)
+    company_dir = tmp_path / "memory" / "company_memory"
+    company_dir.mkdir(parents=True)
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True)
+    write_json(
+        company_dir / "CM-alpha.json",
+        {
+            "company_name": "FictionalAlpha Holdings",
+            "aliases": ["FictionalAlpha"],
+        },
+    )
+    write_json(
+        accepted_dir / "EP-company.json",
+        {
+            "blind_predictions": [
+                {"company_name": "FictionalBeta Systems"},
+            ],
+            "event_ticker_edges": [
+                {"company_name": "FictionalGamma Parts"},
+            ],
+        },
+    )
+    (source_dir / "leaked_company_knowledge.py").write_text(
+        """
+DEFAULT_LEADER = "FictionalAlpha Holdings"
+def fallback_candidate() -> str:
+    return "FictionalBeta Systems"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    company_findings = [
+        finding
+        for finding in findings
+        if finding["rule"] == "known_company_name_literal"
+    ]
+    assert {finding["match"] for finding in company_findings} == {
+        "FictionalAlpha Holdings",
+        "FictionalBeta Systems",
+    }
+
+
 def test_hardcoding_audit_flags_domain_maps_and_ticker_lists(tmp_path: Path) -> None:
     source_dir = tmp_path / "src" / "news_scalping_lab"
     source_dir.mkdir(parents=True)

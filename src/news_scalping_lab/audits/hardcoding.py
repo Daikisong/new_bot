@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 from pathlib import Path
+from typing import Any
 
 TICKER_LITERAL_RE = re.compile(r"[\"'][0-9]{6}[\"']")
 HANGUL_RE = re.compile(r"[가-힣]")
@@ -79,11 +81,15 @@ TEXT_DOMAIN_COLLECTION_RE = re.compile(
 )
 TEXT_HANGUL_COLLECTION_RE = re.compile(r"[\uac00-\ud7a3].*[:=]\s*(?:\[|\{)")
 TEXT_POLICY_FILE_SUFFIXES = {".md", ".txt"}
+SYMBOLIC_PLACEHOLDER_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
+MIN_KNOWN_COMPANY_LITERAL_CHARS = 3
+IGNORED_ENTITY_LITERAL_VALUES = {"n/a", "none", "null", "unknown", "미상", "없음"}
 
 
 def audit_hardcoding(root: Path) -> dict[str, object]:
     src = root / "src" / "news_scalping_lab"
     findings: list[dict[str, object]] = []
+    known_company_literals = _known_company_literals(root)
     for path in sorted(src.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
         lines = text.splitlines()
@@ -98,6 +104,15 @@ def audit_hardcoding(root: Path) -> dict[str, object]:
             )
             continue
         findings.extend(_ast_findings(root, path, tree, lines))
+        findings.extend(
+            _known_company_literal_findings(
+                root,
+                path,
+                tree,
+                lines,
+                known_company_literals,
+            )
+        )
     for path in _iter_text_policy_files(root):
         text = path.read_text(encoding="utf-8")
         for line_number, line in enumerate(text.splitlines(), start=1):
@@ -120,6 +135,90 @@ def audit_hardcoding(root: Path) -> dict[str, object]:
                     )
                 )
     return {"passed": not findings, "findings": findings}
+
+
+def _known_company_literals(root: Path) -> list[str]:
+    values: set[str] = set()
+    for payload in _iter_json_objects(root / "memory" / "company_memory"):
+        _add_company_literal(values, payload.get("company_name"))
+        for alias in _sequence_items(payload.get("aliases")):
+            _add_company_literal(values, alias)
+    for payload in _iter_json_objects(root / "research" / "accepted"):
+        for candidate in _sequence_items(payload.get("blind_predictions")):
+            if isinstance(candidate, dict):
+                _add_company_literal(values, candidate.get("company_name"))
+        for edge in _sequence_items(payload.get("event_ticker_edges")):
+            if isinstance(edge, dict):
+                _add_company_literal(values, edge.get("company_name"))
+    return sorted(values, key=lambda value: (-len(value), value))
+
+
+def _iter_json_objects(directory: Path) -> list[dict[str, Any]]:
+    if not directory.exists():
+        return []
+    payloads: list[dict[str, Any]] = []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _sequence_items(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _add_company_literal(values: set[str], value: object) -> None:
+    if not isinstance(value, str):
+        return
+    normalized = " ".join(value.split())
+    if len(normalized) < MIN_KNOWN_COMPANY_LITERAL_CHARS:
+        return
+    if normalized.lower() in IGNORED_ENTITY_LITERAL_VALUES:
+        return
+    if SYMBOLIC_PLACEHOLDER_RE.fullmatch(normalized):
+        return
+    values.add(normalized)
+
+
+def _known_company_literal_findings(
+    root: Path,
+    path: Path,
+    tree: ast.AST,
+    lines: list[str],
+    known_company_literals: list[str],
+) -> list[dict[str, object]]:
+    if not known_company_literals:
+        return []
+    findings: list[dict[str, object]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+            continue
+        matched = _matched_known_company_literal(node.value, known_company_literals)
+        if matched is None:
+            continue
+        findings.append(
+            _finding(
+                root,
+                path,
+                node.lineno,
+                "known_company_name_literal",
+                _line_at(lines, node.lineno),
+                match=matched,
+            )
+        )
+    return findings
+
+
+def _matched_known_company_literal(value: str, known_company_literals: list[str]) -> str | None:
+    normalized = " ".join(value.split())
+    for literal in known_company_literals:
+        if literal in normalized:
+            return literal
+    return None
 
 
 def _iter_text_policy_files(root: Path) -> list[Path]:
@@ -311,13 +410,24 @@ def _target_mentions_score(target: ast.AST) -> bool:
     return False
 
 
-def _finding(root: Path, path: Path, line_number: int, rule: str, line: str) -> dict[str, object]:
-    return {
+def _finding(
+    root: Path,
+    path: Path,
+    line_number: int,
+    rule: str,
+    line: str,
+    *,
+    match: str | None = None,
+) -> dict[str, object]:
+    finding: dict[str, object] = {
         "file": path.relative_to(root).as_posix(),
         "line": line_number,
         "rule": rule,
         "text": line.strip(),
     }
+    if match is not None:
+        finding["match"] = match
+    return finding
 
 
 def _line_at(lines: list[str], line_number: int) -> str:
