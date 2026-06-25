@@ -6395,6 +6395,10 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
             "source_ledger_artifact": artifact.relative_to(tmp_path).as_posix(),
             "source_ledger_sha256": "wrong",
             "source_ledger_entry_count": 3,
+            "web_sources": ["WEB-MISSING"],
+            "candidate_web_source_ids": ["WEB-CANDIDATE-MISSING"],
+            "excluded_web_source_ids": ["SRC-1"],
+            "excluded_candidate_web_source_ids": [],
         },
     )
 
@@ -6418,6 +6422,12 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert "RUN-ledger.json: source_ledger:2 invalid usage_phase" in findings
     assert "RUN-ledger.json: source_ledger duplicate source_id" in findings
     assert "RUN-ledger.json: source_ledger entry_count mismatch" in findings
+    assert "RUN-ledger.json: source_ledger web_sources mismatch" in findings
+    assert (
+        "RUN-ledger.json: source_ledger candidate_web_source_ids mismatch"
+        in findings
+    )
+    assert "RUN-ledger.json: source_ledger contains excluded source_id" in findings
 
 
 def test_lookahead_audit_flags_invalid_blind_seal_artifacts(tmp_path: Path) -> None:

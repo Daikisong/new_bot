@@ -1130,6 +1130,49 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+    _check_source_ledger_manifest_source_coverage(
+        manifest_name,
+        manifest,
+        rows,
+        findings,
+    )
+
+
+def _check_source_ledger_manifest_source_coverage(
+    manifest_name: str,
+    manifest: dict[object, object],
+    rows: list[dict[str, object]],
+    findings: list[str],
+) -> None:
+    web_source_ids = _unique_strings(
+        row.get("source_id")
+        for row in rows
+        if row.get("source_type") == "web_search_result"
+    )
+    if not _same_unique_string_set(web_source_ids, _string_list(manifest.get("web_sources"))):
+        findings.append(f"{manifest_name}: source_ledger web_sources mismatch")
+
+    candidate_web_source_ids = _unique_strings(
+        row.get("source_id")
+        for row in rows
+        if row.get("source_type") == "candidate_web_check"
+    )
+    if candidate_web_source_ids != _string_list(manifest.get("candidate_web_source_ids")):
+        findings.append(
+            f"{manifest_name}: source_ledger candidate_web_source_ids mismatch"
+        )
+
+    excluded_source_ids = {
+        *_string_list(manifest.get("excluded_web_source_ids")),
+        *_string_list(manifest.get("excluded_candidate_web_source_ids")),
+    }
+    ledger_source_ids = {
+        source_id
+        for row in rows
+        if isinstance(source_id := row.get("source_id"), str)
+    }
+    if ledger_source_ids & excluded_source_ids:
+        findings.append(f"{manifest_name}: source_ledger contains excluded source_id")
 
 
 def _check_source_ledger_published_at(
@@ -1766,6 +1809,27 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _unique_strings(values: Iterator[object]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _same_unique_string_set(left: list[str], right: list[str]) -> bool:
+    left_unique = _unique_strings(iter(left))
+    right_unique = _unique_strings(iter(right))
+    return (
+        len(left_unique) == len(left)
+        and len(right_unique) == len(right)
+        and set(left_unique) == set(right_unique)
+    )
 
 
 def _string_list_or_none(value: object) -> list[str] | None:
