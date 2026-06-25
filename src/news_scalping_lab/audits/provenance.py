@@ -993,6 +993,32 @@ def _check_memory_source(
         findings.append(f"{label}: {kind} provenance {index} content_sha256 mismatch")
 
 
+def _read_local_json_source(
+    root: Path,
+    entry: dict[str, Any],
+    findings: list[str],
+) -> dict[str, Any] | None:
+    uri = entry.get("uri")
+    if not isinstance(uri, str) or not uri or _is_external_uri(uri):
+        return None
+    source_path = _resolve_project_path(root, uri)
+    if source_path is None or not source_path.exists():
+        return None
+    return _read_json_object(source_path, findings)
+
+
+def _without_provenance(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _without_provenance(item)
+            for key, item in value.items()
+            if key != "provenance"
+        }
+    if isinstance(value, list):
+        return [_without_provenance(item) for item in value]
+    return value
+
+
 def _check_blind_artifact_hash(
     prediction_path: Path,
     prediction: dict[str, Any],
@@ -1065,6 +1091,9 @@ def _check_evaluation_episode_sources(
     findings: list[str],
 ) -> None:
     provenance_entries = _top_level_provenance_entries(episode)
+    sealed_prediction: dict[str, Any] | None = None
+    sealed_prediction_sha256: str | None = None
+    evaluation_report: dict[str, Any] | None = None
     source_types = {
         entry.get("source_type")
         for entry in provenance_entries
@@ -1084,31 +1113,53 @@ def _check_evaluation_episode_sources(
         source_type = entry.get("source_type")
         if source_type == "evaluation_postmortem":
             _check_memory_source(root, label, index, entry, findings, kind="evaluation postmortem")
-            _check_evaluation_report_payload(root, label, entry, episode, findings)
+            evaluation_report = _read_local_json_source(root, entry, findings)
         elif source_type == "sealed_blind_prediction":
             _check_memory_source(root, label, index, entry, findings, kind="sealed blind prediction")
+            sealed_prediction = _read_local_json_source(root, entry, findings)
+            if isinstance(entry.get("content_sha256"), str):
+                sealed_prediction_sha256 = entry["content_sha256"]
+    if sealed_prediction is not None:
+        _check_evaluation_sealed_prediction_payload(
+            label,
+            episode,
+            sealed_prediction,
+            findings,
+        )
+    if evaluation_report is not None:
+        _check_evaluation_report_payload(
+            label,
+            evaluation_report,
+            episode,
+            findings,
+            sealed_prediction=sealed_prediction,
+            sealed_prediction_sha256=sealed_prediction_sha256,
+        )
 
 
 def _check_evaluation_report_payload(
-    root: Path,
     label: str,
-    entry: dict[str, Any],
+    report: dict[str, Any],
     episode: dict[str, Any],
     findings: list[str],
+    *,
+    sealed_prediction: dict[str, Any] | None,
+    sealed_prediction_sha256: str | None,
 ) -> None:
-    uri = entry.get("uri")
-    if not isinstance(uri, str) or not uri or _is_external_uri(uri):
-        return
-    report_path = _resolve_project_path(root, uri)
-    if report_path is None or not report_path.exists():
-        return
-    report = _read_json_object(report_path, findings)
-    if report is None:
-        return
     if report.get("schema_version") != "nslab.evaluation.v1":
         findings.append(f"{label}: evaluation report schema_version invalid")
+    if report.get("execution_protocol_version") != episode.get("execution_protocol_version"):
+        findings.append(f"{label}: evaluation report execution_protocol_version mismatch")
     if report.get("trade_date") != episode.get("trade_date"):
         findings.append(f"{label}: evaluation report trade_date mismatch")
+    if sealed_prediction is not None and report.get("blind_prediction_id") != sealed_prediction.get(
+        "prediction_id"
+    ):
+        findings.append(f"{label}: evaluation report blind_prediction_id mismatch")
+    if sealed_prediction_sha256 is not None and report.get("blind_prediction_sha256") != (
+        sealed_prediction_sha256
+    ):
+        findings.append(f"{label}: evaluation report blind_prediction_sha256 mismatch")
     if _postmortem_content(report.get("postmortem")) != _postmortem_content(
         episode.get("postmortem")
     ):
@@ -1117,6 +1168,86 @@ def _check_evaluation_report_payload(
         findings.append(f"{label}: evaluation report eligibility_matrix mismatch")
     if report.get("outcome_coverage_status") != episode.get("outcome_coverage_status"):
         findings.append(f"{label}: evaluation report outcome_coverage_status mismatch")
+    _check_evaluation_report_outcomes(label, report, episode, findings)
+    _check_evaluation_report_metrics(label, report, episode, findings)
+
+
+def _check_evaluation_sealed_prediction_payload(
+    label: str,
+    episode: dict[str, Any],
+    prediction: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if prediction.get("schema_version") != "nslab.blind_prediction.v1":
+        findings.append(f"{label}: sealed blind prediction schema_version invalid")
+    if not isinstance(prediction.get("sealed_at"), str):
+        findings.append(f"{label}: sealed blind prediction sealed_at missing")
+    if not isinstance(prediction.get("blind_artifact_sha256"), str):
+        findings.append(f"{label}: sealed blind prediction blind_artifact_sha256 missing")
+    if prediction.get("trade_date") != episode.get("trade_date"):
+        findings.append(f"{label}: sealed blind prediction trade_date mismatch")
+    if prediction.get("cutoff_at") != episode.get("cutoff_at"):
+        findings.append(f"{label}: sealed blind prediction cutoff_at mismatch")
+    if _without_provenance(prediction.get("blind_analysis")) != _without_provenance(
+        episode.get("blind_analysis")
+    ):
+        findings.append(f"{label}: sealed blind prediction blind_analysis mismatch")
+    if _without_provenance(prediction.get("candidates")) != _without_provenance(
+        episode.get("blind_predictions")
+    ):
+        findings.append(f"{label}: sealed blind prediction blind_predictions mismatch")
+
+
+def _check_evaluation_report_outcomes(
+    label: str,
+    report: dict[str, Any],
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    report_outcomes = report.get("outcomes")
+    episode_outcomes = episode.get("outcome_labels")
+    blind_predictions = episode.get("blind_predictions")
+    if not isinstance(report_outcomes, dict) or not isinstance(episode_outcomes, dict):
+        return
+    if not isinstance(blind_predictions, list):
+        return
+    for candidate in blind_predictions:
+        if not isinstance(candidate, dict):
+            continue
+        rank = candidate.get("rank")
+        ticker = candidate.get("ticker")
+        company = candidate.get("company_name")
+        if not isinstance(rank, int) or not isinstance(ticker, str) or not isinstance(company, str):
+            continue
+        outcome_key = f"{rank}:{ticker}:{company}"
+        if episode_outcomes.get(outcome_key) != report_outcomes.get(company):
+            findings.append(
+                f"{label}: evaluation report outcome mismatch for {outcome_key}"
+            )
+    expected_count = len(
+        [
+            candidate
+            for candidate in blind_predictions
+            if isinstance(candidate, dict) and isinstance(candidate.get("company_name"), str)
+        ]
+    )
+    if len(report_outcomes) != expected_count:
+        findings.append(f"{label}: evaluation report outcome count mismatch")
+
+
+def _check_evaluation_report_metrics(
+    label: str,
+    report: dict[str, Any],
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    metrics = report.get("performance_metrics")
+    blind_predictions = episode.get("blind_predictions")
+    if not isinstance(metrics, dict) or not isinstance(blind_predictions, list):
+        return
+    candidate_count = metrics.get("candidate_count")
+    if candidate_count != len(blind_predictions):
+        findings.append(f"{label}: evaluation report candidate_count mismatch")
 
 
 def _top_level_provenance_entries(episode: dict[str, Any]) -> list[dict[str, Any]]:

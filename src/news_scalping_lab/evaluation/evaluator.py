@@ -63,6 +63,22 @@ class Evaluator:
         prediction = BlindPrediction.model_validate(prediction_data)
         if prediction.sealed_at is None or not prediction.blind_artifact_sha256:
             raise ValueError("evaluation requires a sealed blind prediction")
+        episode_id = stable_id(
+            "EP",
+            "evaluation",
+            trade_date.isoformat(),
+            prediction.prediction_id,
+        )
+        prediction_snapshot_path = (
+            self.root
+            / "runs"
+            / "checkpoints"
+            / "evaluations"
+            / episode_id
+            / "sealed_blind_prediction.json"
+        )
+        write_json(prediction_snapshot_path, prediction_data)
+        prediction_snapshot_sha256 = file_sha256(prediction_snapshot_path)
         outcomes: dict[str, object] = {}
         outcome_labels: dict[str, OutcomeLabels] = {}
         ranked_outcomes: list[tuple[Candidate, OutcomeLabels]] = []
@@ -109,6 +125,7 @@ class Evaluator:
             "trade_date": trade_date.isoformat(),
             "created_at": now_kst().isoformat(),
             "blind_prediction_id": prediction.prediction_id,
+            "blind_prediction_sha256": prediction_snapshot_sha256,
             "outcome_coverage_status": outcome_coverage_status,
             "outcomes": outcomes,
             "performance_metrics": metrics.model_dump(mode="json"),

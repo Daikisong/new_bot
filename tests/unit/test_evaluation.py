@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 import pytest
 
+from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import (
@@ -390,3 +391,64 @@ def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="sealed blind prediction"):
         Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+
+
+def test_evaluation_provenance_audit_verifies_sealed_snapshot_and_report(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction_path = tmp_path / "predictions" / f"{trade_day.isoformat()}.json"
+    write_json(prediction_path, _sealed_prediction(trade_day).model_dump(mode="json"))
+
+    result = Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+    prediction_path.unlink()
+    episode = read_json(result.episode_path)
+    evaluation_report_uri = next(
+        entry["uri"]
+        for entry in episode["provenance"]
+        if entry["source_type"] == "evaluation_postmortem"
+    )
+    evaluation_report_snapshot = tmp_path / evaluation_report_uri
+
+    assert read_json(result.report_path)["blind_prediction_sha256"]
+    valid = audit_provenance(tmp_path)
+    assert valid["passed"], valid["findings"]
+
+    tampered_episode = read_json(result.episode_path)
+    tampered_episode["blind_predictions"][0]["company_name"] = "PosthocCandidate"
+    write_json(result.episode_path, tampered_episode)
+
+    blind_mismatch = audit_provenance(tmp_path)
+
+    assert not blind_mismatch["passed"]
+    assert (
+        f"research/episodes/{result.episode_id}.json: sealed blind prediction "
+        "blind_predictions mismatch"
+    ) in blind_mismatch["findings"]
+
+    write_json(result.episode_path, episode)
+    tampered_report = read_json(evaluation_report_snapshot)
+    tampered_report["blind_prediction_sha256"] = "0" * 64
+    write_json(evaluation_report_snapshot, tampered_report)
+
+    report_mismatch = audit_provenance(tmp_path)
+
+    assert not report_mismatch["passed"]
+    assert (
+        f"research/episodes/{result.episode_id}.json: evaluation report "
+        "blind_prediction_sha256 mismatch"
+    ) in report_mismatch["findings"]
+
+    write_json(evaluation_report_snapshot, read_json(result.report_path))
+    tampered_outcome_episode = read_json(result.episode_path)
+    outcome_key = next(iter(tampered_outcome_episode["outcome_labels"]))
+    tampered_outcome_episode["outcome_labels"][outcome_key]["upper_limit_touched"] = True
+    write_json(result.episode_path, tampered_outcome_episode)
+
+    outcome_mismatch = audit_provenance(tmp_path)
+
+    assert not outcome_mismatch["passed"]
+    assert (
+        f"research/episodes/{result.episode_id}.json: evaluation report outcome "
+        f"mismatch for {outcome_key}"
+    ) in outcome_mismatch["findings"]

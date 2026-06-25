@@ -4348,7 +4348,25 @@ def test_provenance_audit_validates_mechanism_memory_source_hash(tmp_path: Path)
 def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -> None:
     checkpoint_dir = tmp_path / "runs" / "checkpoints" / "evaluations" / "EP-evaluation"
     prediction_source = checkpoint_dir / "sealed_blind_prediction.json"
-    write_json(prediction_source, {"prediction_id": "PRED-eval"})
+    blind_analysis = {
+        "summary": "Sealed blind analysis.",
+    }
+    write_json(
+        prediction_source,
+        {
+            "schema_version": "nslab.blind_prediction.v1",
+            "prediction_id": "PRED-eval",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-10T08:58:00+09:00",
+            "sealed_at": "2030-01-10T08:58:30+09:00",
+            "blind_artifact_sha256": "a" * 64,
+            "blind_analysis": blind_analysis,
+            "dominant_sectors": [],
+            "candidates": [],
+        },
+    )
+    prediction_sha256 = file_sha256(prediction_source)
     report_path = checkpoint_dir / "postmortem_report.json"
     postmortem = {
         "summary": "Evaluation learning from sealed blind prediction.",
@@ -4372,8 +4390,13 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
         report_path,
         {
             "schema_version": "nslab.evaluation.v1",
+            "execution_protocol_version": "nslab.exhaustive_news_blind_full_market.v5",
             "trade_date": "2030-01-10",
+            "blind_prediction_id": "PRED-eval",
+            "blind_prediction_sha256": prediction_sha256,
             "outcome_coverage_status": "PREDICTED_CANDIDATES_ONLY",
+            "outcomes": {},
+            "performance_metrics": {"candidate_count": 0},
             "postmortem": postmortem,
             "eligibility_matrix": eligibility,
         },
@@ -4400,10 +4423,11 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
             "created_at": "2030-01-11T00:01:00+09:00",
+            "execution_protocol_version": "nslab.exhaustive_news_blind_full_market.v5",
             "research_version": "evaluation-postmortem-v1",
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
-                "summary": "Sealed blind analysis.",
+                **blind_analysis,
                 "provenance": [prediction_provenance],
             },
             "blind_predictions": [],

@@ -480,7 +480,7 @@
   ],
   "blind_seal_receipt": {},
   "counterexamples": [],
-  "created_at": "2026-06-25T21:11:50.558723+09:00",
+  "created_at": "2026-06-26T02:47:40.218474+09:00",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
   "eligibility_matrix": {
     "brain_eligible": true,
@@ -515,15 +515,15 @@
         "UNKNOWN"
       ],
       "first_observed_at": "2026-06-24",
-      "last_updated_at": "2026-06-25T21:11:50.558621+09:00",
+      "last_updated_at": "2026-06-26T02:47:40.218302+09:00",
       "mechanism": "postmortem learning from sealed blind prediction and evaluation-only outcomes",
       "near_miss_episode_ids": [],
       "provenance": [
         {
-          "content_sha256": "acccc61c0ca5a3de16dc80681af109ce7a60a821f1110b529a19bc8918de8d68",
+          "content_sha256": "ac81117eea99c242457acb0e5f14671a985871878696476fba7501cd510d0d7e",
           "excerpt": null,
-          "observed_at": "2026-06-25T21:11:50.558621+09:00",
-          "source_id": "SRC-d4525e42c9ac",
+          "observed_at": "2026-06-26T02:47:40.218302+09:00",
+          "source_id": "SRC-f7f0d54f208a",
           "source_type": "evaluation_postmortem",
           "uri": "runs/checkpoints/evaluations/EP-f56c790fe2fc/postmortem_report.json"
         }
@@ -548,15 +548,15 @@
         "UNKNOWN"
       ],
       "first_observed_at": "2026-06-24",
-      "last_updated_at": "2026-06-25T21:11:50.558621+09:00",
+      "last_updated_at": "2026-06-26T02:47:40.218302+09:00",
       "mechanism": "postmortem learning from sealed blind prediction and evaluation-only outcomes",
       "near_miss_episode_ids": [],
       "provenance": [
         {
-          "content_sha256": "acccc61c0ca5a3de16dc80681af109ce7a60a821f1110b529a19bc8918de8d68",
+          "content_sha256": "ac81117eea99c242457acb0e5f14671a985871878696476fba7501cd510d0d7e",
           "excerpt": null,
-          "observed_at": "2026-06-25T21:11:50.558621+09:00",
-          "source_id": "SRC-d4525e42c9ac",
+          "observed_at": "2026-06-26T02:47:40.218302+09:00",
+          "source_id": "SRC-f7f0d54f208a",
           "source_type": "evaluation_postmortem",
           "uri": "runs/checkpoints/evaluations/EP-f56c790fe2fc/postmortem_report.json"
         }
@@ -735,10 +735,10 @@
     "misses": [],
     "provenance": [
       {
-        "content_sha256": "acccc61c0ca5a3de16dc80681af109ce7a60a821f1110b529a19bc8918de8d68",
+        "content_sha256": "ac81117eea99c242457acb0e5f14671a985871878696476fba7501cd510d0d7e",
         "excerpt": null,
-        "observed_at": "2026-06-25T21:11:50.558621+09:00",
-        "source_id": "SRC-d4525e42c9ac",
+        "observed_at": "2026-06-26T02:47:40.218302+09:00",
+        "source_id": "SRC-f7f0d54f208a",
         "source_type": "evaluation_postmortem",
         "uri": "runs/checkpoints/evaluations/EP-f56c790fe2fc/postmortem_report.json"
       }
@@ -759,10 +759,10 @@
       "uri": "runs/checkpoints/evaluations/EP-f56c790fe2fc/sealed_blind_prediction.json"
     },
     {
-      "content_sha256": "acccc61c0ca5a3de16dc80681af109ce7a60a821f1110b529a19bc8918de8d68",
+      "content_sha256": "ac81117eea99c242457acb0e5f14671a985871878696476fba7501cd510d0d7e",
       "excerpt": null,
-      "observed_at": "2026-06-25T21:11:50.558621+09:00",
-      "source_id": "SRC-d4525e42c9ac",
+      "observed_at": "2026-06-26T02:47:40.218302+09:00",
+      "source_id": "SRC-f7f0d54f208a",
       "source_type": "evaluation_postmortem",
       "uri": "runs/checkpoints/evaluations/EP-f56c790fe2fc/postmortem_report.json"
     }
