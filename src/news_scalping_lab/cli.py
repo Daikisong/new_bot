@@ -1153,8 +1153,11 @@ def _inspect_final_synthesis_context_artifact(
             "run_id_verified": None,
             "payload_hash_verified": None,
             "required_inputs_verified": None,
+            "required_input_set_verified": None,
+            "payload_keys_verified": None,
             "input_summary_verified": None,
             "manifest_summary_verified": None,
+            "manifest_counts_verified": None,
         }
     )
     if not (
@@ -1214,6 +1217,19 @@ def _inspect_final_synthesis_context_artifact(
     )
     if not status["required_inputs_verified"]:
         status["errors"].append("final_synthesis_context_required_inputs_mismatch")
+    required_input_list = _string_list(required_inputs)
+    status["required_input_set_verified"] = (
+        required_input_list == _final_synthesis_required_inputs()
+    )
+    if not status["required_input_set_verified"]:
+        status["errors"].append("final_synthesis_context_required_input_set_mismatch")
+    missing_payload_keys = [
+        key for key in required_input_list if key not in context_payload
+    ]
+    status["missing_payload_keys"] = missing_payload_keys
+    status["payload_keys_verified"] = not missing_payload_keys
+    if not status["payload_keys_verified"]:
+        status["errors"].append("final_synthesis_context_payload_keys_missing")
 
     expected_summary = final_synthesis_input_summary(context_payload)
     status["input_summary_verified"] = payload.get("input_summary") == expected_summary
@@ -1226,6 +1242,13 @@ def _inspect_final_synthesis_context_artifact(
     )
     if not status["manifest_summary_verified"]:
         status["errors"].append("final_synthesis_context_manifest_summary_mismatch")
+    manifest_count_mismatches = _final_synthesis_manifest_count_mismatches(
+        manifest, expected_summary
+    )
+    status["manifest_count_mismatches"] = manifest_count_mismatches
+    status["manifest_counts_verified"] = not manifest_count_mismatches
+    if not status["manifest_counts_verified"]:
+        status["errors"].append("final_synthesis_context_manifest_count_mismatches")
 
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
@@ -2423,8 +2446,11 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("run_id_verified")
         and status.get("payload_hash_verified")
         and status.get("required_inputs_verified")
+        and status.get("required_input_set_verified")
+        and status.get("payload_keys_verified")
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
+        and status.get("manifest_counts_verified")
     )
 
 
@@ -2570,6 +2596,122 @@ def _candidate_verification_status_counts(
                 continue
             counts[str(dimension["status"])] += 1
     return dict(counts)
+
+
+def _final_synthesis_required_inputs() -> list[str]:
+    return [
+        "current_news",
+        "open_world_first_analysis",
+        "news_novelty_review",
+        "additional_semantic_retrieval",
+        "open_world_candidate_expansion",
+        "web_research",
+        "global_brain",
+        "all_shard_brains",
+        "all_shard_contributions",
+        "retrieved_raw_episodes",
+        "positive_cases",
+        "negative_cases",
+        "counterexamples",
+        "candidate_research",
+        "candidate_web_checks",
+        "candidate_verification",
+        "red_team_output",
+        "d_minus_one_market_data",
+        "company_memory",
+        "market_memory",
+    ]
+
+
+def _final_synthesis_manifest_count_mismatches(
+    manifest: dict[str, Any],
+    summary: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    expected_counts: dict[str, int] = {}
+    _add_expected_count(
+        expected_counts, "current_news_count", manifest.get("included_news_row_count")
+    )
+    _add_expected_count(
+        expected_counts, "event_cluster_count", manifest.get("event_cluster_count")
+    )
+    _add_expected_count(
+        expected_counts,
+        "news_novelty_finding_count",
+        manifest.get("news_novelty_review_count"),
+    )
+    _add_expected_count(
+        expected_counts,
+        "semantic_retrieval_row_count",
+        manifest.get("semantic_retrieval_query_count"),
+    )
+    _add_expected_count(
+        expected_counts,
+        "candidate_expansion_finding_count",
+        manifest.get("candidate_expansion_count"),
+    )
+    _add_expected_count(
+        expected_counts,
+        "candidate_web_check_count",
+        manifest.get("candidate_web_check_count"),
+    )
+    _add_expected_count(
+        expected_counts,
+        "candidate_verification_finding_count",
+        manifest.get("candidate_verification_count"),
+    )
+    _add_expected_count(
+        expected_counts, "shard_contribution_count", manifest.get("memory_sweep_shard_count")
+    )
+    _add_expected_count(
+        expected_counts,
+        "retrieved_raw_episode_count",
+        len(_string_list(manifest.get("retrieved_episode_ids"))),
+    )
+    _add_expected_count(
+        expected_counts,
+        "counterexample_count",
+        len(_string_list(manifest.get("counterexample_episode_ids"))),
+    )
+    _add_expected_count(
+        expected_counts, "web_source_count", len(_string_list(manifest.get("web_sources")))
+    )
+    _add_expected_count(
+        expected_counts, "global_brain_file_count", len(_string_list(manifest.get("brain_files")))
+    )
+    _add_expected_count(
+        expected_counts,
+        "shard_brain_file_count",
+        len(_string_list(manifest.get("shard_brain_files"))),
+    )
+    red_team_summary = manifest.get("red_team_summary")
+    if isinstance(red_team_summary, dict):
+        _add_expected_count(
+            expected_counts,
+            "candidate_count",
+            red_team_summary.get("candidate_count"),
+        )
+        _add_expected_count(
+            expected_counts,
+            "red_team_finding_count",
+            red_team_summary.get("finding_count"),
+        )
+
+    mismatches: dict[str, dict[str, Any]] = {}
+    for key, expected in expected_counts.items():
+        observed = summary.get(key)
+        if observed != expected:
+            mismatches[key] = {"expected": expected, "observed": observed}
+    return mismatches
+
+
+def _add_expected_count(
+    expected_counts: dict[str, int],
+    key: str,
+    value: object,
+) -> None:
+    count = _non_bool_int(value)
+    if count is not None:
+        expected_counts[key] = count
 
 
 def _semantic_retrieval_summary_verified(

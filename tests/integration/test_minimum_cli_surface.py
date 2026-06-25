@@ -6,8 +6,16 @@ from datetime import date, datetime, time
 from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
+from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    write_json,
+)
 
 RUNNER = CliRunner()
 
@@ -214,8 +222,11 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["final_synthesis_context"]["run_id_verified"] is True
     assert supporting["final_synthesis_context"]["payload_hash_verified"] is True
     assert supporting["final_synthesis_context"]["required_inputs_verified"] is True
+    assert supporting["final_synthesis_context"]["required_input_set_verified"] is True
+    assert supporting["final_synthesis_context"]["payload_keys_verified"] is True
     assert supporting["final_synthesis_context"]["input_summary_verified"] is True
     assert supporting["final_synthesis_context"]["manifest_summary_verified"] is True
+    assert supporting["final_synthesis_context"]["manifest_counts_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
@@ -530,6 +541,54 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     final_context_file = tmp_path / context_payload["final_synthesis_context_artifact"]
     original_final_context = read_json(final_context_file)
     original_manifest = read_json(manifest_file)
+    missing_required_inputs = [
+        item
+        for item in original_final_context["required_inputs"]
+        if item != "d_minus_one_market_data"
+    ]
+    tampered_final_payload = {
+        **original_final_context["payload"],
+        "required_inputs": missing_required_inputs,
+    }
+    tampered_final_summary = final_synthesis_input_summary(tampered_final_payload)
+    tampered_final_required_inputs = {
+        **original_final_context,
+        "required_inputs": missing_required_inputs,
+        "payload_sha256": sha256_text(canonical_json(tampered_final_payload)),
+        "input_summary": tampered_final_summary,
+        "payload": tampered_final_payload,
+    }
+    write_json(final_context_file, tampered_final_required_inputs)
+    tampered_manifest_required_inputs = {
+        **original_manifest,
+        "final_synthesis_context_sha256": sha256_text(
+            final_context_file.read_text(encoding="utf-8")
+        ),
+        "final_synthesis_context_summary": tampered_final_summary,
+    }
+    write_json(manifest_file, tampered_manifest_required_inputs)
+    tampered_final_inputs_result = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok(
+        "context inspect tampered final synthesis required inputs",
+        tampered_final_inputs_result,
+    )
+    tampered_final_inputs_inspection = json.loads(
+        tampered_final_inputs_result.output
+    )["inspection"]
+    assert tampered_final_inputs_inspection["reproducibility_checks_passed"] is False
+    tampered_final_inputs_status = tampered_final_inputs_inspection[
+        "supporting_artifacts"
+    ]["final_synthesis_context"]
+    assert tampered_final_inputs_status["hash_verified"] is True
+    assert tampered_final_inputs_status["payload_hash_verified"] is True
+    assert tampered_final_inputs_status["input_summary_verified"] is True
+    assert tampered_final_inputs_status["manifest_summary_verified"] is True
+    assert tampered_final_inputs_status["required_input_set_verified"] is False
+    assert "final_synthesis_context_required_input_set_mismatch" in (
+        tampered_final_inputs_status["errors"]
+    )
+    write_json(final_context_file, original_final_context)
+    write_json(manifest_file, original_manifest)
     tampered_final_context = {
         **original_final_context,
         "input_summary": {"current_news_count": 999},
