@@ -735,15 +735,67 @@ class DailyAnalyzer:
                 "provenance": analysis_provenance,
             }
         )
+        sectors = prediction.dominant_sectors or [
+            DominantSectorHypothesis(
+                name="open-world catalyst cluster",
+                triggering_events=event_ids[:5],
+                formation_mechanism=(
+                    analysis.open_world_mechanisms[0]
+                    if analysis.open_world_mechanisms
+                    else "current catalyst -> open-world sector hypothesis"
+                ),
+                expected_breadth="requires web verification and memory comparison",
+                direct_beneficiaries=[
+                    candidate.company_name
+                    for candidate in prediction.candidates
+                    if candidate.path_type == PathType.SINGLE_EVENT
+                ][:5],
+                indirect_beneficiaries=[
+                    candidate.company_name
+                    for candidate in prediction.candidates
+                    if candidate.path_type != PathType.SINGLE_EVENT
+                ][:5],
+                possible_leaders=[
+                    candidate.company_name
+                    for candidate in sorted(prediction.candidates, key=lambda item: item.rank)[:5]
+                ],
+                failure_conditions=[
+                    "web evidence fails listing or relation verification",
+                    "D-1 market already absorbed the catalyst",
+                    "memory counterexamples outweigh support",
+                ],
+            )
+        ]
         normalized_sectors = []
-        for sector in prediction.dominant_sectors:
+        for index, sector in enumerate(sectors, start=1):
+            sector_event_ids = sector.triggering_events or event_ids[:1]
+            sector_provenance = _append_unique_provenance(
+                sector.provenance,
+                Provenance(
+                    source_id=stable_id(
+                        "SRC",
+                        purpose,
+                        "dominant_sector",
+                        str(index),
+                        sector.name,
+                        prompt_hash,
+                    ),
+                    source_type=f"{purpose}_dominant_sector",
+                    uri=f"sector://{purpose}/{trade_date.isoformat()}/{index}",
+                    content_sha256=prompt_hash,
+                    excerpt="; ".join(sector_event_ids[:5]) or None,
+                    observed_at=observed_at,
+                ),
+            )
             normalized_sectors.append(
                 sector.model_copy(
                     update={
+                        "triggering_events": sector_event_ids,
                         "supporting_cases": sector.supporting_cases
                         or fallback_positive_case_ids,
                         "contradicting_cases": sector.contradicting_cases
                         or fallback_negative_case_ids,
+                        "provenance": sector_provenance,
                     }
                 )
             )

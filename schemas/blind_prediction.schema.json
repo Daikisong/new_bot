@@ -245,6 +245,13 @@
           "title": "Possible Leaders",
           "type": "array"
         },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/Provenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
         "supporting_cases": {
           "items": {
             "type": "string"

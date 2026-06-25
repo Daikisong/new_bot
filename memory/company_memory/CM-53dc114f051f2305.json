@@ -21,15 +21,7 @@
   ],
   "provenance": [
     {
-      "content_sha256": "93b4ae4b5970960e72445d615523e52984b39ca94e0311eab173e9a493734ce4",
-      "excerpt": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "observed_at": "2026-06-24T08:59:59+09:00",
-      "source_id": "SRC-53fc58f4b03a",
-      "source_type": "blind_analysis_company_memory_candidate",
-      "uri": "predictions/2026-06-24.json"
-    },
-    {
-      "content_sha256": "33724c56be9e09e847dababfa083304e9acd483f64335d21498a1a574bd86c6f",
+      "content_sha256": "f3436cddccf122e342bc334e0aef71dd0b745e8a5c7cf8917a5f38cb851b959a",
       "excerpt": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
       "observed_at": "2026-06-24T08:59:59+09:00",
       "source_id": "SRC-53fc58f4b03a",

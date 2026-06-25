@@ -115,9 +115,20 @@ def _merge_company_memory(existing: CompanyMemory, incoming: CompanyMemory) -> C
                 existing.contradictory_relations, incoming.contradictory_relations
             ),
             "known_at": min(existing.known_at, incoming.known_at),
-            "provenance": [*existing.provenance, *incoming.provenance],
+            "provenance": _merged_provenance(existing.provenance, incoming.provenance),
         }
     )
+
+
+def _merged_provenance(first: list[Provenance], second: list[Provenance]) -> list[Provenance]:
+    by_source: dict[str, Provenance] = {}
+    order: list[str] = []
+    for item in [*first, *second]:
+        key = item.source_id
+        if key not in by_source:
+            order.append(key)
+        by_source[key] = item
+    return [by_source[key] for key in order]
 
 
 def _merged(first: list[str], second: list[str]) -> list[str]:

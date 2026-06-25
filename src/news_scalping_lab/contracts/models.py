@@ -164,6 +164,7 @@ class DominantSectorHypothesis(StrictModel):
     failure_conditions: list[str] = Field(default_factory=list)
     supporting_cases: list[str] = Field(default_factory=list)
     contradicting_cases: list[str] = Field(default_factory=list)
+    provenance: list[Provenance] = Field(default_factory=list)
 
 
 class BlindPrediction(StrictModel):

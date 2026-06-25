@@ -33,6 +33,16 @@ def _candidate_with_provenance() -> dict[str, object]:
     }
 
 
+def _sector_with_provenance() -> dict[str, object]:
+    return {
+        "name": "SectorCo catalyst cluster",
+        "triggering_events": ["EVT-1"],
+        "formation_mechanism": "current catalyst -> open-world sector hypothesis",
+        "expected_breadth": "narrow",
+        "provenance": _provenance("test_dominant_sector"),
+    }
+
+
 def _blind_analysis_with_provenance() -> dict[str, object]:
     return {
         "summary": "Test blind analysis.",
@@ -219,6 +229,7 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
             "blind_analysis": _blind_analysis_with_provenance(),
+            "dominant_sectors": [_sector_with_provenance()],
             "candidates": [_candidate_with_provenance()],
         },
     )
@@ -240,7 +251,7 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     assert result["passed"], result["findings"]
 
 
-def test_provenance_audit_requires_blind_and_candidate_provenance(tmp_path: Path) -> None:
+def test_provenance_audit_requires_blind_sector_and_candidate_provenance(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
@@ -250,6 +261,13 @@ def test_provenance_audit_requires_blind_and_candidate_provenance(tmp_path: Path
             "blind_artifact_sha256": "abc123",
             "context_manifest_id": "RUN-linked",
             "blind_analysis": {"summary": "No provenance."},
+            "dominant_sectors": [
+                {
+                    "name": "SectorWithoutProvenance",
+                    "formation_mechanism": "missing source",
+                    "expected_breadth": "unknown",
+                }
+            ],
             "candidates": [{"company_name": "CandidateCo", "event_ids": ["EVT-1"]}],
         },
     )
@@ -270,6 +288,12 @@ def test_provenance_audit_requires_blind_and_candidate_provenance(tmp_path: Path
 
     assert not result["passed"]
     assert "2030-01-10.json: blind_analysis missing provenance" in result["findings"]
+    assert (
+        "2030-01-10.json: dominant sector missing provenance: SectorWithoutProvenance"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: dominant sector lacks provenance anchors: SectorWithoutProvenance"
+    ) in result["findings"]
     assert (
         "2030-01-10.json: candidate missing provenance: CandidateCo"
     ) in result["findings"]

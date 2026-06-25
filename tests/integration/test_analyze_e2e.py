@@ -279,6 +279,11 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_prediction["blind_analysis"]["provenance"][0]["source_type"].endswith(
         "_blind_analysis"
     )
+    assert saved_prediction["dominant_sectors"]
+    assert all(sector["provenance"] for sector in saved_prediction["dominant_sectors"])
+    assert {
+        sector["provenance"][-1]["source_type"] for sector in saved_prediction["dominant_sectors"]
+    } == {"final_synthesis_dominant_sector"}
     assert all(candidate["provenance"] for candidate in saved_prediction["candidates"])
     assert {
         candidate["provenance"][-1]["source_type"] for candidate in saved_prediction["candidates"]
@@ -384,6 +389,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert analysis.blind_prediction.candidates[0].rank == 1
     assert analysis.blind_prediction.candidates[0].event_ids
     assert analysis.blind_prediction.blind_analysis.provenance
+    assert analysis.blind_prediction.dominant_sectors[0].provenance
     assert analysis.blind_prediction.candidates[0].provenance
     assert analysis.blind_prediction.blind_analysis.summary == "Provider final synthesis."
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
@@ -703,6 +709,18 @@ async def test_new_company_candidate_creates_company_memory_candidate(tmp_path) 
     assert memory["known_at"] == "2030-01-10T08:59:59+09:00"
     assert memory["provenance"][0]["source_type"] == "blind_analysis_company_memory_candidate"
     assert memory["provenance"][0]["uri"] == analysis.prediction_path
+    await DailyAnalyzer(settings).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+    memory_after_rerun = read_json(memory_paths[0])
+    provenance_source_ids = [
+        item["source_id"] for item in memory_after_rerun["provenance"]
+    ]
+    assert provenance_source_ids == list(dict.fromkeys(provenance_source_ids))
 
 
 @pytest.mark.asyncio

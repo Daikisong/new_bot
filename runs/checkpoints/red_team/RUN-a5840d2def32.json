@@ -182,13 +182,13 @@
       ]
     }
   ],
-  "created_at": "2026-06-25T00:08:12.698604+09:00",
+  "created_at": "2026-06-25T09:43:29.179651+09:00",
   "notes": [
     "Mock structured red-team pass."
   ],
-  "prompt_sha256": "ec01e32aca3d8cec8d9ed83d7f645162ee4e191b29657ce9448e7cf0588c191c",
+  "prompt_sha256": "b45717fc357dd91bedd07388a84b1bd2f2d4522e73802f424770bb26b433bf3d",
   "prompt_version": "red_team.candidate_attack.v1",
   "run_id": "RUN-a5840d2def32",
   "schema_version": "nslab.red_team_artifact.v1",
-  "source_prediction_id": "PRED-16b82d53e1ab"
+  "source_prediction_id": "PRED-09539381a8cd"
 }

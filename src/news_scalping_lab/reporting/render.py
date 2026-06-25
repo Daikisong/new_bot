@@ -53,6 +53,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"- Expected breadth: {sector.expected_breadth}",
                 f"- Possible leaders: {', '.join(sector.possible_leaders) or 'unknown'}",
                 f"- Failure conditions: {'; '.join(sector.failure_conditions) or 'none recorded'}",
+                f"- Provenance sources: {list_text([item.source_id for item in sector.provenance])}",
                 "",
             ]
         )

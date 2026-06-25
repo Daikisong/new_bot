@@ -8,6 +8,7 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     ConfidenceLabel,
     ContextManifest,
+    DominantSectorHypothesis,
     PathType,
     PriceSnapshot,
     Provenance,
@@ -28,6 +29,21 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
             summary="Report evidence summary.",
             initial_uncertainties=["directness may fail"],
         ),
+        dominant_sectors=[
+            DominantSectorHypothesis(
+                name="Report sector",
+                triggering_events=["EVT-report"],
+                formation_mechanism="current catalyst -> sector hypothesis",
+                expected_breadth="narrow",
+                provenance=[
+                    Provenance(
+                        source_id="SRC-report-sector",
+                        source_type="test",
+                        uri="test://sector",
+                    )
+                ],
+            )
+        ],
         candidates=[
             Candidate(
                 rank=1,
@@ -85,6 +101,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Disconfirming conditions: not listed" in report
     assert "- Source URLs: news://EVT-report" in report
     assert "- Provenance sources: SRC-report-candidate" in report
+    assert "- Provenance sources: SRC-report-sector" in report
     assert "Counterexample episode ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report

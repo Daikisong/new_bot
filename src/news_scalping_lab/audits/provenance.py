@@ -33,6 +33,23 @@ def audit_provenance(root: Path) -> dict[str, object]:
         blind_analysis = prediction.get("blind_analysis", {})
         if not isinstance(blind_analysis, dict) or not blind_analysis.get("provenance"):
             findings.append(f"{path.name}: blind_analysis missing provenance")
+        for sector in prediction.get("dominant_sectors", []):
+            if not isinstance(sector, dict):
+                findings.append(f"{path.name}: dominant sector is not an object")
+                continue
+            if not sector.get("provenance"):
+                findings.append(
+                    f"{path.name}: dominant sector missing provenance: {sector.get('name')}"
+                )
+            has_anchor = (
+                sector.get("triggering_events")
+                or sector.get("supporting_cases")
+                or sector.get("contradicting_cases")
+            )
+            if not has_anchor:
+                findings.append(
+                    f"{path.name}: dominant sector lacks provenance anchors: {sector.get('name')}"
+                )
         for candidate in prediction.get("candidates", []):
             if not isinstance(candidate, dict):
                 findings.append(f"{path.name}: candidate is not an object")
