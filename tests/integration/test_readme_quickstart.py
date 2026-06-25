@@ -110,6 +110,9 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert news_input["observed_row_count"] == 1
     assert news_input["row_count_verified"] is True
     assert news_input["row_count_partition_verified"] is True
+    assert inspection["context_files"]["brain"]["hashes_verified"] is True
+    assert inspection["context_files"]["brain"]["file_count"] >= 12
+    assert inspection["context_files"]["shard_brain"]["hashes_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]

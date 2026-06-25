@@ -119,6 +119,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert news_input["observed_row_count"] == 1
     assert news_input["row_count_verified"] is True
     assert news_input["row_count_partition_verified"] is True
+    brain_context = inspection["context_files"]["brain"]
+    assert brain_context["hashes_verified"] is True
+    assert brain_context["file_count"] >= 12
+    shard_context = inspection["context_files"]["shard_brain"]
+    assert shard_context["hashes_verified"] is True
+    assert shard_context["file_count"] >= 1
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
@@ -126,6 +132,20 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
+    brain_context_file = tmp_path / context_payload["brain_files"][0]
+    original_brain_context = brain_context_file.read_text(encoding="utf-8")
+    brain_context_file.write_text(
+        original_brain_context + "\nTampered context checkpoint.\n",
+        encoding="utf-8",
+    )
+    tampered_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered brain file", tampered_context)
+    tampered_inspection = json.loads(tampered_context.output)["inspection"]
+    assert tampered_inspection["reproducibility_checks_passed"] is False
+    assert tampered_inspection["context_files"]["brain"]["hash_mismatches"] == [
+        context_payload["brain_files"][0]
+    ]
+    brain_context_file.write_text(original_brain_context, encoding="utf-8")
 
     session_pack = RUNNER.invoke(
         app,

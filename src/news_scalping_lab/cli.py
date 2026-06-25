@@ -298,6 +298,18 @@ def _inspect_context_manifest(
     prediction = _inspect_prediction_artifact(root, manifest)
     report = _inspect_report_artifact(root, manifest)
     news_input = _inspect_news_input(root, manifest)
+    brain_files = _inspect_context_file_group(
+        root,
+        manifest,
+        files_field="brain_files",
+        hashes_field="brain_file_hashes",
+    )
+    shard_brain_files = _inspect_context_file_group(
+        root,
+        manifest,
+        files_field="shard_brain_files",
+        hashes_field="shard_brain_file_hashes",
+    )
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
@@ -305,6 +317,10 @@ def _inspect_context_manifest(
             "sha256": file_sha256(manifest_path) if manifest_path.exists() else None,
         },
         "news_input": news_input,
+        "context_files": {
+            "brain": brain_files,
+            "shard_brain": shard_brain_files,
+        },
         "output_artifacts": {
             "prediction": prediction,
             "report": report,
@@ -314,8 +330,102 @@ def _inspect_context_manifest(
             required_extra_key="context_manifest_id_verified",
         )
         and _artifact_status_passed(report, required_extra_key="contains_run_id")
-        and _news_input_status_passed(news_input),
+        and _news_input_status_passed(news_input)
+        and _context_file_group_status_passed(brain_files)
+        and _context_file_group_status_passed(shard_brain_files),
     }
+
+
+def _inspect_context_file_group(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    files_field: str,
+    hashes_field: str,
+) -> dict[str, Any]:
+    raw_files = manifest.get(files_field)
+    raw_hashes = manifest.get(hashes_field)
+    status: dict[str, Any] = {
+        "configured": raw_files is not None or raw_hashes is not None,
+        "files_field": files_field,
+        "hashes_field": hashes_field,
+        "file_count": 0,
+        "hash_count": 0,
+        "missing_hashes": [],
+        "extra_hashes": [],
+        "duplicate_files": [],
+        "missing_files": [],
+        "hash_mismatches": [],
+        "path_escape_errors": [],
+        "path_within_project": None,
+        "exists_verified": None,
+        "hashes_verified": None,
+        "errors": [],
+    }
+    if not status["configured"]:
+        status["errors"].append(f"{files_field}_missing")
+        return status
+    if not isinstance(raw_files, list) or not all(
+        isinstance(item, str) and item for item in raw_files
+    ):
+        status["errors"].append(f"{files_field}_invalid")
+        return status
+    if not isinstance(raw_hashes, dict):
+        status["errors"].append(f"{hashes_field}_invalid")
+        return status
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in raw_hashes.items()
+    ):
+        status["errors"].append(f"{hashes_field}_invalid")
+        return status
+
+    file_refs = [str(item) for item in raw_files]
+    hash_refs = {str(key): str(value) for key, value in raw_hashes.items()}
+    file_ref_set = set(file_refs)
+    hash_ref_set = set(hash_refs)
+    status["file_count"] = len(file_refs)
+    status["hash_count"] = len(hash_refs)
+    status["duplicate_files"] = sorted(
+        {file_ref for file_ref in file_refs if file_refs.count(file_ref) > 1}
+    )
+    status["missing_hashes"] = sorted(file_ref_set - hash_ref_set)
+    status["extra_hashes"] = sorted(hash_ref_set - file_ref_set)
+
+    for file_ref in file_refs:
+        artifact_path = _resolve_project_artifact(root, file_ref)
+        if artifact_path is None:
+            status["path_escape_errors"].append(file_ref)
+            continue
+        if not artifact_path.exists():
+            status["missing_files"].append(file_ref)
+            continue
+        expected_hash = hash_refs.get(file_ref)
+        if expected_hash is not None and file_sha256(artifact_path) != expected_hash:
+            status["hash_mismatches"].append(file_ref)
+
+    status["path_within_project"] = not status["path_escape_errors"]
+    status["exists_verified"] = status["path_within_project"] and not status["missing_files"]
+    status["hashes_verified"] = (
+        status["exists_verified"]
+        and not status["duplicate_files"]
+        and not status["missing_hashes"]
+        and not status["extra_hashes"]
+        and not status["hash_mismatches"]
+    )
+    if status["duplicate_files"]:
+        status["errors"].append(f"{files_field}_duplicates")
+    if status["path_escape_errors"]:
+        status["errors"].append(f"{files_field}_path_escapes_project_root")
+    if status["missing_files"]:
+        status["errors"].append(f"{files_field}_missing_files")
+    if status["missing_hashes"]:
+        status["errors"].append(f"{hashes_field}_missing_hashes")
+    if status["extra_hashes"]:
+        status["errors"].append(f"{hashes_field}_extra_hashes")
+    if status["hash_mismatches"]:
+        status["errors"].append(f"{hashes_field}_mismatches")
+    return status
 
 
 def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -475,6 +585,16 @@ def _news_input_status_passed(status: dict[str, Any]) -> bool:
         and status.get("hash_verified")
         and status.get("row_count_verified")
         and status.get("row_count_partition_verified")
+        and not status.get("errors")
+    )
+
+
+def _context_file_group_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists_verified")
+        and status.get("hashes_verified")
         and not status.get("errors")
     )
 
