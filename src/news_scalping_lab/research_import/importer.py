@@ -23,10 +23,12 @@ from news_scalping_lab.research_import.semantic import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
+    canonical_json,
     file_sha256,
     next_calendar_day,
     now_kst,
     read_json,
+    sha256_text,
     stable_id,
 )
 
@@ -114,6 +116,23 @@ class ResearchImporter:
             excerpt=text[:500],
             observed_at=now_kst(),
         )
+        source_segments = _source_segments(text)
+        input_audit = {
+            "semantic_import": {
+                "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
+                "source_path": path.as_posix(),
+                "source_sha256": source_hash,
+                "source_text_sha256": sha256_text(text),
+                "source_segment_count": len(source_segments),
+                "source_segments_sha256": sha256_text(canonical_json(source_segments)),
+                "source_segments": source_segments,
+                "output_field_source_ids": {
+                    "blind_analysis.summary": [provenance.source_id],
+                    "blind_analysis.open_world_mechanisms": [provenance.source_id],
+                    "blind_analysis.initial_uncertainties": [provenance.source_id],
+                },
+            }
+        }
         available_from = draft.available_from or datetime.combine(
             next_calendar_day(draft.trade_date), time(0, 0, 0), tzinfo=KST
         )
@@ -125,6 +144,7 @@ class ResearchImporter:
             research_version=draft.research_version,
             input_news_files=draft.input_news_files,
             input_news_hashes=draft.input_news_hashes,
+            input_audit=input_audit,
             price_source_snapshot=draft.price_source_snapshot or {"source": "unknown"},
             blind_analysis=BlindAnalysis(
                 summary=draft.summary,
@@ -141,3 +161,47 @@ class ResearchImporter:
             provenance=[provenance],
             available_from=available_from,
         )
+
+
+def _source_segments(text: str) -> list[dict[str, object]]:
+    segments: list[dict[str, object]] = []
+    start = 0
+    index = 1
+    sentence_endings = {".", "?", "!", "。", "？", "！"}
+    for position, character in enumerate(text):
+        if character not in sentence_endings and character not in {"\n", "\r"}:
+            continue
+        next_position = position + 1
+        raw_segment = text[start:next_position]
+        stripped_start, stripped_end, segment = _trimmed_span(raw_segment, start)
+        if segment:
+            segments.append(_source_segment(index, segment, stripped_start, stripped_end))
+            index += 1
+        start = next_position
+    stripped_start, stripped_end, tail = _trimmed_span(text[start:], start)
+    if tail:
+        segments.append(_source_segment(index, tail, stripped_start, stripped_end))
+    return segments
+
+
+def _source_segment(
+    index: int,
+    text: str,
+    start: int,
+    end: int,
+) -> dict[str, object]:
+    return {
+        "index": index,
+        "char_start": start,
+        "char_end": end,
+        "text_sha256": sha256_text(text),
+        "excerpt": text[:240],
+    }
+
+
+def _trimmed_span(raw_segment: str, absolute_start: int) -> tuple[int, int, str]:
+    leading = len(raw_segment) - len(raw_segment.lstrip())
+    trailing = len(raw_segment.rstrip())
+    start = absolute_start + leading
+    end = absolute_start + trailing
+    return start, end, raw_segment.strip()

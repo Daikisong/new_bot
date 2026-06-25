@@ -24,7 +24,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json, sha256_text
+from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 T = TypeVar("T", bound=BaseModel)
@@ -495,7 +495,11 @@ def test_brain_update_requires_accepted_episode(tmp_path) -> None:
 
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:
     source = tmp_path / "freeform_notes.md"
-    source.write_text("Free-form research note without a parseable date.", encoding="utf-8")
+    source.write_text(
+        "Free-form research note without a parseable date.\n"
+        "Second sentence should be covered by source segment audit.",
+        encoding="utf-8",
+    )
     llm = RecordingSemanticLLM()
 
     episode = ResearchImporter(tmp_path, llm=llm).import_path(source, mode="semantic")
@@ -506,6 +510,26 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert episode.trade_date == date(2040, 2, 3)
     assert episode.price_source_snapshot == {"source": "recording-test"}
     assert episode.provenance[0].source_type == "semantic_llm_structured_import"
+    preserved_raw = tmp_path / episode.provenance[0].uri
+    semantic_audit = episode.input_audit["semantic_import"]
+    assert preserved_raw.exists()
+    assert semantic_audit["source_path"] == episode.provenance[0].uri
+    assert semantic_audit["source_sha256"] == file_sha256(preserved_raw)
+    assert semantic_audit["source_text_sha256"] == sha256_text(
+        preserved_raw.read_text(encoding="utf-8")
+    )
+    assert semantic_audit["source_segment_count"] == len(
+        semantic_audit["source_segments"]
+    )
+    assert semantic_audit["source_segment_count"] >= 2
+    first_segment = semantic_audit["source_segments"][0]
+    assert first_segment["excerpt"] == "Free-form research note without a parseable date."
+    assert first_segment["text_sha256"] == sha256_text(str(first_segment["excerpt"]))
+    assert semantic_audit["output_field_source_ids"] == {
+        "blind_analysis.summary": [episode.provenance[0].source_id],
+        "blind_analysis.open_world_mechanisms": [episode.provenance[0].source_id],
+        "blind_analysis.initial_uncertainties": [episode.provenance[0].source_id],
+    }
 
     traces = list((tmp_path / "runs" / "traces").glob("TRACE-*.json"))
     assert len(traces) == 1

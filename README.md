@@ -59,6 +59,11 @@ nslab brain audit
 updates the brain immediately. Use `--no-accept` when you want to stage episodes
 for manual validation first.
 
+Free-form semantic imports preserve the raw source under `data/raw/research/`
+and record a source-segment audit in `ResearchEpisode.input_audit.semantic_import`.
+The audit stores source hashes, non-empty segment hashes, and the episode fields
+that were derived from the preserved source provenance.
+
 ## Daily Blind Analysis
 
 ```bash
