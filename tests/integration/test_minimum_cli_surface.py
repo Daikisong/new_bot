@@ -347,6 +347,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["source_ledger"]["required_fields_verified"] is True
     assert supporting["source_ledger"]["source_ids_verified"] is True
     assert supporting["source_ledger"]["duplicate_source_ids_absent"] is True
+    assert supporting["source_ledger"]["summary_verified"] is True
     assert supporting["source_ledger"]["web_sources_covered_verified"] is True
     assert (
         supporting["source_ledger"]["candidate_web_sources_covered_verified"]
@@ -517,6 +518,45 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_source_ledger)
+
+    original_manifest_for_source_ledger_summary = read_json(manifest_file)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_source_ledger_summary,
+            "source_ledger_summary": {
+                **original_manifest_for_source_ledger_summary[
+                    "source_ledger_summary"
+                ],
+                "total_sources": 0,
+            },
+        },
+    )
+    tampered_source_ledger_summary_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered source ledger summary",
+        tampered_source_ledger_summary_context,
+    )
+    tampered_source_ledger_summary_inspection = json.loads(
+        tampered_source_ledger_summary_context.output
+    )["inspection"]
+    assert (
+        tampered_source_ledger_summary_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_source_ledger_summary_status = (
+        tampered_source_ledger_summary_inspection["supporting_artifacts"][
+            "source_ledger"
+        ]
+    )
+    assert tampered_source_ledger_summary_status["hash_verified"] is True
+    assert tampered_source_ledger_summary_status["summary_verified"] is False
+    assert "source_ledger_summary_mismatch" in (
+        tampered_source_ledger_summary_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_source_ledger_summary)
 
     candidate_expansion_file = tmp_path / context_payload["candidate_expansion_artifact"]
     original_candidate_expansion = read_json(candidate_expansion_file)

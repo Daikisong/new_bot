@@ -2150,6 +2150,8 @@ def _check_source_ledger_source_coverage(
     rows: list[dict[str, Any]],
     findings: list[str],
 ) -> None:
+    _check_source_ledger_summary(prediction_path, manifest, rows, findings)
+
     web_source_ids = _unique_strings(
         row.get("source_id")
         for row in rows
@@ -2185,6 +2187,37 @@ def _check_source_ledger_source_coverage(
         findings.append(
             f"{prediction_path.name}: context manifest source_ledger "
             "contains excluded source_id"
+        )
+
+
+def _check_source_ledger_summary(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("source_ledger_summary")
+    if summary is None:
+        return
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest source_ledger_summary invalid"
+        )
+        return
+    phase_counts = Counter(
+        row.get("usage_phase")
+        for row in rows
+        if isinstance(row.get("usage_phase"), str)
+    )
+    expected_counts = {
+        "total_sources": len(rows),
+        "blind_sources": phase_counts.get("BLIND", 0),
+        "outcome_sources": phase_counts.get("OUTCOME", 0),
+        "postmortem_sources": phase_counts.get("POSTMORTEM", 0),
+    }
+    if any(summary.get(key) != value for key, value in expected_counts.items()):
+        findings.append(
+            f"{prediction_path.name}: context manifest source_ledger_summary mismatch"
         )
 
 

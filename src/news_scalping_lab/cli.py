@@ -1191,6 +1191,7 @@ def _inspect_source_ledger_artifact(
             "required_fields_verified": None,
             "source_ids_verified": None,
             "duplicate_source_ids_absent": None,
+            "summary_verified": None,
             "web_sources_covered_verified": None,
             "candidate_web_sources_covered_verified": None,
             "excluded_sources_absent_verified": None,
@@ -1243,6 +1244,13 @@ def _inspect_source_ledger_artifact(
     status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
     if not status["duplicate_source_ids_absent"]:
         status["errors"].append("source_ledger_duplicate_source_id")
+
+    status["summary_verified"] = _source_ledger_summary_matches(
+        manifest.get("source_ledger_summary"),
+        rows,
+    )
+    if not status["summary_verified"]:
+        status["errors"].append("source_ledger_summary_mismatch")
 
     ledger_web_source_ids = _source_ledger_source_ids_for_type(
         rows, "web_search_result"
@@ -3632,6 +3640,7 @@ def _source_ledger_status_passed(status: dict[str, Any]) -> bool:
         and status.get("required_fields_verified")
         and status.get("source_ids_verified")
         and status.get("duplicate_source_ids_absent")
+        and status.get("summary_verified")
         and status.get("web_sources_covered_verified")
         and status.get("candidate_web_sources_covered_verified")
         and status.get("excluded_sources_absent_verified")
@@ -4127,6 +4136,25 @@ def _source_ledger_source_ids_for_type(
         for row in rows
         if row.get("source_type") == source_type
         and isinstance(row.get("source_id"), str)
+    )
+
+
+def _source_ledger_summary_matches(
+    summary: object,
+    rows: list[dict[str, Any]],
+) -> bool:
+    if not isinstance(summary, dict):
+        return False
+    phase_counts = Counter(
+        row.get("usage_phase")
+        for row in rows
+        if isinstance(row.get("usage_phase"), str)
+    )
+    return (
+        summary.get("total_sources") == len(rows)
+        and summary.get("blind_sources") == phase_counts.get("BLIND", 0)
+        and summary.get("outcome_sources") == phase_counts.get("OUTCOME", 0)
+        and summary.get("postmortem_sources") == phase_counts.get("POSTMORTEM", 0)
     )
 
 

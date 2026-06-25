@@ -1130,12 +1130,37 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+    _check_source_ledger_summary(manifest_name, manifest, rows, findings)
     _check_source_ledger_manifest_source_coverage(
         manifest_name,
         manifest,
         rows,
         findings,
     )
+
+
+def _check_source_ledger_summary(
+    manifest_name: str,
+    manifest: dict[object, object],
+    rows: list[dict[str, object]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("source_ledger_summary")
+    if summary is None:
+        return
+    if not isinstance(summary, dict):
+        findings.append(f"{manifest_name}: source_ledger_summary invalid")
+        return
+    expected_counts = {
+        "total_sources": len(rows),
+        "blind_sources": sum(1 for row in rows if row.get("usage_phase") == "BLIND"),
+        "outcome_sources": sum(1 for row in rows if row.get("usage_phase") == "OUTCOME"),
+        "postmortem_sources": sum(
+            1 for row in rows if row.get("usage_phase") == "POSTMORTEM"
+        ),
+    }
+    if any(summary.get(key) != value for key, value in expected_counts.items()):
+        findings.append(f"{manifest_name}: source_ledger_summary mismatch")
 
 
 def _check_source_ledger_manifest_source_coverage(

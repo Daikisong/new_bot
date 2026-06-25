@@ -954,6 +954,12 @@ def test_provenance_audit_validates_source_ledger_manifest_source_coverage(
             "source_ledger_artifact": source_path.relative_to(tmp_path).as_posix(),
             "source_ledger_sha256": sha256_text(source_text),
             "source_ledger_entry_count": len(source_rows),
+            "source_ledger_summary": {
+                "total_sources": len(source_rows),
+                "blind_sources": 0,
+                "outcome_sources": 0,
+                "postmortem_sources": 0,
+            },
             "web_sources": ["WEB-B", "WEB-A"],
             "candidate_web_source_ids": ["WEB-C"],
             "excluded_web_source_ids": ["WEB-X"],
@@ -982,6 +988,10 @@ def test_provenance_audit_validates_source_ledger_manifest_source_coverage(
     findings = failed["findings"]
     assert (
         "2030-01-10.json: context manifest source_ledger web_sources mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest source_ledger_summary mismatch"
         in findings
     )
     assert (
@@ -6395,6 +6405,12 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
             "source_ledger_artifact": artifact.relative_to(tmp_path).as_posix(),
             "source_ledger_sha256": "wrong",
             "source_ledger_entry_count": 3,
+            "source_ledger_summary": {
+                "total_sources": 99,
+                "blind_sources": 0,
+                "outcome_sources": 0,
+                "postmortem_sources": 0,
+            },
             "web_sources": ["WEB-MISSING"],
             "candidate_web_source_ids": ["WEB-CANDIDATE-MISSING"],
             "excluded_web_source_ids": ["SRC-1"],
@@ -6422,6 +6438,7 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert "RUN-ledger.json: source_ledger:2 invalid usage_phase" in findings
     assert "RUN-ledger.json: source_ledger duplicate source_id" in findings
     assert "RUN-ledger.json: source_ledger entry_count mismatch" in findings
+    assert "RUN-ledger.json: source_ledger_summary mismatch" in findings
     assert "RUN-ledger.json: source_ledger web_sources mismatch" in findings
     assert (
         "RUN-ledger.json: source_ledger candidate_web_source_ids mismatch"
