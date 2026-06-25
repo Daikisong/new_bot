@@ -1012,3 +1012,27 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     for artifact in repeated_manifest.memory_sweep_artifacts:
         payload = read_json(tmp_path / artifact)
         assert payload["from_cache"] is True
+
+    changed_settings = Settings(project_root=tmp_path)
+    changed_settings.limits.shard_episode_count = 1
+    changed_settings.llm_provider = "mock-cache-other"
+    changed_model = await DailyAnalyzer(
+        changed_settings,
+        llm=RecordingBlindLLM(),
+    ).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 11),
+        cutoff_at=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    changed_manifest = changed_model.context_manifest
+    assert changed_manifest.run_id != manifest.run_id
+    assert changed_manifest.memory_sweep_shard_count == 2
+    assert changed_manifest.memory_sweep_cache_hits == 0
+    for artifact in changed_manifest.memory_sweep_artifacts:
+        payload = read_json(tmp_path / artifact)
+        assert payload["from_cache"] is False
+        assert payload["prompt_version"] == "memory_sweep.shard_analysis.v1"
+        assert payload["model_config_sha256"]

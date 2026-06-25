@@ -18,7 +18,16 @@ from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, stable_id, write_json
+from news_scalping_lab.utils import (
+    canonical_json,
+    is_available_as_of,
+    read_json,
+    sha256_text,
+    stable_id,
+    write_json,
+)
+
+MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v1"
 
 
 @dataclass(frozen=True)
@@ -51,8 +60,12 @@ class MemorySweeper:
         run_id: str,
         current_news_texts: list[str],
         first_pass_mechanisms: list[str],
+        model_config: dict[str, object] | None = None,
+        prompt_version: str = MEMORY_SWEEP_PROMPT_VERSION,
     ) -> SweepResult:
         mode = normalize_analysis_mode(mode)
+        cache_model_config = model_config or {}
+        model_config_hash = sha256_text(canonical_json(cache_model_config))
         accepted = self._available_episodes(cutoff_at)
         if mode == "fast":
             return SweepResult(
@@ -84,6 +97,8 @@ class MemorySweeper:
                 shard_hash,
                 mode,
                 cutoff_at.isoformat(),
+                prompt_version,
+                model_config_hash,
                 length=16,
             )
             cache_path = self.cache_dir / f"{cache_key}.json"
@@ -97,6 +112,8 @@ class MemorySweeper:
                 news_hash=news_hash,
                 shard_hash=shard_hash,
                 episode_ids=episode_ids,
+                prompt_version=prompt_version,
+                model_config_hash=model_config_hash,
             )
             if cached_payload is not None:
                 payload = cached_payload
@@ -114,6 +131,8 @@ class MemorySweeper:
                     episode_count=len(shard),
                     episodes=shard,
                     first_pass_mechanisms=first_pass_mechanisms,
+                    prompt_version=prompt_version,
+                    model_config_hash=model_config_hash,
                 )
                 write_json(cache_path, payload)
             run_path = run_dir / f"shard_{shard_index:04d}.json"
@@ -180,6 +199,8 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         episode_ids: list[str],
+        prompt_version: str,
+        model_config_hash: str,
     ) -> dict[str, object] | None:
         if not cache_path.exists():
             return None
@@ -199,6 +220,8 @@ class MemorySweeper:
             news_hash=news_hash,
             shard_hash=shard_hash,
             episode_ids=episode_ids,
+            prompt_version=prompt_version,
+            model_config_hash=model_config_hash,
         ):
             return None
         cached = {str(key): value for key, value in payload.items()}
@@ -217,6 +240,8 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         episode_ids: list[str],
+        prompt_version: str,
+        model_config_hash: str,
     ) -> bool:
         return (
             payload.get("schema_version") == "nslab.memory_sweep_contribution.v1"
@@ -228,6 +253,8 @@ class MemorySweeper:
             and payload.get("current_news_sha256") == news_hash
             and payload.get("episode_shard_sha256") == shard_hash
             and payload.get("episode_ids") == episode_ids
+            and payload.get("prompt_version") == prompt_version
+            and payload.get("model_config_sha256") == model_config_hash
         )
 
     def _build_contribution(
@@ -244,6 +271,8 @@ class MemorySweeper:
         episode_count: int,
         episodes: list[ResearchEpisode],
         first_pass_mechanisms: list[str],
+        prompt_version: str,
+        model_config_hash: str,
     ) -> dict[str, object]:
         episode_ids = [episode.episode_id for episode in episodes]
         summaries = [episode.blind_analysis.summary for episode in episodes]
@@ -259,6 +288,8 @@ class MemorySweeper:
             "trade_date": trade_date.isoformat(),
             "cutoff_at": cutoff_at.isoformat(),
             "brain_version": brain_version,
+            "prompt_version": prompt_version,
+            "model_config_sha256": model_config_hash,
             "current_news_sha256": news_hash,
             "episode_shard_sha256": shard_hash,
             "shard_index": shard_index,

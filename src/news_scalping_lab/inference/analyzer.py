@@ -170,6 +170,7 @@ class DailyAnalyzer:
             run_id=manifest.run_id,
             current_news_texts=news_texts,
             first_pass_mechanisms=first_pass_mechanisms,
+            model_config=self.llm_model_config,
         )
         manifest.accepted_episode_count = sweep.accepted_episode_count
         manifest.swept_episode_count = len(sweep.swept_episode_ids)
