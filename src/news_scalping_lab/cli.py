@@ -1114,10 +1114,7 @@ def _inspect_excluded_candidate_web_check_artifact(
     unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
     expected_source_ids = _string_list(manifest.get("excluded_candidate_web_source_ids"))
     status["source_ids"] = unique_source_ids
-    status["source_ids_verified"] = (
-        len(expected_source_ids) == len(set(expected_source_ids))
-        and set(unique_source_ids) == set(expected_source_ids)
-    )
+    status["source_ids_verified"] = unique_source_ids == expected_source_ids
     if not status["source_ids_verified"]:
         status["errors"].append("excluded_candidate_web_check_source_ids_mismatch")
     status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))

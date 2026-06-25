@@ -883,6 +883,83 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         encoding="utf-8",
     )
     write_json(manifest_file, original_manifest_for_excluded_candidate_web_check)
+
+    original_manifest_for_excluded_candidate_web_source_order = read_json(manifest_file)
+    tampered_excluded_candidate_web_order_rows = [
+        {
+            **candidate_web_rows[0],
+            "schema_version": "nslab.excluded_candidate_web_check.v1",
+            "candidate_rank": index,
+            "source_id": source_id,
+            "exclusion_reason": "after_cutoff",
+            "published_at": "2030-01-10T09:30:00+09:00",
+            "time_verified": True,
+            "available_before_cutoff": False,
+        }
+        for index, source_id in enumerate(
+            [
+                "WEB-excluded-candidate-order-a",
+                "WEB-excluded-candidate-order-b",
+            ],
+            start=1,
+        )
+    ]
+    tampered_excluded_candidate_web_order_payload = "".join(
+        canonical_json(row) + "\n"
+        for row in tampered_excluded_candidate_web_order_rows
+    )
+    excluded_candidate_web_check_file.write_text(
+        tampered_excluded_candidate_web_order_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_excluded_candidate_web_source_order,
+            "excluded_candidate_web_check_count": 2,
+            "excluded_candidate_web_check_sha256": sha256_text(
+                tampered_excluded_candidate_web_order_payload
+            ),
+            "excluded_candidate_web_source_ids": [
+                "WEB-excluded-candidate-order-b",
+                "WEB-excluded-candidate-order-a",
+            ],
+        },
+    )
+    tampered_excluded_candidate_web_order_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered excluded candidate web source order",
+        tampered_excluded_candidate_web_order_context,
+    )
+    tampered_excluded_candidate_web_order_inspection = json.loads(
+        tampered_excluded_candidate_web_order_context.output
+    )["inspection"]
+    assert (
+        tampered_excluded_candidate_web_order_inspection[
+            "reproducibility_checks_passed"
+        ]
+        is False
+    )
+    tampered_excluded_candidate_web_order_status = (
+        tampered_excluded_candidate_web_order_inspection["supporting_artifacts"][
+            "excluded_candidate_web_check"
+        ]
+    )
+    assert tampered_excluded_candidate_web_order_status["hash_verified"] is True
+    assert (
+        tampered_excluded_candidate_web_order_status["source_ids_verified"]
+        is False
+    )
+    assert "excluded_candidate_web_check_source_ids_mismatch" in (
+        tampered_excluded_candidate_web_order_status["errors"]
+    )
+    excluded_candidate_web_check_file.write_text(
+        original_excluded_candidate_web_check,
+        encoding="utf-8",
+    )
+    write_json(manifest_file, original_manifest_for_excluded_candidate_web_source_order)
     candidate_verification_file = tmp_path / context_payload[
         "candidate_verification_artifact"
     ]
