@@ -72,6 +72,11 @@ nslab analyze \
 
 `exhaustive` mode is the default quality mode. It sweeps every accepted research episode and fails if coverage is incomplete. Retrieval misses are recorded but never used to block open-world candidate generation.
 
+The BLIND phase runs in `NEWS_ONLY_STRICT` mode. Even when `--web-search` is passed,
+the blind prediction does not call web providers or price repositories; the manifest
+records `blind_web_search_call_count = 0` and `blind_price_repository_access_count = 0`.
+Web and stock-web access belong to evaluation/postmortem or later supervised research phases.
+
 ## Evaluation
 
 ```bash

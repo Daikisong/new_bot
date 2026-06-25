@@ -52,6 +52,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             and manifest.get("accepted_episode_count") != manifest.get("swept_episode_count")
         ):
             findings.append(f"{manifest_name}: exhaustive coverage mismatch")
+        _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
         "passed": not findings,
         "findings": findings,
@@ -156,6 +157,25 @@ def _check_context_files_for_future_episode_ids(
                     f"{manifest_name}: context file contains future episode {episode_id}: "
                     f"{relative_path}"
                 )
+
+
+def _check_news_only_blind_protocol(
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    if manifest.get("blind_context_mode") != "NEWS_ONLY_STRICT":
+        return
+    expected_zero_fields = [
+        "blind_web_search_call_count",
+        "blind_price_repository_access_count",
+        "blind_current_price_access_count",
+    ]
+    for field in expected_zero_fields:
+        if manifest.get(field) != 0:
+            findings.append(f"{manifest_name}: {field} must be 0 in NEWS_ONLY_STRICT")
+    if manifest.get("no_d_outcome_exposed") is not True:
+        findings.append(f"{manifest_name}: no_d_outcome_exposed must be true")
 
 
 def _string_list(value: object) -> list[str]:

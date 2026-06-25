@@ -44,6 +44,7 @@ class OutcomeTrapPriceSource:
 
     def __init__(self) -> None:
         self.outcome_calls: list[tuple[str, date]] = []
+        self.snapshot_calls: list[tuple[str, date]] = []
 
     def get_history(self, ticker: str, *, through: date) -> list[PriceRecord]:
         return [
@@ -55,6 +56,7 @@ class OutcomeTrapPriceSource:
         ]
 
     def get_snapshot(self, ticker: str, *, as_of: date) -> PriceRecord | None:
+        self.snapshot_calls.append((ticker, as_of))
         return PriceRecord(ticker=ticker, trade_date=as_of, close=100.0)
 
     def get_outcome(self, ticker: str, *, trade_date: date) -> OutcomeLabels:
@@ -99,6 +101,7 @@ class RecordingBlindLLM:
         if purpose == "final_synthesis":
             assert "red_team_output" in prompt
             assert "d_minus_one_market_data" in prompt
+            assert "NEWS_ONLY_STRICT_NO_PRICE_ACCESS" in prompt
             assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
             assert "all_shard_contributions" in prompt
@@ -168,7 +171,11 @@ class BrokenMemorySweeper:
 
 
 class FutureOnlyWebProvider:
+    def __init__(self) -> None:
+        self.search_calls: list[tuple[str, datetime]] = []
+
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
+        self.search_calls.append((query, cutoff_at))
         return [
             WebSearchResult(
                 source_id="WEB-FUTURE-PIPELINE",
@@ -324,7 +331,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_analyze_excludes_cutoff_after_web_sources_from_manifest_and_prediction(
+async def test_news_only_blind_defers_web_search_even_when_requested(
     tmp_path,
 ) -> None:
     settings = Settings(project_root=tmp_path)
@@ -337,8 +344,9 @@ async def test_analyze_excludes_cutoff_after_web_sources_from_manifest_and_predi
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
+    web_provider = FutureOnlyWebProvider()
 
-    analysis = await DailyAnalyzer(settings, web_provider=FutureOnlyWebProvider()).analyze(
+    analysis = await DailyAnalyzer(settings, web_provider=web_provider).analyze(
         news_csv=csv_path,
         trade_date=date(2030, 1, 10),
         cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
@@ -346,15 +354,21 @@ async def test_analyze_excludes_cutoff_after_web_sources_from_manifest_and_predi
         web_search=True,
     )
 
+    assert web_provider.search_calls == []
+    assert analysis.context_manifest.blind_context_mode == "NEWS_ONLY_STRICT"
+    assert analysis.context_manifest.blind_web_search_call_count == 0
     assert analysis.context_manifest.web_sources == []
-    assert analysis.context_manifest.excluded_web_source_ids == ["WEB-FUTURE-PIPELINE"]
-    assert analysis.blind_prediction.blind_analysis.excluded_after_cutoff_source_ids == [
-        "WEB-FUTURE-PIPELINE"
-    ]
+    assert analysis.context_manifest.excluded_web_source_ids == []
+    assert analysis.blind_prediction.blind_analysis.excluded_after_cutoff_source_ids == []
     manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
     saved_manifest = read_json(manifest_path)
+    assert saved_manifest["blind_context_mode"] == "NEWS_ONLY_STRICT"
+    assert saved_manifest["blind_web_search_call_count"] == 0
     assert saved_manifest["web_sources"] == []
-    assert saved_manifest["excluded_web_source_ids"] == ["WEB-FUTURE-PIPELINE"]
+    assert saved_manifest["excluded_web_source_ids"] == []
+    assert "web_search_requested_but_deferred_by_news_only_blind" in saved_manifest[
+        "truncations"
+    ]
 
 
 @pytest.mark.asyncio
@@ -780,6 +794,10 @@ async def test_blind_analyze_does_not_request_d_day_outcomes(tmp_path) -> None:
     )
 
     assert price_source.outcome_calls == []
+    assert price_source.snapshot_calls == []
+    assert analysis.context_manifest.blind_price_repository_access_count == 0
+    assert analysis.context_manifest.blind_current_price_access_count == 0
+    assert analysis.context_manifest.no_d_outcome_exposed is True
     assert analysis.context_manifest.price_snapshot.source_name == "outcome-trap"
     assert analysis.context_manifest.price_snapshot.allowed_through == date(2030, 1, 9)
 

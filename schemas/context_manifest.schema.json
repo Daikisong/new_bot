@@ -66,6 +66,26 @@
       "title": "Accepted Episode Count",
       "type": "integer"
     },
+    "blind_context_mode": {
+      "default": "NEWS_ONLY_STRICT",
+      "title": "Blind Context Mode",
+      "type": "string"
+    },
+    "blind_current_price_access_count": {
+      "default": 0,
+      "title": "Blind Current Price Access Count",
+      "type": "integer"
+    },
+    "blind_price_repository_access_count": {
+      "default": 0,
+      "title": "Blind Price Repository Access Count",
+      "type": "integer"
+    },
+    "blind_web_search_call_count": {
+      "default": 0,
+      "title": "Blind Web Search Call Count",
+      "type": "integer"
+    },
     "brain_file_hashes": {
       "additionalProperties": {
         "type": "string"
@@ -91,6 +111,11 @@
       ],
       "default": null,
       "title": "Brain Version"
+    },
+    "continuation_analysis_status": {
+      "default": "LIMITED_OR_UNAVAILABLE",
+      "title": "Continuation Analysis Status",
+      "type": "string"
     },
     "counterexample_episode_ids": {
       "items": {
@@ -150,6 +175,11 @@
       "additionalProperties": true,
       "title": "Model Config",
       "type": "object"
+    },
+    "no_d_outcome_exposed": {
+      "default": true,
+      "title": "No D Outcome Exposed",
+      "type": "boolean"
     },
     "price_snapshot": {
       "$ref": "#/$defs/PriceSnapshot"

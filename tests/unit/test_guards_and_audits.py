@@ -590,6 +590,43 @@ def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> N
     assert "RUN-missing-time.json: missing cutoff_at" in result["findings"]
 
 
+def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-news-only-violation.json",
+        {
+            "run_id": "RUN-news-only-violation",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_context_mode": "NEWS_ONLY_STRICT",
+            "blind_web_search_call_count": 1,
+            "blind_price_repository_access_count": 1,
+            "blind_current_price_access_count": 1,
+            "no_d_outcome_exposed": False,
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert (
+        "RUN-news-only-violation.json: blind_web_search_call_count must be 0 in NEWS_ONLY_STRICT"
+    ) in findings
+    assert (
+        "RUN-news-only-violation.json: blind_price_repository_access_count must be 0 in NEWS_ONLY_STRICT"
+    ) in findings
+    assert (
+        "RUN-news-only-violation.json: blind_current_price_access_count must be 0 in NEWS_ONLY_STRICT"
+    ) in findings
+    assert "RUN-news-only-violation.json: no_d_outcome_exposed must be true" in findings
+
+
 def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
     (tmp_path / "session_packs" / "2030-01-10").mkdir(parents=True)
     (tmp_path / "research" / "accepted").mkdir(parents=True)

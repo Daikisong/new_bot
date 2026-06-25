@@ -346,6 +346,12 @@ class ContextManifest(StrictModel):
     mode: str
     trade_date: date
     cutoff_at: datetime
+    blind_context_mode: str = "NEWS_ONLY_STRICT"
+    blind_web_search_call_count: int = 0
+    blind_price_repository_access_count: int = 0
+    blind_current_price_access_count: int = 0
+    no_d_outcome_exposed: bool = True
+    continuation_analysis_status: str = "LIMITED_OR_UNAVAILABLE"
     brain_version: str | None = None
     brain_files: list[str] = Field(default_factory=list)
     brain_file_hashes: dict[str, str] = Field(default_factory=dict)

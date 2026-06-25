@@ -38,8 +38,7 @@ from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory import MemoryStore
 from news_scalping_lab.memory.company import CompanyMemoryStore
-from news_scalping_lab.prices.base import BlindPriceGuard, PriceSource
-from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.prices.base import PriceSource
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
@@ -54,7 +53,7 @@ from news_scalping_lab.utils import (
 )
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
-from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider
+from news_scalping_lab.web.provider import WebResearchProvider
 
 
 class ExhaustiveCoverageError(RuntimeError):
@@ -84,8 +83,15 @@ class DailyAnalyzer:
         self.llm = self._trace_llm(llm or create_llm_provider(settings))
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
-        self.price_source = price_source or create_price_source(self.settings)
+        self.price_source = price_source
         self.web_provider = web_provider or create_web_provider(self.settings)
+
+    def _blind_price_source_name(self) -> str:
+        if self.price_source is not None:
+            return self.price_source.source_name
+        if self.settings.price_provider == "mock":
+            return "mock-price"
+        return f"{self.settings.price_provider}-deferred-news-only"
 
     async def analyze(
         self,
@@ -120,15 +126,10 @@ class DailyAnalyzer:
             manifest=manifest,
         )
 
-        web_guard = TemporalWebGuard(self.web_provider)
         if web_search:
-            for query in web_queries[:5]:
-                results = await web_guard.search(query, cutoff_at=cutoff_at)
-                manifest.web_sources.extend(result.url for result in results)
-            manifest.excluded_web_source_ids = sorted(set(web_guard.excluded_source_ids))
+            manifest.truncations.append("web_search_requested_but_deferred_by_news_only_blind")
 
-        price_guard = BlindPriceGuard(self.price_source, trade_date=trade_date)
-        manifest.price_snapshot.source_name = price_guard.source_name
+        manifest.price_snapshot.source_name = self._blind_price_source_name()
 
         news_texts = [
             item.combined_text for item in batch.items[: self.settings.limits.max_news_items_for_mock]
@@ -163,7 +164,7 @@ class DailyAnalyzer:
             event_ids=event_ids,
             retrieved_episode_ids=retrieved_ids,
             counterexample_episode_ids=manifest.counterexample_episode_ids,
-            excluded_source_ids=web_guard.excluded_source_ids,
+            excluded_source_ids=[],
             first_pass_mechanisms=first_pass_mechanisms,
             context_payload={
                 "run_id": manifest.run_id,
@@ -193,7 +194,6 @@ class DailyAnalyzer:
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
         d_minus_one_market_data = self._collect_d_minus_one_market_data(
             candidates=prediction.candidates,
-            price_guard=price_guard,
             manifest=manifest,
         )
         prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = (
@@ -203,7 +203,7 @@ class DailyAnalyzer:
                 news_texts=news_texts,
                 event_ids=event_ids,
                 retrieved_episode_ids=retrieved_ids,
-                excluded_source_ids=web_guard.excluded_source_ids,
+                excluded_source_ids=[],
                 first_pass_mechanisms=first_pass_mechanisms,
                 red_team_artifact=red_team.artifact,
                 d_minus_one_market_data=d_minus_one_market_data,
@@ -381,7 +381,8 @@ class DailyAnalyzer:
             f"{self._load_synthesis_prompt().strip()}\n"
             "Return the final BlindPrediction. Keep qualitative confidence only, "
             "preserve red-team objections in candidate counterarguments, and do not use "
-            "D-day prices, outcomes, or cutoff-after sources.\n"
+            "D-day prices, D-1 price repository data, outcomes, web search results, "
+            "or cutoff-after sources during NEWS_ONLY_STRICT BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -390,18 +391,19 @@ class DailyAnalyzer:
         self,
         *,
         candidates: list[Candidate],
-        price_guard: BlindPriceGuard,
         manifest: ContextManifest,
     ) -> dict[str, Any]:
         allowed_through = manifest.price_snapshot.allowed_through
         payload: dict[str, Any] = {
-            "source_name": price_guard.source_name,
+            "status": "NEWS_ONLY_STRICT_NO_PRICE_ACCESS",
+            "source_name": manifest.price_snapshot.source_name,
             "allowed_through": allowed_through.isoformat() if allowed_through else None,
+            "blind_context_mode": manifest.blind_context_mode,
+            "blind_price_repository_access_count": manifest.blind_price_repository_access_count,
+            "blind_current_price_access_count": manifest.blind_current_price_access_count,
             "snapshots": [],
             "skipped_tickers": [],
         }
-        if allowed_through is None:
-            return payload
         seen: set[str] = set()
         for candidate in candidates:
             ticker = candidate.ticker.strip().upper()
@@ -413,13 +415,8 @@ class DailyAnalyzer:
                     {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
                 )
                 continue
-            snapshot = price_guard.get_snapshot(ticker, as_of=allowed_through)
-            payload["snapshots"].append(
-                {
-                    "ticker": ticker,
-                    "as_of": allowed_through.isoformat(),
-                    "record": snapshot.__dict__ if snapshot is not None else None,
-                }
+            payload["skipped_tickers"].append(
+                {"ticker": ticker, "reason": "news_only_blind_price_access_disabled"}
             )
         return payload
 
@@ -512,8 +509,9 @@ class DailyAnalyzer:
         if path.exists():
             return path.read_text(encoding="utf-8")
         return (
-            "Synthesize current news, web verification, global brain, swept memory, "
-            "counterexamples, candidate research, red-team objections, and D-1 market data."
+            "Synthesize current news, global brain, swept memory, counterexamples, "
+            "candidate research, and red-team objections. In NEWS_ONLY_STRICT BLIND, "
+            "web and price repository access must remain unavailable."
         )
 
     def _build_web_queries(self, items: Sequence[NewsItem]) -> list[str]:
