@@ -72,7 +72,12 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     episodes = store.list_accepted()
     source_hashes = store.accepted_hashes()
     rows = _rows_for_kind(kind, episodes, source_hashes=source_hashes)
-    skipped = _skipped_episodes(kind, episodes)
+    row_episode_ids = {
+        episode_id
+        for row in rows
+        if isinstance(episode_id := row.get("episode_id"), str) and episode_id
+    }
+    skipped = _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
     path = target_dir / f"{kind}.jsonl"
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
@@ -452,17 +457,31 @@ def _outcome_for_candidate(
     return None
 
 
-def _skipped_episodes(kind: str, episodes: list[ResearchEpisode]) -> list[dict[str, Any]]:
+def _skipped_episodes(
+    kind: str,
+    episodes: list[ResearchEpisode],
+    *,
+    row_episode_ids: set[str],
+) -> list[dict[str, Any]]:
     skipped: list[dict[str, Any]] = []
     for episode in episodes:
+        if episode.episode_id in row_episode_ids:
+            continue
         missing = _missing_eligibility_for_kind(kind, episode.eligibility_matrix)
+        if not missing:
+            missing = ["training_rows"]
         if missing:
             skipped.append(
                 {
                     "episode_id": episode.episode_id,
                     "missing_eligibility": missing,
                     "reasons": {
-                        key: episode.eligibility_matrix.reasons.get(key, "not eligible")
+                        key: episode.eligibility_matrix.reasons.get(
+                            key,
+                            "no rows produced for this training export kind"
+                            if key == "training_rows"
+                            else "not eligible",
+                        )
                         for key in missing
                     },
                 }

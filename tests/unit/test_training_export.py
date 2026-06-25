@@ -325,6 +325,40 @@ def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
     ]
 
 
+def test_training_export_does_not_skip_episode_with_evals_rows(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode().model_copy(
+        update={
+            "episode_id": "EP-evals-retrospective-only",
+            "eligibility_matrix": EligibilityMatrix(
+                forecast_evaluation_eligible=False,
+                direct_supervised_cases_eligible=False,
+                theme_supervised_cases_eligible=False,
+                leader_pair_training_eligible=False,
+                retrospective_memory_eligible=True,
+                brain_eligible=True,
+                reasons={
+                    "direct_supervised_cases_eligible": (
+                        "resolved candidate D-day outcomes are unavailable"
+                    )
+                },
+            ),
+        }
+    )
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+
+    evals = export_training(tmp_path, kind="evals")
+
+    rows = _jsonl(evals.path)
+    manifest = read_json(evals.manifest_path)
+    assert evals.row_count == 1
+    assert rows[0]["task"] == "failure_code_eval"
+    assert manifest["eligible_episode_count"] == 1
+    assert manifest["skipped_episode_count"] == 0
+    assert manifest["skipped_episodes"] == []
+
+
 def test_training_export_rejects_unknown_kind(tmp_path) -> None:
     with pytest.raises(ValueError, match="kind must be sft, preference, or evals"):
         export_training(tmp_path, kind="unknown")

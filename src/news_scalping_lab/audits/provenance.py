@@ -1690,6 +1690,14 @@ def _check_training_export_manifest(
     if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
         findings.append(f"{label}: training export output_sha256 mismatch")
     rows = _read_training_export_rows(output_path, label, findings)
+    _check_training_export_episode_scope(
+        root,
+        label,
+        manifest,
+        rows,
+        source_hashes=source_hashes,
+        findings=findings,
+    )
     _check_training_export_rows(
         label,
         kind,
@@ -1725,6 +1733,98 @@ def _training_export_source_hashes(
         if file_sha256(accepted_path) != expected_hash:
             findings.append(f"{label}: training export source_hash mismatch: {episode_id}")
     return source_hashes
+
+
+def _check_training_export_episode_scope(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    source_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    accepted_hashes = _accepted_episode_hashes(root)
+    accepted_ids = set(accepted_hashes)
+    source_ids = set(source_hashes)
+    if source_ids != accepted_ids:
+        findings.append(f"{label}: training export source_hashes episode scope mismatch")
+
+    episode_ids = _training_export_manifest_episode_ids(label, manifest, findings)
+    if episode_ids is not None and set(episode_ids) != accepted_ids:
+        findings.append(f"{label}: training export episode_ids mismatch")
+    if manifest.get("episode_count") != len(accepted_ids):
+        findings.append(f"{label}: training export episode_count mismatch")
+
+    skipped_ids = _training_export_skipped_episode_ids(label, manifest, findings)
+    if skipped_ids is None:
+        skipped_ids = set()
+    if not skipped_ids <= accepted_ids:
+        findings.append(f"{label}: training export skipped_episode_ids mismatch")
+    if manifest.get("skipped_episode_count") != len(skipped_ids):
+        findings.append(f"{label}: training export skipped_episode_count mismatch")
+    if manifest.get("eligible_episode_count") != len(accepted_ids) - len(skipped_ids):
+        findings.append(f"{label}: training export eligible_episode_count mismatch")
+
+    row_episode_ids = {
+        episode_id
+        for row in rows
+        if isinstance(episode_id := row.get("episode_id"), str) and episode_id
+    }
+    if not row_episode_ids <= accepted_ids:
+        findings.append(f"{label}: training export row episode scope mismatch")
+    if row_episode_ids & skipped_ids:
+        findings.append(f"{label}: training export skipped_episode row overlap")
+    if row_episode_ids | skipped_ids != accepted_ids:
+        findings.append(f"{label}: training export episode coverage mismatch")
+
+
+def _accepted_episode_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.stem: file_sha256(path)
+        for path in sorted((root / "research" / "accepted").glob("*.json"))
+    }
+
+
+def _training_export_manifest_episode_ids(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> list[str] | None:
+    raw = manifest.get("episode_ids")
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+        findings.append(f"{label}: training export episode_ids invalid")
+        return None
+    if len(raw) != len(set(raw)):
+        findings.append(f"{label}: training export episode_ids duplicate")
+    return list(raw)
+
+
+def _training_export_skipped_episode_ids(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> set[str] | None:
+    raw = manifest.get("skipped_episodes")
+    if not isinstance(raw, list):
+        findings.append(f"{label}: training export skipped_episodes invalid")
+        return None
+    skipped_ids: list[str] = []
+    invalid = False
+    for item in raw:
+        if not isinstance(item, dict):
+            invalid = True
+            continue
+        episode_id = item.get("episode_id")
+        if not isinstance(episode_id, str) or not episode_id:
+            invalid = True
+            continue
+        skipped_ids.append(episode_id)
+    if invalid:
+        findings.append(f"{label}: training export skipped_episodes invalid")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        findings.append(f"{label}: training export skipped_episode_ids duplicate")
+    return set(skipped_ids)
 
 
 def _resolve_training_export_output_path(root: Path, output_file: str) -> Path | None:
