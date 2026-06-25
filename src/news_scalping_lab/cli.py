@@ -541,6 +541,10 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         )
         for label, artifact_field, hash_field, required in specs
     }
+    statuses["event_cluster"] = _inspect_event_cluster_artifact(root, manifest)
+    statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(
+        root, manifest
+    )
     statuses["semantic_retrieval_plan"] = _inspect_semantic_retrieval_plan_artifact(
         root, manifest
     )
@@ -604,6 +608,263 @@ def _inspect_text_hashed_artifact(
     if not isinstance(expected_hash, str) or not expected_hash:
         status["errors"].append(f"{hash_field}_missing")
     status["passed"] = _text_hashed_artifact_status_passed(status)
+    return status
+
+
+def _inspect_event_cluster_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="event_cluster_artifact",
+        hash_field="event_cluster_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "row_count_verified": None,
+            "summary_cluster_count_verified": None,
+            "summary_source_row_count_verified": None,
+            "summary_exact_duplicate_count_verified": None,
+            "summary_exact_duplicate_cluster_count_verified": None,
+            "summary_semantic_duplicate_cluster_count_verified": None,
+            "summary_cluster_method_verified": None,
+            "summary_novelty_review_required_verified": None,
+            "row_membership_counts_verified": None,
+        }
+    )
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("event_cluster_artifact"),
+        status,
+        label="event_cluster",
+    )
+    if rows is None:
+        status["passed"] = _event_cluster_status_passed(status)
+        return status
+
+    run_id = manifest.get("run_id")
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.news_event_cluster.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("event_cluster_schema_version_mismatch")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("event_cluster_run_id_mismatch")
+
+    expected_count = manifest.get("event_cluster_count")
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(
+        rows
+    ) == expected_count
+    if not status["row_count_verified"]:
+        status["errors"].append("event_cluster_count_mismatch")
+
+    summary = manifest.get("event_cluster_summary")
+    if not isinstance(summary, dict):
+        status["errors"].append("event_cluster_summary_invalid")
+        status["passed"] = _event_cluster_status_passed(status)
+        return status
+
+    source_row_count = sum(_non_bool_int(row.get("row_count")) or 0 for row in rows)
+    exact_duplicate_count = sum(
+        _non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows
+    )
+    exact_duplicate_cluster_count = sum(
+        1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0
+    )
+    status["summary_cluster_count_verified"] = (
+        _non_bool_int(summary.get("cluster_count")) == len(rows)
+    )
+    if not status["summary_cluster_count_verified"]:
+        status["errors"].append("event_cluster_summary_cluster_count_mismatch")
+    status["summary_source_row_count_verified"] = (
+        _non_bool_int(summary.get("source_row_count")) == source_row_count
+    )
+    if not status["summary_source_row_count_verified"]:
+        status["errors"].append("event_cluster_summary_source_row_count_mismatch")
+    status["summary_exact_duplicate_count_verified"] = (
+        _non_bool_int(summary.get("exact_duplicate_count")) == exact_duplicate_count
+    )
+    if not status["summary_exact_duplicate_count_verified"]:
+        status["errors"].append("event_cluster_summary_exact_duplicate_count_mismatch")
+    status["summary_exact_duplicate_cluster_count_verified"] = (
+        _non_bool_int(summary.get("exact_duplicate_cluster_count"))
+        == exact_duplicate_cluster_count
+    )
+    if not status["summary_exact_duplicate_cluster_count_verified"]:
+        status["errors"].append(
+            "event_cluster_summary_exact_duplicate_cluster_count_mismatch"
+        )
+    status["summary_semantic_duplicate_cluster_count_verified"] = (
+        _non_bool_int(summary.get("semantic_duplicate_cluster_count")) == 0
+    )
+    if not status["summary_semantic_duplicate_cluster_count_verified"]:
+        status["errors"].append(
+            "event_cluster_summary_semantic_duplicate_cluster_count_mismatch"
+        )
+    methods = {
+        method
+        for row in rows
+        if isinstance(method := row.get("cluster_method"), str) and method
+    }
+    status["summary_cluster_method_verified"] = (
+        isinstance(summary.get("cluster_method"), str)
+        and bool(methods)
+        and methods == {summary.get("cluster_method")}
+    )
+    if not status["summary_cluster_method_verified"]:
+        status["errors"].append("event_cluster_summary_cluster_method_mismatch")
+    status["summary_novelty_review_required_verified"] = (
+        summary.get("novelty_review_required") is True
+    )
+    if not status["summary_novelty_review_required_verified"]:
+        status["errors"].append("event_cluster_summary_novelty_review_required_mismatch")
+    status["row_membership_counts_verified"] = all(
+        _event_cluster_membership_counts_match(row) for row in rows
+    )
+    if not status["row_membership_counts_verified"]:
+        status["errors"].append("event_cluster_row_membership_counts_mismatch")
+
+    status["passed"] = _event_cluster_status_passed(status)
+    return status
+
+
+def _inspect_news_novelty_review_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="news_novelty_review_artifact",
+        hash_field="news_novelty_review_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "prompt_hash_verified": None,
+            "manifest_count_verified": None,
+            "payload_cluster_count_verified": None,
+            "payload_reviewed_cluster_count_verified": None,
+            "summary_cluster_count_verified": None,
+            "summary_reviewed_cluster_count_verified": None,
+            "summary_review_mode_verified": None,
+            "summary_novelty_counts_verified": None,
+            "summary_time_verified_count_verified": None,
+            "summary_excluded_after_cutoff_source_count_verified": None,
+        }
+    )
+    payload = _read_artifact_object(
+        root,
+        manifest.get("news_novelty_review_artifact"),
+        status,
+    )
+    if payload is None:
+        status["passed"] = _news_novelty_review_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.news_novelty_review.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("news_novelty_review_schema_version_mismatch")
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("news_novelty_review_run_id_mismatch")
+    prompt_hash = _manifest_prompt_hash(manifest, "news_novelty_review")
+    status["prompt_hash_verified"] = (
+        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
+    )
+    if not status["prompt_hash_verified"]:
+        status["errors"].append("news_novelty_review_prompt_hash_mismatch")
+
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or not all(
+        isinstance(finding, dict) for finding in findings
+    ):
+        status["errors"].append("news_novelty_review_findings_invalid")
+        status["passed"] = _news_novelty_review_status_passed(status)
+        return status
+
+    expected_count = manifest.get("news_novelty_review_count")
+    status["manifest_count_verified"] = not isinstance(expected_count, int) or len(
+        findings
+    ) == expected_count
+    if not status["manifest_count_verified"]:
+        status["errors"].append("news_novelty_review_count_mismatch")
+    event_cluster_count = manifest.get("event_cluster_count")
+    status["payload_cluster_count_verified"] = (
+        not isinstance(event_cluster_count, int)
+        or payload.get("cluster_count") == event_cluster_count
+    )
+    if not status["payload_cluster_count_verified"]:
+        status["errors"].append("news_novelty_review_cluster_count_mismatch")
+    status["payload_reviewed_cluster_count_verified"] = (
+        payload.get("reviewed_cluster_count") == len(findings)
+    )
+    if not status["payload_reviewed_cluster_count_verified"]:
+        status["errors"].append("news_novelty_review_reviewed_cluster_count_mismatch")
+
+    summary = manifest.get("news_novelty_review_summary")
+    if not isinstance(summary, dict):
+        status["errors"].append("news_novelty_review_summary_invalid")
+        status["passed"] = _news_novelty_review_status_passed(status)
+        return status
+
+    time_verified_count = sum(1 for finding in findings if finding.get("time_verified") is True)
+    excluded_ids = _string_list(payload.get("excluded_after_cutoff_source_ids"))
+    novelty_counts = _news_novelty_counts(findings, summary.get("novelty_counts"))
+    status["summary_cluster_count_verified"] = (
+        _non_bool_int(summary.get("cluster_count"))
+        == _non_bool_int(payload.get("cluster_count"))
+    )
+    if not status["summary_cluster_count_verified"]:
+        status["errors"].append("news_novelty_review_summary_cluster_count_mismatch")
+    status["summary_reviewed_cluster_count_verified"] = (
+        _non_bool_int(summary.get("reviewed_cluster_count")) == len(findings)
+    )
+    if not status["summary_reviewed_cluster_count_verified"]:
+        status["errors"].append(
+            "news_novelty_review_summary_reviewed_cluster_count_mismatch"
+        )
+    status["summary_review_mode_verified"] = (
+        isinstance(summary.get("review_mode"), str)
+        and summary.get("review_mode") == payload.get("review_mode")
+    )
+    if not status["summary_review_mode_verified"]:
+        status["errors"].append("news_novelty_review_summary_review_mode_mismatch")
+    status["summary_novelty_counts_verified"] = (
+        summary.get("novelty_counts") == novelty_counts
+    )
+    if not status["summary_novelty_counts_verified"]:
+        status["errors"].append("news_novelty_review_summary_novelty_counts_mismatch")
+    status["summary_time_verified_count_verified"] = (
+        _non_bool_int(summary.get("time_verified_count")) == time_verified_count
+    )
+    if not status["summary_time_verified_count_verified"]:
+        status["errors"].append(
+            "news_novelty_review_summary_time_verified_count_mismatch"
+        )
+    status["summary_excluded_after_cutoff_source_count_verified"] = (
+        _non_bool_int(summary.get("excluded_after_cutoff_source_count"))
+        == len(excluded_ids)
+    )
+    if not status["summary_excluded_after_cutoff_source_count_verified"]:
+        status["errors"].append(
+            "news_novelty_review_summary_excluded_after_cutoff_source_count_mismatch"
+        )
+
+    status["passed"] = _news_novelty_review_status_passed(status)
     return status
 
 
@@ -3643,6 +3904,41 @@ def _text_hashed_artifact_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _event_cluster_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("row_count_verified")
+        and status.get("summary_cluster_count_verified")
+        and status.get("summary_source_row_count_verified")
+        and status.get("summary_exact_duplicate_count_verified")
+        and status.get("summary_exact_duplicate_cluster_count_verified")
+        and status.get("summary_semantic_duplicate_cluster_count_verified")
+        and status.get("summary_cluster_method_verified")
+        and status.get("summary_novelty_review_required_verified")
+        and status.get("row_membership_counts_verified")
+    )
+
+
+def _news_novelty_review_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("prompt_hash_verified")
+        and status.get("manifest_count_verified")
+        and status.get("payload_cluster_count_verified")
+        and status.get("payload_reviewed_cluster_count_verified")
+        and status.get("summary_cluster_count_verified")
+        and status.get("summary_reviewed_cluster_count_verified")
+        and status.get("summary_review_mode_verified")
+        and status.get("summary_novelty_counts_verified")
+        and status.get("summary_time_verified_count_verified")
+        and status.get("summary_excluded_after_cutoff_source_count_verified")
+    )
+
+
 def _semantic_retrieval_plan_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         _text_hashed_artifact_status_passed(status)
@@ -3954,6 +4250,39 @@ def _candidate_expansion_required_paths(manifest: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("required_paths"))
+
+
+def _event_cluster_membership_counts_match(row: dict[str, Any]) -> bool:
+    row_count = _non_bool_int(row.get("row_count"))
+    if row_count is None:
+        return False
+    for field in ("row_numbers", "event_ids", "source_ids"):
+        value = row.get(field)
+        if isinstance(value, list) and len(value) != row_count:
+            return False
+    return True
+
+
+def _news_novelty_counts(
+    findings: list[dict[str, Any]],
+    summary_counts: object,
+) -> dict[str, int]:
+    observed = Counter(
+        novelty
+        for finding in findings
+        if isinstance(novelty := finding.get("novelty"), str) and novelty
+    )
+    if isinstance(summary_counts, dict):
+        labels = [
+            label
+            for label, count in summary_counts.items()
+            if isinstance(label, str)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+        ]
+        if labels:
+            return {label: observed.get(label, 0) for label in labels}
+    return dict(observed)
 
 
 def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:

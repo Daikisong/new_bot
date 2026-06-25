@@ -156,7 +156,75 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     supporting = inspection["supporting_artifacts"]
     assert supporting["row_disposition"]["hash_verified"] is True
     assert supporting["event_cluster"]["hash_verified"] is True
+    assert supporting["event_cluster"]["schema_version_verified"] is True
+    assert supporting["event_cluster"]["run_id_verified"] is True
+    assert supporting["event_cluster"]["row_count_verified"] is True
+    assert supporting["event_cluster"]["summary_cluster_count_verified"] is True
+    assert supporting["event_cluster"]["summary_source_row_count_verified"] is True
+    assert (
+        supporting["event_cluster"]["summary_exact_duplicate_count_verified"]
+        is True
+    )
+    assert (
+        supporting["event_cluster"][
+            "summary_exact_duplicate_cluster_count_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["event_cluster"][
+            "summary_semantic_duplicate_cluster_count_verified"
+        ]
+        is True
+    )
+    assert supporting["event_cluster"]["summary_cluster_method_verified"] is True
+    assert (
+        supporting["event_cluster"]["summary_novelty_review_required_verified"]
+        is True
+    )
+    assert supporting["event_cluster"]["row_membership_counts_verified"] is True
     assert supporting["news_novelty_review"]["hash_verified"] is True
+    assert supporting["news_novelty_review"]["schema_version_verified"] is True
+    assert supporting["news_novelty_review"]["run_id_verified"] is True
+    assert supporting["news_novelty_review"]["prompt_hash_verified"] is True
+    assert supporting["news_novelty_review"]["manifest_count_verified"] is True
+    assert (
+        supporting["news_novelty_review"]["payload_cluster_count_verified"]
+        is True
+    )
+    assert (
+        supporting["news_novelty_review"][
+            "payload_reviewed_cluster_count_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["news_novelty_review"]["summary_cluster_count_verified"]
+        is True
+    )
+    assert (
+        supporting["news_novelty_review"][
+            "summary_reviewed_cluster_count_verified"
+        ]
+        is True
+    )
+    assert supporting["news_novelty_review"]["summary_review_mode_verified"] is True
+    assert (
+        supporting["news_novelty_review"]["summary_novelty_counts_verified"]
+        is True
+    )
+    assert (
+        supporting["news_novelty_review"][
+            "summary_time_verified_count_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["news_novelty_review"][
+            "summary_excluded_after_cutoff_source_count_verified"
+        ]
+        is True
+    )
     assert supporting["semantic_retrieval_plan"]["hash_verified"] is True
     assert supporting["semantic_retrieval_plan"]["schema_version_verified"] is True
     assert supporting["semantic_retrieval_plan"]["run_id_verified"] is True
@@ -487,6 +555,93 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert strict_tampered_prediction_inspection["reproducibility_checks_passed"] is False
     write_json(prediction_file, original_prediction)
     write_json(manifest_file, original_manifest_for_prediction)
+
+    original_manifest_for_event_cluster_summary = read_json(manifest_file)
+    tampered_event_cluster_summary = {
+        **original_manifest_for_event_cluster_summary["event_cluster_summary"],
+        "cluster_count": (
+            original_manifest_for_event_cluster_summary["event_cluster_summary"][
+                "cluster_count"
+            ]
+            + 1
+        ),
+    }
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_event_cluster_summary,
+            "event_cluster_summary": tampered_event_cluster_summary,
+        },
+    )
+    tampered_event_cluster_summary_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered event cluster summary",
+        tampered_event_cluster_summary_context,
+    )
+    tampered_event_cluster_summary_inspection = json.loads(
+        tampered_event_cluster_summary_context.output
+    )["inspection"]
+    assert (
+        tampered_event_cluster_summary_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_event_cluster_status = tampered_event_cluster_summary_inspection[
+        "supporting_artifacts"
+    ]["event_cluster"]
+    assert tampered_event_cluster_status["hash_verified"] is True
+    assert tampered_event_cluster_status["summary_cluster_count_verified"] is False
+    assert "event_cluster_summary_cluster_count_mismatch" in (
+        tampered_event_cluster_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_event_cluster_summary)
+
+    original_manifest_for_news_novelty_summary = read_json(manifest_file)
+    tampered_news_novelty_summary = {
+        **original_manifest_for_news_novelty_summary[
+            "news_novelty_review_summary"
+        ],
+        "time_verified_count": (
+            original_manifest_for_news_novelty_summary[
+                "news_novelty_review_summary"
+            ]["time_verified_count"]
+            + 1
+        ),
+    }
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_news_novelty_summary,
+            "news_novelty_review_summary": tampered_news_novelty_summary,
+        },
+    )
+    tampered_news_novelty_summary_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered news novelty summary",
+        tampered_news_novelty_summary_context,
+    )
+    tampered_news_novelty_summary_inspection = json.loads(
+        tampered_news_novelty_summary_context.output
+    )["inspection"]
+    assert (
+        tampered_news_novelty_summary_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_news_novelty_status = tampered_news_novelty_summary_inspection[
+        "supporting_artifacts"
+    ]["news_novelty_review"]
+    assert tampered_news_novelty_status["hash_verified"] is True
+    assert (
+        tampered_news_novelty_status["summary_time_verified_count_verified"]
+        is False
+    )
+    assert "news_novelty_review_summary_time_verified_count_mismatch" in (
+        tampered_news_novelty_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_news_novelty_summary)
 
     source_ledger_file = tmp_path / context_payload["source_ledger_artifact"]
     original_source_ledger = source_ledger_file.read_text(encoding="utf-8")
