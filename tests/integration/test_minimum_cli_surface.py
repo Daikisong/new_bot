@@ -291,6 +291,16 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is True
     )
     assert supporting["source_ledger"]["hash_verified"] is True
+    assert supporting["source_ledger"]["schema_version_verified"] is True
+    assert supporting["source_ledger"]["entry_count_verified"] is True
+    assert supporting["source_ledger"]["required_fields_verified"] is True
+    assert supporting["source_ledger"]["source_ids_verified"] is True
+    assert supporting["source_ledger"]["duplicate_source_ids_absent"] is True
+    assert supporting["source_ledger"]["source_url_verified"] is True
+    assert supporting["source_ledger"]["raw_content_absent_verified"] is True
+    assert supporting["source_ledger"]["usage_phase_verified"] is True
+    assert supporting["source_ledger"]["blind_cutoff_verified"] is True
+    assert supporting["source_ledger"]["timestamp_precision_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["schema_version_verified"] is True
     assert supporting["blind_seal_receipt"]["run_id_verified"] is True
@@ -689,6 +699,47 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is False
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+
+    original_manifest_for_source_ledger_contract = read_json(manifest_file)
+    source_ledger_rows = [
+        json.loads(line) for line in original_source_ledger.splitlines() if line.strip()
+    ]
+    source_ledger_rows[0] = {
+        **source_ledger_rows[0],
+        "timestamp_precision": "date_only_end_of_day",
+        "published_at": "2030-01-12T08:00:00+09:00",
+    }
+    tampered_source_ledger_payload = "".join(
+        canonical_json(row) + "\n" for row in source_ledger_rows
+    )
+    source_ledger_file.write_text(tampered_source_ledger_payload, encoding="utf-8")
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_source_ledger_contract,
+            "source_ledger_sha256": sha256_text(tampered_source_ledger_payload),
+        },
+    )
+    tampered_ledger_contract_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok(
+        "context inspect tampered source ledger contract",
+        tampered_ledger_contract_context,
+    )
+    tampered_ledger_contract_inspection = json.loads(
+        tampered_ledger_contract_context.output
+    )["inspection"]
+    assert tampered_ledger_contract_inspection["reproducibility_checks_passed"] is False
+    tampered_ledger_contract_status = tampered_ledger_contract_inspection[
+        "supporting_artifacts"
+    ]["source_ledger"]
+    assert tampered_ledger_contract_status["hash_verified"] is True
+    assert tampered_ledger_contract_status["timestamp_precision_verified"] is False
+    assert "source_ledger_timestamp_precision_invalid" in (
+        tampered_ledger_contract_status["errors"]
+    )
+    source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_source_ledger_contract)
+
     blind_receipt_file = tmp_path / context_payload["blind_seal_receipt_artifact"]
     phase_state_file = tmp_path / context_payload["phase_state_artifact"]
     original_blind_receipt = read_json(blind_receipt_file)

@@ -38,6 +38,11 @@ from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
+from news_scalping_lab.research_import.bundle import (
+    SOURCE_LEDGER_REQUIRED_FIELDS,
+    SOURCE_LEDGER_USAGE_PHASES,
+    WEB_TIMESTAMP_PRECISIONS,
+)
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
@@ -507,6 +512,7 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(
         root, manifest
     )
+    statuses["source_ledger"] = _inspect_source_ledger_artifact(root, manifest)
     statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(
         root, manifest
     )
@@ -983,6 +989,110 @@ def _inspect_candidate_web_check_artifact(
         status["errors"].append("candidate_web_check_opened_text_present")
 
     status["passed"] = _candidate_web_check_status_passed(status)
+    return status
+
+
+def _inspect_source_ledger_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="source_ledger_artifact",
+        hash_field="source_ledger_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "entry_count_verified": None,
+            "required_fields_verified": None,
+            "source_ids_verified": None,
+            "duplicate_source_ids_absent": None,
+            "source_url_verified": None,
+            "raw_content_absent_verified": None,
+            "usage_phase_verified": None,
+            "blind_cutoff_verified": None,
+            "timestamp_precision_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _source_ledger_status_passed(status)
+        return status
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("source_ledger_artifact"),
+        status,
+        label="source_ledger",
+    )
+    if rows is None:
+        status["passed"] = _source_ledger_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.source_ledger.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("source_ledger_schema_version_mismatch")
+
+    expected_count = manifest.get("source_ledger_entry_count")
+    status["entry_count_verified"] = (
+        isinstance(expected_count, int) and len(rows) == expected_count
+    )
+    if not status["entry_count_verified"]:
+        status["errors"].append("source_ledger_entry_count_mismatch")
+
+    status["required_fields_verified"] = all(
+        set(row) >= SOURCE_LEDGER_REQUIRED_FIELDS for row in rows
+    )
+    if not status["required_fields_verified"]:
+        status["errors"].append("source_ledger_required_fields_missing")
+
+    source_ids = [
+        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
+    ]
+    status["source_ids_verified"] = len(source_ids) == len(rows) and all(source_ids)
+    if not status["source_ids_verified"]:
+        status["errors"].append("source_ledger_source_id_invalid")
+    status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
+    if not status["duplicate_source_ids_absent"]:
+        status["errors"].append("source_ledger_duplicate_source_id")
+
+    status["source_url_verified"] = all(
+        _source_ledger_source_url_valid(row) for row in rows
+    )
+    if not status["source_url_verified"]:
+        status["errors"].append("source_ledger_source_url_mismatch")
+
+    status["raw_content_absent_verified"] = all(
+        "body" not in row and "content" not in row and "opened_text" not in row
+        for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("source_ledger_raw_content_present")
+
+    status["usage_phase_verified"] = all(
+        row.get("usage_phase") in SOURCE_LEDGER_USAGE_PHASES for row in rows
+    )
+    if not status["usage_phase_verified"]:
+        status["errors"].append("source_ledger_usage_phase_invalid")
+
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status["blind_cutoff_verified"] = all(
+        _source_ledger_blind_cutoff_valid(row, cutoff_at) for row in rows
+    )
+    if not status["blind_cutoff_verified"]:
+        status["errors"].append("source_ledger_blind_cutoff_invalid")
+
+    status["timestamp_precision_verified"] = all(
+        _web_timestamp_precision_valid(row) for row in rows
+    )
+    if not status["timestamp_precision_verified"]:
+        status["errors"].append("source_ledger_timestamp_precision_invalid")
+
+    status["passed"] = _source_ledger_status_passed(status)
     return status
 
 
@@ -3060,6 +3170,22 @@ def _candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _source_ledger_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("entry_count_verified")
+        and status.get("required_fields_verified")
+        and status.get("source_ids_verified")
+        and status.get("duplicate_source_ids_absent")
+        and status.get("source_url_verified")
+        and status.get("raw_content_absent_verified")
+        and status.get("usage_phase_verified")
+        and status.get("blind_cutoff_verified")
+        and status.get("timestamp_precision_verified")
+    )
+
+
 def _candidate_verification_status_passed(status: dict[str, Any]) -> bool:
     if not status.get("configured"):
         return not status.get("required") and not status.get("errors")
@@ -3236,6 +3362,59 @@ def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("verification_focus"))
+
+
+def _source_ledger_source_url_valid(row: dict[str, Any]) -> bool:
+    source_url = row.get("source_url")
+    if not isinstance(source_url, str) or not source_url:
+        return False
+    url = row.get("url")
+    return not isinstance(url, str) or not url or source_url == url
+
+
+def _source_ledger_blind_cutoff_valid(
+    row: dict[str, Any],
+    cutoff_at: datetime | None,
+) -> bool:
+    if row.get("usage_phase") != "BLIND":
+        return True
+    if row.get("available_before_cutoff") is not True:
+        return False
+    if row.get("time_verified") is not True:
+        return False
+    if cutoff_at is None:
+        return True
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        return False
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        return False
+    return published_at <= cutoff_at
+
+
+def _web_timestamp_precision_valid(row: dict[str, Any]) -> bool:
+    precision = row.get("timestamp_precision")
+    if precision is None:
+        return True
+    if not isinstance(precision, str) or precision not in WEB_TIMESTAMP_PRECISIONS:
+        return False
+    if precision != "date_only_end_of_day":
+        return True
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        return False
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        return False
+    return (
+        published_at.hour,
+        published_at.minute,
+        published_at.second,
+        published_at.microsecond,
+    ) == (23, 59, 59, 0)
 
 
 def _candidate_verification_required_dimensions(manifest: dict[str, Any]) -> list[str]:
