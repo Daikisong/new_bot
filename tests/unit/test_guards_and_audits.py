@@ -1285,7 +1285,7 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
         "price_source_snapshot": {"source": "test"},
         "blind_analysis": {
             "summary": "Imported from source.",
-            "open_world_mechanisms": [],
+            "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
             "initial_uncertainties": [],
             "provenance": [provenance],
         },
@@ -1360,7 +1360,7 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
             ),
             "blind_analysis": {
                 "summary": "Accepted episode with identity metadata.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1435,6 +1435,29 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "price_source_snapshot missing or invalid"
     ) in metadata_failed["findings"]
 
+    missing_blind_shape = episode_payload("EP-identity")
+    blind_analysis = missing_blind_shape["blind_analysis"]
+    assert isinstance(blind_analysis, dict)
+    blind_analysis["summary"] = ""
+    blind_analysis["open_world_mechanisms"] = []
+    blind_analysis["initial_uncertainties"] = [123]
+    write_json(episode_path, missing_blind_shape)
+    blind_shape_failed = audit_provenance(tmp_path)
+
+    assert not blind_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "blind_analysis summary missing or invalid"
+    ) in blind_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "blind_analysis open_world_mechanisms missing or invalid"
+    ) in blind_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "blind_analysis initial_uncertainties invalid"
+    ) in blind_shape_failed["findings"]
+
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(
     tmp_path: Path,
@@ -1458,7 +1481,7 @@ def test_provenance_audit_validates_accepted_episode_top_level_sources(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Accepted episode with sealed provenance.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1529,7 +1552,7 @@ def test_provenance_audit_validates_research_episode_input_news_hash(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Accepted episode with input news hash.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1592,7 +1615,7 @@ def test_provenance_audit_rejects_early_research_episode_available_from(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Accepted episode with early available_from.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1645,7 +1668,7 @@ def test_provenance_audit_rejects_research_episode_cutoff_after_preopen(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Accepted episode with late cutoff.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1698,7 +1721,7 @@ def test_provenance_audit_rejects_early_research_episode_claim_available_from(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Accepted episode with early claim availability.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [
                     {
@@ -1783,7 +1806,7 @@ def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
             "price_source_snapshot": {"source": "test"},
             "blind_analysis": {
                 "summary": "Missing nested provenance.",
-                "open_world_mechanisms": [],
+                "open_world_mechanisms": ["current evidence -> open-world blind mechanism"],
                 "initial_uncertainties": [],
                 "provenance": [],
             },

@@ -297,6 +297,7 @@ def _check_research_episode_blind_decision_provenance(
     if not isinstance(blind_analysis, dict):
         findings.append(f"{label}: research episode blind_analysis missing")
     else:
+        _check_research_episode_blind_analysis_shape(label, blind_analysis, findings)
         _check_nested_provenance_entries(
             root,
             label,
@@ -391,6 +392,30 @@ def _check_research_episode_nested_list_provenance(
                 kind=kind,
                 index=index,
             )
+
+
+def _check_research_episode_blind_analysis_shape(
+    label: str,
+    blind_analysis: dict[str, Any],
+    findings: list[str],
+) -> None:
+    summary = blind_analysis.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        findings.append(f"{label}: research episode blind_analysis summary missing or invalid")
+    mechanisms = blind_analysis.get("open_world_mechanisms")
+    if not isinstance(mechanisms, list) or not mechanisms or not all(
+        isinstance(item, str) and item.strip() for item in mechanisms
+    ):
+        findings.append(
+            f"{label}: research episode blind_analysis open_world_mechanisms missing or invalid"
+        )
+    initial_uncertainties = blind_analysis.get("initial_uncertainties")
+    if not isinstance(initial_uncertainties, list) or not all(
+        isinstance(item, str) and item.strip() for item in initial_uncertainties
+    ):
+        findings.append(
+            f"{label}: research episode blind_analysis initial_uncertainties invalid"
+        )
 
 
 def _check_research_episode_claim_available_from(
