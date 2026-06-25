@@ -61,6 +61,7 @@ def _bundle_text(
     tamper_seal_hash: bool = False,
     tamper_receipt_contract: bool = False,
     tamper_phase_hash: bool = False,
+    tamper_phase_contract: bool = False,
     phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
     blind_context_mode: str = "NEWS_ONLY_STRICT",
@@ -165,6 +166,9 @@ def _bundle_text(
         "sealed_at": episode.created_at.isoformat(),
         "blind_seal_receipt_sha256": receipt_sha,
     }
+    if tamper_phase_contract:
+        phase_state["completed_phases"] = ["PHASE_A_wrong"]
+        phase_state["cutoff_at"] = "2030-01-10T09:00:00+09:00"
     phase_state_json = _write_json_text(phase_state)
     manifest_validation = {
         "markers_complete": True,
@@ -181,6 +185,7 @@ def _bundle_text(
         "blind_seal_receipt_hash_verified": True,
         "blind_seal_receipt_contract_verified": True,
         "phase_state_hash_verified": True,
+        "phase_state_contract_verified": True,
         "phase_state_receipt_link_verified": True,
         "id_reference_integrity_verified": True,
         "manifest_validation_self_consistent_verified": True,
@@ -294,6 +299,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["blind_seal_receipt_hash_verified"]
     assert parsed.validation["blind_seal_receipt_contract_verified"]
     assert parsed.validation["phase_state_hash_verified"]
+    assert parsed.validation["phase_state_contract_verified"]
     assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
     assert parsed.validation["manifest_validation_self_consistent_verified"]
@@ -485,6 +491,22 @@ def test_bundle_import_rejects_mismatched_phase_state_hash(tmp_path) -> None:
 
     assert not parsed.validation["phase_state_hash_verified"]
     with pytest.raises(BundleImportError, match="phase_state.json hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_phase_state_contract_mismatch(tmp_path) -> None:
+    source = tmp_path / "tampered_phase_contract_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), tamper_phase_contract=True),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["phase_state_hash_verified"]
+    assert not parsed.validation["phase_state_contract_verified"]
+    assert parsed.validation["phase_state_receipt_link_verified"]
+    with pytest.raises(BundleImportError, match="phase_state.json content"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

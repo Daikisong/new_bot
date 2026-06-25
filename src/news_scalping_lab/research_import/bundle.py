@@ -162,6 +162,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         )
     if not parsed.validation["phase_state_hash_verified"]:
         raise BundleImportError("phase_state.json hash does not match bundle_manifest.json")
+    if not parsed.validation["phase_state_contract_verified"]:
+        raise BundleImportError("phase_state.json content does not match bundle_manifest.json")
     if not parsed.validation["phase_state_receipt_link_verified"]:
         raise BundleImportError("phase_state.json is not linked to blind_seal_receipt")
     if not parsed.validation["id_reference_integrity_verified"]:
@@ -262,6 +264,7 @@ def parse_bundle(path: Path) -> BundleParseResult:
             block_name="phase_state.json",
             manifest_field="phase_state_sha256",
         ),
+        "phase_state_contract_verified": _verify_phase_state_contract(json_blocks),
         "phase_state_receipt_link_verified": _verify_phase_state_receipt_link(
             json_blocks,
         ),
@@ -802,6 +805,33 @@ def _verify_phase_state_receipt_link(json_blocks: dict[str, Any]) -> bool:
     )
 
 
+def _verify_phase_state_contract(json_blocks: dict[str, Any]) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    phase_state = json_blocks.get("phase_state.json")
+    if not isinstance(manifest, dict) or not isinstance(phase_state, dict):
+        return False
+    if phase_state.get("schema_version") != "nslab.phase_state.v1":
+        return False
+    if phase_state.get("phase") != "BLIND_SEALED":
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and phase_state.get("run_id") != manifest_run_id:
+        return False
+    for field_name in ("trade_date", "cutoff_at"):
+        manifest_value = manifest.get(field_name)
+        if isinstance(manifest_value, str) and phase_state.get(field_name) != manifest_value:
+            return False
+    sealed_at = phase_state.get("sealed_at")
+    if not isinstance(sealed_at, str) or not sealed_at:
+        return False
+    blind_context_mode = manifest.get("blind_context_mode")
+    if isinstance(blind_context_mode, str):
+        completed_phases = set(_string_list(phase_state.get("completed_phases")))
+        if completed_phases.isdisjoint(_phase_a_names(blind_context_mode)):
+            return False
+    return True
+
+
 def _verify_blind_seal_receipt_contract(json_blocks: dict[str, Any]) -> bool:
     manifest = json_blocks.get("bundle_manifest.json", {})
     episode = json_blocks.get("research_episode.json", {})
@@ -944,3 +974,10 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _phase_a_names(blind_context_mode: str) -> set[str]:
+    names = {f"PHASE_A_{blind_context_mode}"}
+    if blind_context_mode == "NEWS_ONLY_STRICT":
+        names.add("PHASE_A_NEWS_ONLY_BLIND")
+    return names
