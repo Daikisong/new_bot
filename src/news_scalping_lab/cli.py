@@ -20,7 +20,10 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
-from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    final_synthesis_input_summary,
+)
 from news_scalping_lab.context.session_pack import (
     SessionPackBudgetExceededError,
     SessionPackFutureContextError,
@@ -2823,28 +2826,7 @@ def _candidate_verification_status_counts(
 
 
 def _final_synthesis_required_inputs() -> list[str]:
-    return [
-        "current_news",
-        "open_world_first_analysis",
-        "news_novelty_review",
-        "additional_semantic_retrieval",
-        "open_world_candidate_expansion",
-        "web_research",
-        "global_brain",
-        "all_shard_brains",
-        "all_shard_contributions",
-        "retrieved_raw_episodes",
-        "positive_cases",
-        "negative_cases",
-        "counterexamples",
-        "candidate_research",
-        "candidate_web_checks",
-        "candidate_verification",
-        "red_team_output",
-        "d_minus_one_market_data",
-        "company_memory",
-        "market_memory",
-    ]
+    return list(FINAL_SYNTHESIS_REQUIRED_INPUTS)
 
 
 def _final_synthesis_manifest_count_mismatches(

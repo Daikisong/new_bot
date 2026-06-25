@@ -444,6 +444,7 @@ def _build_bundle_manifest(
             {},
         )
         validation["final_synthesis_context_hash_verified"] = True
+        validation["final_synthesis_context_contract_verified"] = True
     if excluded_candidate_web_checks is not None:
         payload["excluded_candidate_web_check_sha256"] = sha256_text(
             excluded_candidate_web_checks

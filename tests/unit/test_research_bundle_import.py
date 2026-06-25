@@ -5,6 +5,10 @@ from datetime import date, datetime, time
 
 import pytest
 
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    final_synthesis_input_summary,
+)
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction, ResearchEpisode
 from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -48,6 +52,32 @@ def _episode() -> ResearchEpisode:
     )
 
 
+def _final_synthesis_payload() -> dict[str, object]:
+    return {
+        "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
+        "current_news": ["bundle news"],
+        "open_world_first_analysis": [],
+        "news_novelty_review": {"findings": []},
+        "additional_semantic_retrieval": {"rows": [], "episodes": []},
+        "open_world_candidate_expansion": {"findings": []},
+        "web_research": {"sources": []},
+        "global_brain": [],
+        "all_shard_brains": [],
+        "all_shard_contributions": [],
+        "retrieved_raw_episodes": [],
+        "positive_cases": [],
+        "negative_cases": [],
+        "counterexamples": [],
+        "candidate_research": {"candidates": []},
+        "candidate_web_checks": [],
+        "candidate_verification": {"findings": []},
+        "red_team_output": {"candidate_findings": []},
+        "d_minus_one_market_data": {"snapshots": []},
+        "company_memory": [],
+        "market_memory": [],
+    }
+
+
 def _bundle_text(
     episode: ResearchEpisode,
     *,
@@ -62,6 +92,8 @@ def _bundle_text(
     tamper_receipt_contract: bool = False,
     tamper_phase_hash: bool = False,
     tamper_phase_contract: bool = False,
+    include_final_synthesis_context: bool = False,
+    tamper_final_synthesis_context_contract: bool = False,
     phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
     blind_context_mode: str = "NEWS_ONLY_STRICT",
@@ -222,6 +254,41 @@ def _bundle_text(
         "phase_state_sha256": "0" * 64 if tamper_phase_hash else sha256_text(phase_state_json),
         "validation": manifest_validation,
     }
+    final_context_block = ""
+    if include_final_synthesis_context:
+        final_context_payload = _final_synthesis_payload()
+        final_context_summary = final_synthesis_input_summary(final_context_payload)
+        final_context = {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-bundle-test",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": (
+                ["current_news"]
+                if tamper_final_synthesis_context_contract
+                else list(FINAL_SYNTHESIS_REQUIRED_INPUTS)
+            ),
+            "payload_sha256": sha256_text(canonical_json(final_context_payload)),
+            "input_summary": final_context_summary,
+            "payload": final_context_payload,
+        }
+        final_context_json = json.dumps(
+            final_context,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        manifest["final_synthesis_context_sha256"] = sha256_text(final_context_json)
+        manifest["final_synthesis_context_summary"] = final_context_summary
+        manifest_validation["final_synthesis_context_hash_verified"] = True
+        manifest_validation["final_synthesis_context_contract_verified"] = True
+        final_context_block = f"""
+<!-- NSLAB:BEGIN final_synthesis_context.json -->
+```json
+{final_context_json}
+```
+<!-- NSLAB:END final_synthesis_context.json -->
+
+"""
     return f"""---
 schema_version: nslab.research_bundle.v1
 artifact_type: research_episode_bundle
@@ -266,6 +333,7 @@ Blind report body.
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
+{final_context_block}
 <!-- NSLAB:BEGIN phase_state.json -->
 ```json
 {phase_state_json}
@@ -309,6 +377,42 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert any(item.source_type == "nslab_markdown_bundle" for item in imported.provenance)
     assert (tmp_path / "research" / "episodes" / f"{episode.episode_id}.json").exists()
     assert len(list((tmp_path / "data" / "raw" / "research").glob("*.md"))) == 1
+
+
+def test_bundle_import_accepts_final_synthesis_context_contract(tmp_path) -> None:
+    source = tmp_path / "final_context_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), include_final_synthesis_context=True),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+    imported = ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+    assert parsed.validation["final_synthesis_context_hash_verified"]
+    assert parsed.validation["final_synthesis_context_contract_verified"]
+    assert imported.episode_id == _episode().episode_id
+
+
+def test_bundle_import_rejects_final_synthesis_context_contract_mismatch(
+    tmp_path,
+) -> None:
+    source = tmp_path / "bad_final_context_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_final_synthesis_context=True,
+            tamper_final_synthesis_context_contract=True,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["final_synthesis_context_hash_verified"]
+    assert not parsed.validation["final_synthesis_context_contract_verified"]
+    with pytest.raises(BundleImportError, match="final_synthesis_context.json content"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
 def test_bundle_jsonl_contract_requires_record_type(tmp_path) -> None:

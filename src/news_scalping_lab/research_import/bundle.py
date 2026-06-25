@@ -9,6 +9,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    final_synthesis_input_summary,
+)
 from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
 from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, sha256_text, stable_id
 
@@ -136,6 +140,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
     if not parsed.validation.get("final_synthesis_context_hash_verified", True):
         raise BundleImportError(
             "final_synthesis_context.json hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("final_synthesis_context_contract_verified", True):
+        raise BundleImportError(
+            "final_synthesis_context.json content does not match bundle_manifest.json"
         )
     if not parsed.validation.get("excluded_candidate_web_check_hash_verified", True):
         raise BundleImportError(
@@ -300,6 +308,9 @@ def parse_bundle(path: Path) -> BundleParseResult:
             payload_blocks,
             block_name="final_synthesis_context.json",
             manifest_field="final_synthesis_context_sha256",
+        )
+        validation["final_synthesis_context_contract_verified"] = (
+            _verify_final_synthesis_context_contract(json_blocks)
         )
     _add_optional_jsonl_validation(
         validation,
@@ -830,6 +841,39 @@ def _verify_phase_state_contract(json_blocks: dict[str, Any]) -> bool:
         if completed_phases.isdisjoint(_phase_a_names(blind_context_mode)):
             return False
     return True
+
+
+def _verify_final_synthesis_context_contract(json_blocks: dict[str, Any]) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    context = json_blocks.get("final_synthesis_context.json")
+    if not isinstance(manifest, dict) or not isinstance(context, dict):
+        return False
+    if context.get("schema_version") != "nslab.final_synthesis_context.v1":
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and context.get("run_id") != manifest_run_id:
+        return False
+    payload = context.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    if context.get("payload_sha256") != sha256_text(canonical_json(payload)):
+        return False
+    required_inputs = payload.get("required_inputs")
+    if not isinstance(required_inputs, list) or not all(
+        isinstance(item, str) for item in required_inputs
+    ):
+        return False
+    if context.get("required_inputs") != required_inputs:
+        return False
+    if required_inputs != list(FINAL_SYNTHESIS_REQUIRED_INPUTS):
+        return False
+    if any(key not in payload for key in required_inputs):
+        return False
+    expected_summary = final_synthesis_input_summary(payload)
+    if context.get("input_summary") != expected_summary:
+        return False
+    manifest_summary = manifest.get("final_synthesis_context_summary")
+    return manifest_summary is None or manifest_summary == expected_summary
 
 
 def _verify_blind_seal_receipt_contract(json_blocks: dict[str, Any]) -> bool:

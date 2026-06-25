@@ -6,6 +6,10 @@ from datetime import date, datetime
 import pytest
 
 from news_scalping_lab.config import Settings
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    final_synthesis_input_summary,
+)
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.research_import.bundle import parse_bundle
@@ -176,28 +180,39 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         / "excluded_candidate_web_checks.jsonl"
     )
     excluded_candidate_path.write_text(excluded_candidate_web_checks, encoding="utf-8")
+    final_context_payload = {
+        "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
+        "current_news": ["bundle news"],
+        "open_world_first_analysis": [],
+        "news_novelty_review": {"findings": []},
+        "additional_semantic_retrieval": {"rows": [], "episodes": []},
+        "open_world_candidate_expansion": {"findings": []},
+        "web_research": {"sources": []},
+        "global_brain": [],
+        "all_shard_brains": [],
+        "all_shard_contributions": [],
+        "retrieved_raw_episodes": [],
+        "positive_cases": [],
+        "negative_cases": [],
+        "counterexamples": [],
+        "candidate_research": {"candidates": []},
+        "candidate_web_checks": [],
+        "candidate_verification": {"findings": []},
+        "red_team_output": {"candidate_findings": []},
+        "d_minus_one_market_data": {"snapshots": []},
+        "company_memory": [],
+        "market_memory": [],
+    }
+    final_context_summary = final_synthesis_input_summary(final_context_payload)
     final_synthesis_context = json.dumps(
         {
             "schema_version": "nslab.final_synthesis_context.v1",
             "run_id": run_id,
             "prompt_version": "synthesis.final.v1",
-            "required_inputs": ["current_news", "red_team_output"],
-            "payload_sha256": sha256_text(
-                canonical_json(
-                    {
-                        "required_inputs": ["current_news", "red_team_output"],
-                        "current_news": ["bundle news"],
-                    }
-                )
-            ),
-            "input_summary": {
-                "required_input_count": 2,
-                "current_news_count": 1,
-            },
-            "payload": {
-                "required_inputs": ["current_news", "red_team_output"],
-                "current_news": ["bundle news"],
-            },
+            "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
+            "payload_sha256": sha256_text(canonical_json(final_context_payload)),
+            "input_summary": final_context_summary,
+            "payload": final_context_payload,
         },
         ensure_ascii=False,
         indent=2,
@@ -295,10 +310,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
             tmp_path
         ).as_posix(),
         "final_synthesis_context_sha256": sha256_text(final_synthesis_context),
-        "final_synthesis_context_summary": {
-            "required_input_count": 2,
-            "current_news_count": 1,
-        },
+        "final_synthesis_context_summary": final_context_summary,
         "excluded_candidate_web_check_artifact": excluded_candidate_path.relative_to(
             tmp_path
         ).as_posix(),
@@ -338,6 +350,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["candidate_verification_hash_verified"]
     assert parsed.validation["candidate_verification_count_verified"]
     assert parsed.validation["final_synthesis_context_hash_verified"]
+    assert parsed.validation["final_synthesis_context_contract_verified"]
     assert parsed.validation["excluded_candidate_web_check_hash_verified"]
     assert parsed.validation["excluded_candidate_web_check_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
@@ -364,6 +377,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["candidate_verification_hash_verified"] is True
     assert manifest["validation"]["candidate_verification_count_verified"] is True
     assert manifest["validation"]["final_synthesis_context_hash_verified"] is True
+    assert manifest["validation"]["final_synthesis_context_contract_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_hash_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_count_verified"] is True
     assert manifest["validation"]["phase_state_hash_verified"] is True

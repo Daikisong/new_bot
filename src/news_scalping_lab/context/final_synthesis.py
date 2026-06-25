@@ -4,6 +4,29 @@ from __future__ import annotations
 
 from typing import Any
 
+FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
+    "current_news",
+    "open_world_first_analysis",
+    "news_novelty_review",
+    "additional_semantic_retrieval",
+    "open_world_candidate_expansion",
+    "web_research",
+    "global_brain",
+    "all_shard_brains",
+    "all_shard_contributions",
+    "retrieved_raw_episodes",
+    "positive_cases",
+    "negative_cases",
+    "counterexamples",
+    "candidate_research",
+    "candidate_web_checks",
+    "candidate_verification",
+    "red_team_output",
+    "d_minus_one_market_data",
+    "company_memory",
+    "market_memory",
+)
+
 
 def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Return reproducibility counts for the exact final synthesis payload."""
