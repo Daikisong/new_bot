@@ -73,10 +73,13 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     }
     structured = next(trace for trace in traces if trace["operation"] == "generate_structured")
     text_trace = next(trace for trace in traces if trace["operation"] == "generate_text")
+    assert all(trace["schema_version"] == "nslab.llm_trace.v1" for trace in traces)
     assert structured["status"] == "ok"
     assert structured["input"]["response_model"] == "SemanticResearchDraft"
     assert structured["output"]["trade_date"] == "2030-01-10"
+    assert structured["metadata"]["prompt_version"] == "structured-v2"
     assert structured["prompt_version"] == "structured-v2"
+    assert text_trace["metadata"]["prompt_version"] == "test-v1"
     assert text_trace["prompt_version"] == "test-v1"
     assert structured["model_config"] == {"provider": "mock", "model": "deterministic"}
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
@@ -103,6 +106,7 @@ async def test_tracing_llm_provider_records_failed_calls(tmp_path) -> None:
     assert trace["error"]["type"] == "RuntimeError"
     assert trace["error"]["message"] == "structured failed"
     assert trace["output"] is None
+    assert trace["token_usage"]["prompt_tokens_estimate"] > 0
 
 
 @pytest.mark.asyncio

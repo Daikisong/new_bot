@@ -11,6 +11,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.utils import canonical_json, now_kst, read_json, sha256_text, stable_id, write_json
 
 T = TypeVar("T", bound=BaseModel)
+TRACE_SCHEMA_VERSION = "nslab.llm_trace.v1"
 
 
 class TracingLLMProvider:
@@ -76,6 +77,7 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
+                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
                 error=exc,
                 checkpoint_id=checkpoint_id,
             )
@@ -154,6 +156,7 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
+                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
                 error=exc,
                 checkpoint_id=checkpoint_id,
             )
@@ -224,6 +227,9 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
+                token_usage={
+                    "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
+                },
                 error=exc,
                 checkpoint_id=checkpoint_id,
             )
@@ -271,13 +277,16 @@ class TracingLLMProvider:
             }
         )
         trace_id = stable_id("TRACE", trace_seed)
+        metadata = self._metadata_for(purpose)
         payload: dict[str, Any] = {
+            "schema_version": TRACE_SCHEMA_VERSION,
             "trace_id": trace_id,
             "operation": operation,
             "purpose": purpose,
             "status": status,
             "provider": type(self.provider).__name__,
             "model_config": self.model_config,
+            "metadata": metadata,
             "input": input_payload,
             "input_sha256": sha256_text(canonical_json(input_payload)),
             "output": output,
@@ -288,7 +297,7 @@ class TracingLLMProvider:
             "token_usage": token_usage or {},
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
-            **self._metadata_for(purpose),
+            **metadata,
         }
         if error is not None:
             payload["error"] = {

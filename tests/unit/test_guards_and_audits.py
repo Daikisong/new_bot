@@ -775,6 +775,8 @@ def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) ->
     incomplete_trace = _trace_payload(prompt_sha256="blind-hash")
     incomplete_trace.pop("model_config")
     incomplete_trace.pop("prompt_version")
+    incomplete_trace["schema_version"] = "bad.trace.schema"
+    incomplete_trace["metadata"] = {"prompt_version": "different"}
     incomplete_trace["input_sha256"] = "wrong"
     incomplete_trace["token_usage"] = {}
     write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", incomplete_trace)
@@ -786,7 +788,9 @@ def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) ->
 
     assert not result["passed"]
     assert "TRACE-daily.json: trace missing model_config" in result["findings"]
+    assert "TRACE-daily.json: trace schema_version is invalid" in result["findings"]
     assert "TRACE-daily.json: trace missing prompt_version" in result["findings"]
+    assert "TRACE-daily.json: trace metadata prompt_version mismatch" in result["findings"]
     assert "TRACE-daily.json: trace input_sha256 mismatch" in result["findings"]
     assert "TRACE-daily.json: trace missing prompt token estimate" in result["findings"]
 

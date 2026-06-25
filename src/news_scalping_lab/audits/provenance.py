@@ -691,6 +691,9 @@ def _trace_metadata_by_purpose(root: Path, findings: list[str]) -> dict[str, dic
 
 
 def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str]) -> None:
+    schema_version = payload.get("schema_version")
+    if schema_version is not None and schema_version != "nslab.llm_trace.v1":
+        findings.append(f"{path.name}: trace schema_version is invalid")
     operation = _string_field(path, payload, "operation", findings)
     status = _string_field(path, payload, "status", findings)
     _string_field(path, payload, "trace_id", findings)
@@ -701,6 +704,16 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
     _string_field(path, payload, "checkpoint_id", findings, required=False)
     if operation in {"generate_text", "generate_structured"}:
         _string_field(path, payload, "prompt_version", findings)
+    metadata = payload.get("metadata")
+    if metadata is not None:
+        if not isinstance(metadata, dict):
+            findings.append(f"{path.name}: trace metadata is not an object")
+        elif (
+            operation in {"generate_text", "generate_structured"}
+            and "prompt_version" in metadata
+            and payload.get("prompt_version") != metadata.get("prompt_version")
+        ):
+            findings.append(f"{path.name}: trace metadata prompt_version mismatch")
     if not isinstance(payload.get("model_config"), dict) or not payload.get("model_config"):
         findings.append(f"{path.name}: trace missing model_config")
     trace_input = payload.get("input")
