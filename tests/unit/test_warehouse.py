@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time
 from pathlib import Path
 
@@ -198,6 +199,79 @@ def test_warehouse_projects_mechanism_and_company_memory(tmp_path) -> None:
             '["benefits from component shortage"]',
         )
     ]
+
+
+def test_warehouse_projects_daily_outcome_evaluation_metadata(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    report = {
+        "schema_version": "nslab.evaluation.v1",
+        "execution_protocol_version": "nslab.exhaustive_news_blind_full_market.v5",
+        "trade_date": "2030-01-10",
+        "created_at": "2030-01-10T16:00:00+09:00",
+        "blind_prediction_id": "PRED-warehouse-outcome",
+        "blind_prediction_sha256": "c" * 64,
+        "outcome_coverage_status": "FULL_MARKET_COMPLETE",
+        "outcomes": {
+            "Warehouse Outcome Co": {
+                "intraday_high_return_pct": 29.5,
+                "upper_limit_touched": True,
+                "upper_limit_closed": False,
+            }
+        },
+        "performance_metrics": {
+            "candidate_count": 1,
+            "upper_limit_recall_at_5": 1.0,
+            "precision_at_5": 1.0,
+        },
+        "postmortem": {
+            "summary": "Warehouse projection preserves evaluation metadata.",
+            "hits": ["Warehouse Outcome Co"],
+            "misses": [],
+            "false_positives": [],
+            "failure_codes": [],
+            "lessons": ["Keep evaluation metadata available in derived projections."],
+        },
+        "eligibility_matrix": {
+            "forecast_evaluation_eligible": True,
+            "direct_supervised_cases_eligible": True,
+            "theme_supervised_cases_eligible": True,
+            "leader_pair_training_eligible": False,
+            "retrospective_memory_eligible": True,
+            "brain_eligible": True,
+            "reasons": {
+                "leader_pair_training_eligible": "need at least two resolved blind candidates"
+            },
+        },
+    }
+    write_json(tmp_path / "reports" / "2030-01-10_postmortem.json", report)
+
+    counts = WarehouseStore(tmp_path).rebuild_all()
+
+    assert counts["daily_outcomes"] == 1
+    rows = _query_parquet(
+        tmp_path / "warehouse" / "daily_outcomes.parquet",
+        (
+            "schema_version, execution_protocol_version, trade_date, "
+            "blind_prediction_id, blind_prediction_sha256, outcome_count, "
+            "outcome_coverage_status, outcomes_json, performance_metrics_json, "
+            "postmortem_json, eligibility_matrix_json"
+        ),
+    )
+    row = rows[0]
+    assert row[0:7] == (
+        "nslab.evaluation.v1",
+        "nslab.exhaustive_news_blind_full_market.v5",
+        "2030-01-10",
+        "PRED-warehouse-outcome",
+        "c" * 64,
+        1,
+        "FULL_MARKET_COMPLETE",
+    )
+    assert json.loads(str(row[7]))["Warehouse Outcome Co"]["upper_limit_touched"] is True
+    assert json.loads(str(row[8]))["upper_limit_recall_at_5"] == 1.0
+    assert json.loads(str(row[9]))["hits"] == ["Warehouse Outcome Co"]
+    assert json.loads(str(row[10]))["brain_eligible"] is True
 
 
 def test_previous_trade_day_is_calendar_previous_day() -> None:

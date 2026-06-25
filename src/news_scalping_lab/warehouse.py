@@ -255,11 +255,18 @@ class WarehouseStore:
             data = read_json(path)
             rows.append(
                 {
+                    "schema_version": data.get("schema_version"),
+                    "execution_protocol_version": data.get("execution_protocol_version"),
                     "trade_date": data.get("trade_date"),
                     "blind_prediction_id": data.get("blind_prediction_id"),
+                    "blind_prediction_sha256": data.get("blind_prediction_sha256"),
                     "created_at": data.get("created_at"),
                     "outcome_count": len(data.get("outcomes", {})),
+                    "outcome_coverage_status": data.get("outcome_coverage_status"),
+                    "outcomes_json": _json(data.get("outcomes", {})),
+                    "performance_metrics_json": _json(data.get("performance_metrics", {})),
                     "postmortem_json": _json(data.get("postmortem", {})),
+                    "eligibility_matrix_json": _json(data.get("eligibility_matrix", {})),
                 }
             )
         self._write_rows("daily_outcomes.parquet", rows)
