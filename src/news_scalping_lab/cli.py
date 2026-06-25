@@ -1191,6 +1191,9 @@ def _inspect_source_ledger_artifact(
             "required_fields_verified": None,
             "source_ids_verified": None,
             "duplicate_source_ids_absent": None,
+            "web_sources_covered_verified": None,
+            "candidate_web_sources_covered_verified": None,
+            "excluded_sources_absent_verified": None,
             "source_url_verified": None,
             "raw_content_absent_verified": None,
             "usage_phase_verified": None,
@@ -1240,6 +1243,36 @@ def _inspect_source_ledger_artifact(
     status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
     if not status["duplicate_source_ids_absent"]:
         status["errors"].append("source_ledger_duplicate_source_id")
+
+    ledger_web_source_ids = _source_ledger_source_ids_for_type(
+        rows, "web_search_result"
+    )
+    status["web_sources_covered_verified"] = _same_unique_string_set(
+        ledger_web_source_ids,
+        manifest.get("web_sources"),
+    )
+    if not status["web_sources_covered_verified"]:
+        status["errors"].append("source_ledger_web_sources_mismatch")
+
+    ledger_candidate_web_source_ids = _source_ledger_source_ids_for_type(
+        rows, "candidate_web_check"
+    )
+    status["candidate_web_sources_covered_verified"] = (
+        ledger_candidate_web_source_ids
+        == _string_list(manifest.get("candidate_web_source_ids"))
+    )
+    if not status["candidate_web_sources_covered_verified"]:
+        status["errors"].append("source_ledger_candidate_web_sources_mismatch")
+
+    excluded_source_ids = {
+        *_string_list(manifest.get("excluded_web_source_ids")),
+        *_string_list(manifest.get("excluded_candidate_web_source_ids")),
+    }
+    status["excluded_sources_absent_verified"] = not (
+        set(source_ids) & excluded_source_ids
+    )
+    if not status["excluded_sources_absent_verified"]:
+        status["errors"].append("source_ledger_excluded_source_present")
 
     status["source_url_verified"] = all(
         _source_url_valid(row) for row in rows
@@ -3599,6 +3632,9 @@ def _source_ledger_status_passed(status: dict[str, Any]) -> bool:
         and status.get("required_fields_verified")
         and status.get("source_ids_verified")
         and status.get("duplicate_source_ids_absent")
+        and status.get("web_sources_covered_verified")
+        and status.get("candidate_web_sources_covered_verified")
+        and status.get("excluded_sources_absent_verified")
         and status.get("source_url_verified")
         and status.get("raw_content_absent_verified")
         and status.get("usage_phase_verified")
@@ -4080,6 +4116,18 @@ def _unique_strings(values: Iterable[str]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _source_ledger_source_ids_for_type(
+    rows: list[dict[str, Any]],
+    source_type: str,
+) -> list[str]:
+    return _unique_strings(
+        str(row["source_id"])
+        for row in rows
+        if row.get("source_type") == source_type
+        and isinstance(row.get("source_id"), str)
+    )
 
 
 def _same_unique_string_set(left: object, right: object) -> bool:

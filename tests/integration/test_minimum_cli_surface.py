@@ -347,6 +347,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["source_ledger"]["required_fields_verified"] is True
     assert supporting["source_ledger"]["source_ids_verified"] is True
     assert supporting["source_ledger"]["duplicate_source_ids_absent"] is True
+    assert supporting["source_ledger"]["web_sources_covered_verified"] is True
+    assert (
+        supporting["source_ledger"]["candidate_web_sources_covered_verified"]
+        is True
+    )
+    assert supporting["source_ledger"]["excluded_sources_absent_verified"] is True
     assert supporting["source_ledger"]["source_url_verified"] is True
     assert supporting["source_ledger"]["raw_content_absent_verified"] is True
     assert supporting["source_ledger"]["usage_phase_verified"] is True
@@ -461,6 +467,57 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert strict_tampered_prediction_inspection["reproducibility_checks_passed"] is False
     write_json(prediction_file, original_prediction)
     write_json(manifest_file, original_manifest_for_prediction)
+
+    source_ledger_file = tmp_path / context_payload["source_ledger_artifact"]
+    original_source_ledger = source_ledger_file.read_text(encoding="utf-8")
+    original_manifest_for_source_ledger = read_json(manifest_file)
+    tampered_source_ledger_rows = []
+    removed_candidate_source = False
+    for row in (
+        json.loads(line)
+        for line in original_source_ledger.splitlines()
+        if line.strip()
+    ):
+        if row.get("source_type") == "candidate_web_check" and not removed_candidate_source:
+            removed_candidate_source = True
+            continue
+        tampered_source_ledger_rows.append(row)
+    assert removed_candidate_source is True
+    tampered_source_ledger_payload = "".join(
+        canonical_json(row) + "\n" for row in tampered_source_ledger_rows
+    )
+    source_ledger_file.write_text(tampered_source_ledger_payload, encoding="utf-8")
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_source_ledger,
+            "source_ledger_entry_count": len(tampered_source_ledger_rows),
+            "source_ledger_sha256": sha256_text(tampered_source_ledger_payload),
+        },
+    )
+    tampered_source_ledger_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok("context inspect tampered source ledger", tampered_source_ledger_context)
+    tampered_source_ledger_inspection = json.loads(
+        tampered_source_ledger_context.output
+    )["inspection"]
+    assert tampered_source_ledger_inspection["reproducibility_checks_passed"] is False
+    tampered_source_ledger_status = tampered_source_ledger_inspection[
+        "supporting_artifacts"
+    ]["source_ledger"]
+    assert tampered_source_ledger_status["hash_verified"] is True
+    assert tampered_source_ledger_status["entry_count_verified"] is True
+    assert (
+        tampered_source_ledger_status["candidate_web_sources_covered_verified"]
+        is False
+    )
+    assert "source_ledger_candidate_web_sources_mismatch" in (
+        tampered_source_ledger_status["errors"]
+    )
+    source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_source_ledger)
+
     candidate_expansion_file = tmp_path / context_payload["candidate_expansion_artifact"]
     original_candidate_expansion = read_json(candidate_expansion_file)
     original_manifest_for_candidate_expansion = read_json(manifest_file)

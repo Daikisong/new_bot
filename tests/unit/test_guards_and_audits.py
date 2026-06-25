@@ -901,6 +901,99 @@ def test_provenance_audit_validates_manifest_supporting_jsonl_artifacts(
     assert "2030-01-10.json: context manifest source_ledger count mismatch" in findings
 
 
+def test_provenance_audit_validates_source_ledger_manifest_source_coverage(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-ledger",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(run_id="RUN-ledger"), encoding="utf-8"
+    )
+    source_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "source_ledger"
+        / "RUN-ledger"
+        / "source_ledger.jsonl"
+    )
+    source_path.parent.mkdir(parents=True)
+
+    def ledger_row(source_id: str, source_type: str) -> dict[str, str]:
+        return {
+            "schema_version": "nslab.source_ledger.v1",
+            "run_id": "RUN-ledger",
+            "source_id": source_id,
+            "source_type": source_type,
+        }
+
+    source_rows = [
+        ledger_row("WEB-A", "web_search_result"),
+        ledger_row("WEB-B", "web_search_result"),
+        ledger_row("WEB-C", "candidate_web_check"),
+    ]
+    source_text = "".join(canonical_json(row) + "\n" for row in source_rows)
+    source_path.write_text(source_text, encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-ledger.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-ledger",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "source_ledger_artifact": source_path.relative_to(tmp_path).as_posix(),
+            "source_ledger_sha256": sha256_text(source_text),
+            "source_ledger_entry_count": len(source_rows),
+            "web_sources": ["WEB-B", "WEB-A"],
+            "candidate_web_source_ids": ["WEB-C"],
+            "excluded_web_source_ids": ["WEB-X"],
+            "excluded_candidate_web_source_ids": [],
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_source_rows = [
+        ledger_row("WEB-A", "web_search_result"),
+        ledger_row("WEB-X", "web_search_result"),
+    ]
+    bad_source_text = "".join(canonical_json(row) + "\n" for row in bad_source_rows)
+    source_path.write_text(bad_source_text, encoding="utf-8")
+    manifest = read_json(manifest_path)
+    manifest["source_ledger_sha256"] = sha256_text(bad_source_text)
+    manifest["source_ledger_entry_count"] = len(bad_source_rows)
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest source_ledger web_sources mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest source_ledger "
+        "candidate_web_source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest source_ledger contains excluded source_id"
+        in findings
+    )
+
+
 def test_provenance_audit_validates_event_cluster_and_novelty_artifacts(
     tmp_path: Path,
 ) -> None:

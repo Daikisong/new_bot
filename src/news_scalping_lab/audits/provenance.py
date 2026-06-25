@@ -1993,7 +1993,7 @@ def _check_manifest_output_artifacts(
         label="row_disposition",
         findings=findings,
     )
-    _check_manifest_jsonl_artifact(
+    source_ledger_rows = _check_manifest_jsonl_artifact(
         root,
         prediction_path,
         manifest,
@@ -2004,6 +2004,13 @@ def _check_manifest_output_artifacts(
         label="source_ledger",
         findings=findings,
     )
+    if source_ledger_rows is not None:
+        _check_source_ledger_source_coverage(
+            prediction_path,
+            manifest,
+            source_ledger_rows,
+            findings,
+        )
     event_cluster_rows = _check_manifest_jsonl_artifact(
         root,
         prediction_path,
@@ -2135,6 +2142,50 @@ def _check_manifest_jsonl_artifact(
                     "count mismatch"
                 )
     return rows
+
+
+def _check_source_ledger_source_coverage(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    web_source_ids = _unique_strings(
+        row.get("source_id")
+        for row in rows
+        if row.get("source_type") == "web_search_result"
+    )
+    if not _same_unique_string_set(web_source_ids, _string_list(manifest.get("web_sources"))):
+        findings.append(
+            f"{prediction_path.name}: context manifest source_ledger "
+            "web_sources mismatch"
+        )
+
+    candidate_web_source_ids = _unique_strings(
+        row.get("source_id")
+        for row in rows
+        if row.get("source_type") == "candidate_web_check"
+    )
+    if candidate_web_source_ids != _string_list(manifest.get("candidate_web_source_ids")):
+        findings.append(
+            f"{prediction_path.name}: context manifest source_ledger "
+            "candidate_web_source_ids mismatch"
+        )
+
+    excluded_source_ids = {
+        *_string_list(manifest.get("excluded_web_source_ids")),
+        *_string_list(manifest.get("excluded_candidate_web_source_ids")),
+    }
+    ledger_source_ids = {
+        source_id
+        for row in rows
+        if isinstance(source_id := row.get("source_id"), str)
+    }
+    if ledger_source_ids & excluded_source_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest source_ledger "
+            "contains excluded source_id"
+        )
 
 
 def _check_event_cluster_artifact_summary(
