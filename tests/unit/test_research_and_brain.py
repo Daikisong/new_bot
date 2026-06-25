@@ -7,9 +7,10 @@ from typing import TypeVar
 
 import pytest
 import typer
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typer.testing import CliRunner
 
+from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
@@ -182,6 +183,47 @@ def test_cli_import_batch_can_leave_episodes_unaccepted(
     assert imported_output["imported_episode_ids"] == ["EP-staged-only"]
     assert imported_output["accepted_episode_ids"] == []
     assert ResearchStore(tmp_path).list_accepted() == []
+
+
+def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "strict_episode.json"
+    source.write_text(
+        _batch_episode("EP-strict-source", "Strict source preservation lesson.").model_dump_json(),
+        encoding="utf-8",
+    )
+
+    episode = ResearchImporter(tmp_path).import_path(source, mode="strict")
+
+    strict_provenance = [
+        item for item in episode.provenance if item.source_type == "strict_research_json"
+    ]
+    assert len(strict_provenance) == 1
+    preserved_raw = Path(strict_provenance[0].uri)
+    assert preserved_raw.exists()
+    assert preserved_raw.parent == tmp_path / "data" / "raw" / "research"
+    assert strict_provenance[0].content_sha256 == file_sha256(preserved_raw)
+    assert ResearchStore(tmp_path).get_episode("EP-strict-source").episode_id == (
+        "EP-strict-source"
+    )
+    audit = audit_provenance(tmp_path)
+    assert audit["passed"], audit["findings"]
+    assert audit["checked_research_episode_files"] == 1
+
+
+def test_strict_import_rejects_invalid_episode_without_saving(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "invalid_episode.json"
+    source.write_text('{"episode_id":"EP-invalid"}', encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        ResearchImporter(tmp_path).import_path(source, mode="strict")
+
+    assert ResearchStore(tmp_path).list_episodes() == []
+    raw_files = list((tmp_path / "data" / "raw" / "research").glob("*invalid_episode.json"))
+    assert len(raw_files) == 1
 
 
 def test_research_accept_reject_stages_are_mutually_exclusive(tmp_path) -> None:

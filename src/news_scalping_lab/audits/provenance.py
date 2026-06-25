@@ -12,6 +12,7 @@ from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
+STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -93,10 +94,12 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
     checked = 0
     for path in _iter_research_episode_paths(root):
         episode = _read_json_object(path, findings)
-        if episode is None or not _has_semantic_import_provenance(episode):
+        if episode is None or not _has_import_provenance(episode):
             continue
         checked += 1
-        _check_semantic_import_audit(root, path, episode, findings)
+        if _has_semantic_import_provenance(episode):
+            _check_semantic_import_audit(root, path, episode, findings)
+        _check_strict_import_provenance(root, path, episode, findings)
     return checked
 
 
@@ -220,6 +223,26 @@ def _has_semantic_import_provenance(episode: dict[str, Any]) -> bool:
         entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
         for entry in _iter_provenance_entries(episode)
     )
+
+
+def _has_import_provenance(episode: dict[str, Any]) -> bool:
+    return _has_semantic_import_provenance(episode) or any(
+        entry.get("source_type") == STRICT_IMPORT_SOURCE_TYPE
+        for entry in _iter_provenance_entries(episode)
+    )
+
+
+def _check_strict_import_provenance(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    for index, entry in enumerate(_iter_provenance_entries(episode), start=1):
+        if entry.get("source_type") != STRICT_IMPORT_SOURCE_TYPE:
+            continue
+        _check_memory_source(root, label, index, entry, findings, kind="strict import")
 
 
 def _check_semantic_import_audit(
