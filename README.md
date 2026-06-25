@@ -205,6 +205,9 @@ set NSLAB_STOCK_WEB_CACHE_PATH=data/cache/stock-web
 set NSLAB_STOCK_WEB_REMOTE_URL=https://github.com/Songdaiki/stock-web.git
 ```
 
+`nslab doctor` reports the effective stock-web path it will inspect: the explicit
+path when present, otherwise the enabled cache path.
+
 The adapter reads `atlas/manifest.json` and `atlas/schema.json`, then uses the
 configured shard roots such as:
 

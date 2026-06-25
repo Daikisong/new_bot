@@ -42,9 +42,15 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
     store = ResearchStore(settings.project_root)
     accepted_episode_count = len(store.list_accepted())
     stock_web_path = _resolved_optional_path(settings, settings.stock_web_path)
+    stock_web_cache_path = settings.path(settings.stock_web_cache_path)
+    stock_web_effective_path, stock_web_effective_source = _stock_web_effective_path(
+        settings,
+        configured_path=stock_web_path,
+        cache_path=stock_web_cache_path,
+    )
     stock_web_schema = (
-        StockWebPriceSource(stock_web_path).inspect_atlas_schema()
-        if stock_web_path is not None and stock_web_path.exists()
+        StockWebPriceSource(stock_web_effective_path).inspect_atlas_schema()
+        if stock_web_effective_path is not None and stock_web_effective_path.exists()
         else None
     )
     schema_dir = settings.path("schemas")
@@ -68,8 +74,17 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "path": stock_web_path.as_posix() if stock_web_path is not None else None,
             "path_exists": bool(stock_web_path is not None and stock_web_path.exists()),
             "cache_enabled": settings.stock_web_cache_enabled,
-            "cache_path": settings.path(settings.stock_web_cache_path).as_posix(),
-            "cache_path_exists": settings.path(settings.stock_web_cache_path).exists(),
+            "cache_path": stock_web_cache_path.as_posix(),
+            "cache_path_exists": stock_web_cache_path.exists(),
+            "effective_path": (
+                stock_web_effective_path.as_posix()
+                if stock_web_effective_path is not None
+                else None
+            ),
+            "effective_path_exists": bool(
+                stock_web_effective_path is not None and stock_web_effective_path.exists()
+            ),
+            "effective_path_source": stock_web_effective_source,
             "remote_url": settings.stock_web_remote_url,
             "schema": stock_web_schema,
         },
@@ -96,6 +111,23 @@ def _resolved_optional_path(settings: Settings, path: Path | None) -> Path | Non
     if path is None:
         return None
     return settings.path(path)
+
+
+def _stock_web_effective_path(
+    settings: Settings,
+    *,
+    configured_path: Path | None,
+    cache_path: Path,
+) -> tuple[Path | None, str]:
+    if configured_path is not None and configured_path.exists():
+        return configured_path, "path"
+    if settings.stock_web_cache_enabled and cache_path.exists():
+        return cache_path, "cache"
+    if configured_path is not None:
+        return configured_path, "path"
+    if settings.stock_web_cache_enabled:
+        return cache_path, "cache"
+    return None, "none"
 
 
 def _environment_status() -> dict[str, dict[str, object]]:

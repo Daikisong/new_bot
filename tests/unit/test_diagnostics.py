@@ -75,6 +75,9 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
         "status": "configured_not_called",
     }
     assert report["stock_web"]["path_exists"] is True
+    assert report["stock_web"]["effective_path"] == (tmp_path / "stock-web").as_posix()
+    assert report["stock_web"]["effective_path_exists"] is True
+    assert report["stock_web"]["effective_path_source"] == "path"
     assert report["stock_web"]["schema"]["source_name"] == "stock-web-test"
     assert report["warehouse"]["status"] == "ok"
     assert "research_episodes.parquet" in report["warehouse"]["counts"]
@@ -127,3 +130,37 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
         "missing_episode_ids": [],
         "status": "complete",
     }
+
+
+def test_doctor_report_inspects_stock_web_cache_when_no_explicit_path(tmp_path) -> None:
+    settings = Settings(
+        project_root=tmp_path,
+        stock_web_path=None,
+        stock_web_cache_enabled=True,
+        stock_web_cache_path=tmp_path / "cache" / "stock-web",
+    )
+    ensure_project_dirs(settings)
+    atlas = tmp_path / "cache" / "stock-web" / "atlas"
+    atlas.mkdir(parents=True)
+    write_json(
+        atlas / "manifest.json",
+        {
+            "source_name": "stock-web-cache-test",
+            "source_repo_url": "https://example.test/cache-stock-web",
+        },
+    )
+    write_json(atlas / "schema.json", {"tradable_shard_columns": {"d": "date"}})
+
+    report = build_doctor_report(settings)
+
+    assert report["stock_web"]["path"] is None
+    assert report["stock_web"]["path_exists"] is False
+    assert report["stock_web"]["cache_enabled"] is True
+    assert report["stock_web"]["cache_path"] == (tmp_path / "cache" / "stock-web").as_posix()
+    assert report["stock_web"]["cache_path_exists"] is True
+    assert report["stock_web"]["effective_path"] == (
+        tmp_path / "cache" / "stock-web"
+    ).as_posix()
+    assert report["stock_web"]["effective_path_exists"] is True
+    assert report["stock_web"]["effective_path_source"] == "cache"
+    assert report["stock_web"]["schema"]["source_name"] == "stock-web-cache-test"
