@@ -1946,6 +1946,110 @@ def test_provenance_audit_verifies_training_export_source_hashes(
     assert f"{label}: training export source_hash mismatch: EP-training" in result["findings"]
 
 
+def test_provenance_audit_flags_blind_safe_training_row_hindsight_content(
+    tmp_path: Path,
+) -> None:
+    export_dir = tmp_path / "training_exports" / "sft"
+    export_dir.mkdir(parents=True)
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True)
+    accepted_path = accepted_dir / "EP-training.json"
+    write_json(
+        accepted_path,
+        {
+            "episode_id": "EP-training",
+            "postmortem": {
+                "summary": "Winner hit and loser failed.",
+                "failure_codes": ["DIRECTNESS_ERROR"],
+                "lessons": ["prefer verified directness over loose theme breadth"],
+            },
+        },
+    )
+    source_hash = file_sha256(accepted_path)
+    output_path = export_dir / "sft.jsonl"
+    row = {
+        "schema_version": "nslab.training_example.v1",
+        "task": "blind_reasoning",
+        "training_category": "blind_reasoning_examples",
+        "episode_id": "EP-training",
+        "hindsight_safe_for_blind_sft": True,
+        "source_phase": "BLIND",
+        "input": {"current_news": ["pre-cutoff event"]},
+        "output": {
+            "summary": "Blind answer contaminated by prefer verified directness over loose theme breadth"
+        },
+        "provenance": [
+            {
+                "source_id": "EP-training:accepted_episode",
+                "source_type": "accepted_research_episode",
+                "uri": "research/accepted/EP-training.json",
+                "content_sha256": source_hash,
+            }
+        ],
+    }
+    output_path.write_text(
+        json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        export_dir / "manifest.json",
+        {
+            "schema_version": "nslab.training_export_manifest.v1",
+            "kind": "sft",
+            "output_file": output_path.relative_to(tmp_path).as_posix(),
+            "output_sha256": file_sha256(output_path),
+            "row_count": 1,
+            "episode_count": 1,
+            "episode_ids": ["EP-training"],
+            "eligible_episode_count": 1,
+            "skipped_episode_count": 0,
+            "skipped_episodes": [],
+            "task_counts": {"blind_reasoning": 1},
+            "required_training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "positive_vs_negative_candidate_preferences",
+                "failure_correction_examples",
+            ],
+            "training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "category_counts": {
+                "blind_reasoning_examples": 1,
+                "theme_formation_examples": 0,
+                "beneficiary_discovery_examples": 0,
+                "leader_selection_comparisons": 0,
+                "failure_correction_examples": 0,
+            },
+            "missing_training_categories": [
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "blind_safe_row_count": 1,
+            "hindsight_row_count": 0,
+            "source_phase_counts": {"BLIND": 1},
+            "source_hashes": {"EP-training": source_hash},
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    label = "training_exports/sft/manifest.json"
+    assert (
+        f"{label}: training export row 1 blind-safe SFT contains postmortem content"
+        in result["findings"]
+    )
+
+
 def test_provenance_audit_flags_training_export_episode_coverage_gap(
     tmp_path: Path,
 ) -> None:

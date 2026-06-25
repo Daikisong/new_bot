@@ -1715,6 +1715,7 @@ def _check_training_export_manifest(
         findings.append(f"{label}: training export output_file not found")
         return
     source_hashes = _training_export_source_hashes(root, label, manifest, findings)
+    source_payloads = _training_export_source_payloads(root, source_hashes)
     expected_sha = manifest.get("output_sha256")
     if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
         findings.append(f"{label}: training export output_sha256 mismatch")
@@ -1733,6 +1734,7 @@ def _check_training_export_manifest(
         allowed_categories,
         rows,
         source_hashes=source_hashes,
+        source_payloads=source_payloads,
         findings=findings,
     )
     _check_training_export_manifest_counts(label, kind, manifest, rows, findings)
@@ -1762,6 +1764,24 @@ def _training_export_source_hashes(
         if file_sha256(accepted_path) != expected_hash:
             findings.append(f"{label}: training export source_hash mismatch: {episode_id}")
     return source_hashes
+
+
+def _training_export_source_payloads(
+    root: Path,
+    source_hashes: dict[str, str],
+) -> dict[str, dict[str, Any]]:
+    payloads: dict[str, dict[str, Any]] = {}
+    for episode_id in source_hashes:
+        accepted_path = root / "research" / "accepted" / f"{episode_id}.json"
+        if not accepted_path.exists():
+            continue
+        try:
+            payload = read_json(accepted_path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            payloads[episode_id] = payload
+    return payloads
 
 
 def _check_training_export_episode_scope(
@@ -1895,6 +1915,7 @@ def _check_training_export_rows(
     rows: list[dict[str, Any]],
     *,
     source_hashes: dict[str, str],
+    source_payloads: dict[str, dict[str, Any]],
     findings: list[str],
 ) -> None:
     for index, row in enumerate(rows, start=1):
@@ -1928,6 +1949,73 @@ def _check_training_export_rows(
             source_hashes=source_hashes,
             findings=findings,
         )
+        _check_training_export_blind_row_hindsight_leaks(
+            label,
+            index,
+            kind,
+            row,
+            source_payloads=source_payloads,
+            findings=findings,
+        )
+
+
+def _check_training_export_blind_row_hindsight_leaks(
+    label: str,
+    index: int,
+    kind: str,
+    row: dict[str, Any],
+    *,
+    source_payloads: dict[str, dict[str, Any]],
+    findings: list[str],
+) -> None:
+    if (
+        kind != "sft"
+        or row.get("hindsight_safe_for_blind_sft") is not True
+        or row.get("source_phase") != "BLIND"
+    ):
+        return
+    episode_id = row.get("episode_id")
+    if not isinstance(episode_id, str):
+        return
+    source_payload = source_payloads.get(episode_id)
+    if source_payload is None:
+        return
+    forbidden_snippets = _training_export_postmortem_snippets(source_payload)
+    if not forbidden_snippets:
+        return
+    row_text = canonical_json({"input": row.get("input"), "output": row.get("output")})
+    for snippet in forbidden_snippets:
+        if snippet in row_text:
+            findings.append(
+                f"{label}: training export row {index} blind-safe SFT contains "
+                "postmortem content"
+            )
+            return
+
+
+def _training_export_postmortem_snippets(
+    episode: dict[str, Any],
+) -> list[str]:
+    postmortem = episode.get("postmortem")
+    if not isinstance(postmortem, dict):
+        return []
+    snippets: list[str] = []
+    for field in ("summary", "failure_codes", "lessons"):
+        _collect_training_export_hindsight_strings(postmortem.get(field), snippets)
+    return sorted({snippet for snippet in snippets if len(snippet) >= 8})
+
+
+def _collect_training_export_hindsight_strings(value: Any, snippets: list[str]) -> None:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            snippets.append(text)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_training_export_hindsight_strings(item, snippets)
+    elif isinstance(value, dict):
+        for item in value.values():
+            _collect_training_export_hindsight_strings(item, snippets)
 
 
 def _check_training_export_row_provenance(
