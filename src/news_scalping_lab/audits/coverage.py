@@ -3,26 +3,39 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import duckdb
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.utils import read_json
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
 def audit_coverage(root: Path) -> dict[str, object]:
     brain = audit_brain(root)
     accepted_episode_count = _int_value(brain.get("accepted_episode_count"))
+    accepted_episodes = ResearchStore(root).list_accepted()
     vector_index = inspect_vector_index(root)
     warehouse_counts = WarehouseStore(root).counts()
     warehouse_research_episode_count = _int_value(
         warehouse_counts.get("research_episodes.parquet")
     )
-    warehouse_expected_source_counts = _warehouse_expected_source_counts(root)
+    warehouse_expected_source_counts = _warehouse_expected_source_counts(
+        root,
+        accepted_episodes,
+    )
     warehouse_count_mismatches = _warehouse_count_mismatches(
         warehouse_counts,
         warehouse_expected_source_counts,
+    )
+    warehouse_identity_expectations = _warehouse_identity_expectations(root, accepted_episodes)
+    warehouse_identity_mismatches = _warehouse_identity_mismatches(
+        root,
+        warehouse_identity_expectations,
     )
     missing_warehouse_files = [
         filename
@@ -36,7 +49,9 @@ def audit_coverage(root: Path) -> dict[str, object]:
     ]
     vector_index_current = vector_index.get("status") == "current"
     warehouse_synced = warehouse_research_episode_count == accepted_episode_count
-    warehouse_projection_synced = not warehouse_count_mismatches
+    warehouse_projection_synced = not warehouse_count_mismatches and not (
+        warehouse_identity_mismatches
+    )
     warehouse_required_files_present = (
         not missing_warehouse_files and not unreadable_warehouse_files
     )
@@ -69,11 +84,19 @@ def audit_coverage(root: Path) -> dict[str, object]:
         findings.append(f"warehouse: missing required parquet file: {filename}")
     for filename in unreadable_warehouse_files:
         findings.append(f"warehouse: unreadable required parquet file: {filename}")
-    for filename, mismatch in warehouse_count_mismatches.items():
+    for filename, count_mismatch in warehouse_count_mismatches.items():
         label = warehouse_expected_source_counts[filename]["source_label"]
         findings.append(
-            f"warehouse: {filename} count {mismatch['actual']} != "
-            f"{label} count {mismatch['expected']}"
+            f"warehouse: {filename} count {count_mismatch['actual']} != "
+            f"{label} count {count_mismatch['expected']}"
+        )
+    for filename, identity_mismatch in warehouse_identity_mismatches.items():
+        expectation = warehouse_identity_expectations[filename]
+        missing = ", ".join(identity_mismatch["missing"]) or "none"
+        extra = ", ".join(identity_mismatch["extra"]) or "none"
+        findings.append(
+            f"warehouse: {filename} ids mismatch; missing "
+            f"{expectation['source_label']}: {missing}; extra projected ids: {extra}"
         )
     return {
         **brain,
@@ -90,6 +113,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
         "warehouse_counts": warehouse_counts,
         "warehouse_expected_source_counts": warehouse_expected_source_counts,
         "warehouse_count_mismatches": warehouse_count_mismatches,
+        "warehouse_identity_mismatches": warehouse_identity_mismatches,
         "warehouse_research_episode_count": warehouse_research_episode_count,
         "warehouse_synced": warehouse_synced,
         "warehouse_projection_synced": warehouse_projection_synced,
@@ -104,8 +128,11 @@ def _int_value(value: object) -> int:
     return value if isinstance(value, int) else 0
 
 
-def _warehouse_expected_source_counts(root: Path) -> dict[str, dict[str, int | str]]:
-    accepted_counts = _accepted_episode_projection_counts(ResearchStore(root).list_accepted())
+def _warehouse_expected_source_counts(
+    root: Path,
+    accepted_episodes: list[ResearchEpisode],
+) -> dict[str, dict[str, int | str]]:
+    accepted_counts = _accepted_episode_projection_counts(accepted_episodes)
     return {
         "events.parquet": {
             "expected": accepted_counts["events"],
@@ -142,6 +169,113 @@ def _warehouse_expected_source_counts(root: Path) -> dict[str, dict[str, int | s
             "source_label": "source mechanism memory records",
         },
     }
+
+
+def _warehouse_identity_expectations(
+    root: Path,
+    accepted_episodes: list[ResearchEpisode],
+) -> dict[str, dict[str, Any]]:
+    return {
+        "research_episodes.parquet": {
+            "columns": ("episode_id",),
+            "expected": sorted(episode.episode_id for episode in accepted_episodes),
+            "source_label": "accepted episode ids",
+        },
+        "events.parquet": {
+            "columns": ("episode_id", "event_id"),
+            "expected": sorted(
+                _identity(episode.episode_id, event.event_id)
+                for episode in accepted_episodes
+                for event in episode.observed_events
+            ),
+            "source_label": "accepted event ids",
+        },
+        "event_sources.parquet": {
+            "columns": ("episode_id", "event_id", "source_id", "uri"),
+            "expected": sorted(
+                _identity(episode.episode_id, event.event_id, source.source_id, source.uri)
+                for episode in accepted_episodes
+                for event in episode.observed_events
+                for source in event.provenance
+            ),
+            "source_label": "accepted event source ids",
+        },
+        "event_ticker_edges.parquet": {
+            "columns": ("episode_id", "edge_id"),
+            "expected": sorted(
+                _identity(edge.episode_id, edge.edge_id)
+                for episode in accepted_episodes
+                for edge in episode.event_ticker_edges
+            ),
+            "source_label": "accepted event ticker edge ids",
+        },
+        "market_memory.parquet": {
+            "columns": ("claim_id",),
+            "expected": sorted(
+                claim.claim_id
+                for episode in accepted_episodes
+                for claim in [*episode.lessons, *episode.counterexamples]
+            ),
+            "source_label": "accepted market memory claim ids",
+        },
+        "predictions.parquet": {
+            "columns": ("prediction_id",),
+            "expected": _source_prediction_ids(root),
+            "source_label": "source predictions",
+        },
+    }
+
+
+def _warehouse_identity_mismatches(
+    root: Path,
+    expectations: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, list[str]]]:
+    mismatches: dict[str, dict[str, list[str]]] = {}
+    for filename, expectation in expectations.items():
+        expected = set(_string_items(expectation.get("expected")))
+        if not expected:
+            continue
+        actual = set(
+            _warehouse_identity_values(
+                root / "warehouse" / filename,
+                tuple(expectation["columns"]),
+            )
+        )
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        if missing or extra:
+            mismatches[filename] = {"missing": missing, "extra": extra}
+    return mismatches
+
+
+def _warehouse_identity_values(path: Path, columns: tuple[str, ...]) -> list[str]:
+    if not path.exists():
+        return []
+    escaped_path = path.as_posix().replace("'", "''")
+    expression = " || '|' || ".join(
+        f"coalesce(cast({column} as varchar), '')" for column in columns
+    )
+    try:
+        rows = duckdb.sql(
+            f"select {expression} as identity from read_parquet('{escaped_path}')"
+        ).fetchall()
+    except duckdb.Error:
+        return []
+    return [row[0] for row in rows if isinstance(row[0], str) and row[0]]
+
+
+def _source_prediction_ids(root: Path) -> list[str]:
+    prediction_ids: list[str] = []
+    for path in sorted((root / "predictions").glob("*.json")):
+        data = read_json(path)
+        prediction_id = data.get("prediction_id")
+        if isinstance(prediction_id, str) and prediction_id:
+            prediction_ids.append(prediction_id)
+    return sorted(prediction_ids)
+
+
+def _identity(*parts: object) -> str:
+    return "|".join(str(part) for part in parts)
 
 
 def _accepted_episode_projection_counts(episodes: list[ResearchEpisode]) -> dict[str, int]:

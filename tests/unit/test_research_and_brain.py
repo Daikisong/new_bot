@@ -20,6 +20,7 @@ from news_scalping_lab.cli import brain_audit as cli_brain_audit
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
+    BlindPrediction,
     BrainManifest,
     CompanyMemory,
     EventTickerEdge,
@@ -880,6 +881,49 @@ def test_coverage_audit_requires_accepted_episode_projection_counts(tmp_path) ->
         "warehouse: market_memory.parquet count 0 != accepted market memory claims count 1"
         in failed["findings"]
     )
+
+
+def test_coverage_audit_requires_warehouse_prediction_id_set_to_match_source(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Prediction identity audit research note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    trade_day = date(2030, 1, 10)
+    cutoff_at = datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST)
+    source_prediction = BlindPrediction(
+        prediction_id="PRED-source",
+        trade_date=trade_day,
+        cutoff_at=cutoff_at,
+        created_at=cutoff_at,
+        blind_analysis=BlindAnalysis(summary="Source prediction."),
+    )
+    stale_prediction = source_prediction.model_copy(update={"prediction_id": "PRED-stale"})
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        source_prediction.model_dump(mode="json"),
+    )
+    WarehouseStore(tmp_path).write_prediction(stale_prediction)
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["warehouse_projection_synced"] is False
+    assert audit["warehouse_count_mismatches"] == {}
+    assert audit["warehouse_identity_mismatches"] == {
+        "predictions.parquet": {
+            "extra": ["PRED-stale"],
+            "missing": ["PRED-source"],
+        }
+    }
+    assert (
+        "warehouse: predictions.parquet ids mismatch; missing source predictions: "
+        "PRED-source; extra projected ids: PRED-stale"
+    ) in audit["findings"]
 
 
 def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:
