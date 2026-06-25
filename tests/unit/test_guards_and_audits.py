@@ -5334,6 +5334,128 @@ def test_context_inspect_flags_invalid_llm_retry_error_history() -> None:
     assert "retry_errors_0_message_missing" in errors
 
 
+def test_context_inspect_flags_invalid_embed_trace_output_summary() -> None:
+    trace = {
+        "schema_version": "nslab.llm_trace.v1",
+        "trace_id": "TRACE-embed",
+        "operation": "embed",
+        "purpose": "trace.embed",
+        "status": "ok",
+        "provider": "DeterministicMockLLMProvider",
+        "model_config": {"provider": "mock"},
+        "input": {
+            "texts_sha256": "abc123",
+            "text_count": 1,
+            "total_chars": 5,
+        },
+        "input_sha256": "",
+        "output": {"vector_count": -1, "dimensions": True},
+        "output_sha256": "",
+        "checkpoint_id": "LLMCKPT-embed",
+        "tool_calls": [],
+        "retries": 0,
+        "retry_errors": [],
+        "token_usage": {"prompt_tokens_estimate": 1},
+        "started_at": "2030-01-10T08:59:00+09:00",
+        "finished_at": "2030-01-10T08:59:01+09:00",
+    }
+    trace["input_sha256"] = sha256_text(canonical_json(trace["input"]))
+    trace["output_sha256"] = sha256_text(canonical_json(trace["output"]))
+
+    errors = _llm_trace_payload_errors(trace)
+
+    assert "embed_output_vector_count_invalid" in errors
+    assert "embed_output_dimensions_invalid" in errors
+    assert "embed_output_vectors_sha256_missing" in errors
+
+
+def test_provenance_audit_flags_invalid_embed_trace_output_summary(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    (tmp_path / "runs" / "checkpoints" / "llm").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    trace = {
+        "schema_version": "nslab.llm_trace.v1",
+        "trace_id": "TRACE-embed",
+        "operation": "embed",
+        "purpose": "trace.embed",
+        "status": "ok",
+        "provider": "DeterministicMockLLMProvider",
+        "model_config": {"provider": "mock"},
+        "metadata": {},
+        "input": {
+            "texts_sha256": "abc123",
+            "text_count": 1,
+            "total_chars": 5,
+        },
+        "input_sha256": "",
+        "output": {"vector_count": "1", "dimensions": -1},
+        "output_sha256": "",
+        "checkpoint_id": "LLMCKPT-embed",
+        "tool_calls": [],
+        "retries": 0,
+        "retry_errors": [],
+        "token_usage": {"prompt_tokens_estimate": 1},
+        "started_at": "2030-01-10T08:59:00+09:00",
+        "finished_at": "2030-01-10T08:59:01+09:00",
+    }
+    trace["input_sha256"] = sha256_text(canonical_json(trace["input"]))
+    trace["output_sha256"] = sha256_text(canonical_json(trace["output"]))
+    write_json(tmp_path / "runs" / "traces" / "TRACE-embed.json", trace)
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "llm" / "LLMCKPT-embed.json",
+        {
+            "checkpoint_id": "LLMCKPT-embed",
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "operation": "embed",
+            "purpose": "trace.embed",
+            "status": "ok",
+            "provider": "DeterministicMockLLMProvider",
+            "model_config": {"provider": "mock"},
+            "metadata": {},
+            "input": trace["input"],
+            "input_sha256": trace["input_sha256"],
+            "output": [[0.1, 0.2]],
+            "output_sha256": sha256_text(canonical_json([[0.1, 0.2]])),
+            "retries": 0,
+            "retry_errors": [],
+            "updated_at": "2030-01-10T08:59:01+09:00",
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "TRACE-embed.json: trace embed output vector_count invalid" in result["findings"]
+    assert "TRACE-embed.json: trace embed output dimensions invalid" in result["findings"]
+    assert "TRACE-embed.json: trace embed output vectors_sha256 missing" in result["findings"]
+    assert "TRACE-embed.json: trace checkpoint embedding output mismatch" in result["findings"]
+
+
 def test_provenance_audit_flags_llm_checkpoint_mismatch(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

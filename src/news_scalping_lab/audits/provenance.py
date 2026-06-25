@@ -4548,6 +4548,8 @@ def _trace_metadata_by_purpose(root: Path, findings: list[str]) -> dict[str, dic
         if payload is None:
             continue
         _check_trace_payload(path, payload, findings)
+        if payload.get("operation") == "embed":
+            _check_trace_checkpoint(root, path, payload, findings)
         purpose = payload.get("purpose")
         trace_input = payload.get("input")
         if not isinstance(purpose, str) or not isinstance(trace_input, dict):
@@ -4614,6 +4616,11 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
         findings.append(f"{path.name}: trace output_sha256 mismatch")
     if status in {"ok", "checkpoint_hit"} and output is None:
         findings.append(f"{path.name}: successful trace missing output")
+    if operation == "embed":
+        findings.extend(
+            f"{path.name}: {error}"
+            for error in _embedding_trace_output_findings(output)
+        )
     if not isinstance(payload.get("tool_calls"), list):
         findings.append(f"{path.name}: trace tool_calls is not a list")
     retries = payload.get("retries")
@@ -4743,6 +4750,22 @@ def _check_trace_checkpoint(
         findings.append(f"{trace_path.name}: trace checkpoint error mismatch")
     if not isinstance(checkpoint.get("updated_at"), str) or not checkpoint.get("updated_at"):
         findings.append(f"{trace_path.name}: trace checkpoint missing updated_at")
+
+
+def _embedding_trace_output_findings(output: object) -> list[str]:
+    if not isinstance(output, dict):
+        return ["trace embed output summary is not an object"]
+    findings: list[str] = []
+    vector_count = output.get("vector_count")
+    dimensions = output.get("dimensions")
+    vectors_sha256 = output.get("vectors_sha256")
+    if not isinstance(vector_count, int) or isinstance(vector_count, bool) or vector_count < 0:
+        findings.append("trace embed output vector_count invalid")
+    if not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions < 0:
+        findings.append("trace embed output dimensions invalid")
+    if not isinstance(vectors_sha256, str) or not vectors_sha256:
+        findings.append("trace embed output vectors_sha256 missing")
+    return findings
 
 
 def _checkpoint_metadata_matches_trace(

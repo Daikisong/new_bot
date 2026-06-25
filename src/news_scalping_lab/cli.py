@@ -3782,6 +3782,8 @@ def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
         errors.append("output_sha256_mismatch")
     if status in {"ok", "checkpoint_hit"} and output is None:
         errors.append("successful_trace_missing_output")
+    if operation == "embed":
+        errors.extend(_embedding_trace_output_errors(output))
     if not isinstance(payload.get("tool_calls"), list):
         errors.append("tool_calls_not_list")
     retries = payload.get("retries")
@@ -3826,6 +3828,22 @@ def _retry_error_history_errors(value: object, retries: int | None) -> list[str]
             errors.append(f"retry_errors_{index}_type_missing")
         if not isinstance(item.get("message"), str):
             errors.append(f"retry_errors_{index}_message_missing")
+    return errors
+
+
+def _embedding_trace_output_errors(output: object) -> list[str]:
+    if not isinstance(output, dict):
+        return ["embed_output_summary_not_object"]
+    errors: list[str] = []
+    vector_count = output.get("vector_count")
+    dimensions = output.get("dimensions")
+    vectors_sha256 = output.get("vectors_sha256")
+    if not isinstance(vector_count, int) or isinstance(vector_count, bool) or vector_count < 0:
+        errors.append("embed_output_vector_count_invalid")
+    if not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions < 0:
+        errors.append("embed_output_dimensions_invalid")
+    if not isinstance(vectors_sha256, str) or not vectors_sha256:
+        errors.append("embed_output_vectors_sha256_missing")
     return errors
 
 

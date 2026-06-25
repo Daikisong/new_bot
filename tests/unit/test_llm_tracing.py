@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
-from news_scalping_lab.utils import read_json
+from news_scalping_lab.utils import canonical_json, read_json, sha256_text
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -95,6 +95,7 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     }
     structured = next(trace for trace in traces if trace["operation"] == "generate_structured")
     text_trace = next(trace for trace in traces if trace["operation"] == "generate_text")
+    embed_trace = next(trace for trace in traces if trace["operation"] == "embed")
     assert all(trace["schema_version"] == "nslab.llm_trace.v1" for trace in traces)
     assert structured["status"] == "ok"
     assert structured["input"]["response_model"] == "SemanticResearchDraft"
@@ -107,6 +108,13 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
     assert structured["token_usage"]["completion_tokens_estimate"] > 0
     assert text_trace["token_usage"]["completion_tokens_estimate"] > 0
+    assert embed_trace["input"]["text_count"] == 2
+    assert embed_trace["output"] == {
+        "vector_count": 2,
+        "dimensions": len(vectors[0]),
+        "vectors_sha256": sha256_text(canonical_json(vectors)),
+    }
+    assert embed_trace["output_sha256"] == sha256_text(canonical_json(embed_trace["output"]))
     assert structured["tool_calls"] == []
     assert structured["retries"] == 0
     assert structured["retry_errors"] == []
