@@ -134,6 +134,11 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert "DIRECTNESS_ERROR" not in blind_row_text
     assert "postmortem-only edge must not enter blind-safe rows" not in blind_row_text
     assert all(row["source_phase"] == "BLIND" for row in blind_rows)
+    assert all(row["eligibility_basis"]["satisfied"] is True for row in blind_rows)
+    assert all(
+        row["eligibility_basis"]["required_fields"] == ["forecast_evaluation_eligible"]
+        for row in blind_rows
+    )
     theme_row = next(row for row in blind_rows if row["task"] == "theme_formation")
     assert theme_row["output"]["failure_conditions"] == ["leader selection"]
     beneficiary_row = next(row for row in blind_rows if row["task"] == "beneficiary_discovery")
@@ -151,6 +156,9 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     failure_rows = [row for row in sft_rows if row["task"] == "failure_correction"]
     assert failure_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert failure_rows[0]["source_phase"] == "POSTMORTEM"
+    assert failure_rows[0]["eligibility_basis"]["required_fields"] == [
+        "retrospective_memory_eligible"
+    ]
     assert "failure_codes" in failure_rows[0]["output"]
 
     assert preference.row_count == 1
@@ -159,6 +167,9 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert preference_rows[0]["output"]["rejected"] == "LoserCo"
     assert preference_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert preference_rows[0]["source_phase"] == "POSTMORTEM"
+    assert preference_rows[0]["eligibility_basis"]["required_fields"] == [
+        "leader_pair_training_eligible"
+    ]
 
     assert evals.row_count == 3
     assert {row["task"] for row in eval_rows} == {
@@ -167,6 +178,19 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     }
     assert all(row["hindsight_safe_for_blind_sft"] is False for row in eval_rows)
     assert all(row["source_phase"] == "POSTMORTEM" for row in eval_rows)
+    candidate_eval_rows = [
+        row for row in eval_rows if row["task"] == "candidate_outcome_eval"
+    ]
+    failure_eval_row = next(row for row in eval_rows if row["task"] == "failure_code_eval")
+    assert all(
+        row["eligibility_basis"]["required_fields"] == [
+            "direct_supervised_cases_eligible"
+        ]
+        for row in candidate_eval_rows
+    )
+    assert failure_eval_row["eligibility_basis"]["required_fields"] == [
+        "retrospective_memory_eligible"
+    ]
 
     manifest = read_json(sft.manifest_path)
     assert manifest["row_count"] == sft.row_count

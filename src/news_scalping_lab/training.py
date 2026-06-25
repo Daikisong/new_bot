@@ -325,6 +325,7 @@ def _training_row(
     split: str,
     hindsight_safe: bool,
 ) -> dict[str, Any]:
+    eligibility_basis = _eligibility_basis_for_task(task, episode.eligibility_matrix)
     return {
         "schema_version": "nslab.training_example.v1",
         "example_id": stable_id("TRN", split, task, episode.episode_id, input_payload),
@@ -335,6 +336,7 @@ def _training_row(
         "available_from": episode.available_from.isoformat(),
         "hindsight_safe_for_blind_sft": hindsight_safe,
         "source_phase": "BLIND" if hindsight_safe else "POSTMORTEM",
+        "eligibility_basis": eligibility_basis,
         "input": input_payload,
         "output": output_payload,
         "provenance": [item.model_dump(mode="json") for item in episode.provenance],
@@ -386,6 +388,45 @@ def _missing_eligibility_for_kind(kind: str, eligibility: EligibilityMatrix) -> 
         if eligibility.retrospective_memory_eligible:
             required.append("retrospective_memory_eligible")
     return [field for field in required if not bool(getattr(eligibility, field))]
+
+
+def _eligibility_basis_for_task(
+    task: str,
+    eligibility: EligibilityMatrix,
+) -> dict[str, Any]:
+    required_fields = _required_eligibility_for_task(task)
+    return {
+        "required_fields": required_fields,
+        "satisfied": all(bool(getattr(eligibility, field)) for field in required_fields),
+        "field_values": {
+            field: bool(getattr(eligibility, field)) for field in required_fields
+        },
+        "reasons": {
+            field: eligibility.reasons[field]
+            for field in required_fields
+            if field in eligibility.reasons
+        },
+    }
+
+
+def _required_eligibility_for_task(task: str) -> list[str]:
+    if task in {
+        "blind_reasoning",
+        "theme_formation",
+        "beneficiary_discovery",
+        "leader_selection_comparison",
+    }:
+        return ["forecast_evaluation_eligible"]
+    if task in {
+        "positive_vs_negative_candidate_preference",
+        "postmortem_preference_summary",
+    }:
+        return ["leader_pair_training_eligible"]
+    if task == "candidate_outcome_eval":
+        return ["direct_supervised_cases_eligible"]
+    if task in {"failure_correction", "failure_code_eval"}:
+        return ["retrospective_memory_eligible"]
+    return []
 
 
 def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
