@@ -31,15 +31,62 @@ class WarehouseStore:
         store = ResearchStore(self.root)
         episodes = store.list_accepted()
         counts = {
+            "events": self.write_events(episodes),
+            "event_sources": self.write_event_sources(episodes),
             "research_episodes": self.write_research_episodes(episodes),
             "event_ticker_edges": self.write_event_ticker_edges(episodes),
             "market_memory": self.write_market_memory(episodes),
             "predictions": self.write_predictions_from_files(),
             "daily_outcomes": self.write_daily_outcomes_from_files(),
         }
-        self.write_empty("events.parquet")
-        self.write_empty("event_sources.parquet")
         return counts
+
+    def write_events(self, episodes: list[ResearchEpisode]) -> int:
+        rows: list[dict[str, Any]] = []
+        for episode in episodes:
+            for event in episode.observed_events:
+                rows.append(
+                    {
+                        "event_id": event.event_id,
+                        "episode_id": episode.episode_id,
+                        "trade_date": episode.trade_date.isoformat(),
+                        "published_at": event.published_at.isoformat(),
+                        "row_number": event.row_number,
+                        "title": event.title,
+                        "body": event.body,
+                        "source_id": event.source_id,
+                        "provenance_json": _json(event.provenance),
+                    }
+                )
+        self._write_rows("events.parquet", rows)
+        return len(rows)
+
+    def write_event_sources(self, episodes: list[ResearchEpisode]) -> int:
+        rows: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        for episode in episodes:
+            for event in episode.observed_events:
+                for source in event.provenance:
+                    key = (episode.episode_id, event.event_id, source.source_id, source.uri)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rows.append(
+                        {
+                            "source_id": source.source_id,
+                            "event_id": event.event_id,
+                            "episode_id": episode.episode_id,
+                            "source_type": source.source_type,
+                            "uri": source.uri,
+                            "content_sha256": source.content_sha256,
+                            "excerpt": source.excerpt,
+                            "observed_at": (
+                                source.observed_at.isoformat() if source.observed_at else None
+                            ),
+                        }
+                    )
+        self._write_rows("event_sources.parquet", rows)
+        return len(rows)
 
     def write_research_episodes(self, episodes: list[ResearchEpisode]) -> int:
         rows: list[dict[str, Any]] = []
