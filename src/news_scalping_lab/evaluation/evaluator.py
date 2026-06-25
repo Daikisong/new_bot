@@ -31,6 +31,7 @@ from news_scalping_lab.utils import (
     next_trading_day,
     now_kst,
     read_json,
+    relative_to_root,
     stable_id,
     write_json,
 )
@@ -146,6 +147,8 @@ class Evaluator:
     ) -> ResearchEpisode:
         prediction_hash = file_sha256(prediction_path)
         postmortem_hash = file_sha256(postmortem_path)
+        prediction_uri = relative_to_root(prediction_path, self.root)
+        postmortem_uri = relative_to_root(postmortem_path, self.root)
         episode_id = stable_id(
             "EP",
             "evaluation",
@@ -153,16 +156,16 @@ class Evaluator:
             prediction.prediction_id,
         )
         evaluation_provenance = Provenance(
-            source_id=stable_id("SRC", postmortem_path.as_posix(), postmortem_hash),
+            source_id=stable_id("SRC", postmortem_uri, postmortem_hash),
             source_type="evaluation_postmortem",
-            uri=postmortem_path.as_posix(),
+            uri=postmortem_uri,
             content_sha256=postmortem_hash,
             observed_at=now_kst(),
         )
         prediction_provenance = Provenance(
-            source_id=stable_id("SRC", prediction_path.as_posix(), prediction_hash),
+            source_id=stable_id("SRC", prediction_uri, prediction_hash),
             source_type="sealed_blind_prediction",
-            uri=prediction_path.as_posix(),
+            uri=prediction_uri,
             content_sha256=prediction_hash,
             observed_at=prediction.sealed_at or prediction.created_at,
         )

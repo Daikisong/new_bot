@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from news_scalping_lab.contracts.models import CompanyMemory
+from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
@@ -77,12 +77,14 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 )
     checked_research_episode_files = _check_research_episode_provenance(root, findings)
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
+    checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
     return {
         "passed": not findings,
         "findings": findings,
         "checked_predictions": checked_predictions,
         "checked_research_episode_files": checked_research_episode_files,
         "checked_company_memory_files": checked_company_memory_files,
+        "checked_mechanism_memory_records": checked_mechanism_memory_records,
     }
 
 
@@ -118,36 +120,69 @@ def _check_company_memory_provenance(root: Path, findings: list[str]) -> int:
             if not isinstance(entry, dict):
                 findings.append(f"{label}: company memory provenance {index} is invalid")
                 continue
-            _check_company_memory_source(root, label, index, entry, findings)
+            _check_memory_source(root, label, index, entry, findings, kind="company memory")
     return checked
 
 
-def _check_company_memory_source(
+def _check_mechanism_memory_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    path = root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    if not path.exists():
+        return checked
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        checked += 1
+        label = f"{_display_path(root, path)}:{line_number}"
+        try:
+            raw = json.loads(line)
+            memory = MechanismMemory.model_validate(raw)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            findings.append(f"{label}: mechanism memory schema invalid: {exc}")
+            continue
+        if not memory.provenance:
+            findings.append(f"{label}: mechanism memory missing provenance")
+            continue
+        for index, entry in enumerate(memory.provenance, start=1):
+            _check_memory_source(
+                root,
+                label,
+                index,
+                entry.model_dump(mode="json"),
+                findings,
+                kind="mechanism memory",
+            )
+    return checked
+
+
+def _check_memory_source(
     root: Path,
     label: str,
     index: int,
     entry: dict[str, Any],
     findings: list[str],
+    *,
+    kind: str,
 ) -> None:
     for field in ("source_id", "source_type", "uri"):
         if not isinstance(entry.get(field), str) or not entry.get(field):
-            findings.append(f"{label}: company memory provenance {index} missing {field}")
+            findings.append(f"{label}: {kind} provenance {index} missing {field}")
     uri = entry.get("uri")
     if not isinstance(uri, str) or not uri or _is_external_uri(uri):
         return
     source_path = _resolve_project_path(root, uri)
     if source_path is None:
-        findings.append(f"{label}: company memory provenance {index} uri escapes project root")
+        findings.append(f"{label}: {kind} provenance {index} uri escapes project root")
         return
     if not source_path.exists():
-        findings.append(f"{label}: company memory provenance {index} source file not found: {uri}")
+        findings.append(f"{label}: {kind} provenance {index} source file not found: {uri}")
         return
     expected_hash = entry.get("content_sha256")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(f"{label}: company memory provenance {index} missing content_sha256")
+        findings.append(f"{label}: {kind} provenance {index} missing content_sha256")
         return
     if file_sha256(source_path) != expected_hash:
-        findings.append(f"{label}: company memory provenance {index} content_sha256 mismatch")
+        findings.append(f"{label}: {kind} provenance {index} content_sha256 mismatch")
 
 
 def _check_blind_artifact_hash(

@@ -137,6 +137,10 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
         "sealed_blind_prediction",
         "evaluation_postmortem",
     }
+    assert {item.uri for item in episode.provenance} == {
+        "predictions/2030-01-10.json",
+        "reports/2030-01-10_postmortem.json",
+    }
 
     store.accept(episode.episode_id)
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")

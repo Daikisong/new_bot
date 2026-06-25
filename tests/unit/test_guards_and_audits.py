@@ -619,6 +619,47 @@ def test_provenance_audit_validates_company_memory_source_hash(tmp_path: Path) -
     ) in failed["findings"]
 
 
+def test_provenance_audit_validates_mechanism_memory_source_hash(tmp_path: Path) -> None:
+    source_dir = tmp_path / "reports"
+    source_dir.mkdir()
+    source_path = source_dir / "2030-01-10_postmortem.json"
+    source_path.write_text('{"lesson":"Mechanism source"}\n', encoding="utf-8")
+    mechanisms_dir = tmp_path / "memory" / "mechanisms" / "current"
+    mechanisms_dir.mkdir(parents=True)
+    mechanism = {
+        "mechanism_id": "MM-valid",
+        "natural_language_description": "Current event mechanics require source-backed review.",
+        "successful_cases": ["EP-valid"],
+        "provenance": [
+            {
+                "source_id": "SRC-mechanism-memory",
+                "source_type": "evaluation_postmortem",
+                "uri": "reports/2030-01-10_postmortem.json",
+                "content_sha256": file_sha256(source_path),
+                "observed_at": "2030-01-11T00:00:00+09:00",
+            }
+        ],
+    }
+    (mechanisms_dir / "mechanisms.jsonl").write_text(
+        canonical_json(mechanism) + "\n",
+        encoding="utf-8",
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"] is True
+    assert result["checked_mechanism_memory_records"] == 1
+
+    source_path.write_text('{"lesson":"Tampered mechanism source"}\n', encoding="utf-8")
+    failed = audit_provenance(tmp_path)
+
+    assert failed["passed"] is False
+    assert (
+        "memory/mechanisms/current/mechanisms.jsonl:1: "
+        "mechanism memory provenance 1 content_sha256 mismatch"
+    ) in failed["findings"]
+
+
 def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
