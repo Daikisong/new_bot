@@ -491,6 +491,10 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
         root, manifest
     )
+    statuses["blind_seal_receipt"] = _inspect_blind_seal_receipt_artifact(
+        root, manifest
+    )
+    statuses["phase_state"] = _inspect_phase_state_artifact(root, manifest)
     statuses["red_team"] = _inspect_red_team_artifacts(root, manifest)
     return statuses
 
@@ -1251,6 +1255,152 @@ def _inspect_final_synthesis_context_artifact(
         status["errors"].append("final_synthesis_context_manifest_count_mismatches")
 
     status["passed"] = _final_synthesis_context_status_passed(status)
+    return status
+
+
+def _inspect_blind_seal_receipt_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="blind_seal_receipt_artifact",
+        hash_field="blind_seal_receipt_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "phase_verified": None,
+            "blind_artifact_hash_verified": None,
+            "prediction_path_verified": None,
+            "row_disposition_hash_verified": None,
+            "source_ledger_hash_verified": None,
+            "no_d_outcome_verified": None,
+            "validation_counts_verified": None,
+        }
+    )
+    payload = _read_artifact_object(
+        root, manifest.get("blind_seal_receipt_artifact"), status
+    )
+    if payload is None:
+        status["passed"] = _blind_seal_receipt_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.blind_seal_receipt.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("blind_seal_receipt_schema_version_mismatch")
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("blind_seal_receipt_run_id_mismatch")
+    status["phase_verified"] = payload.get("phase") == "BLIND_SEALED"
+    if not status["phase_verified"]:
+        status["errors"].append("blind_seal_receipt_phase_mismatch")
+    status["blind_artifact_hash_verified"] = (
+        payload.get("blind_artifact_sha256") == manifest.get("blind_artifact_sha256")
+    )
+    if not status["blind_artifact_hash_verified"]:
+        status["errors"].append("blind_seal_receipt_blind_hash_mismatch")
+    status["prediction_path_verified"] = (
+        payload.get("blind_prediction_path") == manifest.get("prediction_artifact")
+    )
+    if not status["prediction_path_verified"]:
+        status["errors"].append("blind_seal_receipt_prediction_path_mismatch")
+    status["row_disposition_hash_verified"] = (
+        payload.get("row_disposition_sha256") == manifest.get("row_disposition_sha256")
+    )
+    if not status["row_disposition_hash_verified"]:
+        status["errors"].append("blind_seal_receipt_row_disposition_hash_mismatch")
+    status["source_ledger_hash_verified"] = (
+        payload.get("source_ledger_sha256") == manifest.get("source_ledger_sha256")
+    )
+    if not status["source_ledger_hash_verified"]:
+        status["errors"].append("blind_seal_receipt_source_ledger_hash_mismatch")
+    status["no_d_outcome_verified"] = (
+        payload.get("no_d_outcome_exposed") is True
+        and manifest.get("no_d_outcome_exposed") is True
+    )
+    if not status["no_d_outcome_verified"]:
+        status["errors"].append("blind_seal_receipt_no_d_outcome_mismatch")
+    validation = payload.get("validation")
+    expected_counts = {
+        "blind_web_search_call_count": manifest.get("blind_web_search_call_count"),
+        "blind_price_repository_access_count": manifest.get(
+            "blind_price_repository_access_count"
+        ),
+        "blind_current_price_access_count": manifest.get("blind_current_price_access_count"),
+        "canonical_blind_hash_verified": True,
+    }
+    status["validation_counts_verified"] = (
+        isinstance(validation, dict)
+        and all(validation.get(key) == value for key, value in expected_counts.items())
+    )
+    if not status["validation_counts_verified"]:
+        status["errors"].append("blind_seal_receipt_validation_counts_mismatch")
+    status["passed"] = _blind_seal_receipt_status_passed(status)
+    return status
+
+
+def _inspect_phase_state_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="phase_state_artifact",
+        hash_field="phase_state_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "phase_verified": None,
+            "completed_phase_verified": None,
+            "receipt_link_verified": None,
+            "trade_date_verified": None,
+            "cutoff_at_verified": None,
+        }
+    )
+    payload = _read_artifact_object(root, manifest.get("phase_state_artifact"), status)
+    if payload is None:
+        status["passed"] = _phase_state_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.phase_state.v1"
+    if not status["schema_version_verified"]:
+        status["errors"].append("phase_state_schema_version_mismatch")
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("phase_state_run_id_mismatch")
+    status["phase_verified"] = payload.get("phase") == "BLIND_SEALED"
+    if not status["phase_verified"]:
+        status["errors"].append("phase_state_phase_mismatch")
+    completed_phases = _string_list(payload.get("completed_phases"))
+    expected_phase = f"PHASE_A_{manifest.get('blind_context_mode')}"
+    status["completed_phase_verified"] = expected_phase in completed_phases
+    if not status["completed_phase_verified"]:
+        status["errors"].append("phase_state_completed_phase_mismatch")
+    status["receipt_link_verified"] = (
+        payload.get("blind_seal_receipt_sha256")
+        == manifest.get("blind_seal_receipt_sha256")
+    )
+    if not status["receipt_link_verified"]:
+        status["errors"].append("phase_state_receipt_sha_mismatch")
+    status["trade_date_verified"] = payload.get("trade_date") == manifest.get("trade_date")
+    if not status["trade_date_verified"]:
+        status["errors"].append("phase_state_trade_date_mismatch")
+    status["cutoff_at_verified"] = payload.get("cutoff_at") == manifest.get("cutoff_at")
+    if not status["cutoff_at_verified"]:
+        status["errors"].append("phase_state_cutoff_at_mismatch")
+    status["passed"] = _phase_state_status_passed(status)
     return status
 
 
@@ -2451,6 +2601,34 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")
+    )
+
+
+def _blind_seal_receipt_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("phase_verified")
+        and status.get("blind_artifact_hash_verified")
+        and status.get("prediction_path_verified")
+        and status.get("row_disposition_hash_verified")
+        and status.get("source_ledger_hash_verified")
+        and status.get("no_d_outcome_verified")
+        and status.get("validation_counts_verified")
+    )
+
+
+def _phase_state_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("phase_verified")
+        and status.get("completed_phase_verified")
+        and status.get("receipt_link_verified")
+        and status.get("trade_date_verified")
+        and status.get("cutoff_at_verified")
     )
 
 
