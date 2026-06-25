@@ -6243,6 +6243,7 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
                 "url": "news://one",
                 "source_url": "news://mismatch",
                 "published_at": "2030-01-10T09:30:00+09:00",
+                "timestamp_precision": "date_only_end_of_day",
                 "retrieved_at": "2030-01-10T10:00:00+09:00",
                 "time_verified": True,
                 "available_before_cutoff": False,
@@ -6282,6 +6283,9 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert "RUN-ledger.json: source_ledger_sha256 mismatch" in findings
     assert "RUN-ledger.json: source_ledger:1 must not duplicate body/content" in findings
     assert "RUN-ledger.json: source_ledger:1 source_url mismatch" in findings
+    assert (
+        "RUN-ledger.json: source_ledger:1 date_only_end_of_day must use 23:59:59"
+    ) in findings
     assert "RUN-ledger.json: source_ledger:1 BLIND source after cutoff" in findings
     assert "RUN-ledger.json: source_ledger:1 after cutoff" in findings
     assert any(

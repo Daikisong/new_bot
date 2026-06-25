@@ -141,6 +141,7 @@ def _bundle_text(
     episode_cutoff_at: str | None = None,
     candidate_web_run_id: str = "RUN-bundle-test",
     candidate_web_cutoff_at: str | None = None,
+    candidate_web_timestamp_precision: str | None = "datetime",
 ) -> str:
     blind = BlindPrediction(
         prediction_id="BP-bundle-20300110",
@@ -318,13 +319,16 @@ def _bundle_text(
             "url": "https://example.test/candidate",
             "source_url": "https://example.test/candidate",
             "published_at": "2030-01-10T08:30:00+09:00",
-            "timestamp_precision": "datetime",
             "retrieved_at": "2030-01-10T08:31:00+09:00",
             "cutoff_at": candidate_cutoff_at,
             "time_verified": True,
             "available_before_cutoff": True,
             "content_sha256": "candidate-hash",
         }
+        if candidate_web_timestamp_precision is not None:
+            candidate_web_checks_payload["timestamp_precision"] = (
+                candidate_web_timestamp_precision
+            )
         candidate_web_checks = json.dumps(
             candidate_web_checks_payload,
             ensure_ascii=False,
@@ -1144,6 +1148,42 @@ def test_bundle_source_ledger_rejects_source_url_mismatch(tmp_path) -> None:
         parse_bundle(source)
 
 
+def test_bundle_source_ledger_rejects_invalid_timestamp_precision(tmp_path) -> None:
+    source = tmp_path / "bad_source_precision_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            source_rows=[
+                {
+                    "source_id": "WEB-1",
+                    "source_type": "web_search_result",
+                    "title": "web source",
+                    "publisher": None,
+                    "url": "https://example.test/web",
+                    "source_url": "https://example.test/web",
+                    "published_at": "2030-01-09T08:30:00+09:00",
+                    "timestamp_precision": "date_only_end_of_day",
+                    "retrieved_at": "2030-01-10T08:00:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [],
+                    "event_ids": [],
+                    "content_sha256": "abc",
+                    "notes": "date-only precision must use end-of-day timestamp",
+                }
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="source_ledger.jsonl:1 date_only_end_of_day must use 23:59:59",
+    ):
+        parse_bundle(source)
+
+
 def test_bundle_source_ledger_rejects_blind_source_after_cutoff_timestamp(tmp_path) -> None:
     source = tmp_path / "after_cutoff_source_ledger_bundle.md"
     source.write_text(
@@ -1248,6 +1288,26 @@ def test_bundle_candidate_web_checks_reject_opened_text_duplication(tmp_path) ->
     )
 
     with pytest.raises(BundleImportError, match="must not duplicate opened/body/content"):
+        parse_bundle(source)
+
+
+def test_bundle_candidate_web_checks_reject_invalid_timestamp_precision(
+    tmp_path,
+) -> None:
+    source = tmp_path / "bad_candidate_web_precision_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_candidate_verification=True,
+            candidate_web_timestamp_precision="unexpected_precision",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="candidate_web_checks.jsonl:1 invalid timestamp_precision",
+    ):
         parse_bundle(source)
 
 

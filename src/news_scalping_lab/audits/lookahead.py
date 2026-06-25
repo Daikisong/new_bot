@@ -1097,6 +1097,9 @@ def _check_source_ledger(
                 f"{manifest_name}: source_ledger:{line_number} must not duplicate body/content"
             )
         _check_source_url_contract(manifest_name, "source_ledger", line_number, row, findings)
+        _check_web_timestamp_precision_contract(
+            manifest_name, "source_ledger", line_number, row, findings
+        )
         usage_phase = row.get("usage_phase")
         if usage_phase not in {"BLIND", "OUTCOME", "POSTMORTEM"}:
             findings.append(f"{manifest_name}: source_ledger:{line_number} invalid usage_phase")

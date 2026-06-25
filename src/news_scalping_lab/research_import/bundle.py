@@ -53,6 +53,9 @@ SOURCE_LEDGER_REQUIRED_FIELDS = {
     "notes",
 }
 SOURCE_LEDGER_USAGE_PHASES = {"BLIND", "OUTCOME", "POSTMORTEM"}
+WEB_TIMESTAMP_PRECISIONS = frozenset(
+    {"datetime", "date_only_end_of_day", "relative_age"}
+)
 CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
     "schema_version",
     "run_id",
@@ -478,6 +481,9 @@ def _validate_jsonl_contracts(
                 f"source_ledger.jsonl:{index} must not duplicate body/content"
             )
         _validate_source_url(block_name="source_ledger.jsonl", index=index, row=row)
+        _validate_web_timestamp_precision(
+            block_name="source_ledger.jsonl", index=index, row=row
+        )
         source_id = row.get("source_id")
         if not isinstance(source_id, str) or not source_id:
             raise BundleImportError(f"source_ledger.jsonl:{index} invalid source_id")
@@ -878,6 +884,7 @@ def _validate_candidate_web_check_row(
         raise BundleImportError(
             f"{block_name}:{index} must not duplicate opened/body/content"
         )
+    _validate_web_timestamp_precision(block_name=block_name, index=index, row=row)
     if not isinstance(row.get("source_id"), str) or not row.get("source_id"):
         raise BundleImportError(f"{block_name}:{index} invalid source_id")
     if not isinstance(row.get("candidate_rank"), int):
@@ -891,6 +898,41 @@ def _validate_source_url(*, block_name: str, index: int, row: dict[str, Any]) ->
     url = row.get("url")
     if isinstance(url, str) and url and source_url != url:
         raise BundleImportError(f"{block_name}:{index} source_url mismatch")
+
+
+def _validate_web_timestamp_precision(
+    *,
+    block_name: str,
+    index: int,
+    row: dict[str, Any],
+) -> None:
+    precision = row.get("timestamp_precision")
+    if precision is None:
+        return
+    if not isinstance(precision, str) or precision not in WEB_TIMESTAMP_PRECISIONS:
+        raise BundleImportError(f"{block_name}:{index} invalid timestamp_precision")
+    if precision != "date_only_end_of_day":
+        return
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        raise BundleImportError(
+            f"{block_name}:{index} date_only_end_of_day missing published_at"
+        )
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError as exc:
+        raise BundleImportError(
+            f"{block_name}:{index} date_only_end_of_day invalid published_at"
+        ) from exc
+    if (
+        published_at.hour,
+        published_at.minute,
+        published_at.second,
+        published_at.microsecond,
+    ) != (23, 59, 59, 0):
+        raise BundleImportError(
+            f"{block_name}:{index} date_only_end_of_day must use 23:59:59"
+        )
 
 
 def _verify_canonical_json_hash(
