@@ -215,6 +215,34 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_web_check"]["source_url_verified"] is True
     assert supporting["candidate_web_check"]["cutoff_verified"] is True
     assert supporting["candidate_web_check"]["opened_text_absent_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["hash_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["schema_version_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["run_id_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["row_count_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["source_ids_verified"] is True
+    assert (
+        supporting["excluded_candidate_web_check"]["duplicate_source_ids_absent"]
+        is True
+    )
+    assert supporting["excluded_candidate_web_check"]["not_accepted_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["required_fields_verified"] is True
+    assert supporting["excluded_candidate_web_check"]["source_url_verified"] is True
+    assert (
+        supporting["excluded_candidate_web_check"]["exclusion_reason_verified"]
+        is True
+    )
+    assert (
+        supporting["excluded_candidate_web_check"]["raw_content_absent_verified"]
+        is True
+    )
+    assert (
+        supporting["excluded_candidate_web_check"]["cutoff_exclusion_verified"]
+        is True
+    )
+    assert (
+        supporting["excluded_candidate_web_check"]["timestamp_precision_verified"]
+        is True
+    )
     assert supporting["candidate_verification"]["hash_verified"] is True
     assert supporting["candidate_verification"]["schema_version_verified"] is True
     assert supporting["candidate_verification"]["run_id_verified"] is True
@@ -553,6 +581,76 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_candidate_web_check)
+    excluded_candidate_web_check_file = (
+        tmp_path / context_payload["excluded_candidate_web_check_artifact"]
+    )
+    original_excluded_candidate_web_check = (
+        excluded_candidate_web_check_file.read_text(encoding="utf-8")
+    )
+    original_manifest_for_excluded_candidate_web_check = read_json(manifest_file)
+    candidate_web_rows = [
+        json.loads(line)
+        for line in original_candidate_web_check.splitlines()
+        if line.strip()
+    ]
+    tampered_excluded_candidate_web_row = {
+        **candidate_web_rows[0],
+        "schema_version": "nslab.excluded_candidate_web_check.v1",
+        "source_id": "WEB-excluded-candidate-tamper",
+        "exclusion_reason": "after_cutoff",
+        "time_verified": True,
+        "available_before_cutoff": True,
+    }
+    tampered_excluded_candidate_web_payload = (
+        canonical_json(tampered_excluded_candidate_web_row) + "\n"
+    )
+    excluded_candidate_web_check_file.write_text(
+        tampered_excluded_candidate_web_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_excluded_candidate_web_check,
+            "excluded_candidate_web_check_count": 1,
+            "excluded_candidate_web_check_sha256": sha256_text(
+                tampered_excluded_candidate_web_payload
+            ),
+            "excluded_candidate_web_source_ids": ["WEB-excluded-candidate-tamper"],
+        },
+    )
+    tampered_excluded_candidate_web_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered excluded candidate web check",
+        tampered_excluded_candidate_web_context,
+    )
+    tampered_excluded_candidate_web_inspection = json.loads(
+        tampered_excluded_candidate_web_context.output
+    )["inspection"]
+    assert (
+        tampered_excluded_candidate_web_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_excluded_candidate_web_status = (
+        tampered_excluded_candidate_web_inspection["supporting_artifacts"][
+            "excluded_candidate_web_check"
+        ]
+    )
+    assert tampered_excluded_candidate_web_status["hash_verified"] is True
+    assert (
+        tampered_excluded_candidate_web_status["cutoff_exclusion_verified"]
+        is False
+    )
+    assert "excluded_candidate_web_check_cutoff_exclusion_invalid" in (
+        tampered_excluded_candidate_web_status["errors"]
+    )
+    excluded_candidate_web_check_file.write_text(
+        original_excluded_candidate_web_check,
+        encoding="utf-8",
+    )
+    write_json(manifest_file, original_manifest_for_excluded_candidate_web_check)
     candidate_verification_file = tmp_path / context_payload[
         "candidate_verification_artifact"
     ]

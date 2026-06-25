@@ -39,6 +39,7 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
+    EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
     SOURCE_LEDGER_REQUIRED_FIELDS,
     SOURCE_LEDGER_USAGE_PHASES,
     WEB_TIMESTAMP_PRECISIONS,
@@ -554,6 +555,9 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(
         root, manifest
     )
+    statuses["excluded_candidate_web_check"] = (
+        _inspect_excluded_candidate_web_check_artifact(root, manifest)
+    )
     statuses["candidate_verification"] = _inspect_candidate_verification_artifact(
         root, manifest
     )
@@ -1027,6 +1031,141 @@ def _inspect_candidate_web_check_artifact(
         status["errors"].append("candidate_web_check_opened_text_present")
 
     status["passed"] = _candidate_web_check_status_passed(status)
+    return status
+
+
+def _inspect_excluded_candidate_web_check_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(
+        manifest.get("excluded_candidate_web_check_artifact")
+        or _optional_int(manifest.get("excluded_candidate_web_check_count"))
+        or _string_list(manifest.get("excluded_candidate_web_source_ids"))
+    )
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="excluded_candidate_web_check_artifact",
+        hash_field="excluded_candidate_web_check_sha256",
+        required=required,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "row_count_verified": None,
+            "source_ids_verified": None,
+            "duplicate_source_ids_absent": None,
+            "not_accepted_verified": None,
+            "required_fields_verified": None,
+            "source_url_verified": None,
+            "exclusion_reason_verified": None,
+            "raw_content_absent_verified": None,
+            "cutoff_exclusion_verified": None,
+            "timestamp_precision_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _excluded_candidate_web_check_status_passed(status)
+        return status
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("excluded_candidate_web_check_artifact"),
+        status,
+        label="excluded_candidate_web_check",
+    )
+    if rows is None:
+        status["passed"] = _excluded_candidate_web_check_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.excluded_candidate_web_check.v1"
+        for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("excluded_candidate_web_check_schema_version_mismatch")
+
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("excluded_candidate_web_check_run_id_mismatch")
+
+    expected_count = manifest.get("excluded_candidate_web_check_count")
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(
+        rows
+    ) == expected_count
+    if not status["row_count_verified"]:
+        status["errors"].append("excluded_candidate_web_check_count_mismatch")
+
+    source_ids = [
+        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
+    ]
+    unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
+    expected_source_ids = _string_list(manifest.get("excluded_candidate_web_source_ids"))
+    status["source_ids"] = unique_source_ids
+    status["source_ids_verified"] = (
+        len(expected_source_ids) == len(set(expected_source_ids))
+        and set(unique_source_ids) == set(expected_source_ids)
+    )
+    if not status["source_ids_verified"]:
+        status["errors"].append("excluded_candidate_web_check_source_ids_mismatch")
+    status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
+    if not status["duplicate_source_ids_absent"]:
+        status["errors"].append("excluded_candidate_web_check_duplicate_source_id")
+
+    accepted_source_ids = set(_string_list(manifest.get("candidate_web_source_ids")))
+    status["not_accepted_verified"] = all(
+        source_id not in accepted_source_ids for source_id in unique_source_ids
+    )
+    if not status["not_accepted_verified"]:
+        status["errors"].append("excluded_candidate_web_check_also_accepted")
+
+    status["required_fields_verified"] = all(
+        set(row) >= EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS for row in rows
+    )
+    if not status["required_fields_verified"]:
+        status["errors"].append("excluded_candidate_web_check_required_fields_missing")
+
+    status["source_url_verified"] = all(_source_url_valid(row) for row in rows)
+    if not status["source_url_verified"]:
+        status["errors"].append("excluded_candidate_web_check_source_url_mismatch")
+
+    status["exclusion_reason_verified"] = all(
+        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason"))
+        for row in rows
+    )
+    if not status["exclusion_reason_verified"]:
+        status["errors"].append(
+            "excluded_candidate_web_check_exclusion_reason_missing"
+        )
+
+    status["raw_content_absent_verified"] = all(
+        "body" not in row and "content" not in row and "opened_text" not in row
+        for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("excluded_candidate_web_check_raw_content_present")
+
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status["cutoff_exclusion_verified"] = all(
+        _excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows
+    )
+    if not status["cutoff_exclusion_verified"]:
+        status["errors"].append(
+            "excluded_candidate_web_check_cutoff_exclusion_invalid"
+        )
+
+    status["timestamp_precision_verified"] = all(
+        _web_timestamp_precision_valid(row) for row in rows
+    )
+    if not status["timestamp_precision_verified"]:
+        status["errors"].append("excluded_candidate_web_check_timestamp_precision_invalid")
+
+    status["passed"] = _excluded_candidate_web_check_status_passed(status)
     return status
 
 
@@ -3423,6 +3562,26 @@ def _candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
         and status.get("source_url_verified")
         and status.get("cutoff_verified")
         and status.get("opened_text_absent_verified")
+    )
+
+
+def _excluded_candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
+    if not status.get("configured"):
+        return not status.get("required") and not status.get("errors")
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("row_count_verified")
+        and status.get("source_ids_verified")
+        and status.get("duplicate_source_ids_absent")
+        and status.get("not_accepted_verified")
+        and status.get("required_fields_verified")
+        and status.get("source_url_verified")
+        and status.get("exclusion_reason_verified")
+        and status.get("raw_content_absent_verified")
+        and status.get("cutoff_exclusion_verified")
+        and status.get("timestamp_precision_verified")
     )
 
 
