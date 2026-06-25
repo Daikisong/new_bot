@@ -1189,6 +1189,11 @@ def _check_blind_seal(
         findings=findings,
     )
     if receipt is not None:
+        if receipt.get("schema_version") != "nslab.blind_seal_receipt.v1":
+            findings.append(f"{manifest_name}: blind_seal_receipt schema_version mismatch")
+        run_id = manifest.get("run_id")
+        if isinstance(run_id, str) and receipt.get("run_id") != run_id:
+            findings.append(f"{manifest_name}: blind_seal_receipt run_id mismatch")
         if receipt.get("phase") != "BLIND_SEALED":
             findings.append(f"{manifest_name}: blind_seal_receipt phase must be BLIND_SEALED")
         manifest_blind_hash = manifest.get("blind_artifact_sha256")
@@ -1197,17 +1202,62 @@ def _check_blind_seal(
             and receipt.get("blind_artifact_sha256") != manifest_blind_hash
         ):
             findings.append(f"{manifest_name}: blind_seal_receipt blind hash mismatch")
+        prediction_artifact = manifest.get("prediction_artifact")
+        if (
+            isinstance(prediction_artifact, str)
+            and receipt.get("blind_prediction_path") != prediction_artifact
+        ):
+            findings.append(f"{manifest_name}: blind_seal_receipt prediction path mismatch")
+        row_disposition_sha = manifest.get("row_disposition_sha256")
+        if (
+            isinstance(row_disposition_sha, str)
+            and receipt.get("row_disposition_sha256") != row_disposition_sha
+        ):
+            findings.append(f"{manifest_name}: blind_seal_receipt row_disposition hash mismatch")
+        source_ledger_sha = manifest.get("source_ledger_sha256")
+        if (
+            isinstance(source_ledger_sha, str)
+            and receipt.get("source_ledger_sha256") != source_ledger_sha
+        ):
+            findings.append(f"{manifest_name}: blind_seal_receipt source_ledger hash mismatch")
         if receipt.get("no_d_outcome_exposed") is not True:
             findings.append(f"{manifest_name}: blind_seal_receipt no_d_outcome_exposed must be true")
+        validation = receipt.get("validation")
+        expected_validation = {
+            "blind_web_search_call_count": manifest.get("blind_web_search_call_count"),
+            "blind_price_repository_access_count": manifest.get(
+                "blind_price_repository_access_count"
+            ),
+            "blind_current_price_access_count": manifest.get("blind_current_price_access_count"),
+            "canonical_blind_hash_verified": True,
+        }
+        if not isinstance(validation, dict) or any(
+            validation.get(key) != value for key, value in expected_validation.items()
+        ):
+            findings.append(f"{manifest_name}: blind_seal_receipt validation counts mismatch")
     if phase_state is not None:
+        if phase_state.get("schema_version") != "nslab.phase_state.v1":
+            findings.append(f"{manifest_name}: phase_state schema_version mismatch")
+        run_id = manifest.get("run_id")
+        if isinstance(run_id, str) and phase_state.get("run_id") != run_id:
+            findings.append(f"{manifest_name}: phase_state run_id mismatch")
         if phase_state.get("phase") != "BLIND_SEALED":
             findings.append(f"{manifest_name}: phase_state phase must be BLIND_SEALED")
+        blind_context_mode = manifest.get("blind_context_mode")
+        if isinstance(blind_context_mode, str):
+            completed_phases = set(_string_list(phase_state.get("completed_phases")))
+            if completed_phases.isdisjoint(_phase_a_names(blind_context_mode)):
+                findings.append(f"{manifest_name}: phase_state completed phase mismatch")
         receipt_sha = manifest.get("blind_seal_receipt_sha256")
         if (
             isinstance(receipt_sha, str)
             and phase_state.get("blind_seal_receipt_sha256") != receipt_sha
         ):
             findings.append(f"{manifest_name}: phase_state receipt sha mismatch")
+        if phase_state.get("trade_date") != manifest.get("trade_date"):
+            findings.append(f"{manifest_name}: phase_state trade_date mismatch")
+        if phase_state.get("cutoff_at") != manifest.get("cutoff_at"):
+            findings.append(f"{manifest_name}: phase_state cutoff_at mismatch")
 
 
 def _read_manifest_json_artifact(
@@ -1246,3 +1296,10 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _phase_a_names(blind_context_mode: str) -> set[str]:
+    names = {f"PHASE_A_{blind_context_mode}"}
+    if blind_context_mode == "NEWS_ONLY_STRICT":
+        names.add("PHASE_A_NEWS_ONLY_BLIND")
+    return names

@@ -1383,8 +1383,10 @@ def _inspect_phase_state_artifact(
     if not status["phase_verified"]:
         status["errors"].append("phase_state_phase_mismatch")
     completed_phases = _string_list(payload.get("completed_phases"))
-    expected_phase = f"PHASE_A_{manifest.get('blind_context_mode')}"
-    status["completed_phase_verified"] = expected_phase in completed_phases
+    expected_phases = _phase_a_names(manifest.get("blind_context_mode"))
+    status["completed_phase_verified"] = bool(
+        expected_phases.intersection(completed_phases)
+    )
     if not status["completed_phase_verified"]:
         status["errors"].append("phase_state_completed_phase_mismatch")
     status["receipt_link_verified"] = (
@@ -2959,6 +2961,15 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _phase_a_names(blind_context_mode: object) -> set[str]:
+    if not isinstance(blind_context_mode, str):
+        return set()
+    names = {f"PHASE_A_{blind_context_mode}"}
+    if blind_context_mode == "NEWS_ONLY_STRICT":
+        names.add("PHASE_A_NEWS_ONLY_BLIND")
+    return names
 
 
 def _unique_strings(values: Iterable[str]) -> list[str]:

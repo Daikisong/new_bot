@@ -2568,20 +2568,32 @@ def test_lookahead_audit_flags_invalid_blind_seal_artifacts(tmp_path: Path) -> N
     write_json(
         receipt,
         {
-            "schema_version": "nslab.blind_seal_receipt.v1",
-            "run_id": "RUN-seal",
+            "schema_version": "wrong.receipt.v1",
+            "run_id": "RUN-other",
             "phase": "OPEN",
             "blind_artifact_sha256": "other",
+            "blind_prediction_path": "runs/checkpoints/output_artifacts/RUN-other/blind_prediction.json",
+            "row_disposition_sha256": "wrong-row",
+            "source_ledger_sha256": "wrong-source",
             "no_d_outcome_exposed": False,
+            "validation": {
+                "blind_web_search_call_count": 99,
+                "blind_price_repository_access_count": 99,
+                "blind_current_price_access_count": 1,
+                "canonical_blind_hash_verified": False,
+            },
         },
     )
     write_json(
         phase_state,
         {
-            "schema_version": "nslab.phase_state.v1",
-            "run_id": "RUN-seal",
+            "schema_version": "wrong.phase_state.v1",
+            "run_id": "RUN-other",
             "phase": "OPEN",
+            "completed_phases": ["PHASE_A_fast"],
             "blind_seal_receipt_sha256": "wrong",
+            "trade_date": "2030-01-11",
+            "cutoff_at": "2030-01-10T09:00:00+09:00",
         },
     )
     write_json(
@@ -2595,6 +2607,13 @@ def test_lookahead_audit_flags_invalid_blind_seal_artifacts(tmp_path: Path) -> N
             "swept_episode_count": 0,
             "price_snapshot": {"allowed_through": "2030-01-09"},
             "blind_artifact_sha256": "abc",
+            "prediction_artifact": "runs/checkpoints/output_artifacts/RUN-seal/blind_prediction.json",
+            "row_disposition_sha256": "row-sha",
+            "source_ledger_sha256": "source-sha",
+            "blind_web_search_call_count": 2,
+            "blind_price_repository_access_count": 1,
+            "blind_current_price_access_count": 0,
+            "blind_context_mode": "exhaustive",
             "blind_seal_receipt_artifact": receipt.relative_to(tmp_path).as_posix(),
             "blind_seal_receipt_sha256": "bad",
             "phase_state_artifact": phase_state.relative_to(tmp_path).as_posix(),
@@ -2609,11 +2628,22 @@ def test_lookahead_audit_flags_invalid_blind_seal_artifacts(tmp_path: Path) -> N
     assert isinstance(findings, list)
     assert "RUN-seal.json: blind_seal_receipt_sha256 mismatch" in findings
     assert "RUN-seal.json: phase_state_sha256 mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt schema_version mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt run_id mismatch" in findings
     assert "RUN-seal.json: blind_seal_receipt phase must be BLIND_SEALED" in findings
     assert "RUN-seal.json: blind_seal_receipt blind hash mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt prediction path mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt row_disposition hash mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt source_ledger hash mismatch" in findings
     assert "RUN-seal.json: blind_seal_receipt no_d_outcome_exposed must be true" in findings
+    assert "RUN-seal.json: blind_seal_receipt validation counts mismatch" in findings
+    assert "RUN-seal.json: phase_state schema_version mismatch" in findings
+    assert "RUN-seal.json: phase_state run_id mismatch" in findings
     assert "RUN-seal.json: phase_state phase must be BLIND_SEALED" in findings
+    assert "RUN-seal.json: phase_state completed phase mismatch" in findings
     assert "RUN-seal.json: phase_state receipt sha mismatch" in findings
+    assert "RUN-seal.json: phase_state trade_date mismatch" in findings
+    assert "RUN-seal.json: phase_state cutoff_at mismatch" in findings
 
 
 def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
