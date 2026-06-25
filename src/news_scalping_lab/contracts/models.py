@@ -48,6 +48,12 @@ class CandidateExpansionPath(StrEnum):
     CONTINUATION = "CONTINUATION"
 
 
+class CandidateVerificationStatus(StrEnum):
+    SOURCE_COLLECTED = "source_collected"
+    NEEDS_COMPANY_DISCOVERY = "needs_company_discovery"
+    NO_CUTOFF_SAFE_SOURCE = "no_cutoff_safe_source"
+
+
 class RelationClass(StrEnum):
     DIRECT = "DIRECT"
     FUNDAMENTAL = "FUNDAMENTAL"
@@ -244,6 +250,43 @@ class CandidateExpansionReview(StrictModel):
     cutoff_at: datetime
     required_paths: list[CandidateExpansionPath] = Field(default_factory=list)
     findings: list[CandidateExpansionFinding] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class CandidateVerificationDimension(StrictModel):
+    name: str
+    status: CandidateVerificationStatus
+    evidence_source_ids: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class CandidateVerificationFinding(StrictModel):
+    subject_type: str
+    candidate_rank: int
+    candidate_ticker: str = ""
+    candidate_company_name: str
+    candidate_path_type: str
+    candidate_expansion_path: str | None = None
+    query: str
+    source_count: int = 0
+    excluded_source_count: int = 0
+    accepted_source_ids: list[str] = Field(default_factory=list)
+    excluded_source_ids: list[str] = Field(default_factory=list)
+    verification_dimensions: list[CandidateVerificationDimension] = Field(
+        default_factory=list
+    )
+    d_minus_one_market_data_only: bool = False
+    uncertainties: list[str] = Field(default_factory=list)
+
+
+class CandidateVerificationReview(StrictModel):
+    schema_version: str = "nslab.candidate_verification.v1"
+    run_id: str
+    created_at: datetime
+    cutoff_at: datetime
+    required_dimensions: list[str] = Field(default_factory=list)
+    subject_count: int = 0
+    findings: list[CandidateVerificationFinding] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -544,6 +587,10 @@ class ContextManifest(StrictModel):
     candidate_web_check_count: int = 0
     candidate_web_check_summary: dict[str, Any] = Field(default_factory=dict)
     candidate_web_source_ids: list[str] = Field(default_factory=list)
+    candidate_verification_artifact: str | None = None
+    candidate_verification_sha256: str | None = None
+    candidate_verification_count: int = 0
+    candidate_verification_summary: dict[str, Any] = Field(default_factory=dict)
     excluded_candidate_web_check_artifact: str | None = None
     excluded_candidate_web_check_sha256: str | None = None
     excluded_candidate_web_source_ids: list[str] = Field(default_factory=list)

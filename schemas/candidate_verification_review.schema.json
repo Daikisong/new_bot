@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "CandidateVerificationDimension": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Source Ids",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/CandidateVerificationStatus"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "title": "CandidateVerificationDimension",
+      "type": "object"
+    },
+    "CandidateVerificationFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Source Ids",
+          "type": "array"
+        },
+        "candidate_company_name": {
+          "title": "Candidate Company Name",
+          "type": "string"
+        },
+        "candidate_expansion_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Expansion Path"
+        },
+        "candidate_path_type": {
+          "title": "Candidate Path Type",
+          "type": "string"
+        },
+        "candidate_rank": {
+          "title": "Candidate Rank",
+          "type": "integer"
+        },
+        "candidate_ticker": {
+          "default": "",
+          "title": "Candidate Ticker",
+          "type": "string"
+        },
+        "d_minus_one_market_data_only": {
+          "default": false,
+          "title": "D Minus One Market Data Only",
+          "type": "boolean"
+        },
+        "excluded_source_count": {
+          "default": 0,
+          "title": "Excluded Source Count",
+          "type": "integer"
+        },
+        "excluded_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Source Ids",
+          "type": "array"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "source_count": {
+          "default": 0,
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "subject_type": {
+          "title": "Subject Type",
+          "type": "string"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertainties",
+          "type": "array"
+        },
+        "verification_dimensions": {
+          "items": {
+            "$ref": "#/$defs/CandidateVerificationDimension"
+          },
+          "title": "Verification Dimensions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subject_type",
+        "candidate_rank",
+        "candidate_company_name",
+        "candidate_path_type",
+        "query"
+      ],
+      "title": "CandidateVerificationFinding",
+      "type": "object"
+    },
+    "CandidateVerificationStatus": {
+      "enum": [
+        "source_collected",
+        "needs_company_discovery",
+        "no_cutoff_safe_source"
+      ],
+      "title": "CandidateVerificationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/CandidateVerificationFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "required_dimensions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Dimensions",
+      "type": "array"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.candidate_verification.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "subject_count": {
+      "default": 0,
+      "title": "Subject Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "created_at",
+    "cutoff_at"
+  ],
+  "title": "CandidateVerificationReview",
+  "type": "object"
+}

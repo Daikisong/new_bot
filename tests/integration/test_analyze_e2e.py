@@ -209,6 +209,7 @@ class RecordingBlindLLM:
             assert "red_team_output" in prompt
             assert "d_minus_one_market_data" in prompt
             assert "candidate_web_checks" in prompt
+            assert "candidate_verification" in prompt
             assert "NEWS_ONLY_STRICT_NO_PRICE_ACCESS" in prompt
             assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
@@ -854,6 +855,53 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert saved_manifest["candidate_web_check_count"] == (
         saved_manifest["candidate_web_check_summary"]["source_count"]
     )
+    verification_path = tmp_path / saved_manifest["candidate_verification_artifact"]
+    verification_text = verification_path.read_text(encoding="utf-8")
+    verification = json.loads(verification_text)
+    assert sha256_text(verification_text) == saved_manifest["candidate_verification_sha256"]
+    assert verification["schema_version"] == "nslab.candidate_verification.v1"
+    assert saved_manifest["candidate_verification_count"] == len(verification["findings"])
+    assert saved_manifest["candidate_verification_count"] == expected_candidate_web_subjects
+    assert saved_manifest["candidate_verification_summary"]["finding_count"] == (
+        expected_candidate_web_subjects
+    )
+    assert saved_manifest["candidate_verification_summary"][
+        "candidate_expansion_subject_count"
+    ] == analysis.context_manifest.candidate_expansion_count
+    assert saved_manifest["candidate_verification_summary"][
+        "subjects_without_cutoff_safe_sources"
+    ] == 0
+    expected_source_collected_dimensions = (
+        len(analysis.blind_prediction.candidates) * 9
+        + analysis.context_manifest.candidate_expansion_count * 8
+    )
+    assert saved_manifest["candidate_verification_summary"]["status_counts"] == {
+        "source_collected": expected_source_collected_dimensions,
+        "needs_company_discovery": analysis.context_manifest.candidate_expansion_count,
+    }
+    assert verification["required_dimensions"] == (
+        saved_manifest["candidate_web_check_summary"]["verification_focus"]
+    )
+    assert all(
+        len(finding["verification_dimensions"]) == len(verification["required_dimensions"])
+        for finding in verification["findings"]
+    )
+    expansion_verification_findings = [
+        finding
+        for finding in verification["findings"]
+        if finding["subject_type"] == "candidate_expansion"
+    ]
+    assert len(expansion_verification_findings) == (
+        analysis.context_manifest.candidate_expansion_count
+    )
+    assert all(
+        any(
+            dimension["name"] == "listed_security_and_exact_ticker"
+            and dimension["status"] == "needs_company_discovery"
+            for dimension in finding["verification_dimensions"]
+        )
+        for finding in expansion_verification_findings
+    )
     assert {row["source_id"] for row in candidate_check_rows} == set(
         saved_manifest["candidate_web_source_ids"]
     )
@@ -1039,6 +1087,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert "news_novelty_review" in str(final_call["prompt"])
     assert "additional_semantic_retrieval" in str(final_call["prompt"])
     assert "open_world_candidate_expansion" in str(final_call["prompt"])
+    assert "candidate_verification" in str(final_call["prompt"])
     assert "red_team_output" in str(final_call["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)

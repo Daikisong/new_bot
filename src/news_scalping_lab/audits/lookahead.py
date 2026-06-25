@@ -98,6 +98,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_source_ledger(root, manifest_name, manifest, findings)
         _check_web_source_artifact(root, manifest_name, manifest, findings)
         _check_candidate_web_check_artifact(root, manifest_name, manifest, findings)
+        _check_candidate_verification_artifact(root, manifest_name, manifest, findings)
         _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
@@ -956,6 +957,58 @@ def _check_excluded_candidate_web_check_artifact(
     expected_count = manifest.get("excluded_candidate_web_check_count")
     if isinstance(expected_count, int) and expected_count != len(row_source_ids):
         findings.append(f"{manifest_name}: excluded_candidate_web_check_count mismatch")
+
+
+def _check_candidate_verification_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    payload = _read_manifest_json_artifact(
+        root,
+        manifest_name,
+        manifest,
+        path_field="candidate_verification_artifact",
+        sha_field="candidate_verification_sha256",
+        label="candidate_verification",
+        findings=findings,
+    )
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.candidate_verification.v1":
+        findings.append(f"{manifest_name}: candidate_verification schema_version invalid")
+    review_sources = set(_string_list(manifest.get("candidate_web_source_ids")))
+    excluded_sources = set(_string_list(manifest.get("excluded_candidate_web_source_ids")))
+    findings_payload = payload.get("findings")
+    if not isinstance(findings_payload, list):
+        findings.append(f"{manifest_name}: candidate_verification findings must be list")
+        return
+    expected_count = manifest.get("candidate_verification_count")
+    if isinstance(expected_count, int) and expected_count != len(findings_payload):
+        findings.append(f"{manifest_name}: candidate_verification_count mismatch")
+    for index, item in enumerate(findings_payload, start=1):
+        if not isinstance(item, dict):
+            findings.append(f"{manifest_name}: candidate_verification:{index} must be object")
+            continue
+        accepted = set(_string_list(item.get("accepted_source_ids")))
+        excluded = set(_string_list(item.get("excluded_source_ids")))
+        if not accepted <= review_sources:
+            findings.append(
+                f"{manifest_name}: candidate_verification:{index} "
+                "accepted_source_ids not in candidate_web_source_ids"
+            )
+        if not excluded <= excluded_sources:
+            findings.append(
+                f"{manifest_name}: candidate_verification:{index} "
+                "excluded_source_ids not in excluded_candidate_web_source_ids"
+            )
+        dimensions = item.get("verification_dimensions")
+        if not isinstance(dimensions, list) or not dimensions:
+            findings.append(
+                f"{manifest_name}: candidate_verification:{index} "
+                "verification_dimensions missing"
+            )
 
 
 def _check_blind_seal(

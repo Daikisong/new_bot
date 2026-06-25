@@ -187,6 +187,40 @@
       "title": "Candidate Expansion Summary",
       "type": "object"
     },
+    "candidate_verification_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Verification Artifact"
+    },
+    "candidate_verification_count": {
+      "default": 0,
+      "title": "Candidate Verification Count",
+      "type": "integer"
+    },
+    "candidate_verification_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Candidate Verification Sha256"
+    },
+    "candidate_verification_summary": {
+      "additionalProperties": true,
+      "title": "Candidate Verification Summary",
+      "type": "object"
+    },
     "candidate_web_check_artifact": {
       "anyOf": [
         {

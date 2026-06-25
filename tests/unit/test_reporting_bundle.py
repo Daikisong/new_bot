@@ -100,6 +100,51 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     )
     candidate_path.parent.mkdir(parents=True)
     candidate_path.write_text(candidate_web_checks, encoding="utf-8")
+    candidate_verification = canonical_json(
+        {
+            "schema_version": "nslab.candidate_verification.v1",
+            "run_id": run_id,
+            "created_at": cutoff_at.isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
+            "required_dimensions": ["listed_security_and_exact_ticker"],
+            "subject_count": 1,
+            "findings": [
+                {
+                    "subject_type": "final_candidate",
+                    "candidate_rank": 1,
+                    "candidate_ticker": "UNKNOWN",
+                    "candidate_company_name": "BundleCandidateCo",
+                    "candidate_path_type": "SINGLE_EVENT",
+                    "query": "candidate verification",
+                    "source_count": 1,
+                    "excluded_source_count": 0,
+                    "accepted_source_ids": ["WEB-CANDIDATE-1"],
+                    "excluded_source_ids": [],
+                    "verification_dimensions": [
+                        {
+                            "name": "listed_security_and_exact_ticker",
+                            "status": "source_collected",
+                            "evidence_source_ids": ["WEB-CANDIDATE-1"],
+                            "notes": ["cutoff-safe source collected"],
+                        }
+                    ],
+                    "d_minus_one_market_data_only": False,
+                    "uncertainties": [],
+                }
+            ],
+            "notes": ["test verification"],
+        }
+    )
+    candidate_verification_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_verifications"
+        / run_id
+        / "candidate_verification.json"
+    )
+    candidate_verification_path.parent.mkdir(parents=True)
+    candidate_verification_path.write_text(candidate_verification, encoding="utf-8")
     excluded_candidate_web_checks = canonical_json(
         {
             "schema_version": "nslab.excluded_candidate_web_check.v1",
@@ -199,6 +244,11 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "candidate_web_check_artifact": candidate_path.relative_to(tmp_path).as_posix(),
         "candidate_web_check_sha256": sha256_text(candidate_web_checks),
         "candidate_web_check_count": 1,
+        "candidate_verification_artifact": candidate_verification_path.relative_to(
+            tmp_path
+        ).as_posix(),
+        "candidate_verification_sha256": sha256_text(candidate_verification),
+        "candidate_verification_count": 1,
         "excluded_candidate_web_check_artifact": excluded_candidate_path.relative_to(
             tmp_path
         ).as_posix(),
@@ -221,6 +271,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "brain_delta.jsonl",
         "source_ledger.jsonl",
         "candidate_web_checks.jsonl",
+        "candidate_verification.json",
         "excluded_candidate_web_checks.jsonl",
         "phase_state.json",
         "bundle_manifest.json",
@@ -233,6 +284,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["source_ledger_entry_count_verified"]
     assert parsed.validation["candidate_web_check_hash_verified"]
     assert parsed.validation["candidate_web_check_count_verified"]
+    assert parsed.validation["candidate_verification_hash_verified"]
+    assert parsed.validation["candidate_verification_count_verified"]
     assert parsed.validation["excluded_candidate_web_check_hash_verified"]
     assert parsed.validation["excluded_candidate_web_check_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
@@ -253,6 +306,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True
     assert manifest["validation"]["candidate_web_check_hash_verified"] is True
     assert manifest["validation"]["candidate_web_check_count_verified"] is True
+    assert manifest["validation"]["candidate_verification_hash_verified"] is True
+    assert manifest["validation"]["candidate_verification_count_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_hash_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_count_verified"] is True
     assert manifest["validation"]["phase_state_hash_verified"] is True
@@ -267,6 +322,9 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.jsonl_blocks["candidate_web_checks.jsonl"][0]["source_id"] == (
         "WEB-CANDIDATE-1"
     )
+    assert parsed.json_blocks["candidate_verification.json"]["findings"][0][
+        "accepted_source_ids"
+    ] == ["WEB-CANDIDATE-1"]
     assert parsed.jsonl_blocks["excluded_candidate_web_checks.jsonl"][0]["source_id"] == (
         "WEB-CANDIDATE-EXCLUDED"
     )

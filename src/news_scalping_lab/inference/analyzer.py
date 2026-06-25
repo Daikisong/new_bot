@@ -20,6 +20,10 @@ from news_scalping_lab.contracts.models import (
     CandidateExpansionFinding,
     CandidateExpansionPath,
     CandidateExpansionReview,
+    CandidateVerificationDimension,
+    CandidateVerificationFinding,
+    CandidateVerificationReview,
+    CandidateVerificationStatus,
     CompanyMemory,
     ConfidenceLabel,
     ContextManifest,
@@ -332,6 +336,12 @@ class DailyAnalyzer:
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
                 "web_source_artifact": manifest.web_source_artifact,
                 "candidate_web_source_ids": manifest.candidate_web_source_ids,
+                "candidate_verification_artifact": (
+                    manifest.candidate_verification_artifact
+                ),
+                "candidate_verification_summary": (
+                    manifest.candidate_verification_summary
+                ),
                 "excluded_candidate_web_source_ids": (
                     manifest.excluded_candidate_web_source_ids
                 ),
@@ -1597,6 +1607,13 @@ class DailyAnalyzer:
                 }
             ),
         }
+        self._write_candidate_verification_artifact(
+            manifest=manifest,
+            subjects=subjects,
+            rows=rows,
+            excluded_rows=excluded_rows,
+            cutoff_at=cutoff_at,
+        )
         excluded_artifact_relative = (
             Path("runs")
             / "checkpoints"
@@ -1612,6 +1629,164 @@ class DailyAnalyzer:
         )
         manifest.excluded_candidate_web_check_sha256 = sha256_text(excluded_payload)
         manifest.excluded_candidate_web_check_count = len(excluded_rows)
+
+    def _write_candidate_verification_artifact(
+        self,
+        *,
+        manifest: ContextManifest,
+        subjects: Sequence[CandidateWebCheckSubject],
+        rows: Sequence[dict[str, Any]],
+        excluded_rows: Sequence[dict[str, Any]],
+        cutoff_at: datetime,
+    ) -> None:
+        findings: list[CandidateVerificationFinding] = []
+        for subject in subjects:
+            key = _candidate_web_check_subject_key(subject)
+            accepted = [
+                row
+                for row in rows
+                if _candidate_web_check_row_key(row) == key
+            ]
+            excluded = [
+                row
+                for row in excluded_rows
+                if _candidate_web_check_row_key(row) == key
+            ]
+            accepted_source_ids = _unique_preserving_order(
+                [
+                    str(row["source_id"])
+                    for row in accepted
+                    if isinstance(row.get("source_id"), str)
+                ]
+            )
+            excluded_source_ids = _unique_preserving_order(
+                [
+                    str(row["source_id"])
+                    for row in excluded
+                    if isinstance(row.get("source_id"), str)
+                ]
+            )
+            findings.append(
+                CandidateVerificationFinding(
+                    subject_type=subject.subject_type,
+                    candidate_rank=subject.rank,
+                    candidate_ticker=subject.ticker,
+                    candidate_company_name=subject.company_name,
+                    candidate_path_type=subject.path_type,
+                    candidate_expansion_path=subject.expansion_path,
+                    query=self._candidate_web_check_query(subject),
+                    source_count=len(accepted),
+                    excluded_source_count=len(excluded),
+                    accepted_source_ids=accepted_source_ids,
+                    excluded_source_ids=excluded_source_ids,
+                    verification_dimensions=self._candidate_verification_dimensions(
+                        subject=subject,
+                        accepted_source_ids=accepted_source_ids,
+                    ),
+                    d_minus_one_market_data_only=(
+                        subject.path_type == CandidateExpansionPath.CONTINUATION
+                        or subject.path_type == str(PathType.CONTINUATION)
+                    ),
+                    uncertainties=self._candidate_verification_uncertainties(
+                        subject=subject,
+                        accepted_source_ids=accepted_source_ids,
+                        excluded_source_ids=excluded_source_ids,
+                    ),
+                )
+            )
+        review = CandidateVerificationReview(
+            run_id=manifest.run_id,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            required_dimensions=list(CANDIDATE_WEB_VERIFICATION_FOCUS),
+            subject_count=len(subjects),
+            findings=findings,
+            notes=[
+                "Pass 5 checklist records cutoff-safe verification coverage; final synthesis judges substance."
+            ],
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "candidate_verifications"
+            / manifest.run_id
+            / "candidate_verification.json"
+        )
+        artifact_path = self.root / artifact_relative
+        write_json(artifact_path, review.model_dump(mode="json"))
+        artifact_text = artifact_path.read_text(encoding="utf-8")
+        manifest.candidate_verification_artifact = artifact_relative.as_posix()
+        manifest.candidate_verification_sha256 = sha256_text(artifact_text)
+        manifest.candidate_verification_count = len(findings)
+        status_counts: dict[str, int] = {}
+        for finding in findings:
+            for dimension in finding.verification_dimensions:
+                status_counts[dimension.status] = status_counts.get(dimension.status, 0) + 1
+        manifest.candidate_verification_summary = {
+            "subject_count": len(subjects),
+            "finding_count": len(findings),
+            "required_dimensions": list(CANDIDATE_WEB_VERIFICATION_FOCUS),
+            "status_counts": status_counts,
+            "subjects_without_cutoff_safe_sources": sum(
+                1 for finding in findings if not finding.accepted_source_ids
+            ),
+            "candidate_expansion_subject_count": sum(
+                1 for finding in findings if finding.subject_type == "candidate_expansion"
+            ),
+            "d_minus_one_only_subject_count": sum(
+                1 for finding in findings if finding.d_minus_one_market_data_only
+            ),
+        }
+
+    def _candidate_verification_dimensions(
+        self,
+        *,
+        subject: CandidateWebCheckSubject,
+        accepted_source_ids: Sequence[str],
+    ) -> list[CandidateVerificationDimension]:
+        dimensions: list[CandidateVerificationDimension] = []
+        for name in CANDIDATE_WEB_VERIFICATION_FOCUS:
+            status = CandidateVerificationStatus.SOURCE_COLLECTED
+            notes = ["cutoff-safe web source collected for final synthesis"]
+            if not accepted_source_ids:
+                status = CandidateVerificationStatus.NO_CUTOFF_SAFE_SOURCE
+                notes = ["no cutoff-safe web source collected for this dimension"]
+            elif (
+                name == "listed_security_and_exact_ticker"
+                and subject.subject_type == "candidate_expansion"
+                and not subject.ticker
+            ):
+                status = CandidateVerificationStatus.NEEDS_COMPANY_DISCOVERY
+                notes = [
+                    "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
+                ]
+            dimensions.append(
+                CandidateVerificationDimension(
+                    name=name,
+                    status=status,
+                    evidence_source_ids=list(accepted_source_ids),
+                    notes=notes,
+                )
+            )
+        return dimensions
+
+    def _candidate_verification_uncertainties(
+        self,
+        *,
+        subject: CandidateWebCheckSubject,
+        accepted_source_ids: Sequence[str],
+        excluded_source_ids: Sequence[str],
+    ) -> list[str]:
+        uncertainties: list[str] = []
+        if not accepted_source_ids:
+            uncertainties.append("no cutoff-safe web source was collected")
+        if excluded_source_ids:
+            uncertainties.append("some web sources were excluded as cutoff-unsafe")
+        if subject.subject_type == "candidate_expansion" and not subject.ticker:
+            uncertainties.append("exact listed security and ticker remain unresolved")
+        if subject.expansion_path == CandidateExpansionPath.CONTINUATION:
+            uncertainties.append("continuation must remain limited to D-1 market data")
+        return uncertainties
 
     def _candidate_web_check_subjects(
         self,
@@ -2100,6 +2275,7 @@ class DailyAnalyzer:
                 "counterexamples",
                 "candidate_research",
                 "candidate_web_checks",
+                "candidate_verification",
                 "red_team_output",
                 "d_minus_one_market_data",
                 "company_memory",
@@ -2137,6 +2313,9 @@ class DailyAnalyzer:
             "counterexamples": self._read_counterexample_context(manifest),
             "candidate_research": prediction.model_dump(mode="json"),
             "candidate_web_checks": self._read_candidate_web_check_context(manifest),
+            "candidate_verification": self._read_candidate_verification_context(
+                manifest
+            ),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
             "company_memory": company_memory_context,
@@ -2147,7 +2326,8 @@ class DailyAnalyzer:
             "Return the final BlindPrediction. Keep qualitative confidence only, "
             "preserve red-team objections in candidate counterarguments, use only "
             "timestamp-verified web_research.sources, candidate_web_checks, "
-            "cutoff-safe company_memory, and cutoff-safe market_memory. Do not use "
+            "candidate_verification, cutoff-safe company_memory, and "
+            "cutoff-safe market_memory. Do not use "
             "D-day prices, outcomes, unverified web results, or cutoff-after "
             "sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
@@ -2581,6 +2761,18 @@ class DailyAnalyzer:
                 }
             )
         return checks
+
+    def _read_candidate_verification_context(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        if not manifest.candidate_verification_artifact:
+            return {}
+        path = self.root / manifest.candidate_verification_artifact
+        if not path.exists():
+            return {"path": manifest.candidate_verification_artifact, "missing": True}
+        payload = read_json(path)
+        return payload if isinstance(payload, dict) else {}
 
     def _load_synthesis_prompt(self) -> str:
         path = self.root / "prompts" / "synthesis" / "final.md"
@@ -3256,6 +3448,37 @@ def _dedupe_candidate_web_check_subjects(
         seen.add(key)
         unique.append(subject)
     return unique
+
+
+def _candidate_web_check_subject_key(
+    subject: CandidateWebCheckSubject,
+) -> tuple[str, int, str, str, str, str | None]:
+    return (
+        subject.subject_type,
+        subject.rank,
+        subject.ticker,
+        subject.company_name,
+        subject.path_type,
+        subject.expansion_path,
+    )
+
+
+def _candidate_web_check_row_key(
+    row: dict[str, Any],
+) -> tuple[str, int, str, str, str, str | None]:
+    rank = row.get("candidate_rank")
+    return (
+        str(row.get("candidate_subject_type") or ""),
+        rank if isinstance(rank, int) else 0,
+        str(row.get("candidate_ticker") or ""),
+        str(row.get("candidate_company_name") or ""),
+        str(row.get("candidate_path_type") or ""),
+        (
+            str(row["candidate_expansion_path"])
+            if row.get("candidate_expansion_path") is not None
+            else None
+        ),
+    )
 
 
 def _excerpt(text: str, *, limit: int = 1200) -> str:

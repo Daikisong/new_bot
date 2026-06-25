@@ -411,6 +411,12 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
             False,
         ),
         (
+            "candidate_verification",
+            "candidate_verification_artifact",
+            "candidate_verification_sha256",
+            False,
+        ),
+        (
             "excluded_candidate_web_check",
             "excluded_candidate_web_check_artifact",
             "excluded_candidate_web_check_sha256",

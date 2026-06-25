@@ -191,6 +191,18 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
             "candidate_expansion_subject_count": 4,
         },
         candidate_web_source_ids=["WEB-CANDIDATE-1", "WEB-CANDIDATE-2"],
+        candidate_verification_artifact=(
+            "runs/checkpoints/candidate_verifications/RUN-report/"
+            "candidate_verification.json"
+        ),
+        candidate_verification_sha256="candidate-verification-sha",
+        candidate_verification_count=6,
+        candidate_verification_summary={
+            "status_counts": {
+                "source_collected": 12,
+                "needs_company_discovery": 4,
+            },
+        },
         excluded_candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-report/"
             "excluded_candidate_web_checks.jsonl"
@@ -323,6 +335,18 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Excluded SHA256: excluded-candidate-web-sha" in report
     assert "- Excluded sources: 1" in report
     assert "- Excluded source ids: WEB-CANDIDATE-EXCLUDED" in report
+    assert (
+        "- Verification artifact: runs/checkpoints/candidate_verifications/RUN-report/"
+        "candidate_verification.json"
+        in report
+    )
+    assert "- Verification SHA256: candidate-verification-sha" in report
+    assert "- Verification subjects: 6" in report
+    assert (
+        "- Verification status counts: {'source_collected': 12, "
+        "'needs_company_discovery': 4}"
+        in report
+    )
     assert "Counterexample episode ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report

@@ -125,6 +125,14 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "candidate_web_checks.jsonl entry count does not match bundle_manifest.json"
         )
+    if not parsed.validation.get("candidate_verification_hash_verified", True):
+        raise BundleImportError(
+            "candidate_verification.json hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("candidate_verification_count_verified", True):
+        raise BundleImportError(
+            "candidate_verification.json finding count does not match bundle_manifest.json"
+        )
     if not parsed.validation.get("excluded_candidate_web_check_hash_verified", True):
         raise BundleImportError(
             "excluded_candidate_web_checks.jsonl hash does not match bundle_manifest.json"
@@ -191,7 +199,7 @@ def parse_bundle(path: Path) -> BundleParseResult:
         elif name.endswith(".jsonl"):
             jsonl_blocks[name] = _parse_jsonl(name, payload)
 
-    _validate_jsonl_contracts(jsonl_blocks)
+    _validate_jsonl_contracts(json_blocks, jsonl_blocks)
     validation = {
         "markers_complete": True,
         "json_valid": True,
@@ -261,6 +269,16 @@ def parse_bundle(path: Path) -> BundleParseResult:
         count_field="candidate_web_check_count",
         hash_key="candidate_web_check_hash_verified",
         count_key="candidate_web_check_count_verified",
+    )
+    _add_optional_json_validation(
+        validation,
+        json_blocks,
+        payload_blocks,
+        block_name="candidate_verification.json",
+        hash_field="candidate_verification_sha256",
+        count_field="candidate_verification_count",
+        hash_key="candidate_verification_hash_verified",
+        count_key="candidate_verification_count_verified",
     )
     _add_optional_jsonl_validation(
         validation,
@@ -352,7 +370,10 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> None:
+def _validate_jsonl_contracts(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> None:
     for index, row in enumerate(jsonl_blocks.get("row_disposition.jsonl", []), start=1):
         if "row_number" not in row:
             raise BundleImportError(f"row_disposition.jsonl:{index} missing row_number")
@@ -435,6 +456,13 @@ def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> 
             required_fields=EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
             expected_schema_version="nslab.excluded_candidate_web_check.v1",
         )
+    candidate_verification = json_blocks.get("candidate_verification.json")
+    if isinstance(candidate_verification, dict):
+        if candidate_verification.get("schema_version") != "nslab.candidate_verification.v1":
+            raise BundleImportError("candidate_verification.json invalid schema_version")
+        findings = candidate_verification.get("findings")
+        if not isinstance(findings, list):
+            raise BundleImportError("candidate_verification.json findings must be a list")
 
 
 def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
@@ -562,6 +590,23 @@ def _verify_jsonl_entry_count(
     return expected == len(rows)
 
 
+def _verify_json_finding_count(
+    json_blocks: dict[str, Any],
+    *,
+    block_name: str,
+    manifest_field: str,
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    payload = json_blocks.get(block_name)
+    if not isinstance(manifest, dict) or not isinstance(payload, dict):
+        return False
+    expected = manifest.get(manifest_field)
+    findings = payload.get("findings")
+    if not isinstance(expected, int) or not isinstance(findings, list):
+        return False
+    return expected == len(findings)
+
+
 def _add_optional_jsonl_validation(
     validation: dict[str, bool],
     json_blocks: dict[str, Any],
@@ -590,6 +635,37 @@ def _add_optional_jsonl_validation(
     validation[count_key] = _verify_jsonl_entry_count(
         json_blocks,
         jsonl_blocks,
+        block_name=block_name,
+        manifest_field=count_field,
+    )
+
+
+def _add_optional_json_validation(
+    validation: dict[str, bool],
+    json_blocks: dict[str, Any],
+    payload_blocks: dict[str, str],
+    *,
+    block_name: str,
+    hash_field: str,
+    count_field: str,
+    hash_key: str,
+    count_key: str,
+) -> None:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return
+    has_manifest_fields = hash_field in manifest or count_field in manifest
+    has_block = block_name in payload_blocks or block_name in json_blocks
+    if not has_manifest_fields and not has_block:
+        return
+    validation[hash_key] = _verify_payload_hash(
+        json_blocks,
+        payload_blocks,
+        block_name=block_name,
+        manifest_field=hash_field,
+    )
+    validation[count_key] = _verify_json_finding_count(
+        json_blocks,
         block_name=block_name,
         manifest_field=count_field,
     )

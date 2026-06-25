@@ -191,6 +191,13 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Excluded SHA256: {manifest.excluded_candidate_web_check_sha256 or 'none'}",
             f"- Excluded sources: {manifest.excluded_candidate_web_check_count}",
             f"- Excluded source ids: {list_text(manifest.excluded_candidate_web_source_ids)}",
+            f"- Verification artifact: {manifest.candidate_verification_artifact or 'none'}",
+            f"- Verification SHA256: {manifest.candidate_verification_sha256 or 'none'}",
+            f"- Verification subjects: {manifest.candidate_verification_count}",
+            (
+                "- Verification status counts: "
+                f"{manifest.candidate_verification_summary.get('status_counts', {})}"
+            ),
             "",
             "News event clusters:",
             "",

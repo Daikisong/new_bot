@@ -20,6 +20,7 @@ EXPECTED_SCHEMA_FILES = {
     "brain_manifest.schema.json",
     "candidate.schema.json",
     "candidate_expansion_review.schema.json",
+    "candidate_verification_review.schema.json",
     "company_memory.schema.json",
     "context_manifest.schema.json",
     "daily_analysis.schema.json",

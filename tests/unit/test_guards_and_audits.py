@@ -1526,6 +1526,43 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
         + "\n"
     )
     excluded_artifact.write_text(excluded_payload, encoding="utf-8")
+    verification_artifact = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_verifications"
+        / "RUN-candidate"
+        / "candidate_verification.json"
+    )
+    verification_artifact.parent.mkdir(parents=True)
+    write_json(
+        verification_artifact,
+        {
+            "schema_version": "nslab.candidate_verification.v1",
+            "run_id": "RUN-candidate",
+            "created_at": "2030-01-10T08:58:00+09:00",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "required_dimensions": ["listed_security_and_exact_ticker"],
+            "subject_count": 1,
+            "findings": [
+                {
+                    "subject_type": "final_candidate",
+                    "candidate_rank": 1,
+                    "candidate_ticker": "UNKNOWN",
+                    "candidate_company_name": "CandidateCo",
+                    "candidate_path_type": "SINGLE_EVENT",
+                    "query": "candidate verification",
+                    "source_count": 1,
+                    "excluded_source_count": 1,
+                    "accepted_source_ids": ["WEB-CANDIDATE-NOT-MANIFEST"],
+                    "excluded_source_ids": ["WEB-CANDIDATE-EXCLUDED-NOT-MANIFEST"],
+                    "verification_dimensions": [],
+                    "d_minus_one_market_data_only": False,
+                    "uncertainties": [],
+                }
+            ],
+        },
+    )
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-candidate.json",
         {
@@ -1550,6 +1587,11 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
             ).as_posix(),
             "excluded_candidate_web_check_sha256": "bad",
             "excluded_candidate_web_check_count": 2,
+            "candidate_verification_artifact": verification_artifact.relative_to(
+                tmp_path
+            ).as_posix(),
+            "candidate_verification_sha256": "bad-verification",
+            "candidate_verification_count": 2,
         },
     )
 
@@ -1575,6 +1617,22 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
         in findings
     )
     assert "RUN-candidate.json: excluded_candidate_web_check_count mismatch" in findings
+    assert "RUN-candidate.json: candidate_verification_sha256 mismatch" in findings
+    assert "RUN-candidate.json: candidate_verification_count mismatch" in findings
+    assert (
+        "RUN-candidate.json: candidate_verification:1 accepted_source_ids not in "
+        "candidate_web_source_ids"
+        in findings
+    )
+    assert (
+        "RUN-candidate.json: candidate_verification:1 excluded_source_ids not in "
+        "excluded_candidate_web_source_ids"
+        in findings
+    )
+    assert (
+        "RUN-candidate.json: candidate_verification:1 verification_dimensions missing"
+        in findings
+    )
 
 
 def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:
