@@ -5831,6 +5831,143 @@ def test_provenance_audit_flags_llm_checkpoint_retry_error_mismatch(
     assert "TRACE-daily.json: trace checkpoint retry_errors mismatch" in result["findings"]
 
 
+def test_provenance_audit_checks_session_pack_manifest_integrity(
+    tmp_path: Path,
+) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    for file_name in pack_files:
+        (pack_dir / file_name).write_text(
+            f"{file_name} reproducible content\n" * 3,
+            encoding="utf-8",
+        )
+    omission_report = pack_dir / "omission_report.md"
+    omission_report.write_text("Future-unavailable episodes are listed.\n", encoding="utf-8")
+    brain_file = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "brain_context"
+        / "SESSION-test"
+        / "brain"
+        / "00_world_model.md"
+    )
+    brain_file.parent.mkdir(parents=True)
+    brain_file.write_text("as-of brain context\n", encoding="utf-8")
+    brain_ref = brain_file.relative_to(tmp_path).as_posix()
+    pack_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
+    token_counts = {
+        file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
+        for file_name in pack_files
+    }
+    token_count_total = sum(token_counts.values())
+    manifest = {
+        "schema_version": "nslab.session_pack_manifest.v1",
+        "blocked": True,
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "as_of": "2030-01-10T08:59:59+09:00",
+        "mode": "brain",
+        "brain_version": "brain-asof-test",
+        "brain_files": [brain_ref],
+        "brain_file_hashes": {brain_ref: file_sha256(brain_file)},
+        "shard_brain_files": [],
+        "shard_brain_file_hashes": {},
+        "accepted_episode_count": 1,
+        "available_episode_count": 0,
+        "available_episode_ids": [],
+        "included_episode_count": 0,
+        "included_episode_ids": [],
+        "unavailable_episode_count": 1,
+        "unavailable_episode_ids": ["EP-future"],
+        "budget_omitted_episode_count": 0,
+        "budget_omitted_episode_ids": [],
+        "omitted_episode_ids": ["EP-future"],
+        "available_coverage_complete": True,
+        "omission_report_file": "omission_report.md",
+        "omission_report_sha256": file_sha256(omission_report),
+        "token_budget": 10,
+        "token_counts": token_counts,
+        "token_count_total": token_count_total,
+        "pack_files": list(pack_files),
+        "pack_file_count": len(pack_files),
+        "pack_file_hashes": pack_hashes,
+        "pack_sha256": sha256_text(
+            "\n".join(pack_hashes[file_name] for file_name in pack_files)
+        ),
+        "truncations": [
+            {
+                "artifact": "memory_cases.md",
+                "reason": "episode_available_from_after_cutoff",
+                "omitted_episode_ids": ["EP-future"],
+            },
+            {
+                "artifact": "session_pack",
+                "reason": "session_pack_required_context_exceeds_token_budget",
+                "token_budget": 10,
+                "token_count_total": token_count_total,
+            },
+        ],
+        "errors": [
+            "session pack excluded future-unavailable episodes",
+            "session pack required context exceeds token budget",
+        ],
+    }
+    write_json(pack_dir / "manifest.json", manifest)
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+    assert result["checked_session_pack_manifests"] == 1
+
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            **manifest,
+            "blocked": False,
+            "pack_sha256": "bad",
+            "token_count_total": 1,
+            "truncations": [],
+            "errors": [],
+        },
+    )
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    label = "session_packs/2030-01-10/manifest.json"
+    assert f"{label}: session pack pack_sha256 mismatch" in failed["findings"]
+    assert f"{label}: session pack token_count_total mismatch" in failed["findings"]
+    assert (
+        f"{label}: session pack token budget exceeded without blocked"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing required context over budget error"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing required context over budget truncation"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing future-unavailable episode error"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing future-unavailable episode truncation"
+        in failed["findings"]
+    )
+
+
 def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path) -> None:
     export_dir = tmp_path / "training_exports" / "sft"
     export_dir.mkdir(parents=True)

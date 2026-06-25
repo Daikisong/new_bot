@@ -32,6 +32,8 @@ runs/checkpoints/*
 !runs/checkpoints/red_team/**
 !runs/checkpoints/brain_context/
 !runs/checkpoints/brain_context/**
+runs/checkpoints/brain_context/SESSION-*/
+runs/checkpoints/brain_context/SESSION-*/**
 !runs/checkpoints/memory_sweep/
 !runs/checkpoints/memory_sweep/**
 !runs/checkpoints/row_disposition/

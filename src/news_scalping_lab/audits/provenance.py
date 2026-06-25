@@ -75,6 +75,14 @@ POSTMORTEM_STRING_SEQUENCE_FIELDS = (
     "false_positives",
     "lessons",
 )
+SESSION_PACK_FILES = (
+    "system_instructions.md",
+    "research_brain.md",
+    "memory_cases.md",
+    "current_news.md",
+    "company_memory.md",
+    "market_context.md",
+)
 MEMORY_CLAIM_STRING_SEQUENCE_FIELDS = (
     "conditions",
     "failure_modes",
@@ -199,6 +207,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
     checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
     checked_training_export_manifests = _check_training_export_provenance(root, findings)
+    checked_session_pack_manifests = _check_session_pack_provenance(root, findings)
     checked_analysis_bundles = _check_analysis_bundle_provenance(root, findings)
     return {
         "passed": not findings,
@@ -209,6 +218,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
         "checked_company_memory_files": checked_company_memory_files,
         "checked_mechanism_memory_records": checked_mechanism_memory_records,
         "checked_training_export_manifests": checked_training_export_manifests,
+        "checked_session_pack_manifests": checked_session_pack_manifests,
         "checked_analysis_bundles": checked_analysis_bundles,
     }
 
@@ -5319,6 +5329,422 @@ def _retry_error_history_findings(
         if not isinstance(item.get("message"), str):
             findings.append(f"{label} item {index} missing message")
     return findings
+
+
+def _check_session_pack_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for manifest_path in sorted((root / "session_packs").glob("*/manifest.json")):
+        manifest = _read_json_object(manifest_path, findings)
+        if manifest is None:
+            continue
+        checked += 1
+        _check_session_pack_manifest(root, manifest_path, manifest, findings)
+    return checked
+
+
+def _check_session_pack_manifest(
+    root: Path,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, manifest_path)
+    if manifest.get("schema_version") != "nslab.session_pack_manifest.v1":
+        findings.append(f"{label}: session pack schema_version invalid")
+    for field in ("trade_date", "cutoff_at", "as_of", "mode", "brain_version"):
+        if not isinstance(manifest.get(field), str) or not manifest.get(field):
+            findings.append(f"{label}: session pack {field} missing")
+    if not isinstance(manifest.get("blocked"), bool):
+        findings.append(f"{label}: session pack blocked invalid")
+
+    _check_session_pack_context_hashes(
+        root,
+        label,
+        manifest,
+        files_field="brain_files",
+        hashes_field="brain_file_hashes",
+        findings=findings,
+    )
+    _check_session_pack_context_hashes(
+        root,
+        label,
+        manifest,
+        files_field="shard_brain_files",
+        hashes_field="shard_brain_file_hashes",
+        findings=findings,
+    )
+    observed_token_counts = _check_session_pack_files(
+        label,
+        manifest_path,
+        manifest,
+        findings,
+    )
+    observed_total = _check_session_pack_token_counts(
+        label,
+        manifest,
+        observed_token_counts,
+        findings,
+    )
+    _check_session_pack_omission_report(root, label, manifest_path, manifest, findings)
+    _check_session_pack_blocking_contract(
+        label,
+        manifest,
+        observed_total=observed_total,
+        findings=findings,
+    )
+
+
+def _check_session_pack_context_hashes(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    *,
+    files_field: str,
+    hashes_field: str,
+    findings: list[str],
+) -> None:
+    file_refs = _session_pack_string_list_field(label, manifest, files_field, findings)
+    hashes = _session_pack_hash_dict_field(label, manifest, hashes_field, findings)
+    if file_refs is None or hashes is None:
+        return
+    missing_hashes = sorted(set(file_refs) - set(hashes))
+    extra_hashes = sorted(set(hashes) - set(file_refs))
+    for file_ref in missing_hashes:
+        findings.append(
+            f"{label}: session pack {hashes_field} missing: {file_ref}"
+        )
+    for file_ref in extra_hashes:
+        findings.append(
+            f"{label}: session pack {hashes_field} unlisted: {file_ref}"
+        )
+    for file_ref in file_refs:
+        expected_hash = hashes.get(file_ref)
+        if not isinstance(expected_hash, str):
+            continue
+        path = _resolve_project_path(root, file_ref)
+        if path is None:
+            findings.append(
+                f"{label}: session pack {files_field} path escapes project root: "
+                f"{file_ref}"
+            )
+            continue
+        if not path.is_file():
+            findings.append(
+                f"{label}: session pack {files_field} file not found: {file_ref}"
+            )
+            continue
+        if file_sha256(path) != expected_hash:
+            findings.append(
+                f"{label}: session pack {hashes_field} mismatch: {file_ref}"
+            )
+
+
+def _check_session_pack_files(
+    label: str,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> dict[str, int]:
+    pack_files = _session_pack_string_list_field(label, manifest, "pack_files", findings)
+    if pack_files is not None and pack_files != list(SESSION_PACK_FILES):
+        findings.append(f"{label}: session pack pack_files mismatch")
+    pack_file_count = _non_bool_int(manifest.get("pack_file_count"))
+    if pack_file_count != len(SESSION_PACK_FILES):
+        findings.append(f"{label}: session pack pack_file_count mismatch")
+
+    pack_hashes = _session_pack_hash_dict_field(
+        label,
+        manifest,
+        "pack_file_hashes",
+        findings,
+    )
+    if pack_hashes is None:
+        return {}
+    observed_hashes: dict[str, str] = {}
+    observed_token_counts: dict[str, int] = {}
+    for file_name in SESSION_PACK_FILES:
+        expected_hash = pack_hashes.get(file_name)
+        if not isinstance(expected_hash, str):
+            findings.append(
+                f"{label}: session pack pack_file_hashes missing: {file_name}"
+            )
+            continue
+        path = manifest_path.parent / file_name
+        if not path.is_file():
+            findings.append(f"{label}: session pack file missing: {file_name}")
+            continue
+        observed_hash = file_sha256(path)
+        observed_hashes[file_name] = observed_hash
+        observed_token_counts[file_name] = _estimate_session_pack_tokens(
+            path.read_text(encoding="utf-8")
+        )
+        if observed_hash != expected_hash:
+            findings.append(
+                f"{label}: session pack pack_file_hashes mismatch: {file_name}"
+            )
+    extra_hashes = sorted(str(key) for key in pack_hashes if key not in SESSION_PACK_FILES)
+    if extra_hashes:
+        findings.append(
+            f"{label}: session pack unlisted pack_file_hashes: "
+            f"{', '.join(extra_hashes)}"
+        )
+    expected_pack_sha = manifest.get("pack_sha256")
+    if not isinstance(expected_pack_sha, str) or not expected_pack_sha:
+        findings.append(f"{label}: session pack pack_sha256 missing")
+    elif set(observed_hashes) == set(SESSION_PACK_FILES):
+        observed_pack_sha = sha256_text(
+            "\n".join(observed_hashes[file_name] for file_name in SESSION_PACK_FILES)
+        )
+        if observed_pack_sha != expected_pack_sha:
+            findings.append(f"{label}: session pack pack_sha256 mismatch")
+    return observed_token_counts
+
+
+def _check_session_pack_token_counts(
+    label: str,
+    manifest: dict[str, Any],
+    observed_token_counts: dict[str, int],
+    findings: list[str],
+) -> int | None:
+    token_counts = manifest.get("token_counts")
+    if not isinstance(token_counts, dict):
+        findings.append(f"{label}: session pack token_counts invalid")
+        return None
+    expected_total = 0
+    valid_expected_counts = True
+    for file_name in SESSION_PACK_FILES:
+        expected_count = token_counts.get(file_name)
+        if not isinstance(expected_count, int) or isinstance(expected_count, bool):
+            findings.append(f"{label}: session pack token_counts missing: {file_name}")
+            valid_expected_counts = False
+            continue
+        expected_total += expected_count
+        observed_count = observed_token_counts.get(file_name)
+        if observed_count is not None and observed_count != expected_count:
+            findings.append(
+                f"{label}: session pack token_counts mismatch: {file_name}"
+            )
+    extra_counts = sorted(str(key) for key in token_counts if key not in SESSION_PACK_FILES)
+    if extra_counts:
+        findings.append(
+            f"{label}: session pack unlisted token_counts: {', '.join(extra_counts)}"
+        )
+
+    manifest_total = _non_bool_int(manifest.get("token_count_total"))
+    if manifest_total is None:
+        findings.append(f"{label}: session pack token_count_total invalid")
+        return None
+    observed_total = (
+        sum(observed_token_counts[file_name] for file_name in SESSION_PACK_FILES)
+        if set(observed_token_counts) == set(SESSION_PACK_FILES)
+        else None
+    )
+    if valid_expected_counts and manifest_total != expected_total:
+        findings.append(f"{label}: session pack token_count_total mismatch")
+    if observed_total is not None and manifest_total != observed_total:
+        findings.append(f"{label}: session pack token_count_total mismatch")
+    return observed_total if observed_total is not None else manifest_total
+
+
+def _check_session_pack_omission_report(
+    root: Path,
+    label: str,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    report_file = manifest.get("omission_report_file")
+    if not isinstance(report_file, str) or not report_file:
+        findings.append(f"{label}: session pack omission_report_file invalid")
+        return
+    report_path = (manifest_path.parent / report_file).resolve()
+    try:
+        report_path.relative_to(root.resolve())
+        report_path.relative_to(manifest_path.parent.resolve())
+    except ValueError:
+        findings.append(f"{label}: session pack omission_report_file escapes pack")
+        return
+    if not report_path.is_file():
+        findings.append(f"{label}: session pack omission_report_file missing")
+        return
+    expected_hash = manifest.get("omission_report_sha256")
+    if not isinstance(expected_hash, str) or file_sha256(report_path) != expected_hash:
+        findings.append(f"{label}: session pack omission_report_sha256 mismatch")
+
+
+def _check_session_pack_blocking_contract(
+    label: str,
+    manifest: dict[str, Any],
+    *,
+    observed_total: int | None,
+    findings: list[str],
+) -> None:
+    errors = _session_pack_error_list(label, manifest, findings)
+    truncation_reasons = _session_pack_truncation_reasons(label, manifest, findings)
+    blocked = manifest.get("blocked")
+    token_budget = _non_bool_int(manifest.get("token_budget"))
+    if token_budget is None or token_budget < 1:
+        findings.append(f"{label}: session pack token_budget invalid")
+    elif observed_total is not None and observed_total > token_budget:
+        if blocked is not True:
+            findings.append(
+                f"{label}: session pack token budget exceeded without blocked"
+            )
+        _require_session_pack_error(
+            label,
+            errors,
+            "session pack required context exceeds token budget",
+            "required context over budget",
+            findings,
+        )
+        _require_session_pack_truncation(
+            label,
+            truncation_reasons,
+            "session_pack_required_context_exceeds_token_budget",
+            "required context over budget",
+            findings,
+        )
+
+    budget_omitted_ids = _session_pack_optional_string_list(
+        label,
+        manifest,
+        "budget_omitted_episode_ids",
+        findings,
+    )
+    if budget_omitted_ids:
+        if blocked is not True:
+            findings.append(
+                f"{label}: session pack budget omissions without blocked"
+            )
+        _require_session_pack_error(
+            label,
+            errors,
+            "session pack omitted available episodes due to token budget",
+            "budget omission",
+            findings,
+        )
+        _require_session_pack_truncation(
+            label,
+            truncation_reasons,
+            "session_pack_token_budget_exceeded",
+            "budget omission",
+            findings,
+        )
+
+    unavailable_ids = _session_pack_optional_string_list(
+        label,
+        manifest,
+        "unavailable_episode_ids",
+        findings,
+    )
+    if unavailable_ids:
+        _require_session_pack_error(
+            label,
+            errors,
+            "session pack excluded future-unavailable episodes",
+            "future-unavailable episode",
+            findings,
+        )
+        _require_session_pack_truncation(
+            label,
+            truncation_reasons,
+            "episode_available_from_after_cutoff",
+            "future-unavailable episode",
+            findings,
+        )
+
+
+def _session_pack_string_list_field(
+    label: str,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> list[str] | None:
+    value = manifest.get(field)
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        findings.append(f"{label}: session pack {field} invalid")
+        return None
+    return list(value)
+
+
+def _session_pack_optional_string_list(
+    label: str,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> list[str]:
+    if field not in manifest:
+        return []
+    value = _session_pack_string_list_field(label, manifest, field, findings)
+    return value or []
+
+
+def _session_pack_hash_dict_field(
+    label: str,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> dict[str, str] | None:
+    value = manifest.get(field)
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str) and key and isinstance(item, str) and item
+        for key, item in value.items()
+    ):
+        findings.append(f"{label}: session pack {field} invalid")
+        return None
+    return dict(value)
+
+
+def _session_pack_error_list(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> list[str]:
+    value = manifest.get("errors")
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        findings.append(f"{label}: session pack errors invalid")
+        return []
+    return list(value)
+
+
+def _session_pack_truncation_reasons(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> set[str]:
+    value = manifest.get("truncations")
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        findings.append(f"{label}: session pack truncations invalid")
+        return set()
+    return {reason for item in value if isinstance(reason := item.get("reason"), str)}
+
+
+def _require_session_pack_error(
+    label: str,
+    errors: list[str],
+    expected: str,
+    reason_label: str,
+    findings: list[str],
+) -> None:
+    if expected not in errors:
+        findings.append(f"{label}: session pack missing {reason_label} error")
+
+
+def _require_session_pack_truncation(
+    label: str,
+    truncation_reasons: set[str],
+    expected: str,
+    reason_label: str,
+    findings: list[str],
+) -> None:
+    if expected not in truncation_reasons:
+        findings.append(f"{label}: session pack missing {reason_label} truncation")
+
+
+def _estimate_session_pack_tokens(text: str) -> int:
+    return max(1, len(text) // 4) if text else 0
 
 
 def _check_training_export_provenance(root: Path, findings: list[str]) -> int:
