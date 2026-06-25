@@ -281,10 +281,54 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
         is True
     )
+    assert (
+        inspection["output_artifacts"]["prediction"]["schema_version_verified"] is True
+    )
+    assert inspection["output_artifacts"]["prediction"]["sealed_at_verified"] is True
+    assert (
+        inspection["output_artifacts"]["prediction"]["blind_artifact_hash_verified"]
+        is True
+    )
+    assert (
+        inspection["output_artifacts"]["prediction"]["manifest_blind_hash_verified"]
+        is True
+    )
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
     manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
+    prediction_file = tmp_path / context_payload["prediction_artifact"]
+    original_prediction = read_json(prediction_file)
+    original_manifest_for_prediction = read_json(manifest_file)
+    tampered_prediction = {
+        **original_prediction,
+        "blind_artifact_sha256": "0" * 64,
+    }
+    write_json(prediction_file, tampered_prediction)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_prediction,
+            "prediction_sha256": file_sha256(prediction_file),
+        },
+    )
+    tampered_prediction_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered prediction", tampered_prediction_context)
+    tampered_prediction_inspection = json.loads(
+        tampered_prediction_context.output
+    )["inspection"]
+    assert tampered_prediction_inspection["reproducibility_checks_passed"] is False
+    tampered_prediction_status = tampered_prediction_inspection["output_artifacts"][
+        "prediction"
+    ]
+    assert tampered_prediction_status["hash_verified"] is True
+    assert tampered_prediction_status["blind_artifact_hash_verified"] is False
+    assert tampered_prediction_status["manifest_blind_hash_verified"] is False
+    assert "prediction_artifact_blind_hash_mismatch" in (
+        tampered_prediction_status["errors"]
+    )
+    write_json(prediction_file, original_prediction)
+    write_json(manifest_file, original_manifest_for_prediction)
     candidate_expansion_file = tmp_path / context_payload["candidate_expansion_artifact"]
     original_candidate_expansion = read_json(candidate_expansion_file)
     original_manifest_for_candidate_expansion = read_json(manifest_file)

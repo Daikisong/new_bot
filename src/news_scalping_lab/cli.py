@@ -352,9 +352,8 @@ def _inspect_context_manifest(
         "supporting_artifacts": supporting_artifacts,
         "memory_sweep": memory_sweep,
         "llm_traces": llm_traces,
-        "reproducibility_checks_passed": _artifact_status_passed(
-            prediction,
-            required_extra_key="context_manifest_id_verified",
+        "reproducibility_checks_passed": _prediction_artifact_status_passed(
+            prediction
         )
         and _artifact_status_passed(report, required_extra_key="contains_run_id")
         and _news_input_status_passed(news_input)
@@ -2304,6 +2303,10 @@ def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[s
     status = _base_artifact_status(root, manifest.get("prediction_artifact"))
     expected_hash = manifest.get("prediction_sha256")
     status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
+    status["schema_version_verified"] = False
+    status["sealed_at_verified"] = False
+    status["blind_artifact_hash_verified"] = False
+    status["manifest_blind_hash_verified"] = False
     if not status["configured"]:
         return status
     artifact_path = status.pop("_artifact_path", None)
@@ -2330,6 +2333,32 @@ def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[s
     status["context_manifest_id_verified"] = (
         isinstance(run_id, str) and context_manifest_id == run_id
     )
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.blind_prediction.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("prediction_artifact_schema_version_mismatch")
+    sealed_at = payload.get("sealed_at")
+    status["sealed_at_verified"] = isinstance(sealed_at, str) and bool(sealed_at)
+    if not status["sealed_at_verified"]:
+        status["errors"].append("prediction_artifact_sealed_at_missing")
+    observed_blind_hash = payload.get("blind_artifact_sha256")
+    status["blind_artifact_sha256"] = (
+        observed_blind_hash if isinstance(observed_blind_hash, str) else None
+    )
+    prediction_for_hash = {**payload, "blind_artifact_sha256": None}
+    expected_blind_hash = sha256_text(canonical_json(prediction_for_hash))
+    status["expected_blind_artifact_sha256"] = expected_blind_hash
+    status["blind_artifact_hash_verified"] = observed_blind_hash == expected_blind_hash
+    if not status["blind_artifact_hash_verified"]:
+        status["errors"].append("prediction_artifact_blind_hash_mismatch")
+    manifest_blind_hash = manifest.get("blind_artifact_sha256")
+    status["manifest_blind_artifact_sha256"] = (
+        manifest_blind_hash if isinstance(manifest_blind_hash, str) else None
+    )
+    status["manifest_blind_hash_verified"] = observed_blind_hash == manifest_blind_hash
+    if not status["manifest_blind_hash_verified"]:
+        status["errors"].append("prediction_artifact_manifest_blind_hash_mismatch")
     return status
 
 
@@ -2409,6 +2438,21 @@ def _artifact_status_passed(status: dict[str, Any], *, required_extra_key: str) 
         and status.get("exists")
         and status.get("hash_verified")
         and status.get(required_extra_key)
+        and not status.get("errors")
+    )
+
+
+def _prediction_artifact_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists")
+        and status.get("hash_verified")
+        and status.get("context_manifest_id_verified")
+        and status.get("schema_version_verified")
+        and status.get("sealed_at_verified")
+        and status.get("blind_artifact_hash_verified")
+        and status.get("manifest_blind_hash_verified")
         and not status.get("errors")
     )
 

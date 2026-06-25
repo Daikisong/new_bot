@@ -174,6 +174,18 @@ def test_readme_quick_start_commands_produce_demo_outputs(
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
         is True
     )
+    assert (
+        inspection["output_artifacts"]["prediction"]["schema_version_verified"] is True
+    )
+    assert inspection["output_artifacts"]["prediction"]["sealed_at_verified"] is True
+    assert (
+        inspection["output_artifacts"]["prediction"]["blind_artifact_hash_verified"]
+        is True
+    )
+    assert (
+        inspection["output_artifacts"]["prediction"]["manifest_blind_hash_verified"]
+        is True
+    )
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
