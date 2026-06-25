@@ -14,11 +14,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from news_scalping_lab.contracts.models import OutcomeLabels
+from news_scalping_lab.outcomes.labels import build_outcome_labels, unavailable_outcome
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.utils import read_json
 
 PRIMARY_STOCK_WEB_REMOTE_URL = "https://github.com/Songdaiki/stock-web.git"
-UPPER_LIMIT_RETURN_THRESHOLD_PCT = 29.0
 
 
 class GitRunner(Protocol):
@@ -99,49 +99,17 @@ class StockWebPriceSource:
         previous_candidates = [record for record in all_records if record.trade_date < trade_date]
         previous = previous_candidates[-1] if previous_candidates else None
         if snapshot is None or previous is None or previous.close in (None, 0):
-            return OutcomeLabels(flags=["PRICE_UNAVAILABLE"])
-        previous_close = previous.close
-        assert previous_close is not None
-        high_return = None if snapshot.high is None else (snapshot.high / previous_close - 1) * 100
-        close_return = (
-            None if snapshot.close is None else (snapshot.close / previous_close - 1) * 100
-        )
-        open_gap = None if snapshot.open is None else (snapshot.open / previous_close - 1) * 100
-        low_return = None if snapshot.low is None else (snapshot.low / previous_close - 1) * 100
-        touched = (
-            high_return is not None and high_return >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
-        )
-        closed = (
-            close_return is not None and close_return >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
-        )
-        one_price = all(
-            value is not None and value >= UPPER_LIMIT_RETURN_THRESHOLD_PCT
-            for value in (open_gap, high_return, low_return, close_return)
-        )
-        turnover_ratio = (
-            snapshot.volume / snapshot.listed_shares * 100
-            if snapshot.volume is not None
-            and snapshot.listed_shares is not None
-            and snapshot.listed_shares > 0
-            else None
-        )
-        return OutcomeLabels(
-            open_gap_pct=open_gap,
-            intraday_high_return_pct=high_return,
-            close_return_pct=close_return,
-            upper_limit_touched=touched,
-            upper_limit_closed=closed,
-            upper_limit_released=touched and not closed,
-            one_price_upper_limit=one_price,
+            return unavailable_outcome()
+        return build_outcome_labels(
+            previous_close=previous.close,
+            open_price=snapshot.open,
+            high=snapshot.high,
+            low=snapshot.low,
+            close=snapshot.close,
             volume=snapshot.volume,
             amount=snapshot.amount,
-            turnover_ratio=turnover_ratio,
+            listed_shares=snapshot.listed_shares,
             market_cap_previous_close=previous.market_cap,
-            intraday_fields_unavailable=[
-                "first_upper_limit_touch_time",
-                "first_one_minute_return",
-                "volatility_interruptions",
-            ],
         )
 
     def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
