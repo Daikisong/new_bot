@@ -123,6 +123,9 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     evaluated = RUNNER.invoke(app, ["evaluate", "--trade-date", "2026-06-24"])
     assert evaluated.exit_code == 0, evaluated.output
     evaluation_payload = json.loads(evaluated.output)
+    assert evaluation_payload["outcome_coverage_status"] == "PREDICTED_CANDIDATES_ONLY"
+    assert evaluation_payload["performance_metrics"]["candidate_count"] > 0
+    assert evaluation_payload["eligibility_matrix"]["forecast_evaluation_eligible"] is True
     postmortem_path = tmp_path / evaluation_payload["postmortem"]
     episode_id = evaluation_payload["research_episode_id"]
     assert postmortem_path.exists()

@@ -82,6 +82,7 @@ class Evaluator:
                 false_positives.append(company)
         outcome_universe = _load_outcome_universe(self.price_source, trade_date=trade_date)
         metrics = _build_metrics(ranked_outcomes, outcome_universe=outcome_universe)
+        outcome_coverage_status = _outcome_coverage_status(outcome_universe)
         misses = _upper_limit_misses(prediction.candidates, outcome_universe)
         postmortem = Postmortem(
             summary="Mock postmortem generated from sealed blind prediction and evaluation-only outcomes.",
@@ -108,6 +109,7 @@ class Evaluator:
             "trade_date": trade_date.isoformat(),
             "created_at": now_kst().isoformat(),
             "blind_prediction_id": prediction.prediction_id,
+            "outcome_coverage_status": outcome_coverage_status,
             "outcomes": outcomes,
             "performance_metrics": metrics.model_dump(mode="json"),
             "postmortem": postmortem.model_dump(mode="json"),
@@ -123,7 +125,7 @@ class Evaluator:
             postmortem=postmortem,
             outcome_labels=outcome_labels,
             eligibility_matrix=eligibility_matrix,
-            outcome_coverage_status=_outcome_coverage_status(outcome_universe),
+            outcome_coverage_status=outcome_coverage_status,
         )
         episode_path = ResearchStore(self.root).save_episode(episode)
         WarehouseStore(self.root).write_daily_outcomes_from_files()

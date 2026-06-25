@@ -267,6 +267,9 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     )
 
     metrics = read_json(result.report_path)["performance_metrics"]
+    assert read_json(result.report_path)["outcome_coverage_status"] == (
+        "PREDICTED_CANDIDATES_ONLY"
+    )
     eligibility = read_json(result.report_path)["eligibility_matrix"]
     assert metrics["candidate_count"] == 3
     assert metrics["upper_limit_hits_at_5"] == 1
@@ -347,6 +350,7 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     )
 
     metrics = read_json(result.report_path)["performance_metrics"]
+    assert read_json(result.report_path)["outcome_coverage_status"] == "FULL_MARKET_COMPLETE"
     eligibility = read_json(result.report_path)["eligibility_matrix"]
     postmortem = read_json(result.report_path)["postmortem"]
     assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)

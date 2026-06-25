@@ -157,6 +157,9 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     evaluated = RUNNER.invoke(app, ["evaluate", "--trade-date", "2030-01-12"])
     _assert_ok("evaluate", evaluated)
     evaluation_payload = json.loads(evaluated.output)
+    assert evaluation_payload["outcome_coverage_status"] == "PREDICTED_CANDIDATES_ONLY"
+    assert evaluation_payload["performance_metrics"]["candidate_count"] > 0
+    assert evaluation_payload["eligibility_matrix"]["forecast_evaluation_eligible"] is True
     evaluation_episode_id = evaluation_payload["research_episode_id"]
     assert (tmp_path / evaluation_payload["postmortem"]).exists()
     assert (tmp_path / evaluation_payload["research_episode_path"]).exists()

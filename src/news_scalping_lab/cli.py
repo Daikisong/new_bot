@@ -260,11 +260,17 @@ def analyze(
 def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
     settings = load_settings()
     result = Evaluator(settings.project_root).evaluate(trade_date=_parse_date(trade_date))
+    postmortem = read_json(result.report_path)
+    if not isinstance(postmortem, dict):
+        raise typer.BadParameter("postmortem report must be a JSON object")
     _echo(
         {
             "postmortem": result.report_path.as_posix(),
             "research_episode_id": result.episode_id,
             "research_episode_path": result.episode_path.as_posix(),
+            "outcome_coverage_status": postmortem.get("outcome_coverage_status"),
+            "performance_metrics": postmortem.get("performance_metrics"),
+            "eligibility_matrix": postmortem.get("eligibility_matrix"),
         }
     )
 
