@@ -615,6 +615,13 @@ def _check_manifest_basics(
     if not isinstance(prompt_hashes, dict):
         findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
         prompt_hashes = {}
+    _check_current_manifest_required_contract(
+        prediction_path,
+        prediction,
+        manifest,
+        prompt_hashes,
+        findings,
+    )
     if not prompt_hashes.get("blind_analysis"):
         findings.append(f"{prediction_path.name}: context manifest missing blind_analysis prompt hash")
 
@@ -634,6 +641,71 @@ def _check_manifest_basics(
     if final_synthesis_was_run and not prompt_hashes.get("final_synthesis"):
         findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
     return prompt_hashes
+
+
+def _check_current_manifest_required_contract(
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    manifest: dict[str, Any],
+    prompt_hashes: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if manifest.get("schema_version") != "nslab.context_manifest.v1":
+        return
+    if not isinstance(prediction.get("sealed_at"), str) or not prediction.get("sealed_at"):
+        return
+
+    required_string_fields = (
+        "news_file",
+        "news_sha256",
+        "prediction_artifact",
+        "prediction_sha256",
+        "report_artifact",
+        "report_sha256",
+        "row_disposition_artifact",
+        "row_disposition_sha256",
+        "event_cluster_artifact",
+        "event_cluster_sha256",
+        "news_novelty_review_artifact",
+        "news_novelty_review_sha256",
+        "semantic_retrieval_plan_artifact",
+        "semantic_retrieval_plan_sha256",
+        "semantic_retrieval_artifact",
+        "semantic_retrieval_sha256",
+        "candidate_expansion_artifact",
+        "candidate_expansion_sha256",
+        "source_ledger_artifact",
+        "source_ledger_sha256",
+        "blind_seal_receipt_artifact",
+        "blind_seal_receipt_sha256",
+        "phase_state_artifact",
+        "phase_state_sha256",
+        "final_synthesis_context_artifact",
+        "final_synthesis_context_sha256",
+    )
+    for field in required_string_fields:
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value:
+            findings.append(f"{prediction_path.name}: context manifest missing {field}")
+
+    red_team_artifacts = manifest.get("red_team_artifacts")
+    if (
+        not isinstance(red_team_artifacts, list)
+        or not red_team_artifacts
+        or not all(isinstance(item, str) and item for item in red_team_artifacts)
+    ):
+        findings.append(f"{prediction_path.name}: context manifest red_team_artifacts is invalid")
+
+    for purpose in (
+        "news_novelty_review",
+        "semantic_retrieval_plan",
+        "candidate_expansion",
+        "blind_analysis",
+        "red_team_candidate_review",
+        "final_synthesis",
+    ):
+        if not isinstance(prompt_hashes.get(purpose), str) or not prompt_hashes.get(purpose):
+            findings.append(f"{prediction_path.name}: context manifest missing {purpose} prompt hash")
 
 
 def _check_manifest_reproducibility_fields(
@@ -1284,20 +1356,28 @@ def _check_prompt_hash_traces(
             findings.append(
                 f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
             )
-        else:
-            for trace_record in trace_metadata["trace_records"]:
-                if trace_record.get("prompt_sha256") == manifest_hash:
-                    _check_trace_checkpoint(
-                        root,
-                        trace_record["path"],
-                        trace_record["payload"],
-                        findings,
-                    )
+            continue
+        matching_trace_records = [
+            trace_record
+            for trace_record in trace_metadata["trace_records"]
+            if trace_record.get("prompt_sha256") == manifest_hash
+        ]
+        matching_model_configs = []
+        for trace_record in matching_trace_records:
+            _check_trace_checkpoint(
+                root,
+                trace_record["path"],
+                trace_record["payload"],
+                findings,
+            )
+            model_config = trace_record["payload"].get("model_config")
+            if isinstance(model_config, dict):
+                matching_model_configs.append(model_config)
         _check_trace_model_config_matches_manifest(
             prediction_path,
             manifest,
             purpose,
-            trace_metadata["model_configs"],
+            matching_model_configs,
             findings,
         )
 
@@ -1330,17 +1410,21 @@ def _check_trace_model_config_matches_manifest(
     if not trace_model_configs:
         findings.append(f"{prediction_path.name}: trace model_config missing for {purpose}")
         return
-    for trace_model_config in trace_model_configs:
-        mismatches = [
+    mismatch_sets = [
+        [
             key
             for key, expected_value in expected.items()
             if trace_model_config.get(key) != expected_value
         ]
-        if mismatches:
-            findings.append(
-                f"{prediction_path.name}: trace model_config mismatch for {purpose}: "
-                f"{', '.join(mismatches)}"
-            )
+        for trace_model_config in trace_model_configs
+    ]
+    if any(not mismatches for mismatches in mismatch_sets):
+        return
+    best_mismatches = min(mismatch_sets, key=len)
+    findings.append(
+        f"{prediction_path.name}: trace model_config mismatch for {purpose}: "
+        f"{', '.join(best_mismatches)}"
+    )
 
 
 def _check_context_manifest(

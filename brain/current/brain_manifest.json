@@ -1,19 +1,22 @@
 {
   "accepted_episode_count": 1,
-  "brain_version": "brain-f0b4038f50",
+  "brain_version": "brain-cfa3129213",
+  "build_mode": "full",
   "claim_ids": [
-    "CL-ffbc195d052b",
-    "CL-d8f2bcb3efc4",
-    "CL-f620e6731be2"
+    "CL-0f7bde611467",
+    "CL-7816a26d3aad",
+    "CL-c6377253f530"
   ],
   "coverage_complete": true,
   "covered_episode_count": 1,
   "covered_episode_ids": [
-    "EP-6415569f7b43"
+    "EP-f56c790fe2fc"
   ],
-  "created_at": "2026-06-25T12:52:51.227406+09:00",
+  "created_at": "2026-06-25T21:11:50.558723+09:00",
+  "last_full_rebuild_at": "2026-06-25T21:11:50.558723+09:00",
   "schema_version": "nslab.brain_manifest.v1",
   "source_hashes": {
-    "EP-6415569f7b43": "1d71109ebbd7d7c1ec6ef402ba08315efab0958924b40b8606c620149380eba8"
-  }
+    "EP-f56c790fe2fc": "aeba46a1f47ca52c04fed874857f54353abf58b1f8220f605a4a622a7e11f4c0"
+  },
+  "updated_episode_id": null
 }

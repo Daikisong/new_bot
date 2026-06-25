@@ -2835,9 +2835,6 @@ def _final_synthesis_manifest_count_mismatches(
 ) -> dict[str, dict[str, Any]]:
     expected_counts: dict[str, int] = {}
     _add_expected_count(
-        expected_counts, "current_news_count", manifest.get("included_news_row_count")
-    )
-    _add_expected_count(
         expected_counts, "event_cluster_count", manifest.get("event_cluster_count")
     )
     _add_expected_count(

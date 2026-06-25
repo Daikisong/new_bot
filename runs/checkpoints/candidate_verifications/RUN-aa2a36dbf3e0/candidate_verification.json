@@ -1,0 +1,1231 @@
+{
+  "created_at": "2026-06-25T21:05:47.405221+09:00",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "findings": [
+    {
+      "accepted_source_ids": [
+        "WEB-6a9af894e44f"
+      ],
+      "candidate_company_name": "넥스턴앤롤코리아",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 1,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders 넥스턴앤롤코리아 UNKNOWN SINGLE_EVENT Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption. The entity appears in the current pre-cutoff news batch.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6a9af894e44f"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-24caa6762443"
+      ],
+      "candidate_company_name": "꼭승리한다홍명보호",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 2,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders 꼭승리한다홍명보호 UNKNOWN SINGLE_EVENT Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption. The entity appears in the current pre-cutoff news batch.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-24caa6762443"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-308f32ddccaa"
+      ],
+      "candidate_company_name": "제노코",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 3,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders 제노코 UNKNOWN SINGLE_EVENT Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption. The entity appears in the current pre-cutoff news batch.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-308f32ddccaa"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-b40879c1262d"
+      ],
+      "candidate_company_name": "삼성",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 4,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders 삼성 UNKNOWN SINGLE_EVENT Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption. The entity appears in the current pre-cutoff news batch.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-b40879c1262d"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-946bf52c6a87"
+      ],
+      "candidate_company_name": "오창테크노폴리스",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 5,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders 오창테크노폴리스 UNKNOWN SINGLE_EVENT Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption. The entity appears in the current pre-cutoff news batch.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-946bf52c6a87"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-6ae1104e638a"
+      ],
+      "candidate_company_name": "BENEFICIARY_DISCOVERY_REQUIRED",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "THEME_BENEFICIARY",
+      "candidate_rank": 6,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders BENEFICIARY_DISCOVERY_REQUIRED UNKNOWN THEME_BENEFICIARY Policy, industry, or supply-chain beneficiaries require web/company discovery. Open-world mechanisms indicate indirect paths before any retrieval gate.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-6ae1104e638a"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-a95627b1975d"
+      ],
+      "candidate_company_name": "D_MINUS_ONE_LEADER_REVIEW",
+      "candidate_expansion_path": null,
+      "candidate_path_type": "CONTINUATION",
+      "candidate_rank": 7,
+      "candidate_ticker": "UNKNOWN",
+      "d_minus_one_market_data_only": true,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders D_MINUS_ONE_LEADER_REVIEW UNKNOWN CONTINUATION Recent leaders must be checked using only D-1 and earlier market data. Continuation is evaluated separately from current-news directness.  ",
+      "source_count": 1,
+      "subject_type": "final_candidate",
+      "uncertainties": [],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-a95627b1975d"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-c8a9f0228b76"
+      ],
+      "candidate_company_name": "SINGLE_EVENT_DISCOVERY_REQUIRED",
+      "candidate_expansion_path": "SINGLE_EVENT",
+      "candidate_path_type": "SINGLE_EVENT",
+      "candidate_rank": 0,
+      "candidate_ticker": "",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders SINGLE_EVENT_DISCOVERY_REQUIRED  SINGLE_EVENT Mock single event route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Mock single event route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Which listed entities match the single event route? What cutoff-safe evidence would disconfirm directness or novelty? single event sector hypothesis",
+      "source_count": 1,
+      "subject_type": "candidate_expansion",
+      "uncertainties": [
+        "exact listed security and ticker remain unresolved"
+      ],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
+          ],
+          "status": "needs_company_discovery"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c8a9f0228b76"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-c1c56801231b"
+      ],
+      "candidate_company_name": "THEME_FORMATION_DISCOVERY_REQUIRED",
+      "candidate_expansion_path": "THEME_FORMATION",
+      "candidate_path_type": "THEME_FORMATION",
+      "candidate_rank": 0,
+      "candidate_ticker": "",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders THEME_FORMATION_DISCOVERY_REQUIRED  THEME_FORMATION Mock theme formation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Mock theme formation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Which listed entities match the theme formation route? What cutoff-safe evidence would disconfirm directness or novelty? theme formation sector hypothesis",
+      "source_count": 1,
+      "subject_type": "candidate_expansion",
+      "uncertainties": [
+        "exact listed security and ticker remain unresolved"
+      ],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
+          ],
+          "status": "needs_company_discovery"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-c1c56801231b"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-0db62bca34a0"
+      ],
+      "candidate_company_name": "BENEFICIARY_DISCOVERY_DISCOVERY_REQUIRED",
+      "candidate_expansion_path": "BENEFICIARY_DISCOVERY",
+      "candidate_path_type": "BENEFICIARY_DISCOVERY",
+      "candidate_rank": 0,
+      "candidate_ticker": "",
+      "d_minus_one_market_data_only": false,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders BENEFICIARY_DISCOVERY_DISCOVERY_REQUIRED  BENEFICIARY_DISCOVERY Mock beneficiary discovery route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Mock beneficiary discovery route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Which listed entities match the beneficiary discovery route? What cutoff-safe evidence would disconfirm directness or novelty? beneficiary discovery sector hypothesis",
+      "source_count": 1,
+      "subject_type": "candidate_expansion",
+      "uncertainties": [
+        "exact listed security and ticker remain unresolved"
+      ],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
+          ],
+          "status": "needs_company_discovery"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0db62bca34a0"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    },
+    {
+      "accepted_source_ids": [
+        "WEB-0ca92d2d9b08"
+      ],
+      "candidate_company_name": "CONTINUATION_DISCOVERY_REQUIRED",
+      "candidate_expansion_path": "CONTINUATION",
+      "candidate_path_type": "CONTINUATION",
+      "candidate_rank": 0,
+      "candidate_ticker": "",
+      "d_minus_one_market_data_only": true,
+      "excluded_source_count": 0,
+      "excluded_source_ids": [],
+      "query": "candidate verification listed security exact ticker business location customer supply chain relation prior market narrative theme memory current news relation name similarity recent disclosure news market cap shares outstanding D-1 trading value turnover limit up multi-day pre-absorption liquidity competing leaders CONTINUATION_DISCOVERY_REQUIRED  CONTINUATION Mock continuation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Mock continuation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path. Which listed entities match the continuation route? What cutoff-safe evidence would disconfirm directness or novelty? continuation sector hypothesis",
+      "source_count": 1,
+      "subject_type": "candidate_expansion",
+      "uncertainties": [
+        "exact listed security and ticker remain unresolved",
+        "continuation must remain limited to D-1 market data"
+      ],
+      "verification_dimensions": [
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "listed_security_and_exact_ticker",
+          "notes": [
+            "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
+          ],
+          "status": "needs_company_discovery"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "business_location_customer_supply_chain_relation",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "prior_market_narratives_and_theme_memory",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "current_news_relation_vs_name_similarity",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "recent_disclosures_and_news",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "market_cap_and_shares_outstanding",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "D_minus_one_trading_value_turnover_limit_up",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "multi_day_pre_absorption",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        },
+        {
+          "evidence_source_ids": [
+            "WEB-0ca92d2d9b08"
+          ],
+          "name": "liquidity_and_competing_leaders",
+          "notes": [
+            "cutoff-safe web source collected for final synthesis"
+          ],
+          "status": "source_collected"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Pass 5 checklist records cutoff-safe verification coverage; final synthesis judges substance."
+  ],
+  "required_dimensions": [
+    "listed_security_and_exact_ticker",
+    "business_location_customer_supply_chain_relation",
+    "prior_market_narratives_and_theme_memory",
+    "current_news_relation_vs_name_similarity",
+    "recent_disclosures_and_news",
+    "market_cap_and_shares_outstanding",
+    "D_minus_one_trading_value_turnover_limit_up",
+    "multi_day_pre_absorption",
+    "liquidity_and_competing_leaders"
+  ],
+  "run_id": "RUN-aa2a36dbf3e0",
+  "schema_version": "nslab.candidate_verification.v1",
+  "subject_count": 11
+}

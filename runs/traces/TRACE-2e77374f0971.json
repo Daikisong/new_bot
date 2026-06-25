@@ -1,0 +1,161 @@
+{
+  "checkpoint_id": "LLMCKPT-e35dca8d70f5eeae",
+  "finished_at": "2026-06-25T21:05:47.383335+09:00",
+  "input": {
+    "prompt_chars": 975666,
+    "prompt_sha256": "bffc89d96523bdd4249c424ed28fb823768f89b48b654828224fc13b331a6115",
+    "response_model": "CandidateExpansionReview"
+  },
+  "input_sha256": "9e4a43db5f929e3ca6cace4f45d7b4253dc1023105a9e08327a9c252ecffa101",
+  "metadata": {
+    "prompt_version": "candidate_expansion.v1"
+  },
+  "model_config": {
+    "configured_provider": "mock",
+    "max_concurrency": 4,
+    "max_output_tokens": 4096,
+    "max_retries": 0,
+    "model": "deterministic-mock",
+    "provider_class": "DeterministicMockLLMProvider",
+    "reasoning_effort": "low",
+    "shard_episode_count": 20
+  },
+  "operation": "generate_structured",
+  "output": {
+    "created_at": "2026-06-25T21:05:47.382226+09:00",
+    "cutoff_at": "2026-06-24T08:59:59+09:00",
+    "findings": [
+      {
+        "candidate_names": [
+          "SINGLE_EVENT_DISCOVERY_REQUIRED"
+        ],
+        "d_minus_one_market_data_only": false,
+        "evidence_source_ids": [],
+        "hypothesis": "Mock single event route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+        "investigation_questions": [
+          "Which listed entities match the single event route?",
+          "What cutoff-safe evidence would disconfirm directness or novelty?"
+        ],
+        "memory_episode_ids": [],
+        "path": "SINGLE_EVENT",
+        "related_cluster_ids": [
+          "EVCL-4cd5eb0aa465",
+          "EVCL-dda5a7d2035e",
+          "EVCL-7e76a10495fa"
+        ],
+        "requires_web_company_discovery": true,
+        "sector_hypotheses": [
+          "single event sector hypothesis"
+        ],
+        "uncertainties": [
+          "requires candidate-specific web verification"
+        ]
+      },
+      {
+        "candidate_names": [
+          "THEME_FORMATION_DISCOVERY_REQUIRED"
+        ],
+        "d_minus_one_market_data_only": false,
+        "evidence_source_ids": [],
+        "hypothesis": "Mock theme formation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+        "investigation_questions": [
+          "Which listed entities match the theme formation route?",
+          "What cutoff-safe evidence would disconfirm directness or novelty?"
+        ],
+        "memory_episode_ids": [],
+        "path": "THEME_FORMATION",
+        "related_cluster_ids": [
+          "EVCL-4cd5eb0aa465",
+          "EVCL-dda5a7d2035e",
+          "EVCL-7e76a10495fa"
+        ],
+        "requires_web_company_discovery": true,
+        "sector_hypotheses": [
+          "theme formation sector hypothesis"
+        ],
+        "uncertainties": [
+          "requires candidate-specific web verification"
+        ]
+      },
+      {
+        "candidate_names": [
+          "BENEFICIARY_DISCOVERY_DISCOVERY_REQUIRED"
+        ],
+        "d_minus_one_market_data_only": false,
+        "evidence_source_ids": [],
+        "hypothesis": "Mock beneficiary discovery route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+        "investigation_questions": [
+          "Which listed entities match the beneficiary discovery route?",
+          "What cutoff-safe evidence would disconfirm directness or novelty?"
+        ],
+        "memory_episode_ids": [],
+        "path": "BENEFICIARY_DISCOVERY",
+        "related_cluster_ids": [
+          "EVCL-4cd5eb0aa465",
+          "EVCL-dda5a7d2035e",
+          "EVCL-7e76a10495fa"
+        ],
+        "requires_web_company_discovery": true,
+        "sector_hypotheses": [
+          "beneficiary discovery sector hypothesis"
+        ],
+        "uncertainties": [
+          "requires candidate-specific web verification"
+        ]
+      },
+      {
+        "candidate_names": [
+          "CONTINUATION_DISCOVERY_REQUIRED"
+        ],
+        "d_minus_one_market_data_only": true,
+        "evidence_source_ids": [],
+        "hypothesis": "Mock continuation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+        "investigation_questions": [
+          "Which listed entities match the continuation route?",
+          "What cutoff-safe evidence would disconfirm directness or novelty?"
+        ],
+        "memory_episode_ids": [],
+        "path": "CONTINUATION",
+        "related_cluster_ids": [
+          "EVCL-4cd5eb0aa465",
+          "EVCL-dda5a7d2035e",
+          "EVCL-7e76a10495fa"
+        ],
+        "requires_web_company_discovery": false,
+        "sector_hypotheses": [
+          "continuation sector hypothesis"
+        ],
+        "uncertainties": [
+          "requires candidate-specific web verification"
+        ]
+      }
+    ],
+    "notes": [
+      "Mock structured candidate expansion review."
+    ],
+    "prompt_sha256": "bffc89d96523bdd4249c424ed28fb823768f89b48b654828224fc13b331a6115",
+    "prompt_version": "candidate_expansion.v1",
+    "required_paths": [
+      "SINGLE_EVENT",
+      "THEME_FORMATION",
+      "BENEFICIARY_DISCOVERY",
+      "CONTINUATION"
+    ],
+    "run_id": "RUN-aa2a36dbf3e0",
+    "schema_version": "nslab.candidate_expansion.v1"
+  },
+  "output_sha256": "9f85133f48dd7c64fed97ffd27d39d5fd931c4b295c9ad83eae3d30909dc5137",
+  "prompt_version": "candidate_expansion.v1",
+  "provider": "DeterministicMockLLMProvider",
+  "purpose": "candidate_expansion",
+  "retries": 0,
+  "schema_version": "nslab.llm_trace.v1",
+  "started_at": "2026-06-25T21:05:47.377645+09:00",
+  "status": "ok",
+  "token_usage": {
+    "completion_tokens_estimate": 805,
+    "prompt_tokens_estimate": 243916
+  },
+  "tool_calls": [],
+  "trace_id": "TRACE-2e77374f0971"
+}

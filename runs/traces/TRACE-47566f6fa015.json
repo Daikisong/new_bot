@@ -1,0 +1,89 @@
+{
+  "checkpoint_id": "LLMCKPT-19590931c2511050",
+  "finished_at": "2026-06-25T21:05:47.343141+09:00",
+  "input": {
+    "prompt_chars": 970975,
+    "prompt_sha256": "ad935fec429b30c3caf41e7b37cde5965b9c44efcc564ab967fdb18eeb2b6055",
+    "response_model": "SemanticRetrievalPlan"
+  },
+  "input_sha256": "de1b8d46773ac0b806dd92f5da66d42ba7ffe1ef2c2a8dc0a4586763a16d4f98",
+  "metadata": {
+    "prompt_version": "semantic_retrieval_plan.v1"
+  },
+  "model_config": {
+    "configured_provider": "mock",
+    "max_concurrency": 4,
+    "max_output_tokens": 4096,
+    "max_retries": 0,
+    "model": "deterministic-mock",
+    "provider_class": "DeterministicMockLLMProvider",
+    "reasoning_effort": "low",
+    "shard_episode_count": 20
+  },
+  "operation": "generate_structured",
+  "output": {
+    "created_at": "2026-06-25T21:05:47.342085+09:00",
+    "cutoff_at": "2026-06-24T08:59:59+09:00",
+    "notes": [
+      "Mock structured semantic retrieval plan."
+    ],
+    "prompt_sha256": "ad935fec429b30c3caf41e7b37cde5965b9c44efcc564ab967fdb18eeb2b6055",
+    "prompt_version": "semantic_retrieval_plan.v1",
+    "queries": [
+      {
+        "category": "positive_analogs",
+        "query": "positive analogs structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      },
+      {
+        "category": "negative_analogs",
+        "query": "negative analogs structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      },
+      {
+        "category": "near_misses",
+        "query": "near misses structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      },
+      {
+        "category": "counterexamples",
+        "query": "counterexamples structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      },
+      {
+        "category": "leader_selection_cases",
+        "query": "leader selection cases structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      },
+      {
+        "category": "theme_formation_failures",
+        "query": "theme formation failures structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+        "rationale": "Mock LLM covers required semantic retrieval category."
+      }
+    ],
+    "required_categories": [
+      "positive_analogs",
+      "negative_analogs",
+      "near_misses",
+      "counterexamples",
+      "leader_selection_cases",
+      "theme_formation_failures"
+    ],
+    "run_id": "RUN-aa2a36dbf3e0",
+    "schema_version": "nslab.semantic_retrieval_plan.v1"
+  },
+  "output_sha256": "b08377a0340b2cc92731c446fa9bf63ab0403ce7c9ba637c887300e64b6ffcc0",
+  "prompt_version": "semantic_retrieval_plan.v1",
+  "provider": "DeterministicMockLLMProvider",
+  "purpose": "semantic_retrieval_plan",
+  "retries": 0,
+  "schema_version": "nslab.llm_trace.v1",
+  "started_at": "2026-06-25T21:05:47.337653+09:00",
+  "status": "ok",
+  "token_usage": {
+    "completion_tokens_estimate": 572,
+    "prompt_tokens_estimate": 242743
+  },
+  "tool_calls": [],
+  "trace_id": "TRACE-47566f6fa015"
+}

@@ -1,0 +1,22 @@
+{
+  "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+  "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+  "blind_prediction_path": "runs/checkpoints/output_artifacts/RUN-aa2a36dbf3e0/blind_prediction.json",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "no_d_outcome_exposed": true,
+  "phase": "BLIND_SEALED",
+  "prediction_id": "PRED-2a818e0612b3",
+  "row_disposition_coverage_ratio": 1.0,
+  "row_disposition_sha256": "5383b681391c911bc841d1d2ffb52ba5328b1decb1801b3e0429d87f62fbb6d3",
+  "run_id": "RUN-aa2a36dbf3e0",
+  "schema_version": "nslab.blind_seal_receipt.v1",
+  "sealed_at": "2026-06-25T21:05:47.520101+09:00",
+  "source_ledger_sha256": "93c9b57061f94d626b0045c352fd243e912767ee4e4d8e1416657f4bdbf4ee64",
+  "trade_date": "2026-06-24",
+  "validation": {
+    "blind_current_price_access_count": 0,
+    "blind_price_repository_access_count": 0,
+    "blind_web_search_call_count": 51,
+    "canonical_blind_hash_verified": true
+  }
+}

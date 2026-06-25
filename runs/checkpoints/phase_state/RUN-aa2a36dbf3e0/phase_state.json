@@ -1,0 +1,12 @@
+{
+  "blind_seal_receipt_sha256": "eeee496495f34376f89f935f3882a325397c693c760368b4bcc6ec857a2f7c9a",
+  "completed_phases": [
+    "PHASE_A_CUTOFF_SAFE_WEB_BLIND"
+  ],
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "phase": "BLIND_SEALED",
+  "run_id": "RUN-aa2a36dbf3e0",
+  "schema_version": "nslab.phase_state.v1",
+  "sealed_at": "2026-06-25T21:05:47.520101+09:00",
+  "trade_date": "2026-06-24"
+}

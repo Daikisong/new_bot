@@ -10,6 +10,7 @@ import pytest
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
+from news_scalping_lab.cli import _final_synthesis_manifest_count_mismatches
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
     BlindPriceGuard,
@@ -463,6 +464,56 @@ def test_provenance_audit_validates_context_manifest_reproducibility_fields(
     assert "2030-01-10.json: context manifest web_sources is invalid" in findings
 
 
+def test_provenance_audit_requires_current_manifest_artifact_contract(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = _sealed_prediction_payload()
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            **_manifest_reproducibility_fields(),
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "2030-01-10.json: context manifest missing news_file" in findings
+    assert "2030-01-10.json: context manifest missing prediction_artifact" in findings
+    assert "2030-01-10.json: context manifest missing report_artifact" in findings
+    assert (
+        "2030-01-10.json: context manifest missing final_synthesis_context_artifact"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest red_team_artifacts is invalid"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest missing semantic_retrieval_plan prompt hash"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest missing final_synthesis prompt hash"
+        in findings
+    )
+
+
 def test_provenance_audit_validates_manifest_news_input_hash(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
@@ -727,6 +778,32 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
         "2030-01-10.json: context manifest final_synthesis_context_summary mismatch"
         in findings
     )
+
+
+def test_final_synthesis_manifest_counts_allow_capped_current_news() -> None:
+    summary = {
+        "current_news_count": 12,
+        "event_cluster_count": 1180,
+        "retrieved_raw_episode_count": 0,
+        "counterexample_count": 0,
+        "web_source_count": 0,
+        "global_brain_file_count": 0,
+        "shard_brain_file_count": 0,
+    }
+    mismatches = _final_synthesis_manifest_count_mismatches(
+        {"included_news_row_count": 1182, "event_cluster_count": 1180},
+        summary,
+    )
+
+    assert mismatches == {}
+
+    failed_summary = summary | {"event_cluster_count": 1179}
+    failed = _final_synthesis_manifest_count_mismatches(
+        {"included_news_row_count": 1182, "event_cluster_count": 1180},
+        failed_summary,
+    )
+
+    assert failed == {"event_cluster_count": {"expected": 1180, "observed": 1179}}
 
 
 def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> None:
@@ -1467,6 +1544,61 @@ def test_provenance_audit_flags_trace_model_config_mismatch(tmp_path: Path) -> N
         "2030-01-10.json: trace model_config mismatch for daily_blind_analysis: "
         "configured_provider, provider_class"
     ) in result["findings"]
+
+
+def test_provenance_audit_accepts_current_trace_when_stale_trace_shares_prompt_hash(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    expected_model_config = {
+        "configured_provider": "mock",
+        "provider_class": "DeterministicMockLLMProvider",
+        "max_concurrency": 4,
+        "shard_episode_count": 20,
+    }
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "model_config": expected_model_config,
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    stale_trace = _trace_payload(prompt_sha256="blind-hash")
+    stale_trace["model_config"] = {
+        "configured_provider": "openai",
+        "provider_class": "OpenAIResponsesProvider",
+        "max_concurrency": 4,
+        "shard_episode_count": 20,
+    }
+    current_trace = _trace_payload(prompt_sha256="blind-hash")
+    current_trace["model_config"] = expected_model_config
+    write_json(tmp_path / "runs" / "traces" / "TRACE-stale.json", stale_trace)
+    write_json(tmp_path / "runs" / "traces" / "TRACE-current.json", current_trace)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert (
+        "2030-01-10.json: trace model_config mismatch for daily_blind_analysis: "
+        "configured_provider, provider_class"
+    ) not in result["findings"]
 
 
 def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) -> None:

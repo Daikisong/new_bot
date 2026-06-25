@@ -1,11 +1,14 @@
 {
   "accepted_episode_count": 1,
-  "brain_version": "brain-f0b4038f50",
+  "brain_version": "brain-cfa3129213",
+  "build_mode": "full",
   "coverage_complete": true,
   "covered_episode_count": 1,
   "covered_episode_ids": [
-    "EP-6415569f7b43"
+    "EP-f56c790fe2fc"
   ],
-  "created_at": "2026-06-25T12:52:51.227406+09:00",
-  "missing_episode_ids": []
+  "created_at": "2026-06-25T21:11:50.558723+09:00",
+  "last_full_rebuild_at": "2026-06-25T21:11:50.558723+09:00",
+  "missing_episode_ids": [],
+  "updated_episode_id": null
 }
