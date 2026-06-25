@@ -170,6 +170,42 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
     }
 
 
+def test_doctor_report_readiness_flags_unsynced_warehouse(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-warehouse",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor warehouse status lesson.",
+            open_world_mechanisms=["accepted episode -> warehouse projection"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    (tmp_path / "warehouse" / "research_episodes.parquet").unlink()
+
+    report = build_doctor_report(settings)
+
+    assert report["warehouse"]["status"] == "attention"
+    assert report["warehouse"]["missing_files"] == ["research_episodes.parquet"]
+    assert report["warehouse"]["synced"] is False
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["warehouse: required projections are missing, unreadable, or unsynced"],
+    }
+
+
 def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

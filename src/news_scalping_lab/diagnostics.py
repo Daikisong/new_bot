@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import (
@@ -20,7 +21,6 @@ from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.warehouse import WarehouseStore
 
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
@@ -63,6 +63,11 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         else None
     )
     schema_dir = settings.path("schemas")
+    coverage_audit = audit_coverage(settings.project_root)
+    warehouse_status = _warehouse_status(
+        coverage_audit,
+        accepted_episode_count=accepted_episode_count,
+    )
     report = {
         "project_root": settings.project_root.as_posix(),
         "providers": {
@@ -103,8 +108,23 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "schema": stock_web_schema,
         },
         "warehouse": {
-            "status": "ok",
-            "counts": WarehouseStore(settings.project_root).counts(),
+            "status": warehouse_status,
+            "counts": coverage_audit.get("warehouse_counts", {}),
+            "required_files": coverage_audit.get("warehouse_required_files", []),
+            "missing_files": coverage_audit.get("warehouse_missing_files", []),
+            "unreadable_files": coverage_audit.get("warehouse_unreadable_files", []),
+            "required_files_present": coverage_audit.get(
+                "warehouse_required_files_present",
+                False,
+            ),
+            "synced": coverage_audit.get("warehouse_synced", False),
+            "projection_synced": coverage_audit.get("warehouse_projection_synced", False),
+            "count_mismatches": coverage_audit.get("warehouse_count_mismatches", {}),
+            "identity_mismatches": coverage_audit.get("warehouse_identity_mismatches", {}),
+            "expected_source_counts": coverage_audit.get(
+                "warehouse_expected_source_counts",
+                {},
+            ),
         },
         "brain": {
             "head": current_brain_version(settings.project_root),
@@ -154,7 +174,7 @@ def _doctor_readiness(
 
     warehouse = report.get("warehouse")
     if not isinstance(warehouse, dict) or warehouse.get("status") != "ok":
-        findings.append("warehouse: status is not ok")
+        findings.append("warehouse: required projections are missing, unreadable, or unsynced")
     else:
         counts = warehouse.get("counts")
         if not isinstance(counts, dict) or any(
@@ -189,6 +209,41 @@ def _nested_dict(source: dict[str, Any], *keys: str) -> dict[str, Any]:
             return {}
         current = current.get(key)
     return current if isinstance(current, dict) else {}
+
+
+def _warehouse_status(
+    coverage_audit: dict[str, object],
+    *,
+    accepted_episode_count: int,
+) -> str:
+    expected_counts = coverage_audit.get("warehouse_expected_source_counts")
+    source_projection_required = accepted_episode_count > 0 or _has_expected_warehouse_sources(
+        expected_counts,
+    )
+    unreadable = coverage_audit.get("warehouse_unreadable_files")
+    if isinstance(unreadable, list) and unreadable:
+        return "attention"
+    if not source_projection_required:
+        return "ok"
+    return (
+        "ok"
+        if coverage_audit.get("warehouse_required_files_present") is True
+        and coverage_audit.get("warehouse_synced") is True
+        and coverage_audit.get("warehouse_projection_synced") is True
+        else "attention"
+    )
+
+
+def _has_expected_warehouse_sources(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for item in value.values():
+        if not isinstance(item, dict):
+            continue
+        expected = item.get("expected")
+        if isinstance(expected, int) and not isinstance(expected, bool) and expected > 0:
+            return True
+    return False
 
 
 def _resolved_optional_path(settings: Settings, path: Path | None) -> Path | None:
