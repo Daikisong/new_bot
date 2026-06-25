@@ -1685,12 +1685,35 @@ def _check_training_export_manifest(
     if not output_path.exists():
         findings.append(f"{label}: training export output_file not found")
         return
+    source_hashes = _training_export_source_hashes(label, manifest, findings)
     expected_sha = manifest.get("output_sha256")
     if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
         findings.append(f"{label}: training export output_sha256 mismatch")
     rows = _read_training_export_rows(output_path, label, findings)
-    _check_training_export_rows(label, kind, allowed_categories, rows, findings)
+    _check_training_export_rows(
+        label,
+        kind,
+        allowed_categories,
+        rows,
+        source_hashes=source_hashes,
+        findings=findings,
+    )
     _check_training_export_manifest_counts(label, kind, manifest, rows, findings)
+
+
+def _training_export_source_hashes(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> dict[str, str]:
+    raw = manifest.get("source_hashes")
+    if not isinstance(raw, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) and value
+        for key, value in raw.items()
+    ):
+        findings.append(f"{label}: training export source_hashes invalid")
+        return {}
+    return dict(raw)
 
 
 def _resolve_training_export_output_path(root: Path, output_file: str) -> Path | None:
@@ -1730,6 +1753,8 @@ def _check_training_export_rows(
     kind: str,
     allowed_categories: list[str],
     rows: list[dict[str, Any]],
+    *,
+    source_hashes: dict[str, str],
     findings: list[str],
 ) -> None:
     for index, row in enumerate(rows, start=1):
@@ -1756,6 +1781,46 @@ def _check_training_export_rows(
             and category != "failure_correction_examples"
         ):
             findings.append(f"{label}: training export row {index} mixes postmortem into blind SFT")
+        _check_training_export_row_provenance(
+            label,
+            index,
+            row,
+            source_hashes=source_hashes,
+            findings=findings,
+        )
+
+
+def _check_training_export_row_provenance(
+    label: str,
+    index: int,
+    row: dict[str, Any],
+    *,
+    source_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    provenance = row.get("provenance")
+    if not isinstance(provenance, list) or not provenance:
+        findings.append(f"{label}: training export row {index} provenance missing")
+        return
+    if not all(isinstance(item, dict) for item in provenance):
+        findings.append(f"{label}: training export row {index} provenance invalid")
+        return
+    episode_id = row.get("episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        findings.append(f"{label}: training export row {index} episode_id invalid")
+        return
+    expected_hash = source_hashes.get(episode_id)
+    if expected_hash is None:
+        findings.append(f"{label}: training export row {index} source_hash missing")
+        return
+    expected_uri = f"research/accepted/{episode_id}.json"
+    if not any(
+        entry.get("source_type") == "accepted_research_episode"
+        and entry.get("uri") == expected_uri
+        and entry.get("content_sha256") == expected_hash
+        for entry in provenance
+    ):
+        findings.append(f"{label}: training export row {index} accepted episode provenance mismatch")
 
 
 def _check_training_export_manifest_counts(

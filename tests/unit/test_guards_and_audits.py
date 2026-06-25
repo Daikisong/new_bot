@@ -1784,8 +1784,11 @@ def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path
     label = "training_exports/sft/manifest.json"
     assert f"{label}: training export required_training_categories mismatch" in findings
     assert f"{label}: training export training_categories mismatch" in findings
+    assert f"{label}: training export source_hashes invalid" in findings
     assert f"{label}: training export output_sha256 mismatch" in findings
+    assert f"{label}: training export row 1 provenance missing" in findings
     assert f"{label}: training export row 1 source_phase mismatch" in findings
+    assert f"{label}: training export row 2 provenance missing" in findings
     assert f"{label}: training export row 2 mixes postmortem into blind SFT" in findings
     assert f"{label}: training export row_count mismatch" in findings
     assert f"{label}: training export category_counts mismatch" in findings

@@ -70,7 +70,8 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     target_dir.mkdir(parents=True, exist_ok=True)
     store = ResearchStore(root)
     episodes = store.list_accepted()
-    rows = _rows_for_kind(kind, episodes)
+    source_hashes = store.accepted_hashes()
+    rows = _rows_for_kind(kind, episodes, source_hashes=source_hashes)
     skipped = _skipped_episodes(kind, episodes)
     path = target_dir / f"{kind}.jsonl"
     path.write_text(
@@ -90,7 +91,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "eligible_episode_count": len(episodes) - len(skipped),
             "skipped_episode_count": len(skipped),
             "skipped_episodes": skipped,
-            "source_hashes": store.accepted_hashes(),
+            "source_hashes": source_hashes,
             "output_file": path.as_posix(),
             "output_sha256": file_sha256(path),
             "task_counts": _task_counts(rows),
@@ -116,15 +117,36 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     return TrainingExportResult(path=path, manifest_path=manifest_path, row_count=len(rows))
 
 
-def _rows_for_kind(kind: str, episodes: list[ResearchEpisode]) -> list[dict[str, Any]]:
+def _rows_for_kind(
+    kind: str,
+    episodes: list[ResearchEpisode],
+    *,
+    source_hashes: dict[str, str],
+) -> list[dict[str, Any]]:
     if kind == "sft":
-        return [row for episode in episodes for row in _sft_rows(episode)]
+        return [
+            row
+            for episode in episodes
+            for row in _sft_rows(episode, source_hashes=source_hashes)
+        ]
     if kind == "preference":
-        return [row for episode in episodes for row in _preference_rows(episode)]
-    return [row for episode in episodes for row in _eval_rows(episode)]
+        return [
+            row
+            for episode in episodes
+            for row in _preference_rows(episode, source_hashes=source_hashes)
+        ]
+    return [
+        row
+        for episode in episodes
+        for row in _eval_rows(episode, source_hashes=source_hashes)
+    ]
 
 
-def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
+def _sft_rows(
+    episode: ResearchEpisode,
+    *,
+    source_hashes: dict[str, str],
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if episode.eligibility_matrix.forecast_evaluation_eligible:
         rows.extend(
@@ -151,6 +173,7 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="sft",
                     hindsight_safe=True,
+                    source_hashes=source_hashes,
                 ),
                 _training_row(
                     task="theme_formation",
@@ -162,6 +185,7 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="sft",
                     hindsight_safe=True,
+                    source_hashes=source_hashes,
                 ),
                 _training_row(
                     task="beneficiary_discovery",
@@ -183,6 +207,7 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="sft",
                     hindsight_safe=True,
+                    source_hashes=source_hashes,
                 ),
                 _training_row(
                     task="leader_selection_comparison",
@@ -228,6 +253,7 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="sft",
                     hindsight_safe=True,
+                    source_hashes=source_hashes,
                 ),
             ]
         )
@@ -250,12 +276,17 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                 },
                 split="sft_postmortem",
                 hindsight_safe=False,
+                source_hashes=source_hashes,
             )
         )
     return rows
 
 
-def _preference_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
+def _preference_rows(
+    episode: ResearchEpisode,
+    *,
+    source_hashes: dict[str, str],
+) -> list[dict[str, Any]]:
     if not episode.eligibility_matrix.leader_pair_training_eligible:
         return []
     positives: list[Candidate] = []
@@ -288,6 +319,7 @@ def _preference_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="preference",
                     hindsight_safe=False,
+                    source_hashes=source_hashes,
                 )
             )
     if not rows and episode.postmortem is not None:
@@ -303,12 +335,17 @@ def _preference_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                 output_payload={"lessons": episode.postmortem.lessons},
                 split="preference",
                 hindsight_safe=False,
+                source_hashes=source_hashes,
             )
         )
     return rows
 
 
-def _eval_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
+def _eval_rows(
+    episode: ResearchEpisode,
+    *,
+    source_hashes: dict[str, str],
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if episode.eligibility_matrix.direct_supervised_cases_eligible:
         for candidate in episode.blind_predictions:
@@ -330,6 +367,7 @@ def _eval_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                     },
                     split="evals",
                     hindsight_safe=False,
+                    source_hashes=source_hashes,
                 )
             )
     if episode.postmortem is not None and episode.eligibility_matrix.retrospective_memory_eligible:
@@ -348,6 +386,7 @@ def _eval_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
                 },
                 split="evals",
                 hindsight_safe=False,
+                source_hashes=source_hashes,
             )
         )
     return rows
@@ -361,6 +400,7 @@ def _training_row(
     output_payload: dict[str, Any],
     split: str,
     hindsight_safe: bool,
+    source_hashes: dict[str, str],
 ) -> dict[str, Any]:
     eligibility_basis = _eligibility_basis_for_task(task, episode.eligibility_matrix)
     return {
@@ -377,8 +417,26 @@ def _training_row(
         "eligibility_basis": eligibility_basis,
         "input": input_payload,
         "output": output_payload,
-        "provenance": [item.model_dump(mode="json") for item in episode.provenance],
+        "provenance": _training_row_provenance(episode, source_hashes),
     }
+
+
+def _training_row_provenance(
+    episode: ResearchEpisode,
+    source_hashes: dict[str, str],
+) -> list[dict[str, Any]]:
+    entries = [item.model_dump(mode="json") for item in episode.provenance]
+    source_hash = source_hashes.get(episode.episode_id)
+    if source_hash is not None:
+        entries.append(
+            {
+                "source_id": f"{episode.episode_id}:accepted_episode",
+                "source_type": "accepted_research_episode",
+                "uri": f"research/accepted/{episode.episode_id}.json",
+                "content_sha256": source_hash,
+            }
+        )
+    return entries
 
 
 def _outcome_for_candidate(

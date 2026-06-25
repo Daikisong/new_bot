@@ -112,8 +112,18 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     sft_rows = _jsonl(sft.path)
     preference_rows = _jsonl(preference.path)
     eval_rows = _jsonl(evals.path)
+    sft_manifest = read_json(sft.manifest_path)
+    accepted_provenance = {
+        "source_id": "EP-training:accepted_episode",
+        "source_type": "accepted_research_episode",
+        "uri": "research/accepted/EP-training.json",
+        "content_sha256": sft_manifest["source_hashes"]["EP-training"],
+    }
 
     assert sft.row_count == 5
+    assert all(accepted_provenance in row["provenance"] for row in sft_rows)
+    assert all(accepted_provenance in row["provenance"] for row in preference_rows)
+    assert all(accepted_provenance in row["provenance"] for row in eval_rows)
     assert {row["training_category"] for row in sft_rows} == {
         "blind_reasoning_examples",
         "theme_formation_examples",
@@ -204,11 +214,10 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "retrospective_memory_eligible"
     ]
 
-    manifest = read_json(sft.manifest_path)
-    assert manifest["row_count"] == sft.row_count
-    assert manifest["task_counts"]["blind_reasoning"] == 1
-    assert manifest["task_counts"]["leader_selection_comparison"] == 1
-    assert manifest["required_training_categories"] == [
+    assert sft_manifest["row_count"] == sft.row_count
+    assert sft_manifest["task_counts"]["blind_reasoning"] == 1
+    assert sft_manifest["task_counts"]["leader_selection_comparison"] == 1
+    assert sft_manifest["required_training_categories"] == [
         "blind_reasoning_examples",
         "theme_formation_examples",
         "beneficiary_discovery_examples",
@@ -216,29 +225,29 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "positive_vs_negative_candidate_preferences",
         "failure_correction_examples",
     ]
-    assert manifest["training_categories"] == [
+    assert sft_manifest["training_categories"] == [
         "blind_reasoning_examples",
         "theme_formation_examples",
         "beneficiary_discovery_examples",
         "leader_selection_comparisons",
         "failure_correction_examples",
     ]
-    assert manifest["category_counts"] == {
+    assert sft_manifest["category_counts"] == {
         "blind_reasoning_examples": 1,
         "theme_formation_examples": 1,
         "beneficiary_discovery_examples": 1,
         "leader_selection_comparisons": 1,
         "failure_correction_examples": 1,
     }
-    assert manifest["missing_training_categories"] == []
-    assert manifest["blind_safe_row_count"] == 4
-    assert manifest["hindsight_row_count"] == 1
-    assert manifest["eligible_episode_count"] == 1
-    assert manifest["skipped_episode_count"] == 0
-    assert manifest["skipped_episodes"] == []
-    assert manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
-    assert manifest["output_sha256"]
-    assert "Do not train postmortem labels as if they were blind answers." in manifest["notes"]
+    assert sft_manifest["missing_training_categories"] == []
+    assert sft_manifest["blind_safe_row_count"] == 4
+    assert sft_manifest["hindsight_row_count"] == 1
+    assert sft_manifest["eligible_episode_count"] == 1
+    assert sft_manifest["skipped_episode_count"] == 0
+    assert sft_manifest["skipped_episodes"] == []
+    assert sft_manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
+    assert sft_manifest["output_sha256"]
+    assert "Do not train postmortem labels as if they were blind answers." in sft_manifest["notes"]
     preference_manifest = read_json(preference.manifest_path)
     evals_manifest = read_json(evals.manifest_path)
     assert preference_manifest["category_counts"] == {
