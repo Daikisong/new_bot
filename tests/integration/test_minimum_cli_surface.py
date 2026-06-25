@@ -155,6 +155,14 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert shard_context["file_count"] >= 1
     supporting = inspection["supporting_artifacts"]
     assert supporting["row_disposition"]["hash_verified"] is True
+    assert supporting["row_disposition"]["schema_version_verified"] is True
+    assert supporting["row_disposition"]["run_id_verified"] is True
+    assert supporting["row_disposition"]["row_count_verified"] is True
+    assert supporting["row_disposition"]["summary_verified"] is True
+    assert supporting["row_disposition"]["coverage_ratio_verified"] is True
+    assert supporting["row_disposition"]["duplicate_row_numbers_absent"] is True
+    assert supporting["row_disposition"]["raw_content_absent_verified"] is True
+    assert supporting["row_disposition"]["news_window_contract_verified"] is True
     assert supporting["event_cluster"]["hash_verified"] is True
     assert supporting["event_cluster"]["schema_version_verified"] is True
     assert supporting["event_cluster"]["run_id_verified"] is True
@@ -555,6 +563,47 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert strict_tampered_prediction_inspection["reproducibility_checks_passed"] is False
     write_json(prediction_file, original_prediction)
     write_json(manifest_file, original_manifest_for_prediction)
+
+    original_manifest_for_row_disposition_summary = read_json(manifest_file)
+    tampered_row_disposition_summary = {
+        **original_manifest_for_row_disposition_summary["row_disposition_summary"],
+        "included_in_news_window": (
+            original_manifest_for_row_disposition_summary["row_disposition_summary"][
+                "included_in_news_window"
+            ]
+            + 1
+        ),
+    }
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_row_disposition_summary,
+            "row_disposition_summary": tampered_row_disposition_summary,
+        },
+    )
+    tampered_row_disposition_summary_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered row disposition summary",
+        tampered_row_disposition_summary_context,
+    )
+    tampered_row_disposition_summary_inspection = json.loads(
+        tampered_row_disposition_summary_context.output
+    )["inspection"]
+    assert (
+        tampered_row_disposition_summary_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_row_disposition_status = tampered_row_disposition_summary_inspection[
+        "supporting_artifacts"
+    ]["row_disposition"]
+    assert tampered_row_disposition_status["hash_verified"] is True
+    assert tampered_row_disposition_status["summary_verified"] is False
+    assert "row_disposition_summary_mismatch" in (
+        tampered_row_disposition_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_row_disposition_summary)
 
     original_manifest_for_event_cluster_summary = read_json(manifest_file)
     tampered_event_cluster_summary = {

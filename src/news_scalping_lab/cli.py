@@ -541,6 +541,7 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         )
         for label, artifact_field, hash_field, required in specs
     }
+    statuses["row_disposition"] = _inspect_row_disposition_artifact(root, manifest)
     statuses["event_cluster"] = _inspect_event_cluster_artifact(root, manifest)
     statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(
         root, manifest
@@ -608,6 +609,116 @@ def _inspect_text_hashed_artifact(
     if not isinstance(expected_hash, str) or not expected_hash:
         status["errors"].append(f"{hash_field}_missing")
     status["passed"] = _text_hashed_artifact_status_passed(status)
+    return status
+
+
+def _inspect_row_disposition_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="row_disposition_artifact",
+        hash_field="row_disposition_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "row_count_verified": None,
+            "summary_verified": None,
+            "coverage_ratio_verified": None,
+            "duplicate_row_numbers_absent": None,
+            "raw_content_absent_verified": None,
+            "news_window_contract_verified": None,
+        }
+    )
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("row_disposition_artifact"),
+        status,
+        label="row_disposition",
+    )
+    if rows is None:
+        status["passed"] = _row_disposition_status_passed(status)
+        return status
+
+    run_id = manifest.get("run_id")
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.row_disposition.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("row_disposition_schema_version_mismatch")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("row_disposition_run_id_mismatch")
+
+    expected_total = _optional_int(manifest.get("news_row_count"))
+    status["row_count_verified"] = expected_total is None or len(rows) == expected_total
+    if not status["row_count_verified"]:
+        status["errors"].append("row_disposition_count_mismatch")
+
+    expected_summary = _row_disposition_summary_from_rows(rows)
+    manifest_summary = manifest.get("row_disposition_summary")
+    status["summary_verified"] = manifest_summary == expected_summary
+    if not status["summary_verified"]:
+        status["errors"].append("row_disposition_summary_mismatch")
+
+    manifest_ratio = manifest.get("row_disposition_coverage_ratio")
+    summary_ratio = (
+        manifest_summary.get("coverage_ratio")
+        if isinstance(manifest_summary, dict)
+        else None
+    )
+    status["coverage_ratio_verified"] = (
+        isinstance(manifest_ratio, int | float)
+        and not isinstance(manifest_ratio, bool)
+        and float(manifest_ratio) == 1.0
+        and isinstance(summary_ratio, int | float)
+        and not isinstance(summary_ratio, bool)
+        and float(summary_ratio) == 1.0
+    )
+    if not status["coverage_ratio_verified"]:
+        status["errors"].append("row_disposition_coverage_ratio_mismatch")
+
+    row_numbers = [
+        row.get("row_number")
+        for row in rows
+        if isinstance(row.get("row_number"), int)
+        and not isinstance(row.get("row_number"), bool)
+    ]
+    status["duplicate_row_numbers_absent"] = len(row_numbers) == len(set(row_numbers))
+    if not status["duplicate_row_numbers_absent"]:
+        status["errors"].append("row_disposition_duplicate_row_number")
+
+    status["raw_content_absent_verified"] = all(
+        "title" not in row and "body" not in row for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("row_disposition_raw_content_present")
+
+    news_window_start_at = _manifest_datetime(manifest.get("news_window_start_at"))
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status["news_window_contract_verified"] = (
+        news_window_start_at is not None
+        and cutoff_at is not None
+        and all(
+            _row_disposition_news_window_contract_matches(
+                row,
+                news_window_start_at,
+                cutoff_at,
+            )
+            for row in rows
+        )
+    )
+    if not status["news_window_contract_verified"]:
+        status["errors"].append("row_disposition_news_window_contract_mismatch")
+
+    status["passed"] = _row_disposition_status_passed(status)
     return status
 
 
@@ -3904,6 +4015,20 @@ def _text_hashed_artifact_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _row_disposition_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("row_count_verified")
+        and status.get("summary_verified")
+        and status.get("coverage_ratio_verified")
+        and status.get("duplicate_row_numbers_absent")
+        and status.get("raw_content_absent_verified")
+        and status.get("news_window_contract_verified")
+    )
+
+
 def _event_cluster_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         _text_hashed_artifact_status_passed(status)
@@ -4250,6 +4375,62 @@ def _candidate_expansion_required_paths(manifest: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("required_paths"))
+
+
+def _row_disposition_summary_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    total_rows = len(rows)
+    included = sum(
+        1 for row in rows if row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW"
+    )
+    excluded_before = sum(
+        1 for row in rows if row.get("disposition") == "EXCLUDED_BEFORE_WINDOW"
+    )
+    excluded_after = sum(
+        1 for row in rows if row.get("disposition") == "EXCLUDED_AFTER_CUTOFF"
+    )
+    missing_collected_at = sum(
+        1 for row in rows if row.get("collected_at_present") is False
+    )
+    return {
+        "coverage_ratio": 1.0,
+        "excluded_after_cutoff": excluded_after,
+        "excluded_before_window": excluded_before,
+        "included_before_cutoff": included,
+        "included_in_news_window": included,
+        "missing_collected_at": missing_collected_at,
+        "total_rows": total_rows,
+    }
+
+
+def _row_disposition_news_window_contract_matches(
+    row: dict[str, Any],
+    news_window_start_at: datetime,
+    cutoff_at: datetime,
+) -> bool:
+    published_at = _manifest_datetime(row.get("published_at"))
+    if published_at is None:
+        return False
+    within_window = news_window_start_at <= published_at <= cutoff_at
+    if row.get("news_window_start_at") != news_window_start_at.isoformat():
+        return False
+    if row.get("cutoff_at") != cutoff_at.isoformat():
+        return False
+    if row.get("within_news_window") is not within_window:
+        return False
+    if within_window:
+        return (
+            row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW"
+            and row.get("eligible_for_blind_evidence") is True
+        )
+    if published_at > cutoff_at:
+        return (
+            row.get("disposition") == "EXCLUDED_AFTER_CUTOFF"
+            and row.get("eligible_for_blind_evidence") is False
+        )
+    return (
+        row.get("disposition") == "EXCLUDED_BEFORE_WINDOW"
+        and row.get("eligible_for_blind_evidence") is False
+    )
 
 
 def _event_cluster_membership_counts_match(row: dict[str, Any]) -> bool:
