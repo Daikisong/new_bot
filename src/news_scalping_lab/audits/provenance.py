@@ -1305,6 +1305,42 @@ def _check_evaluation_postmortem_trace(
             trace_model_config = trace_payload.get("model_config")
             if trace_model_config != report_model_config:
                 findings.append(f"{label}: evaluation postmortem trace model_config mismatch")
+        _check_evaluation_postmortem_trace_output(
+            label,
+            report,
+            trace_payload.get("output"),
+            findings,
+        )
+
+
+def _check_evaluation_postmortem_trace_output(
+    label: str,
+    report: dict[str, Any],
+    trace_output: object,
+    findings: list[str],
+) -> None:
+    report_postmortem = report.get("postmortem")
+    if not isinstance(report_postmortem, dict):
+        return
+    if not isinstance(trace_output, dict):
+        findings.append(f"{label}: evaluation postmortem trace output missing or invalid")
+        return
+    trace_summary = trace_output.get("summary")
+    report_summary = report_postmortem.get("summary")
+    if (
+        isinstance(trace_summary, str)
+        and trace_summary.strip()
+        and trace_summary.strip() != report_summary
+    ):
+        findings.append(f"{label}: evaluation postmortem trace summary mismatch")
+    trace_lessons = trace_output.get("lessons")
+    report_lessons = report_postmortem.get("lessons")
+    if isinstance(trace_lessons, list):
+        cleaned_trace_lessons = [
+            lesson for lesson in trace_lessons if isinstance(lesson, str) and lesson.strip()
+        ]
+        if cleaned_trace_lessons and cleaned_trace_lessons != report_lessons:
+            findings.append(f"{label}: evaluation postmortem trace lessons mismatch")
 
 
 def _top_level_provenance_entries(episode: dict[str, Any]) -> list[dict[str, Any]]:

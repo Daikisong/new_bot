@@ -5074,6 +5074,24 @@ def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -
 
     report["postmortem_prompt_sha256"] = postmortem_prompt_sha256
     write_json(report_path, report)
+    mismatched_trace_payload = json.loads(json.dumps(trace_payload))
+    mismatched_trace_payload["output"]["summary"] = "Different trace postmortem."
+    mismatched_trace_payload["output_sha256"] = sha256_text(
+        canonical_json(mismatched_trace_payload["output"])
+    )
+    write_json(trace_dir / "TRACE-evaluation-postmortem.json", mismatched_trace_payload)
+    _write_trace_checkpoint(tmp_path, mismatched_trace_payload)
+
+    failed_trace_output = audit_provenance(tmp_path)
+
+    assert (
+        "research/episodes/EP-evaluation.json: evaluation postmortem trace "
+        "summary mismatch"
+    ) in failed_trace_output["findings"]
+
+    write_json(trace_dir / "TRACE-evaluation-postmortem.json", trace_payload)
+    _write_trace_checkpoint(tmp_path, trace_payload)
+
     episode = read_json(episode_path)
     episode["available_from"] = "2030-01-10T00:00:00+09:00"
     write_json(episode_path, episode)
