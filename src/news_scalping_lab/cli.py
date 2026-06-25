@@ -297,12 +297,14 @@ def _inspect_context_manifest(
 ) -> dict[str, Any]:
     prediction = _inspect_prediction_artifact(root, manifest)
     report = _inspect_report_artifact(root, manifest)
+    news_input = _inspect_news_input(root, manifest)
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
             "exists": manifest_path.exists(),
             "sha256": file_sha256(manifest_path) if manifest_path.exists() else None,
         },
+        "news_input": news_input,
         "output_artifacts": {
             "prediction": prediction,
             "report": report,
@@ -311,8 +313,49 @@ def _inspect_context_manifest(
             prediction,
             required_extra_key="context_manifest_id_verified",
         )
-        and _artifact_status_passed(report, required_extra_key="contains_run_id"),
+        and _artifact_status_passed(report, required_extra_key="contains_run_id")
+        and _news_input_status_passed(news_input),
     }
+
+
+def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    status = _base_artifact_status(root, manifest.get("news_file"))
+    expected_hash = manifest.get("news_sha256")
+    status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
+    status["expected_row_count"] = _optional_int(manifest.get("news_row_count"))
+    status["expected_included_row_count"] = _optional_int(
+        manifest.get("included_news_row_count")
+    )
+    status["expected_excluded_row_count"] = _optional_int(
+        manifest.get("excluded_news_row_count")
+    )
+    status["observed_row_count"] = None
+    status["row_count_verified"] = None
+    status["row_count_partition_verified"] = None
+    if not status["configured"]:
+        status["errors"].append("news_file_missing")
+        return status
+    artifact_path = status.pop("_artifact_path", None)
+    if not isinstance(artifact_path, Path) or not status["exists"]:
+        return status
+    observed_hash = file_sha256(artifact_path)
+    status["observed_sha256"] = observed_hash
+    status["hash_verified"] = observed_hash == expected_hash
+    try:
+        batch = load_news_csv(artifact_path)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        status["errors"].append(f"news_file_invalid_csv:{type(exc).__name__}")
+        return status
+    observed_row_count = batch.row_count
+    status["observed_row_count"] = observed_row_count
+    status["row_count_verified"] = observed_row_count == status["expected_row_count"]
+    expected_included = status["expected_included_row_count"]
+    expected_excluded = status["expected_excluded_row_count"]
+    if isinstance(expected_included, int) and isinstance(expected_excluded, int):
+        status["row_count_partition_verified"] = (
+            expected_included + expected_excluded == status["expected_row_count"]
+        )
+    return status
 
 
 def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -422,6 +465,22 @@ def _artifact_status_passed(status: dict[str, Any], *, required_extra_key: str) 
         and status.get(required_extra_key)
         and not status.get("errors")
     )
+
+
+def _news_input_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists")
+        and status.get("hash_verified")
+        and status.get("row_count_verified")
+        and status.get("row_count_partition_verified")
+        and not status.get("errors")
+    )
+
+
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
 
 
 @context_app.command("export-session-pack")

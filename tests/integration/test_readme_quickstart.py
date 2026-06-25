@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.research_import.bundle import parse_bundle
-from news_scalping_lab.utils import read_json
+from news_scalping_lab.utils import file_sha256, read_json
 
 RUNNER = CliRunner()
 
@@ -104,6 +104,12 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert context_payload["run_id"] == run_id
     inspection = context_payload["inspection"]
     assert inspection["reproducibility_checks_passed"] is True
+    news_input = inspection["news_input"]
+    assert news_input["hash_verified"] is True
+    assert news_input["expected_sha256"] == file_sha256(csv_path)
+    assert news_input["observed_row_count"] == 1
+    assert news_input["row_count_verified"] is True
+    assert news_input["row_count_partition_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]

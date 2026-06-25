@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, file_sha256, read_json
 
 RUNNER = CliRunner()
 
@@ -113,6 +113,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert context_payload["run_id"] == run_id
     inspection = context_payload["inspection"]
     assert inspection["reproducibility_checks_passed"] is True
+    news_input = inspection["news_input"]
+    assert news_input["hash_verified"] is True
+    assert news_input["expected_sha256"] == file_sha256(news_csv)
+    assert news_input["observed_row_count"] == 1
+    assert news_input["row_count_verified"] is True
+    assert news_input["row_count_partition_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
