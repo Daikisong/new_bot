@@ -1525,6 +1525,58 @@ def test_provenance_audit_rejects_early_research_episode_available_from(
     ) in result["findings"]
 
 
+def test_provenance_audit_rejects_research_episode_cutoff_after_preopen(
+    tmp_path: Path,
+) -> None:
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-cutoff-leak.json",
+        {
+            "episode_id": "EP-cutoff-leak",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T09:00:00+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "cutoff-test-v1",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Accepted episode with late cutoff.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [
+                    {
+                        "source_id": "SRC-blind-analysis",
+                        "source_type": "daily_blind_analysis_blind_analysis",
+                        "uri": "prompt://daily_blind_analysis/test",
+                    }
+                ],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-episode",
+                    "source_type": "accepted_research_episode",
+                    "uri": "prompt://accepted_episode/test",
+                }
+            ],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "research/accepted/EP-cutoff-leak.json: research episode cutoff_at "
+        "is after trade-date cutoff"
+    ) in result["findings"]
+
+
 def test_provenance_audit_rejects_early_research_episode_claim_available_from(
     tmp_path: Path,
 ) -> None:

@@ -138,6 +138,7 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         checked += 1
         _check_research_episode_top_level_provenance(root, path, episode, findings)
         _check_research_episode_input_news_sources(root, path, episode, findings)
+        _check_research_episode_cutoff_at(path, root, episode, findings)
         _check_research_episode_available_from(path, root, episode, findings)
         if is_accepted_episode:
             _check_research_episode_blind_decision_provenance(root, path, episode, findings)
@@ -200,6 +201,29 @@ def _check_research_episode_input_news_sources(
             continue
         if file_sha256(source_path) != expected_hash:
             findings.append(f"{label}: research episode input news hash mismatch: {path_ref}")
+
+
+def _check_research_episode_cutoff_at(
+    episode_path: Path,
+    root: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    raw_trade_date = episode.get("trade_date")
+    raw_cutoff_at = episode.get("cutoff_at")
+    if not isinstance(raw_trade_date, str) or not isinstance(raw_cutoff_at, str):
+        findings.append(f"{label}: research episode cutoff_at or trade_date missing")
+        return
+    try:
+        trade_date = date.fromisoformat(raw_trade_date)
+        cutoff_at = parse_datetime(raw_cutoff_at)
+    except ValueError:
+        findings.append(f"{label}: research episode cutoff_at or trade_date invalid")
+        return
+    latest = datetime.combine(trade_date, time(8, 59, 59), tzinfo=KST)
+    if cutoff_at.astimezone(KST) > latest:
+        findings.append(f"{label}: research episode cutoff_at is after trade-date cutoff")
 
 
 def _check_research_episode_available_from(
