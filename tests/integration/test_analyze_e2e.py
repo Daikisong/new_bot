@@ -902,6 +902,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     ]
     assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
     assert all(row["source_url"] == row["url"] for row in web_source_rows)
+    assert all(row["timestamp_precision"] is None for row in web_source_rows)
     assert all(row["available_before_cutoff"] is True for row in web_source_rows)
     assert all(
         "cutoff-safe opened verification text" in row["opened_text_excerpt"]
@@ -999,6 +1000,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     )
     assert all(row["available_before_cutoff"] is True for row in candidate_check_rows)
     assert all(row["time_verified"] is True for row in candidate_check_rows)
+    assert all(row["timestamp_precision"] is None for row in candidate_check_rows)
     assert all("opened_text" not in row for row in candidate_check_rows)
     excluded_web_source_path = tmp_path / saved_manifest["excluded_web_source_artifact"]
     excluded_web_source_rows = [
@@ -1016,6 +1018,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     )
     assert all(row["available_before_cutoff"] is False for row in excluded_web_source_rows)
     assert all(row["time_verified"] is False for row in excluded_web_source_rows)
+    assert all(row["timestamp_precision"] is None for row in excluded_web_source_rows)
     excluded_candidate_check_path = (
         tmp_path / saved_manifest["excluded_candidate_web_check_artifact"]
     )
@@ -1042,12 +1045,17 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         row["exclusion_reason"] == "published_after_cutoff"
         for row in excluded_candidate_check_rows
     )
+    assert all(row["timestamp_precision"] is None for row in excluded_candidate_check_rows)
     source_ledger = (
         tmp_path / saved_manifest["source_ledger_artifact"]
     ).read_text(encoding="utf-8")
     source_ledger_rows = [json.loads(line) for line in source_ledger.splitlines()]
     assert saved_manifest["source_ledger_entry_count"] == len(source_ledger_rows)
     assert any(row["source_type"] == "web_search_result" for row in source_ledger_rows)
+    web_ledger_rows = [
+        row for row in source_ledger_rows if row["source_type"] == "web_search_result"
+    ]
+    assert all(row["timestamp_precision"] is None for row in web_ledger_rows)
     candidate_ledger_rows = [
         row for row in source_ledger_rows if row["source_type"] == "candidate_web_check"
     ]
@@ -1058,6 +1066,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert all(row["source_url"] == row["url"] for row in candidate_ledger_rows)
     assert all(row["usage_phase"] == "BLIND" for row in candidate_ledger_rows)
     assert all(row["available_before_cutoff"] is True for row in candidate_ledger_rows)
+    assert all(row["timestamp_precision"] is None for row in candidate_ledger_rows)
     assert all("content" not in row for row in candidate_ledger_rows)
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
 

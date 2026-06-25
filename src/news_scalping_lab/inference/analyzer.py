@@ -1509,6 +1509,7 @@ class DailyAnalyzer:
             "source_url": result.url,
             "snippet": result.snippet,
             "published_at": published_at.isoformat() if published_at else None,
+            "timestamp_precision": result.timestamp_precision,
             "retrieved_at": now_kst().isoformat(),
             "cutoff_at": cutoff_at.isoformat(),
             "time_verified": published_at is not None and published_at <= cutoff_at,
@@ -1537,6 +1538,7 @@ class DailyAnalyzer:
             "source_url": result.url,
             "snippet": result.snippet,
             "published_at": published_at.isoformat() if published_at else None,
+            "timestamp_precision": result.timestamp_precision,
             "retrieved_at": now_kst().isoformat(),
             "cutoff_at": cutoff_at.isoformat(),
             "exclusion_reason": exclusion.reason,
@@ -2050,6 +2052,7 @@ class DailyAnalyzer:
                     "url": payload["url"],
                     "source_url": payload.get("source_url", payload["url"]),
                     "published_at": payload["published_at"],
+                    "timestamp_precision": payload.get("timestamp_precision"),
                     "retrieved_at": retrieved_at.isoformat(),
                     "time_verified": payload["time_verified"],
                     "available_before_cutoff": payload["available_before_cutoff"],
@@ -2092,6 +2095,7 @@ class DailyAnalyzer:
                     "url": payload["url"],
                     "source_url": payload.get("source_url", payload["url"]),
                     "published_at": payload["published_at"],
+                    "timestamp_precision": payload.get("timestamp_precision"),
                     "retrieved_at": retrieved_at.isoformat(),
                     "time_verified": payload["time_verified"],
                     "available_before_cutoff": payload["available_before_cutoff"],
@@ -2766,19 +2770,20 @@ class DailyAnalyzer:
             if not line.strip():
                 continue
             row = json.loads(line)
-            sources.append(
-                {
-                    "source_id": row.get("source_id"),
-                    "query": row.get("query"),
-                    "title": row.get("title"),
-                    "url": row.get("url"),
-                    "snippet": row.get("snippet"),
-                    "published_at": row.get("published_at"),
-                    "time_verified": row.get("time_verified"),
-                    "content_sha256": row.get("content_sha256"),
-                    "opened_text_excerpt": row.get("opened_text_excerpt"),
-                }
-            )
+            source = {
+                "source_id": row.get("source_id"),
+                "query": row.get("query"),
+                "title": row.get("title"),
+                "url": row.get("url"),
+                "snippet": row.get("snippet"),
+                "published_at": row.get("published_at"),
+                "time_verified": row.get("time_verified"),
+                "content_sha256": row.get("content_sha256"),
+                "opened_text_excerpt": row.get("opened_text_excerpt"),
+            }
+            if "timestamp_precision" in row:
+                source["timestamp_precision"] = row.get("timestamp_precision")
+            sources.append(source)
         return sources
 
     def _read_candidate_web_check_context(
@@ -2795,31 +2800,34 @@ class DailyAnalyzer:
             if not line.strip():
                 continue
             row = json.loads(line)
+            check = {
+                "candidate_rank": row.get("candidate_rank"),
+                "candidate_ticker": row.get("candidate_ticker"),
+                "candidate_company_name": row.get("candidate_company_name"),
+                "candidate_path_type": row.get("candidate_path_type"),
+                "candidate_subject_type": row.get("candidate_subject_type"),
+                "candidate_expansion_path": row.get("candidate_expansion_path"),
+                "candidate_expansion_hypothesis": row.get(
+                    "candidate_expansion_hypothesis"
+                ),
+                "candidate_investigation_questions": row.get(
+                    "candidate_investigation_questions"
+                ),
+                "verification_focus": row.get("verification_focus"),
+                "source_id": row.get("source_id"),
+                "query": row.get("query"),
+                "title": row.get("title"),
+                "url": row.get("url"),
+                "snippet": row.get("snippet"),
+                "published_at": row.get("published_at"),
+                "time_verified": row.get("time_verified"),
+                "content_sha256": row.get("content_sha256"),
+                "opened_text_excerpt": row.get("opened_text_excerpt"),
+            }
+            if "timestamp_precision" in row:
+                check["timestamp_precision"] = row.get("timestamp_precision")
             checks.append(
-                {
-                    "candidate_rank": row.get("candidate_rank"),
-                    "candidate_ticker": row.get("candidate_ticker"),
-                    "candidate_company_name": row.get("candidate_company_name"),
-                    "candidate_path_type": row.get("candidate_path_type"),
-                    "candidate_subject_type": row.get("candidate_subject_type"),
-                    "candidate_expansion_path": row.get("candidate_expansion_path"),
-                    "candidate_expansion_hypothesis": row.get(
-                        "candidate_expansion_hypothesis"
-                    ),
-                    "candidate_investigation_questions": row.get(
-                        "candidate_investigation_questions"
-                    ),
-                    "verification_focus": row.get("verification_focus"),
-                    "source_id": row.get("source_id"),
-                    "query": row.get("query"),
-                    "title": row.get("title"),
-                    "url": row.get("url"),
-                    "snippet": row.get("snippet"),
-                    "published_at": row.get("published_at"),
-                    "time_verified": row.get("time_verified"),
-                    "content_sha256": row.get("content_sha256"),
-                    "opened_text_excerpt": row.get("opened_text_excerpt"),
-                }
+                check
             )
         return checks
 

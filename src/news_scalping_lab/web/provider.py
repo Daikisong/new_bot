@@ -25,6 +25,13 @@ class WebSearchResult:
     url: str
     snippet: str
     published_at: datetime | None
+    timestamp_precision: str | None = None
+
+
+@dataclass(frozen=True)
+class ParsedWebTimestamp:
+    published_at: datetime | None
+    precision: str | None
 
 
 @dataclass(frozen=True)
@@ -138,7 +145,7 @@ class BraveSearchWebResearchProvider:
                 or _string_value(item, "content")
                 or ""
             )
-            published_at = _published_at_from_result(item)
+            timestamp = _published_at_from_result(item)
             source_id = stable_web_source_id("BRAVE", query, url, str(index))
             results.append(
                 WebSearchResult(
@@ -146,7 +153,8 @@ class BraveSearchWebResearchProvider:
                     title=title,
                     url=url,
                     snippet=snippet,
-                    published_at=published_at,
+                    published_at=timestamp.published_at,
+                    timestamp_precision=timestamp.precision,
                 )
             )
         return results
@@ -286,7 +294,7 @@ def _string_value(item: Mapping[str, Any], key: str) -> str | None:
     return None
 
 
-def _published_at_from_result(item: Mapping[str, Any]) -> datetime | None:
+def _published_at_from_result(item: Mapping[str, Any]) -> ParsedWebTimestamp:
     for key in (
         "published_at",
         "published",
@@ -300,36 +308,36 @@ def _published_at_from_result(item: Mapping[str, Any]) -> datetime | None:
         if value is None:
             continue
         parsed = _parse_web_datetime(value)
-        if parsed is not None:
+        if parsed.published_at is not None:
             return parsed
     age = _string_value(item, "age")
     if age is None:
-        return None
+        return ParsedWebTimestamp(published_at=None, precision=None)
     return _parse_web_datetime(age)
 
 
-def _parse_web_datetime(value: str) -> datetime | None:
+def _parse_web_datetime(value: str) -> ParsedWebTimestamp:
     cleaned = value.strip()
     if not cleaned:
-        return None
+        return ParsedWebTimestamp(published_at=None, precision=None)
     date_only = _parse_date_only(cleaned)
     if date_only is not None:
-        return date_only
+        return ParsedWebTimestamp(published_at=date_only, precision="date_only_end_of_day")
     iso_candidate = cleaned.replace("Z", "+00:00")
     try:
         parsed_iso = parse_datetime(iso_candidate)
-        return as_kst(parsed_iso)
+        return ParsedWebTimestamp(published_at=as_kst(parsed_iso), precision="datetime")
     except ValueError:
         pass
     try:
         parsed_email = parsedate_to_datetime(cleaned)
-        return as_kst(parsed_email)
+        return ParsedWebTimestamp(published_at=as_kst(parsed_email), precision="datetime")
     except (TypeError, ValueError, IndexError):
         pass
     relative = _parse_relative_age(cleaned)
     if relative is not None:
-        return relative
-    return None
+        return ParsedWebTimestamp(published_at=relative, precision="relative_age")
+    return ParsedWebTimestamp(published_at=None, precision=None)
 
 
 def _parse_date_only(value: str) -> datetime | None:

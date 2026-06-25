@@ -3798,7 +3798,7 @@ def _read_web_source_context_rows(
 
 
 def _web_source_context_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    context_row = {
         "source_id": row.get("source_id"),
         "query": row.get("query"),
         "title": row.get("title"),
@@ -3809,6 +3809,9 @@ def _web_source_context_row(row: dict[str, Any]) -> dict[str, Any]:
         "content_sha256": row.get("content_sha256"),
         "opened_text_excerpt": row.get("opened_text_excerpt"),
     }
+    if "timestamp_precision" in row:
+        context_row["timestamp_precision"] = row.get("timestamp_precision")
+    return context_row
 
 
 def _read_candidate_web_check_context_rows(
@@ -3839,7 +3842,7 @@ def _read_candidate_web_check_context_rows(
 
 
 def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    context_row = {
         "candidate_rank": row.get("candidate_rank"),
         "candidate_ticker": row.get("candidate_ticker"),
         "candidate_company_name": row.get("candidate_company_name"),
@@ -3861,6 +3864,9 @@ def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
         "content_sha256": row.get("content_sha256"),
         "opened_text_excerpt": row.get("opened_text_excerpt"),
     }
+    if "timestamp_precision" in row:
+        context_row["timestamp_precision"] = row.get("timestamp_precision")
+    return context_row
 
 
 def _resolve_required_manifest_artifact(

@@ -138,6 +138,7 @@ async def test_brave_search_provider_reads_nested_web_results() -> None:
     assert len(results) == 1
     assert results[0].title == "nested web source"
     assert results[0].published_at == datetime(2030, 1, 9, 23, 59, 59, tzinfo=KST)
+    assert results[0].timestamp_precision == "date_only_end_of_day"
 
 
 @pytest.mark.asyncio
@@ -167,7 +168,9 @@ async def test_temporal_guard_excludes_trade_day_date_only_results_before_cutoff
     kept = await guard.search("date-only", cutoff_at=cutoff)
 
     assert [result.title for result in kept] == ["previous date-only source"]
+    assert kept[0].timestamp_precision == "date_only_end_of_day"
     assert guard.excluded_sources[0].result.title == "trade date-only source"
+    assert guard.excluded_sources[0].result.timestamp_precision == "date_only_end_of_day"
     assert guard.excluded_sources[0].reason == "published_after_cutoff"
 
 
