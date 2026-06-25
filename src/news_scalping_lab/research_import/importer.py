@@ -86,14 +86,30 @@ class ResearchImporter:
     def _strict_import(self, path: Path) -> ResearchEpisode:
         data = read_json(path)
         episode = ResearchEpisode.model_validate(data)
+        source_hash = file_sha256(path)
         provenance = Provenance(
-            source_id=stable_id("SRC", path.as_posix(), file_sha256(path)),
+            source_id=stable_id("SRC", path.as_posix(), source_hash),
             source_type="strict_research_json",
             uri=path.as_posix(),
-            content_sha256=file_sha256(path),
+            content_sha256=source_hash,
             observed_at=now_kst(),
         )
-        return episode.model_copy(update={"provenance": [*episode.provenance, provenance]})
+        blind_analysis = episode.blind_analysis
+        if not blind_analysis.provenance:
+            blind_analysis = blind_analysis.model_copy(update={"provenance": [provenance]})
+        blind_predictions = [
+            candidate
+            if candidate.provenance
+            else candidate.model_copy(update={"provenance": [provenance]})
+            for candidate in episode.blind_predictions
+        ]
+        return episode.model_copy(
+            update={
+                "provenance": [*episode.provenance, provenance],
+                "blind_analysis": blind_analysis,
+                "blind_predictions": blind_predictions,
+            }
+        )
 
     async def _semantic_import(self, path: Path) -> ResearchEpisode:
         text = path.read_text(encoding="utf-8", errors="replace")

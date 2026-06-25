@@ -248,6 +248,7 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     assert preserved_raw.exists()
     assert preserved_raw.parent == tmp_path / "data" / "raw" / "research"
     assert strict_provenance[0].content_sha256 == file_sha256(preserved_raw)
+    assert episode.blind_analysis.provenance == strict_provenance
     assert ResearchStore(tmp_path).get_episode("EP-strict-source").episode_id == (
         "EP-strict-source"
     )

@@ -136,6 +136,8 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
             continue
         checked += 1
         _check_research_episode_top_level_provenance(root, path, episode, findings)
+        if is_accepted_episode:
+            _check_research_episode_blind_decision_provenance(root, path, episode, findings)
         if _has_semantic_import_provenance(episode):
             _check_semantic_import_audit(root, path, episode, findings)
         if has_import_provenance:
@@ -156,6 +158,70 @@ def _check_research_episode_top_level_provenance(
         return
     for index, entry in enumerate(provenance_entries, start=1):
         _check_memory_source(root, label, index, entry, findings, kind="research episode")
+
+
+def _check_research_episode_blind_decision_provenance(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    blind_analysis = episode.get("blind_analysis")
+    if not isinstance(blind_analysis, dict):
+        findings.append(f"{label}: research episode blind_analysis missing")
+    else:
+        _check_nested_provenance_entries(
+            root,
+            label,
+            blind_analysis,
+            findings,
+            kind="research episode blind_analysis",
+        )
+    blind_predictions = episode.get("blind_predictions")
+    if not isinstance(blind_predictions, list):
+        findings.append(f"{label}: research episode blind_predictions missing")
+        return
+    for index, candidate in enumerate(blind_predictions, start=1):
+        if not isinstance(candidate, dict):
+            findings.append(f"{label}: research episode blind prediction {index} is not an object")
+            continue
+        _check_nested_provenance_entries(
+            root,
+            label,
+            candidate,
+            findings,
+            kind=f"research episode blind prediction {index}",
+        )
+        has_anchor = (
+            candidate.get("event_ids")
+            or candidate.get("memory_episode_ids")
+            or candidate.get("source_urls")
+        )
+        if not has_anchor:
+            findings.append(
+                f"{label}: research episode blind prediction lacks provenance anchors: "
+                f"{candidate.get('company_name')}"
+            )
+
+
+def _check_nested_provenance_entries(
+    root: Path,
+    label: str,
+    payload: dict[str, Any],
+    findings: list[str],
+    *,
+    kind: str,
+) -> None:
+    provenance_entries = payload.get("provenance")
+    if not isinstance(provenance_entries, list) or not provenance_entries:
+        findings.append(f"{label}: {kind} missing provenance")
+        return
+    for index, entry in enumerate(provenance_entries, start=1):
+        if not isinstance(entry, dict):
+            findings.append(f"{label}: {kind} provenance {index} is invalid")
+            continue
+        _check_memory_source(root, label, index, entry, findings, kind=kind)
 
 
 def _check_evaluation_episode_provenance(root: Path, findings: list[str]) -> int:

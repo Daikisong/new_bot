@@ -1359,7 +1359,13 @@ def test_provenance_audit_validates_accepted_episode_top_level_sources(
                 "summary": "Accepted episode with sealed provenance.",
                 "open_world_mechanisms": [],
                 "initial_uncertainties": [],
-                "provenance": [],
+                "provenance": [
+                    {
+                        "source_id": "SRC-blind-analysis",
+                        "source_type": "daily_blind_analysis_blind_analysis",
+                        "uri": "prompt://daily_blind_analysis/test",
+                    }
+                ],
             },
             "blind_predictions": [],
             "observed_events": [],
@@ -1395,6 +1401,73 @@ def test_provenance_audit_validates_accepted_episode_top_level_sources(
         "research/accepted/EP-accepted.json: research episode provenance 1 "
         "content_sha256 mismatch"
     ) in failed["findings"]
+
+
+def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "runs" / "checkpoints" / "evaluations" / "EP-blind"
+    source_path.mkdir(parents=True)
+    sealed_prediction = source_path / "sealed_blind_prediction.json"
+    sealed_prediction.write_text('{"prediction":"sealed"}\n', encoding="utf-8")
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-blind.json",
+        {
+            "episode_id": "EP-blind",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "evaluation-postmortem-v1",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Missing nested provenance.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [],
+            },
+            "blind_predictions": [
+                {
+                    "company_name": "CandidateWithoutSource",
+                    "provenance": [],
+                    "event_ids": [],
+                    "memory_episode_ids": [],
+                    "source_urls": [],
+                }
+            ],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-sealed",
+                    "source_type": "sealed_blind_prediction",
+                    "uri": sealed_prediction.relative_to(tmp_path).as_posix(),
+                    "content_sha256": file_sha256(sealed_prediction),
+                }
+            ],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "research/accepted/EP-blind.json: research episode blind_analysis "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode blind prediction 1 "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode blind prediction "
+        "lacks provenance anchors: CandidateWithoutSource"
+    ) in result["findings"]
 
 
 def test_provenance_audit_requires_blind_sector_and_candidate_provenance(tmp_path: Path) -> None:
