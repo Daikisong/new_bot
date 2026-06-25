@@ -45,6 +45,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             findings.append(f"{manifest_name}: missing cutoff_at")
         if _requires_as_of(manifest) and manifest_as_of is None:
             findings.append(f"{manifest_name}: missing as_of")
+        _check_context_manifest_episode_scope(
+            manifest_name,
+            manifest,
+            manifest_cutoff_at,
+            accepted_episode_available_from,
+            findings,
+        )
         if (
             manifest_as_of is not None
             and manifest_cutoff_at is not None
@@ -151,6 +158,78 @@ def _requires_as_of(manifest: dict[object, object]) -> bool:
         "nslab.context_manifest.v1",
         "nslab.session_pack_manifest.v1",
     }
+
+
+def _check_context_manifest_episode_scope(
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_cutoff_at: datetime | None,
+    accepted_episode_available_from: dict[str, datetime],
+    findings: list[str],
+) -> None:
+    if manifest.get("schema_version") != "nslab.context_manifest.v1":
+        return
+    accepted_count = _non_bool_int(manifest.get("accepted_episode_count"))
+    total_count = _non_bool_int(manifest.get("total_accepted_episode_count"))
+    available_count = _non_bool_int(manifest.get("available_episode_count"))
+    unavailable_count = _non_bool_int(manifest.get("unavailable_episode_count"))
+    swept_count = _non_bool_int(manifest.get("swept_episode_count"))
+    unavailable_ids = _string_list_or_none(manifest.get("unavailable_episode_ids"))
+    swept_ids = _string_list_or_none(manifest.get("swept_episode_ids"))
+
+    for field, value in (
+        ("accepted_episode_count", accepted_count),
+        ("total_accepted_episode_count", total_count),
+        ("available_episode_count", available_count),
+        ("unavailable_episode_count", unavailable_count),
+        ("swept_episode_count", swept_count),
+    ):
+        if value is None or value < 0:
+            findings.append(f"{manifest_name}: episode scope {field}_invalid")
+    if unavailable_ids is None:
+        findings.append(f"{manifest_name}: episode scope unavailable_episode_ids_invalid")
+    if swept_ids is None:
+        findings.append(f"{manifest_name}: episode scope swept_episode_ids_invalid")
+
+    if accepted_count is not None and available_count is not None and accepted_count != available_count:
+        findings.append(f"{manifest_name}: episode scope accepted_episode_count_mismatch")
+        findings.append(f"{manifest_name}: episode scope available_episode_count_mismatch")
+    if (
+        total_count is not None
+        and available_count is not None
+        and unavailable_count is not None
+        and total_count != available_count + unavailable_count
+    ):
+        findings.append(f"{manifest_name}: episode scope total_accepted_episode_count_mismatch")
+    if (
+        unavailable_count is not None
+        and unavailable_ids is not None
+        and unavailable_count != len(unavailable_ids)
+    ):
+        findings.append(f"{manifest_name}: episode scope unavailable_episode_count_mismatch")
+    if swept_count is not None and swept_ids is not None and swept_count != len(swept_ids):
+        findings.append(f"{manifest_name}: episode scope swept_episode_count_mismatch")
+
+    if unavailable_ids is None or swept_ids is None:
+        return
+    overlapping_ids = sorted(set(unavailable_ids) & set(swept_ids))
+    for episode_id in overlapping_ids:
+        findings.append(
+            f"{manifest_name}: episode scope unavailable episode also swept: {episode_id}"
+        )
+    if manifest_cutoff_at is None:
+        return
+    for episode_id in unavailable_ids:
+        available_from = accepted_episode_available_from.get(episode_id)
+        if available_from is not None and is_available_as_of(available_from, manifest_cutoff_at):
+            findings.append(
+                f"{manifest_name}: episode scope unavailable_episode_ids_mismatch"
+            )
+            break
+    for episode_id in swept_ids:
+        available_from = accepted_episode_available_from.get(episode_id)
+        if available_from is not None and not is_available_as_of(available_from, manifest_cutoff_at):
+            findings.append(f"{manifest_name}: future swept episode: {episode_id}")
 
 
 def _accepted_episode_available_from(root: Path) -> dict[str, datetime]:
@@ -1296,6 +1375,18 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_or_none(value: object) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    if not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+def _non_bool_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _phase_a_names(blind_context_mode: str) -> set[str]:

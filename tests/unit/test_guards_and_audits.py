@@ -11,6 +11,7 @@ from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.cli import _final_synthesis_manifest_count_mismatches
+from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
     BlindPriceGuard,
@@ -2041,6 +2042,89 @@ def test_lookahead_audit_flags_manifest_as_of_after_cutoff(tmp_path: Path) -> No
 
     assert not result["passed"]
     assert "RUN-as-of-leak.json: as_of is after cutoff_at" in result["findings"]
+
+
+def test_lookahead_audit_validates_context_manifest_episode_scope(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "research" / "accepted").mkdir(parents=True)
+    available_episode = ResearchEpisode(
+        episode_id="EP-available",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Available lesson."),
+        available_from=datetime(2030, 1, 10, 8, 30, 0, tzinfo=KST),
+    )
+    future_episode = ResearchEpisode(
+        episode_id="EP-future",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Future lesson."),
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-available.json",
+        available_episode.model_dump(mode="json"),
+    )
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-future.json",
+        future_episode.model_dump(mode="json"),
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-episode-scope.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-episode-scope",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "accepted_episode_count": 2,
+            "total_accepted_episode_count": 3,
+            "available_episode_count": 1,
+            "unavailable_episode_count": 0,
+            "unavailable_episode_ids": ["EP-available"],
+            "swept_episode_count": 1,
+            "swept_episode_ids": ["EP-available", "EP-future"],
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert (
+        "RUN-episode-scope.json: episode scope accepted_episode_count_mismatch"
+        in findings
+    )
+    assert (
+        "RUN-episode-scope.json: episode scope total_accepted_episode_count_mismatch"
+        in findings
+    )
+    assert (
+        "RUN-episode-scope.json: episode scope available_episode_count_mismatch"
+        in findings
+    )
+    assert (
+        "RUN-episode-scope.json: episode scope unavailable_episode_count_mismatch"
+        in findings
+    )
+    assert (
+        "RUN-episode-scope.json: episode scope unavailable_episode_ids_mismatch"
+        in findings
+    )
+    assert (
+        "RUN-episode-scope.json: episode scope swept_episode_count_mismatch"
+        in findings
+    )
+    assert "RUN-episode-scope.json: future swept episode: EP-future" in findings
 
 
 def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Path) -> None:
