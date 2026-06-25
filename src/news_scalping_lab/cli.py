@@ -371,6 +371,18 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
             "news_novelty_review_sha256",
             True,
         ),
+        (
+            "semantic_retrieval_plan",
+            "semantic_retrieval_plan_artifact",
+            "semantic_retrieval_plan_sha256",
+            True,
+        ),
+        (
+            "semantic_retrieval",
+            "semantic_retrieval_artifact",
+            "semantic_retrieval_sha256",
+            True,
+        ),
         ("source_ledger", "source_ledger_artifact", "source_ledger_sha256", True),
         (
             "blind_seal_receipt",
@@ -714,6 +726,7 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
 
 _CONTEXT_PROMPT_TRACE_PURPOSES = {
     "news_novelty_review": "news_novelty_review",
+    "semantic_retrieval_plan": "semantic_retrieval_plan",
     "blind_analysis": "daily_blind_analysis",
     "red_team_candidate_review": "red_team_candidate_review",
     "final_synthesis": "final_synthesis",

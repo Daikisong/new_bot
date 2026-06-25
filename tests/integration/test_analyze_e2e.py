@@ -28,6 +28,8 @@ from news_scalping_lab.contracts.models import (
     RedTeamArtifact,
     RedTeamFinding,
     ResearchEpisode,
+    SemanticRetrievalPlan,
+    SemanticRetrievalQuery,
 )
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
@@ -113,6 +115,38 @@ class RecordingBlindLLM:
                 ],
             )
             return review  # type: ignore[return-value]
+        if response_model is SemanticRetrievalPlan:
+            plan = SemanticRetrievalPlan(
+                run_id="RUN-provider-semantic-retrieval",
+                prompt_version="test",
+                prompt_sha256="test",
+                created_at=datetime(1999, 1, 1, 8, 40, 0, tzinfo=KST),
+                cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
+                required_categories=[
+                    "positive_analogs",
+                    "negative_analogs",
+                    "near_misses",
+                    "counterexamples",
+                    "leader_selection_cases",
+                    "theme_formation_failures",
+                ],
+                queries=[
+                    SemanticRetrievalQuery(
+                        category=category,
+                        query=f"{category} ProviderCo structural memory",
+                        rationale="provider semantic query",
+                    )
+                    for category in [
+                        "positive_analogs",
+                        "negative_analogs",
+                        "near_misses",
+                        "counterexamples",
+                        "leader_selection_cases",
+                        "theme_formation_failures",
+                    ]
+                ],
+            )
+            return plan  # type: ignore[return-value]
         if response_model is RedTeamArtifact:
             artifact = RedTeamArtifact(
                 run_id="RUN-provider-red-team",
@@ -561,6 +595,48 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     )
     assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
     assert saved_manifest["token_counts"]["news_novelty_review_prompt"] > 0
+    assert saved_manifest["semantic_retrieval_plan_artifact"]
+    assert saved_manifest["semantic_retrieval_artifact"]
+    assert saved_manifest["semantic_retrieval_query_count"] == 6
+    assert saved_manifest["semantic_retrieval_summary"] == {
+        "required_categories": [
+            "positive_analogs",
+            "negative_analogs",
+            "near_misses",
+            "counterexamples",
+            "leader_selection_cases",
+            "theme_formation_failures",
+        ],
+        "category_query_counts": {
+            "positive_analogs": 1,
+            "negative_analogs": 1,
+            "near_misses": 1,
+            "counterexamples": 1,
+            "leader_selection_cases": 1,
+            "theme_formation_failures": 1,
+        },
+        "query_count": 6,
+        "included_episode_count": 0,
+        "excluded_episode_count": 0,
+        "retrieval_zero_is_valid": True,
+    }
+    semantic_plan_path = tmp_path / saved_manifest["semantic_retrieval_plan_artifact"]
+    semantic_plan_text = semantic_plan_path.read_text(encoding="utf-8")
+    semantic_plan = json.loads(semantic_plan_text)
+    assert sha256_text(semantic_plan_text) == saved_manifest["semantic_retrieval_plan_sha256"]
+    assert semantic_plan["schema_version"] == "nslab.semantic_retrieval_plan.v1"
+    assert {query["category"] for query in semantic_plan["queries"]} == set(
+        saved_manifest["semantic_retrieval_summary"]["required_categories"]
+    )
+    semantic_results_path = tmp_path / saved_manifest["semantic_retrieval_artifact"]
+    semantic_results_text = semantic_results_path.read_text(encoding="utf-8")
+    semantic_rows = [
+        json.loads(line) for line in semantic_results_text.splitlines() if line.strip()
+    ]
+    assert sha256_text(semantic_results_text) == saved_manifest["semantic_retrieval_sha256"]
+    assert len(semantic_rows) == 6
+    assert all(row["schema_version"] == "nslab.semantic_retrieval_result.v1" for row in semantic_rows)
+    assert all(row["included_episode_ids"] == [] for row in semantic_rows)
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     prompt_hash_by_purpose = {
@@ -574,6 +650,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         if trace["purpose"]
         in {
             "news_novelty_review",
+            "semantic_retrieval_plan",
             "daily_blind_analysis",
             "red_team_candidate_review",
             "final_synthesis",
@@ -581,6 +658,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     }
     assert saved_manifest["prompt_hashes"]["news_novelty_review"] == prompt_hash_by_purpose[
         "news_novelty_review"
+    ]
+    assert saved_manifest["prompt_hashes"]["semantic_retrieval_plan"] == prompt_hash_by_purpose[
+        "semantic_retrieval_plan"
     ]
     assert saved_manifest["prompt_hashes"]["blind_analysis"] == prompt_hash_by_purpose[
         "daily_blind_analysis"
@@ -822,6 +902,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
 
     assert [call["purpose"] for call in llm.calls] == [
         "news_novelty_review",
+        "semantic_retrieval_plan",
         "daily_blind_analysis",
         "red_team_candidate_review",
         "final_synthesis",
@@ -830,6 +911,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     final_call = _llm_call(llm, "final_synthesis")
     assert "ProviderCo" in str(blind_call["prompt"])
     assert "news_novelty_review" in str(final_call["prompt"])
+    assert "additional_semantic_retrieval" in str(final_call["prompt"])
     assert "red_team_output" in str(final_call["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
@@ -880,11 +962,13 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert analysis.context_manifest.prompt_hashes["final_synthesis"]
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     assert any(trace["purpose"] == "news_novelty_review" for trace in traces)
+    assert any(trace["purpose"] == "semantic_retrieval_plan" for trace in traces)
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
     assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
+    assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v1"
     assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
@@ -1052,11 +1136,21 @@ async def test_retrieved_raw_episodes_are_filtered_by_available_from(tmp_path) -
     final_prompt = str(_llm_call(llm, "final_synthesis")["prompt"])
     assert analysis.context_manifest.retrieved_episode_ids == ["EP-retrieved"]
     assert analysis.context_manifest.excluded_retrieved_episode_ids == ["EP-future-retrieved"]
+    assert "EP-retrieved" in analysis.context_manifest.semantic_retrieval_episode_ids
+    assert (
+        "EP-future-retrieved"
+        in analysis.context_manifest.excluded_semantic_retrieval_episode_ids
+    )
     assert "ProviderCo retrieved raw summary available before the run" in final_prompt
     assert "ProviderCo future unavailable summary must not enter blind context" not in final_prompt
+    assert "additional_semantic_retrieval" in final_prompt
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["retrieved_episode_ids"] == ["EP-retrieved"]
     assert saved_manifest["excluded_retrieved_episode_ids"] == ["EP-future-retrieved"]
+    assert "EP-retrieved" in saved_manifest["semantic_retrieval_episode_ids"]
+    assert "EP-future-retrieved" in saved_manifest[
+        "excluded_semantic_retrieval_episode_ids"
+    ]
 
 
 @pytest.mark.asyncio

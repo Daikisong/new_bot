@@ -115,6 +115,10 @@ LLM as `news_novelty_review.json` using only current news and cutoff-safe web
 sources. The review records novelty, first-public evidence time, contract stage,
 customer/period/economic attribution fields, and dilution or financing risks; code
 validates schema, source IDs, hashes, and cutoff timing.
+After the exhaustive memory sweep, the LLM writes `semantic_retrieval_plan.json`
+with the required positive/negative/near-miss/counterexample/leader/theme-failure
+query categories. The engine executes those queries against accepted episodes,
+filters unavailable future episodes, and persists `semantic_retrieval.jsonl`.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates

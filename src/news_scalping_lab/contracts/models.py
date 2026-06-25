@@ -196,6 +196,24 @@ class NewsNoveltyReview(StrictModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class SemanticRetrievalQuery(StrictModel):
+    category: str
+    query: str
+    rationale: str = ""
+
+
+class SemanticRetrievalPlan(StrictModel):
+    schema_version: str = "nslab.semantic_retrieval_plan.v1"
+    run_id: str
+    prompt_version: str
+    prompt_sha256: str
+    created_at: datetime
+    cutoff_at: datetime
+    queries: list[SemanticRetrievalQuery] = Field(default_factory=list)
+    required_categories: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class DominantSectorHypothesis(StrictModel):
     name: str
     triggering_events: list[str] = Field(default_factory=list)
@@ -461,6 +479,14 @@ class ContextManifest(StrictModel):
     news_novelty_review_sha256: str | None = None
     news_novelty_review_count: int = 0
     news_novelty_review_summary: dict[str, Any] = Field(default_factory=dict)
+    semantic_retrieval_plan_artifact: str | None = None
+    semantic_retrieval_plan_sha256: str | None = None
+    semantic_retrieval_query_count: int = 0
+    semantic_retrieval_artifact: str | None = None
+    semantic_retrieval_sha256: str | None = None
+    semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
+    excluded_semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
+    semantic_retrieval_summary: dict[str, Any] = Field(default_factory=dict)
     source_ledger_artifact: str | None = None
     source_ledger_sha256: str | None = None
     source_ledger_entry_count: int = 0

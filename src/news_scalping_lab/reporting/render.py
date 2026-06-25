@@ -205,6 +205,19 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"{manifest.news_novelty_review_summary.get('time_verified_count', 0)}"
             ),
             "",
+            "Semantic retrieval:",
+            "",
+            f"- Plan artifact: {manifest.semantic_retrieval_plan_artifact or 'none'}",
+            f"- Plan SHA256: {manifest.semantic_retrieval_plan_sha256 or 'none'}",
+            f"- Result artifact: {manifest.semantic_retrieval_artifact or 'none'}",
+            f"- Result SHA256: {manifest.semantic_retrieval_sha256 or 'none'}",
+            f"- Queries: {manifest.semantic_retrieval_query_count}",
+            f"- Retrieved episodes: {list_text(manifest.semantic_retrieval_episode_ids)}",
+            (
+                "- Excluded semantic episodes: "
+                f"{list_text(manifest.excluded_semantic_retrieval_episode_ids)}"
+            ),
+            "",
             "Excluded after-cutoff web source ids:",
             "",
             "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)

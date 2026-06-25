@@ -26,6 +26,8 @@ from news_scalping_lab.contracts.models import (
     PathType,
     RedTeamArtifact,
     RedTeamFinding,
+    SemanticRetrievalPlan,
+    SemanticRetrievalQuery,
 )
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
@@ -66,6 +68,9 @@ class DeterministicMockLLMProvider:
         if response_model is NewsNoveltyReview:
             review = self._news_novelty_review(prompt)
             return review  # type: ignore[return-value]
+        if response_model is SemanticRetrievalPlan:
+            plan = self._semantic_retrieval_plan(prompt)
+            return plan  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
@@ -490,6 +495,44 @@ class DeterministicMockLLMProvider:
 
     def _final_synthesis_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---FINAL_SYNTHESIS_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _semantic_retrieval_plan(self, prompt: str) -> SemanticRetrievalPlan:
+        payload = self._semantic_retrieval_payload(prompt)
+        cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
+        mechanisms = self._payload_string_list(payload, "open_world_first_analysis")
+        mechanism_text = " ".join(mechanisms[:2]) or "current catalyst"
+        required_categories = self._payload_string_list(payload, "required_categories")
+        queries = [
+            SemanticRetrievalQuery(
+                category=category,
+                query=f"{category.replace('_', ' ')} structural analogs {mechanism_text}",
+                rationale="Mock LLM covers required semantic retrieval category.",
+            )
+            for category in required_categories
+        ]
+        return SemanticRetrievalPlan(
+            run_id=str(payload.get("run_id") or "RUN-mock-semantic-retrieval"),
+            prompt_version=str(
+                payload.get("prompt_version") or "semantic_retrieval_plan.v1"
+            ),
+            prompt_sha256=sha256_text(prompt),
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            queries=queries,
+            required_categories=required_categories,
+            notes=["Mock structured semantic retrieval plan."],
+        )
+
+    def _semantic_retrieval_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---"
         if marker not in prompt:
             return {}
         payload_text = prompt.split(marker, maxsplit=1)[-1].strip()

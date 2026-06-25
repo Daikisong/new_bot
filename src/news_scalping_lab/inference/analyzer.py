@@ -28,6 +28,8 @@ from news_scalping_lab.contracts.models import (
     PathType,
     Provenance,
     RedTeamArtifact,
+    SemanticRetrievalPlan,
+    SemanticRetrievalQuery,
 )
 from news_scalping_lab.inference.red_team import (
     PROMPT_VERSION as RED_TEAM_PROMPT_VERSION,
@@ -80,7 +82,16 @@ class FutureContextLeakError(RuntimeError):
 
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
+SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v1"
 FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
+SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
+    "positive_analogs",
+    "negative_analogs",
+    "near_misses",
+    "counterexamples",
+    "leader_selection_cases",
+    "theme_formation_failures",
+)
 
 
 class DailyAnalyzer:
@@ -222,6 +233,19 @@ class DailyAnalyzer:
         manifest.token_counts["current_news"] = sum(len(text) for text in news_texts) // 4
         manifest.errors.extend(sweep.errors)
         self._fail_if_exhaustive_coverage_incomplete(manifest)
+        _semantic_plan, semantic_prompt_hash, semantic_prompt_tokens = (
+            await self._run_semantic_retrieval_plan(
+                news_texts=news_texts,
+                first_pass_mechanisms=first_pass_mechanisms,
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
+        )
+        self._write_semantic_retrieval_artifact(
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+        )
+        manifest.token_counts["semantic_retrieval_plan_prompt"] = semantic_prompt_tokens
 
         prediction, blind_prompt_hash, blind_prompt_tokens = await self._generate_prediction(
             trade_date=trade_date,
@@ -246,6 +270,15 @@ class DailyAnalyzer:
                 "event_cluster_summary": manifest.event_cluster_summary,
                 "news_novelty_review_artifact": manifest.news_novelty_review_artifact,
                 "news_novelty_review_summary": manifest.news_novelty_review_summary,
+                "semantic_retrieval_plan_artifact": (
+                    manifest.semantic_retrieval_plan_artifact
+                ),
+                "semantic_retrieval_artifact": manifest.semantic_retrieval_artifact,
+                "semantic_retrieval_episode_ids": manifest.semantic_retrieval_episode_ids,
+                "excluded_semantic_retrieval_episode_ids": (
+                    manifest.excluded_semantic_retrieval_episode_ids
+                ),
+                "semantic_retrieval_summary": manifest.semantic_retrieval_summary,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
@@ -312,6 +345,7 @@ class DailyAnalyzer:
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["news_novelty_review"] = novelty_prompt_hash
+        manifest.prompt_hashes["semantic_retrieval_plan"] = semantic_prompt_hash
         manifest.prompt_hashes["blind_analysis"] = blind_prompt_hash
         manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
         manifest.prompt_hashes["final_synthesis"] = final_synthesis_prompt_hash
@@ -788,6 +822,261 @@ class DailyAnalyzer:
                     source_ids.add(source_id)
         source_ids.update(manifest.web_sources)
         return source_ids
+
+    async def _run_semantic_retrieval_plan(
+        self,
+        *,
+        news_texts: list[str],
+        first_pass_mechanisms: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> tuple[SemanticRetrievalPlan, str, int]:
+        prompt = self._build_semantic_retrieval_plan_prompt(
+            news_texts=news_texts,
+            first_pass_mechanisms=first_pass_mechanisms,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+        )
+        prompt_sha256 = sha256_text(prompt)
+        try:
+            plan = await self.llm.generate_structured(
+                prompt=prompt,
+                response_model=SemanticRetrievalPlan,
+                purpose="semantic_retrieval_plan",
+            )
+        except NotImplementedError:
+            plan = self._fallback_semantic_retrieval_plan(
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+                prompt_sha256=prompt_sha256,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
+        normalized = self._normalize_semantic_retrieval_plan(
+            plan,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+            first_pass_mechanisms=first_pass_mechanisms,
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "semantic_retrieval"
+            / manifest.run_id
+            / "semantic_retrieval_plan.json"
+        )
+        artifact_path = self.root / artifact_relative
+        write_json(artifact_path, normalized.model_dump(mode="json"))
+        artifact_text = artifact_path.read_text(encoding="utf-8")
+        manifest.semantic_retrieval_plan_artifact = artifact_relative.as_posix()
+        manifest.semantic_retrieval_plan_sha256 = sha256_text(artifact_text)
+        manifest.semantic_retrieval_query_count = len(normalized.queries)
+        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+
+    def _build_semantic_retrieval_plan_prompt(
+        self,
+        *,
+        news_texts: list[str],
+        first_pass_mechanisms: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> str:
+        payload = {
+            "schema": "nslab.semantic_retrieval_plan.v1",
+            "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION,
+            "run_id": manifest.run_id,
+            "cutoff_at": cutoff_at.isoformat(),
+            "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
+            "current_news": news_texts,
+            "open_world_first_analysis": first_pass_mechanisms,
+            "news_novelty_review": self._read_news_novelty_review_context(manifest),
+            "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
+        }
+        return (
+            "Create additional semantic retrieval queries as SemanticRetrievalPlan. "
+            "Queries must be mechanism-oriented and must cover every required category: "
+            "positive analogs, negative analogs, near misses, counterexamples, "
+            "leader-selection cases, and theme-formation failures. Do not use exact "
+            "keyword matching as a gate and do not request cutoff-after evidence.\n"
+            "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _normalize_semantic_retrieval_plan(
+        self,
+        plan: SemanticRetrievalPlan,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+        first_pass_mechanisms: list[str],
+    ) -> SemanticRetrievalPlan:
+        queries: list[SemanticRetrievalQuery] = []
+        seen: set[tuple[str, str]] = set()
+        for query in plan.queries:
+            category = _normalize_semantic_retrieval_category(query.category)
+            if category is None:
+                continue
+            text = " ".join(query.query.split())
+            if not text:
+                continue
+            key = (category, text)
+            if key in seen:
+                continue
+            seen.add(key)
+            queries.append(
+                query.model_copy(
+                    update={
+                        "category": category,
+                        "query": text,
+                    }
+                )
+            )
+        existing_categories = {query.category for query in queries}
+        for category in SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES:
+            if category in existing_categories:
+                continue
+            queries.append(
+                self._fallback_semantic_retrieval_query(
+                    category=category,
+                    first_pass_mechanisms=first_pass_mechanisms,
+                )
+            )
+        queries.sort(
+            key=lambda item: (
+                SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES.index(item.category),
+                item.query,
+            )
+        )
+        return plan.model_copy(
+            update={
+                "run_id": manifest.run_id,
+                "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION,
+                "prompt_sha256": prompt_sha256,
+                "cutoff_at": cutoff_at,
+                "queries": queries,
+                "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
+            }
+        )
+
+    def _fallback_semantic_retrieval_plan(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+        first_pass_mechanisms: list[str],
+    ) -> SemanticRetrievalPlan:
+        queries = [
+            self._fallback_semantic_retrieval_query(
+                category=category,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
+            for category in SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES
+        ]
+        return SemanticRetrievalPlan(
+            run_id=manifest.run_id,
+            prompt_version=SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION,
+            prompt_sha256=prompt_sha256,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            queries=queries,
+            required_categories=list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
+            notes=["Fallback semantic retrieval plan: LLM query planning was unavailable."],
+        )
+
+    def _fallback_semantic_retrieval_query(
+        self,
+        *,
+        category: str,
+        first_pass_mechanisms: list[str],
+    ) -> SemanticRetrievalQuery:
+        mechanism_text = " ".join(first_pass_mechanisms[:2]) or "current catalyst"
+        category_text = category.replace("_", " ")
+        return SemanticRetrievalQuery(
+            category=category,
+            query=f"{category_text} structural analogs {mechanism_text}",
+            rationale="Required Pass 3 category query generated without domain maps.",
+        )
+
+    def _write_semantic_retrieval_artifact(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> None:
+        plan = self._read_semantic_retrieval_plan(manifest)
+        rows: list[dict[str, Any]] = []
+        included_episode_ids: list[str] = []
+        excluded_episode_ids: list[str] = []
+        for query_index, query in enumerate(plan.queries, start=1):
+            raw_episode_ids = self.retrieval.search_semantic(query.query, limit=5)
+            available_ids, unavailable_ids = self._filter_retrieved_ids_available_as_of(
+                raw_episode_ids,
+                cutoff_at=cutoff_at,
+            )
+            included_episode_ids.extend(available_ids)
+            excluded_episode_ids.extend(unavailable_ids)
+            rows.append(
+                {
+                    "schema_version": "nslab.semantic_retrieval_result.v1",
+                    "run_id": manifest.run_id,
+                    "query_index": query_index,
+                    "category": query.category,
+                    "query": query.query,
+                    "query_sha256": sha256_text(query.query),
+                    "rationale": query.rationale,
+                    "raw_episode_ids": raw_episode_ids,
+                    "included_episode_ids": available_ids,
+                    "excluded_episode_ids": unavailable_ids,
+                    "result_count": len(available_ids),
+                    "excluded_count": len(unavailable_ids),
+                    "cutoff_at": cutoff_at.isoformat(),
+                }
+            )
+        included_episode_ids = _unique_preserving_order(included_episode_ids)
+        excluded_episode_ids = _unique_preserving_order(excluded_episode_ids)
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "semantic_retrieval"
+            / manifest.run_id
+            / "semantic_retrieval.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        category_counts = {
+            category: sum(1 for row in rows if row["category"] == category)
+            for category in SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES
+        }
+        manifest.semantic_retrieval_artifact = artifact_relative.as_posix()
+        manifest.semantic_retrieval_sha256 = sha256_text(payload)
+        manifest.semantic_retrieval_episode_ids = included_episode_ids
+        manifest.excluded_semantic_retrieval_episode_ids = excluded_episode_ids
+        manifest.semantic_retrieval_summary = {
+            "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
+            "category_query_counts": category_counts,
+            "query_count": len(rows),
+            "included_episode_count": len(included_episode_ids),
+            "excluded_episode_count": len(excluded_episode_ids),
+            "retrieval_zero_is_valid": True,
+        }
+
+    def _read_semantic_retrieval_plan(
+        self,
+        manifest: ContextManifest,
+    ) -> SemanticRetrievalPlan:
+        if not manifest.semantic_retrieval_plan_artifact:
+            return self._fallback_semantic_retrieval_plan(
+                manifest=manifest,
+                cutoff_at=manifest.cutoff_at,
+                prompt_sha256="",
+                first_pass_mechanisms=[],
+            )
+        payload = read_json(self.root / manifest.semantic_retrieval_plan_artifact)
+        return SemanticRetrievalPlan.model_validate(payload)
 
     async def _collect_cutoff_safe_web_sources(
         self,
@@ -1406,6 +1695,7 @@ class DailyAnalyzer:
                 "current_news",
                 "open_world_first_analysis",
                 "news_novelty_review",
+                "additional_semantic_retrieval",
                 "web_research",
                 "global_brain",
                 "all_shard_brains",
@@ -1428,6 +1718,9 @@ class DailyAnalyzer:
             "open_world_first_analysis": first_pass_mechanisms,
             "event_clusters": self._read_event_cluster_context(manifest),
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
+            "additional_semantic_retrieval": self._read_semantic_retrieval_context(
+                manifest
+            ),
             "web_research": {
                 "queries": manifest.web_queries,
                 "included_sources": manifest.web_sources,
@@ -1485,6 +1778,32 @@ class DailyAnalyzer:
             return {"path": manifest.news_novelty_review_artifact, "missing": True}
         payload = read_json(path)
         return payload if isinstance(payload, dict) else {}
+
+    def _read_semantic_retrieval_context(self, manifest: ContextManifest) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = []
+        if manifest.semantic_retrieval_artifact:
+            path = self.root / manifest.semantic_retrieval_artifact
+            if path.exists():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        rows.append(json.loads(line))
+        episodes: list[dict[str, Any]] = []
+        store = ResearchStore(self.root)
+        for episode_id in manifest.semantic_retrieval_episode_ids:
+            try:
+                episode = store.get_episode(episode_id)
+            except FileNotFoundError:
+                episodes.append({"episode_id": episode_id, "missing": True})
+                continue
+            episodes.append(episode.model_dump(mode="json"))
+        return {
+            "plan_artifact": manifest.semantic_retrieval_plan_artifact,
+            "artifact": manifest.semantic_retrieval_artifact,
+            "summary": manifest.semantic_retrieval_summary,
+            "rows": rows,
+            "episodes": episodes,
+            "excluded_episode_ids": manifest.excluded_semantic_retrieval_episode_ids,
+        }
 
     def _collect_company_memory_context(
         self,
@@ -2223,6 +2542,9 @@ class DailyAnalyzer:
                 "news_novelty_review": {
                     "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION
                 },
+                "semantic_retrieval_plan": {
+                    "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION
+                },
                 "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
                 "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},
                 "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
@@ -2449,6 +2771,28 @@ def _optional_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     return parse_datetime(value)
+
+
+def _normalize_semantic_retrieval_category(value: str) -> str | None:
+    normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "positive": "positive_analogs",
+        "positive_analog": "positive_analogs",
+        "positive_analogs": "positive_analogs",
+        "negative": "negative_analogs",
+        "negative_analog": "negative_analogs",
+        "negative_analogs": "negative_analogs",
+        "near_miss": "near_misses",
+        "near_misses": "near_misses",
+        "counterexample": "counterexamples",
+        "counterexamples": "counterexamples",
+        "leader_selection": "leader_selection_cases",
+        "leader_selection_case": "leader_selection_cases",
+        "leader_selection_cases": "leader_selection_cases",
+        "theme_formation_failure": "theme_formation_failures",
+        "theme_formation_failures": "theme_formation_failures",
+    }
+    return aliases.get(normalized)
 
 
 def _append_unique_provenance(

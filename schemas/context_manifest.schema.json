@@ -295,6 +295,13 @@
       "title": "Excluded Retrieved Episode Ids",
       "type": "array"
     },
+    "excluded_semantic_retrieval_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Excluded Semantic Retrieval Episode Ids",
+      "type": "array"
+    },
     "excluded_web_source_artifact": {
       "anyOf": [
         {
@@ -635,6 +642,71 @@
       "default": "nslab.context_manifest.v1",
       "title": "Schema Version",
       "type": "string"
+    },
+    "semantic_retrieval_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Retrieval Artifact"
+    },
+    "semantic_retrieval_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Semantic Retrieval Episode Ids",
+      "type": "array"
+    },
+    "semantic_retrieval_plan_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Retrieval Plan Artifact"
+    },
+    "semantic_retrieval_plan_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Retrieval Plan Sha256"
+    },
+    "semantic_retrieval_query_count": {
+      "default": 0,
+      "title": "Semantic Retrieval Query Count",
+      "type": "integer"
+    },
+    "semantic_retrieval_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Retrieval Sha256"
+    },
+    "semantic_retrieval_summary": {
+      "additionalProperties": true,
+      "title": "Semantic Retrieval Summary",
+      "type": "object"
     },
     "shard_brain_file_hashes": {
       "additionalProperties": {

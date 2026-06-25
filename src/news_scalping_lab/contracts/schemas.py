@@ -20,6 +20,7 @@ from news_scalping_lab.contracts.models import (
     Postmortem,
     RedTeamArtifact,
     ResearchEpisode,
+    SemanticRetrievalPlan,
 )
 from news_scalping_lab.utils import write_json
 
@@ -37,6 +38,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "context_manifest.schema.json": ContextManifest,
     "red_team_artifact.schema.json": RedTeamArtifact,
     "news_novelty_review.schema.json": NewsNoveltyReview,
+    "semantic_retrieval_plan.schema.json": SemanticRetrievalPlan,
 }
 
 

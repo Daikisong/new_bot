@@ -29,6 +29,7 @@ EXPECTED_SCHEMA_FILES = {
     "postmortem.schema.json",
     "red_team_artifact.schema.json",
     "research_episode.schema.json",
+    "semantic_retrieval_plan.schema.json",
 }
 
 

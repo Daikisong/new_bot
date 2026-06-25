@@ -152,6 +152,17 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
             "novelty_counts": {"unclear": 1},
             "time_verified_count": 1,
         },
+        semantic_retrieval_plan_artifact=(
+            "runs/checkpoints/semantic_retrieval/RUN-report/semantic_retrieval_plan.json"
+        ),
+        semantic_retrieval_plan_sha256="semantic-plan-sha",
+        semantic_retrieval_query_count=6,
+        semantic_retrieval_artifact=(
+            "runs/checkpoints/semantic_retrieval/RUN-report/semantic_retrieval.jsonl"
+        ),
+        semantic_retrieval_sha256="semantic-result-sha",
+        semantic_retrieval_episode_ids=["EP-semantic-positive"],
+        excluded_semantic_retrieval_episode_ids=["EP-semantic-future"],
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
         source_ledger_sha256="ledger-sha",
         source_ledger_entry_count=3,
@@ -241,6 +252,22 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Reviewed clusters: 1" in report
     assert "- Novelty counts: {'unclear': 1}" in report
     assert "- Time-verified findings: 1" in report
+    assert "Semantic retrieval:" in report
+    assert (
+        "- Plan artifact: runs/checkpoints/semantic_retrieval/RUN-report/"
+        "semantic_retrieval_plan.json"
+        in report
+    )
+    assert "- Plan SHA256: semantic-plan-sha" in report
+    assert (
+        "- Result artifact: runs/checkpoints/semantic_retrieval/RUN-report/"
+        "semantic_retrieval.jsonl"
+        in report
+    )
+    assert "- Result SHA256: semantic-result-sha" in report
+    assert "- Queries: 6" in report
+    assert "- Retrieved episodes: EP-semantic-positive" in report
+    assert "- Excluded semantic episodes: EP-semantic-future" in report
     assert "Source ledger:" in report
     assert "- Artifact: runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl" in report
     assert "- SHA256: ledger-sha" in report
