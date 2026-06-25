@@ -26,6 +26,9 @@ SESSION_PACK_FILES = (
     "company_memory.md",
     "market_context.md",
 )
+WEB_TIMESTAMP_PRECISIONS = frozenset(
+    {"datetime", "date_only_end_of_day", "relative_age"}
+)
 
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
@@ -1158,6 +1161,50 @@ def _check_source_url_contract(
         findings.append(f"{manifest_name}: {artifact_label}:{line_number} source_url mismatch")
 
 
+def _check_web_timestamp_precision_contract(
+    manifest_name: str,
+    artifact_label: str,
+    line_number: int,
+    row: dict[str, object],
+    findings: list[str],
+) -> None:
+    precision = row.get("timestamp_precision")
+    if precision is None:
+        return
+    if not isinstance(precision, str) or precision not in WEB_TIMESTAMP_PRECISIONS:
+        findings.append(
+            f"{manifest_name}: {artifact_label}:{line_number} invalid timestamp_precision"
+        )
+        return
+    if precision != "date_only_end_of_day":
+        return
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        findings.append(
+            f"{manifest_name}: {artifact_label}:{line_number} "
+            "date_only_end_of_day missing published_at"
+        )
+        return
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        findings.append(
+            f"{manifest_name}: {artifact_label}:{line_number} "
+            "date_only_end_of_day invalid published_at"
+        )
+        return
+    if (
+        published_at.hour,
+        published_at.minute,
+        published_at.second,
+        published_at.microsecond,
+    ) != (23, 59, 59, 0):
+        findings.append(
+            f"{manifest_name}: {artifact_label}:{line_number} "
+            "date_only_end_of_day must use 23:59:59"
+        )
+
+
 def _check_web_source_artifact(
     root: Path,
     manifest_name: str,
@@ -1201,6 +1248,9 @@ def _check_web_source_artifact(
         if row.get("available_before_cutoff") is not True or row.get("time_verified") is not True:
             findings.append(f"{manifest_name}: web_source:{line_number} is not cutoff verified")
         _check_source_url_contract(manifest_name, "web_source", line_number, row, findings)
+        _check_web_timestamp_precision_contract(
+            manifest_name, "web_source", line_number, row, findings
+        )
         raw_published_at = row.get("published_at")
         if isinstance(raw_published_at, str) and manifest_cutoff_at is not None:
             try:
@@ -1260,6 +1310,9 @@ def _check_excluded_web_source_artifact(
                 f"{manifest_name}: excluded_web_source:{line_number} missing exclusion_reason"
             )
         _check_source_url_contract(
+            manifest_name, "excluded_web_source", line_number, row, findings
+        )
+        _check_web_timestamp_precision_contract(
             manifest_name, "excluded_web_source", line_number, row, findings
         )
         if row.get("available_before_cutoff") is True and row.get("time_verified") is True:
@@ -1333,6 +1386,9 @@ def _check_candidate_web_check_artifact(
                 f"{', '.join(missing)}"
             )
         _check_source_url_contract(
+            manifest_name, "candidate_web_check", line_number, row, findings
+        )
+        _check_web_timestamp_precision_contract(
             manifest_name, "candidate_web_check", line_number, row, findings
         )
         if "opened_text" in row:
@@ -1424,6 +1480,13 @@ def _check_excluded_candidate_web_check_artifact(
                 "missing exclusion_reason"
             )
         _check_source_url_contract(
+            manifest_name,
+            "excluded_candidate_web_check",
+            line_number,
+            row,
+            findings,
+        )
+        _check_web_timestamp_precision_contract(
             manifest_name,
             "excluded_candidate_web_check",
             line_number,

@@ -5667,6 +5667,7 @@ def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
                 "source_url": "https://example.test/future",
                 "snippet": "future",
                 "published_at": "2030-01-10T09:30:00+09:00",
+                "timestamp_precision": "unknown_precision",
                 "retrieved_at": "2030-01-10T09:31:00+09:00",
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "time_verified": False,
@@ -5712,6 +5713,7 @@ def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
     assert isinstance(findings, list)
     assert "RUN-web.json: web source is both included and excluded" in findings
     assert "RUN-web.json: web_source:1 is not cutoff verified" in findings
+    assert "RUN-web.json: web_source:1 invalid timestamp_precision" in findings
     assert "RUN-web.json: web_source:1 after cutoff" in findings
 
 
@@ -5731,6 +5733,7 @@ def test_lookahead_audit_checks_excluded_web_source_artifact(tmp_path: Path) -> 
                 "source_url": "https://example.test/excluded",
                 "snippet": "excluded",
                 "published_at": "2030-01-10T08:30:00+09:00",
+                "timestamp_precision": "date_only_end_of_day",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "exclusion_reason": "timestamp_verification_failed",
@@ -5770,6 +5773,9 @@ def test_lookahead_audit_checks_excluded_web_source_artifact(tmp_path: Path) -> 
     findings = result["findings"]
     assert "RUN-web.json: excluded_web_source_sha256 mismatch" in findings
     assert "RUN-web.json: excluded_web_source:1 is cutoff verified" in findings
+    assert (
+        "RUN-web.json: excluded_web_source:1 date_only_end_of_day must use 23:59:59"
+    ) in findings
     assert "RUN-web.json: excluded_web_source_ids do not match excluded artifact" in findings
     assert "RUN-web.json: excluded_web_source_count mismatch" in findings
 
@@ -5796,6 +5802,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "source_url": "https://example.test/future",
                 "snippet": "future",
                 "published_at": "2030-01-10T09:30:00+09:00",
+                "timestamp_precision": "date_only_end_of_day",
                 "retrieved_at": "2030-01-10T09:31:00+09:00",
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "time_verified": False,
@@ -5824,6 +5831,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "source_url": "https://example.test/excluded",
                 "snippet": "excluded",
                 "published_at": "2030-01-10T08:30:00+09:00",
+                "timestamp_precision": "unexpected_precision",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "exclusion_reason": "timestamp_verification_failed",
@@ -5908,6 +5916,10 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
     assert not result["passed"]
     findings = result["findings"]
     assert "RUN-candidate.json: candidate_web_check:1 is not cutoff verified" in findings
+    assert (
+        "RUN-candidate.json: candidate_web_check:1 "
+        "date_only_end_of_day must use 23:59:59"
+    ) in findings
     assert "RUN-candidate.json: candidate_web_check:1 after cutoff" in findings
     assert (
         "RUN-candidate.json: candidate_web_check:1 must not duplicate opened_text"
@@ -5916,6 +5928,9 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
     assert "RUN-candidate.json: candidate_web_source_ids do not match artifact" in findings
     assert "RUN-candidate.json: candidate_web_check_count mismatch" in findings
     assert "RUN-candidate.json: excluded_candidate_web_check_sha256 mismatch" in findings
+    assert (
+        "RUN-candidate.json: excluded_candidate_web_check:1 invalid timestamp_precision"
+    ) in findings
     assert (
         "RUN-candidate.json: excluded_candidate_web_check:1 is cutoff verified"
         in findings
