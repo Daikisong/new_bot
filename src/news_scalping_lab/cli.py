@@ -935,6 +935,7 @@ def _inspect_candidate_web_check_artifact(
             "source_url_verified": None,
             "cutoff_verified": None,
             "opened_text_absent_verified": None,
+            "raw_content_absent_verified": None,
             "timestamp_precision_verified": None,
         }
     )
@@ -1030,6 +1031,13 @@ def _inspect_candidate_web_check_artifact(
     status["opened_text_absent_verified"] = all("opened_text" not in row for row in rows)
     if not status["opened_text_absent_verified"]:
         status["errors"].append("candidate_web_check_opened_text_present")
+
+    status["raw_content_absent_verified"] = all(
+        "opened_text" not in row and "body" not in row and "content" not in row
+        for row in rows
+    )
+    if not status["raw_content_absent_verified"]:
+        status["errors"].append("candidate_web_check_raw_content_present")
 
     status["timestamp_precision_verified"] = all(
         _web_timestamp_precision_valid(row) for row in rows
@@ -3569,6 +3577,7 @@ def _candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
         and status.get("source_url_verified")
         and status.get("cutoff_verified")
         and status.get("opened_text_absent_verified")
+        and status.get("raw_content_absent_verified")
         and status.get("timestamp_precision_verified")
     )
 

@@ -1398,6 +1398,10 @@ def _check_candidate_web_check_artifact(
             findings.append(
                 f"{manifest_name}: candidate_web_check:{line_number} must not duplicate opened_text"
             )
+        if "body" in row or "content" in row:
+            findings.append(
+                f"{manifest_name}: candidate_web_check:{line_number} must not duplicate body/content"
+            )
         if row.get("available_before_cutoff") is not True or row.get("time_verified") is not True:
             findings.append(
                 f"{manifest_name}: candidate_web_check:{line_number} is not cutoff verified"

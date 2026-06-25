@@ -1616,6 +1616,7 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
         "url": "https://example.test/source-b",
         "query": "",
         "opened_text": "raw copied text",
+        "body": "raw copied body text",
     }
     bad_candidate_text = canonical_json(bad_row) + "\n"
     candidate_path.write_text(bad_candidate_text, encoding="utf-8")
@@ -1679,6 +1680,10 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
     )
     assert (
         "2030-01-10.json: context manifest candidate_web_check:1 opened_text present"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 body/content present"
         in findings
     )
     assert (
@@ -5809,6 +5814,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "available_before_cutoff": False,
                 "content_sha256": "abc",
                 "opened_text": "raw opened text must not be copied",
+                "content": "raw opened page content must not be copied",
             }
         )
         + "\n"
@@ -5923,6 +5929,10 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
     assert "RUN-candidate.json: candidate_web_check:1 after cutoff" in findings
     assert (
         "RUN-candidate.json: candidate_web_check:1 must not duplicate opened_text"
+        in findings
+    )
+    assert (
+        "RUN-candidate.json: candidate_web_check:1 must not duplicate body/content"
         in findings
     )
     assert "RUN-candidate.json: candidate_web_source_ids do not match artifact" in findings

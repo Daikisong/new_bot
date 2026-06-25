@@ -215,6 +215,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_web_check"]["source_url_verified"] is True
     assert supporting["candidate_web_check"]["cutoff_verified"] is True
     assert supporting["candidate_web_check"]["opened_text_absent_verified"] is True
+    assert supporting["candidate_web_check"]["raw_content_absent_verified"] is True
     assert supporting["candidate_web_check"]["timestamp_precision_verified"] is True
     assert supporting["excluded_candidate_web_check"]["hash_verified"] is True
     assert supporting["excluded_candidate_web_check"]["schema_version_verified"] is True
@@ -582,6 +583,66 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_candidate_web_check)
+
+    original_manifest_for_candidate_web_raw_content = read_json(manifest_file)
+    tampered_candidate_web_raw_content_rows = [
+        json.loads(line)
+        for line in original_candidate_web_check.splitlines()
+        if line.strip()
+    ]
+    tampered_candidate_web_raw_content_rows[0] = {
+        **tampered_candidate_web_raw_content_rows[0],
+        "body": "raw opened page content must not be stored in candidate checks",
+    }
+    tampered_candidate_web_raw_content_payload = "".join(
+        canonical_json(row) + "\n" for row in tampered_candidate_web_raw_content_rows
+    )
+    candidate_web_check_file.write_text(
+        tampered_candidate_web_raw_content_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_web_raw_content,
+            "candidate_web_check_sha256": sha256_text(
+                tampered_candidate_web_raw_content_payload
+            ),
+        },
+    )
+    tampered_candidate_web_raw_content_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate web raw content",
+        tampered_candidate_web_raw_content_context,
+    )
+    tampered_candidate_web_raw_content_inspection = json.loads(
+        tampered_candidate_web_raw_content_context.output
+    )["inspection"]
+    assert (
+        tampered_candidate_web_raw_content_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_candidate_web_raw_content_status = (
+        tampered_candidate_web_raw_content_inspection["supporting_artifacts"][
+            "candidate_web_check"
+        ]
+    )
+    assert tampered_candidate_web_raw_content_status["hash_verified"] is True
+    assert (
+        tampered_candidate_web_raw_content_status["opened_text_absent_verified"]
+        is True
+    )
+    assert (
+        tampered_candidate_web_raw_content_status["raw_content_absent_verified"]
+        is False
+    )
+    assert "candidate_web_check_raw_content_present" in (
+        tampered_candidate_web_raw_content_status["errors"]
+    )
+    candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_candidate_web_raw_content)
 
     original_manifest_for_candidate_web_timestamp = read_json(manifest_file)
     tampered_candidate_web_timestamp_rows = [

@@ -2972,6 +2972,11 @@ def _check_candidate_web_check_rows(
                 f"{prediction_path.name}: context manifest {label}:{index} "
                 "opened_text present"
             )
+        if "body" in row or "content" in row:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "body/content present"
+            )
         if "verification_focus" in row and not _string_list(row.get("verification_focus")):
             findings.append(
                 f"{prediction_path.name}: context manifest {label}:{index} "
