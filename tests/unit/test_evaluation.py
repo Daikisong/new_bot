@@ -11,6 +11,7 @@ from news_scalping_lab.contracts.models import (
     BlindPrediction,
     Candidate,
     ConfidenceLabel,
+    DominantSectorHypothesis,
     OutcomeLabels,
     PathType,
 )
@@ -114,6 +115,13 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
     episode = episodes[0]
     assert result.episode_id == episode.episode_id
     assert episode.trade_date == trade_day
+    assert episode.execution_protocol_version == "nslab.exhaustive_news_blind_full_market.v5"
+    assert episode.outcome_coverage_status == "PREDICTED_CANDIDATES_ONLY"
+    assert episode.eligibility_matrix.forecast_evaluation_eligible is True
+    assert episode.eligibility_matrix.direct_supervised_cases_eligible is False
+    assert episode.eligibility_matrix.retrospective_memory_eligible is True
+    assert episode.eligibility_matrix.brain_eligible is True
+    assert "direct_supervised_cases_eligible" in episode.eligibility_matrix.reasons
     assert episode.available_from.date() == date(2030, 1, 11)
     assert episode.postmortem is not None
     assert episode.blind_predictions[0].company_name == "EvaluationCandidate"
@@ -237,6 +245,7 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     )
 
     metrics = read_json(result.report_path)["performance_metrics"]
+    eligibility = read_json(result.report_path)["eligibility_matrix"]
     assert metrics["candidate_count"] == 3
     assert metrics["upper_limit_hits_at_5"] == 1
     assert metrics["upper_limit_hits_at_10"] == 1
@@ -258,6 +267,12 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     assert metrics["beneficiary_recall"] is None
     assert metrics["continuation_recall"] is None
     assert "universe is unavailable" in metrics["recall_unavailable_reason"]
+    assert eligibility["forecast_evaluation_eligible"] is True
+    assert eligibility["direct_supervised_cases_eligible"] is True
+    assert eligibility["theme_supervised_cases_eligible"] is False
+    assert eligibility["leader_pair_training_eligible"] is True
+    assert eligibility["retrospective_memory_eligible"] is True
+    assert eligibility["brain_eligible"] is True
 
 
 def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_path) -> None:
@@ -267,6 +282,13 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     prediction = _sealed_prediction(trade_day)
     prediction = prediction.model_copy(
         update={
+            "dominant_sectors": [
+                DominantSectorHypothesis(
+                    name="Fake direct catalyst group",
+                    formation_mechanism="Direct news candidates can form a narrow theme.",
+                    expected_breadth="limited",
+                )
+            ],
             "candidates": [
                 Candidate(
                     rank=1,
@@ -303,6 +325,7 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     )
 
     metrics = read_json(result.report_path)["performance_metrics"]
+    eligibility = read_json(result.report_path)["eligibility_matrix"]
     postmortem = read_json(result.report_path)["postmortem"]
     assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_10"] == pytest.approx(0.5)
@@ -315,6 +338,10 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     assert postmortem["misses"] == ["T4"]
     assert postmortem["failure_codes"] == ["UNKNOWN", "RANKING_MISS"]
     episode = ResearchStore(tmp_path).get_episode(result.episode_id)
+    assert episode.outcome_coverage_status == "FULL_MARKET_COMPLETE"
+    assert episode.eligibility_matrix.theme_supervised_cases_eligible is True
+    assert episode.eligibility_matrix.leader_pair_training_eligible is True
+    assert eligibility["theme_supervised_cases_eligible"] is True
     assert episode.misses == ["T4"]
     assert episode.postmortem is not None
     assert episode.postmortem.misses == ["T4"]

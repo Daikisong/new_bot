@@ -97,10 +97,13 @@ class WarehouseStore:
                     "trade_date": episode.trade_date.isoformat(),
                     "cutoff_at": episode.cutoff_at.isoformat(),
                     "available_from": episode.available_from.isoformat(),
+                    "execution_protocol_version": episode.execution_protocol_version,
+                    "outcome_coverage_status": episode.outcome_coverage_status,
                     "research_version": episode.research_version,
                     "lesson_count": len(episode.lessons),
                     "counterexample_count": len(episode.counterexamples),
                     "candidate_count": len(episode.blind_predictions),
+                    "eligibility_matrix_json": _json(episode.eligibility_matrix),
                     "provenance_json": _json(episode.provenance),
                 }
             )

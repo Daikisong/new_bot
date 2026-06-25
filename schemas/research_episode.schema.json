@@ -199,6 +199,50 @@
       "title": "ConfidenceLabel",
       "type": "string"
     },
+    "EligibilityMatrix": {
+      "additionalProperties": false,
+      "properties": {
+        "brain_eligible": {
+          "default": false,
+          "title": "Brain Eligible",
+          "type": "boolean"
+        },
+        "direct_supervised_cases_eligible": {
+          "default": false,
+          "title": "Direct Supervised Cases Eligible",
+          "type": "boolean"
+        },
+        "forecast_evaluation_eligible": {
+          "default": false,
+          "title": "Forecast Evaluation Eligible",
+          "type": "boolean"
+        },
+        "leader_pair_training_eligible": {
+          "default": false,
+          "title": "Leader Pair Training Eligible",
+          "type": "boolean"
+        },
+        "reasons": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "object"
+        },
+        "retrospective_memory_eligible": {
+          "default": false,
+          "title": "Retrospective Memory Eligible",
+          "type": "boolean"
+        },
+        "theme_supervised_cases_eligible": {
+          "default": false,
+          "title": "Theme Supervised Cases Eligible",
+          "type": "boolean"
+        }
+      },
+      "title": "EligibilityMatrix",
+      "type": "object"
+    },
     "EventTickerEdge": {
       "additionalProperties": false,
       "properties": {
@@ -786,6 +830,9 @@
       "title": "Cutoff At",
       "type": "string"
     },
+    "eligibility_matrix": {
+      "$ref": "#/$defs/EligibilityMatrix"
+    },
     "episode_id": {
       "title": "Episode Id",
       "type": "string"
@@ -796,6 +843,18 @@
       },
       "title": "Event Ticker Edges",
       "type": "array"
+    },
+    "execution_protocol_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Execution Protocol Version"
     },
     "input_news_files": {
       "items": {
@@ -831,6 +890,11 @@
       },
       "title": "Observed Events",
       "type": "array"
+    },
+    "outcome_coverage_status": {
+      "default": "UNKNOWN",
+      "title": "Outcome Coverage Status",
+      "type": "string"
     },
     "outcome_labels": {
       "additionalProperties": {

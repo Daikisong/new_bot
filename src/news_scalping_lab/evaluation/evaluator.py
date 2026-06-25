@@ -12,6 +12,7 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     ClaimStatus,
     ConfidenceLabel,
+    EligibilityMatrix,
     EvaluationMetrics,
     FailureCode,
     MemoryClaim,
@@ -34,6 +35,8 @@ from news_scalping_lab.utils import (
     write_json,
 )
 from news_scalping_lab.warehouse import WarehouseStore
+
+EVALUATION_PROTOCOL_VERSION = "nslab.exhaustive_news_blind_full_market.v5"
 
 
 @dataclass(frozen=True)
@@ -90,14 +93,24 @@ class Evaluator:
                 "Do not rewrite sealed blind reasoning after outcomes are known.",
             ],
         )
+        eligibility_matrix = _build_eligibility_matrix(
+            prediction=prediction,
+            ranked_outcomes=ranked_outcomes,
+            outcome_universe=outcome_universe,
+            metrics=metrics,
+            postmortem=postmortem,
+            trade_date=trade_date,
+        )
         output = {
             "schema_version": "nslab.evaluation.v1",
+            "execution_protocol_version": EVALUATION_PROTOCOL_VERSION,
             "trade_date": trade_date.isoformat(),
             "created_at": now_kst().isoformat(),
             "blind_prediction_id": prediction.prediction_id,
             "outcomes": outcomes,
             "performance_metrics": metrics.model_dump(mode="json"),
             "postmortem": postmortem.model_dump(mode="json"),
+            "eligibility_matrix": eligibility_matrix.model_dump(mode="json"),
         }
         target = self.root / "reports" / f"{trade_date.isoformat()}_postmortem.json"
         write_json(target, output)
@@ -108,6 +121,8 @@ class Evaluator:
             postmortem_path=target,
             postmortem=postmortem,
             outcome_labels=outcome_labels,
+            eligibility_matrix=eligibility_matrix,
+            outcome_coverage_status=_outcome_coverage_status(outcome_universe),
         )
         episode_path = ResearchStore(self.root).save_episode(episode)
         WarehouseStore(self.root).write_daily_outcomes_from_files()
@@ -126,6 +141,8 @@ class Evaluator:
         postmortem_path: Path,
         postmortem: Postmortem,
         outcome_labels: dict[str, OutcomeLabels],
+        eligibility_matrix: EligibilityMatrix,
+        outcome_coverage_status: str,
     ) -> ResearchEpisode:
         prediction_hash = file_sha256(prediction_path)
         postmortem_hash = file_sha256(postmortem_path)
@@ -165,6 +182,7 @@ class Evaluator:
             trade_date=trade_date,
             cutoff_at=prediction.cutoff_at,
             created_at=now_kst(),
+            execution_protocol_version=EVALUATION_PROTOCOL_VERSION,
             research_version="evaluation-postmortem-v1",
             input_news_files=[],
             input_news_hashes=[],
@@ -188,6 +206,8 @@ class Evaluator:
             lessons=lesson_claims,
             counterexamples=[],
             misses=postmortem.misses,
+            eligibility_matrix=eligibility_matrix,
+            outcome_coverage_status=outcome_coverage_status,
             provenance=[prediction_provenance, evaluation_provenance],
             available_from=available_from,
         )
@@ -302,6 +322,91 @@ def _postmortem_lesson_claims(
             )
         )
     return claims
+
+
+def _build_eligibility_matrix(
+    *,
+    prediction: BlindPrediction,
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    metrics: EvaluationMetrics,
+    postmortem: Postmortem,
+    trade_date: date,
+) -> EligibilityMatrix:
+    sealed_blind = prediction.sealed_at is not None and bool(prediction.blind_artifact_sha256)
+    candidate_outcomes_available = bool(ranked_outcomes) and all(
+        not _outcome_unavailable(outcome) for _candidate, outcome in ranked_outcomes
+    )
+    resolved_candidate_pool = [
+        candidate
+        for candidate, _outcome in ranked_outcomes
+        if candidate.ticker.strip() and candidate.ticker.strip().upper() != "UNKNOWN"
+    ]
+    full_market_complete = outcome_universe is not None
+    has_theme_hypothesis = bool(prediction.dominant_sectors)
+    forecast_evaluation_eligible = sealed_blind
+    direct_supervised_cases_eligible = (
+        sealed_blind and candidate_outcomes_available and bool(resolved_candidate_pool)
+    )
+    theme_supervised_cases_eligible = (
+        sealed_blind and full_market_complete and has_theme_hypothesis
+    )
+    leader_pair_training_eligible = (
+        sealed_blind and candidate_outcomes_available and len(resolved_candidate_pool) >= 2
+    )
+    retrospective_memory_eligible = (
+        sealed_blind
+        and bool(postmortem.lessons)
+        and candidate_outcomes_available
+        and prediction.trade_date == trade_date
+    )
+    brain_eligible = retrospective_memory_eligible
+    reasons: dict[str, str] = {}
+    if not forecast_evaluation_eligible:
+        reasons["forecast_evaluation_eligible"] = "sealed blind prediction is missing"
+    if not direct_supervised_cases_eligible:
+        reasons["direct_supervised_cases_eligible"] = (
+            "resolved candidate D-day outcomes are unavailable or blind prediction is unsealed"
+        )
+    if not theme_supervised_cases_eligible:
+        if not full_market_complete:
+            reasons["theme_supervised_cases_eligible"] = (
+                metrics.recall_unavailable_reason
+                or "full-market outcome universe is unavailable"
+            )
+        elif not has_theme_hypothesis:
+            reasons["theme_supervised_cases_eligible"] = (
+                "blind prediction has no dominant sector hypothesis"
+            )
+        else:
+            reasons["theme_supervised_cases_eligible"] = "sealed blind prediction is missing"
+    if not leader_pair_training_eligible:
+        reasons["leader_pair_training_eligible"] = (
+            "need at least two resolved blind candidates with D-day outcomes"
+        )
+    if not retrospective_memory_eligible:
+        reasons["retrospective_memory_eligible"] = (
+            "postmortem lessons require sealed blind prediction and candidate outcomes"
+        )
+    if not brain_eligible:
+        reasons["brain_eligible"] = "retrospective memory is not eligible for future brain use"
+    return EligibilityMatrix(
+        forecast_evaluation_eligible=forecast_evaluation_eligible,
+        direct_supervised_cases_eligible=direct_supervised_cases_eligible,
+        theme_supervised_cases_eligible=theme_supervised_cases_eligible,
+        leader_pair_training_eligible=leader_pair_training_eligible,
+        retrospective_memory_eligible=retrospective_memory_eligible,
+        brain_eligible=brain_eligible,
+        reasons=reasons,
+    )
+
+
+def _outcome_coverage_status(outcome_universe: dict[str, OutcomeLabels] | None) -> str:
+    return "FULL_MARKET_COMPLETE" if outcome_universe is not None else "PREDICTED_CANDIDATES_ONLY"
+
+
+def _outcome_unavailable(outcome: OutcomeLabels) -> bool:
+    return "PRICE_UNAVAILABLE" in outcome.flags
 
 
 def _upper_limit_hits_at(

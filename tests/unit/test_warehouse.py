@@ -6,7 +6,13 @@ from pathlib import Path
 import duckdb
 
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.contracts.models import BlindAnalysis, NewsItem, Provenance, ResearchEpisode
+from news_scalping_lab.contracts.models import (
+    BlindAnalysis,
+    EligibilityMatrix,
+    NewsItem,
+    Provenance,
+    ResearchEpisode,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST
 from news_scalping_lab.warehouse import WarehouseStore
@@ -41,6 +47,7 @@ def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
         trade_date=trade_day,
         cutoff_at=datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST),
         created_at=datetime.combine(trade_day, time(16, 0, 0), tzinfo=KST),
+        execution_protocol_version="nslab.exhaustive_news_blind_full_market.v5",
         research_version="warehouse-test-v1",
         price_source_snapshot={"source": "mock"},
         blind_analysis=BlindAnalysis(
@@ -58,6 +65,13 @@ def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
                 provenance=[provenance],
             )
         ],
+        eligibility_matrix=EligibilityMatrix(
+            forecast_evaluation_eligible=True,
+            direct_supervised_cases_eligible=True,
+            retrospective_memory_eligible=True,
+            brain_eligible=True,
+        ),
+        outcome_coverage_status="PREDICTED_CANDIDATES_ONLY",
         available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
     )
     store = ResearchStore(tmp_path)
@@ -76,6 +90,10 @@ def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
         tmp_path / "warehouse" / "event_sources.parquet",
         "source_id, event_id, source_type, uri",
     )
+    research_rows = _query_parquet(
+        tmp_path / "warehouse" / "research_episodes.parquet",
+        "episode_id, execution_protocol_version, outcome_coverage_status, eligibility_matrix_json",
+    )
     assert events == [
         (
             "EVT-fake-catalyst",
@@ -92,6 +110,12 @@ def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
             "fake_news.csv#row=1",
         )
     ]
+    assert research_rows[0][0:3] == (
+        "EP-warehouse-events",
+        "nslab.exhaustive_news_blind_full_market.v5",
+        "PREDICTED_CANDIDATES_ONLY",
+    )
+    assert '"forecast_evaluation_eligible": true' in str(research_rows[0][3])
 
 
 def test_previous_trade_day_is_calendar_previous_day() -> None:

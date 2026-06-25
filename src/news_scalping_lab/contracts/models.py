@@ -235,6 +235,16 @@ class EvaluationMetrics(StrictModel):
     upper_limit_closed_count: int
 
 
+class EligibilityMatrix(StrictModel):
+    forecast_evaluation_eligible: bool = False
+    direct_supervised_cases_eligible: bool = False
+    theme_supervised_cases_eligible: bool = False
+    leader_pair_training_eligible: bool = False
+    retrospective_memory_eligible: bool = False
+    brain_eligible: bool = False
+    reasons: dict[str, str] = Field(default_factory=dict)
+
+
 class EventTickerEdge(StrictModel):
     edge_id: str
     episode_id: str
@@ -303,6 +313,7 @@ class ResearchEpisode(StrictModel):
     trade_date: date
     cutoff_at: datetime
     created_at: datetime
+    execution_protocol_version: str | None = None
     research_version: str
     input_news_files: list[str] = Field(default_factory=list)
     input_news_hashes: list[str] = Field(default_factory=list)
@@ -316,6 +327,8 @@ class ResearchEpisode(StrictModel):
     lessons: list[MemoryClaim] = Field(default_factory=list)
     counterexamples: list[MemoryClaim] = Field(default_factory=list)
     misses: list[str] = Field(default_factory=list)
+    eligibility_matrix: EligibilityMatrix = Field(default_factory=EligibilityMatrix)
+    outcome_coverage_status: str = "UNKNOWN"
     provenance: list[Provenance] = Field(default_factory=list)
     available_from: datetime
 
