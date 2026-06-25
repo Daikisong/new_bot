@@ -2149,6 +2149,67 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     candidate_web_path.parent.mkdir(parents=True)
     candidate_web_path.write_text(candidate_web_text, encoding="utf-8")
 
+    news_novelty_review = {
+        "schema_version": "nslab.news_novelty_review.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "novelty-hash",
+        "cluster_count": 1,
+        "reviewed_cluster_count": 1,
+        "findings": [
+            {
+                "cluster_id": "EVCL-1",
+                "cluster_index": 1,
+                "novelty": "new",
+                "time_verified": True,
+            }
+        ],
+        "excluded_after_cutoff_source_ids": [],
+    }
+    novelty_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "news_novelty_reviews"
+        / "RUN-linked"
+        / "news_novelty_review.json"
+    )
+    novelty_text = canonical_json(news_novelty_review)
+    novelty_path.parent.mkdir(parents=True)
+    novelty_path.write_text(novelty_text, encoding="utf-8")
+
+    candidate_expansion = {
+        "schema_version": "nslab.candidate_expansion.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "candidate-expansion-hash",
+        "required_paths": ["SINGLE_EVENT"],
+        "findings": [
+            {
+                "path": "SINGLE_EVENT",
+                "hypothesis": "Direct catalyst route.",
+                "candidate_names": ["DirectCandidate"],
+                "sector_hypotheses": ["direct sector"],
+                "investigation_questions": ["verify directness"],
+                "evidence_source_ids": ["SRC-1"],
+                "related_cluster_ids": ["EVCL-1"],
+                "memory_episode_ids": [],
+                "requires_web_company_discovery": True,
+                "d_minus_one_market_data_only": False,
+                "uncertainties": ["needs web check"],
+            }
+        ],
+    }
+    expansion_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_expansion"
+        / "RUN-linked"
+        / "candidate_expansion.json"
+    )
+    expansion_text = canonical_json(candidate_expansion)
+    expansion_path.parent.mkdir(parents=True)
+    expansion_path.write_text(expansion_text, encoding="utf-8")
+
     candidate_verification = {
         "schema_version": "nslab.candidate_verification.v1",
         "run_id": "RUN-linked",
@@ -2221,6 +2282,8 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
         "current_news": ["pre-cutoff news"],
         "candidate_research": {"candidates": prediction["candidates"]},
+        "news_novelty_review": news_novelty_review,
+        "open_world_candidate_expansion": candidate_expansion,
         "candidate_web_checks": [candidate_web_context],
         "candidate_verification": candidate_verification,
         "red_team_output": red_team,
@@ -2260,6 +2323,8 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "blind_artifact_sha256": prediction["blind_artifact_sha256"],
             "prompt_hashes": {
                 "blind_analysis": "blind-hash",
+                "news_novelty_review": "novelty-hash",
+                "candidate_expansion": "candidate-expansion-hash",
                 "red_team_candidate_review": "red-team-hash",
                 "final_synthesis": "final-hash",
             },
@@ -2281,6 +2346,31 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
                 "source_count": 1,
                 "excluded_source_count": 0,
                 "verification_focus": ["listed_security_and_exact_ticker"],
+            },
+            "news_novelty_review_artifact": novelty_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "news_novelty_review_sha256": sha256_text(novelty_text),
+            "news_novelty_review_count": 1,
+            "news_novelty_review_summary": {
+                "cluster_count": 1,
+                "reviewed_cluster_count": 1,
+                "novelty_counts": {"new": 1},
+                "time_verified_count": 1,
+                "excluded_after_cutoff_source_count": 0,
+            },
+            "candidate_expansion_artifact": expansion_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "candidate_expansion_sha256": sha256_text(expansion_text),
+            "candidate_expansion_count": 1,
+            "candidate_expansion_summary": {
+                "required_paths": ["SINGLE_EVENT"],
+                "path_counts": {"SINGLE_EVENT": 1},
+                "finding_count": 1,
+                "candidate_name_count": 1,
+                "requires_web_company_discovery_count": 1,
+                "continuation_d_minus_one_only_verified": False,
             },
             "candidate_verification_artifact": verification_path.relative_to(
                 tmp_path
@@ -2318,6 +2408,14 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     assert result["passed"], result["findings"]
 
     bad_payload = json.loads(canonical_json(final_payload))
+    bad_payload["news_novelty_review"] = {
+        **news_novelty_review,
+        "findings": [],
+    }
+    bad_payload["open_world_candidate_expansion"] = {
+        **candidate_expansion,
+        "findings": [],
+    }
     bad_payload["candidate_web_checks"] = []
     bad_payload["candidate_verification"] = {
         **candidate_verification,
@@ -2343,6 +2441,14 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "2030-01-10.json: final_synthesis_context candidate_web_checks mismatch"
         in findings
     )
+    assert (
+        "2030-01-10.json: final_synthesis_context news_novelty_review mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: final_synthesis_context "
+        "open_world_candidate_expansion mismatch"
+    ) in findings
     assert (
         "2030-01-10.json: final_synthesis_context "
         "candidate_verification mismatch"

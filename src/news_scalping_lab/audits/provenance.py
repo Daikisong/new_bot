@@ -3469,6 +3469,32 @@ def _check_final_synthesis_embedded_artifacts(
             "candidate_web_checks mismatch"
         )
 
+    news_novelty_review = _read_optional_manifest_object(
+        root,
+        manifest.get("news_novelty_review_artifact"),
+    )
+    if (
+        news_novelty_review is not None
+        and context_payload.get("news_novelty_review") != news_novelty_review
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "news_novelty_review mismatch"
+        )
+
+    candidate_expansion = _read_optional_manifest_object(
+        root,
+        manifest.get("candidate_expansion_artifact"),
+    )
+    if (
+        candidate_expansion is not None
+        and context_payload.get("open_world_candidate_expansion") != candidate_expansion
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "open_world_candidate_expansion mismatch"
+        )
+
     red_team_artifacts = manifest.get("red_team_artifacts")
     if not (
         isinstance(red_team_artifacts, list)
