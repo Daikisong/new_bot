@@ -443,6 +443,13 @@
           "title": "Included Company Memory Files",
           "type": "array"
         },
+        "included_market_context_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Included Market Context Files",
+          "type": "array"
+        },
         "memory_sweep_artifacts": {
           "items": {
             "type": "string"
@@ -482,6 +489,16 @@
             "type": "object"
           },
           "title": "Omitted Company Memory Files",
+          "type": "array"
+        },
+        "omitted_market_context_files": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Omitted Market Context Files",
           "type": "array"
         },
         "phase_state_artifact": {

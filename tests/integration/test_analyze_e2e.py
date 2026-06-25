@@ -557,9 +557,23 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
             "provenance": [],
         },
     )
+    market_dir = tmp_path / "memory" / "market_memory"
+    market_dir.mkdir(parents=True, exist_ok=True)
+    (market_dir / "claims.jsonl").write_text(
+        '{"claim_id":"M-safe","available_from":"2030-01-10T08:00:00+09:00",'
+        '"statement":"safe market context reaches final synthesis"}\n'
+        '{"claim_id":"M-future","available_from":"2030-01-10T09:30:00+09:00",'
+        '"statement":"future market context must not reach synthesis"}\n'
+        '{"claim_id":"M-unscoped","statement":"unscoped market context must not reach synthesis"}\n',
+        encoding="utf-8",
+    )
     llm = RecordingBlindLLM(
         expected_final_prompt_substring="cutoff-safe opened verification text",
-        forbidden_final_prompt_substrings=["FutureMemoryCo"],
+        forbidden_final_prompt_substrings=[
+            "FutureMemoryCo",
+            "future market context must not reach synthesis",
+            "unscoped market context must not reach synthesis",
+        ],
     )
     web_provider = MixedTemporalWebProvider()
 
@@ -590,6 +604,10 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert "company_memory" in final_prompt
     assert "SafeMemoryCo" in final_prompt
     assert "FutureMemoryCo" not in final_prompt
+    assert "market_memory" in final_prompt
+    assert "safe market context reaches final synthesis" in final_prompt
+    assert "future market context must not reach synthesis" not in final_prompt
+    assert "unscoped market context must not reach synthesis" not in final_prompt
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["included_company_memory_files"] == [
         "memory/company_memory/CM-safe-provider.json"
@@ -600,6 +618,20 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
             "reason": "company_memory_known_after_cutoff",
             "known_at": "2030-01-10T09:30:00+09:00",
         }
+    ]
+    assert saved_manifest["included_market_context_files"] == [
+        "memory/market_memory/claims.jsonl#L1"
+    ]
+    assert saved_manifest["omitted_market_context_files"] == [
+        {
+            "path": "memory/market_memory/claims.jsonl#L2",
+            "reason": "available_from_after_cutoff",
+            "available_at": "2030-01-10T09:30:00+09:00",
+        },
+        {
+            "path": "memory/market_memory/claims.jsonl#L3",
+            "reason": "missing_temporal_scope",
+        },
     ]
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert analysis.blind_prediction.blind_artifact_sha256

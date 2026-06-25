@@ -1485,3 +1485,34 @@ def test_lookahead_audit_checks_daily_manifest_company_memory_refs(tmp_path: Pat
         "RUN-company-memory.json: included future company memory: "
         "memory/company_memory/CM-future.json"
     ) in result["findings"]
+
+
+def test_lookahead_audit_checks_daily_manifest_market_memory_refs(tmp_path: Path) -> None:
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    market_dir = tmp_path / "memory" / "market_memory"
+    market_dir.mkdir(parents=True)
+    (market_dir / "claims.jsonl").write_text(
+        '{"claim_id":"M-future","available_from":"2030-01-10T09:30:00+09:00",'
+        '"statement":"future market context"}\n',
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-market-memory.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-market-memory",
+            "mode": "brain",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "included_market_context_files": ["memory/market_memory/claims.jsonl#L1"],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "RUN-market-memory.json: included future market_context memory: "
+        "memory/market_memory/claims.jsonl#L1"
+    ) in result["findings"]

@@ -48,6 +48,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     is_available_as_of,
     now_kst,
+    parse_datetime,
     read_json,
     relative_to_root,
     sha256_text,
@@ -234,6 +235,10 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
+        market_memory_context = self._collect_market_memory_context(
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
         prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = (
             await self._run_final_synthesis(
                 prediction=prediction,
@@ -246,6 +251,7 @@ class DailyAnalyzer:
                 red_team_artifact=red_team.artifact,
                 d_minus_one_market_data=d_minus_one_market_data,
                 company_memory_context=company_memory_context,
+                market_memory_context=market_memory_context,
             )
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
@@ -713,6 +719,7 @@ class DailyAnalyzer:
         red_team_artifact: RedTeamArtifact,
         d_minus_one_market_data: dict[str, Any],
         company_memory_context: list[dict[str, Any]],
+        market_memory_context: list[dict[str, Any]],
     ) -> tuple[BlindPrediction, str, int]:
         prompt = self._build_final_synthesis_prompt(
             prediction=prediction,
@@ -722,6 +729,7 @@ class DailyAnalyzer:
             red_team_artifact=red_team_artifact,
             d_minus_one_market_data=d_minus_one_market_data,
             company_memory_context=company_memory_context,
+            market_memory_context=market_memory_context,
         )
         prompt_sha256 = sha256_text(prompt)
         try:
@@ -766,6 +774,7 @@ class DailyAnalyzer:
         red_team_artifact: RedTeamArtifact,
         d_minus_one_market_data: dict[str, Any],
         company_memory_context: list[dict[str, Any]],
+        market_memory_context: list[dict[str, Any]],
     ) -> str:
         payload = {
             "schema": "nslab.blind_prediction.v1",
@@ -785,6 +794,7 @@ class DailyAnalyzer:
                 "red_team_output",
                 "d_minus_one_market_data",
                 "company_memory",
+                "market_memory",
             ],
             "run_id": manifest.run_id,
             "trade_date": prediction.trade_date.isoformat(),
@@ -812,14 +822,15 @@ class DailyAnalyzer:
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
             "company_memory": company_memory_context,
+            "market_memory": market_memory_context,
         }
         return (
             f"{self._load_synthesis_prompt().strip()}\n"
             "Return the final BlindPrediction. Keep qualitative confidence only, "
             "preserve red-team objections in candidate counterarguments, use only "
-            "timestamp-verified web_research.sources and cutoff-safe company_memory, "
-            "and do not use D-day prices, outcomes, unverified web results, or "
-            "cutoff-after sources during BLIND.\n"
+            "timestamp-verified web_research.sources, cutoff-safe company_memory, "
+            "and cutoff-safe market_memory. Do not use D-day prices, outcomes, "
+            "unverified web results, or cutoff-after sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -864,6 +875,151 @@ class DailyAnalyzer:
         manifest.included_company_memory_files = included
         manifest.omitted_company_memory_files = omitted
         return contexts
+
+    def _collect_market_memory_context(
+        self,
+        *,
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> list[dict[str, Any]]:
+        directory = self.root / "memory" / "market_memory"
+        if not directory.exists():
+            return []
+        contexts: list[dict[str, Any]] = []
+        included: list[str] = []
+        omitted: list[dict[str, str]] = []
+        for path in sorted(directory.glob("*")):
+            if not path.is_file():
+                continue
+            relative_path = relative_to_root(path, self.root)
+            if path.suffix.lower() == ".jsonl":
+                contexts.extend(
+                    self._collect_market_memory_jsonl(
+                        path,
+                        relative_path=relative_path,
+                        cutoff_at=cutoff_at,
+                        included=included,
+                        omitted=omitted,
+                    )
+                )
+                continue
+            if path.suffix.lower() == ".json":
+                contexts.extend(
+                    self._collect_market_memory_json(
+                        path,
+                        relative_path=relative_path,
+                        cutoff_at=cutoff_at,
+                        included=included,
+                        omitted=omitted,
+                    )
+                )
+                continue
+            if path.suffix.lower() in {".md", ".txt"}:
+                omitted.append({"path": relative_path, "reason": "missing_temporal_scope"})
+        manifest.included_market_context_files = included
+        manifest.omitted_market_context_files = omitted
+        return contexts
+
+    def _collect_market_memory_jsonl(
+        self,
+        path: Path,
+        *,
+        relative_path: str,
+        cutoff_at: datetime,
+        included: list[str],
+        omitted: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        contexts: list[dict[str, Any]] = []
+        for line_number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
+            if not line.strip():
+                continue
+            entry_path = f"{relative_path}#L{line_number}"
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                omitted.append({"path": entry_path, "reason": "invalid_jsonl"})
+                continue
+            context = self._market_memory_payload_context(
+                payload,
+                entry_path=entry_path,
+                cutoff_at=cutoff_at,
+                omitted=omitted,
+            )
+            if context is None:
+                continue
+            included.append(entry_path)
+            contexts.append(context)
+        return contexts
+
+    def _collect_market_memory_json(
+        self,
+        path: Path,
+        *,
+        relative_path: str,
+        cutoff_at: datetime,
+        included: list[str],
+        omitted: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        try:
+            payload = read_json(path)
+        except Exception:
+            omitted.append({"path": relative_path, "reason": "invalid_json"})
+            return []
+        if isinstance(payload, list):
+            contexts: list[dict[str, Any]] = []
+            for index, item in enumerate(payload):
+                entry_path = f"{relative_path}#{index}"
+                context = self._market_memory_payload_context(
+                    item,
+                    entry_path=entry_path,
+                    cutoff_at=cutoff_at,
+                    omitted=omitted,
+                )
+                if context is None:
+                    continue
+                included.append(entry_path)
+                contexts.append(context)
+            return contexts
+        context = self._market_memory_payload_context(
+            payload,
+            entry_path=relative_path,
+            cutoff_at=cutoff_at,
+            omitted=omitted,
+        )
+        if context is None:
+            return []
+        included.append(relative_path)
+        return [context]
+
+    def _market_memory_payload_context(
+        self,
+        payload: object,
+        *,
+        entry_path: str,
+        cutoff_at: datetime,
+        omitted: list[dict[str, str]],
+    ) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            omitted.append({"path": entry_path, "reason": "non_object_json"})
+            return None
+        timestamp, reason = _payload_temporal_scope(payload)
+        if timestamp is None:
+            omitted.append({"path": entry_path, "reason": reason})
+            return None
+        if not is_available_as_of(timestamp, cutoff_at):
+            omitted.append(
+                {
+                    "path": entry_path,
+                    "reason": f"{reason}_after_cutoff",
+                    "available_at": timestamp.isoformat(),
+                }
+            )
+            return None
+        return {
+            "path": entry_path,
+            "sha256": sha256_text(canonical_json(payload)),
+            "memory": payload,
+        }
 
     def _collect_d_minus_one_market_data(
         self,
@@ -1615,3 +1771,15 @@ def _excerpt(text: str, *, limit: int = 1200) -> str:
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3].rstrip() + "..."
+
+
+def _payload_temporal_scope(payload: dict[str, object]) -> tuple[datetime | None, str]:
+    for field in ("available_from", "known_at"):
+        raw_value = payload.get(field)
+        if not isinstance(raw_value, str):
+            continue
+        try:
+            return parse_datetime(raw_value), field
+        except ValueError:
+            return None, f"invalid_{field}"
+    return None, "missing_temporal_scope"
