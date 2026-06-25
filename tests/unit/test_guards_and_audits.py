@@ -1101,6 +1101,235 @@ def test_provenance_audit_validates_event_cluster_and_novelty_artifacts(
     )
 
 
+def test_provenance_audit_validates_semantic_retrieval_artifacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    retrieval_dir = tmp_path / "runs" / "checkpoints" / "semantic_retrieval" / "RUN-linked"
+    retrieval_dir.mkdir(parents=True)
+    plan_path = retrieval_dir / "semantic_retrieval_plan.json"
+    result_path = retrieval_dir / "semantic_retrieval.jsonl"
+    categories = ["positive_analogs", "negative_analogs"]
+    plan_payload = {
+        "schema_version": "nslab.semantic_retrieval_plan.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "semantic-plan-hash",
+        "required_categories": categories,
+        "queries": [
+            {
+                "category": "positive_analogs",
+                "query": "positive structural analog",
+                "rationale": "positive cases",
+            },
+            {
+                "category": "negative_analogs",
+                "query": "negative structural analog",
+                "rationale": "negative cases",
+            },
+        ],
+    }
+    write_json(plan_path, plan_payload)
+    result_rows = [
+        {
+            "schema_version": "nslab.semantic_retrieval_result.v1",
+            "run_id": "RUN-linked",
+            "query_index": 1,
+            "category": "positive_analogs",
+            "query": "positive structural analog",
+            "query_sha256": sha256_text("positive structural analog"),
+            "included_episode_ids": ["EP-1"],
+            "excluded_episode_ids": [],
+            "result_count": 1,
+            "excluded_count": 0,
+        },
+        {
+            "schema_version": "nslab.semantic_retrieval_result.v1",
+            "run_id": "RUN-linked",
+            "query_index": 2,
+            "category": "negative_analogs",
+            "query": "negative structural analog",
+            "query_sha256": sha256_text("negative structural analog"),
+            "included_episode_ids": [],
+            "excluded_episode_ids": ["EP-2"],
+            "result_count": 0,
+            "excluded_count": 1,
+        },
+    ]
+    result_text = "".join(canonical_json(row) + "\n" for row in result_rows)
+    result_path.write_text(result_text, encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "def456",
+                "semantic_retrieval_plan": "semantic-plan-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "semantic_retrieval_plan_artifact": plan_path.relative_to(tmp_path).as_posix(),
+            "semantic_retrieval_plan_sha256": sha256_text(
+                plan_path.read_text(encoding="utf-8")
+            ),
+            "semantic_retrieval_artifact": result_path.relative_to(tmp_path).as_posix(),
+            "semantic_retrieval_sha256": sha256_text(result_text),
+            "semantic_retrieval_query_count": 2,
+            "semantic_retrieval_episode_ids": ["EP-1"],
+            "excluded_semantic_retrieval_episode_ids": ["EP-2"],
+            "semantic_retrieval_summary": {
+                "required_categories": categories,
+                "category_query_counts": {
+                    "positive_analogs": 1,
+                    "negative_analogs": 1,
+                },
+                "query_count": 2,
+                "included_episode_count": 1,
+                "excluded_episode_count": 1,
+                "retrieval_zero_is_valid": True,
+            },
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    write_json(
+        plan_path,
+        {
+            **plan_payload,
+            "schema_version": "bad.plan",
+            "run_id": "RUN-other",
+            "prompt_sha256": "wrong-prompt",
+            "required_categories": ["wrong_category"],
+            "queries": [{"category": "wrong_category", "query": "", "rationale": ""}],
+        },
+    )
+    bad_rows = [
+        {
+            **result_rows[0],
+            "schema_version": "bad.result",
+            "run_id": "RUN-other",
+            "query_sha256": "bad-sha",
+            "included_episode_ids": ["EP-X"],
+            "excluded_episode_ids": ["EP-Y"],
+            "result_count": 2,
+            "excluded_count": 2,
+        }
+    ]
+    bad_result_text = "".join(canonical_json(row) + "\n" for row in bad_rows)
+    result_path.write_text(bad_result_text, encoding="utf-8")
+    manifest = read_json(manifest_path)
+    manifest["semantic_retrieval_plan_sha256"] = "0" * 64
+    manifest["semantic_retrieval_sha256"] = "1" * 64
+    manifest["semantic_retrieval_query_count"] = 2
+    manifest["semantic_retrieval_summary"] = {
+        "required_categories": categories,
+        "category_query_counts": {
+            "positive_analogs": 1,
+            "negative_analogs": 1,
+        },
+        "query_count": 2,
+        "included_episode_count": 1,
+        "excluded_episode_count": 1,
+        "retrieval_zero_is_valid": False,
+    }
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan schema_version mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan run_id mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan prompt_hash mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan required_categories mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan query_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan category coverage mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_plan query text invalid"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 schema_version mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest semantic_retrieval:1 run_id mismatch" in findings
+    assert "2030-01-10.json: context manifest semantic_retrieval count mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval category_counts mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval included_episode_ids mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval excluded_episode_ids mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval zero_policy missing"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval category coverage mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 query_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 result_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 excluded_count mismatch"
+        in findings
+    )
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

@@ -1886,6 +1886,25 @@ def _check_manifest_output_artifacts(
             findings,
         )
     _check_news_novelty_review_artifact(root, prediction_path, manifest, findings)
+    _check_semantic_retrieval_plan_artifact(root, prediction_path, manifest, findings)
+    semantic_retrieval_rows = _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="semantic_retrieval_artifact",
+        sha_field="semantic_retrieval_sha256",
+        count_field="semantic_retrieval_query_count",
+        expected_schema="nslab.semantic_retrieval_result.v1",
+        label="semantic_retrieval",
+        findings=findings,
+    )
+    if semantic_retrieval_rows is not None:
+        _check_semantic_retrieval_artifact_summary(
+            prediction_path,
+            manifest,
+            semantic_retrieval_rows,
+            findings,
+        )
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
@@ -2252,12 +2271,261 @@ def _check_news_novelty_counts_summary(
         )
 
 
+def _check_semantic_retrieval_plan_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("semantic_retrieval_plan_artifact")
+    expected_hash = manifest.get("semantic_retrieval_plan_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="semantic_retrieval_plan_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing "
+            "semantic_retrieval_plan_sha256"
+        )
+    elif sha256_text(text) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_retrieval_plan_sha256 mismatch"
+        )
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.semantic_retrieval_plan.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "schema_version mismatch"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "run_id mismatch"
+        )
+    prompt_hash = _manifest_prompt_hash(manifest, "semantic_retrieval_plan")
+    if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "prompt_hash mismatch"
+        )
+    expected_categories = _semantic_retrieval_required_categories(manifest)
+    observed_categories = _string_list(payload.get("required_categories"))
+    if expected_categories and observed_categories != expected_categories:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "required_categories mismatch"
+        )
+    queries = payload.get("queries")
+    if not isinstance(queries, list) or not all(isinstance(item, dict) for item in queries):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "queries invalid"
+        )
+        return
+    expected_query_count = _non_bool_int(manifest.get("semantic_retrieval_query_count"))
+    if expected_query_count is not None and len(queries) != expected_query_count:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "query_count mismatch"
+        )
+    query_categories = [
+        category
+        for query in queries
+        if isinstance(category := query.get("category"), str) and category
+    ]
+    if len(query_categories) != len(queries):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "query categories invalid"
+        )
+    if expected_categories and set(query_categories) != set(expected_categories):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "category coverage mismatch"
+        )
+    if any(
+        not isinstance(query.get("query"), str) or not query.get("query")
+        for query in queries
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
+            "query text invalid"
+        )
+
+
+def _check_semantic_retrieval_artifact_summary(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    category_counts = Counter(
+        category
+        for row in rows
+        if isinstance(category := row.get("category"), str) and category
+    )
+    summary = manifest.get("semantic_retrieval_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_summary invalid"
+        )
+        return
+    expected_category_counts = summary.get("category_query_counts")
+    if isinstance(expected_category_counts, dict):
+        expected_counts = {
+            key: value
+            for key, value in expected_category_counts.items()
+            if isinstance(key, str) and _non_bool_int(value) is not None
+        }
+        if len(expected_counts) != len(expected_category_counts) or dict(category_counts) != expected_counts:
+            findings.append(
+                f"{prediction_path.name}: context manifest semantic_retrieval "
+                "category_counts mismatch"
+            )
+    else:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "category_counts invalid"
+        )
+    included_ids = _unique_strings(
+        episode_id
+        for row in rows
+        for episode_id in _string_list(row.get("included_episode_ids"))
+    )
+    excluded_ids = _unique_strings(
+        episode_id
+        for row in rows
+        for episode_id in _string_list(row.get("excluded_episode_ids"))
+    )
+    expected_included_ids = _string_list(manifest.get("semantic_retrieval_episode_ids"))
+    expected_excluded_ids = _string_list(
+        manifest.get("excluded_semantic_retrieval_episode_ids")
+    )
+    if included_ids != expected_included_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "included_episode_ids mismatch"
+        )
+    if excluded_ids != expected_excluded_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "excluded_episode_ids mismatch"
+        )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "query_count",
+        len(rows),
+        label="semantic_retrieval",
+        findings=findings,
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "included_episode_count",
+        len(included_ids),
+        label="semantic_retrieval",
+        findings=findings,
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "excluded_episode_count",
+        len(excluded_ids),
+        label="semantic_retrieval",
+        findings=findings,
+    )
+    if summary.get("retrieval_zero_is_valid") is not True:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "zero_policy missing"
+        )
+    expected_categories = _semantic_retrieval_required_categories(manifest)
+    if expected_categories and set(category_counts) != set(expected_categories):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "category coverage mismatch"
+        )
+    for index, row in enumerate(rows, start=1):
+        _check_semantic_retrieval_row(prediction_path, index, row, findings)
+
+
+def _check_semantic_retrieval_row(
+    prediction_path: Path,
+    index: int,
+    row: dict[str, Any],
+    findings: list[str],
+) -> None:
+    query = row.get("query")
+    if not isinstance(query, str) or not query:
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "query invalid"
+        )
+    elif row.get("query_sha256") != sha256_text(query):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "query_sha256 mismatch"
+        )
+    included_ids = _string_list(row.get("included_episode_ids"))
+    excluded_ids = _string_list(row.get("excluded_episode_ids"))
+    result_count = _non_bool_int(row.get("result_count"))
+    excluded_count = _non_bool_int(row.get("excluded_count"))
+    if result_count is not None and result_count != len(included_ids):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "result_count mismatch"
+        )
+    if excluded_count is not None and excluded_count != len(excluded_ids):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "excluded_count mismatch"
+        )
+
+
 def _manifest_prompt_hash(manifest: dict[str, Any], key: str) -> str | None:
     prompt_hashes = manifest.get("prompt_hashes")
     if not isinstance(prompt_hashes, dict):
         return None
     value = prompt_hashes.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _semantic_retrieval_required_categories(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("semantic_retrieval_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("required_categories"))
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _unique_strings(values: Any) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def _check_payload_int(
