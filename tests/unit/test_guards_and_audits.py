@@ -1552,13 +1552,21 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
         "schema_version": "nslab.candidate_web_check.v1",
         "run_id": "RUN-linked",
         "candidate_rank": 1,
+        "candidate_ticker": "UNKNOWN",
         "candidate_company_name": "CandidateCo",
         "candidate_path_type": "SINGLE_EVENT",
         "verification_focus": ["listed_security_and_exact_ticker"],
         "source_id": "WEB-1",
+        "title": "candidate source",
         "source_url": "https://example.test/source",
         "url": "https://example.test/source",
         "query": "candidate verification",
+        "published_at": "2030-01-10T08:30:00+09:00",
+        "retrieved_at": "2030-01-10T08:31:00+09:00",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "time_verified": True,
+        "available_before_cutoff": True,
+        "content_sha256": "abc",
     }
     candidate_text = canonical_json(row) + "\n"
     candidate_path.write_text(candidate_text, encoding="utf-8")
@@ -1566,12 +1574,18 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
         "schema_version": "nslab.excluded_candidate_web_check.v1",
         "run_id": "RUN-linked",
         "candidate_rank": 1,
+        "candidate_ticker": "UNKNOWN",
         "candidate_company_name": "CandidateCo",
         "candidate_path_type": "SINGLE_EVENT",
         "source_id": "WEB-X",
+        "title": "excluded candidate source",
         "source_url": "https://example.test/excluded",
         "url": "https://example.test/excluded",
         "query": "candidate verification",
+        "published_at": "2030-01-10T09:30:00+09:00",
+        "retrieved_at": "2030-01-10T09:31:00+09:00",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "exclusion_reason": "after_cutoff",
     }
     excluded_text = canonical_json(excluded_row) + "\n"
     excluded_path.write_text(excluded_text, encoding="utf-8")
@@ -2256,7 +2270,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "snippet": "Candidate verification source.",
         "published_at": "2030-01-10T08:30:00+09:00",
         "timestamp_precision": "datetime",
+        "retrieved_at": "2030-01-10T08:40:00+09:00",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
         "time_verified": True,
+        "available_before_cutoff": True,
         "content_sha256": "c" * 64,
         "opened_text_excerpt": "excerpt",
     }
@@ -5812,7 +5829,6 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "time_verified": False,
                 "available_before_cutoff": False,
-                "content_sha256": "abc",
                 "opened_text": "raw opened text must not be copied",
                 "content": "raw opened page content must not be copied",
             }
@@ -5927,6 +5943,10 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
         "date_only_end_of_day must use 23:59:59"
     ) in findings
     assert "RUN-candidate.json: candidate_web_check:1 after cutoff" in findings
+    assert (
+        "RUN-candidate.json: candidate_web_check:1 missing fields: content_sha256"
+        in findings
+    )
     assert (
         "RUN-candidate.json: candidate_web_check:1 must not duplicate opened_text"
         in findings

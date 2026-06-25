@@ -23,7 +23,12 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
-from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
+from news_scalping_lab.research_import.bundle import (
+    CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+    EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+    BundleImportError,
+    parse_bundle,
+)
 from news_scalping_lab.research_import.semantic import SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
 from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
 from news_scalping_lab.utils import (
@@ -2875,6 +2880,8 @@ def _check_candidate_web_check_artifacts(
             prediction_path,
             rows,
             label="candidate_web_check",
+            required_fields=CANDIDATE_WEB_CHECK_REQUIRED_FIELDS
+            | {"verification_focus"},
             findings=findings,
         )
     if excluded_rows is not None:
@@ -2890,6 +2897,7 @@ def _check_candidate_web_check_artifacts(
             prediction_path,
             excluded_rows,
             label="excluded_candidate_web_check",
+            required_fields=EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
             findings=findings,
         )
     if rows is not None:
@@ -2928,17 +2936,9 @@ def _check_candidate_web_check_rows(
     rows: list[dict[str, Any]],
     *,
     label: str,
+    required_fields: set[str],
     findings: list[str],
 ) -> None:
-    required_fields = {
-        "candidate_rank",
-        "candidate_company_name",
-        "candidate_path_type",
-        "source_id",
-        "source_url",
-        "url",
-        "query",
-    }
     for index, row in enumerate(rows, start=1):
         missing = sorted(required_fields - set(row))
         if missing:

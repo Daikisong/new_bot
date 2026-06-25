@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import cast
 
 from news_scalping_lab.ingest.news import NewsBatch, load_news_csv
+from news_scalping_lab.research_import.bundle import (
+    CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+    EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+)
 from news_scalping_lab.utils import (
     default_news_window_start,
     file_sha256,
@@ -1372,17 +1376,8 @@ def _check_candidate_web_check_artifact(
         source_id = row.get("source_id")
         if isinstance(source_id, str):
             row_source_ids.add(source_id)
-        missing = sorted(
-            {
-                "candidate_rank",
-                "candidate_company_name",
-                "candidate_path_type",
-                "verification_focus",
-                "source_id",
-                "source_url",
-            }
-            - set(row)
-        )
+        required_fields = CANDIDATE_WEB_CHECK_REQUIRED_FIELDS | {"verification_focus"}
+        missing = sorted(required_fields - set(row))
         if missing:
             findings.append(
                 f"{manifest_name}: candidate_web_check:{line_number} missing fields: "
@@ -1466,16 +1461,7 @@ def _check_excluded_candidate_web_check_artifact(
         source_id = row.get("source_id")
         if isinstance(source_id, str):
             row_source_ids.add(source_id)
-        missing = sorted(
-            {
-                "candidate_rank",
-                "candidate_company_name",
-                "candidate_path_type",
-                "source_id",
-                "source_url",
-            }
-            - set(row)
-        )
+        missing = sorted(EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS - set(row))
         if missing:
             findings.append(
                 f"{manifest_name}: excluded_candidate_web_check:{line_number} missing fields: "

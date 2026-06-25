@@ -39,6 +39,7 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
+    CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
     EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
     SOURCE_LEDGER_REQUIRED_FIELDS,
     SOURCE_LEDGER_USAGE_PHASES,
@@ -997,15 +998,7 @@ def _inspect_candidate_web_check_artifact(
     if not status["verification_focus_verified"]:
         status["errors"].append("candidate_web_check_verification_focus_mismatch")
 
-    required_fields = {
-        "candidate_rank",
-        "candidate_company_name",
-        "candidate_path_type",
-        "verification_focus",
-        "source_id",
-        "source_url",
-        "url",
-    }
+    required_fields = CANDIDATE_WEB_CHECK_REQUIRED_FIELDS | {"verification_focus"}
     status["required_fields_verified"] = all(
         required_fields <= set(row) for row in rows
     )

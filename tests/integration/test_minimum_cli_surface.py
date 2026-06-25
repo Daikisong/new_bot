@@ -639,6 +639,63 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_candidate_web_cutoff_contract)
 
+    original_manifest_for_candidate_web_required_fields = read_json(manifest_file)
+    tampered_candidate_web_required_rows = [
+        json.loads(line)
+        for line in original_candidate_web_check.splitlines()
+        if line.strip()
+    ]
+    tampered_candidate_web_required_rows[0] = {
+        key: value
+        for key, value in tampered_candidate_web_required_rows[0].items()
+        if key != "content_sha256"
+    }
+    tampered_candidate_web_required_payload = "".join(
+        canonical_json(row) + "\n" for row in tampered_candidate_web_required_rows
+    )
+    candidate_web_check_file.write_text(
+        tampered_candidate_web_required_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_web_required_fields,
+            "candidate_web_check_sha256": sha256_text(
+                tampered_candidate_web_required_payload
+            ),
+        },
+    )
+    tampered_candidate_web_required_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate web required fields",
+        tampered_candidate_web_required_context,
+    )
+    tampered_candidate_web_required_inspection = json.loads(
+        tampered_candidate_web_required_context.output
+    )["inspection"]
+    assert (
+        tampered_candidate_web_required_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_candidate_web_required_status = (
+        tampered_candidate_web_required_inspection["supporting_artifacts"][
+            "candidate_web_check"
+        ]
+    )
+    assert tampered_candidate_web_required_status["hash_verified"] is True
+    assert (
+        tampered_candidate_web_required_status["required_fields_verified"]
+        is False
+    )
+    assert "candidate_web_check_required_fields_missing" in (
+        tampered_candidate_web_required_status["errors"]
+    )
+    candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_candidate_web_required_fields)
+
     original_manifest_for_candidate_web_raw_content = read_json(manifest_file)
     tampered_candidate_web_raw_content_rows = [
         json.loads(line)
