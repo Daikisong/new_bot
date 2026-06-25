@@ -227,6 +227,35 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["final_synthesis_context"]["input_summary_verified"] is True
     assert supporting["final_synthesis_context"]["manifest_summary_verified"] is True
     assert supporting["final_synthesis_context"]["manifest_counts_verified"] is True
+    assert supporting["final_synthesis_context"]["event_clusters_verified"] is True
+    assert (
+        supporting["final_synthesis_context"][
+            "semantic_retrieval_plan_artifact_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["semantic_retrieval_artifact_verified"]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["semantic_retrieval_summary_verified"]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["semantic_retrieval_rows_verified"]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
+            "semantic_retrieval_excluded_ids_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["semantic_retrieval_context_verified"]
+        is True
+    )
     assert supporting["final_synthesis_context"]["web_research_queries_verified"] is True
     assert supporting["final_synthesis_context"]["web_research_source_ids_verified"] is True
     assert supporting["final_synthesis_context"]["web_research_sources_verified"] is True
@@ -755,6 +784,95 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert tampered_final_inputs_status["required_input_set_verified"] is False
     assert "final_synthesis_context_required_input_set_mismatch" in (
         tampered_final_inputs_status["errors"]
+    )
+    write_json(final_context_file, original_final_context)
+    write_json(manifest_file, original_manifest)
+    original_event_clusters = original_final_context["payload"]["event_clusters"]
+    original_semantic_rows = original_final_context["payload"][
+        "additional_semantic_retrieval"
+    ]["rows"]
+    assert original_event_clusters
+    assert original_semantic_rows
+    tampered_event_clusters = [
+        (
+            {**cluster, "cluster_id": f"{cluster['cluster_id']}-tampered"}
+            if index == 0
+            else cluster
+        )
+        for index, cluster in enumerate(original_event_clusters)
+    ]
+    tampered_semantic_rows = [
+        (
+            {**row, "category": f"{row['category']}-tampered"}
+            if index == 0
+            else row
+        )
+        for index, row in enumerate(original_semantic_rows)
+    ]
+    tampered_event_semantic_payload = {
+        **original_final_context["payload"],
+        "event_clusters": tampered_event_clusters,
+        "additional_semantic_retrieval": {
+            **original_final_context["payload"]["additional_semantic_retrieval"],
+            "rows": tampered_semantic_rows,
+        },
+    }
+    tampered_event_semantic_summary = final_synthesis_input_summary(
+        tampered_event_semantic_payload
+    )
+    tampered_event_semantic_context = {
+        **original_final_context,
+        "payload_sha256": sha256_text(canonical_json(tampered_event_semantic_payload)),
+        "input_summary": tampered_event_semantic_summary,
+        "payload": tampered_event_semantic_payload,
+    }
+    write_json(final_context_file, tampered_event_semantic_context)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest,
+            "final_synthesis_context_sha256": sha256_text(
+                final_context_file.read_text(encoding="utf-8")
+            ),
+            "final_synthesis_context_summary": tampered_event_semantic_summary,
+        },
+    )
+    tampered_event_semantic_result = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered final synthesis event semantic context",
+        tampered_event_semantic_result,
+    )
+    tampered_event_semantic_inspection = json.loads(
+        tampered_event_semantic_result.output
+    )["inspection"]
+    assert (
+        tampered_event_semantic_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_event_semantic_status = tampered_event_semantic_inspection[
+        "supporting_artifacts"
+    ]["final_synthesis_context"]
+    assert tampered_event_semantic_status["hash_verified"] is True
+    assert tampered_event_semantic_status["payload_hash_verified"] is True
+    assert tampered_event_semantic_status["input_summary_verified"] is True
+    assert tampered_event_semantic_status["manifest_summary_verified"] is True
+    assert tampered_event_semantic_status["manifest_counts_verified"] is True
+    assert tampered_event_semantic_status["event_clusters_verified"] is False
+    assert (
+        tampered_event_semantic_status["semantic_retrieval_rows_verified"]
+        is False
+    )
+    assert (
+        tampered_event_semantic_status["semantic_retrieval_context_verified"]
+        is False
+    )
+    assert "final_synthesis_context_event_clusters_mismatch" in (
+        tampered_event_semantic_status["errors"]
+    )
+    assert "final_synthesis_context_semantic_retrieval_rows_mismatch" in (
+        tampered_event_semantic_status["errors"]
     )
     write_json(final_context_file, original_final_context)
     write_json(manifest_file, original_manifest)

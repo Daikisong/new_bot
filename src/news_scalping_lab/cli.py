@@ -1187,6 +1187,13 @@ def _inspect_final_synthesis_context_artifact(
             "input_summary_verified": None,
             "manifest_summary_verified": None,
             "manifest_counts_verified": None,
+            "event_clusters_verified": None,
+            "semantic_retrieval_plan_artifact_verified": None,
+            "semantic_retrieval_artifact_verified": None,
+            "semantic_retrieval_summary_verified": None,
+            "semantic_retrieval_rows_verified": None,
+            "semantic_retrieval_excluded_ids_verified": None,
+            "semantic_retrieval_context_verified": None,
             "web_research_queries_verified": None,
             "web_research_source_ids_verified": None,
             "web_research_sources_verified": None,
@@ -1284,6 +1291,18 @@ def _inspect_final_synthesis_context_artifact(
     if not status["manifest_counts_verified"]:
         status["errors"].append("final_synthesis_context_manifest_count_mismatches")
 
+    _inspect_final_synthesis_event_cluster_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
+    _inspect_final_synthesis_semantic_retrieval_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
     _inspect_final_synthesis_web_research_context(
         root,
         manifest,
@@ -1293,6 +1312,86 @@ def _inspect_final_synthesis_context_artifact(
 
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
+
+
+def _inspect_final_synthesis_event_cluster_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    event_cluster_rows = _read_final_synthesis_jsonl_context_rows(
+        root,
+        manifest.get("event_cluster_artifact"),
+        status,
+        label="event_clusters",
+    )
+    status["event_clusters_verified"] = (
+        context_payload.get("event_clusters") == event_cluster_rows
+    )
+    if not status["event_clusters_verified"]:
+        status["errors"].append("final_synthesis_context_event_clusters_mismatch")
+
+
+def _inspect_final_synthesis_semantic_retrieval_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    context = context_payload.get("additional_semantic_retrieval")
+    if not isinstance(context, dict):
+        status["semantic_retrieval_context_verified"] = False
+        status["errors"].append(
+            "final_synthesis_context_semantic_retrieval_context_invalid"
+        )
+        return
+
+    semantic_rows = _read_final_synthesis_jsonl_context_rows(
+        root,
+        manifest.get("semantic_retrieval_artifact"),
+        status,
+        label="semantic_retrieval",
+    )
+    checks = {
+        "semantic_retrieval_plan_artifact_verified": (
+            context.get("plan_artifact")
+            == manifest.get("semantic_retrieval_plan_artifact")
+        ),
+        "semantic_retrieval_artifact_verified": (
+            context.get("artifact") == manifest.get("semantic_retrieval_artifact")
+        ),
+        "semantic_retrieval_summary_verified": (
+            context.get("summary") == manifest.get("semantic_retrieval_summary")
+        ),
+        "semantic_retrieval_rows_verified": context.get("rows") == semantic_rows,
+        "semantic_retrieval_excluded_ids_verified": (
+            context.get("excluded_episode_ids")
+            == manifest.get("excluded_semantic_retrieval_episode_ids")
+        ),
+    }
+    status.update(checks)
+    error_by_field = {
+        "semantic_retrieval_plan_artifact_verified": (
+            "final_synthesis_context_semantic_retrieval_plan_artifact_mismatch"
+        ),
+        "semantic_retrieval_artifact_verified": (
+            "final_synthesis_context_semantic_retrieval_artifact_mismatch"
+        ),
+        "semantic_retrieval_summary_verified": (
+            "final_synthesis_context_semantic_retrieval_summary_mismatch"
+        ),
+        "semantic_retrieval_rows_verified": (
+            "final_synthesis_context_semantic_retrieval_rows_mismatch"
+        ),
+        "semantic_retrieval_excluded_ids_verified": (
+            "final_synthesis_context_semantic_retrieval_excluded_ids_mismatch"
+        ),
+    }
+    for field, error in error_by_field.items():
+        if not status[field]:
+            status["errors"].append(error)
+    status["semantic_retrieval_context_verified"] = all(checks.values())
 
 
 def _inspect_final_synthesis_web_research_context(
@@ -1342,6 +1441,20 @@ def _inspect_final_synthesis_web_research_context(
         and status["web_research_sources_verified"]
         and status["web_research_excluded_ids_verified"]
     )
+
+
+def _read_final_synthesis_jsonl_context_rows(
+    root: Path,
+    artifact_ref: object,
+    status: dict[str, Any],
+    *,
+    label: str,
+) -> list[dict[str, Any]]:
+    rows = _read_artifact_jsonl_rows(root, artifact_ref, status, label=label)
+    if rows is None:
+        status["errors"].append(f"final_synthesis_context_{label}_rows_unavailable")
+        return []
+    return rows
 
 
 def _read_web_source_context_rows(
@@ -2770,6 +2883,8 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")
+        and status.get("event_clusters_verified")
+        and status.get("semantic_retrieval_context_verified")
         and status.get("web_research_verified")
     )
 
