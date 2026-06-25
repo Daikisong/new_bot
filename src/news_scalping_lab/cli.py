@@ -38,7 +38,13 @@ from news_scalping_lab.ui.launcher import (
     StreamlitLaunchError,
     run_streamlit_ui,
 )
-from news_scalping_lab.utils import file_sha256, parse_datetime, read_json, sha256_text
+from news_scalping_lab.utils import (
+    canonical_json,
+    file_sha256,
+    parse_datetime,
+    read_json,
+    sha256_text,
+)
 from news_scalping_lab.warehouse import WarehouseStore
 
 app = typer.Typer(help="news-scalping-lab CLI")
@@ -311,6 +317,7 @@ def _inspect_context_manifest(
         hashes_field="shard_brain_file_hashes",
     )
     supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
+    llm_traces = _inspect_llm_traces(root, manifest)
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
@@ -327,6 +334,7 @@ def _inspect_context_manifest(
             "report": report,
         },
         "supporting_artifacts": supporting_artifacts,
+        "llm_traces": llm_traces,
         "reproducibility_checks_passed": _artifact_status_passed(
             prediction,
             required_extra_key="context_manifest_id_verified",
@@ -335,7 +343,8 @@ def _inspect_context_manifest(
         and _news_input_status_passed(news_input)
         and _context_file_group_status_passed(brain_files)
         and _context_file_group_status_passed(shard_brain_files)
-        and _supporting_artifacts_status_passed(supporting_artifacts),
+        and _supporting_artifacts_status_passed(supporting_artifacts)
+        and _llm_trace_status_passed(llm_traces),
     }
 
 
@@ -501,6 +510,285 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
         status["errors"].append("red_team_artifact_prompt_hash_mismatches")
     status["passed"] = _red_team_artifact_status_passed(status)
     return status
+
+
+_CONTEXT_PROMPT_TRACE_PURPOSES = {
+    "blind_analysis": "daily_blind_analysis",
+    "red_team_candidate_review": "red_team_candidate_review",
+    "final_synthesis": "final_synthesis",
+}
+
+_TRACE_MODEL_CONFIG_KEYS = (
+    "configured_provider",
+    "provider_class",
+    "model",
+    "embedding_model",
+    "max_concurrency",
+    "shard_episode_count",
+)
+
+
+def _inspect_llm_traces(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    prompt_hashes = manifest.get("prompt_hashes")
+    trace_dir = root / "runs" / "traces"
+    trace_records, invalid_trace_files = _load_llm_trace_records(root, trace_dir)
+    status: dict[str, Any] = {
+        "configured": isinstance(prompt_hashes, dict),
+        "trace_dir": _display_path(root, trace_dir),
+        "trace_dir_exists": trace_dir.exists(),
+        "trace_file_count": len(trace_records) + len(invalid_trace_files),
+        "invalid_trace_files": invalid_trace_files,
+        "expected_prompt_count": len(_CONTEXT_PROMPT_TRACE_PURPOSES),
+        "matched_prompt_count": 0,
+        "purposes": {},
+        "errors": [],
+    }
+    if not isinstance(prompt_hashes, dict):
+        status["errors"].append("prompt_hashes_missing_or_invalid")
+        status["passed"] = False
+        return status
+    if not trace_dir.exists():
+        status["errors"].append("llm_trace_dir_missing")
+
+    purpose_statuses = {
+        purpose: _inspect_prompt_trace(
+            root,
+            manifest,
+            prompt_hashes,
+            trace_records,
+            hash_key=hash_key,
+            purpose=purpose,
+        )
+        for hash_key, purpose in _CONTEXT_PROMPT_TRACE_PURPOSES.items()
+    }
+    status["purposes"] = purpose_statuses
+    status["matched_prompt_count"] = sum(
+        1
+        for purpose_status in purpose_statuses.values()
+        if purpose_status.get("matching_trace_count", 0) > 0
+    )
+    status["passed"] = (
+        status["configured"]
+        and status["trace_dir_exists"]
+        and all(_prompt_trace_status_passed(item) for item in purpose_statuses.values())
+        and not status["errors"]
+    )
+    return status
+
+
+def _load_llm_trace_records(
+    root: Path,
+    trace_dir: Path,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    trace_records: list[dict[str, Any]] = []
+    invalid_trace_files: list[str] = []
+    if not trace_dir.exists():
+        return trace_records, invalid_trace_files
+    for trace_path in sorted(trace_dir.glob("*.json")):
+        trace_ref = _display_path(root, trace_path)
+        try:
+            payload = read_json(trace_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            invalid_trace_files.append(trace_ref)
+            continue
+        if not isinstance(payload, dict):
+            invalid_trace_files.append(trace_ref)
+            continue
+        trace_records.append({"path": trace_path, "path_ref": trace_ref, "payload": payload})
+    return trace_records, invalid_trace_files
+
+
+def _inspect_prompt_trace(
+    root: Path,
+    manifest: dict[str, Any],
+    prompt_hashes: dict[str, Any],
+    trace_records: list[dict[str, Any]],
+    *,
+    hash_key: str,
+    purpose: str,
+) -> dict[str, Any]:
+    expected_prompt_hash = prompt_hashes.get(hash_key)
+    expected_model_config = _expected_trace_model_config(manifest)
+    status: dict[str, Any] = {
+        "configured": isinstance(expected_prompt_hash, str) and bool(expected_prompt_hash),
+        "manifest_hash_key": hash_key,
+        "purpose": purpose,
+        "expected_prompt_sha256": expected_prompt_hash
+        if isinstance(expected_prompt_hash, str)
+        else None,
+        "matching_trace_count": 0,
+        "matching_trace_ids": [],
+        "matching_trace_paths": [],
+        "trace_payloads_valid": None,
+        "model_config_verified": None,
+        "model_config_comparison": None,
+        "model_config_mismatches": [],
+        "trace_validation_errors": {},
+        "errors": [],
+    }
+    if not status["configured"]:
+        status["errors"].append(f"{hash_key}_prompt_hash_missing")
+        status["passed"] = False
+        return status
+    if expected_model_config is None:
+        status["errors"].append("manifest_model_config_missing_or_invalid")
+
+    for trace_record in trace_records:
+        payload = trace_record["payload"]
+        if not _trace_matches_prompt(payload, purpose, str(expected_prompt_hash)):
+            continue
+        trace_path = trace_record["path"]
+        trace_ref = str(trace_record["path_ref"])
+        trace_id = payload.get("trace_id")
+        status["matching_trace_count"] += 1
+        status["matching_trace_paths"].append(trace_ref)
+        status["matching_trace_ids"].append(trace_id if isinstance(trace_id, str) else None)
+        validation_errors = _llm_trace_payload_errors(payload)
+        if validation_errors:
+            status["trace_validation_errors"][trace_ref] = validation_errors
+        if expected_model_config:
+            mismatched_keys = _trace_model_config_mismatches(
+                payload,
+                expected_model_config,
+            )
+            if mismatched_keys:
+                status["model_config_mismatches"].append(
+                    {
+                        "path": _display_path(root, trace_path),
+                        "keys": mismatched_keys,
+                    }
+                )
+
+    if status["matching_trace_count"] == 0:
+        status["errors"].append("matching_trace_missing")
+    status["trace_payloads_valid"] = (
+        status["matching_trace_count"] > 0 and not status["trace_validation_errors"]
+    )
+    if expected_model_config == {}:
+        status["model_config_comparison"] = "skipped_no_comparable_manifest_keys"
+        status["model_config_verified"] = status["matching_trace_count"] > 0
+    else:
+        status["model_config_comparison"] = "verified"
+        status["model_config_verified"] = (
+            expected_model_config is not None
+            and status["matching_trace_count"] > 0
+            and not status["model_config_mismatches"]
+        )
+    if not status["trace_payloads_valid"]:
+        status["errors"].append("matching_trace_payload_invalid")
+    if not status["model_config_verified"]:
+        status["errors"].append("matching_trace_model_config_mismatch")
+    status["passed"] = _prompt_trace_status_passed(status)
+    return status
+
+
+def _trace_matches_prompt(
+    payload: dict[str, Any],
+    purpose: str,
+    expected_prompt_hash: str,
+) -> bool:
+    trace_input = payload.get("input")
+    return (
+        payload.get("purpose") == purpose
+        and isinstance(trace_input, dict)
+        and trace_input.get("prompt_sha256") == expected_prompt_hash
+    )
+
+
+def _expected_trace_model_config(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    model_config = manifest.get("model_config")
+    if not isinstance(model_config, dict) or not model_config:
+        return None
+    return {
+        key: model_config[key] for key in _TRACE_MODEL_CONFIG_KEYS if key in model_config
+    }
+
+
+def _trace_model_config_mismatches(
+    payload: dict[str, Any],
+    expected_model_config: dict[str, Any],
+) -> list[str]:
+    trace_model_config = payload.get("model_config")
+    if not isinstance(trace_model_config, dict):
+        return ["model_config"]
+    return [
+        key
+        for key, expected_value in expected_model_config.items()
+        if trace_model_config.get(key) != expected_value
+    ]
+
+
+def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    schema_version = payload.get("schema_version")
+    if schema_version is not None and schema_version != "nslab.llm_trace.v1":
+        errors.append("schema_version_invalid")
+    operation = _trace_string_field(payload, "operation", errors)
+    status = _trace_string_field(payload, "status", errors)
+    _trace_string_field(payload, "trace_id", errors)
+    _trace_string_field(payload, "purpose", errors)
+    _trace_string_field(payload, "provider", errors)
+    _trace_string_field(payload, "started_at", errors)
+    _trace_string_field(payload, "finished_at", errors)
+    if operation in {"generate_text", "generate_structured"}:
+        _trace_string_field(payload, "prompt_version", errors)
+    metadata = payload.get("metadata")
+    if metadata is not None:
+        if not isinstance(metadata, dict):
+            errors.append("metadata_not_object")
+        elif (
+            operation in {"generate_text", "generate_structured"}
+            and "prompt_version" in metadata
+            and payload.get("prompt_version") != metadata.get("prompt_version")
+        ):
+            errors.append("metadata_prompt_version_mismatch")
+    if not isinstance(payload.get("model_config"), dict) or not payload.get("model_config"):
+        errors.append("model_config_missing_or_invalid")
+    trace_input = payload.get("input")
+    if not isinstance(trace_input, dict):
+        errors.append("input_not_object")
+    else:
+        expected_input_hash = sha256_text(canonical_json(trace_input))
+        if payload.get("input_sha256") != expected_input_hash:
+            errors.append("input_sha256_mismatch")
+        if operation in {"generate_text", "generate_structured"} and not isinstance(
+            trace_input.get("prompt_sha256"), str
+        ):
+            errors.append("prompt_sha256_missing")
+        if operation == "embed" and not isinstance(trace_input.get("texts_sha256"), str):
+            errors.append("texts_sha256_missing")
+    output = payload.get("output")
+    expected_output_hash = sha256_text(canonical_json(output)) if output is not None else None
+    if payload.get("output_sha256") != expected_output_hash:
+        errors.append("output_sha256_mismatch")
+    if status in {"ok", "checkpoint_hit"} and output is None:
+        errors.append("successful_trace_missing_output")
+    if not isinstance(payload.get("tool_calls"), list):
+        errors.append("tool_calls_not_list")
+    if not isinstance(payload.get("retries"), int):
+        errors.append("retries_not_integer")
+    token_usage = payload.get("token_usage")
+    if not isinstance(token_usage, dict):
+        errors.append("token_usage_not_object")
+    elif status in {"ok", "checkpoint_hit"} and not isinstance(
+        token_usage.get("prompt_tokens_estimate"), int
+    ):
+        errors.append("prompt_token_estimate_missing")
+    if status == "error" and not isinstance(payload.get("error"), dict):
+        errors.append("error_trace_missing_error_details")
+    return errors
+
+
+def _trace_string_field(
+    payload: dict[str, Any],
+    field: str,
+    errors: list[str],
+) -> str | None:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value:
+        errors.append(f"{field}_missing")
+        return None
+    return value
 
 
 def _inspect_context_file_group(
@@ -770,6 +1058,32 @@ def _supporting_artifacts_status_passed(statuses: dict[str, Any]) -> bool:
     return all(
         isinstance(status, dict) and bool(status.get("passed"))
         for status in statuses.values()
+    )
+
+
+def _llm_trace_status_passed(status: dict[str, Any]) -> bool:
+    purposes = status.get("purposes")
+    return bool(
+        status.get("configured")
+        and status.get("trace_dir_exists")
+        and isinstance(purposes, dict)
+        and purposes
+        and all(
+            isinstance(purpose_status, dict)
+            and _prompt_trace_status_passed(purpose_status)
+            for purpose_status in purposes.values()
+        )
+        and not status.get("errors")
+    )
+
+
+def _prompt_trace_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("matching_trace_count", 0) > 0
+        and status.get("trace_payloads_valid")
+        and status.get("model_config_verified")
+        and not status.get("errors")
     )
 
 

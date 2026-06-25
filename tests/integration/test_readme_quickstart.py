@@ -119,6 +119,18 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
     assert supporting["red_team"]["metadata_verified"] is True
+    llm_traces = inspection["llm_traces"]
+    assert llm_traces["passed"] is True
+    assert llm_traces["matched_prompt_count"] == 3
+    for purpose in (
+        "daily_blind_analysis",
+        "red_team_candidate_review",
+        "final_synthesis",
+    ):
+        purpose_trace = llm_traces["purposes"][purpose]
+        assert purpose_trace["matching_trace_count"] >= 1
+        assert purpose_trace["trace_payloads_valid"] is True
+        assert purpose_trace["model_config_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]

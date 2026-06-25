@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.utils import KST, file_sha256, read_json
+from news_scalping_lab.utils import KST, file_sha256, read_json, write_json
 
 RUNNER = CliRunner()
 
@@ -131,6 +131,18 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
     assert supporting["red_team"]["metadata_verified"] is True
+    llm_traces = inspection["llm_traces"]
+    assert llm_traces["passed"] is True
+    assert llm_traces["matched_prompt_count"] == 3
+    for purpose in (
+        "daily_blind_analysis",
+        "red_team_candidate_review",
+        "final_synthesis",
+    ):
+        purpose_trace = llm_traces["purposes"][purpose]
+        assert purpose_trace["matching_trace_count"] >= 1
+        assert purpose_trace["trace_payloads_valid"] is True
+        assert purpose_trace["model_config_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
@@ -169,6 +181,31 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is False
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+    daily_trace_file = (
+        tmp_path
+        / llm_traces["purposes"]["daily_blind_analysis"]["matching_trace_paths"][0]
+    )
+    original_daily_trace = read_json(daily_trace_file)
+    tampered_daily_trace = {
+        **original_daily_trace,
+        "model_config": {
+            **original_daily_trace["model_config"],
+            "configured_provider": "tampered-provider",
+        },
+    }
+    write_json(daily_trace_file, tampered_daily_trace)
+    tampered_trace_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered llm trace", tampered_trace_context)
+    tampered_trace_inspection = json.loads(tampered_trace_context.output)["inspection"]
+    assert tampered_trace_inspection["reproducibility_checks_passed"] is False
+    tampered_trace_status = tampered_trace_inspection["llm_traces"]["purposes"][
+        "daily_blind_analysis"
+    ]
+    assert tampered_trace_status["model_config_verified"] is False
+    assert tampered_trace_status["model_config_mismatches"][0]["keys"] == [
+        "configured_provider"
+    ]
+    write_json(daily_trace_file, original_daily_trace)
 
     session_pack = RUNNER.invoke(
         app,
