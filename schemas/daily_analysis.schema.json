@@ -597,6 +597,30 @@
           "default": null,
           "title": "Phase State Sha256"
         },
+        "prediction_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prediction Artifact"
+        },
+        "prediction_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prediction Sha256"
+        },
         "price_snapshot": {
           "$ref": "#/$defs/PriceSnapshot"
         },
@@ -613,6 +637,30 @@
           },
           "title": "Red Team Artifacts",
           "type": "array"
+        },
+        "report_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Artifact"
+        },
+        "report_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Sha256"
         },
         "retrieved_episode_ids": {
           "items": {

@@ -46,6 +46,7 @@ from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
+    file_sha256,
     is_available_as_of,
     now_kst,
     parse_datetime,
@@ -284,10 +285,21 @@ class DailyAnalyzer:
         manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
         prediction_path = prediction_dir / f"{trade_date.isoformat()}.json"
         report_path = report_dir / f"{trade_date.isoformat()}_preopen.md"
+        run_output_dir = self.root / "runs" / "checkpoints" / "output_artifacts" / manifest.run_id
+        run_prediction_path = run_output_dir / "blind_prediction.json"
+        run_report_path = run_output_dir / "preopen_report.md"
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
+        run_prediction_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(run_prediction_path, prediction.model_dump(mode="json"))
+        report_text = render_preopen_report(prediction, manifest)
+        run_report_path.write_text(report_text, encoding="utf-8")
+        manifest.prediction_artifact = run_prediction_path.relative_to(self.root).as_posix()
+        manifest.prediction_sha256 = file_sha256(run_prediction_path)
+        manifest.report_artifact = run_report_path.relative_to(self.root).as_posix()
+        manifest.report_sha256 = sha256_text(report_text)
         self._write_blind_seal_artifacts(
             prediction=prediction,
-            prediction_path=prediction_path,
+            prediction_path=run_prediction_path,
             manifest=manifest,
         )
         write_json(prediction_path, prediction.model_dump(mode="json"))
@@ -299,7 +311,7 @@ class DailyAnalyzer:
         write_json(manifest_path, manifest.model_dump(mode="json"))
         WarehouseStore(self.root).write_prediction(prediction)
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(render_preopen_report(prediction, manifest), encoding="utf-8")
+        report_path.write_text(report_text, encoding="utf-8")
         return DailyAnalysis(
             run_id=manifest.run_id,
             trade_date=trade_date,

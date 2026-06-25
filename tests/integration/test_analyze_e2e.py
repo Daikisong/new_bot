@@ -34,7 +34,7 @@ from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json, sha256_text, write_json
+from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text, write_json
 from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
@@ -335,6 +335,16 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]
+    run_prediction_path = tmp_path / saved_manifest["prediction_artifact"]
+    run_report_path = tmp_path / saved_manifest["report_artifact"]
+    assert run_prediction_path.exists()
+    assert run_report_path.exists()
+    assert file_sha256(run_prediction_path) == saved_manifest["prediction_sha256"]
+    assert (
+        sha256_text(run_report_path.read_text(encoding="utf-8"))
+        == saved_manifest["report_sha256"]
+    )
+    assert read_json(run_prediction_path)["context_manifest_id"] == analysis.run_id
     assert saved_manifest["row_disposition_artifact"]
     assert saved_manifest["row_disposition_coverage_ratio"] == 1.0
     assert saved_manifest["row_disposition_summary"] == {
@@ -385,6 +395,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert sha256_text(receipt_text) == saved_manifest["blind_seal_receipt_sha256"]
     assert receipt["phase"] == "BLIND_SEALED"
     assert receipt["blind_artifact_sha256"] == saved_prediction["blind_artifact_sha256"]
+    assert receipt["blind_prediction_path"] == saved_manifest["prediction_artifact"]
     phase_state_path = tmp_path / saved_manifest["phase_state_artifact"]
     phase_state_text = phase_state_path.read_text(encoding="utf-8")
     phase_state = json.loads(phase_state_text)

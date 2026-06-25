@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
+import pytest
+
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.research_import.bundle import parse_bundle
-from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
+from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text, write_json
 
 
 def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
@@ -22,6 +24,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         created_at=cutoff_at,
         sealed_at=cutoff_at,
         blind_analysis=BlindAnalysis(summary="blind summary"),
+        context_manifest_id=run_id,
     )
     blind_hash = sha256_text(canonical_json(prediction.model_dump(mode="json")))
     prediction = prediction.model_copy(update={"blind_artifact_sha256": blind_hash})
@@ -63,6 +66,68 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     source_path = tmp_path / "runs" / "checkpoints" / "source_ledger" / run_id / "source_ledger.jsonl"
     source_path.parent.mkdir(parents=True)
     source_path.write_text(source_ledger, encoding="utf-8")
+    candidate_web_checks = canonical_json(
+        {
+            "schema_version": "nslab.candidate_web_check.v1",
+            "run_id": run_id,
+            "candidate_rank": 1,
+            "candidate_ticker": "UNKNOWN",
+            "candidate_company_name": "BundleCandidateCo",
+            "candidate_path_type": "SINGLE_EVENT",
+            "verification_focus": ["listed_security_and_exact_ticker"],
+            "source_id": "WEB-CANDIDATE-1",
+            "query": "candidate verification",
+            "title": "candidate source",
+            "url": "https://example.test/candidate",
+            "snippet": "candidate",
+            "published_at": "2030-01-10T08:30:00+09:00",
+            "retrieved_at": "2030-01-10T08:31:00+09:00",
+            "cutoff_at": cutoff_at.isoformat(),
+            "time_verified": True,
+            "available_before_cutoff": True,
+            "content_sha256": "candidate-hash",
+        }
+    ) + "\n"
+    candidate_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_web_checks"
+        / run_id
+        / "candidate_web_checks.jsonl"
+    )
+    candidate_path.parent.mkdir(parents=True)
+    candidate_path.write_text(candidate_web_checks, encoding="utf-8")
+    excluded_candidate_web_checks = canonical_json(
+        {
+            "schema_version": "nslab.excluded_candidate_web_check.v1",
+            "run_id": run_id,
+            "candidate_rank": 1,
+            "candidate_ticker": "UNKNOWN",
+            "candidate_company_name": "BundleCandidateCo",
+            "candidate_path_type": "SINGLE_EVENT",
+            "source_id": "WEB-CANDIDATE-EXCLUDED",
+            "query": "candidate verification",
+            "title": "excluded candidate source",
+            "url": "https://example.test/excluded",
+            "snippet": "excluded",
+            "published_at": "2030-01-10T09:30:00+09:00",
+            "retrieved_at": "2030-01-10T09:31:00+09:00",
+            "cutoff_at": cutoff_at.isoformat(),
+            "exclusion_reason": "after_cutoff",
+            "time_verified": True,
+            "available_before_cutoff": False,
+        }
+    ) + "\n"
+    excluded_candidate_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_web_checks"
+        / run_id
+        / "excluded_candidate_web_checks.jsonl"
+    )
+    excluded_candidate_path.write_text(excluded_candidate_web_checks, encoding="utf-8")
     receipt = {
         "schema_version": "nslab.blind_seal_receipt.v1",
         "run_id": run_id,
@@ -101,33 +166,45 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     }
     phase_path = tmp_path / "runs" / "checkpoints" / "phase_state" / run_id / "phase_state.json"
     write_json(phase_path, phase_state)
-    write_json(
-        tmp_path / "runs" / "manifests" / f"{run_id}.json",
-        {
-            "run_id": run_id,
-            "trade_date": trade_date.isoformat(),
-            "cutoff_at": cutoff_at.isoformat(),
-            "blind_context_mode": "NEWS_ONLY_STRICT",
-            "blind_web_search_call_count": 0,
-            "blind_price_repository_access_count": 0,
-            "blind_current_price_access_count": 0,
-            "no_d_outcome_exposed": True,
-            "blind_artifact_sha256": blind_hash,
-            "blind_seal_receipt_artifact": receipt_path.relative_to(tmp_path).as_posix(),
-            "blind_seal_receipt_sha256": sha256_text(
-                receipt_path.read_text(encoding="utf-8")
-            ),
-            "phase_state_artifact": phase_path.relative_to(tmp_path).as_posix(),
-            "phase_state_sha256": sha256_text(phase_path.read_text(encoding="utf-8")),
-            "price_snapshot": {"source_name": "mock", "allowed_through": "2030-01-09"},
-            "row_disposition_artifact": row_path.relative_to(tmp_path).as_posix(),
-            "row_disposition_sha256": sha256_text(row_disposition),
-            "row_disposition_coverage_ratio": 1.0,
-            "source_ledger_artifact": source_path.relative_to(tmp_path).as_posix(),
-            "source_ledger_sha256": sha256_text(source_ledger),
-            "source_ledger_entry_count": 1,
-        },
-    )
+    manifest_payload = {
+        "run_id": run_id,
+        "trade_date": trade_date.isoformat(),
+        "cutoff_at": cutoff_at.isoformat(),
+        "blind_context_mode": "NEWS_ONLY_STRICT",
+        "blind_web_search_call_count": 0,
+        "blind_price_repository_access_count": 0,
+        "blind_current_price_access_count": 0,
+        "no_d_outcome_exposed": True,
+        "blind_artifact_sha256": blind_hash,
+        "prediction_artifact": prediction_path.relative_to(tmp_path).as_posix(),
+        "prediction_sha256": file_sha256(prediction_path),
+        "report_artifact": report_path.relative_to(tmp_path).as_posix(),
+        "report_sha256": sha256_text(report_path.read_text(encoding="utf-8")),
+        "blind_seal_receipt_artifact": receipt_path.relative_to(tmp_path).as_posix(),
+        "blind_seal_receipt_sha256": sha256_text(
+            receipt_path.read_text(encoding="utf-8")
+        ),
+        "phase_state_artifact": phase_path.relative_to(tmp_path).as_posix(),
+        "phase_state_sha256": sha256_text(phase_path.read_text(encoding="utf-8")),
+        "price_snapshot": {"source_name": "mock", "allowed_through": "2030-01-09"},
+        "row_disposition_artifact": row_path.relative_to(tmp_path).as_posix(),
+        "row_disposition_sha256": sha256_text(row_disposition),
+        "row_disposition_coverage_ratio": 1.0,
+        "source_ledger_artifact": source_path.relative_to(tmp_path).as_posix(),
+        "source_ledger_sha256": sha256_text(source_ledger),
+        "source_ledger_entry_count": 1,
+        "candidate_web_check_artifact": candidate_path.relative_to(tmp_path).as_posix(),
+        "candidate_web_check_sha256": sha256_text(candidate_web_checks),
+        "candidate_web_check_count": 1,
+        "excluded_candidate_web_check_artifact": excluded_candidate_path.relative_to(
+            tmp_path
+        ).as_posix(),
+        "excluded_candidate_web_check_sha256": sha256_text(
+            excluded_candidate_web_checks
+        ),
+        "excluded_candidate_web_check_count": 1,
+    }
+    write_json(tmp_path / "runs" / "manifests" / f"{run_id}.json", manifest_payload)
 
     output = export_analysis_bundle(settings, run_id=run_id)
     parsed = parse_bundle(output)
@@ -140,6 +217,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "row_disposition.jsonl",
         "brain_delta.jsonl",
         "source_ledger.jsonl",
+        "candidate_web_checks.jsonl",
+        "excluded_candidate_web_checks.jsonl",
         "phase_state.json",
         "bundle_manifest.json",
     }
@@ -149,6 +228,10 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["row_disposition_coverage_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
     assert parsed.validation["source_ledger_entry_count_verified"]
+    assert parsed.validation["candidate_web_check_hash_verified"]
+    assert parsed.validation["candidate_web_check_count_verified"]
+    assert parsed.validation["excluded_candidate_web_check_hash_verified"]
+    assert parsed.validation["excluded_candidate_web_check_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
@@ -165,6 +248,10 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["brain_delta_hash_verified"] is True
     assert manifest["validation"]["row_disposition_coverage_verified"] is True
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True
+    assert manifest["validation"]["candidate_web_check_hash_verified"] is True
+    assert manifest["validation"]["candidate_web_check_count_verified"] is True
+    assert manifest["validation"]["excluded_candidate_web_check_hash_verified"] is True
+    assert manifest["validation"]["excluded_candidate_web_check_count_verified"] is True
     assert manifest["validation"]["phase_state_hash_verified"] is True
     assert manifest["validation"]["phase_state_receipt_link_verified"] is True
     assert manifest["validation"]["id_reference_integrity_verified"] is True
@@ -174,4 +261,18 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert episode["blind_seal_receipt"]["phase"] == "BLIND_SEALED"
     assert parsed.json_blocks["phase_state.json"]["phase"] == "BLIND_SEALED"
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "bundle_incomplete"
+    assert parsed.jsonl_blocks["candidate_web_checks.jsonl"][0]["source_id"] == (
+        "WEB-CANDIDATE-1"
+    )
+    assert parsed.jsonl_blocks["excluded_candidate_web_checks.jsonl"][0]["source_id"] == (
+        "WEB-CANDIDATE-EXCLUDED"
+    )
     assert json.loads(parsed.blocks["row_disposition.jsonl"].splitlines()[1])["row_number"] == 1
+
+    bad_run_id = "RUN-other"
+    write_json(
+        tmp_path / "runs" / "manifests" / f"{bad_run_id}.json",
+        {**manifest_payload, "run_id": bad_run_id},
+    )
+    with pytest.raises(ValueError, match=f"belongs to {run_id}, not {bad_run_id}"):
+        export_analysis_bundle(settings, run_id=bad_run_id)

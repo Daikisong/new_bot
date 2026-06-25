@@ -145,7 +145,8 @@ nslab context export-analysis-bundle --run-id RUN-a5840d2def32
 This writes a single Markdown bundle named `<YYYYMMDD>_nslab_episode_bundle.md`
 under `reports/`. The bundle contains the report, sealed blind prediction,
 research episode JSON, row disposition JSONL, brain delta JSONL, source ledger
-JSONL, phase state JSON, and bundle manifest blocks with machine-verified hashes.
+JSONL, optional candidate web-check JSONL, phase state JSON, and bundle manifest
+blocks with machine-verified hashes.
 
 ## Environment
 

@@ -33,16 +33,48 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
     manifest = _read_dict(manifest_path)
     trade_date = str(manifest["trade_date"])
     compact_trade_date = trade_date.replace("-", "")
-    prediction_path = settings.path(settings.output_dirs.predictions) / f"{trade_date}.json"
-    report_path = settings.path(settings.output_dirs.reports) / f"{trade_date}_preopen.md"
-    prediction = BlindPrediction.model_validate(_read_dict(prediction_path))
-    report = report_path.read_text(encoding="utf-8")
     row_disposition = _read_manifest_artifact(settings, manifest, "row_disposition_artifact")
     source_ledger = _read_manifest_artifact(settings, manifest, "source_ledger_artifact")
+    candidate_web_checks = _read_optional_manifest_artifact(
+        settings,
+        manifest,
+        "candidate_web_check_artifact",
+    )
+    excluded_candidate_web_checks = _read_optional_manifest_artifact(
+        settings,
+        manifest,
+        "excluded_candidate_web_check_artifact",
+    )
     blind_seal_receipt = _read_manifest_artifact(
         settings,
         manifest,
         "blind_seal_receipt_artifact",
+    )
+    prediction_path = _prediction_path_for_bundle(
+        settings,
+        manifest=manifest,
+        blind_seal_receipt=blind_seal_receipt,
+        trade_date=trade_date,
+    )
+    report_path = _report_path_for_bundle(
+        settings,
+        manifest=manifest,
+        trade_date=trade_date,
+    )
+    prediction = BlindPrediction.model_validate(_read_dict(prediction_path))
+    _validate_prediction_belongs_to_run(prediction, run_id=run_id, prediction_path=prediction_path)
+    report = report_path.read_text(encoding="utf-8")
+    _validate_manifest_artifact_hash(
+        manifest,
+        field_name="prediction_sha256",
+        observed=file_sha256(prediction_path),
+        path=prediction_path,
+    )
+    _validate_manifest_artifact_hash(
+        manifest,
+        field_name="report_sha256",
+        observed=sha256_text(report),
+        path=report_path,
     )
     phase_state = _read_manifest_artifact(settings, manifest, "phase_state_artifact")
     brain_delta = _brain_delta_jsonl(run_id=run_id, reason="postmortem_not_run")
@@ -61,6 +93,8 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         report_path=report_path,
         row_disposition=row_disposition,
         source_ledger=source_ledger,
+        candidate_web_checks=candidate_web_checks,
+        excluded_candidate_web_checks=excluded_candidate_web_checks,
         blind_seal_receipt=blind_seal_receipt,
         phase_state=phase_state,
         brain_delta=brain_delta,
@@ -80,6 +114,8 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             row_disposition=row_disposition,
             brain_delta=brain_delta,
             source_ledger=source_ledger,
+            candidate_web_checks=candidate_web_checks,
+            excluded_candidate_web_checks=excluded_candidate_web_checks,
             phase_state=phase_state,
             bundle_manifest=bundle_manifest,
         ),
@@ -106,6 +142,93 @@ def _read_manifest_artifact(
     return settings.path(relative).read_text(encoding="utf-8")
 
 
+def _read_optional_manifest_artifact(
+    settings: Settings,
+    manifest: dict[str, Any],
+    field_name: str,
+) -> str | None:
+    relative = manifest.get(field_name)
+    if not isinstance(relative, str) or not relative:
+        return None
+    return settings.path(relative).read_text(encoding="utf-8")
+
+
+def _prediction_path_for_bundle(
+    settings: Settings,
+    *,
+    manifest: dict[str, Any],
+    blind_seal_receipt: str,
+    trade_date: str,
+) -> Path:
+    manifest_path = _optional_manifest_path(settings, manifest, "prediction_artifact")
+    if manifest_path is not None:
+        return manifest_path
+    try:
+        receipt = json.loads(blind_seal_receipt)
+    except json.JSONDecodeError:
+        receipt = {}
+    if isinstance(receipt, dict):
+        receipt_path = receipt.get("blind_prediction_path")
+        if isinstance(receipt_path, str) and receipt_path:
+            return settings.path(receipt_path)
+    return settings.path(settings.output_dirs.predictions) / f"{trade_date}.json"
+
+
+def _report_path_for_bundle(
+    settings: Settings,
+    *,
+    manifest: dict[str, Any],
+    trade_date: str,
+) -> Path:
+    manifest_path = _optional_manifest_path(settings, manifest, "report_artifact")
+    if manifest_path is not None:
+        return manifest_path
+    return settings.path(settings.output_dirs.reports) / f"{trade_date}_preopen.md"
+
+
+def _optional_manifest_path(
+    settings: Settings,
+    manifest: dict[str, Any],
+    field_name: str,
+) -> Path | None:
+    relative = manifest.get(field_name)
+    if not isinstance(relative, str) or not relative:
+        return None
+    return settings.path(relative)
+
+
+def _validate_prediction_belongs_to_run(
+    prediction: BlindPrediction,
+    *,
+    run_id: str,
+    prediction_path: Path,
+) -> None:
+    if prediction.context_manifest_id is None:
+        return
+    if prediction.context_manifest_id != run_id:
+        raise ValueError(
+            f"prediction artifact {prediction_path.as_posix()} belongs to "
+            f"{prediction.context_manifest_id}, not {run_id}"
+        )
+
+
+def _validate_manifest_artifact_hash(
+    manifest: dict[str, Any],
+    *,
+    field_name: str,
+    observed: str,
+    path: Path,
+) -> None:
+    expected = manifest.get(field_name)
+    if expected is None:
+        return
+    if expected != observed:
+        raise ValueError(
+            f"manifest {field_name} mismatch for {path.as_posix()}: "
+            f"expected {expected}, observed {observed}"
+        )
+
+
 def _build_research_episode(
     *,
     run_id: str,
@@ -124,9 +247,21 @@ def _build_research_episode(
         for value in (
             manifest.get("row_disposition_sha256"),
             manifest.get("source_ledger_sha256"),
+            manifest.get("candidate_web_check_sha256"),
+            manifest.get("excluded_candidate_web_check_sha256"),
         )
         if isinstance(value, str)
     ]
+    input_audit = {
+        "row_disposition_coverage_ratio": manifest.get("row_disposition_coverage_ratio"),
+        "source_ledger_entry_count": manifest.get("source_ledger_entry_count"),
+    }
+    if manifest.get("candidate_web_check_artifact"):
+        input_audit["candidate_web_check_count"] = manifest.get("candidate_web_check_count")
+    if manifest.get("excluded_candidate_web_check_artifact"):
+        input_audit["excluded_candidate_web_check_count"] = manifest.get(
+            "excluded_candidate_web_check_count"
+        )
     return ResearchEpisode(
         episode_id=stable_id("EP", "analysis-bundle", run_id),
         trade_date=prediction.trade_date,
@@ -134,12 +269,9 @@ def _build_research_episode(
         created_at=prediction.created_at,
         execution_protocol_version=EXECUTION_PROTOCOL_VERSION,
         research_version="analysis-bundle.v1",
-        input_news_files=[str(path) for path in _source_ledger_input_files(manifest)],
+        input_news_files=[str(path) for path in _bundle_input_artifacts(manifest)],
         input_news_hashes=source_hashes,
-        input_audit={
-            "row_disposition_coverage_ratio": manifest.get("row_disposition_coverage_ratio"),
-            "source_ledger_entry_count": manifest.get("source_ledger_entry_count"),
-        },
+        input_audit=input_audit,
         row_disposition_summary=manifest.get("row_disposition_summary", {}),
         blind_integrity={
             "blind_context_mode": manifest.get("blind_context_mode"),
@@ -182,11 +314,17 @@ def _build_research_episode(
     )
 
 
-def _source_ledger_input_files(manifest: dict[str, Any]) -> list[str]:
-    artifact = manifest.get("source_ledger_artifact")
-    if isinstance(artifact, str):
-        return [artifact]
-    return []
+def _bundle_input_artifacts(manifest: dict[str, Any]) -> list[str]:
+    artifacts: list[str] = []
+    for field_name in (
+        "source_ledger_artifact",
+        "candidate_web_check_artifact",
+        "excluded_candidate_web_check_artifact",
+    ):
+        artifact = manifest.get(field_name)
+        if isinstance(artifact, str) and artifact:
+            artifacts.append(artifact)
+    return artifacts
 
 
 def _build_bundle_manifest(
@@ -198,6 +336,8 @@ def _build_bundle_manifest(
     report_path: Path,
     row_disposition: str,
     source_ledger: str,
+    candidate_web_checks: str | None,
+    excluded_candidate_web_checks: str | None,
     blind_seal_receipt: str,
     phase_state: str,
     brain_delta: str,
@@ -208,7 +348,26 @@ def _build_bundle_manifest(
     prediction_payload["blind_artifact_sha256"] = None
     blind_hash = sha256_text(canonical_json(prediction_payload))
     blind_execution_guard_verified = _blind_execution_guard_verified(manifest)
-    return {
+    validation = {
+        "markers_complete": True,
+        "json_valid": True,
+        "jsonl_valid": True,
+        "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
+        "blind_execution_guard_verified": blind_execution_guard_verified,
+        "row_disposition_hash_verified": True,
+        "row_disposition_coverage_verified": True,
+        "source_ledger_hash_verified": True,
+        "source_ledger_entry_count_verified": True,
+        "research_episode_hash_verified": True,
+        "brain_delta_hash_verified": True,
+        "blind_seal_receipt_hash_verified": True,
+        "phase_state_hash_verified": True,
+        "phase_state_receipt_link_verified": True,
+        "id_reference_integrity_verified": True,
+        "manifest_validation_self_consistent_verified": True,
+        "phase_state_recorded": True,
+    }
+    payload = {
         "schema_version": "nslab.bundle_manifest.v1",
         "execution_protocol_version": EXECUTION_PROTOCOL_VERSION,
         "run_id": run_id,
@@ -239,28 +398,26 @@ def _build_bundle_manifest(
         "outcome_slice_sha256": None,
         "outcome_completeness_audit": {"status": "NOT_RUN"},
         "eligibility_matrix": research_episode.eligibility_matrix.model_dump(mode="json"),
-        "validation": {
-            "markers_complete": True,
-            "json_valid": True,
-            "jsonl_valid": True,
-            "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
-            "blind_execution_guard_verified": blind_execution_guard_verified,
-            "row_disposition_hash_verified": True,
-            "row_disposition_coverage_verified": True,
-            "source_ledger_hash_verified": True,
-            "source_ledger_entry_count_verified": True,
-            "research_episode_hash_verified": True,
-            "brain_delta_hash_verified": True,
-            "blind_seal_receipt_hash_verified": True,
-            "phase_state_hash_verified": True,
-            "phase_state_receipt_link_verified": True,
-            "id_reference_integrity_verified": True,
-            "manifest_validation_self_consistent_verified": True,
-            "phase_state_recorded": True,
-        },
+        "validation": validation,
         "bundle_incomplete": True,
         "incomplete_reasons": ["postmortem outcome evaluation has not been run"],
     }
+    if candidate_web_checks is not None:
+        payload["candidate_web_check_sha256"] = sha256_text(candidate_web_checks)
+        payload["candidate_web_check_count"] = manifest.get("candidate_web_check_count", 0)
+        validation["candidate_web_check_hash_verified"] = True
+        validation["candidate_web_check_count_verified"] = True
+    if excluded_candidate_web_checks is not None:
+        payload["excluded_candidate_web_check_sha256"] = sha256_text(
+            excluded_candidate_web_checks
+        )
+        payload["excluded_candidate_web_check_count"] = manifest.get(
+            "excluded_candidate_web_check_count",
+            0,
+        )
+        validation["excluded_candidate_web_check_hash_verified"] = True
+        validation["excluded_candidate_web_check_count_verified"] = True
+    return payload
 
 
 def _brain_delta_jsonl(*, run_id: str, reason: str) -> str:
@@ -296,6 +453,8 @@ def _render_bundle(
     row_disposition: str,
     brain_delta: str,
     source_ledger: str,
+    candidate_web_checks: str | None,
+    excluded_candidate_web_checks: str | None,
     phase_state: str,
     bundle_manifest: dict[str, Any],
 ) -> str:
@@ -312,6 +471,15 @@ def _render_bundle(
         indent=2,
         sort_keys=True,
     )
+    optional_blocks = ""
+    if candidate_web_checks is not None:
+        optional_blocks += (
+            f"{_block('candidate_web_checks.jsonl', candidate_web_checks, fence='jsonl')}\n\n"
+        )
+    if excluded_candidate_web_checks is not None:
+        optional_blocks += (
+            f"{_block('excluded_candidate_web_checks.jsonl', excluded_candidate_web_checks, fence='jsonl')}\n\n"
+        )
     return (
         "---\n"
         f"schema_version: {BUNDLE_SCHEMA_VERSION}\n"
@@ -326,6 +494,7 @@ def _render_bundle(
         f"{_block('row_disposition.jsonl', row_disposition, fence='jsonl')}\n\n"
         f"{_block('brain_delta.jsonl', brain_delta, fence='jsonl')}\n\n"
         f"{_block('source_ledger.jsonl', source_ledger, fence='jsonl')}\n\n"
+        f"{optional_blocks}"
         f"{_block('phase_state.json', phase_state, fence='json')}\n\n"
         f"{_block('bundle_manifest.json', manifest_json, fence='json')}\n"
     )

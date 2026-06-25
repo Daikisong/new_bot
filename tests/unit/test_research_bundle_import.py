@@ -575,6 +575,49 @@ def test_bundle_source_ledger_rejects_raw_body_duplication(tmp_path) -> None:
         parse_bundle(source)
 
 
+def test_bundle_candidate_web_checks_reject_opened_text_duplication(tmp_path) -> None:
+    candidate_jsonl = json.dumps(
+        {
+            "schema_version": "nslab.candidate_web_check.v1",
+            "run_id": "RUN-bundle-test",
+            "candidate_rank": 1,
+            "candidate_ticker": "UNKNOWN",
+            "candidate_company_name": "CandidateCo",
+            "candidate_path_type": "SINGLE_EVENT",
+            "source_id": "WEB-CANDIDATE-1",
+            "query": "candidate verification",
+            "title": "candidate source",
+            "url": "https://example.test/candidate",
+            "published_at": "2030-01-10T08:30:00+09:00",
+            "retrieved_at": "2030-01-10T08:31:00+09:00",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "time_verified": True,
+            "available_before_cutoff": True,
+            "content_sha256": "abc",
+            "opened_text": "raw text must stay outside the bundle",
+        },
+        ensure_ascii=False,
+    )
+    candidate_block = f"""
+<!-- NSLAB:BEGIN candidate_web_checks.jsonl -->
+```jsonl
+{candidate_jsonl}
+```
+<!-- NSLAB:END candidate_web_checks.jsonl -->
+"""
+    source = tmp_path / "duplicated_candidate_web_bundle.md"
+    source.write_text(
+        _bundle_text(_episode()).replace(
+            "<!-- NSLAB:BEGIN phase_state.json -->",
+            f"{candidate_block}\n<!-- NSLAB:BEGIN phase_state.json -->",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleImportError, match="must not duplicate opened/body/content"):
+        parse_bundle(source)
+
+
 def test_bundle_row_disposition_rejects_raw_title_body(tmp_path) -> None:
     source = tmp_path / "bad_row_bundle.md"
     source.write_text(

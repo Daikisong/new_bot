@@ -369,6 +369,10 @@ class ContextManifest(StrictModel):
     blind_price_repository_access_count: int = 0
     blind_current_price_access_count: int = 0
     blind_artifact_sha256: str | None = None
+    prediction_artifact: str | None = None
+    prediction_sha256: str | None = None
+    report_artifact: str | None = None
+    report_sha256: str | None = None
     blind_seal_receipt_artifact: str | None = None
     blind_seal_receipt_sha256: str | None = None
     phase_state_artifact: str | None = None

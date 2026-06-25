@@ -39,6 +39,40 @@ SOURCE_LEDGER_REQUIRED_FIELDS = {
     "notes",
 }
 SOURCE_LEDGER_USAGE_PHASES = {"BLIND", "OUTCOME", "POSTMORTEM"}
+CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
+    "schema_version",
+    "run_id",
+    "candidate_rank",
+    "candidate_ticker",
+    "candidate_company_name",
+    "candidate_path_type",
+    "source_id",
+    "query",
+    "title",
+    "url",
+    "published_at",
+    "retrieved_at",
+    "cutoff_at",
+    "time_verified",
+    "available_before_cutoff",
+    "content_sha256",
+}
+EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
+    "schema_version",
+    "run_id",
+    "candidate_rank",
+    "candidate_ticker",
+    "candidate_company_name",
+    "candidate_path_type",
+    "source_id",
+    "query",
+    "title",
+    "url",
+    "published_at",
+    "retrieved_at",
+    "cutoff_at",
+    "exclusion_reason",
+}
 
 
 class BundleImportError(ValueError):
@@ -79,6 +113,23 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
     if not parsed.validation["source_ledger_entry_count_verified"]:
         raise BundleImportError(
             "source_ledger.jsonl entry count does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("candidate_web_check_hash_verified", True):
+        raise BundleImportError(
+            "candidate_web_checks.jsonl hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("candidate_web_check_count_verified", True):
+        raise BundleImportError(
+            "candidate_web_checks.jsonl entry count does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("excluded_candidate_web_check_hash_verified", True):
+        raise BundleImportError(
+            "excluded_candidate_web_checks.jsonl hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("excluded_candidate_web_check_count_verified", True):
+        raise BundleImportError(
+            "excluded_candidate_web_checks.jsonl entry count does not match "
+            "bundle_manifest.json"
         )
     if not parsed.validation["research_episode_hash_verified"]:
         raise BundleImportError(
@@ -197,6 +248,28 @@ def parse_bundle(path: Path) -> BundleParseResult:
             jsonl_blocks,
         ),
     }
+    _add_optional_jsonl_validation(
+        validation,
+        json_blocks,
+        jsonl_blocks,
+        payload_blocks,
+        block_name="candidate_web_checks.jsonl",
+        hash_field="candidate_web_check_sha256",
+        count_field="candidate_web_check_count",
+        hash_key="candidate_web_check_hash_verified",
+        count_key="candidate_web_check_count_verified",
+    )
+    _add_optional_jsonl_validation(
+        validation,
+        json_blocks,
+        jsonl_blocks,
+        payload_blocks,
+        block_name="excluded_candidate_web_checks.jsonl",
+        hash_field="excluded_candidate_web_check_sha256",
+        count_field="excluded_candidate_web_check_count",
+        hash_key="excluded_candidate_web_check_hash_verified",
+        count_key="excluded_candidate_web_check_count_verified",
+    )
     validation["manifest_validation_self_consistent_verified"] = (
         _verify_manifest_validation_self_consistency(json_blocks, validation)
     )
@@ -331,6 +404,34 @@ def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> 
     if len(source_ids) != len(set(source_ids)):
         raise BundleImportError("source_ledger.jsonl duplicate source_id")
 
+    for index, row in enumerate(jsonl_blocks.get("candidate_web_checks.jsonl", []), start=1):
+        _validate_candidate_web_check_row(
+            block_name="candidate_web_checks.jsonl",
+            index=index,
+            row=row,
+            required_fields=CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+            expected_schema_version="nslab.candidate_web_check.v1",
+        )
+        if row.get("time_verified") is not True:
+            raise BundleImportError(
+                f"candidate_web_checks.jsonl:{index} must be cutoff verified"
+            )
+        if row.get("available_before_cutoff") is not True:
+            raise BundleImportError(
+                f"candidate_web_checks.jsonl:{index} must be before cutoff"
+            )
+    for index, row in enumerate(
+        jsonl_blocks.get("excluded_candidate_web_checks.jsonl", []),
+        start=1,
+    ):
+        _validate_candidate_web_check_row(
+            block_name="excluded_candidate_web_checks.jsonl",
+            index=index,
+            row=row,
+            required_fields=EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
+            expected_schema_version="nslab.excluded_candidate_web_check.v1",
+        )
+
 
 def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
     blind = json_blocks.get("blind_prediction.json")
@@ -455,6 +556,64 @@ def _verify_jsonl_entry_count(
     if not isinstance(expected, int) or rows is None:
         return False
     return expected == len(rows)
+
+
+def _add_optional_jsonl_validation(
+    validation: dict[str, bool],
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+    payload_blocks: dict[str, str],
+    *,
+    block_name: str,
+    hash_field: str,
+    count_field: str,
+    hash_key: str,
+    count_key: str,
+) -> None:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return
+    has_manifest_fields = hash_field in manifest or count_field in manifest
+    has_block = block_name in payload_blocks or block_name in jsonl_blocks
+    if not has_manifest_fields and not has_block:
+        return
+    validation[hash_key] = _verify_payload_hash(
+        json_blocks,
+        payload_blocks,
+        block_name=block_name,
+        manifest_field=hash_field,
+    )
+    validation[count_key] = _verify_jsonl_entry_count(
+        json_blocks,
+        jsonl_blocks,
+        block_name=block_name,
+        manifest_field=count_field,
+    )
+
+
+def _validate_candidate_web_check_row(
+    *,
+    block_name: str,
+    index: int,
+    row: dict[str, Any],
+    required_fields: set[str],
+    expected_schema_version: str,
+) -> None:
+    missing = sorted(required_fields - set(row))
+    if missing:
+        raise BundleImportError(
+            f"{block_name}:{index} missing fields: {', '.join(missing)}"
+        )
+    if row.get("schema_version") != expected_schema_version:
+        raise BundleImportError(f"{block_name}:{index} invalid schema_version")
+    if "opened_text" in row or "body" in row or "content" in row:
+        raise BundleImportError(
+            f"{block_name}:{index} must not duplicate opened/body/content"
+        )
+    if not isinstance(row.get("source_id"), str) or not row.get("source_id"):
+        raise BundleImportError(f"{block_name}:{index} invalid source_id")
+    if not isinstance(row.get("candidate_rank"), int):
+        raise BundleImportError(f"{block_name}:{index} invalid candidate_rank")
 
 
 def _verify_canonical_json_hash(
