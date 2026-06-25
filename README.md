@@ -91,6 +91,8 @@ nslab analyze \
 ```
 
 `exhaustive` mode is the default quality mode. It sweeps every accepted research episode and fails if coverage is incomplete. Retrieval misses are recorded but never used to block open-world candidate generation.
+When `--mode` is omitted, `nslab analyze` uses `default_mode` from
+`configs/default.yaml`, whose initial value is `exhaustive`.
 `brain` mode also loads global brain files and shard brain summaries, and records
 memory sweep artifacts for every time-available accepted episode so those episodes
 still influence synthesis indirectly.

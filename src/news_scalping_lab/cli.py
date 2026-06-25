@@ -262,17 +262,18 @@ def analyze(
     news: Annotated[Path, typer.Option("--news")],
     trade_date: Annotated[str, typer.Option("--trade-date")],
     cutoff: Annotated[str, typer.Option("--cutoff")],
-    mode: Annotated[str, typer.Option("--mode")] = "exhaustive",
+    mode: Annotated[str | None, typer.Option("--mode")] = None,
     web_search: Annotated[bool, typer.Option("--web-search")] = False,
 ) -> None:
     settings = load_settings()
+    analysis_mode = mode if mode is not None else settings.default_mode
     parsed_trade_date = _parse_date(trade_date)
     analysis = asyncio.run(
         DailyAnalyzer(settings).analyze(
             news_csv=news,
             trade_date=parsed_trade_date,
             cutoff_at=parse_datetime(cutoff),
-            mode=mode,
+            mode=analysis_mode,
             web_search=web_search,
         )
     )
