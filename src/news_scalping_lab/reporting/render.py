@@ -54,10 +54,16 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             [
                 f"### {sector.name}",
                 "",
+                f"- Triggering events: {list_text(sector.triggering_events)}",
                 f"- Mechanism: {sector.formation_mechanism}",
                 f"- Expected breadth: {sector.expected_breadth}",
-                f"- Possible leaders: {', '.join(sector.possible_leaders) or 'unknown'}",
+                f"- Direct beneficiaries: {list_text(sector.direct_beneficiaries)}",
+                f"- Indirect beneficiaries: {list_text(sector.indirect_beneficiaries)}",
+                f"- Narrative beneficiaries: {list_text(sector.narrative_beneficiaries)}",
+                f"- Possible leaders: {list_text(sector.possible_leaders)}",
                 f"- Failure conditions: {'; '.join(sector.failure_conditions) or 'none recorded'}",
+                f"- Supporting cases: {list_text(sector.supporting_cases)}",
+                f"- Contradicting cases: {list_text(sector.contradicting_cases)}",
                 f"- Provenance sources: {list_text([item.source_id for item in sector.provenance])}",
                 "",
             ]

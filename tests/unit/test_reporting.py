@@ -35,6 +35,13 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 triggering_events=["EVT-report"],
                 formation_mechanism="current catalyst -> sector hypothesis",
                 expected_breadth="narrow",
+                direct_beneficiaries=["DirectReportCo"],
+                indirect_beneficiaries=["IndirectReportCo"],
+                narrative_beneficiaries=["NarrativeReportCo"],
+                possible_leaders=["LeaderReportCo"],
+                failure_conditions=["theme fails without breadth"],
+                supporting_cases=["EP-sector-positive"],
+                contradicting_cases=["EP-sector-negative"],
                 provenance=[
                     Provenance(
                         source_id="SRC-report-sector",
@@ -151,6 +158,14 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Memory episodes: EP-hybrid-positive, EP-hybrid-negative" in report
     assert "- Source URLs: news://EVT-report-hybrid" in report
     assert "- Provenance sources: SRC-report-hybrid" in report
+    assert "- Triggering events: EVT-report" in report
+    assert "- Direct beneficiaries: DirectReportCo" in report
+    assert "- Indirect beneficiaries: IndirectReportCo" in report
+    assert "- Narrative beneficiaries: NarrativeReportCo" in report
+    assert "- Possible leaders: LeaderReportCo" in report
+    assert "- Failure conditions: theme fails without breadth" in report
+    assert "- Supporting cases: EP-sector-positive" in report
+    assert "- Contradicting cases: EP-sector-negative" in report
     assert "- Provenance sources: SRC-report-sector" in report
     assert "- Total input rows: 2" in report
     assert "- Included pre-cutoff rows: 1" in report
