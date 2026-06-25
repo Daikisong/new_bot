@@ -18,7 +18,7 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, now_kst, stable_id, write_json
+from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, stable_id, write_json
 
 VALID_KINDS = {"sft", "preference", "evals"}
 
@@ -414,7 +414,13 @@ def _training_row(
     eligibility_basis = _eligibility_basis_for_task(task, episode.eligibility_matrix)
     return {
         "schema_version": "nslab.training_example.v1",
-        "example_id": stable_id("TRN", split, task, episode.episode_id, input_payload),
+        "example_id": stable_id(
+            "TRN",
+            split,
+            task,
+            episode.episode_id,
+            canonical_json(input_payload),
+        ),
         "task": task,
         "training_category": _training_category_for_task(task),
         "split": split,

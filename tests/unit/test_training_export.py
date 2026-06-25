@@ -18,7 +18,7 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, canonical_json, read_json, stable_id
 
 
 def _accepted_episode() -> ResearchEpisode:
@@ -121,6 +121,20 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     }
 
     assert sft.row_count == 5
+    assert {row["split"] for row in sft_rows} == {"sft", "sft_postmortem"}
+    assert {row["split"] for row in preference_rows} == {"preference"}
+    assert {row["split"] for row in eval_rows} == {"evals"}
+    assert all(
+        row["example_id"]
+        == stable_id(
+            "TRN",
+            row["split"],
+            row["task"],
+            row["episode_id"],
+            canonical_json(row["input"]),
+        )
+        for row in [*sft_rows, *preference_rows, *eval_rows]
+    )
     assert all(accepted_provenance in row["provenance"] for row in sft_rows)
     assert all(accepted_provenance in row["provenance"] for row in preference_rows)
     assert all(accepted_provenance in row["provenance"] for row in eval_rows)

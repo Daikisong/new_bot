@@ -36,6 +36,7 @@ from news_scalping_lab.utils import (
     parse_datetime,
     read_json,
     sha256_text,
+    stable_id,
 )
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
@@ -4389,9 +4390,18 @@ def _check_training_export_rows(
     for index, row in enumerate(rows, start=1):
         if row.get("schema_version") != "nslab.training_example.v1":
             findings.append(f"{label}: training export row {index} schema_version invalid")
+        task = row.get("task")
+        if not isinstance(task, str) or not task:
+            findings.append(f"{label}: training export row {index} task invalid")
         category = row.get("training_category")
         if category not in allowed_categories:
             findings.append(f"{label}: training export row {index} category invalid")
+        split = row.get("split")
+        if not isinstance(split, str) or not split:
+            findings.append(f"{label}: training export row {index} split invalid")
+        elif split != _expected_training_export_split(kind, row):
+            findings.append(f"{label}: training export row {index} split mismatch")
+        _check_training_export_example_id(label, index, row, findings)
         source_phase = row.get("source_phase")
         hindsight_safe = row.get("hindsight_safe_for_blind_sft")
         if source_phase not in {"BLIND", "POSTMORTEM"}:
@@ -4425,6 +4435,45 @@ def _check_training_export_rows(
             source_payloads=source_payloads,
             findings=findings,
         )
+
+
+def _expected_training_export_split(kind: str, row: dict[str, Any]) -> str:
+    if kind == "sft":
+        return (
+            "sft_postmortem"
+            if row.get("training_category") == "failure_correction_examples"
+            else "sft"
+        )
+    return kind
+
+
+def _check_training_export_example_id(
+    label: str,
+    index: int,
+    row: dict[str, Any],
+    findings: list[str],
+) -> None:
+    example_id = row.get("example_id")
+    task = row.get("task")
+    split = row.get("split")
+    episode_id = row.get("episode_id")
+    input_payload = row.get("input")
+    if (
+        not isinstance(example_id, str)
+        or not example_id
+        or not isinstance(task, str)
+        or not task
+        or not isinstance(split, str)
+        or not split
+        or not isinstance(episode_id, str)
+        or not episode_id
+        or not isinstance(input_payload, dict)
+    ):
+        findings.append(f"{label}: training export row {index} example_id invalid")
+        return
+    expected = stable_id("TRN", split, task, episode_id, canonical_json(input_payload))
+    if example_id != expected:
+        findings.append(f"{label}: training export row {index} example_id mismatch")
 
 
 def _check_training_export_blind_row_hindsight_leaks(

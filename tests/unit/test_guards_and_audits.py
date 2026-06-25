@@ -4709,6 +4709,8 @@ def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path
             "schema_version": "nslab.training_example.v1",
             "task": "blind_reasoning",
             "training_category": "blind_reasoning_examples",
+            "example_id": "TRN-stale",
+            "split": "preference",
             "episode_id": "EP-training",
             "hindsight_safe_for_blind_sft": True,
             "source_phase": "POSTMORTEM",
@@ -4759,8 +4761,12 @@ def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path
     assert f"{label}: training export training_categories mismatch" in findings
     assert f"{label}: training export source_hashes invalid" in findings
     assert f"{label}: training export output_sha256 mismatch" in findings
+    assert f"{label}: training export row 1 split mismatch" in findings
+    assert f"{label}: training export row 1 example_id mismatch" in findings
     assert f"{label}: training export row 1 provenance missing" in findings
     assert f"{label}: training export row 1 source_phase mismatch" in findings
+    assert f"{label}: training export row 2 split invalid" in findings
+    assert f"{label}: training export row 2 example_id invalid" in findings
     assert f"{label}: training export row 2 provenance missing" in findings
     assert f"{label}: training export row 2 mixes postmortem into blind SFT" in findings
     assert f"{label}: training export row_count mismatch" in findings
