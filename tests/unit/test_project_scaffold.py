@@ -11,6 +11,8 @@ from news_scalping_lab.config import (
     load_settings,
     write_default_config_files,
 )
+from news_scalping_lab.contracts.schemas import export_json_schemas
+from news_scalping_lab.utils import read_json
 
 
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
@@ -90,6 +92,22 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     assert models["default"]["provider"] == "mock"
     assert models["openai"]["model"] == "gpt-5-mini"
     assert inference["default_mode"] == "exhaustive"
+
+
+def test_tracked_json_schemas_match_contract_export(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    generated_dir = tmp_path / "schemas"
+
+    generated_paths = export_json_schemas(generated_dir)
+
+    generated = {path.name: read_json(path) for path in generated_paths}
+    tracked = {
+        path.name: read_json(path)
+        for path in sorted((repo_root / "schemas").glob("*.schema.json"))
+    }
+    assert sorted(set(generated) - set(tracked)) == []
+    assert sorted(set(tracked) - set(generated)) == []
+    assert sorted(name for name in generated if generated[name] != tracked[name]) == []
 
 
 def test_load_settings_reads_project_dotenv_without_overriding_environment(
