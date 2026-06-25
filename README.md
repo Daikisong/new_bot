@@ -146,6 +146,8 @@ The red-team pass records the required attack checklist for every candidate and
 keeps each objection marked as passed to synthesis rather than deleting candidates.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
+When retries occur, trace and checkpoint payloads retain the transient retry error
+history before the successful response or final failure.
 Run IDs include the model settings snapshot, so changing providers or models creates
 a separate manifest/checkpoint namespace instead of overwriting a prior run.
 The same audit verifies listed brain and shard-brain context files against their

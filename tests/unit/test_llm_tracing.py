@@ -109,6 +109,7 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert text_trace["token_usage"]["completion_tokens_estimate"] > 0
     assert structured["tool_calls"] == []
     assert structured["retries"] == 0
+    assert structured["retry_errors"] == []
 
 
 @pytest.mark.asyncio
@@ -199,15 +200,26 @@ async def test_tracing_llm_provider_records_successful_retry_count(tmp_path) -> 
     )
 
     text = await provider.generate_text(prompt="recover", purpose="trace.retry")
+    replayed_text = await provider.generate_text(prompt="recover", purpose="trace.retry")
 
     assert text == "recovered:trace.retry:recover"
+    assert replayed_text == text
     assert provider_impl.calls == 3
-    traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
-    assert len(traces) == 1
-    assert traces[0]["status"] == "ok"
+    traces = sorted(
+        [read_json(path) for path in (tmp_path / "traces").glob("TRACE-*.json")],
+        key=lambda trace: str(trace["started_at"]),
+    )
+    assert [trace["status"] for trace in traces] == ["ok", "checkpoint_hit"]
     assert traces[0]["retries"] == 2
+    assert traces[0]["retry_errors"] == [
+        {"type": "RuntimeError", "message": "temporary text failure 1"},
+        {"type": "RuntimeError", "message": "temporary text failure 2"},
+    ]
+    assert traces[1]["retries"] == 2
+    assert traces[1]["retry_errors"] == traces[0]["retry_errors"]
     checkpoint = read_json(next((tmp_path / "checkpoints").glob("LLMCKPT-*.json")))
     assert checkpoint["retries"] == 2
+    assert checkpoint["retry_errors"] == traces[0]["retry_errors"]
 
 
 @pytest.mark.asyncio
@@ -228,4 +240,8 @@ async def test_tracing_llm_provider_records_exhausted_retry_count(tmp_path) -> N
     assert len(traces) == 1
     assert traces[0]["status"] == "error"
     assert traces[0]["retries"] == 2
+    assert traces[0]["retry_errors"] == [
+        {"type": "RuntimeError", "message": "temporary text failure 1"},
+        {"type": "RuntimeError", "message": "temporary text failure 2"},
+    ]
     assert traces[0]["error"]["message"] == "temporary text failure 3"
