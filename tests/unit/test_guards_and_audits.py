@@ -26,7 +26,10 @@ from news_scalping_lab.prices.base import (
     PriceRecord,
 )
 from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
-from news_scalping_lab.research_import.semantic import SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
+from news_scalping_lab.research_import.semantic import (
+    SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
+    build_semantic_import_prompt,
+)
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -3470,8 +3473,17 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
         "uri": raw_path.as_posix(),
         "content_sha256": source_hash,
     }
+    prompt_sha256 = sha256_text(
+        build_semantic_import_prompt(
+            root=tmp_path,
+            source_path=raw_path,
+            source_sha256=source_hash,
+            text=raw_text,
+        )
+    )
     semantic_audit = {
         "prompt_version": "semantic_import.v1",
+        "prompt_sha256": prompt_sha256,
         "source_path": raw_path.as_posix(),
         "source_sha256": source_hash,
         "source_text_sha256": sha256_text(raw_text),
@@ -3512,11 +3524,81 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
     }
     episode_path = tmp_path / "research" / "accepted" / "EP-semantic.json"
     write_json(episode_path, episode)
+    semantic_trace = _trace_payload(
+        prompt_sha256=prompt_sha256,
+        purpose="research_import.semantic",
+        response_model="SemanticResearchDraft",
+        prompt_version="semantic_import.v1",
+        output={
+            "schema_version": "nslab.semantic_research_draft.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "research_version": "semantic-test",
+            "summary": "Imported from source.",
+            "open_world_mechanisms": [
+                "current evidence -> open-world blind mechanism"
+            ],
+            "initial_uncertainties": [],
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "available_from": None,
+        },
+        checkpoint_id="LLMCKPT-semantic",
+        trace_id="TRACE-semantic",
+    )
+    trace_path = tmp_path / "runs" / "traces" / "TRACE-semantic.json"
+    write_json(trace_path, semantic_trace)
+    _write_trace_checkpoint(tmp_path, semantic_trace)
 
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
     assert result["checked_research_episode_files"] == 1
+
+    trace_path.unlink()
+    missing_trace_result = audit_provenance(tmp_path)
+
+    assert not missing_trace_result["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import "
+        "prompt hash has no matching trace"
+    ) in missing_trace_result["findings"]
+
+    write_json(trace_path, semantic_trace)
+    _write_trace_checkpoint(tmp_path, semantic_trace)
+
+    prompt_mismatch = read_json(episode_path)
+    prompt_mismatch["input_audit"]["semantic_import"]["prompt_sha256"] = "0" * 64
+    write_json(episode_path, prompt_mismatch)
+
+    prompt_mismatch_result = audit_provenance(tmp_path)
+
+    assert not prompt_mismatch_result["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import prompt_sha256 mismatch"
+    ) in prompt_mismatch_result["findings"]
+
+    write_json(episode_path, episode)
+
+    output_mismatch_trace = json.loads(json.dumps(semantic_trace))
+    output_mismatch_trace["output"]["summary"] = "Altered after structured import."
+    output_mismatch_trace["output_sha256"] = sha256_text(
+        canonical_json(output_mismatch_trace["output"])
+    )
+    write_json(trace_path, output_mismatch_trace)
+    _write_trace_checkpoint(tmp_path, output_mismatch_trace)
+
+    output_mismatch_result = audit_provenance(tmp_path)
+
+    assert not output_mismatch_result["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import "
+        "trace output blind_analysis.summary mismatch"
+    ) in output_mismatch_result["findings"]
+
+    write_json(trace_path, semantic_trace)
+    _write_trace_checkpoint(tmp_path, semantic_trace)
 
     missing_field = read_json(episode_path)
     del missing_field["input_audit"]["semantic_import"]["output_field_source_ids"][

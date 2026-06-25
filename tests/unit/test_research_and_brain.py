@@ -1311,6 +1311,7 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     preserved_raw = tmp_path / episode.provenance[0].uri
     semantic_audit = episode.input_audit["semantic_import"]
     assert preserved_raw.exists()
+    assert semantic_audit["prompt_sha256"] == sha256_text(str(llm.calls[0]["prompt"]))
     assert semantic_audit["source_path"] == episode.provenance[0].uri
     assert semantic_audit["source_sha256"] == file_sha256(preserved_raw)
     assert semantic_audit["source_text_sha256"] == sha256_text(
@@ -1334,5 +1335,9 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert trace["purpose"] == "research_import.semantic"
     assert trace["operation"] == "generate_structured"
     assert trace["prompt_version"] == "semantic_import.v1"
+    assert trace["input"]["prompt_sha256"] == semantic_audit["prompt_sha256"]
     assert trace["input"]["response_model"] == "SemanticResearchDraft"
     assert trace["output"]["trade_date"] == "2040-02-03"
+
+    audit = audit_provenance(tmp_path)
+    assert audit["passed"], audit["findings"]

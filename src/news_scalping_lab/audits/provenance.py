@@ -30,7 +30,11 @@ from news_scalping_lab.research_import.bundle import (
     BundleImportError,
     parse_bundle,
 )
-from news_scalping_lab.research_import.semantic import SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
+from news_scalping_lab.research_import.semantic import (
+    SEMANTIC_IMPORT_PROMPT_VERSION,
+    SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
+    build_semantic_import_prompt,
+)
 from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
 from news_scalping_lab.utils import (
     KST,
@@ -1470,6 +1474,7 @@ def _check_semantic_import_audit(
         findings.append(f"{label}: semantic_import provenance entry missing")
 
     source_path = _resolve_semantic_source_path(root, label, semantic, findings)
+    source_ref = semantic.get("source_path")
     source_text: str | None = None
     source_hash: str | None = None
     if source_path is not None and source_path.exists():
@@ -1480,9 +1485,150 @@ def _check_semantic_import_audit(
         if semantic.get("source_text_sha256") != sha256_text(source_text):
             findings.append(f"{label}: semantic_import source_text_sha256 mismatch")
 
+    prompt_sha256 = _check_semantic_import_prompt_hash(
+        root,
+        label,
+        semantic,
+        source_ref=source_ref,
+        source_hash=source_hash,
+        source_text=source_text,
+        findings=findings,
+    )
     _check_semantic_provenance_entries(root, label, semantic, source_hash, provenance_entries, findings)
     _check_semantic_source_segments(label, semantic, source_text, findings)
     _check_semantic_output_sources(label, episode, semantic, findings)
+    if prompt_sha256 is not None:
+        _check_semantic_import_trace(root, label, episode, semantic, prompt_sha256, findings)
+
+
+def _check_semantic_import_prompt_hash(
+    root: Path,
+    label: str,
+    semantic: dict[str, Any],
+    *,
+    source_ref: object,
+    source_hash: str | None,
+    source_text: str | None,
+    findings: list[str],
+) -> str | None:
+    if semantic.get("prompt_version") != SEMANTIC_IMPORT_PROMPT_VERSION:
+        findings.append(f"{label}: semantic_import prompt_version invalid")
+    prompt_sha256 = semantic.get("prompt_sha256")
+    if not isinstance(prompt_sha256, str) or not prompt_sha256:
+        findings.append(f"{label}: semantic_import prompt_sha256 missing or invalid")
+        return None
+    if isinstance(source_ref, str) and source_hash is not None and source_text is not None:
+        expected_prompt = build_semantic_import_prompt(
+            root=root,
+            source_path=Path(source_ref),
+            source_sha256=source_hash,
+            text=source_text,
+        )
+        if prompt_sha256 != sha256_text(expected_prompt):
+            findings.append(f"{label}: semantic_import prompt_sha256 mismatch")
+    return prompt_sha256
+
+
+def _check_semantic_import_trace(
+    root: Path,
+    label: str,
+    episode: dict[str, Any],
+    semantic: dict[str, Any],
+    prompt_sha256: str,
+    findings: list[str],
+) -> None:
+    traces_by_purpose = _trace_metadata_by_purpose(root, findings)
+    trace_metadata = traces_by_purpose.get("research_import.semantic")
+    if trace_metadata is None:
+        findings.append(f"{label}: semantic_import prompt hash has no matching trace")
+        return
+    matching_trace_records = [
+        trace_record
+        for trace_record in trace_metadata["trace_records"]
+        if trace_record.get("prompt_sha256") == prompt_sha256
+    ]
+    if not matching_trace_records:
+        findings.append(f"{label}: semantic_import prompt hash has no matching trace")
+        return
+
+    matching_errors: list[str] = []
+    for trace_record in matching_trace_records:
+        trace_errors: list[str] = []
+        trace_path = trace_record["path"]
+        trace_payload = trace_record["payload"]
+        _check_trace_checkpoint(root, trace_path, trace_payload, trace_errors)
+        trace_input = trace_payload.get("input")
+        if isinstance(trace_input, dict) and trace_input.get("response_model") != (
+            "SemanticResearchDraft"
+        ):
+            trace_errors.append(
+                f"{label}: semantic_import trace response_model mismatch"
+            )
+        if trace_payload.get("prompt_version") != semantic.get("prompt_version"):
+            trace_errors.append(f"{label}: semantic_import trace prompt_version mismatch")
+        if trace_payload.get("status") not in {"ok", "checkpoint_hit"}:
+            trace_errors.append(f"{label}: semantic_import trace status is not successful")
+        _check_semantic_trace_output_matches_episode(
+            label,
+            episode,
+            trace_payload.get("output"),
+            trace_errors,
+        )
+        if not trace_errors:
+            return
+        matching_errors.extend(trace_errors)
+    findings.extend(matching_errors)
+
+
+def _check_semantic_trace_output_matches_episode(
+    label: str,
+    episode: dict[str, Any],
+    trace_output: object,
+    findings: list[str],
+) -> None:
+    if not isinstance(trace_output, dict):
+        findings.append(f"{label}: semantic_import trace output missing or invalid")
+        return
+    blind_analysis = episode.get("blind_analysis")
+    blind_analysis = blind_analysis if isinstance(blind_analysis, dict) else {}
+    expected_pairs = {
+        "trade_date": episode.get("trade_date"),
+        "cutoff_at": episode.get("cutoff_at"),
+        "research_version": episode.get("research_version"),
+        "input_news_files": episode.get("input_news_files"),
+        "input_news_hashes": episode.get("input_news_hashes"),
+        "price_source_snapshot": episode.get("price_source_snapshot"),
+        "blind_analysis.summary": blind_analysis.get("summary"),
+        "blind_analysis.open_world_mechanisms": blind_analysis.get(
+            "open_world_mechanisms"
+        ),
+        "blind_analysis.initial_uncertainties": blind_analysis.get(
+            "initial_uncertainties"
+        ),
+    }
+    actual_pairs = {
+        "trade_date": trace_output.get("trade_date"),
+        "cutoff_at": trace_output.get("cutoff_at"),
+        "research_version": trace_output.get("research_version"),
+        "input_news_files": trace_output.get("input_news_files"),
+        "input_news_hashes": trace_output.get("input_news_hashes"),
+        "price_source_snapshot": trace_output.get("price_source_snapshot"),
+        "blind_analysis.summary": trace_output.get("summary"),
+        "blind_analysis.open_world_mechanisms": trace_output.get(
+            "open_world_mechanisms"
+        ),
+        "blind_analysis.initial_uncertainties": trace_output.get(
+            "initial_uncertainties"
+        ),
+    }
+    if trace_output.get("available_from") is not None:
+        expected_pairs["available_from"] = episode.get("available_from")
+        actual_pairs["available_from"] = trace_output.get("available_from")
+    for field_name, expected in expected_pairs.items():
+        if actual_pairs.get(field_name) != expected:
+            findings.append(
+                f"{label}: semantic_import trace output {field_name} mismatch"
+            )
 
 
 def _resolve_semantic_source_path(

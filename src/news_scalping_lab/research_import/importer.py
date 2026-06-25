@@ -177,6 +177,7 @@ class ResearchImporter:
         input_audit = {
             "semantic_import": {
                 "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
+                "prompt_sha256": sha256_text(prompt),
                 "source_path": path.as_posix(),
                 "source_sha256": source_hash,
                 "source_text_sha256": sha256_text(text),
