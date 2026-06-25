@@ -21,6 +21,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
         checked_predictions += 1
         if not prediction.get("blind_artifact_sha256"):
             findings.append(f"{path.name}: missing blind_artifact_sha256")
+        _check_blind_artifact_hash(path, prediction, findings)
         context_manifest_id = prediction.get("context_manifest_id")
         manifest = _check_context_manifest(root, path, context_manifest_id, findings)
         _check_report_link(root, path, context_manifest_id, findings)
@@ -87,6 +88,21 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         checked += 1
         _check_semantic_import_audit(root, path, episode, findings)
     return checked
+
+
+def _check_blind_artifact_hash(
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    findings: list[str],
+) -> None:
+    blind_artifact_sha256 = prediction.get("blind_artifact_sha256")
+    sealed_at = prediction.get("sealed_at")
+    if not isinstance(blind_artifact_sha256, str) or not isinstance(sealed_at, str):
+        return
+    payload_for_hash = {**prediction, "blind_artifact_sha256": None}
+    expected_hash = sha256_text(canonical_json(payload_for_hash))
+    if blind_artifact_sha256 != expected_hash:
+        findings.append(f"{prediction_path.name}: blind_artifact_sha256 mismatch")
 
 
 def _iter_research_episode_paths(root: Path) -> list[Path]:
@@ -328,6 +344,7 @@ def _check_manifest_basics(
         manifest_value = manifest.get(field)
         if prediction_value is not None and prediction_value != manifest_value:
             findings.append(f"{prediction_path.name}: context manifest {field} mismatch")
+    _check_manifest_blind_hash(prediction_path, prediction, manifest, findings)
 
     token_counts = manifest.get("token_counts", {})
     final_synthesis_was_run = (
@@ -338,6 +355,25 @@ def _check_manifest_basics(
     if final_synthesis_was_run and not prompt_hashes.get("final_synthesis"):
         findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
     return prompt_hashes
+
+
+def _check_manifest_blind_hash(
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    prediction_hash = prediction.get("blind_artifact_sha256")
+    manifest_hash = manifest.get("blind_artifact_sha256")
+    if prediction.get("sealed_at") and not isinstance(manifest_hash, str):
+        findings.append(f"{prediction_path.name}: context manifest missing blind_artifact_sha256")
+        return
+    if (
+        isinstance(prediction_hash, str)
+        and isinstance(manifest_hash, str)
+        and prediction_hash != manifest_hash
+    ):
+        findings.append(f"{prediction_path.name}: context manifest blind_artifact_sha256 mismatch")
 
 
 def _check_prompt_hash_traces(

@@ -57,6 +57,24 @@ def _blind_analysis_with_provenance() -> dict[str, object]:
     }
 
 
+def _sealed_prediction_payload(*, context_manifest_id: str = "RUN-linked") -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "nslab.blind_prediction.v1",
+        "prediction_id": "PRED-sealed",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "created_at": "2030-01-10T08:59:00+09:00",
+        "sealed_at": "2030-01-10T08:59:30+09:00",
+        "blind_artifact_sha256": None,
+        "context_manifest_id": context_manifest_id,
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    payload["blind_artifact_sha256"] = sha256_text(canonical_json(payload))
+    return payload
+
+
 def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
     trace_input = {
         "prompt_sha256": prompt_sha256,
@@ -256,6 +274,56 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+
+def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = _sealed_prediction_payload()
+    prediction_path = tmp_path / "predictions" / "2030-01-10.json"
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(prediction_path, prediction)
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    tampered = read_json(prediction_path)
+    tampered["blind_analysis"]["summary"] = "Changed after seal."
+    write_json(prediction_path, tampered)
+
+    tampered_result = audit_provenance(tmp_path)
+
+    assert not tampered_result["passed"]
+    assert "2030-01-10.json: blind_artifact_sha256 mismatch" in tampered_result["findings"]
+
+    write_json(prediction_path, prediction)
+    manifest = read_json(manifest_path)
+    manifest["blind_artifact_sha256"] = "0" * 64
+    write_json(manifest_path, manifest)
+
+    manifest_mismatch = audit_provenance(tmp_path)
+
+    assert not manifest_mismatch["passed"]
+    assert (
+        "2030-01-10.json: context manifest blind_artifact_sha256 mismatch"
+    ) in manifest_mismatch["findings"]
 
 
 def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Path) -> None:
