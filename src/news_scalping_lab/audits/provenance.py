@@ -136,6 +136,7 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         if not has_import_provenance and not is_accepted_episode:
             continue
         checked += 1
+        _check_research_episode_identity(root, path, episode, findings)
         _check_research_episode_top_level_provenance(root, path, episode, findings)
         _check_research_episode_input_news_sources(root, path, episode, findings)
         _check_research_episode_cutoff_at(path, root, episode, findings)
@@ -147,6 +148,23 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         if has_import_provenance:
             _check_strict_import_provenance(root, path, episode, findings)
     return checked
+
+
+def _check_research_episode_identity(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    if episode.get("schema_version") != "nslab.research_episode.v1":
+        findings.append(f"{label}: research episode schema_version invalid")
+    episode_id = episode.get("episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        findings.append(f"{label}: research episode episode_id missing")
+        return
+    if episode_path.stem != episode_id:
+        findings.append(f"{label}: research episode filename/episode_id mismatch")
 
 
 def _check_research_episode_top_level_provenance(
