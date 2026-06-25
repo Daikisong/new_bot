@@ -31,6 +31,17 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class DeterministicMockLLMProvider:
+    def __init__(
+        self,
+        *,
+        model: str = "deterministic-mock",
+        reasoning_effort: str | None = None,
+        max_output_tokens: int | None = None,
+    ) -> None:
+        self.model = model
+        self.reasoning_effort = reasoning_effort
+        self.max_output_tokens = max_output_tokens
+
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         digest = sha256_text(f"{purpose}|{prompt}")[:12]
         return (

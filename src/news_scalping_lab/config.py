@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -29,6 +29,16 @@ class Limits(BaseModel):
     session_pack_token_budget: int = 60_000
 
 
+class LLMModelSettings(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    provider: str = "mock"
+    model: str = "deterministic-mock"
+    embedding_model: str | None = None
+    reasoning_effort: str | None = "low"
+    max_output_tokens: int | None = 4096
+
+
 class Settings(BaseModel):
     project_root: Path = Field(default_factory=lambda: Path.cwd())
     project_name: str = "news-scalping-lab"
@@ -43,6 +53,7 @@ class Settings(BaseModel):
     timezone: str = "Asia/Seoul"
     output_dirs: OutputDirs = Field(default_factory=OutputDirs)
     limits: Limits = Field(default_factory=Limits)
+    llm: LLMModelSettings = Field(default_factory=LLMModelSettings)
 
     def path(self, relative: str | Path) -> Path:
         path = Path(relative)
@@ -225,7 +236,49 @@ def load_settings(project_root: Path | None = None) -> Settings:
     max_concurrency = os.getenv("NSLAB_MAX_CONCURRENCY")
     if max_concurrency:
         settings.limits.max_concurrency = int(max_concurrency)
+    settings.llm = _load_llm_model_settings(root, settings.llm_provider)
+    _apply_llm_env_overrides(settings)
     return settings
+
+
+def _load_llm_model_settings(root: Path, provider: str) -> LLMModelSettings:
+    profiles = _read_yaml(root / "configs" / "models.yaml")
+    profile_key = _model_profile_key(provider)
+    raw_profile = profiles.get(profile_key, profiles.get("default", {}))
+    if raw_profile is None:
+        raw_profile = {}
+    if not isinstance(raw_profile, dict):
+        raise ValueError(f"expected mapping model profile for {profile_key}")
+    profile = LLMModelSettings(**raw_profile)
+    if not profile.provider:
+        profile.provider = provider
+    return profile
+
+
+def _model_profile_key(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized in {"openai", "responses", "openai-responses"}:
+        return "openai"
+    return normalized or "default"
+
+
+def _apply_llm_env_overrides(settings: Settings) -> None:
+    model = os.getenv("NSLAB_LLM_MODEL")
+    if model:
+        settings.llm.model = model
+    if _model_profile_key(settings.llm_provider) == "openai":
+        openai_model = os.getenv("NSLAB_OPENAI_MODEL")
+        if openai_model:
+            settings.llm.model = openai_model
+        embedding_model = os.getenv("NSLAB_OPENAI_EMBEDDING_MODEL")
+        if embedding_model:
+            settings.llm.embedding_model = embedding_model
+    reasoning_effort = os.getenv("NSLAB_LLM_REASONING_EFFORT")
+    if reasoning_effort:
+        settings.llm.reasoning_effort = reasoning_effort
+    max_output_tokens = os.getenv("NSLAB_LLM_MAX_OUTPUT_TOKENS")
+    if max_output_tokens:
+        settings.llm.max_output_tokens = int(max_output_tokens)
 
 
 def _load_dotenv(path: Path) -> None:

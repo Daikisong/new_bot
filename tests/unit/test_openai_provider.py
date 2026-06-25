@@ -9,6 +9,7 @@ import pytest
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.openai_provider import OpenAIResponsesProvider
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import KST
@@ -18,8 +19,8 @@ class FakeResponses:
     def __init__(self, calls: list[dict[str, Any]]) -> None:
         self.calls = calls
 
-    async def create(self, *, model: str, input: str) -> object:
-        self.calls.append({"method": "create", "model": model, "input": input})
+    async def create(self, *, model: str, input: str, **kwargs: Any) -> object:
+        self.calls.append({"method": "create", "model": model, "input": input, "kwargs": kwargs})
         return types.SimpleNamespace(output_text="fake text")
 
     async def parse(
@@ -28,6 +29,7 @@ class FakeResponses:
         model: str,
         input: list[dict[str, str]],
         text_format: type[SemanticResearchDraft],
+        **kwargs: Any,
     ) -> object:
         self.calls.append(
             {
@@ -35,6 +37,7 @@ class FakeResponses:
                 "model": model,
                 "input": input,
                 "text_format": text_format,
+                "kwargs": kwargs,
             }
         )
         parsed = SemanticResearchDraft(
@@ -83,6 +86,7 @@ def _install_fake_openai_with_chat_parse(monkeypatch: pytest.MonkeyPatch) -> lis
             model: str,
             messages: list[dict[str, str]],
             response_format: type[SemanticResearchDraft],
+            **kwargs: Any,
         ) -> object:
             calls.append(
                 {
@@ -90,6 +94,7 @@ def _install_fake_openai_with_chat_parse(monkeypatch: pytest.MonkeyPatch) -> lis
                     "model": model,
                     "messages": messages,
                     "response_format": response_format,
+                    "kwargs": kwargs,
                 }
             )
             parsed = SemanticResearchDraft(
@@ -119,7 +124,12 @@ async def test_openai_provider_uses_responses_parse_for_structured_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = _install_fake_openai(monkeypatch)
-    provider = OpenAIResponsesProvider(model="gpt-test", embedding_model="embed-test")
+    provider = OpenAIResponsesProvider(
+        model="gpt-test",
+        embedding_model="embed-test",
+        reasoning_effort="medium",
+        max_output_tokens=1234,
+    )
 
     draft = await provider.generate_structured(
         prompt="semantic import source",
@@ -136,7 +146,15 @@ async def test_openai_provider_uses_responses_parse_for_structured_output(
     assert parse_call["method"] == "parse"
     assert parse_call["model"] == "gpt-test"
     assert parse_call["text_format"] is SemanticResearchDraft
+    assert parse_call["kwargs"] == {
+        "max_output_tokens": 1234,
+        "reasoning": {"effort": "medium"},
+    }
     assert "semantic import source" in parse_call["input"][1]["content"]
+    assert calls[1]["kwargs"] == {
+        "max_output_tokens": 1234,
+        "reasoning": {"effort": "medium"},
+    }
     assert calls[2] == {"method": "embed", "model": "embed-test", "input": ["a", "b"]}
 
 
@@ -145,7 +163,7 @@ async def test_openai_provider_falls_back_to_chat_parse_when_responses_parse_mis
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = _install_fake_openai_with_chat_parse(monkeypatch)
-    provider = OpenAIResponsesProvider(model="gpt-test")
+    provider = OpenAIResponsesProvider(model="gpt-test", max_output_tokens=2222)
 
     draft = await provider.generate_structured(
         prompt="semantic import source",
@@ -156,14 +174,37 @@ async def test_openai_provider_falls_back_to_chat_parse_when_responses_parse_mis
     assert draft.trade_date == date(2030, 1, 11)
     assert calls[0]["method"] == "chat_parse"
     assert calls[0]["response_format"] is SemanticResearchDraft
+    assert calls[0]["kwargs"] == {"max_completion_tokens": 2222}
     assert "semantic import source" in calls[0]["messages"][1]["content"]
 
 
 def test_llm_factory_selects_openai_provider() -> None:
     settings = Settings(llm_provider="openai")
+    settings.llm.model = "gpt-configured"
+    settings.llm.embedding_model = "embed-configured"
+    settings.llm.reasoning_effort = "high"
+    settings.llm.max_output_tokens = 2048
     provider = create_llm_provider(settings)
 
     assert isinstance(provider, OpenAIResponsesProvider)
+    assert provider.model == "gpt-configured"
+    assert provider.embedding_model == "embed-configured"
+    assert provider.reasoning_effort == "high"
+    assert provider.max_output_tokens == 2048
+
+
+def test_llm_factory_passes_model_settings_to_mock_provider() -> None:
+    settings = Settings(llm_provider="mock")
+    settings.llm.model = "deterministic-custom"
+    settings.llm.reasoning_effort = "low"
+    settings.llm.max_output_tokens = 512
+
+    provider = create_llm_provider(settings)
+
+    assert isinstance(provider, DeterministicMockLLMProvider)
+    assert provider.model == "deterministic-custom"
+    assert provider.reasoning_effort == "low"
+    assert provider.max_output_tokens == 512
 
 
 def test_llm_factory_rejects_unknown_provider() -> None:

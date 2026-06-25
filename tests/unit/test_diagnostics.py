@@ -17,6 +17,11 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
         stock_web_path=tmp_path / "stock-web",
         stock_web_cache_enabled=True,
     )
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-diagnostic"
+    settings.llm.embedding_model = "embed-diagnostic"
+    settings.llm.reasoning_effort = "medium"
+    settings.llm.max_output_tokens = 8192
     ensure_project_dirs(settings)
     export_json_schemas(tmp_path / "schemas")
     (tmp_path / "memory" / "vector_index" / "index.json").write_text(
@@ -39,14 +44,26 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     WarehouseStore(tmp_path).rebuild_all()
     monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("NSLAB_LLM_REASONING_EFFORT", "medium")
 
     report = build_doctor_report(settings)
 
     assert report["providers"]["llm"] == "openai"
+    assert report["llm_model"] == {
+        "provider": "openai",
+        "model": "gpt-diagnostic",
+        "embedding_model": "embed-diagnostic",
+        "reasoning_effort": "medium",
+        "max_output_tokens": 8192,
+    }
     assert report["environment"]["OPENAI_API_KEY"] == {"set": True, "value": "***"}
     assert report["environment"]["NSLAB_LLM_PROVIDER"] == {
         "set": True,
         "value": "openai",
+    }
+    assert report["environment"]["NSLAB_LLM_REASONING_EFFORT"] == {
+        "set": True,
+        "value": "medium",
     }
     assert report["api_connections"]["openai"] == {
         "required": True,

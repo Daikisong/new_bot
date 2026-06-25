@@ -27,6 +27,11 @@ ENV_KEYS = [
     "NSLAB_STOCK_WEB_CACHE_PATH",
     "NSLAB_STOCK_WEB_REMOTE_URL",
     "NSLAB_MAX_CONCURRENCY",
+    "NSLAB_LLM_MODEL",
+    "NSLAB_LLM_REASONING_EFFORT",
+    "NSLAB_LLM_MAX_OUTPUT_TOKENS",
+    "NSLAB_OPENAI_MODEL",
+    "NSLAB_OPENAI_EMBEDDING_MODEL",
     "OPENAI_API_KEY",
 ]
 
@@ -48,6 +53,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "web": settings.web_provider,
             "price": settings.price_provider,
         },
+        "llm_model": settings.llm.model_dump(exclude_none=True),
         "environment": _environment_status(),
         "api_connections": {
             "openai": {

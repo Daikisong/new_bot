@@ -1282,6 +1282,12 @@ class DailyAnalyzer:
         embedding_model = getattr(provider, "embedding_model", None)
         if isinstance(embedding_model, str) and embedding_model:
             config["embedding_model"] = embedding_model
+        reasoning_effort = getattr(provider, "reasoning_effort", None)
+        if isinstance(reasoning_effort, str) and reasoning_effort:
+            config["reasoning_effort"] = reasoning_effort
+        max_output_tokens = getattr(provider, "max_output_tokens", None)
+        if isinstance(max_output_tokens, int):
+            config["max_output_tokens"] = max_output_tokens
         return config
 
     def _make_prediction(

@@ -109,6 +109,43 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     assert inference["default_mode"] == "exhaustive"
 
 
+def test_load_settings_reads_selected_llm_model_profile(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("NSLAB_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_OPENAI_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MAX_OUTPUT_TOKENS", raising=False)
+    configs = tmp_path / "configs"
+    configs.mkdir()
+    (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
+    (configs / "models.yaml").write_text(
+        "\n".join(
+            [
+                "default:",
+                "  provider: mock",
+                "  model: deterministic-mock",
+                "openai:",
+                "  provider: openai",
+                "  model: gpt-configured",
+                "  embedding_model: embed-configured",
+                "  reasoning_effort: high",
+                "  max_output_tokens: 12345",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(tmp_path)
+
+    assert settings.llm_provider == "openai"
+    assert settings.llm.provider == "openai"
+    assert settings.llm.model == "gpt-configured"
+    assert settings.llm.embedding_model == "embed-configured"
+    assert settings.llm.reasoning_effort == "high"
+    assert settings.llm.max_output_tokens == 12345
+
+
 def test_tracked_json_schemas_match_contract_export(tmp_path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     generated_dir = tmp_path / "schemas"
@@ -137,6 +174,11 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
     monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE_PATH", raising=False)
     monkeypatch.delenv("NSLAB_STOCK_WEB_REMOTE_URL", raising=False)
     monkeypatch.delenv("NSLAB_MAX_CONCURRENCY", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_OPENAI_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     (tmp_path / ".env").write_text(
         "\n".join(
@@ -149,6 +191,10 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
                 "NSLAB_STOCK_WEB_CACHE_PATH=data/cache/custom-stock-web",
                 "NSLAB_STOCK_WEB_REMOTE_URL=https://example.test/stock-web.git",
                 "NSLAB_MAX_CONCURRENCY=7",
+                "NSLAB_OPENAI_MODEL=gpt-dotenv",
+                "NSLAB_OPENAI_EMBEDDING_MODEL=embed-dotenv",
+                "NSLAB_LLM_REASONING_EFFORT=medium",
+                "NSLAB_LLM_MAX_OUTPUT_TOKENS=9876",
                 "OPENAI_API_KEY=secret-from-dotenv",
                 "MALFORMED LINE",
             ]
@@ -166,6 +212,10 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
     assert settings.stock_web_cache_path == Path("data/cache/custom-stock-web")
     assert settings.stock_web_remote_url == "https://example.test/stock-web.git"
     assert settings.limits.max_concurrency == 7
+    assert settings.llm.model == "gpt-dotenv"
+    assert settings.llm.embedding_model == "embed-dotenv"
+    assert settings.llm.reasoning_effort == "medium"
+    assert settings.llm.max_output_tokens == 9876
     assert settings.path(settings.stock_web_cache_path) == (
         tmp_path / "data/cache/custom-stock-web"
     )

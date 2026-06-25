@@ -17,16 +17,28 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class OpenAIResponsesProvider:
-    def __init__(self, model: str | None = None, embedding_model: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        embedding_model: str | None = None,
+        reasoning_effort: str | None = None,
+        max_output_tokens: int | None = None,
+    ) -> None:
         self.model = model or os.getenv("NSLAB_OPENAI_MODEL", "gpt-5-mini")
         self.embedding_model = embedding_model or os.getenv(
             "NSLAB_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
         )
+        self.reasoning_effort = reasoning_effort
+        self.max_output_tokens = max_output_tokens
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         client_class = _async_openai_class()
         client = client_class()
-        response = await client.responses.create(model=self.model, input=prompt)
+        response = await client.responses.create(
+            model=self.model,
+            input=prompt,
+            **self._responses_options(),
+        )
         text = getattr(response, "output_text", None)
         if isinstance(text, str):
             return text
@@ -50,6 +62,7 @@ class OpenAIResponsesProvider:
                     {"role": "user", "content": prompt},
                 ],
                 text_format=response_model,
+                **self._responses_options(),
             )
             parsed = getattr(response, "output_parsed", None)
             response_output_text = getattr(response, "output_text", None)
@@ -93,6 +106,7 @@ class OpenAIResponsesProvider:
                 {"role": "user", "content": prompt},
             ],
             response_format=response_model,
+            **self._chat_parse_options(),
         )
         choices = getattr(completion, "choices", [])
         if not choices:
@@ -105,6 +119,19 @@ class OpenAIResponsesProvider:
         client = client_class()
         response = await client.embeddings.create(model=self.embedding_model, input=texts)
         return [item.embedding for item in response.data]
+
+    def _responses_options(self) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        if self.max_output_tokens is not None:
+            options["max_output_tokens"] = self.max_output_tokens
+        if self.reasoning_effort:
+            options["reasoning"] = {"effort": self.reasoning_effort}
+        return options
+
+    def _chat_parse_options(self) -> dict[str, Any]:
+        if self.max_output_tokens is None:
+            return {}
+        return {"max_completion_tokens": self.max_output_tokens}
 
 
 def _async_openai_class() -> Any:

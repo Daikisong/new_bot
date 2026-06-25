@@ -311,8 +311,11 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["model_config"] == {
         "analysis_mode": "exhaustive",
         "configured_provider": "mock",
+        "max_output_tokens": 4096,
         "max_concurrency": 4,
+        "model": "deterministic-mock",
         "provider_class": "DeterministicMockLLMProvider",
+        "reasoning_effort": "low",
         "shard_episode_count": 20,
     }
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
