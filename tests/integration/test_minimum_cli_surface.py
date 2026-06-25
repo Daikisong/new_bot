@@ -176,7 +176,39 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_expansion"]["manifest_count_verified"] is True
     assert supporting["candidate_expansion"]["continuation_d_minus_one_verified"] is True
     assert supporting["candidate_web_check"]["hash_verified"] is True
+    assert supporting["candidate_web_check"]["schema_version_verified"] is True
+    assert supporting["candidate_web_check"]["run_id_verified"] is True
+    assert supporting["candidate_web_check"]["row_count_verified"] is True
+    assert supporting["candidate_web_check"]["source_ids_verified"] is True
+    assert supporting["candidate_web_check"]["summary_source_count_verified"] is True
+    assert supporting["candidate_web_check"]["verification_focus_verified"] is True
+    assert supporting["candidate_web_check"]["required_fields_verified"] is True
+    assert supporting["candidate_web_check"]["source_url_verified"] is True
+    assert supporting["candidate_web_check"]["cutoff_verified"] is True
+    assert supporting["candidate_web_check"]["opened_text_absent_verified"] is True
     assert supporting["candidate_verification"]["hash_verified"] is True
+    assert supporting["candidate_verification"]["schema_version_verified"] is True
+    assert supporting["candidate_verification"]["run_id_verified"] is True
+    assert supporting["candidate_verification"]["required_dimensions_verified"] is True
+    assert supporting["candidate_verification"]["subject_count_verified"] is True
+    assert supporting["candidate_verification"]["finding_count_verified"] is True
+    assert supporting["candidate_verification"]["dimension_coverage_verified"] is True
+    assert supporting["candidate_verification"]["status_counts_verified"] is True
+    assert supporting["candidate_verification"]["source_counts_verified"] is True
+    assert supporting["candidate_verification"]["accepted_source_ids_verified"] is True
+    assert supporting["candidate_verification"]["excluded_source_ids_verified"] is True
+    assert (
+        supporting["candidate_verification"][
+            "candidate_expansion_subject_count_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["candidate_verification"][
+            "d_minus_one_only_subject_count_verified"
+        ]
+        is True
+    )
     assert supporting["final_synthesis_context"]["hash_verified"] is True
     assert supporting["final_synthesis_context"]["schema_version_verified"] is True
     assert supporting["final_synthesis_context"]["run_id_verified"] is True
@@ -260,6 +292,100 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     write_json(candidate_expansion_file, original_candidate_expansion)
     write_json(manifest_file, original_manifest_for_candidate_expansion)
+    candidate_web_check_file = tmp_path / context_payload["candidate_web_check_artifact"]
+    original_candidate_web_check = candidate_web_check_file.read_text(encoding="utf-8")
+    original_manifest_for_candidate_web_check = read_json(manifest_file)
+    tampered_candidate_web_rows = [
+        json.loads(line)
+        for line in original_candidate_web_check.splitlines()
+        if line.strip()
+    ]
+    tampered_candidate_web_rows[0]["time_verified"] = False
+    candidate_web_check_file.write_text(
+        "".join(
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+            for row in tampered_candidate_web_rows
+        ),
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_web_check,
+            "candidate_web_check_sha256": sha256_text(
+                candidate_web_check_file.read_text(encoding="utf-8")
+            ),
+        },
+    )
+    tampered_candidate_web_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate web check",
+        tampered_candidate_web_context,
+    )
+    tampered_candidate_web_inspection = json.loads(
+        tampered_candidate_web_context.output
+    )["inspection"]
+    assert tampered_candidate_web_inspection["reproducibility_checks_passed"] is False
+    tampered_candidate_web_status = tampered_candidate_web_inspection[
+        "supporting_artifacts"
+    ]["candidate_web_check"]
+    assert tampered_candidate_web_status["hash_verified"] is True
+    assert tampered_candidate_web_status["cutoff_verified"] is False
+    assert "candidate_web_check_cutoff_not_verified" in (
+        tampered_candidate_web_status["errors"]
+    )
+    candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_candidate_web_check)
+    candidate_verification_file = tmp_path / context_payload[
+        "candidate_verification_artifact"
+    ]
+    original_candidate_verification = read_json(candidate_verification_file)
+    original_manifest_for_candidate_verification = read_json(manifest_file)
+    tampered_candidate_verification = {
+        **original_candidate_verification,
+        "required_dimensions": original_candidate_verification["required_dimensions"][:-1],
+    }
+    write_json(candidate_verification_file, tampered_candidate_verification)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_verification,
+            "candidate_verification_sha256": sha256_text(
+                candidate_verification_file.read_text(encoding="utf-8")
+            ),
+        },
+    )
+    tampered_candidate_verification_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate verification",
+        tampered_candidate_verification_context,
+    )
+    tampered_candidate_verification_inspection = json.loads(
+        tampered_candidate_verification_context.output
+    )["inspection"]
+    assert (
+        tampered_candidate_verification_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_candidate_verification_status = (
+        tampered_candidate_verification_inspection["supporting_artifacts"][
+            "candidate_verification"
+        ]
+    )
+    assert tampered_candidate_verification_status["hash_verified"] is True
+    assert (
+        tampered_candidate_verification_status["required_dimensions_verified"]
+        is False
+    )
+    assert "candidate_verification_required_dimensions_mismatch" in (
+        tampered_candidate_verification_status["errors"]
+    )
+    write_json(candidate_verification_file, original_candidate_verification)
+    write_json(manifest_file, original_manifest_for_candidate_verification)
     semantic_retrieval_file = tmp_path / context_payload["semantic_retrieval_artifact"]
     original_semantic_retrieval = semantic_retrieval_file.read_text(encoding="utf-8")
     original_manifest_for_semantic = read_json(manifest_file)

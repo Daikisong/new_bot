@@ -482,6 +482,12 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(
         root, manifest
     )
+    statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(
+        root, manifest
+    )
+    statuses["candidate_verification"] = _inspect_candidate_verification_artifact(
+        root, manifest
+    )
     statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
         root, manifest
     )
@@ -821,6 +827,312 @@ def _inspect_candidate_expansion_artifact(
         status["errors"].append("candidate_expansion_continuation_d_minus_one_missing")
 
     status["passed"] = _candidate_expansion_status_passed(status)
+    return status
+
+
+def _inspect_candidate_web_check_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(
+        manifest.get("candidate_web_check_artifact")
+        or _optional_int(manifest.get("candidate_web_check_count"))
+        or _string_list(manifest.get("candidate_web_source_ids"))
+    )
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="candidate_web_check_artifact",
+        hash_field="candidate_web_check_sha256",
+        required=required,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "row_count_verified": None,
+            "source_ids_verified": None,
+            "summary_source_count_verified": None,
+            "verification_focus_verified": None,
+            "required_fields_verified": None,
+            "source_url_verified": None,
+            "cutoff_verified": None,
+            "opened_text_absent_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _candidate_web_check_status_passed(status)
+        return status
+    rows = _read_artifact_jsonl_rows(
+        root,
+        manifest.get("candidate_web_check_artifact"),
+        status,
+        label="candidate_web_check",
+    )
+    if rows is None:
+        status["passed"] = _candidate_web_check_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    run_id = manifest.get("run_id")
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.candidate_web_check.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("candidate_web_check_schema_version_mismatch")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("candidate_web_check_run_id_mismatch")
+
+    expected_count = manifest.get("candidate_web_check_count")
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(
+        rows
+    ) == expected_count
+    if not status["row_count_verified"]:
+        status["errors"].append("candidate_web_check_count_mismatch")
+
+    row_source_ids = _unique_strings(
+        str(row["source_id"]) for row in rows if isinstance(row.get("source_id"), str)
+    )
+    status["source_ids"] = row_source_ids
+    status["source_ids_verified"] = row_source_ids == _string_list(
+        manifest.get("candidate_web_source_ids")
+    )
+    if not status["source_ids_verified"]:
+        status["errors"].append("candidate_web_check_source_ids_mismatch")
+
+    summary = manifest.get("candidate_web_check_summary")
+    summary_source_count = summary.get("source_count") if isinstance(summary, dict) else None
+    status["summary_source_count_verified"] = (
+        isinstance(summary_source_count, int) and summary_source_count == len(rows)
+    )
+    if not status["summary_source_count_verified"]:
+        status["errors"].append("candidate_web_check_summary_source_count_mismatch")
+
+    expected_focus = _candidate_web_verification_focus(manifest)
+    status["verification_focus_verified"] = bool(expected_focus) and all(
+        _string_list(row.get("verification_focus")) == expected_focus for row in rows
+    )
+    if not status["verification_focus_verified"]:
+        status["errors"].append("candidate_web_check_verification_focus_mismatch")
+
+    required_fields = {
+        "candidate_rank",
+        "candidate_company_name",
+        "candidate_path_type",
+        "verification_focus",
+        "source_id",
+        "source_url",
+        "url",
+    }
+    status["required_fields_verified"] = all(
+        required_fields <= set(row) for row in rows
+    )
+    if not status["required_fields_verified"]:
+        status["errors"].append("candidate_web_check_required_fields_missing")
+
+    status["source_url_verified"] = all(
+        isinstance(row.get("source_url"), str)
+        and row.get("source_url") == row.get("url")
+        for row in rows
+    )
+    if not status["source_url_verified"]:
+        status["errors"].append("candidate_web_check_source_url_mismatch")
+
+    status["cutoff_verified"] = all(
+        row.get("available_before_cutoff") is True
+        and row.get("time_verified") is True
+        for row in rows
+    )
+    if not status["cutoff_verified"]:
+        status["errors"].append("candidate_web_check_cutoff_not_verified")
+
+    status["opened_text_absent_verified"] = all("opened_text" not in row for row in rows)
+    if not status["opened_text_absent_verified"]:
+        status["errors"].append("candidate_web_check_opened_text_present")
+
+    status["passed"] = _candidate_web_check_status_passed(status)
+    return status
+
+
+def _inspect_candidate_verification_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(
+        manifest.get("candidate_verification_artifact")
+        or _optional_int(manifest.get("candidate_verification_count"))
+        or manifest.get("candidate_verification_summary")
+    )
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="candidate_verification_artifact",
+        hash_field="candidate_verification_sha256",
+        required=required,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "required_dimensions_verified": None,
+            "subject_count_verified": None,
+            "finding_count_verified": None,
+            "dimension_coverage_verified": None,
+            "status_counts_verified": None,
+            "source_counts_verified": None,
+            "accepted_source_ids_verified": None,
+            "excluded_source_ids_verified": None,
+            "candidate_expansion_subject_count_verified": None,
+            "d_minus_one_only_subject_count_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        status["passed"] = _candidate_verification_status_passed(status)
+        return status
+    payload = _read_artifact_object(
+        root, manifest.get("candidate_verification_artifact"), status
+    )
+    if payload is None:
+        status["passed"] = _candidate_verification_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.candidate_verification.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("candidate_verification_schema_version_mismatch")
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("candidate_verification_run_id_mismatch")
+
+    expected_dimensions = _candidate_verification_required_dimensions(manifest)
+    observed_dimensions = _string_list(payload.get("required_dimensions"))
+    status["required_dimensions_verified"] = (
+        bool(expected_dimensions) and observed_dimensions == expected_dimensions
+    )
+    if not status["required_dimensions_verified"]:
+        status["errors"].append("candidate_verification_required_dimensions_mismatch")
+
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or not all(
+        isinstance(finding, dict) for finding in findings
+    ):
+        status["errors"].append("candidate_verification_findings_invalid")
+        status["passed"] = _candidate_verification_status_passed(status)
+        return status
+
+    summary = manifest.get("candidate_verification_summary")
+    status["finding_count"] = len(findings)
+    expected_manifest_count = manifest.get("candidate_verification_count")
+    summary_finding_count = summary.get("finding_count") if isinstance(summary, dict) else None
+    status["finding_count_verified"] = (
+        (not isinstance(expected_manifest_count, int) or len(findings) == expected_manifest_count)
+        and isinstance(summary_finding_count, int)
+        and summary_finding_count == len(findings)
+    )
+    if not status["finding_count_verified"]:
+        status["errors"].append("candidate_verification_finding_count_mismatch")
+
+    summary_subject_count = summary.get("subject_count") if isinstance(summary, dict) else None
+    payload_subject_count = payload.get("subject_count")
+    status["subject_count_verified"] = (
+        isinstance(payload_subject_count, int)
+        and payload_subject_count == len(findings)
+        and isinstance(summary_subject_count, int)
+        and summary_subject_count == len(findings)
+    )
+    if not status["subject_count_verified"]:
+        status["errors"].append("candidate_verification_subject_count_mismatch")
+
+    status["dimension_coverage_verified"] = bool(expected_dimensions) and all(
+        _candidate_verification_dimension_names(finding) == expected_dimensions
+        for finding in findings
+    )
+    if not status["dimension_coverage_verified"]:
+        status["errors"].append("candidate_verification_dimension_coverage_mismatch")
+
+    observed_status_counts = _candidate_verification_status_counts(findings)
+    expected_status_counts = summary.get("status_counts") if isinstance(summary, dict) else None
+    status["status_counts"] = observed_status_counts
+    status["status_counts_verified"] = (
+        isinstance(expected_status_counts, dict)
+        and observed_status_counts == expected_status_counts
+    )
+    if not status["status_counts_verified"]:
+        status["errors"].append("candidate_verification_status_counts_mismatch")
+
+    status["source_counts_verified"] = (
+        sum(_non_bool_int(finding.get("source_count")) or 0 for finding in findings)
+        == _optional_int(manifest.get("candidate_web_check_count"))
+        and sum(
+            _non_bool_int(finding.get("excluded_source_count")) or 0
+            for finding in findings
+        )
+        == _optional_int(manifest.get("excluded_candidate_web_check_count"))
+    )
+    if not status["source_counts_verified"]:
+        status["errors"].append("candidate_verification_source_counts_mismatch")
+
+    accepted_ids = _unique_strings(
+        source_id
+        for finding in findings
+        for source_id in _string_list(finding.get("accepted_source_ids"))
+    )
+    excluded_ids = _unique_strings(
+        source_id
+        for finding in findings
+        for source_id in _string_list(finding.get("excluded_source_ids"))
+    )
+    status["accepted_source_ids_verified"] = accepted_ids == _string_list(
+        manifest.get("candidate_web_source_ids")
+    )
+    if not status["accepted_source_ids_verified"]:
+        status["errors"].append("candidate_verification_accepted_source_ids_mismatch")
+    status["excluded_source_ids_verified"] = excluded_ids == _string_list(
+        manifest.get("excluded_candidate_web_source_ids")
+    )
+    if not status["excluded_source_ids_verified"]:
+        status["errors"].append("candidate_verification_excluded_source_ids_mismatch")
+
+    observed_expansion_subject_count = sum(
+        1 for finding in findings if finding.get("subject_type") == "candidate_expansion"
+    )
+    expected_expansion_subject_count = (
+        summary.get("candidate_expansion_subject_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["candidate_expansion_subject_count_verified"] = (
+        isinstance(expected_expansion_subject_count, int)
+        and observed_expansion_subject_count == expected_expansion_subject_count
+    )
+    if not status["candidate_expansion_subject_count_verified"]:
+        status["errors"].append(
+            "candidate_verification_candidate_expansion_subject_count_mismatch"
+        )
+
+    observed_d_minus_one_count = sum(
+        1 for finding in findings if finding.get("d_minus_one_market_data_only") is True
+    )
+    expected_d_minus_one_count = (
+        summary.get("d_minus_one_only_subject_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["d_minus_one_only_subject_count_verified"] = (
+        isinstance(expected_d_minus_one_count, int)
+        and observed_d_minus_one_count == expected_d_minus_one_count
+    )
+    if not status["d_minus_one_only_subject_count_verified"]:
+        status["errors"].append(
+            "candidate_verification_d_minus_one_only_subject_count_mismatch"
+        )
+
+    status["passed"] = _candidate_verification_status_passed(status)
     return status
 
 
@@ -1939,6 +2251,44 @@ def _candidate_expansion_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
+    if not status.get("configured"):
+        return not status.get("required") and not status.get("errors")
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("row_count_verified")
+        and status.get("source_ids_verified")
+        and status.get("summary_source_count_verified")
+        and status.get("verification_focus_verified")
+        and status.get("required_fields_verified")
+        and status.get("source_url_verified")
+        and status.get("cutoff_verified")
+        and status.get("opened_text_absent_verified")
+    )
+
+
+def _candidate_verification_status_passed(status: dict[str, Any]) -> bool:
+    if not status.get("configured"):
+        return not status.get("required") and not status.get("errors")
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("required_dimensions_verified")
+        and status.get("subject_count_verified")
+        and status.get("finding_count_verified")
+        and status.get("dimension_coverage_verified")
+        and status.get("status_counts_verified")
+        and status.get("source_counts_verified")
+        and status.get("accepted_source_ids_verified")
+        and status.get("excluded_source_ids_verified")
+        and status.get("candidate_expansion_subject_count_verified")
+        and status.get("d_minus_one_only_subject_count_verified")
+    )
+
+
 def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         _text_hashed_artifact_status_passed(status)
@@ -1965,6 +2315,10 @@ def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def _non_bool_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _read_artifact_object(
     root: Path,
     artifact_ref: object,
@@ -1984,6 +2338,39 @@ def _read_artifact_object(
         status["errors"].append("artifact_not_object")
         return None
     return payload
+
+
+def _read_artifact_jsonl_rows(
+    root: Path,
+    artifact_ref: object,
+    status: dict[str, Any],
+    *,
+    label: str,
+) -> list[dict[str, Any]] | None:
+    artifact_path = (
+        _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
+    )
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = artifact_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        status["errors"].append(f"{label}_unreadable")
+        return None
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            status["errors"].append(f"{label}_invalid_jsonl_line:{line_number}")
+            return None
+        if not isinstance(row, dict):
+            status["errors"].append(f"{label}_row_not_object:{line_number}")
+            return None
+        rows.append(row)
+    return rows
 
 
 def _manifest_prompt_hash(manifest: dict[str, Any], key: str) -> str | None:
@@ -2006,6 +2393,50 @@ def _candidate_expansion_required_paths(manifest: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("required_paths"))
+
+
+def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("candidate_web_check_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("verification_focus"))
+
+
+def _candidate_verification_required_dimensions(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("candidate_verification_summary")
+    if isinstance(summary, dict):
+        required_dimensions = _string_list(summary.get("required_dimensions"))
+        if required_dimensions:
+            return required_dimensions
+    return _candidate_web_verification_focus(manifest)
+
+
+def _candidate_verification_dimension_names(finding: dict[str, Any]) -> list[str]:
+    dimensions = finding.get("verification_dimensions")
+    if not isinstance(dimensions, list):
+        return []
+    return [
+        str(dimension["name"])
+        for dimension in dimensions
+        if isinstance(dimension, dict) and isinstance(dimension.get("name"), str)
+    ]
+
+
+def _candidate_verification_status_counts(
+    findings: list[dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for finding in findings:
+        dimensions = finding.get("verification_dimensions")
+        if not isinstance(dimensions, list):
+            continue
+        for dimension in dimensions:
+            if not isinstance(dimension, dict) or not isinstance(
+                dimension.get("status"), str
+            ):
+                continue
+            counts[str(dimension["status"])] += 1
+    return dict(counts)
 
 
 def _semantic_retrieval_summary_verified(
