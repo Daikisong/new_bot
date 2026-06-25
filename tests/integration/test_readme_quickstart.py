@@ -113,6 +113,12 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert inspection["context_files"]["brain"]["hashes_verified"] is True
     assert inspection["context_files"]["brain"]["file_count"] >= 12
     assert inspection["context_files"]["shard_brain"]["hashes_verified"] is True
+    supporting = inspection["supporting_artifacts"]
+    assert supporting["row_disposition"]["hash_verified"] is True
+    assert supporting["source_ledger"]["hash_verified"] is True
+    assert supporting["blind_seal_receipt"]["hash_verified"] is True
+    assert supporting["phase_state"]["hash_verified"] is True
+    assert supporting["red_team"]["metadata_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]

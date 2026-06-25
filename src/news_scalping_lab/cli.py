@@ -310,6 +310,7 @@ def _inspect_context_manifest(
         files_field="shard_brain_files",
         hashes_field="shard_brain_file_hashes",
     )
+    supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
@@ -325,6 +326,7 @@ def _inspect_context_manifest(
             "prediction": prediction,
             "report": report,
         },
+        "supporting_artifacts": supporting_artifacts,
         "reproducibility_checks_passed": _artifact_status_passed(
             prediction,
             required_extra_key="context_manifest_id_verified",
@@ -332,8 +334,173 @@ def _inspect_context_manifest(
         and _artifact_status_passed(report, required_extra_key="contains_run_id")
         and _news_input_status_passed(news_input)
         and _context_file_group_status_passed(brain_files)
-        and _context_file_group_status_passed(shard_brain_files),
+        and _context_file_group_status_passed(shard_brain_files)
+        and _supporting_artifacts_status_passed(supporting_artifacts),
     }
+
+
+def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    specs = (
+        ("row_disposition", "row_disposition_artifact", "row_disposition_sha256", True),
+        ("source_ledger", "source_ledger_artifact", "source_ledger_sha256", True),
+        (
+            "blind_seal_receipt",
+            "blind_seal_receipt_artifact",
+            "blind_seal_receipt_sha256",
+            True,
+        ),
+        ("phase_state", "phase_state_artifact", "phase_state_sha256", True),
+        ("web_source", "web_source_artifact", "web_source_sha256", False),
+        (
+            "excluded_web_source",
+            "excluded_web_source_artifact",
+            "excluded_web_source_sha256",
+            False,
+        ),
+        (
+            "candidate_web_check",
+            "candidate_web_check_artifact",
+            "candidate_web_check_sha256",
+            False,
+        ),
+        (
+            "excluded_candidate_web_check",
+            "excluded_candidate_web_check_artifact",
+            "excluded_candidate_web_check_sha256",
+            False,
+        ),
+    )
+    statuses = {
+        label: _inspect_text_hashed_artifact(
+            root,
+            manifest,
+            artifact_field=artifact_field,
+            hash_field=hash_field,
+            required=required,
+        )
+        for label, artifact_field, hash_field, required in specs
+    }
+    statuses["red_team"] = _inspect_red_team_artifacts(root, manifest)
+    return statuses
+
+
+def _inspect_text_hashed_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    artifact_field: str,
+    hash_field: str,
+    required: bool,
+) -> dict[str, Any]:
+    status = _base_artifact_status(root, manifest.get(artifact_field))
+    expected_hash = manifest.get(hash_field)
+    status["artifact_field"] = artifact_field
+    status["hash_field"] = hash_field
+    status["required"] = required
+    status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
+    if not status["configured"]:
+        if required:
+            status["errors"].append(f"{artifact_field}_missing")
+            status["passed"] = False
+        else:
+            status["passed"] = True
+        return status
+    artifact_path = status.pop("_artifact_path", None)
+    if not isinstance(artifact_path, Path) or not status["exists"]:
+        status["passed"] = False
+        return status
+    observed_hash = sha256_text(artifact_path.read_text(encoding="utf-8", errors="replace"))
+    status["observed_sha256"] = observed_hash
+    status["hash_verified"] = observed_hash == expected_hash
+    if not isinstance(expected_hash, str) or not expected_hash:
+        status["errors"].append(f"{hash_field}_missing")
+    status["passed"] = _text_hashed_artifact_status_passed(status)
+    return status
+
+
+def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    raw_artifacts = manifest.get("red_team_artifacts")
+    prompt_hashes = manifest.get("prompt_hashes")
+    expected_prompt_hash = (
+        prompt_hashes.get("red_team_candidate_review")
+        if isinstance(prompt_hashes, dict)
+        else None
+    )
+    status: dict[str, Any] = {
+        "configured": raw_artifacts is not None,
+        "artifact_count": 0,
+        "missing_files": [],
+        "path_escape_errors": [],
+        "invalid_json": [],
+        "schema_mismatches": [],
+        "run_id_mismatches": [],
+        "prompt_hash_mismatches": [],
+        "path_within_project": None,
+        "exists_verified": None,
+        "metadata_verified": None,
+        "errors": [],
+    }
+    if raw_artifacts is None:
+        status["errors"].append("red_team_artifacts_missing")
+        status["passed"] = False
+        return status
+    if not isinstance(raw_artifacts, list) or not all(
+        isinstance(item, str) and item for item in raw_artifacts
+    ):
+        status["errors"].append("red_team_artifacts_invalid")
+        status["passed"] = False
+        return status
+    artifact_refs = [str(item) for item in raw_artifacts]
+    status["artifact_count"] = len(artifact_refs)
+    run_id = manifest.get("run_id")
+    for artifact_ref in artifact_refs:
+        artifact_path = _resolve_project_artifact(root, artifact_ref)
+        if artifact_path is None:
+            status["path_escape_errors"].append(artifact_ref)
+            continue
+        if not artifact_path.exists():
+            status["missing_files"].append(artifact_ref)
+            continue
+        try:
+            payload = read_json(artifact_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            status["invalid_json"].append(artifact_ref)
+            continue
+        if not isinstance(payload, dict):
+            status["invalid_json"].append(artifact_ref)
+            continue
+        if payload.get("schema_version") != "nslab.red_team_artifact.v1":
+            status["schema_mismatches"].append(artifact_ref)
+        if isinstance(run_id, str) and payload.get("run_id") != run_id:
+            status["run_id_mismatches"].append(artifact_ref)
+        if (
+            isinstance(expected_prompt_hash, str)
+            and payload.get("prompt_sha256") != expected_prompt_hash
+        ):
+            status["prompt_hash_mismatches"].append(artifact_ref)
+    status["path_within_project"] = not status["path_escape_errors"]
+    status["exists_verified"] = status["path_within_project"] and not status["missing_files"]
+    status["metadata_verified"] = (
+        status["exists_verified"]
+        and not status["invalid_json"]
+        and not status["schema_mismatches"]
+        and not status["run_id_mismatches"]
+        and not status["prompt_hash_mismatches"]
+    )
+    if status["path_escape_errors"]:
+        status["errors"].append("red_team_artifact_path_escapes_project_root")
+    if status["missing_files"]:
+        status["errors"].append("red_team_artifact_missing_files")
+    if status["invalid_json"]:
+        status["errors"].append("red_team_artifact_invalid_json")
+    if status["schema_mismatches"]:
+        status["errors"].append("red_team_artifact_schema_mismatches")
+    if status["run_id_mismatches"]:
+        status["errors"].append("red_team_artifact_run_id_mismatches")
+    if status["prompt_hash_mismatches"]:
+        status["errors"].append("red_team_artifact_prompt_hash_mismatches")
+    status["passed"] = _red_team_artifact_status_passed(status)
+    return status
 
 
 def _inspect_context_file_group(
@@ -595,6 +762,33 @@ def _context_file_group_status_passed(status: dict[str, Any]) -> bool:
         and status.get("path_within_project")
         and status.get("exists_verified")
         and status.get("hashes_verified")
+        and not status.get("errors")
+    )
+
+
+def _supporting_artifacts_status_passed(statuses: dict[str, Any]) -> bool:
+    return all(
+        isinstance(status, dict) and bool(status.get("passed"))
+        for status in statuses.values()
+    )
+
+
+def _text_hashed_artifact_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists")
+        and status.get("hash_verified")
+        and not status.get("errors")
+    )
+
+
+def _red_team_artifact_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists_verified")
+        and status.get("metadata_verified")
         and not status.get("errors")
     )
 

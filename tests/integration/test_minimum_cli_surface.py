@@ -125,6 +125,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     shard_context = inspection["context_files"]["shard_brain"]
     assert shard_context["hashes_verified"] is True
     assert shard_context["file_count"] >= 1
+    supporting = inspection["supporting_artifacts"]
+    assert supporting["row_disposition"]["hash_verified"] is True
+    assert supporting["source_ledger"]["hash_verified"] is True
+    assert supporting["blind_seal_receipt"]["hash_verified"] is True
+    assert supporting["phase_state"]["hash_verified"] is True
+    assert supporting["red_team"]["metadata_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
@@ -146,6 +152,23 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         context_payload["brain_files"][0]
     ]
     brain_context_file.write_text(original_brain_context, encoding="utf-8")
+    source_ledger_file = tmp_path / context_payload["source_ledger_artifact"]
+    original_source_ledger = source_ledger_file.read_text(encoding="utf-8")
+    source_ledger_file.write_text(
+        original_source_ledger + "\nTampered source ledger.\n",
+        encoding="utf-8",
+    )
+    tampered_ledger_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered source ledger", tampered_ledger_context)
+    tampered_ledger_inspection = json.loads(tampered_ledger_context.output)["inspection"]
+    assert tampered_ledger_inspection["reproducibility_checks_passed"] is False
+    assert (
+        tampered_ledger_inspection["supporting_artifacts"]["source_ledger"][
+            "hash_verified"
+        ]
+        is False
+    )
+    source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
 
     session_pack = RUNNER.invoke(
         app,
