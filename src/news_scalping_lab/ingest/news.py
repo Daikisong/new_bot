@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import shutil
-from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -30,14 +29,14 @@ class NewsBatch:
 
 
 def _detect_trade_date(rows: list[dict[str, str]]) -> date:
-    counts: Counter[date] = Counter()
+    observed_dates: list[date] = []
     for row in rows:
         value = row.get("date")
         if value:
-            counts[date.fromisoformat(value.strip().strip('"'))] += 1
-    if not counts:
+            observed_dates.append(date.fromisoformat(value.strip().strip('"')))
+    if not observed_dates:
         raise ValueError("CSV has no date column values")
-    return counts.most_common(1)[0][0]
+    return max(observed_dates)
 
 
 def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
