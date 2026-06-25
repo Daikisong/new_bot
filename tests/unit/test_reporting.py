@@ -155,6 +155,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
 
     assert "- Causal chain: current catalyst, listed entity verification" in report
     assert "- Path type: `SINGLE_EVENT`" in report
+    assert "- Event IDs: EVT-report" in report
     assert "- Direct evidence: direct company mention" in report
     assert "- Inferred evidence: economic attribution check" in report
     assert "- Market-memory evidence: D-1 absorption check" in report
@@ -166,6 +167,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "HybridReportCo" in report
     assert "- Path type: `HYBRID`" in report
     assert "- Thesis: Hybrid report candidate." in report
+    assert "- Novel reasoning: Hybrid path should not lose detailed report evidence." in report
     assert "- Direct evidence: direct path still needs confirmation" in report
     assert "- Inferred evidence: beneficiary channel requires verification" in report
     assert "- Market-memory evidence: hybrid prior market narrative" in report
