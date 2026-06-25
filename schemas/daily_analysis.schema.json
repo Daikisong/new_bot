@@ -532,6 +532,13 @@
           "title": "Included News Row Count",
           "type": "integer"
         },
+        "memory_sweep_artifact_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Memory Sweep Artifact Hashes",
+          "type": "object"
+        },
         "memory_sweep_artifacts": {
           "items": {
             "type": "string"

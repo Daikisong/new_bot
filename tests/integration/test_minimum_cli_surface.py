@@ -131,6 +131,14 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
     assert supporting["red_team"]["metadata_verified"] is True
+    memory_sweep = inspection["memory_sweep"]
+    assert memory_sweep["passed"] is True
+    assert memory_sweep["hashes_verified"] is True
+    assert memory_sweep["metadata_verified"] is True
+    assert memory_sweep["shard_count_verified"] is True
+    assert memory_sweep["cache_hits_verified"] is True
+    assert memory_sweep["swept_episode_ids_verified"] is True
+    assert memory_sweep["artifact_count"] >= 1
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
     assert llm_traces["matched_prompt_count"] == 3
@@ -181,6 +189,23 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is False
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
+    memory_sweep_file = tmp_path / context_payload["memory_sweep_artifacts"][0]
+    original_memory_sweep = memory_sweep_file.read_text(encoding="utf-8")
+    memory_sweep_file.write_text(
+        original_memory_sweep.replace(
+            "nslab.memory_sweep_contribution.v1",
+            "tampered.memory_sweep",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    tampered_sweep_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered memory sweep", tampered_sweep_context)
+    tampered_sweep_inspection = json.loads(tampered_sweep_context.output)["inspection"]
+    assert tampered_sweep_inspection["reproducibility_checks_passed"] is False
+    assert tampered_sweep_inspection["memory_sweep"]["hashes_verified"] is False
+    assert tampered_sweep_inspection["memory_sweep"]["metadata_verified"] is False
+    memory_sweep_file.write_text(original_memory_sweep, encoding="utf-8")
     daily_trace_file = (
         tmp_path
         / llm_traces["purposes"]["daily_blind_analysis"]["matching_trace_paths"][0]

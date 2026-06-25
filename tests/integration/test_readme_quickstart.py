@@ -119,6 +119,13 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
     assert supporting["red_team"]["metadata_verified"] is True
+    memory_sweep = inspection["memory_sweep"]
+    assert memory_sweep["passed"] is True
+    assert memory_sweep["hashes_verified"] is True
+    assert memory_sweep["metadata_verified"] is True
+    assert memory_sweep["shard_count_verified"] is True
+    assert memory_sweep["cache_hits_verified"] is True
+    assert memory_sweep["swept_episode_ids_verified"] is True
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
     assert llm_traces["matched_prompt_count"] == 3

@@ -396,6 +396,7 @@ class ContextManifest(StrictModel):
     excluded_retrieved_episode_ids: list[str] = Field(default_factory=list)
     counterexample_episode_ids: list[str] = Field(default_factory=list)
     memory_sweep_artifacts: list[str] = Field(default_factory=list)
+    memory_sweep_artifact_hashes: dict[str, str] = Field(default_factory=dict)
     memory_sweep_shard_count: int = 0
     memory_sweep_cache_hits: int = 0
     row_disposition_artifact: str | None = None

@@ -190,6 +190,10 @@ class DailyAnalyzer:
         manifest.swept_episode_count = len(sweep.swept_episode_ids)
         manifest.swept_episode_ids = sweep.swept_episode_ids
         manifest.memory_sweep_artifacts = sweep.artifact_paths
+        manifest.memory_sweep_artifact_hashes = {
+            artifact_path: file_sha256(self.root / artifact_path)
+            for artifact_path in sweep.artifact_paths
+        }
         manifest.memory_sweep_shard_count = sweep.shard_count
         manifest.memory_sweep_cache_hits = sweep.cache_hits
         manifest.token_counts.update(sweep.token_counts)

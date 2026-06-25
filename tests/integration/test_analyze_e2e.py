@@ -1177,6 +1177,9 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     assert manifest.memory_sweep_shard_count == 2
     assert manifest.memory_sweep_cache_hits == 0
     assert len(manifest.memory_sweep_artifacts) == 2
+    assert set(manifest.memory_sweep_artifact_hashes) == set(
+        manifest.memory_sweep_artifacts
+    )
     swept_from_artifacts: set[str] = set()
     for artifact in manifest.memory_sweep_artifacts:
         payload = read_json(tmp_path / artifact)
@@ -1199,6 +1202,9 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json")
     assert saved_manifest["shard_brain_files"] == manifest.shard_brain_files
     assert set(saved_manifest["shard_brain_file_hashes"]) == set(manifest.shard_brain_files)
+    assert set(saved_manifest["memory_sweep_artifact_hashes"]) == set(
+        manifest.memory_sweep_artifacts
+    )
     assert repeated_manifest.memory_sweep_shard_count == 2
     assert repeated_manifest.memory_sweep_cache_hits == 2
     for artifact in repeated_manifest.memory_sweep_artifacts:
