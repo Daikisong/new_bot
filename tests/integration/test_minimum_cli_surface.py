@@ -1512,6 +1512,18 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert manifest_reproducibility["web_queries_valid"] is True
     assert manifest_reproducibility["web_sources_valid"] is True
     assert manifest_reproducibility["episode_scope_valid"] is True
+    assert manifest_reproducibility["price_snapshot_valid"] is True
+    assert manifest_reproducibility["price_snapshot"]["source_name_valid"] is True
+    assert (
+        manifest_reproducibility["price_snapshot"][
+            "allowed_through_before_trade_date"
+        ]
+        is True
+    )
+    assert (
+        manifest_reproducibility["price_snapshot"]["as_of_not_after_cutoff"]
+        is True
+    )
     assert manifest_reproducibility["episode_scope"][
         "accepted_episode_count_verified"
     ] is True
@@ -1550,6 +1562,38 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         "episode_scope"
     ]["errors"]
     write_json(manifest_file, original_manifest_for_reproducibility)
+    original_manifest_for_price_snapshot = read_json(manifest_file)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_price_snapshot,
+            "price_snapshot": {
+                **original_manifest_for_price_snapshot["price_snapshot"],
+                "allowed_through": original_manifest_for_price_snapshot["trade_date"],
+                "as_of": "2030-01-12T09:00:00+09:00",
+            },
+        },
+    )
+    tampered_price_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered price snapshot", tampered_price_context)
+    tampered_price_inspection = json.loads(tampered_price_context.output)["inspection"]
+    assert tampered_price_inspection["reproducibility_checks_passed"] is False
+    tampered_price_status = tampered_price_inspection["manifest_reproducibility"]
+    assert tampered_price_status["price_snapshot_valid"] is False
+    assert "price_snapshot_invalid" in tampered_price_status["errors"]
+    tampered_price_snapshot = tampered_price_status["price_snapshot"]
+    assert tampered_price_snapshot["allowed_through_valid"] is True
+    assert tampered_price_snapshot["allowed_through_before_trade_date"] is False
+    assert tampered_price_snapshot["as_of_not_after_cutoff"] is False
+    assert "price_snapshot_allowed_through_not_before_trade_date" in (
+        tampered_price_snapshot["errors"]
+    )
+    assert "price_snapshot_as_of_after_cutoff_at" in tampered_price_snapshot["errors"]
+    strict_tampered_price_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id, "--strict"]
+    )
+    assert strict_tampered_price_context.exit_code == 1
+    write_json(manifest_file, original_manifest_for_price_snapshot)
     brain_context_file = tmp_path / context_payload["brain_files"][0]
     original_brain_context = brain_context_file.read_text(encoding="utf-8")
     brain_context_file.write_text(

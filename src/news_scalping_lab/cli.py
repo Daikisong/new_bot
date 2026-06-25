@@ -430,6 +430,7 @@ def _inspect_manifest_reproducibility_fields(
     manifest: dict[str, Any],
 ) -> dict[str, Any]:
     episode_scope = inspect_manifest_episode_scope(root, manifest)
+    price_snapshot = _inspect_price_snapshot_contract(manifest)
     status: dict[str, Any] = {
         "schema_version": manifest.get("schema_version"),
         "configured": manifest.get("schema_version") == "nslab.context_manifest.v1",
@@ -439,7 +440,9 @@ def _inspect_manifest_reproducibility_fields(
         "web_queries_valid": False,
         "web_sources_valid": False,
         "episode_scope_valid": bool(episode_scope.get("passed")),
+        "price_snapshot_valid": bool(price_snapshot.get("passed")),
         "episode_scope": episode_scope,
+        "price_snapshot": price_snapshot,
         "errors": [],
     }
     if not status["configured"]:
@@ -460,6 +463,96 @@ def _inspect_manifest_reproducibility_fields(
             status["errors"].append(f"{field}_missing_or_invalid")
     if not status["episode_scope_valid"]:
         status["errors"].append("episode_scope_invalid")
+    if not status["price_snapshot_valid"]:
+        status["errors"].append("price_snapshot_invalid")
+    return status
+
+
+def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]:
+    raw_snapshot = manifest.get("price_snapshot")
+    trade_date = _manifest_date(manifest.get("trade_date"))
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    status: dict[str, Any] = {
+        "configured": isinstance(raw_snapshot, dict),
+        "source_name_valid": False,
+        "allowed_through": None,
+        "allowed_through_present": False,
+        "allowed_through_valid": False,
+        "allowed_through_before_trade_date": False,
+        "as_of": None,
+        "as_of_valid": True,
+        "as_of_not_after_cutoff": True,
+        "passed": False,
+        "errors": [],
+    }
+    if not isinstance(raw_snapshot, dict):
+        status["errors"].append("price_snapshot_missing_or_invalid")
+        return status
+
+    source_name = raw_snapshot.get("source_name")
+    status["source_name_valid"] = isinstance(source_name, str) and bool(
+        source_name.strip()
+    )
+    if not status["source_name_valid"]:
+        status["errors"].append("price_snapshot_source_name_missing_or_invalid")
+
+    raw_allowed = raw_snapshot.get("allowed_through")
+    if isinstance(raw_allowed, str):
+        status["allowed_through"] = raw_allowed
+    if not isinstance(raw_allowed, str) or not raw_allowed:
+        status["errors"].append("price_snapshot_allowed_through_missing_or_invalid")
+    else:
+        status["allowed_through_present"] = True
+        try:
+            allowed_through = date.fromisoformat(raw_allowed)
+        except ValueError:
+            status["errors"].append("price_snapshot_allowed_through_invalid_date")
+        else:
+            status["allowed_through_valid"] = True
+            if trade_date is None:
+                status["errors"].append("trade_date_missing_or_invalid")
+            else:
+                status["allowed_through_before_trade_date"] = (
+                    allowed_through < trade_date
+                )
+                if not status["allowed_through_before_trade_date"]:
+                    status["errors"].append(
+                        "price_snapshot_allowed_through_not_before_trade_date"
+                    )
+
+    raw_as_of = raw_snapshot.get("as_of")
+    if raw_as_of is not None:
+        if isinstance(raw_as_of, str):
+            status["as_of"] = raw_as_of
+        else:
+            status["as_of_valid"] = False
+            status["as_of_not_after_cutoff"] = False
+            status["errors"].append("price_snapshot_as_of_missing_or_invalid")
+            return status
+        try:
+            snapshot_as_of = parse_datetime(raw_as_of)
+        except ValueError:
+            status["as_of_valid"] = False
+            status["as_of_not_after_cutoff"] = False
+            status["errors"].append("price_snapshot_as_of_invalid_datetime")
+            return status
+        if cutoff_at is None:
+            status["as_of_not_after_cutoff"] = False
+            status["errors"].append("cutoff_at_missing_or_invalid")
+        else:
+            status["as_of_not_after_cutoff"] = snapshot_as_of <= cutoff_at
+            if not status["as_of_not_after_cutoff"]:
+                status["errors"].append("price_snapshot_as_of_after_cutoff_at")
+
+    status["passed"] = bool(
+        status["configured"]
+        and status["source_name_valid"]
+        and status["allowed_through_valid"]
+        and status["allowed_through_before_trade_date"]
+        and status["as_of_valid"]
+        and status["as_of_not_after_cutoff"]
+        and not status["errors"]
+    )
     return status
 
 
@@ -4066,6 +4159,7 @@ def _manifest_reproducibility_status_passed(status: dict[str, Any]) -> bool:
         and status.get("web_queries_valid")
         and status.get("web_sources_valid")
         and status.get("episode_scope_valid")
+        and status.get("price_snapshot_valid")
         and not status.get("errors")
     )
 
