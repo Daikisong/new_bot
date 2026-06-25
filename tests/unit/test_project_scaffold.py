@@ -162,6 +162,9 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     inference = yaml.safe_load(
         (tmp_path / "configs" / "inference.yaml").read_text(encoding="utf-8")
     )
+    evaluation = yaml.safe_load(
+        (tmp_path / "configs" / "evaluation.yaml").read_text(encoding="utf-8")
+    )
     assert models["default"]["provider"] == "mock"
     assert models["default"]["max_retries"] == 0
     assert models["openai"]["model"] == "gpt-5-mini"
@@ -172,6 +175,20 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     assert generated_default["web_provider"] == "mock"
     assert generated_default["brave_search_api_key_env"] == "BRAVE_SEARCH_API_KEY"
     assert inference["default_mode"] == "exhaustive"
+    assert {
+        "open_gap_pct",
+        "intraday_high_return_pct",
+        "close_return_pct",
+        "upper_limit_released",
+        "one_price_upper_limit",
+        "volume",
+        "amount",
+        "turnover_ratio",
+        "market_cap_previous_close",
+    }.issubset(set(evaluation["labels"]))
+    assert "Average max return of top N" in evaluation["metrics"]
+    assert "Gap-up hit rate" in evaluation["metrics"]
+    assert "False-positive rate" in evaluation["metrics"]
 
 
 def test_load_settings_reads_selected_llm_model_profile(tmp_path, monkeypatch) -> None:

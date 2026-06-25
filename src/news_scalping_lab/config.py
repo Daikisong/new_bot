@@ -184,12 +184,21 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
     },
     "evaluation.yaml": {
         "labels": [
+            "open_gap_pct",
+            "intraday_high_return_pct",
+            "close_return_pct",
             "high_return_5",
             "high_return_10",
             "high_return_15",
             "high_return_20",
             "upper_limit_touched",
             "upper_limit_closed",
+            "upper_limit_released",
+            "one_price_upper_limit",
+            "volume",
+            "amount",
+            "turnover_ratio",
+            "market_cap_previous_close",
         ],
         "metrics": [
             "UpperLimit Recall@5",
@@ -201,6 +210,9 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "Single-event Recall",
             "Beneficiary Recall",
             "Continuation Recall",
+            "Average max return of top N",
+            "Gap-up hit rate",
+            "False-positive rate",
         ],
     },
 }
