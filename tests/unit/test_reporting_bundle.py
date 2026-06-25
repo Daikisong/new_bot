@@ -369,6 +369,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "bundle_manifest.json",
     }
     assert parsed.validation["blind_hash_verified"]
+    assert parsed.validation["front_matter_identity_verified"]
     assert parsed.validation["prediction_file_hash_verified"]
     assert parsed.validation["research_report_hash_verified"]
     assert parsed.validation["blind_execution_guard_verified"]
@@ -404,6 +405,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["blind_seal_receipt_sha256"]
     assert manifest["validation"]["research_episode_hash_verified"] is True
     assert manifest["validation"]["blind_execution_guard_verified"] is True
+    assert manifest["validation"]["front_matter_identity_verified"] is True
     assert manifest["validation"]["prediction_file_hash_verified"] is True
     assert manifest["validation"]["research_report_hash_verified"] is True
     assert manifest["validation"]["brain_delta_hash_verified"] is True
@@ -471,6 +473,15 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     tampered_report = parse_bundle(tampered_report_path)
     assert not tampered_report.validation["research_report_hash_verified"]
     assert not tampered_report.validation["manifest_validation_self_consistent_verified"]
+
+    tampered_front_matter_path = tmp_path / "reports" / "tampered_front_matter_bundle.md"
+    tampered_front_matter_path.write_text(
+        output_text.replace("run_id: RUN-bundle", "run_id: RUN-tampered", 1),
+        encoding="utf-8",
+    )
+    tampered_front_matter = parse_bundle(tampered_front_matter_path)
+    assert not tampered_front_matter.validation["front_matter_identity_verified"]
+    assert not tampered_front_matter.validation["manifest_validation_self_consistent_verified"]
 
     bad_run_id = "RUN-other"
     write_json(

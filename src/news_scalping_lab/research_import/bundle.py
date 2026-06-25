@@ -95,6 +95,7 @@ EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
 LEGACY_OPTIONAL_VALIDATION_KEYS = {
     "final_synthesis_context_candidate_web_checks_verified",
     "final_synthesis_context_candidate_verification_verified",
+    "front_matter_identity_verified",
     "prediction_file_hash_verified",
     "research_report_hash_verified",
 }
@@ -107,6 +108,7 @@ class BundleImportError(ValueError):
 @dataclass(frozen=True)
 class BundleParseResult:
     blocks: dict[str, str]
+    front_matter: dict[str, str] | None
     json_blocks: dict[str, Any]
     jsonl_blocks: dict[str, list[dict[str, Any]]]
     validation: dict[str, bool]
@@ -133,6 +135,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "research_report.md hash does not match bundle_manifest.json"
         )
+    if not parsed.validation.get("front_matter_identity_verified", True):
+        raise BundleImportError("bundle front matter does not match bundle_manifest.json")
     if not parsed.validation["blind_execution_guard_verified"]:
         raise BundleImportError("bundle blind execution guard check failed")
     if not parsed.validation["row_disposition_hash_verified"]:
@@ -247,6 +251,7 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
 def parse_bundle(path: Path) -> BundleParseResult:
     text = path.read_text(encoding="utf-8", errors="replace")
     _validate_required_marker_counts(text)
+    front_matter = _extract_front_matter(text)
     blocks = _extract_blocks(text)
     missing = sorted(REQUIRED_BUNDLE_BLOCKS - set(blocks))
     if missing:
@@ -328,6 +333,13 @@ def parse_bundle(path: Path) -> BundleParseResult:
             jsonl_blocks,
         ),
     }
+    if (
+        front_matter is not None
+        or "front_matter_identity_verified" in _manifest_validation(json_blocks)
+    ):
+        validation["front_matter_identity_verified"] = (
+            _verify_front_matter_identity(front_matter, json_blocks)
+        )
     _add_optional_payload_hash_validation(
         validation,
         json_blocks,
@@ -404,6 +416,7 @@ def parse_bundle(path: Path) -> BundleParseResult:
     )
     return BundleParseResult(
         blocks=blocks,
+        front_matter=front_matter,
         json_blocks=json_blocks,
         jsonl_blocks=jsonl_blocks,
         validation=validation,
@@ -447,6 +460,26 @@ def _extract_blocks(text: str) -> dict[str, str]:
             blocks[name] = "\n".join(content).strip()
         index += 1
     return blocks
+
+
+def _extract_front_matter(text: str) -> dict[str, str] | None:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    front_matter: dict[str, str] = {}
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            return front_matter
+        if not stripped:
+            continue
+        key, separator, value = stripped.partition(":")
+        if not separator or not key.strip():
+            front_matter["__invalid__"] = "true"
+            continue
+        front_matter[key.strip()] = value.strip()
+    front_matter["__invalid__"] = "true"
+    return front_matter
 
 
 def _strip_optional_fence(block: str) -> str:
@@ -739,6 +772,34 @@ def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
     return receipt.get("no_d_outcome_exposed") is True
 
 
+def _verify_front_matter_identity(
+    front_matter: dict[str, str] | None,
+    json_blocks: dict[str, Any],
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    episode = json_blocks.get("research_episode.json", {})
+    if front_matter is None or "__invalid__" in front_matter or not isinstance(manifest, dict):
+        return False
+    required_values = {
+        "schema_version": "nslab.research_bundle.v1",
+        "artifact_type": "research_episode_bundle",
+        "trade_date": manifest.get("trade_date"),
+        "blind_artifact_sha256": manifest.get("blind_artifact_sha256"),
+    }
+    for field_name, expected in required_values.items():
+        if not isinstance(expected, str) or front_matter.get(field_name) != expected:
+            return False
+    run_id = front_matter.get("run_id")
+    if run_id is not None and run_id != manifest.get("run_id"):
+        return False
+    episode_id = front_matter.get("episode_id")
+    return not (
+        episode_id is not None
+        and isinstance(episode, dict)
+        and episode_id != episode.get("episode_id")
+    )
+
+
 def _verify_payload_hash(
     json_blocks: dict[str, Any],
     payload_blocks: dict[str, str],
@@ -858,6 +919,14 @@ def _add_optional_jsonl_validation(
         block_name=block_name,
         manifest_field=count_field,
     )
+
+
+def _manifest_validation(json_blocks: dict[str, Any]) -> dict[str, Any]:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return {}
+    validation = manifest.get("validation")
+    return validation if isinstance(validation, dict) else {}
 
 
 def _add_optional_payload_hash_validation(
@@ -1308,8 +1377,8 @@ def _verify_manifest_validation_self_consistency(
     manifest = json_blocks.get("bundle_manifest.json", {})
     if not isinstance(manifest, dict):
         return False
-    manifest_validation = manifest.get("validation")
-    if not isinstance(manifest_validation, dict):
+    manifest_validation = _manifest_validation(json_blocks)
+    if not manifest_validation:
         return False
     for key, recomputed in recomputed_validation.items():
         if key not in manifest_validation and key in LEGACY_OPTIONAL_VALIDATION_KEYS:

@@ -561,6 +561,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     imported = ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
     assert parsed.validation["blind_hash_verified"]
+    assert parsed.validation["front_matter_identity_verified"]
     assert parsed.validation["blind_execution_guard_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["row_disposition_coverage_verified"]
@@ -797,6 +798,24 @@ def test_bundle_import_rejects_mismatched_blind_hash(tmp_path) -> None:
 
     assert not parsed.validation["blind_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_prediction.json hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_front_matter_identity_mismatch(tmp_path) -> None:
+    source = tmp_path / "tampered_front_matter_bundle.md"
+    source.write_text(
+        _bundle_text(_episode()).replace(
+            "trade_date: 2030-01-10",
+            "trade_date: 2030-01-11",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["front_matter_identity_verified"]
+    with pytest.raises(BundleImportError, match="front matter"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
