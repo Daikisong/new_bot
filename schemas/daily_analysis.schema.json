@@ -287,6 +287,18 @@
           "title": "Accepted Episode Count",
           "type": "integer"
         },
+        "blind_artifact_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blind Artifact Sha256"
+        },
         "blind_context_mode": {
           "default": "NEWS_ONLY_STRICT",
           "title": "Blind Context Mode",
@@ -301,6 +313,30 @@
           "default": 0,
           "title": "Blind Price Repository Access Count",
           "type": "integer"
+        },
+        "blind_seal_receipt_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blind Seal Receipt Artifact"
+        },
+        "blind_seal_receipt_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blind Seal Receipt Sha256"
         },
         "blind_web_search_call_count": {
           "default": 0,
@@ -401,6 +437,30 @@
           "default": true,
           "title": "No D Outcome Exposed",
           "type": "boolean"
+        },
+        "phase_state_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phase State Artifact"
+        },
+        "phase_state_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phase State Sha256"
         },
         "price_snapshot": {
           "$ref": "#/$defs/PriceSnapshot"

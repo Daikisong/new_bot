@@ -235,6 +235,11 @@ class DailyAnalyzer:
         prediction_path = prediction_dir / f"{trade_date.isoformat()}.json"
         report_path = report_dir / f"{trade_date.isoformat()}_preopen.md"
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
+        self._write_blind_seal_artifacts(
+            prediction=prediction,
+            prediction_path=prediction_path,
+            manifest=manifest,
+        )
         write_json(prediction_path, prediction.model_dump(mode="json"))
         CompanyMemoryStore(self.root).upsert_from_candidates(
             prediction.candidates,
@@ -395,6 +400,75 @@ class DailyAnalyzer:
             "outcome_sources": 0,
             "postmortem_sources": 0,
         }
+
+    def _write_blind_seal_artifacts(
+        self,
+        *,
+        prediction: BlindPrediction,
+        prediction_path: Path,
+        manifest: ContextManifest,
+    ) -> None:
+        if prediction.sealed_at is None or prediction.blind_artifact_sha256 is None:
+            raise ValueError("prediction must be sealed before writing blind seal artifacts")
+        prediction_relative = prediction_path.relative_to(self.root).as_posix()
+        receipt = {
+            "schema_version": "nslab.blind_seal_receipt.v1",
+            "run_id": manifest.run_id,
+            "prediction_id": prediction.prediction_id,
+            "trade_date": prediction.trade_date.isoformat(),
+            "cutoff_at": prediction.cutoff_at.isoformat(),
+            "sealed_at": prediction.sealed_at.isoformat(),
+            "phase": "BLIND_SEALED",
+            "blind_context_mode": manifest.blind_context_mode,
+            "blind_artifact_sha256": prediction.blind_artifact_sha256,
+            "blind_prediction_path": prediction_relative,
+            "row_disposition_sha256": manifest.row_disposition_sha256,
+            "row_disposition_coverage_ratio": manifest.row_disposition_coverage_ratio,
+            "source_ledger_sha256": manifest.source_ledger_sha256,
+            "no_d_outcome_exposed": manifest.no_d_outcome_exposed,
+            "validation": {
+                "blind_web_search_call_count": manifest.blind_web_search_call_count,
+                "blind_price_repository_access_count": (
+                    manifest.blind_price_repository_access_count
+                ),
+                "blind_current_price_access_count": manifest.blind_current_price_access_count,
+                "canonical_blind_hash_verified": True,
+            },
+        }
+        receipt_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "blind_seal"
+            / manifest.run_id
+            / "blind_seal_receipt.json"
+        )
+        phase_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "phase_state"
+            / manifest.run_id
+            / "phase_state.json"
+        )
+        receipt_path = self.root / receipt_relative
+        phase_path = self.root / phase_relative
+        write_json(receipt_path, receipt)
+        receipt_sha256 = sha256_text(receipt_path.read_text(encoding="utf-8"))
+        phase_state = {
+            "schema_version": "nslab.phase_state.v1",
+            "run_id": manifest.run_id,
+            "phase": "BLIND_SEALED",
+            "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+            "trade_date": prediction.trade_date.isoformat(),
+            "cutoff_at": prediction.cutoff_at.isoformat(),
+            "sealed_at": prediction.sealed_at.isoformat(),
+            "blind_seal_receipt_sha256": receipt_sha256,
+        }
+        write_json(phase_path, phase_state)
+        manifest.blind_artifact_sha256 = prediction.blind_artifact_sha256
+        manifest.blind_seal_receipt_artifact = receipt_relative.as_posix()
+        manifest.blind_seal_receipt_sha256 = receipt_sha256
+        manifest.phase_state_artifact = phase_relative.as_posix()
+        manifest.phase_state_sha256 = sha256_text(phase_path.read_text(encoding="utf-8"))
 
     def _filter_retrieved_ids_available_as_of(
         self,

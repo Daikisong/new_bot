@@ -60,6 +60,44 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     source_path = tmp_path / "runs" / "checkpoints" / "source_ledger" / run_id / "source_ledger.jsonl"
     source_path.parent.mkdir(parents=True)
     source_path.write_text(source_ledger, encoding="utf-8")
+    receipt = {
+        "schema_version": "nslab.blind_seal_receipt.v1",
+        "run_id": run_id,
+        "prediction_id": prediction.prediction_id,
+        "trade_date": trade_date.isoformat(),
+        "cutoff_at": cutoff_at.isoformat(),
+        "sealed_at": cutoff_at.isoformat(),
+        "phase": "BLIND_SEALED",
+        "blind_context_mode": "NEWS_ONLY_STRICT",
+        "blind_artifact_sha256": blind_hash,
+        "blind_prediction_path": prediction_path.relative_to(tmp_path).as_posix(),
+        "row_disposition_sha256": sha256_text(row_disposition),
+        "row_disposition_coverage_ratio": 1.0,
+        "source_ledger_sha256": sha256_text(source_ledger),
+        "no_d_outcome_exposed": True,
+        "validation": {"canonical_blind_hash_verified": True},
+    }
+    receipt_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "blind_seal"
+        / run_id
+        / "blind_seal_receipt.json"
+    )
+    write_json(receipt_path, receipt)
+    phase_state = {
+        "schema_version": "nslab.phase_state.v1",
+        "run_id": run_id,
+        "phase": "BLIND_SEALED",
+        "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+        "trade_date": trade_date.isoformat(),
+        "cutoff_at": cutoff_at.isoformat(),
+        "sealed_at": cutoff_at.isoformat(),
+        "blind_seal_receipt_sha256": sha256_text(receipt_path.read_text(encoding="utf-8")),
+    }
+    phase_path = tmp_path / "runs" / "checkpoints" / "phase_state" / run_id / "phase_state.json"
+    write_json(phase_path, phase_state)
     write_json(
         tmp_path / "runs" / "manifests" / f"{run_id}.json",
         {
@@ -70,6 +108,13 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
             "blind_web_search_call_count": 0,
             "blind_price_repository_access_count": 0,
             "blind_current_price_access_count": 0,
+            "blind_artifact_sha256": blind_hash,
+            "blind_seal_receipt_artifact": receipt_path.relative_to(tmp_path).as_posix(),
+            "blind_seal_receipt_sha256": sha256_text(
+                receipt_path.read_text(encoding="utf-8")
+            ),
+            "phase_state_artifact": phase_path.relative_to(tmp_path).as_posix(),
+            "phase_state_sha256": sha256_text(phase_path.read_text(encoding="utf-8")),
             "price_snapshot": {"source_name": "mock", "allowed_through": "2030-01-09"},
             "row_disposition_artifact": row_path.relative_to(tmp_path).as_posix(),
             "row_disposition_sha256": sha256_text(row_disposition),
@@ -99,5 +144,9 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     manifest = parsed.json_blocks["bundle_manifest.json"]
     assert isinstance(manifest, dict)
     assert manifest["bundle_incomplete"] is True
+    assert manifest["blind_seal_receipt_sha256"]
+    episode = parsed.json_blocks["research_episode.json"]
+    assert isinstance(episode, dict)
+    assert episode["blind_seal_receipt"]["phase"] == "BLIND_SEALED"
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "bundle_incomplete"
     assert json.loads(parsed.blocks["row_disposition.jsonl"].splitlines()[1])["row_number"] == 1

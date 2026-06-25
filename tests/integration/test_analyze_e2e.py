@@ -347,6 +347,22 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert source_ledger_rows[0]["available_before_cutoff"] is True
     assert source_ledger_rows[0]["input_row_ids"] == [1]
     assert "body" not in source_ledger_rows[0]
+    assert saved_manifest["blind_artifact_sha256"] == saved_prediction["blind_artifact_sha256"]
+    receipt_path = tmp_path / saved_manifest["blind_seal_receipt_artifact"]
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt = json.loads(receipt_text)
+    assert sha256_text(receipt_text) == saved_manifest["blind_seal_receipt_sha256"]
+    assert receipt["phase"] == "BLIND_SEALED"
+    assert receipt["blind_artifact_sha256"] == saved_prediction["blind_artifact_sha256"]
+    phase_state_path = tmp_path / saved_manifest["phase_state_artifact"]
+    phase_state_text = phase_state_path.read_text(encoding="utf-8")
+    phase_state = json.loads(phase_state_text)
+    assert sha256_text(phase_state_text) == saved_manifest["phase_state_sha256"]
+    assert phase_state["phase"] == "BLIND_SEALED"
+    assert (
+        phase_state["blind_seal_receipt_sha256"]
+        == saved_manifest["blind_seal_receipt_sha256"]
+    )
     assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]

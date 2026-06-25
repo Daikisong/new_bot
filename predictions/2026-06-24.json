@@ -16,23 +16,23 @@
       {
         "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.664061+09:00",
+        "observed_at": "2026-06-25T10:35:17.249236+09:00",
         "source_id": "SRC-2740221474b3",
         "source_type": "daily_blind_analysis_blind_analysis",
         "uri": "prompt://daily_blind_analysis/ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c"
       },
       {
-        "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+        "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.670880+09:00",
-        "source_id": "SRC-1dafa6c95aca",
+        "observed_at": "2026-06-25T10:35:17.256297+09:00",
+        "source_id": "SRC-2146402dff3b",
         "source_type": "final_synthesis_blind_analysis",
-        "uri": "prompt://final_synthesis/835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8"
+        "uri": "prompt://final_synthesis/f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046"
       }
     ],
     "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data."
   },
-  "blind_artifact_sha256": "e7ab7aebdc3934069dfe17faa7805385bb39659568415c542cb6e6409ac7fe64",
+  "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "candidates": [
     {
       "causal_chain": [
@@ -74,16 +74,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-dffe72ae359c",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/1"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-dae6e652abfa",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-3b48ce471d26",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/1"
         }
@@ -136,16 +136,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-c552c77a3d57",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/2"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-71190e87e6c9",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-16028ff1580c",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/2"
         }
@@ -198,16 +198,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-8e1050ca2ddc",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/3"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-1b8d8c28e97d",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-48492edcd33f",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/3"
         }
@@ -260,16 +260,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-7ddb30a5f464",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/4"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-19ec09be4946",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-1fa0389c8ecb",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/4"
         }
@@ -322,16 +322,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-b5c6524cdf25",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/5"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-454bff8cefd7",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-885a52688c06",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/5"
         }
@@ -384,16 +384,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-e2faa96c1c18",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/6"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-570bdd793f2c",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-57b3f416b908",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/6"
         }
@@ -445,16 +445,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-45ef85b42d8c",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/7"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-7a4b98beff64",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-4c5f7c2ca565",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/7"
         }
@@ -469,7 +469,7 @@
     }
   ],
   "context_manifest_id": "RUN-a5840d2def32",
-  "created_at": "2026-06-25T10:23:12.671044+09:00",
+  "created_at": "2026-06-25T10:35:17.256450+09:00",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
   "dominant_sectors": [
     {
@@ -500,16 +500,16 @@
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-768538d93edd",
           "source_type": "daily_blind_analysis_dominant_sector",
           "uri": "sector://daily_blind_analysis/2026-06-24/1"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-838e009c8fc9",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-852afe357272",
           "source_type": "final_synthesis_dominant_sector",
           "uri": "sector://final_synthesis/2026-06-24/1"
         }
@@ -524,8 +524,8 @@
       ]
     }
   ],
-  "prediction_id": "PRED-446d114081a2",
+  "prediction_id": "PRED-3bea3cbc9954",
   "schema_version": "nslab.blind_prediction.v1",
-  "sealed_at": "2026-06-25T10:23:12.672185+09:00",
+  "sealed_at": "2026-06-25T10:35:17.257228+09:00",
   "trade_date": "2026-06-24"
 }

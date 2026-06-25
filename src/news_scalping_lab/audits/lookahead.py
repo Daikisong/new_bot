@@ -55,6 +55,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             findings.append(f"{manifest_name}: exhaustive coverage mismatch")
         _check_row_disposition(root, manifest_name, manifest, findings)
         _check_source_ledger(root, manifest_name, manifest, findings)
+        _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
         "passed": not findings,
@@ -296,6 +297,84 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+
+
+def _check_blind_seal(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    receipt = _read_manifest_json_artifact(
+        root,
+        manifest_name,
+        manifest,
+        path_field="blind_seal_receipt_artifact",
+        sha_field="blind_seal_receipt_sha256",
+        label="blind_seal_receipt",
+        findings=findings,
+    )
+    phase_state = _read_manifest_json_artifact(
+        root,
+        manifest_name,
+        manifest,
+        path_field="phase_state_artifact",
+        sha_field="phase_state_sha256",
+        label="phase_state",
+        findings=findings,
+    )
+    if receipt is not None:
+        if receipt.get("phase") != "BLIND_SEALED":
+            findings.append(f"{manifest_name}: blind_seal_receipt phase must be BLIND_SEALED")
+        manifest_blind_hash = manifest.get("blind_artifact_sha256")
+        if (
+            isinstance(manifest_blind_hash, str)
+            and receipt.get("blind_artifact_sha256") != manifest_blind_hash
+        ):
+            findings.append(f"{manifest_name}: blind_seal_receipt blind hash mismatch")
+        if receipt.get("no_d_outcome_exposed") is not True:
+            findings.append(f"{manifest_name}: blind_seal_receipt no_d_outcome_exposed must be true")
+    if phase_state is not None:
+        if phase_state.get("phase") != "BLIND_SEALED":
+            findings.append(f"{manifest_name}: phase_state phase must be BLIND_SEALED")
+        receipt_sha = manifest.get("blind_seal_receipt_sha256")
+        if (
+            isinstance(receipt_sha, str)
+            and phase_state.get("blind_seal_receipt_sha256") != receipt_sha
+        ):
+            findings.append(f"{manifest_name}: phase_state receipt sha mismatch")
+
+
+def _read_manifest_json_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    *,
+    path_field: str,
+    sha_field: str,
+    label: str,
+    findings: list[str],
+) -> dict[str, object] | None:
+    relative_path = manifest.get(path_field)
+    if not isinstance(relative_path, str):
+        return None
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: {path_field} missing: {relative_path}")
+        return None
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get(sha_field)
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: {sha_field} mismatch")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        findings.append(f"{manifest_name}: {label} invalid JSON")
+        return None
+    if not isinstance(payload, dict):
+        findings.append(f"{manifest_name}: {label} must be object")
+        return None
+    return payload
 
 
 def _string_list(value: object) -> list[str]:

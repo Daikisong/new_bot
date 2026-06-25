@@ -39,12 +39,18 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
     report = report_path.read_text(encoding="utf-8")
     row_disposition = _read_manifest_artifact(settings, manifest, "row_disposition_artifact")
     source_ledger = _read_manifest_artifact(settings, manifest, "source_ledger_artifact")
+    blind_seal_receipt = _read_manifest_artifact(
+        settings,
+        manifest,
+        "blind_seal_receipt_artifact",
+    )
     brain_delta = _brain_delta_jsonl(run_id=run_id, reason="postmortem_not_run")
     research_episode = _build_research_episode(
         run_id=run_id,
         prediction=prediction,
         manifest=manifest,
         prediction_path=prediction_path,
+        blind_seal_receipt=blind_seal_receipt,
     )
     bundle_manifest = _build_bundle_manifest(
         run_id=run_id,
@@ -54,6 +60,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         report_path=report_path,
         row_disposition=row_disposition,
         source_ledger=source_ledger,
+        blind_seal_receipt=blind_seal_receipt,
         brain_delta=brain_delta,
         research_episode=research_episode,
     )
@@ -102,6 +109,7 @@ def _build_research_episode(
     prediction: BlindPrediction,
     manifest: dict[str, Any],
     prediction_path: Path,
+    blind_seal_receipt: str,
 ) -> ResearchEpisode:
     available_from = datetime.combine(
         next_calendar_day(prediction.trade_date),
@@ -125,6 +133,24 @@ def _build_research_episode(
         research_version="analysis-bundle.v1",
         input_news_files=[str(path) for path in _source_ledger_input_files(manifest)],
         input_news_hashes=source_hashes,
+        input_audit={
+            "row_disposition_coverage_ratio": manifest.get("row_disposition_coverage_ratio"),
+            "source_ledger_entry_count": manifest.get("source_ledger_entry_count"),
+        },
+        row_disposition_summary=manifest.get("row_disposition_summary", {}),
+        blind_integrity={
+            "blind_context_mode": manifest.get("blind_context_mode"),
+            "blind_web_search_call_count": manifest.get("blind_web_search_call_count", 0),
+            "blind_price_repository_access_count": manifest.get(
+                "blind_price_repository_access_count", 0
+            ),
+            "blind_current_price_access_count": manifest.get(
+                "blind_current_price_access_count", 0
+            ),
+            "no_d_outcome_exposed": manifest.get("no_d_outcome_exposed"),
+        },
+        blind_artifact_sha256=prediction.blind_artifact_sha256,
+        blind_seal_receipt=json.loads(blind_seal_receipt),
         price_source_snapshot=manifest.get("price_snapshot", {}),
         blind_analysis=prediction.blind_analysis,
         blind_predictions=prediction.candidates,
@@ -169,6 +195,7 @@ def _build_bundle_manifest(
     report_path: Path,
     row_disposition: str,
     source_ledger: str,
+    blind_seal_receipt: str,
     brain_delta: str,
     research_episode: ResearchEpisode,
 ) -> dict[str, Any]:
@@ -199,6 +226,8 @@ def _build_bundle_manifest(
         "row_disposition_coverage_ratio": manifest.get("row_disposition_coverage_ratio"),
         "source_ledger_sha256": sha256_text(source_ledger),
         "source_ledger_entry_count": manifest.get("source_ledger_entry_count", 0),
+        "blind_seal_receipt_sha256": sha256_text(blind_seal_receipt),
+        "phase_state_sha256": manifest.get("phase_state_sha256"),
         "brain_delta_sha256": sha256_text(brain_delta),
         "outcome_coverage_status": "NOT_RUN",
         "outcome_slice_sha256": None,
@@ -211,6 +240,8 @@ def _build_bundle_manifest(
             "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
             "row_disposition_hash_verified": True,
             "source_ledger_hash_verified": True,
+            "blind_seal_receipt_hash_verified": True,
+            "phase_state_recorded": bool(manifest.get("phase_state_artifact")),
         },
         "bundle_incomplete": True,
         "incomplete_reasons": ["postmortem outcome evaluation has not been run"],

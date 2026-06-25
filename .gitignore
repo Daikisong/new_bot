@@ -22,6 +22,10 @@ runs/checkpoints/*
 !runs/checkpoints/row_disposition/**
 !runs/checkpoints/source_ledger/
 !runs/checkpoints/source_ledger/**
+!runs/checkpoints/blind_seal/
+!runs/checkpoints/blind_seal/**
+!runs/checkpoints/phase_state/
+!runs/checkpoints/phase_state/**
 brain/snapshots/*
 brain/diffs/*
 !brain/snapshots/.gitkeep

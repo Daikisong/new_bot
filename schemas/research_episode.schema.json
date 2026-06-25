@@ -806,12 +806,34 @@
     "blind_analysis": {
       "$ref": "#/$defs/BlindAnalysis"
     },
+    "blind_artifact_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Blind Artifact Sha256"
+    },
+    "blind_integrity": {
+      "additionalProperties": true,
+      "title": "Blind Integrity",
+      "type": "object"
+    },
     "blind_predictions": {
       "items": {
         "$ref": "#/$defs/Candidate"
       },
       "title": "Blind Predictions",
       "type": "array"
+    },
+    "blind_seal_receipt": {
+      "additionalProperties": true,
+      "title": "Blind Seal Receipt",
+      "type": "object"
     },
     "counterexamples": {
       "items": {
@@ -855,6 +877,11 @@
       ],
       "default": null,
       "title": "Execution Protocol Version"
+    },
+    "input_audit": {
+      "additionalProperties": true,
+      "title": "Input Audit",
+      "type": "object"
     },
     "input_news_files": {
       "items": {
@@ -929,6 +956,11 @@
     "research_version": {
       "title": "Research Version",
       "type": "string"
+    },
+    "row_disposition_summary": {
+      "additionalProperties": true,
+      "title": "Row Disposition Summary",
+      "type": "object"
     },
     "schema_version": {
       "default": "nslab.research_episode.v1",

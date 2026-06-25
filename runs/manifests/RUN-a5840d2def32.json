@@ -1,8 +1,11 @@
 {
   "accepted_episode_count": 0,
+  "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "blind_context_mode": "NEWS_ONLY_STRICT",
   "blind_current_price_access_count": 0,
   "blind_price_repository_access_count": 0,
+  "blind_seal_receipt_artifact": "runs/checkpoints/blind_seal/RUN-a5840d2def32/blind_seal_receipt.json",
+  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
   "blind_web_search_call_count": 0,
   "brain_file_hashes": {
     "runs/checkpoints/brain_context/RUN-a5840d2def32/brain/00_world_model.md": "954271cbc3cfed3ac3b073427f02a2af761393d6393602bae8f175aeea81f63b",
@@ -50,6 +53,8 @@
     "provider": "mock-compatible"
   },
   "no_d_outcome_exposed": true,
+  "phase_state_artifact": "runs/checkpoints/phase_state/RUN-a5840d2def32/phase_state.json",
+  "phase_state_sha256": "293fab64c341ed16767e9fa76d598007216a52040f0904d9c0bce6d0c501d788",
   "price_snapshot": {
     "allowed_through": "2026-06-23",
     "as_of": null,
@@ -59,8 +64,8 @@
   },
   "prompt_hashes": {
     "blind_analysis": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-    "final_synthesis": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
-    "red_team_candidate_review": "3352da92bdfbcffb7916faf9a3dafe9de307f2de58a030069db08b85388e4ebb"
+    "final_synthesis": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+    "red_team_candidate_review": "7d02324d6026c587887ebac7f4bffed8fd8ba51d418350f83def589120a551f7"
   },
   "red_team_artifacts": [
     "runs/checkpoints/red_team/RUN-a5840d2def32.json"
@@ -81,7 +86,7 @@
   "shard_brain_files": [],
   "source_ledger_artifact": "runs/checkpoints/source_ledger/RUN-a5840d2def32/source_ledger.jsonl",
   "source_ledger_entry_count": 5,
-  "source_ledger_sha256": "ad29c62704cb8f41dd5ca7e67e1492b6c54af1f39ae712fa62f85da01e80fdd6",
+  "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
   "source_ledger_summary": {
     "blind_sources": 5,
     "outcome_sources": 0,

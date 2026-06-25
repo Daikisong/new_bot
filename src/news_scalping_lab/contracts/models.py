@@ -317,6 +317,11 @@ class ResearchEpisode(StrictModel):
     research_version: str
     input_news_files: list[str] = Field(default_factory=list)
     input_news_hashes: list[str] = Field(default_factory=list)
+    input_audit: dict[str, Any] = Field(default_factory=dict)
+    row_disposition_summary: dict[str, Any] = Field(default_factory=dict)
+    blind_integrity: dict[str, Any] = Field(default_factory=dict)
+    blind_artifact_sha256: str | None = None
+    blind_seal_receipt: dict[str, Any] = Field(default_factory=dict)
     price_source_snapshot: dict[str, Any] = Field(default_factory=dict)
     blind_analysis: BlindAnalysis
     blind_predictions: list[Candidate] = Field(default_factory=list)
@@ -363,6 +368,11 @@ class ContextManifest(StrictModel):
     blind_web_search_call_count: int = 0
     blind_price_repository_access_count: int = 0
     blind_current_price_access_count: int = 0
+    blind_artifact_sha256: str | None = None
+    blind_seal_receipt_artifact: str | None = None
+    blind_seal_receipt_sha256: str | None = None
+    phase_state_artifact: str | None = None
+    phase_state_sha256: str | None = None
     no_d_outcome_exposed: bool = True
     continuation_analysis_status: str = "LIMITED_OR_UNAVAILABLE"
     brain_version: str | None = None

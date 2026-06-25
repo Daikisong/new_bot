@@ -728,6 +728,65 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert "RUN-ledger.json: source_ledger entry_count mismatch" in findings
 
 
+def test_lookahead_audit_flags_invalid_blind_seal_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    receipt_dir = tmp_path / "runs" / "checkpoints" / "blind_seal" / "RUN-seal"
+    phase_dir = tmp_path / "runs" / "checkpoints" / "phase_state" / "RUN-seal"
+    receipt_dir.mkdir(parents=True)
+    phase_dir.mkdir(parents=True)
+    receipt = receipt_dir / "blind_seal_receipt.json"
+    phase_state = phase_dir / "phase_state.json"
+    write_json(
+        receipt,
+        {
+            "schema_version": "nslab.blind_seal_receipt.v1",
+            "run_id": "RUN-seal",
+            "phase": "OPEN",
+            "blind_artifact_sha256": "other",
+            "no_d_outcome_exposed": False,
+        },
+    )
+    write_json(
+        phase_state,
+        {
+            "schema_version": "nslab.phase_state.v1",
+            "run_id": "RUN-seal",
+            "phase": "OPEN",
+            "blind_seal_receipt_sha256": "wrong",
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-seal.json",
+        {
+            "run_id": "RUN-seal",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "blind_artifact_sha256": "abc",
+            "blind_seal_receipt_artifact": receipt.relative_to(tmp_path).as_posix(),
+            "blind_seal_receipt_sha256": "bad",
+            "phase_state_artifact": phase_state.relative_to(tmp_path).as_posix(),
+            "phase_state_sha256": "bad",
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-seal.json: blind_seal_receipt_sha256 mismatch" in findings
+    assert "RUN-seal.json: phase_state_sha256 mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt phase must be BLIND_SEALED" in findings
+    assert "RUN-seal.json: blind_seal_receipt blind hash mismatch" in findings
+    assert "RUN-seal.json: blind_seal_receipt no_d_outcome_exposed must be true" in findings
+    assert "RUN-seal.json: phase_state phase must be BLIND_SEALED" in findings
+    assert "RUN-seal.json: phase_state receipt sha mismatch" in findings
+
+
 def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
     (tmp_path / "session_packs" / "2030-01-10").mkdir(parents=True)
     (tmp_path / "research" / "accepted").mkdir(parents=True)

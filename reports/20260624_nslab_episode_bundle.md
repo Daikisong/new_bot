@@ -3,7 +3,7 @@ schema_version: nslab.research_bundle.v1
 artifact_type: research_episode_bundle
 run_id: RUN-a5840d2def32
 trade_date: 2026-06-24
-blind_artifact_sha256: e7ab7aebdc3934069dfe17faa7805385bb39659568415c542cb6e6409ac7fe64
+blind_artifact_sha256: 28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507
 ---
 
 <!-- NSLAB:BEGIN research_report.md -->
@@ -31,7 +31,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Expected breadth: unknown until web and memory evidence are compared
 - Possible leaders: 넥스턴앤롤코리아, 꼭승리한다홍명보호, 제노코
 - Failure conditions: no listed entity relation; event was already known before the window; memory counterexamples dominate supporting cases
-- Provenance sources: SRC-768538d93edd, SRC-838e009c8fc9
+- Provenance sources: SRC-768538d93edd, SRC-852afe357272
 
 
 ## 5. Single-News Upper-Limit Candidates
@@ -52,7 +52,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: not listed, cutoff-after source only, D-1 price action already fully reflected the event, only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-dffe72ae359c, SRC-dae6e652abfa
+- Provenance sources: SRC-dffe72ae359c, SRC-3b48ce471d26
 
 ### 2. 꼭승리한다홍명보호 (UNKNOWN)
 
@@ -70,7 +70,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: not listed, cutoff-after source only, D-1 price action already fully reflected the event, only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-c552c77a3d57, SRC-71190e87e6c9
+- Provenance sources: SRC-c552c77a3d57, SRC-16028ff1580c
 
 ### 3. 제노코 (UNKNOWN)
 
@@ -88,7 +88,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: not listed, cutoff-after source only, D-1 price action already fully reflected the event, only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-8e1050ca2ddc, SRC-1b8d8c28e97d
+- Provenance sources: SRC-8e1050ca2ddc, SRC-48492edcd33f
 
 ### 4. 삼성 (UNKNOWN)
 
@@ -106,7 +106,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: not listed, cutoff-after source only, D-1 price action already fully reflected the event, only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-7ddb30a5f464, SRC-19ec09be4946
+- Provenance sources: SRC-7ddb30a5f464, SRC-1fa0389c8ecb
 
 ### 5. 오창테크노폴리스 (UNKNOWN)
 
@@ -124,7 +124,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: not listed, cutoff-after source only, D-1 price action already fully reflected the event, only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-b5c6524cdf25, SRC-454bff8cefd7
+- Provenance sources: SRC-b5c6524cdf25, SRC-885a52688c06
 
 ## 6. Theme Beneficiary Upper-Limit Candidates
 
@@ -144,7 +144,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: news://EVT-2120a5a8de37
-- Provenance sources: SRC-e2faa96c1c18, SRC-570bdd793f2c
+- Provenance sources: SRC-e2faa96c1c18, SRC-57b3f416b908
 
 ## 7. Prior-Leader Continuation Candidates
 
@@ -164,7 +164,7 @@ Only pre-cutoff news rows are eligible for blind evidence.
 - Disconfirming conditions: only cutoff-after evidence is available, D-1 and earlier market action already reflected the catalyst
 - Memory episodes: none
 - Source URLs: price://blind-safe-d-minus-one
-- Provenance sources: SRC-45ef85b42d8c, SRC-7a4b98beff64
+- Provenance sources: SRC-45ef85b42d8c, SRC-4c5f7c2ca565
 
 ## 8. All Pre-Open Watchlist Candidates
 
@@ -249,23 +249,23 @@ Excluded after-cutoff web source ids:
       {
         "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.664061+09:00",
+        "observed_at": "2026-06-25T10:35:17.249236+09:00",
         "source_id": "SRC-2740221474b3",
         "source_type": "daily_blind_analysis_blind_analysis",
         "uri": "prompt://daily_blind_analysis/ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c"
       },
       {
-        "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+        "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.670880+09:00",
-        "source_id": "SRC-1dafa6c95aca",
+        "observed_at": "2026-06-25T10:35:17.256297+09:00",
+        "source_id": "SRC-2146402dff3b",
         "source_type": "final_synthesis_blind_analysis",
-        "uri": "prompt://final_synthesis/835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8"
+        "uri": "prompt://final_synthesis/f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046"
       }
     ],
     "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data."
   },
-  "blind_artifact_sha256": "e7ab7aebdc3934069dfe17faa7805385bb39659568415c542cb6e6409ac7fe64",
+  "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "candidates": [
     {
       "causal_chain": [
@@ -307,16 +307,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-dffe72ae359c",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/1"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-dae6e652abfa",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-3b48ce471d26",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/1"
         }
@@ -369,16 +369,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-c552c77a3d57",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/2"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-71190e87e6c9",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-16028ff1580c",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/2"
         }
@@ -431,16 +431,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-8e1050ca2ddc",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/3"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-1b8d8c28e97d",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-48492edcd33f",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/3"
         }
@@ -493,16 +493,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-7ddb30a5f464",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/4"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-19ec09be4946",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-1fa0389c8ecb",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/4"
         }
@@ -555,16 +555,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-b5c6524cdf25",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/5"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-454bff8cefd7",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-885a52688c06",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/5"
         }
@@ -617,16 +617,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-e2faa96c1c18",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/6"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-570bdd793f2c",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-57b3f416b908",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/6"
         }
@@ -678,16 +678,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-45ef85b42d8c",
           "source_type": "daily_blind_analysis_candidate",
           "uri": "candidate://daily_blind_analysis/2026-06-24/7"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-7a4b98beff64",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-4c5f7c2ca565",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/7"
         }
@@ -702,7 +702,7 @@ Excluded after-cutoff web source ids:
     }
   ],
   "context_manifest_id": "RUN-a5840d2def32",
-  "created_at": "2026-06-25T10:23:12.671044+09:00",
+  "created_at": "2026-06-25T10:35:17.256450+09:00",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
   "dominant_sectors": [
     {
@@ -733,16 +733,16 @@ Excluded after-cutoff web source ids:
         {
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
           "source_id": "SRC-768538d93edd",
           "source_type": "daily_blind_analysis_dominant_sector",
           "uri": "sector://daily_blind_analysis/2026-06-24/1"
         },
         {
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00",
-          "source_id": "SRC-838e009c8fc9",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-852afe357272",
           "source_type": "final_synthesis_dominant_sector",
           "uri": "sector://final_synthesis/2026-06-24/1"
         }
@@ -757,9 +757,9 @@ Excluded after-cutoff web source ids:
       ]
     }
   ],
-  "prediction_id": "PRED-446d114081a2",
+  "prediction_id": "PRED-3bea3cbc9954",
   "schema_version": "nslab.blind_prediction.v1",
-  "sealed_at": "2026-06-25T10:23:12.672185+09:00",
+  "sealed_at": "2026-06-25T10:35:17.257228+09:00",
   "trade_date": "2026-06-24"
 }
 ```
@@ -772,7 +772,7 @@ Excluded after-cutoff web source ids:
   "episode_id": "EP-f55ede4d9302",
   "trade_date": "2026-06-24",
   "cutoff_at": "2026-06-24T08:59:59+09:00",
-  "created_at": "2026-06-25T10:23:12.671044+09:00",
+  "created_at": "2026-06-25T10:35:17.256450+09:00",
   "execution_protocol_version": "nslab.research_prompt.v5",
   "research_version": "analysis-bundle.v1",
   "input_news_files": [
@@ -780,8 +780,48 @@ Excluded after-cutoff web source ids:
   ],
   "input_news_hashes": [
     "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
-    "ad29c62704cb8f41dd5ca7e67e1492b6c54af1f39ae712fa62f85da01e80fdd6"
+    "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d"
   ],
+  "input_audit": {
+    "row_disposition_coverage_ratio": 1.0,
+    "source_ledger_entry_count": 5
+  },
+  "row_disposition_summary": {
+    "coverage_ratio": 1.0,
+    "excluded_after_cutoff": 0,
+    "included_before_cutoff": 1182,
+    "total_rows": 1182
+  },
+  "blind_integrity": {
+    "blind_context_mode": "NEWS_ONLY_STRICT",
+    "blind_web_search_call_count": 0,
+    "blind_price_repository_access_count": 0,
+    "blind_current_price_access_count": 0,
+    "no_d_outcome_exposed": true
+  },
+  "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
+  "blind_seal_receipt": {
+    "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
+    "blind_context_mode": "NEWS_ONLY_STRICT",
+    "blind_prediction_path": "predictions/2026-06-24.json",
+    "cutoff_at": "2026-06-24T08:59:59+09:00",
+    "no_d_outcome_exposed": true,
+    "phase": "BLIND_SEALED",
+    "prediction_id": "PRED-3bea3cbc9954",
+    "row_disposition_coverage_ratio": 1.0,
+    "row_disposition_sha256": "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
+    "run_id": "RUN-a5840d2def32",
+    "schema_version": "nslab.blind_seal_receipt.v1",
+    "sealed_at": "2026-06-25T10:35:17.257228+09:00",
+    "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
+    "trade_date": "2026-06-24",
+    "validation": {
+      "blind_current_price_access_count": 0,
+      "blind_price_repository_access_count": 0,
+      "blind_web_search_call_count": 0,
+      "canonical_blind_hash_verified": true
+    }
+  },
   "price_source_snapshot": {
     "allowed_through": "2026-06-23",
     "as_of": null,
@@ -810,15 +850,15 @@ Excluded after-cutoff web source ids:
         "uri": "prompt://daily_blind_analysis/ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
         "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.664061+09:00"
+        "observed_at": "2026-06-25T10:35:17.249236+09:00"
       },
       {
-        "source_id": "SRC-1dafa6c95aca",
+        "source_id": "SRC-2146402dff3b",
         "source_type": "final_synthesis_blind_analysis",
-        "uri": "prompt://final_synthesis/835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
-        "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+        "uri": "prompt://final_synthesis/f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+        "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
         "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:23:12.670880+09:00"
+        "observed_at": "2026-06-25T10:35:17.256297+09:00"
       }
     ]
   },
@@ -873,15 +913,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/1",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-dae6e652abfa",
+          "source_id": "SRC-3b48ce471d26",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/1",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -935,15 +975,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/2",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-71190e87e6c9",
+          "source_id": "SRC-16028ff1580c",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/2",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -997,15 +1037,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/3",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-1b8d8c28e97d",
+          "source_id": "SRC-48492edcd33f",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/3",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -1059,15 +1099,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/4",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-19ec09be4946",
+          "source_id": "SRC-1fa0389c8ecb",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/4",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -1121,15 +1161,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/5",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-454bff8cefd7",
+          "source_id": "SRC-885a52688c06",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/5",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -1183,15 +1223,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/6",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-570bdd793f2c",
+          "source_id": "SRC-57b3f416b908",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/6",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     },
@@ -1244,15 +1284,15 @@ Excluded after-cutoff web source ids:
           "uri": "candidate://daily_blind_analysis/2026-06-24/7",
           "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.664061+09:00"
+          "observed_at": "2026-06-25T10:35:17.249236+09:00"
         },
         {
-          "source_id": "SRC-7a4b98beff64",
+          "source_id": "SRC-4c5f7c2ca565",
           "source_type": "final_synthesis_candidate",
           "uri": "candidate://final_synthesis/2026-06-24/7",
-          "content_sha256": "835af300e1d7c3ba2ac7d8ebad511c44d05cf6ef3230d31ebb06e87cce3b94c8",
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
           "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:23:12.670880+09:00"
+          "observed_at": "2026-06-25T10:35:17.256297+09:00"
         }
       ]
     }
@@ -1281,9 +1321,9 @@ Excluded after-cutoff web source ids:
       "source_id": "SRC-5be92bc3ab3e",
       "source_type": "blind_prediction_json",
       "uri": "C:/Users/eorb9/projects/news_bot/predictions/2026-06-24.json",
-      "content_sha256": "db09b48843f6f4dddd91e3638ae6c7daf601e3e1351b3fbec263cf1f5b149300",
+      "content_sha256": "d89af5315c670c5290740a4696ce964d79be3b9be8cc16cec664cd879d08392a",
       "excerpt": null,
-      "observed_at": "2026-06-25T10:23:12.672185+09:00"
+      "observed_at": "2026-06-25T10:35:17.257228+09:00"
     }
   ],
   "available_from": "2026-06-25T00:00:00+09:00"
@@ -2486,22 +2526,23 @@ Excluded after-cutoff web source ids:
 
 <!-- NSLAB:BEGIN source_ledger.jsonl -->
 ```jsonl
-{"available_before_cutoff":true,"content_sha256":"03265fdb56fc9592fc8a67a77bfbc68c34cc8e85ea3e58d785434e0879a3e30c","event_ids":["EVT-2120a5a8de37"],"input_row_ids":[1],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:44+09:00","publisher":null,"retrieved_at":"2026-06-25T10:23:12.671233+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-a5fdc92cbc69","source_type":"news_csv_row","time_verified":true,"title":"넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=1","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"dc3901f5707f270c0fc87fb76ec8c2135eea9192145df00994255db491647ebe","event_ids":["EVT-7f6b254c941c"],"input_row_ids":[2],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:43+09:00","publisher":null,"retrieved_at":"2026-06-25T10:23:12.671233+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-fcafef4a8655","source_type":"news_csv_row","time_verified":true,"title":"“꼭 승리한다”…홍명보호, 남아공전에 32강 진출 명운 건다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=2","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"48b9480daeebbbccdea864a13e84d51b6243f260eb0887c02edff458ff141e15","event_ids":["EVT-0b438e8c2304"],"input_row_ids":[3],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:23:12.671233+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-c9d2c3828d20","source_type":"news_csv_row","time_verified":true,"title":"제노코, 허성재 CTO 장내매수…KAI 시너지·기업가치 제고","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=3","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"0226760cf5897c358ab0400a70d8d5e274984b0aa8114d0d99bf4e0169145be3","event_ids":["EVT-7f4d06a5dcb9"],"input_row_ids":[4],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:23:12.671233+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-195e894e5caf","source_type":"news_csv_row","time_verified":true,"title":"삼성 KODEX 글로벌비만치료제TOP2 Plus증권상장지수투자신탁[주식] ETF 괴리율 초과 발생","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=4","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"fae36db6a65b41aedcbeea1e2bf4bc7e68acae010ff341c07f50bcce021f107e","event_ids":["EVT-9fa6cbb2e995"],"input_row_ids":[5],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:34+09:00","publisher":null,"retrieved_at":"2026-06-25T10:23:12.671233+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-3227c1e28c9c","source_type":"news_csv_row","time_verified":true,"title":"오창테크노폴리스 2공구 부분 준공…청주 '첨단산업 벨트' 속도 낸다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=5","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"03265fdb56fc9592fc8a67a77bfbc68c34cc8e85ea3e58d785434e0879a3e30c","event_ids":["EVT-2120a5a8de37"],"input_row_ids":[1],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:44+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-a5fdc92cbc69","source_type":"news_csv_row","time_verified":true,"title":"넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=1","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"dc3901f5707f270c0fc87fb76ec8c2135eea9192145df00994255db491647ebe","event_ids":["EVT-7f6b254c941c"],"input_row_ids":[2],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:43+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-fcafef4a8655","source_type":"news_csv_row","time_verified":true,"title":"“꼭 승리한다”…홍명보호, 남아공전에 32강 진출 명운 건다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=2","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"48b9480daeebbbccdea864a13e84d51b6243f260eb0887c02edff458ff141e15","event_ids":["EVT-0b438e8c2304"],"input_row_ids":[3],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-c9d2c3828d20","source_type":"news_csv_row","time_verified":true,"title":"제노코, 허성재 CTO 장내매수…KAI 시너지·기업가치 제고","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=3","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"0226760cf5897c358ab0400a70d8d5e274984b0aa8114d0d99bf4e0169145be3","event_ids":["EVT-7f4d06a5dcb9"],"input_row_ids":[4],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-195e894e5caf","source_type":"news_csv_row","time_verified":true,"title":"삼성 KODEX 글로벌비만치료제TOP2 Plus증권상장지수투자신탁[주식] ETF 괴리율 초과 발생","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=4","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"fae36db6a65b41aedcbeea1e2bf4bc7e68acae010ff341c07f50bcce021f107e","event_ids":["EVT-9fa6cbb2e995"],"input_row_ids":[5],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:34+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-3227c1e28c9c","source_type":"news_csv_row","time_verified":true,"title":"오창테크노폴리스 2공구 부분 준공…청주 '첨단산업 벨트' 속도 낸다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=5","usage_phase":"BLIND"}
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 ```json
 {
-  "blind_artifact_sha256": "e7ab7aebdc3934069dfe17faa7805385bb39659568415c542cb6e6409ac7fe64",
+  "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "blind_context_mode": "NEWS_ONLY_STRICT",
   "blind_current_price_access_count": 0,
-  "blind_hash_recomputed": "e7ab7aebdc3934069dfe17faa7805385bb39659568415c542cb6e6409ac7fe64",
+  "blind_hash_recomputed": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "blind_price_repository_access_count": 0,
+  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
   "blind_web_search_call_count": 0,
   "brain_delta_sha256": "7a2e3b942ea6798f95f09eddcff9623105b7db08cba3350336fdd0d68181966f",
   "bundle_incomplete": true,
@@ -2526,21 +2567,24 @@ Excluded after-cutoff web source ids:
   },
   "outcome_coverage_status": "NOT_RUN",
   "outcome_slice_sha256": null,
-  "prediction_sha256": "db09b48843f6f4dddd91e3638ae6c7daf601e3e1351b3fbec263cf1f5b149300",
-  "research_episode_sha256": "a910a5ba01a9920e956fd6b5fcfed2c5d2b1046661a4e546b9e09a3cafe794b1",
-  "research_report_sha256": "0ca4efdc8fed5ed38d3101ec9dc33266a7b041186a7bffc6afcdfd52f55c0306",
+  "phase_state_sha256": "293fab64c341ed16767e9fa76d598007216a52040f0904d9c0bce6d0c501d788",
+  "prediction_sha256": "d89af5315c670c5290740a4696ce964d79be3b9be8cc16cec664cd879d08392a",
+  "research_episode_sha256": "e85224df4177b7bf23612e77f1cb607bee9f0bec43da61a0088d33ca9193fec2",
+  "research_report_sha256": "dfd2f21cf21c8ccd818fbe0e544a1c20ea30b97fbf7a40b5f15dc17626f33f63",
   "row_disposition_coverage_ratio": 1.0,
   "row_disposition_sha256": "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
   "run_id": "RUN-a5840d2def32",
   "schema_version": "nslab.bundle_manifest.v1",
   "source_ledger_entry_count": 5,
-  "source_ledger_sha256": "ad29c62704cb8f41dd5ca7e67e1492b6c54af1f39ae712fa62f85da01e80fdd6",
+  "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
   "trade_date": "2026-06-24",
   "validation": {
     "blind_hash_verified": true,
+    "blind_seal_receipt_hash_verified": true,
     "json_valid": true,
     "jsonl_valid": true,
     "markers_complete": true,
+    "phase_state_recorded": true,
     "row_disposition_hash_verified": true,
     "source_ledger_hash_verified": true
   }
