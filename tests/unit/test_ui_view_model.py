@@ -114,6 +114,12 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-ui/candidate_web_checks.jsonl"
         ),
+        candidate_verification_artifact=(
+            "runs/checkpoints/candidate_verifications/RUN-ui/candidate_verification.json"
+        ),
+        final_synthesis_context_artifact=(
+            "runs/checkpoints/final_synthesis_context/RUN-ui/final_synthesis_context.json"
+        ),
         excluded_candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-ui/excluded_candidate_web_checks.jsonl"
         ),
@@ -205,6 +211,22 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         / "candidate_web_checks"
         / "RUN-ui"
         / "candidate_web_checks.jsonl"
+    )
+    assert view.artifacts.candidate_verification_json == (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_verifications"
+        / "RUN-ui"
+        / "candidate_verification.json"
+    )
+    assert view.artifacts.final_synthesis_context_json == (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-ui"
+        / "final_synthesis_context.json"
     )
     assert view.artifacts.excluded_candidate_web_checks_jsonl == (
         tmp_path

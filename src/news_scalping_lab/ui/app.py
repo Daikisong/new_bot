@@ -121,6 +121,16 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     )
     _download_optional(
         st,
+        "Candidate verification JSON",
+        view.artifacts.candidate_verification_json,
+    )
+    _download_optional(
+        st,
+        "Final synthesis context JSON",
+        view.artifacts.final_synthesis_context_json,
+    )
+    _download_optional(
+        st,
         "Excluded candidate web checks JSONL",
         view.artifacts.excluded_candidate_web_checks_jsonl,
     )
