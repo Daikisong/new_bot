@@ -15,7 +15,7 @@ from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
     final_synthesis_input_summary,
 )
-from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.contracts.models import BlindAnalysis, OutcomeLabels, ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
@@ -171,6 +171,10 @@ class RecordingPriceSource:
         self.calls.append(("outcome", ticker, trade_date))
         raise AssertionError("blind guard must not delegate outcome access")
 
+    def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
+        self.calls.append(("outcome_universe", "*", trade_date))
+        raise AssertionError("blind guard must not delegate outcome universe access")
+
 
 def test_blind_price_guard_blocks_d_day() -> None:
     trade_day = date(2030, 1, 10)
@@ -197,6 +201,8 @@ def test_blind_price_guard_blocks_d_day() -> None:
         guard.get_history("UNKNOWN", through=future_day)
     with pytest.raises(BlindPriceAccessError):
         guard.get_outcome("UNKNOWN", trade_date=trade_day)
+    with pytest.raises(BlindPriceAccessError):
+        guard.get_outcome_universe(trade_date=trade_day)
 
     assert source.calls == [
         ("snapshot", "UNKNOWN", prior_day),

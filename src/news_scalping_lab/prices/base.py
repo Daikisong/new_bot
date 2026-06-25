@@ -71,3 +71,8 @@ class BlindPriceGuard:
 
     def get_outcome(self, ticker: str, *, trade_date: date) -> OutcomeLabels:
         raise BlindPriceAccessError("blind inference cannot access outcome labels")
+
+    def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
+        raise BlindPriceAccessError(
+            "blind inference cannot access full-market outcome labels"
+        )
