@@ -405,6 +405,9 @@ class ContextManifest(StrictModel):
     excluded_web_source_ids: list[str] = Field(default_factory=list)
     web_source_artifact: str | None = None
     web_source_sha256: str | None = None
+    excluded_web_source_artifact: str | None = None
+    excluded_web_source_sha256: str | None = None
+    excluded_web_source_count: int = 0
     price_snapshot: PriceSnapshot
     llm_model_config: dict[str, Any] = Field(default_factory=dict, alias="model_config")
     prompt_hashes: dict[str, str] = Field(default_factory=dict)

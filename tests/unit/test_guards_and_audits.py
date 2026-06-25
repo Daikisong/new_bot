@@ -160,6 +160,8 @@ async def test_temporal_web_guard_excludes_cutoff_after_sources() -> None:
     guard = TemporalWebGuard(FutureOnlyProvider())
     assert await guard.search("query", cutoff_at=cutoff) == []
     assert guard.excluded_source_ids == ["WEB-FUTURE"]
+    assert guard.excluded_sources[0].reason == "published_after_cutoff"
+    assert guard.excluded_sources[0].result.source_id == "WEB-FUTURE"
 
 
 @pytest.mark.asyncio
@@ -168,6 +170,7 @@ async def test_temporal_web_guard_uses_provider_timestamp_verification() -> None
     guard = TemporalWebGuard(ProviderTimestampRejectsUnknown())
     assert await guard.search("query", cutoff_at=cutoff) == []
     assert guard.excluded_source_ids == ["WEB-UNVERIFIED"]
+    assert guard.excluded_sources[0].reason == "missing_published_at"
 
 
 def test_hardcoding_audit_passes_current_source() -> None:
@@ -1107,6 +1110,64 @@ def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
     assert "RUN-web.json: web source is both included and excluded" in findings
     assert "RUN-web.json: web_source:1 is not cutoff verified" in findings
     assert "RUN-web.json: web_source:1 after cutoff" in findings
+
+
+def test_lookahead_audit_checks_excluded_web_source_artifact(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    web_dir = tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web"
+    web_dir.mkdir(parents=True)
+    excluded_artifact = web_dir / "excluded_web_sources.jsonl"
+    excluded_payload = (
+        canonical_json(
+            {
+                "schema_version": "nslab.excluded_web_source.v1",
+                "source_id": "WEB-EXCLUDED",
+                "query": "verification query",
+                "title": "excluded source",
+                "url": "https://example.test/excluded",
+                "snippet": "excluded",
+                "published_at": "2030-01-10T08:30:00+09:00",
+                "retrieved_at": "2030-01-10T08:31:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "exclusion_reason": "timestamp_verification_failed",
+                "time_verified": True,
+                "available_before_cutoff": True,
+                "content_sha256": "abc",
+            }
+        )
+        + "\n"
+    )
+    excluded_artifact.write_text(excluded_payload, encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-web.json",
+        {
+            "run_id": "RUN-web",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "web_sources": [],
+            "excluded_web_source_ids": ["WEB-OTHER"],
+            "excluded_web_source_artifact": excluded_artifact.relative_to(tmp_path).as_posix(),
+            "excluded_web_source_sha256": "bad",
+            "excluded_web_source_count": 2,
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "RUN-web.json: excluded_web_source_sha256 mismatch" in findings
+    assert "RUN-web.json: excluded_web_source:1 is cutoff verified" in findings
+    assert "RUN-web.json: excluded_web_source_ids do not match excluded artifact" in findings
+    assert "RUN-web.json: excluded_web_source_count mismatch" in findings
 
 
 def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:

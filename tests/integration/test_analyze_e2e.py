@@ -174,6 +174,7 @@ class BrokenMemorySweeper:
 class MixedTemporalWebProvider:
     def __init__(self) -> None:
         self.search_calls: list[tuple[str, datetime]] = []
+        self.open_calls: list[str] = []
 
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
         self.search_calls.append((query, cutoff_at))
@@ -195,6 +196,7 @@ class MixedTemporalWebProvider:
         ]
 
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        self.open_calls.append(url)
         return url
 
     async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
@@ -457,6 +459,8 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         source_id.startswith("WEB-FUTURE-")
         for source_id in analysis.context_manifest.excluded_web_source_ids
     )
+    assert web_provider.open_calls
+    assert all(call == "mock://safe-pipeline" for call in web_provider.open_calls)
     manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
     saved_manifest = read_json(manifest_path)
     assert saved_manifest["blind_context_mode"] == "CUTOFF_SAFE_WEB_BLIND"
@@ -471,6 +475,21 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     ]
     assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
     assert all(row["available_before_cutoff"] is True for row in web_source_rows)
+    excluded_web_source_path = tmp_path / saved_manifest["excluded_web_source_artifact"]
+    excluded_web_source_rows = [
+        json.loads(line)
+        for line in excluded_web_source_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert {row["source_id"] for row in excluded_web_source_rows} == set(
+        saved_manifest["excluded_web_source_ids"]
+    )
+    assert saved_manifest["excluded_web_source_count"] == len(excluded_web_source_rows)
+    assert all(
+        row["exclusion_reason"] == "published_after_cutoff"
+        for row in excluded_web_source_rows
+    )
+    assert all(row["available_before_cutoff"] is False for row in excluded_web_source_rows)
+    assert all(row["time_verified"] is False for row in excluded_web_source_rows)
     source_ledger = (
         tmp_path / saved_manifest["source_ledger_artifact"]
     ).read_text(encoding="utf-8")

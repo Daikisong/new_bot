@@ -54,7 +54,12 @@ from news_scalping_lab.utils import (
 )
 from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
-from news_scalping_lab.web.provider import TemporalWebGuard, WebResearchProvider, WebSearchResult
+from news_scalping_lab.web.provider import (
+    TemporalWebGuard,
+    WebResearchProvider,
+    WebSearchExclusion,
+    WebSearchResult,
+)
 
 
 class ExhaustiveCoverageError(RuntimeError):
@@ -355,8 +360,10 @@ class DailyAnalyzer:
     ) -> None:
         guard = TemporalWebGuard(self.web_provider)
         rows: list[dict[str, Any]] = []
+        excluded_rows: list[dict[str, Any]] = []
         for query in manifest.web_queries:
             manifest.blind_web_search_call_count += 1
+            prior_exclusion_count = len(guard.excluded_sources)
             for result in await guard.search(query, cutoff_at=cutoff_at):
                 rows.append(
                     self._web_source_row(
@@ -364,6 +371,14 @@ class DailyAnalyzer:
                         query=query,
                         cutoff_at=cutoff_at,
                         opened_text=await guard.open(result.url, cutoff_at=cutoff_at),
+                    )
+                )
+            for exclusion in guard.excluded_sources[prior_exclusion_count:]:
+                excluded_rows.append(
+                    self._excluded_web_source_row(
+                        exclusion,
+                        query=query,
+                        cutoff_at=cutoff_at,
                     )
                 )
         manifest.excluded_web_source_ids = _unique_preserving_order(
@@ -385,6 +400,19 @@ class DailyAnalyzer:
         artifact_path.write_text(payload, encoding="utf-8")
         manifest.web_source_artifact = artifact_relative.as_posix()
         manifest.web_source_sha256 = sha256_text(payload)
+        excluded_artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "web_sources"
+            / manifest.run_id
+            / "excluded_web_sources.jsonl"
+        )
+        excluded_artifact_path = self.root / excluded_artifact_relative
+        excluded_payload = "".join(canonical_json(row) + "\n" for row in excluded_rows)
+        excluded_artifact_path.write_text(excluded_payload, encoding="utf-8")
+        manifest.excluded_web_source_artifact = excluded_artifact_relative.as_posix()
+        manifest.excluded_web_source_sha256 = sha256_text(excluded_payload)
+        manifest.excluded_web_source_count = len(excluded_rows)
 
     def _web_source_row(
         self,
@@ -417,6 +445,40 @@ class DailyAnalyzer:
             "available_before_cutoff": published_at is not None and published_at <= cutoff_at,
             "content_sha256": sha256_text(content_fingerprint),
             "opened_text_sha256": sha256_text(opened_text),
+        }
+
+    def _excluded_web_source_row(
+        self,
+        exclusion: WebSearchExclusion,
+        *,
+        query: str,
+        cutoff_at: datetime,
+    ) -> dict[str, Any]:
+        result = exclusion.result
+        published_at = result.published_at
+        available_before_cutoff = published_at is not None and published_at <= cutoff_at
+        return {
+            "schema_version": "nslab.excluded_web_source.v1",
+            "source_id": result.source_id,
+            "query": query,
+            "title": result.title,
+            "url": result.url,
+            "snippet": result.snippet,
+            "published_at": published_at.isoformat() if published_at else None,
+            "retrieved_at": now_kst().isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
+            "exclusion_reason": exclusion.reason,
+            "time_verified": False,
+            "available_before_cutoff": available_before_cutoff,
+            "content_sha256": sha256_text(
+                canonical_json(
+                    {
+                        "title": result.title,
+                        "url": result.url,
+                        "snippet": result.snippet,
+                    }
+                )
+            ),
         }
 
     def _write_source_ledger_artifact(

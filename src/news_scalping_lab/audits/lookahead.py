@@ -63,6 +63,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             findings.append(f"{manifest_name}: exhaustive coverage mismatch")
         _check_row_disposition(root, manifest_name, manifest, findings)
         _check_source_ledger(root, manifest_name, manifest, findings)
+        _check_web_source_artifact(root, manifest_name, manifest, findings)
         _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
@@ -420,7 +421,6 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
-    _check_web_source_artifact(root, manifest_name, manifest, findings)
 
 
 def _check_web_source_artifact(
@@ -437,6 +437,7 @@ def _check_web_source_artifact(
     if not isinstance(relative_path, str):
         if web_sources:
             findings.append(f"{manifest_name}: web_source_artifact missing")
+        _check_excluded_web_source_artifact(root, manifest_name, manifest, web_sources, findings)
         return
     path = root / relative_path
     if not path.exists():
@@ -475,6 +476,64 @@ def _check_web_source_artifact(
                 findings.append(f"{manifest_name}: web_source:{line_number} after cutoff")
     if web_sources and web_sources != row_source_ids:
         findings.append(f"{manifest_name}: web_sources do not match web_source_artifact")
+    _check_excluded_web_source_artifact(root, manifest_name, manifest, web_sources, findings)
+
+
+def _check_excluded_web_source_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    web_sources: set[str],
+    findings: list[str],
+) -> None:
+    excluded = set(_string_list(manifest.get("excluded_web_source_ids")))
+    relative_path = manifest.get("excluded_web_source_artifact")
+    if not isinstance(relative_path, str):
+        if excluded:
+            findings.append(f"{manifest_name}: excluded_web_source_artifact missing")
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: excluded_web_source_artifact missing: {relative_path}")
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("excluded_web_source_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: excluded_web_source_sha256 mismatch")
+    row_source_ids: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_name}: excluded_web_source:{line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_name}: excluded_web_source:{line_number} must be object")
+            continue
+        source_id = row.get("source_id")
+        if isinstance(source_id, str):
+            row_source_ids.add(source_id)
+            if source_id in web_sources:
+                findings.append(
+                    f"{manifest_name}: excluded_web_source:{line_number} is also included"
+                )
+        if not isinstance(row.get("exclusion_reason"), str):
+            findings.append(
+                f"{manifest_name}: excluded_web_source:{line_number} missing exclusion_reason"
+            )
+        if row.get("available_before_cutoff") is True and row.get("time_verified") is True:
+            findings.append(
+                f"{manifest_name}: excluded_web_source:{line_number} is cutoff verified"
+            )
+    if excluded and excluded != row_source_ids:
+        findings.append(
+            f"{manifest_name}: excluded_web_source_ids do not match excluded artifact"
+        )
+    entry_count = manifest.get("excluded_web_source_count")
+    if isinstance(entry_count, int) and entry_count != len(row_source_ids):
+        findings.append(f"{manifest_name}: excluded_web_source_count mismatch")
 
 
 def _check_blind_seal(

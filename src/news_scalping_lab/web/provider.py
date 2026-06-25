@@ -18,6 +18,12 @@ class WebSearchResult:
     published_at: datetime | None
 
 
+@dataclass(frozen=True)
+class WebSearchExclusion:
+    result: WebSearchResult
+    reason: str
+
+
 class WebResearchProvider(Protocol):
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
         """Return search results for the guard to timestamp-filter."""
@@ -53,19 +59,35 @@ class TemporalWebGuard:
     def __init__(self, provider: WebResearchProvider) -> None:
         self.provider = provider
         self.excluded_source_ids: list[str] = []
+        self.excluded_sources: list[WebSearchExclusion] = []
 
     async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
         results = await self.provider.search(query, cutoff_at=cutoff_at)
         kept: list[WebSearchResult] = []
         for result in results:
-            if result.published_at is None or not await self.provider.verify_timestamp(
-                result,
-                cutoff_at=cutoff_at,
-            ):
+            exclusion_reason = await self._exclusion_reason(result, cutoff_at=cutoff_at)
+            if exclusion_reason is not None:
                 self.excluded_source_ids.append(result.source_id)
+                self.excluded_sources.append(
+                    WebSearchExclusion(result=result, reason=exclusion_reason)
+                )
                 continue
             kept.append(result)
         return kept
 
     async def open(self, url: str, *, cutoff_at: datetime) -> str:
         return await self.provider.open(url, cutoff_at=cutoff_at)
+
+    async def _exclusion_reason(
+        self,
+        result: WebSearchResult,
+        *,
+        cutoff_at: datetime,
+    ) -> str | None:
+        if result.published_at is None:
+            return "missing_published_at"
+        if await self.provider.verify_timestamp(result, cutoff_at=cutoff_at):
+            return None
+        if result.published_at > cutoff_at:
+            return "published_after_cutoff"
+        return "timestamp_verification_failed"
