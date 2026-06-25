@@ -18,12 +18,18 @@ DOMAIN_TOKENS = {
     "event",
     "leader",
     "leaders",
+    "policies",
     "policy",
     "region",
+    "regions",
     "sector",
+    "sectors",
     "stock",
+    "stocks",
     "theme",
+    "themes",
     "ticker",
+    "tickers",
 }
 CONTAINER_TOKENS = {
     "allowlist",
@@ -38,6 +44,18 @@ CONTAINER_TOKENS = {
     "table",
     "whitelist",
 }
+COLLECTION_CONSTRUCTORS = {
+    "defaultdict",
+    "dict",
+    "frozenset",
+    "list",
+    "mappingproxytype",
+    "ordereddict",
+    "set",
+    "tuple",
+}
+MIN_SIX_DIGIT_TICKER = 100_000
+MAX_SIX_DIGIT_TICKER = 999_999
 SCORE_NAME_TOKENS = {"score", "scores", "scoring"}
 SCORE_QUALIFIER_TOKENS = {
     "event",
@@ -140,6 +158,17 @@ def _ast_findings(root: Path, path: Path, tree: ast.AST, lines: list[str]) -> li
                         )
                     )
                     break
+                if target_name and _is_numeric_ticker_domain_collection(target_name, value):
+                    findings.append(
+                        _finding(
+                            root,
+                            path,
+                            node.lineno,
+                            "numeric_six_digit_ticker",
+                            _line_at(lines, node.lineno),
+                        )
+                    )
+                    break
         if isinstance(node, ast.If) and _has_literal_condition_scoring(node):
             findings.append(
                 _finding(root, path, node.lineno, "fixed_expression_score", _line_at(lines, node.lineno))
@@ -165,7 +194,7 @@ def _is_forbidden_domain_assignment(name: str, value: ast.AST) -> bool:
     tokens = set(_identifier_tokens(name))
     if _is_score_table_name(tokens):
         return True
-    if not _is_collection_literal(value):
+    if not _is_collection_expression(value):
         return False
     if tokens & DOMAIN_TOKENS and tokens & CONTAINER_TOKENS:
         return True
@@ -175,7 +204,7 @@ def _is_forbidden_domain_assignment(name: str, value: ast.AST) -> bool:
 
 def _is_hangul_domain_collection(name: str, value: ast.AST) -> bool:
     tokens = set(_identifier_tokens(name))
-    if not _is_collection_literal(value) or not tokens & DOMAIN_TOKENS:
+    if not _is_collection_expression(value) or not tokens & DOMAIN_TOKENS:
         return False
     return _contains_hangul_domain_literal(value)
 
@@ -193,8 +222,42 @@ def _is_score_table_name(tokens: set[str]) -> bool:
     return bool(tokens & SCORE_NAME_TOKENS and tokens & SCORE_QUALIFIER_TOKENS)
 
 
-def _is_collection_literal(value: ast.AST) -> bool:
-    return isinstance(value, ast.Dict | ast.List | ast.Tuple | ast.Set)
+def _is_numeric_ticker_domain_collection(name: str, value: ast.AST) -> bool:
+    tokens = set(_identifier_tokens(name))
+    return bool(
+        tokens & DOMAIN_TOKENS
+        and _is_collection_expression(value)
+        and _contains_numeric_ticker_literal(value)
+    )
+
+
+def _contains_numeric_ticker_literal(value: ast.AST) -> bool:
+    for child in ast.walk(value):
+        if (
+            isinstance(child, ast.Constant)
+            and isinstance(child.value, int)
+            and not isinstance(child.value, bool)
+            and MIN_SIX_DIGIT_TICKER <= child.value <= MAX_SIX_DIGIT_TICKER
+        ):
+            return True
+    return False
+
+
+def _is_collection_expression(value: ast.AST) -> bool:
+    if isinstance(value, ast.Dict | ast.List | ast.Tuple | ast.Set):
+        return True
+    if isinstance(value, ast.Call):
+        call_name = _call_name(value.func)
+        return call_name is not None and call_name.lower() in COLLECTION_CONSTRUCTORS
+    return False
+
+
+def _call_name(func: ast.expr) -> str | None:
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
 
 
 def _identifier_tokens(name: str) -> list[str]:
