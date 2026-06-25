@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.warehouse import WarehouseStore
 
@@ -44,7 +45,6 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         if stock_web_path is not None and stock_web_path.exists()
         else None
     )
-    vector_index_path = settings.path("memory/vector_index")
     schema_dir = settings.path("schemas")
     return {
         "project_root": settings.project_root.as_posix(),
@@ -79,11 +79,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "head": current_brain_version(settings.project_root),
             "accepted_episode_count": len(store.list_accepted()),
         },
-        "vector_index": {
-            "path": vector_index_path.as_posix(),
-            "exists": vector_index_path.exists(),
-            "file_count": _file_count(vector_index_path),
-        },
+        "vector_index": inspect_vector_index(settings.project_root),
         "schemas": {
             "path": schema_dir.as_posix(),
             "exists": schema_dir.exists(),

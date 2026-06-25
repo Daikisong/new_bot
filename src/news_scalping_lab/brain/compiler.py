@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, stable_id, write_json
 from news_scalping_lab.warehouse import WarehouseStore
@@ -109,6 +110,7 @@ class BrainCompiler:
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
         if previous_version != version:
             write_rebuild_diff(self.root, previous_version, version)
+        LocalRetrievalStore(self.root).rebuild_index()
         WarehouseStore(self.root).rebuild_all()
         return manifest
 

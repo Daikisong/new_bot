@@ -59,6 +59,11 @@ nslab brain audit
 updates the brain immediately. Use `--no-accept` when you want to stage episodes
 for manual validation first.
 
+`brain rebuild` also refreshes `memory/vector_index/manifest.json` and
+`memory/vector_index/episodes.jsonl`. The local index is a deterministic
+embedding-style projection of accepted episodes; it supports retrieval but is never
+a candidate gate.
+
 Free-form semantic imports preserve the raw source under `data/raw/research/`
 and record a source-segment audit in `ResearchEpisode.input_audit.semantic_import`.
 The audit stores source hashes, non-empty segment hashes, and the episode fields

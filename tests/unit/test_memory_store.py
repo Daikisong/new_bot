@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.retrieval.store import LocalRetrievalStore
+from news_scalping_lab.retrieval.store import LocalRetrievalStore, inspect_vector_index
+from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST
 
 
@@ -43,6 +44,11 @@ def test_local_memory_store_adds_and_lists_accepted_episode(tmp_path) -> None:
 
     assert [item.episode_id for item in memory.list_all_episodes()] == ["EP-memory"]
     assert (tmp_path / "research" / "accepted" / "EP-memory.json").exists()
+    assert (tmp_path / "memory" / "vector_index" / "manifest.json").exists()
+    assert (tmp_path / "memory" / "vector_index" / "episodes.jsonl").exists()
+    index = memory.inspect_index()
+    assert index["status"] == "current"
+    assert index["record_count"] == 1
 
 
 def test_local_memory_store_filters_available_as_of_cutoff(tmp_path) -> None:
@@ -84,3 +90,31 @@ def test_semantic_search_keeps_research_available_without_exact_keyword_gate(tmp
     assert LocalRetrievalStore(tmp_path, force_empty=True).search_semantic(
         "unseen wording with no shared tokens", limit=5
     ) == []
+
+
+def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:
+    memory = LocalRetrievalStore(tmp_path)
+    memory.add_episode(
+        _episode(
+            "EP-indexed",
+            summary="Indexed memory summary.",
+            mechanism="indexed mechanism",
+            available_at=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+    )
+    store = ResearchStore(tmp_path)
+    second = _episode(
+        "EP-new",
+        summary="New accepted memory summary.",
+        mechanism="new mechanism",
+        available_at=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store.save_episode(second)
+    store.accept(second.episode_id)
+
+    stale = inspect_vector_index(tmp_path)
+    rebuilt = memory.rebuild_index()
+
+    assert stale["status"] == "stale"
+    assert rebuilt["record_count"] == 2
+    assert inspect_vector_index(tmp_path)["status"] == "current"

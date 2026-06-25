@@ -3,6 +3,7 @@ from __future__ import annotations
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostics import build_doctor_report
+from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.utils import write_json
 from news_scalping_lab.warehouse import WarehouseStore
 
@@ -24,9 +25,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     settings.llm.max_output_tokens = 8192
     ensure_project_dirs(settings)
     export_json_schemas(tmp_path / "schemas")
-    (tmp_path / "memory" / "vector_index" / "index.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    LocalRetrievalStore(tmp_path).rebuild_index()
     atlas = tmp_path / "stock-web" / "atlas"
     atlas.mkdir(parents=True)
     write_json(
@@ -75,6 +74,8 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["warehouse"]["status"] == "ok"
     assert "research_episodes.parquet" in report["warehouse"]["counts"]
     assert report["vector_index"]["exists"] is True
-    assert report["vector_index"]["file_count"] == 1
+    assert report["vector_index"]["status"] == "current"
+    assert report["vector_index"]["record_count"] == 0
+    assert report["vector_index"]["embedding_method"] == "deterministic_hashing_v1"
     assert report["schemas"]["file_count"] >= 12
     assert report["schemas"]["versions"]["research_episode"] == "nslab.research_episode.v1"
