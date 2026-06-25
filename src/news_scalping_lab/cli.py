@@ -17,7 +17,7 @@ from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
-from news_scalping_lab.config import ensure_project_dirs, load_settings
+from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
 from news_scalping_lab.context.session_pack import (
     SessionPackBudgetExceededError,
     SessionPackFutureContextError,
@@ -73,8 +73,15 @@ def _parse_date(value: str) -> date:
 def init() -> None:
     settings = load_settings()
     ensure_project_dirs(settings)
+    config_files = write_default_config_files(settings)
     written = export_json_schemas(settings.path("schemas"))
-    _echo({"initialized": True, "schemas": [path.as_posix() for path in written]})
+    _echo(
+        {
+            "initialized": True,
+            "configs": [path.as_posix() for path in config_files],
+            "schemas": [path.as_posix() for path in written],
+        }
+    )
 
 
 @app.command()

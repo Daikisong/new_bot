@@ -48,6 +48,135 @@ class Settings(BaseModel):
         return self.project_root / path
 
 
+DEFAULT_PROJECT_DIRS = [
+    "configs",
+    "schemas",
+    "prompts/research_import",
+    "prompts/brain_compile",
+    "prompts/blind_analysis",
+    "prompts/memory_sweep",
+    "prompts/web_research",
+    "prompts/candidate_generation",
+    "prompts/red_team",
+    "prompts/synthesis",
+    "prompts/evaluation",
+    "data/inbox/news",
+    "data/inbox/research",
+    "data/raw/news",
+    "data/raw/research",
+    "data/normalized",
+    "data/quarantine",
+    "data/cache",
+    "research/episodes",
+    "research/accepted",
+    "research/rejected",
+    "research/hypotheses",
+    "research/counterexamples",
+    "research/indexes",
+    "memory/episodes",
+    "memory/claims",
+    "memory/mechanisms",
+    "memory/event_ticker_edges",
+    "memory/market_memory",
+    "memory/company_memory",
+    "memory/shard_brains",
+    "memory/vector_index",
+    "brain/snapshots",
+    "brain/current",
+    "brain/diffs",
+    "warehouse",
+    "runs/checkpoints",
+    ".agents/skills/news-scalping-lab/references",
+    ".agents/skills/news-scalping-lab/scripts",
+]
+
+DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
+    "default.yaml": {
+        "project_name": "news-scalping-lab",
+        "llm_provider": "mock",
+        "web_provider": "mock",
+        "price_provider": "mock",
+        "stock_web_path": None,
+        "stock_web_remote_url": "https://github.com/Songdaiki/stock-web.git",
+        "stock_web_cache_path": "data/cache/stock-web",
+        "stock_web_cache_enabled": False,
+        "default_mode": "exhaustive",
+        "timezone": "Asia/Seoul",
+        "output_dirs": {
+            "predictions": "predictions",
+            "reports": "reports",
+            "manifests": "runs/manifests",
+            "traces": "runs/traces",
+            "session_packs": "session_packs",
+            "training_exports": "training_exports",
+        },
+        "limits": {
+            "max_concurrency": 4,
+            "shard_episode_count": 20,
+            "max_news_items_for_mock": 12,
+            "session_pack_token_budget": 60_000,
+        },
+    },
+    "models.yaml": {
+        "default": {
+            "provider": "mock",
+            "model": "deterministic-mock",
+            "reasoning_effort": "low",
+            "max_output_tokens": 4096,
+        },
+        "openai": {
+            "provider": "openai",
+            "model": "gpt-5-mini",
+            "reasoning_effort": "medium",
+            "max_output_tokens": 8192,
+        },
+    },
+    "context_budget.yaml": {
+        "exhaustive": {
+            "include_global_brain": True,
+            "include_all_accepted_episodes": True,
+            "include_retrieved_raw_episodes": True,
+        },
+        "brain": {
+            "include_global_brain": True,
+            "include_all_shard_brains": True,
+            "include_retrieved_raw_episodes": True,
+        },
+        "fast": {
+            "include_global_brain": True,
+            "include_all_accepted_episodes": False,
+            "include_retrieved_raw_episodes": True,
+        },
+    },
+    "inference.yaml": {
+        "default_mode": "exhaustive",
+        "confidence_labels": ["very_high", "high", "medium", "low", "speculative"],
+        "path_types": ["SINGLE_EVENT", "THEME_BENEFICIARY", "CONTINUATION", "HYBRID"],
+    },
+    "evaluation.yaml": {
+        "labels": [
+            "high_return_5",
+            "high_return_10",
+            "high_return_15",
+            "high_return_20",
+            "upper_limit_touched",
+            "upper_limit_closed",
+        ],
+        "metrics": [
+            "UpperLimit Recall@5",
+            "UpperLimit Recall@10",
+            "UpperLimit Recall@20",
+            "Precision@5",
+            "Precision@10",
+            "Theme Recall",
+            "Single-event Recall",
+            "Beneficiary Recall",
+            "Continuation Recall",
+        ],
+    },
+}
+
+
 def _read_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -97,36 +226,29 @@ def load_settings(project_root: Path | None = None) -> Settings:
 
 def ensure_project_dirs(settings: Settings) -> None:
     dirs = [
-        "data/inbox/news",
-        "data/inbox/research",
-        "data/raw/news",
-        "data/raw/research",
-        "data/normalized",
-        "data/quarantine",
-        "data/cache",
-        "research/episodes",
-        "research/accepted",
-        "research/rejected",
-        "research/indexes",
-        "memory/episodes",
-        "memory/claims",
-        "memory/mechanisms",
-        "memory/event_ticker_edges",
-        "memory/market_memory",
-        "memory/company_memory",
-        "memory/shard_brains",
-        "memory/vector_index",
-        "brain/snapshots",
-        "brain/current",
-        "brain/diffs",
-        "warehouse",
+        *DEFAULT_PROJECT_DIRS,
         settings.output_dirs.predictions,
         settings.output_dirs.reports,
         settings.output_dirs.manifests,
         settings.output_dirs.traces,
-        "runs/checkpoints",
         settings.output_dirs.session_packs,
         settings.output_dirs.training_exports,
     ]
     for directory in dirs:
         settings.path(directory).mkdir(parents=True, exist_ok=True)
+
+
+def write_default_config_files(settings: Settings) -> list[Path]:
+    configs_dir = settings.path("configs")
+    configs_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for filename, payload in DEFAULT_CONFIG_FILES.items():
+        path = configs_dir / filename
+        if path.exists():
+            continue
+        path.write_text(
+            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        written.append(path)
+    return written

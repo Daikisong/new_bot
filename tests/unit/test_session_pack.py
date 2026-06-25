@@ -150,7 +150,6 @@ def test_session_pack_cli_exits_nonzero_when_available_episode_exceeds_budget(
     settings = Settings(project_root=tmp_path)
     settings.limits.session_pack_token_budget = 500
     ensure_project_dirs(settings)
-    (tmp_path / "configs").mkdir()
     (tmp_path / "configs" / "default.yaml").write_text(
         "limits:\n  session_pack_token_budget: 500\n",
         encoding="utf-8",
