@@ -18,6 +18,8 @@ runs/checkpoints/*
 !runs/checkpoints/brain_context/**
 !runs/checkpoints/memory_sweep/
 !runs/checkpoints/memory_sweep/**
+!runs/checkpoints/row_disposition/
+!runs/checkpoints/row_disposition/**
 brain/snapshots/*
 brain/diffs/*
 !brain/snapshots/.gitkeep

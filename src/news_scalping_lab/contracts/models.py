@@ -379,6 +379,10 @@ class ContextManifest(StrictModel):
     memory_sweep_artifacts: list[str] = Field(default_factory=list)
     memory_sweep_shard_count: int = 0
     memory_sweep_cache_hits: int = 0
+    row_disposition_artifact: str | None = None
+    row_disposition_sha256: str | None = None
+    row_disposition_coverage_ratio: float = 0.0
+    row_disposition_summary: dict[str, Any] = Field(default_factory=dict)
     red_team_artifacts: list[str] = Field(default_factory=list)
     token_counts: dict[str, int] = Field(default_factory=dict)
     truncations: list[str] = Field(default_factory=list)

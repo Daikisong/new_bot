@@ -103,7 +103,8 @@ class DailyAnalyzer:
         web_search: bool = False,
     ) -> DailyAnalysis:
         mode = normalize_analysis_mode(mode)
-        batch = load_news_csv(news_csv, trade_date=trade_date).before_or_at(cutoff_at)
+        full_batch = load_news_csv(news_csv, trade_date=trade_date)
+        batch = full_batch.before_or_at(cutoff_at)
         run_seed = sha256_text(f"{batch.sha256}|{trade_date}|{cutoff_at.isoformat()}|{mode}")
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
@@ -121,6 +122,12 @@ class DailyAnalyzer:
             web_queries=web_queries,
         )
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
+        self._write_row_disposition_artifact(
+            full_items=full_batch.items,
+            included_items=batch.items,
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
         self._fail_if_brain_context_contains_unavailable_episodes(
             cutoff_at=cutoff_at,
             manifest=manifest,
@@ -244,6 +251,70 @@ class DailyAnalyzer:
             report_path=report_path.relative_to(self.root).as_posix(),
             prediction_path=prediction_path.relative_to(self.root).as_posix(),
         )
+
+    def _write_row_disposition_artifact(
+        self,
+        *,
+        full_items: list[NewsItem],
+        included_items: list[NewsItem],
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> None:
+        included_event_ids = {item.event_id for item in included_items}
+        rows: list[dict[str, Any]] = []
+        summary = {
+            "total_rows": len(full_items),
+            "included_before_cutoff": 0,
+            "excluded_after_cutoff": 0,
+        }
+        for item in full_items:
+            included = item.event_id in included_event_ids and item.published_at <= cutoff_at
+            disposition = "INCLUDED_BEFORE_CUTOFF" if included else "EXCLUDED_AFTER_CUTOFF"
+            summary_key = "included_before_cutoff" if included else "excluded_after_cutoff"
+            summary[summary_key] += 1
+            rows.append(
+                {
+                    "schema_version": "nslab.row_disposition.v1",
+                    "run_id": manifest.run_id,
+                    "row_number": item.row_number,
+                    "event_id": item.event_id,
+                    "published_at": item.published_at.isoformat(),
+                    "source_id": item.source_id,
+                    "disposition": disposition,
+                    "eligible_for_blind_evidence": included,
+                    "reason": (
+                        "published_at <= cutoff_at"
+                        if included
+                        else "published_at > cutoff_at"
+                    ),
+                    "title_sha256": sha256_text(item.title),
+                    "body_sha256": sha256_text(item.body),
+                    "title_chars": len(item.title),
+                    "body_chars": len(item.body),
+                    "provenance_source_ids": [
+                        provenance.source_id for provenance in item.provenance
+                    ],
+                }
+            )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "row_disposition"
+            / manifest.run_id
+            / "row_disposition.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        coverage_ratio = len(rows) / len(full_items) if full_items else 1.0
+        manifest.row_disposition_artifact = artifact_relative.as_posix()
+        manifest.row_disposition_sha256 = sha256_text(payload)
+        manifest.row_disposition_coverage_ratio = coverage_ratio
+        manifest.row_disposition_summary = {
+            **summary,
+            "coverage_ratio": coverage_ratio,
+        }
 
     def _filter_retrieved_ids_available_as_of(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time, timedelta
 from typing import TypeVar
 
@@ -33,7 +34,7 @@ from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, read_json, sha256_text
 from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
@@ -256,7 +257,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     csv_path = tmp_path / "news.csv"
     csv_path.write_text(
         "page,row,date,time,title,body\n"
-        '1,1,"2030-01-10","08:00:00","가상회사, 신규 사업 검토","상장 여부와 직접성을 검증해야 한다."\n',
+        '1,1,"2030-01-10","08:00:00","가상회사, 신규 사업 검토","상장 여부와 직접성을 검증해야 한다."\n'
+        '1,2,"2030-01-10","09:30:00","장중 결과성 기사","cutoff 이후 행은 BLIND 근거에서 제외한다."\n',
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
@@ -302,6 +304,29 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]
+    assert saved_manifest["row_disposition_artifact"]
+    assert saved_manifest["row_disposition_coverage_ratio"] == 1.0
+    assert saved_manifest["row_disposition_summary"] == {
+        "coverage_ratio": 1.0,
+        "excluded_after_cutoff": 1,
+        "included_before_cutoff": 1,
+        "total_rows": 2,
+    }
+    row_disposition_path = tmp_path / saved_manifest["row_disposition_artifact"]
+    row_disposition_text = row_disposition_path.read_text(encoding="utf-8")
+    row_dispositions = [
+        json.loads(line) for line in row_disposition_text.splitlines() if line.strip()
+    ]
+    assert sha256_text(row_disposition_text) == saved_manifest["row_disposition_sha256"]
+    assert [row["row_number"] for row in row_dispositions] == [1, 2]
+    assert [row["disposition"] for row in row_dispositions] == [
+        "INCLUDED_BEFORE_CUTOFF",
+        "EXCLUDED_AFTER_CUTOFF",
+    ]
+    assert "title" not in row_dispositions[0]
+    assert "body" not in row_dispositions[0]
+    assert row_dispositions[0]["title_sha256"]
+    assert row_dispositions[0]["body_sha256"]
     assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]

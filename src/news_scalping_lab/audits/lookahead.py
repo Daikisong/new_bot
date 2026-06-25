@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 
-from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_json
+from news_scalping_lab.utils import is_available_as_of, parse_datetime, read_json, sha256_text
 
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
@@ -52,6 +53,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             and manifest.get("accepted_episode_count") != manifest.get("swept_episode_count")
         ):
             findings.append(f"{manifest_name}: exhaustive coverage mismatch")
+        _check_row_disposition(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
         "passed": not findings,
@@ -176,6 +178,53 @@ def _check_news_only_blind_protocol(
             findings.append(f"{manifest_name}: {field} must be 0 in NEWS_ONLY_STRICT")
     if manifest.get("no_d_outcome_exposed") is not True:
         findings.append(f"{manifest_name}: no_d_outcome_exposed must be true")
+
+
+def _check_row_disposition(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    relative_path = manifest.get("row_disposition_artifact")
+    if not isinstance(relative_path, str):
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(f"{manifest_name}: row_disposition_artifact missing: {relative_path}")
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("row_disposition_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: row_disposition_sha256 mismatch")
+    rows: list[dict[str, object]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_name}: row_disposition:{line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_name}: row_disposition:{line_number} must be object")
+            continue
+        if "title" in row or "body" in row:
+            findings.append(
+                f"{manifest_name}: row_disposition:{line_number} must not duplicate title/body"
+            )
+        rows.append(row)
+    row_numbers = [row.get("row_number") for row in rows]
+    if len(row_numbers) != len(set(row_numbers)):
+        findings.append(f"{manifest_name}: row_disposition duplicate row_number")
+    summary = manifest.get("row_disposition_summary")
+    if isinstance(summary, dict):
+        total_rows = summary.get("total_rows")
+        if isinstance(total_rows, int) and total_rows != len(rows):
+            findings.append(f"{manifest_name}: row_disposition total_rows mismatch")
+    coverage_ratio = manifest.get("row_disposition_coverage_ratio")
+    if isinstance(coverage_ratio, (int, float)) and float(coverage_ratio) != 1.0:
+        findings.append(f"{manifest_name}: row_disposition coverage ratio must be 1.0")
 
 
 def _string_list(value: object) -> list[str]:

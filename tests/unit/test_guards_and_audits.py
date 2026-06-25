@@ -627,6 +627,45 @@ def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Pat
     assert "RUN-news-only-violation.json: no_d_outcome_exposed must be true" in findings
 
 
+def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    artifact_dir = tmp_path / "runs" / "checkpoints" / "row_disposition" / "RUN-row"
+    artifact_dir.mkdir(parents=True)
+    artifact = artifact_dir / "row_disposition.jsonl"
+    artifact.write_text(
+        '{"row_number":1,"title":"raw title must not be duplicated"}\n'
+        '{"row_number":1,"disposition":"INCLUDED_BEFORE_CUTOFF"}\n',
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-row.json",
+        {
+            "run_id": "RUN-row",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "row_disposition_artifact": artifact.relative_to(tmp_path).as_posix(),
+            "row_disposition_sha256": "wrong",
+            "row_disposition_coverage_ratio": 0.5,
+            "row_disposition_summary": {"total_rows": 3},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-row.json: row_disposition_sha256 mismatch" in findings
+    assert "RUN-row.json: row_disposition:1 must not duplicate title/body" in findings
+    assert "RUN-row.json: row_disposition duplicate row_number" in findings
+    assert "RUN-row.json: row_disposition total_rows mismatch" in findings
+    assert "RUN-row.json: row_disposition coverage ratio must be 1.0" in findings
+
+
 def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> None:
     (tmp_path / "session_packs" / "2030-01-10").mkdir(parents=True)
     (tmp_path / "research" / "accepted").mkdir(parents=True)
