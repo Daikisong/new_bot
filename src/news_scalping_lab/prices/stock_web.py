@@ -54,6 +54,43 @@ class StockWebPriceSource:
             "max_date": manifest.get("max_date"),
         }
 
+    def inspect_atlas_status(self) -> dict[str, Any]:
+        schema = self.inspect_atlas_schema()
+        shard_roots: dict[str, dict[str, Any]] = {}
+        for key in ("calibration_shard_root", "compat_shard_root", "raw_shard_root"):
+            configured = schema.get(key)
+            path = self._resolve_shard_root(configured)
+            shard_roots[key] = {
+                "configured": str(configured) if configured is not None else None,
+                "path": path.as_posix(),
+                "exists": path.exists(),
+            }
+
+        declared_fields = self._declared_schema_fields(schema)
+        required_fields = sorted(REQUIRED_PRICE_FIELDS)
+        missing_required_fields = sorted(REQUIRED_PRICE_FIELDS - declared_fields)
+        manifest_exists = schema.get("manifest_path") is not None
+        schema_exists = schema.get("schema_path") is not None
+        has_readable_shard_root = any(root["exists"] is True for root in shard_roots.values())
+        status = (
+            "ok"
+            if manifest_exists
+            and schema_exists
+            and not missing_required_fields
+            and has_readable_shard_root
+            else "attention"
+        )
+        return {
+            "status": status,
+            "manifest_exists": manifest_exists,
+            "schema_exists": schema_exists,
+            "required_fields": required_fields,
+            "declared_fields": sorted(declared_fields),
+            "missing_required_fields": missing_required_fields,
+            "shard_roots": shard_roots,
+            "has_readable_shard_root": has_readable_shard_root,
+        }
+
     def inspect_schema(self) -> dict[str, list[str]]:
         schemas: dict[str, list[str]] = {}
         atlas_schema = self.inspect_atlas_schema()
@@ -254,12 +291,29 @@ class StockWebPriceSource:
         ]
         roots: list[Path] = []
         for value in relative_roots:
-            candidate = self.root / str(value)
-            if not candidate.exists() and str(value).startswith("atlas/"):
-                candidate = self.atlas_root / str(value).removeprefix("atlas/")
+            candidate = self._resolve_shard_root(value)
             if candidate.exists() and candidate not in roots:
                 roots.append(candidate)
         return roots
+
+    def _resolve_shard_root(self, value: object) -> Path:
+        text = str(value)
+        candidate = self.root / text
+        if not candidate.exists() and text.startswith("atlas/"):
+            candidate = self.atlas_root / text.removeprefix("atlas/")
+        return candidate
+
+    def _declared_schema_fields(self, schema: dict[str, Any]) -> set[str]:
+        fields: set[str] = set()
+        for key in ("tradable_shard_columns", "raw_shard_columns"):
+            column_map = schema.get(key)
+            if not isinstance(column_map, dict):
+                continue
+            for raw_key, raw_value in column_map.items():
+                canonical = _canonical_price_field(raw_key, raw_value)
+                if canonical is not None:
+                    fields.add(canonical)
+        return fields
 
     def _column_aliases(self) -> dict[str, list[str]]:
         aliases = {
@@ -291,6 +345,8 @@ DEFAULT_COLUMN_ALIASES: dict[str, set[str]] = {
     "market_cap": {"mc", "market_cap", "marketcap", "marcap"},
     "listed_shares": {"s", "listed_shares", "listedshares", "stocks", "shares"},
 }
+
+REQUIRED_PRICE_FIELDS = {"date", "open", "high", "low", "close"}
 
 
 def _normalize_column_name(value: str | None) -> str:

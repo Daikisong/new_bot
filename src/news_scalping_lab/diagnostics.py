@@ -61,11 +61,12 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         configured_path=stock_web_path,
         cache_path=stock_web_cache_path,
     )
-    stock_web_schema = (
-        StockWebPriceSource(stock_web_effective_path).inspect_atlas_schema()
-        if stock_web_effective_path is not None and stock_web_effective_path.exists()
-        else None
-    )
+    stock_web_schema: dict[str, Any] | None = None
+    stock_web_schema_status: dict[str, Any] | None = None
+    if stock_web_effective_path is not None and stock_web_effective_path.exists():
+        stock_web_source = StockWebPriceSource(stock_web_effective_path)
+        stock_web_schema = stock_web_source.inspect_atlas_schema()
+        stock_web_schema_status = stock_web_source.inspect_atlas_status()
     schema_dir = settings.path("schemas")
     coverage_audit = audit_coverage(settings.project_root)
     warehouse_status = _warehouse_status(
@@ -112,6 +113,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "effective_path_source": stock_web_effective_source,
             "remote_url": settings.stock_web_remote_url,
             "schema": stock_web_schema,
+            "schema_status": stock_web_schema_status,
         },
         "warehouse": {
             "status": warehouse_status,
@@ -190,6 +192,10 @@ def _doctor_readiness(
             findings.append("stock_web: configured price provider has no readable path")
         elif not isinstance(stock_web.get("schema"), dict):
             findings.append("stock_web: atlas schema is missing or unreadable")
+        elif not isinstance(stock_web.get("schema_status"), dict) or _nested_dict(
+            stock_web, "schema_status"
+        ).get("status") != "ok":
+            findings.append("stock_web: atlas manifest/schema or shard roots are incomplete")
 
     warehouse = report.get("warehouse")
     if not isinstance(warehouse, dict) or warehouse.get("status") != "ok":

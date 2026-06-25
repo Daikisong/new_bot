@@ -416,6 +416,53 @@ def test_doctor_report_readiness_requires_stock_web_path_when_price_provider_ena
     }
 
 
+def test_doctor_report_readiness_flags_incomplete_stock_web_atlas(
+    tmp_path,
+) -> None:
+    stock_web_path = tmp_path / "stock-web"
+    atlas = stock_web_path / "atlas"
+    atlas.mkdir(parents=True)
+    write_json(
+        atlas / "manifest.json",
+        {
+            "source_name": "stock-web-incomplete-test",
+            "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year",
+        },
+    )
+    write_json(
+        atlas / "schema.json",
+        {
+            "tradable_shard_columns": {
+                "d": "date",
+                "o": "open",
+                "c": "close",
+            }
+        },
+    )
+    settings = Settings(
+        project_root=tmp_path,
+        price_provider="stock-web",
+        stock_web_path=stock_web_path,
+    )
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    report = build_doctor_report(settings)
+
+    assert report["stock_web"]["schema_status"]["status"] == "attention"
+    assert report["stock_web"]["schema_status"]["missing_required_fields"] == [
+        "high",
+        "low",
+    ]
+    assert report["stock_web"]["schema_status"]["has_readable_shard_root"] is False
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["stock_web: atlas manifest/schema or shard roots are incomplete"],
+    }
+
+
 def test_doctor_report_readiness_flags_unsupported_price_provider(tmp_path) -> None:
     settings = Settings(project_root=tmp_path, price_provider="unknown-price")
     ensure_project_dirs(settings)

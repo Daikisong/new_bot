@@ -115,12 +115,18 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
 
     source = StockWebPriceSource(tmp_path)
     schema = source.inspect_atlas_schema()
+    status = source.inspect_atlas_status()
     history = source.get_history("005930", through=date(2030, 1, 10))
     outcome = source.get_outcome("005930", trade_date=date(2030, 1, 10))
     one_price_outcome = source.get_outcome("999999", trade_date=date(2030, 1, 10))
     universe = source.get_outcome_universe(trade_date=date(2030, 1, 10))
 
     assert schema["calibration_shard_root"] == "atlas/ohlcv_tradable_by_symbol_year"
+    assert status["status"] == "ok"
+    assert status["manifest_exists"] is True
+    assert status["schema_exists"] is True
+    assert status["missing_required_fields"] == []
+    assert status["shard_roots"]["calibration_shard_root"]["exists"] is True
     assert [record.trade_date for record in history] == [date(2030, 1, 8), date(2030, 1, 10)]
     assert outcome.open_gap_pct == pytest.approx(5.0)
     assert outcome.intraday_high_return_pct == pytest.approx(30.0)
