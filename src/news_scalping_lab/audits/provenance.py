@@ -1707,6 +1707,8 @@ def _check_training_export_manifest(
     if not isinstance(output_file, str) or not output_file:
         findings.append(f"{label}: training export output_file missing")
         return
+    if Path(output_file).is_absolute():
+        findings.append(f"{label}: training export output_file must be project-relative")
     output_path = _resolve_training_export_output_path(root, output_file)
     if output_path is None:
         findings.append(f"{label}: training export output_file escapes project root")

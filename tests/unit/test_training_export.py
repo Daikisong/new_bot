@@ -246,10 +246,13 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert sft_manifest["skipped_episode_count"] == 0
     assert sft_manifest["skipped_episodes"] == []
     assert sft_manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
+    assert sft_manifest["output_file"] == "training_exports/sft/sft.jsonl"
     assert sft_manifest["output_sha256"]
     assert "Do not train postmortem labels as if they were blind answers." in sft_manifest["notes"]
     preference_manifest = read_json(preference.manifest_path)
     evals_manifest = read_json(evals.manifest_path)
+    assert preference_manifest["output_file"] == "training_exports/preference/preference.jsonl"
+    assert evals_manifest["output_file"] == "training_exports/evals/evals.jsonl"
     assert preference_manifest["category_counts"] == {
         "positive_vs_negative_candidate_preferences": 1
     }

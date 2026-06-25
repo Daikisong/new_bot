@@ -97,7 +97,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "skipped_episode_count": len(skipped),
             "skipped_episodes": skipped,
             "source_hashes": source_hashes,
-            "output_file": path.as_posix(),
+            "output_file": _project_relative_path(root, path),
             "output_sha256": file_sha256(path),
             "task_counts": _task_counts(rows),
             "required_training_categories": REQUIRED_TRAINING_CATEGORIES,
@@ -120,6 +120,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         },
     )
     return TrainingExportResult(path=path, manifest_path=manifest_path, row_count=len(rows))
+
+
+def _project_relative_path(root: Path, path: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()
 
 
 def _rows_for_kind(

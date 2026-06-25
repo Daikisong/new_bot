@@ -1946,6 +1946,73 @@ def test_provenance_audit_verifies_training_export_source_hashes(
     assert f"{label}: training export source_hash mismatch: EP-training" in result["findings"]
 
 
+def test_provenance_audit_flags_absolute_training_export_output_file(
+    tmp_path: Path,
+) -> None:
+    export_dir = tmp_path / "training_exports" / "sft"
+    export_dir.mkdir(parents=True)
+    output_path = export_dir / "sft.jsonl"
+    output_path.write_text("", encoding="utf-8")
+    write_json(
+        export_dir / "manifest.json",
+        {
+            "schema_version": "nslab.training_export_manifest.v1",
+            "kind": "sft",
+            "output_file": output_path.as_posix(),
+            "output_sha256": file_sha256(output_path),
+            "row_count": 0,
+            "episode_count": 0,
+            "episode_ids": [],
+            "eligible_episode_count": 0,
+            "skipped_episode_count": 0,
+            "skipped_episodes": [],
+            "source_hashes": {},
+            "task_counts": {},
+            "required_training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "positive_vs_negative_candidate_preferences",
+                "failure_correction_examples",
+            ],
+            "training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "category_counts": {
+                "blind_reasoning_examples": 0,
+                "theme_formation_examples": 0,
+                "beneficiary_discovery_examples": 0,
+                "leader_selection_comparisons": 0,
+                "failure_correction_examples": 0,
+            },
+            "missing_training_categories": [
+                "blind_reasoning_examples",
+                "theme_formation_examples",
+                "beneficiary_discovery_examples",
+                "leader_selection_comparisons",
+                "failure_correction_examples",
+            ],
+            "blind_safe_row_count": 0,
+            "hindsight_row_count": 0,
+            "source_phase_counts": {},
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    label = "training_exports/sft/manifest.json"
+    assert (
+        f"{label}: training export output_file must be project-relative"
+        in result["findings"]
+    )
+
+
 def test_provenance_audit_flags_blind_safe_training_row_hindsight_content(
     tmp_path: Path,
 ) -> None:
