@@ -1297,10 +1297,105 @@ def _check_strict_import_provenance(
     findings: list[str],
 ) -> None:
     label = _display_path(root, episode_path)
+    strict_entries: list[tuple[int, dict[str, Any]]] = []
     for index, entry in enumerate(_iter_provenance_entries(episode), start=1):
-        if entry.get("source_type") != STRICT_IMPORT_SOURCE_TYPE:
-            continue
+        if entry.get("source_type") == STRICT_IMPORT_SOURCE_TYPE:
+            strict_entries.append((index, entry))
+    if not strict_entries:
+        return
+    _check_strict_import_audit(root, label, episode, [entry for _, entry in strict_entries], findings)
+    for index, entry in strict_entries:
         _check_memory_source(root, label, index, entry, findings, kind="strict import")
+
+
+def _check_strict_import_audit(
+    root: Path,
+    label: str,
+    episode: dict[str, Any],
+    provenance_entries: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    input_audit = episode.get("input_audit")
+    if not isinstance(input_audit, dict):
+        findings.append(f"{label}: strict_import input_audit missing")
+        return
+    strict = input_audit.get("strict_import")
+    if not isinstance(strict, dict):
+        findings.append(f"{label}: strict_import audit missing")
+        return
+    source_path = _resolve_strict_source_path(root, label, strict, findings)
+    source_hash: str | None = None
+    source_json: object | None = None
+    if source_path is not None and source_path.exists():
+        source_hash = file_sha256(source_path)
+        source_text = source_path.read_text(encoding="utf-8", errors="replace")
+        if strict.get("source_sha256") != source_hash:
+            findings.append(f"{label}: strict_import source_sha256 mismatch")
+        if strict.get("source_text_sha256") != sha256_text(source_text):
+            findings.append(f"{label}: strict_import source_text_sha256 mismatch")
+        try:
+            source_json = read_json(source_path)
+        except Exception:
+            findings.append(f"{label}: strict_import source_json invalid")
+        if source_json is not None and strict.get("source_json_sha256") != sha256_text(
+            canonical_json(source_json)
+        ):
+            findings.append(f"{label}: strict_import source_json_sha256 mismatch")
+        if isinstance(source_json, dict):
+            if strict.get("source_schema_version") != source_json.get("schema_version"):
+                findings.append(f"{label}: strict_import source_schema_version mismatch")
+            if strict.get("imported_episode_id") != source_json.get("episode_id"):
+                findings.append(f"{label}: strict_import imported_episode_id mismatch")
+    source_id = strict.get("source_id")
+    known_source_ids = {
+        entry.get("source_id")
+        for entry in provenance_entries
+        if isinstance(entry.get("source_id"), str)
+    }
+    if not isinstance(source_id, str) or source_id not in known_source_ids:
+        findings.append(f"{label}: strict_import source_id mismatch")
+    _check_strict_provenance_entries(root, label, strict, source_hash, provenance_entries, findings)
+
+
+def _resolve_strict_source_path(
+    root: Path,
+    label: str,
+    strict: dict[str, Any],
+    findings: list[str],
+) -> Path | None:
+    source_ref = strict.get("source_path")
+    if not isinstance(source_ref, str) or not source_ref:
+        findings.append(f"{label}: strict_import source_path missing")
+        return None
+    source_path = _resolve_project_path(root, source_ref)
+    if source_path is None:
+        findings.append(f"{label}: strict_import source_path escapes project root")
+        return None
+    if not source_path.exists():
+        findings.append(f"{label}: strict_import source file not found: {source_ref}")
+        return None
+    return source_path
+
+
+def _check_strict_provenance_entries(
+    root: Path,
+    label: str,
+    strict: dict[str, Any],
+    source_hash: str | None,
+    provenance_entries: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    source_ref = strict.get("source_path")
+    for entry in provenance_entries:
+        if source_hash is not None and entry.get("content_sha256") != source_hash:
+            findings.append(f"{label}: strict_import provenance content_sha256 mismatch")
+        uri = entry.get("uri")
+        if (
+            isinstance(source_ref, str)
+            and isinstance(uri, str)
+            and not _same_project_path(root, source_ref, uri)
+        ):
+            findings.append(f"{label}: strict_import provenance uri mismatch")
 
 
 def _check_semantic_import_audit(

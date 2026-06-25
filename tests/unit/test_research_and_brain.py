@@ -40,6 +40,7 @@ from news_scalping_lab.research_import.semantic import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
+    canonical_json,
     file_sha256,
     next_trading_day,
     read_json,
@@ -290,6 +291,15 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     assert preserved_raw.exists()
     assert preserved_raw.parent == tmp_path / "data" / "raw" / "research"
     assert strict_provenance[0].content_sha256 == file_sha256(preserved_raw)
+    assert episode.input_audit["strict_import"] == {
+        "source_path": strict_provenance[0].uri,
+        "source_sha256": file_sha256(preserved_raw),
+        "source_text_sha256": sha256_text(preserved_raw.read_text(encoding="utf-8")),
+        "source_json_sha256": sha256_text(canonical_json(read_json(preserved_raw))),
+        "source_schema_version": "nslab.research_episode.v1",
+        "imported_episode_id": "EP-strict-source",
+        "source_id": strict_provenance[0].source_id,
+    }
     assert episode.blind_analysis.provenance == strict_provenance
     assert episode.postmortem is not None
     assert episode.postmortem.provenance == strict_provenance
@@ -301,6 +311,19 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     audit = audit_provenance(tmp_path)
     assert audit["passed"], audit["findings"]
     assert audit["checked_research_episode_files"] == 1
+
+    saved_episode_path = tmp_path / "research" / "episodes" / "EP-strict-source.json"
+    tampered = read_json(saved_episode_path)
+    tampered["input_audit"]["strict_import"]["source_text_sha256"] = "0" * 64
+    write_json(saved_episode_path, tampered)
+
+    tampered_audit = audit_provenance(tmp_path)
+
+    assert not tampered_audit["passed"]
+    assert (
+        "research/episodes/EP-strict-source.json: strict_import source_text_sha256 mismatch"
+        in tampered_audit["findings"]
+    )
 
 
 def test_strict_import_rejects_invalid_episode_without_saving(tmp_path) -> None:

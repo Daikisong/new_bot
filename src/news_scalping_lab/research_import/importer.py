@@ -87,6 +87,7 @@ class ResearchImporter:
         data = read_json(path)
         episode = ResearchEpisode.model_validate(data)
         source_hash = file_sha256(path)
+        source_text = path.read_text(encoding="utf-8", errors="replace")
         provenance = Provenance(
             source_id=stable_id("SRC", path.as_posix(), source_hash),
             source_type="strict_research_json",
@@ -94,6 +95,18 @@ class ResearchImporter:
             content_sha256=source_hash,
             observed_at=now_kst(),
         )
+        input_audit = {
+            **episode.input_audit,
+            "strict_import": {
+                "source_path": path.as_posix(),
+                "source_sha256": source_hash,
+                "source_text_sha256": sha256_text(source_text),
+                "source_json_sha256": sha256_text(canonical_json(data)),
+                "source_schema_version": data.get("schema_version"),
+                "imported_episode_id": episode.episode_id,
+                "source_id": provenance.source_id,
+            },
+        }
         blind_analysis = episode.blind_analysis
         if not blind_analysis.provenance:
             blind_analysis = blind_analysis.model_copy(update={"provenance": [provenance]})
@@ -124,6 +137,7 @@ class ResearchImporter:
         ]
         return episode.model_copy(
             update={
+                "input_audit": input_audit,
                 "provenance": [*episode.provenance, provenance],
                 "blind_analysis": blind_analysis,
                 "blind_predictions": blind_predictions,

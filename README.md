@@ -76,11 +76,12 @@ embedding-style projection of accepted episodes; it supports retrieval but is ne
 a candidate gate. `nslab audit coverage` fails if brain coverage is incomplete, the
 vector index is stale, or the warehouse research episode projection is out of sync.
 
-Free-form semantic imports preserve the raw source under `data/raw/research/`
-and record a source-segment audit in `ResearchEpisode.input_audit.semantic_import`.
-The audit stores source hashes, non-empty segment hashes, and the episode fields
-that were derived from the preserved source provenance.
-`nslab audit provenance` verifies those source files, hashes, segments, and source IDs.
+Strict and free-form semantic imports preserve the raw source under
+`data/raw/research/`. Strict imports record source file, text, and canonical JSON
+hashes in `ResearchEpisode.input_audit.strict_import`; semantic imports record
+source-segment hashes and derived field source IDs in
+`ResearchEpisode.input_audit.semantic_import`. `nslab audit provenance` verifies
+those source files, hashes, segments, and source IDs.
 
 ## Daily Blind Analysis
 
