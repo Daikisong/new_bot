@@ -17,6 +17,7 @@ from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
     combine_kst,
+    default_news_window_start,
     file_sha256,
     is_available_as_of,
     read_json,
@@ -60,7 +61,14 @@ def export_session_pack(
     cutoff_at = cutoff_at or combine_kst(trade_date, "08:59:59")
     output_dir = settings.path(settings.output_dirs.session_packs) / trade_date.isoformat()
     output_dir.mkdir(parents=True, exist_ok=True)
-    batch = load_news_csv(news_csv, trade_date=trade_date)
+    full_batch = load_news_csv(news_csv, trade_date=trade_date)
+    news_window_start_at = default_news_window_start(trade_date)
+    batch = full_batch.within_window(news_window_start_at, cutoff_at)
+    included_news_event_ids = [item.event_id for item in batch.items]
+    included_news_id_set = set(included_news_event_ids)
+    excluded_news_event_ids = [
+        item.event_id for item in full_batch.items if item.event_id not in included_news_id_set
+    ]
     news_sha256 = file_sha256(news_csv)
     store = ResearchStore(settings.project_root)
     all_accepted = store.list_accepted()
@@ -97,9 +105,7 @@ def export_session_pack(
         f"{brain_text.rstrip()}\n\n# Shard Brain Summaries\n\n{shard_brain_text}".strip()
         + "\n"
     )
-    news_text = "\n\n".join(
-        f"## {item.event_id}\n{item.title}\n\n{item.body}" for item in batch.items
-    )
+    news_text = _render_current_news(batch)
     company_memory = _read_company_memory_as_of(settings.project_root, cutoff_at)
     market_context = _read_temporal_memory_dir_as_of(
         settings.project_root,
@@ -149,6 +155,14 @@ def export_session_pack(
                 "omitted_episode_ids": unavailable_ids,
             }
         )
+    if excluded_news_event_ids:
+        truncations.append(
+            {
+                "artifact": "current_news.md",
+                "reason": "news_outside_blind_window",
+                "omitted_event_ids": excluded_news_event_ids,
+            }
+        )
     if company_memory.omitted:
         truncations.append(
             {
@@ -194,8 +208,15 @@ def export_session_pack(
                 "shard_brain_files": shard_brain_files,
                 "shard_brain_file_hashes": shard_brain_hashes,
                 "shard_brain_count": len(shard_brain_files),
-                "news_file": news_csv.as_posix(),
+                "news_file": _relative_to_root(full_batch.path, settings.project_root),
                 "news_sha256": news_sha256,
+                "news_window_start_at": news_window_start_at.isoformat(),
+                "news_window_end_at": cutoff_at.isoformat(),
+                "news_row_count": full_batch.row_count,
+                "included_news_row_count": batch.row_count,
+                "excluded_news_row_count": full_batch.row_count - batch.row_count,
+                "current_news_event_ids": included_news_event_ids,
+                "excluded_news_event_ids": excluded_news_event_ids,
                 "accepted_episode_count": len(all_accepted),
                 "available_episode_count": len(available),
                 "unavailable_episode_ids": unavailable_ids,
@@ -243,8 +264,15 @@ def export_session_pack(
         "shard_brain_files": shard_brain_files,
         "shard_brain_file_hashes": shard_brain_hashes,
         "shard_brain_count": len(shard_brain_files),
-        "news_file": news_csv.as_posix(),
+        "news_file": _relative_to_root(full_batch.path, settings.project_root),
         "news_sha256": news_sha256,
+        "news_window_start_at": news_window_start_at.isoformat(),
+        "news_window_end_at": cutoff_at.isoformat(),
+        "news_row_count": full_batch.row_count,
+        "included_news_row_count": batch.row_count,
+        "excluded_news_row_count": full_batch.row_count - batch.row_count,
+        "current_news_event_ids": included_news_event_ids,
+        "excluded_news_event_ids": excluded_news_event_ids,
         "accepted_episode_count": len(all_accepted),
         "available_episode_count": len(available),
         "included_episode_count": len(included),
@@ -605,6 +633,12 @@ def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[
     if not chunks:
         return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
     return "\n".join(chunks).strip() + "\n", files, hashes
+
+
+def _render_current_news(batch: Any) -> str:
+    return "\n\n".join(
+        f"## {item.event_id}\n{item.title}\n\n{item.body}" for item in batch.items
+    )
 
 
 def _future_context_leak_errors(

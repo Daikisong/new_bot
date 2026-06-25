@@ -12,6 +12,7 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.cli import _final_synthesis_manifest_count_mismatches
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
     BlindPriceGuard,
@@ -3330,6 +3331,100 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
         "current_news.md"
     ) in findings
     assert "session_packs/2030-01-10/manifest.json: pack_sha256 mismatch" in findings
+
+
+def test_lookahead_audit_checks_session_pack_news_window(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-09","15:30:00","Inside window","Safe news."\n'
+        '1,2,"2030-01-10","09:00:00","After cutoff","Unsafe news."\n',
+        encoding="utf-8",
+    )
+    batch = load_news_csv(news_csv, trade_date=date(2030, 1, 10))
+    current_news = (
+        f"## {batch.items[0].event_id}\n{batch.items[0].title}\n\n{batch.items[0].body}"
+        f"\n\n## {batch.items[1].event_id}\n{batch.items[1].title}\n\n{batch.items[1].body}"
+    )
+    (pack_dir / "current_news.md").write_text(current_news, encoding="utf-8")
+    for file_name in (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "company_memory.md",
+        "market_context.md",
+    ):
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    pack_file_hashes = {
+        file_name: file_sha256(pack_dir / file_name) for file_name in pack_files
+    }
+    token_counts = {
+        file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
+        for file_name in pack_files
+    }
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+            "news_file": "news.csv",
+            "news_sha256": file_sha256(news_csv),
+            "news_window_start_at": "2030-01-09T15:30:00+09:00",
+            "news_window_end_at": "2030-01-10T08:59:59+09:00",
+            "news_row_count": 2,
+            "included_news_row_count": 2,
+            "excluded_news_row_count": 0,
+            "current_news_event_ids": [item.event_id for item in batch.items],
+            "excluded_news_event_ids": [],
+            "pack_files": list(pack_files),
+            "pack_file_count": len(pack_files),
+            "pack_file_hashes": pack_file_hashes,
+            "pack_sha256": sha256_text(
+                "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
+            ),
+            "token_counts": token_counts,
+            "token_count_total": sum(token_counts.values()),
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack included_news_row_count mismatch"
+        in findings
+    )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack excluded_news_row_count mismatch"
+        in findings
+    )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack current_news_event_ids mismatch"
+        in findings
+    )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack excluded_news_event_ids mismatch"
+        in findings
+    )
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack current_news.md content mismatch"
+        in findings
+    )
 
 
 def test_lookahead_audit_checks_daily_manifest_company_memory_refs(tmp_path: Path) -> None:

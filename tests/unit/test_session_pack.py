@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 import pytest
 from typer.testing import CliRunner
 
+from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.session_pack import SessionPackBudgetExceededError, export_session_pack
@@ -348,3 +349,45 @@ def test_session_pack_filters_company_and_market_memory_by_cutoff(tmp_path) -> N
     }
     assert "session pack excluded future company memory" in "\n".join(manifest["errors"])
     assert "session pack omitted unscoped market_context memory" in "\n".join(manifest["errors"])
+
+
+def test_session_pack_filters_current_news_by_default_blind_window(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-09","15:29:59","Before window","Must not be exported."\n'
+        '1,2,"2030-01-09","15:30:00","Inside window","Must be exported."\n'
+        '1,3,"2030-01-10","09:00:00","After cutoff","Must not be exported."\n',
+        encoding="utf-8",
+    )
+
+    output_dir = export_session_pack(
+        settings,
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="brain",
+    )
+
+    manifest = read_json(output_dir / "manifest.json")
+    current_news = (output_dir / "current_news.md").read_text(encoding="utf-8")
+
+    assert "Inside window" in current_news
+    assert "Before window" not in current_news
+    assert "After cutoff" not in current_news
+    assert manifest["news_window_start_at"] == "2030-01-09T15:30:00+09:00"
+    assert manifest["news_window_end_at"] == "2030-01-10T08:59:59+09:00"
+    assert manifest["news_row_count"] == 3
+    assert manifest["included_news_row_count"] == 1
+    assert manifest["excluded_news_row_count"] == 2
+    assert len(manifest["current_news_event_ids"]) == 1
+    assert len(manifest["excluded_news_event_ids"]) == 2
+    assert {
+        item["reason"] for item in manifest["truncations"] if item["artifact"] == "current_news.md"
+    } == {"news_outside_blind_window"}
+
+    audit = audit_lookahead(tmp_path)
+
+    assert audit["passed"], audit["findings"]

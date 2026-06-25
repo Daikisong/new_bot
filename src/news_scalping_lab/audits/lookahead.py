@@ -8,7 +8,9 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
+from news_scalping_lab.ingest.news import NewsBatch, load_news_csv
 from news_scalping_lab.utils import (
+    default_news_window_start,
     file_sha256,
     is_available_as_of,
     parse_datetime,
@@ -106,6 +108,15 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             findings,
         )
         _check_session_pack_hashes(root, path, manifest_name, manifest, findings)
+        _check_session_pack_news_window(
+            root,
+            path,
+            manifest_name,
+            manifest,
+            manifest_trade_date,
+            manifest_cutoff_at,
+            findings,
+        )
         if (
             manifest.get("mode") == "exhaustive"
             and manifest.get("accepted_episode_count") != manifest.get("swept_episode_count")
@@ -631,6 +642,138 @@ def _check_session_pack_hashes(
     )
     if observed_pack_sha != expected_pack_sha:
         findings.append(f"{manifest_name}: pack_sha256 mismatch")
+
+
+def _check_session_pack_news_window(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_trade_date: date | None,
+    manifest_cutoff_at: datetime | None,
+    findings: list[str],
+) -> None:
+    if manifest_path.parent.parent != root / "session_packs":
+        return
+    news_fields = {
+        "news_file",
+        "news_sha256",
+        "news_window_start_at",
+        "news_window_end_at",
+        "news_row_count",
+        "included_news_row_count",
+        "excluded_news_row_count",
+        "current_news_event_ids",
+        "excluded_news_event_ids",
+    }
+    if not any(field in manifest for field in news_fields):
+        return
+    if manifest_trade_date is None or manifest_cutoff_at is None:
+        return
+    news_ref = manifest.get("news_file")
+    if not isinstance(news_ref, str) or not news_ref:
+        findings.append(f"{manifest_name}: session pack news_file missing")
+        return
+    news_path = _resolve_session_pack_news_path(root, news_ref)
+    if news_path is None:
+        findings.append(f"{manifest_name}: session pack news_file escapes project root")
+        return
+    if not news_path.is_file():
+        findings.append(f"{manifest_name}: session pack news_file not found: {news_ref}")
+        return
+    expected_news_sha = manifest.get("news_sha256")
+    if not isinstance(expected_news_sha, str) or file_sha256(news_path) != expected_news_sha:
+        findings.append(f"{manifest_name}: session pack news_sha256 mismatch")
+
+    manifest_window_start = _manifest_news_window_start_at(manifest)
+    if manifest_window_start is None:
+        findings.append(f"{manifest_name}: session pack news_window_start_at missing")
+        return
+    raw_window_end = manifest.get("news_window_end_at")
+    if not isinstance(raw_window_end, str):
+        findings.append(f"{manifest_name}: session pack news_window_end_at missing")
+        return
+    try:
+        manifest_window_end = parse_datetime(raw_window_end)
+    except ValueError:
+        findings.append(f"{manifest_name}: session pack news_window_end_at invalid")
+        return
+    expected_window_start = default_news_window_start(manifest_trade_date)
+    if manifest_window_start != expected_window_start:
+        findings.append(f"{manifest_name}: session pack news_window_start_at mismatch")
+    if manifest_window_end != manifest_cutoff_at:
+        findings.append(f"{manifest_name}: session pack news_window_end_at mismatch")
+
+    batch = load_news_csv(news_path, trade_date=manifest_trade_date)
+    included = batch.within_window(manifest_window_start, manifest_window_end)
+    included_ids = [item.event_id for item in included.items]
+    included_id_set = set(included_ids)
+    excluded_ids = [
+        item.event_id for item in batch.items if item.event_id not in included_id_set
+    ]
+    _check_session_pack_news_count(
+        manifest_name,
+        manifest,
+        "news_row_count",
+        batch.row_count,
+        findings,
+    )
+    _check_session_pack_news_count(
+        manifest_name,
+        manifest,
+        "included_news_row_count",
+        included.row_count,
+        findings,
+    )
+    _check_session_pack_news_count(
+        manifest_name,
+        manifest,
+        "excluded_news_row_count",
+        batch.row_count - included.row_count,
+        findings,
+    )
+    if _string_list_or_none(manifest.get("current_news_event_ids")) != included_ids:
+        findings.append(f"{manifest_name}: session pack current_news_event_ids mismatch")
+    if _string_list_or_none(manifest.get("excluded_news_event_ids")) != excluded_ids:
+        findings.append(f"{manifest_name}: session pack excluded_news_event_ids mismatch")
+
+    current_news_path = manifest_path.parent / "current_news.md"
+    if not current_news_path.is_file():
+        findings.append(f"{manifest_name}: session pack current_news.md missing")
+        return
+    expected_text = _render_expected_session_pack_current_news(included)
+    if current_news_path.read_text(encoding="utf-8") != expected_text:
+        findings.append(f"{manifest_name}: session pack current_news.md content mismatch")
+
+
+def _resolve_session_pack_news_path(root: Path, news_ref: str) -> Path | None:
+    path = Path(news_ref)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return resolved
+
+
+def _check_session_pack_news_count(
+    manifest_name: str,
+    manifest: dict[object, object],
+    field_name: str,
+    expected: int,
+    findings: list[str],
+) -> None:
+    observed = manifest.get(field_name)
+    if not isinstance(observed, int) or isinstance(observed, bool):
+        findings.append(f"{manifest_name}: session pack {field_name} invalid")
+    elif observed != expected:
+        findings.append(f"{manifest_name}: session pack {field_name} mismatch")
+
+
+def _render_expected_session_pack_current_news(batch: NewsBatch) -> str:
+    return "\n\n".join(
+        f"## {item.event_id}\n{item.title}\n\n{item.body}" for item in batch.items
+    )
 
 
 def _check_session_pack_token_counts(
