@@ -199,7 +199,10 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
         )
         event_ids = [item.event_id for item in batch.items]
-        manifest = ContextAssembler(self.root).assemble(
+        manifest = ContextAssembler(
+            self.root,
+            shard_episode_count=self.settings.limits.shard_episode_count,
+        ).assemble(
             mode=mode,
             trade_date=trade_date,
             cutoff_at=cutoff_at,

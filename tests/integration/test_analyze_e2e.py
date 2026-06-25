@@ -1692,8 +1692,11 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     manifest = analysis.context_manifest
     assert manifest.accepted_episode_count == 2
     assert manifest.swept_episode_count == 2
-    assert len(manifest.shard_brain_files) == 1
-    shard_brain_text = (tmp_path / manifest.shard_brain_files[0]).read_text(encoding="utf-8")
+    assert len(manifest.shard_brain_files) == 2
+    shard_brain_text = "\n".join(
+        (tmp_path / shard_path).read_text(encoding="utf-8")
+        for shard_path in manifest.shard_brain_files
+    )
     assert all(episode_id in shard_brain_text for episode_id in manifest.swept_episode_ids)
     assert manifest.memory_sweep_shard_count == 2
     assert manifest.memory_sweep_cache_hits == 0

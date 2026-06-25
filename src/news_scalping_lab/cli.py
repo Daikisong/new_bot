@@ -225,7 +225,10 @@ def research_reject(episode_id: str) -> None:
 @brain_app.command("rebuild")
 def brain_rebuild(mode: str = "full") -> None:
     settings = load_settings()
-    manifest = BrainCompiler(settings.project_root).rebuild(mode=mode)
+    manifest = BrainCompiler(
+        settings.project_root,
+        shard_episode_count=settings.limits.shard_episode_count,
+    ).rebuild(mode=mode)
     _echo(manifest.model_dump(mode="json"))
 
 
@@ -233,7 +236,10 @@ def brain_rebuild(mode: str = "full") -> None:
 def brain_update(episode: Annotated[str, typer.Option("--episode")]) -> None:
     settings = load_settings()
     try:
-        manifest = BrainCompiler(settings.project_root).update(episode_id=episode)
+        manifest = BrainCompiler(
+            settings.project_root,
+            shard_episode_count=settings.limits.shard_episode_count,
+        ).update(episode_id=episode)
     except (FileNotFoundError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc

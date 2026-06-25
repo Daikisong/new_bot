@@ -131,6 +131,40 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
 
 
+def test_brain_rebuild_uses_configurable_shard_episode_count(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    for index in range(3):
+        episode = _batch_episode(
+            f"EP-shard-config-{index}",
+            f"Shard config lesson {index}.",
+        )
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+
+    default_manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    manifest = BrainCompiler(tmp_path, shard_episode_count=2).rebuild(mode="full")
+    shard_manifest = read_json(
+        tmp_path / "memory" / "shard_brains" / "current" / "manifest.json"
+    )
+
+    assert manifest.brain_version != default_manifest.brain_version
+    assert shard_manifest["brain_version"] == manifest.brain_version
+    assert shard_manifest["shard_episode_count"] == 2
+    assert shard_manifest["shard_count"] == 2
+    assert len(shard_manifest["shard_files"]) == 2
+    first_shard = (tmp_path / shard_manifest["shard_files"][0]).read_text(
+        encoding="utf-8"
+    )
+    second_shard = (tmp_path / shard_manifest["shard_files"][1]).read_text(
+        encoding="utf-8"
+    )
+    assert "EP-shard-config-0" in first_shard
+    assert "EP-shard-config-1" in first_shard
+    assert "EP-shard-config-2" in second_shard
+
+
 def test_cli_import_batch_accepts_by_default_and_rebuilds_brain(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

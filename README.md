@@ -66,6 +66,9 @@ or drift is detected, it falls back to `brain rebuild --mode full`; full rebuild
 remain reproducible from accepted source episodes. `brain audit` reports the
 current build mode while preserving the last full rebuild timestamp across
 incremental updates.
+Brain shard summaries and daily memory-sweep shards both use
+`limits.shard_episode_count` from `configs/default.yaml`, so context budget changes
+are reflected in rebuilds and run manifests instead of being hidden in code.
 
 `brain rebuild` also refreshes `memory/vector_index/manifest.json` and
 `memory/vector_index/episodes.jsonl`. The local index is a deterministic

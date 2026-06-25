@@ -1,6 +1,6 @@
 # 00 World Model
 
-Brain version: `brain-cfa3129213`
+Brain version: `brain-0b1fe29ee9`
 Accepted episodes covered: 1/1
 
 This file stores abstract mechanisms and cautions. It is not a keyword map, ticker list, or score table.

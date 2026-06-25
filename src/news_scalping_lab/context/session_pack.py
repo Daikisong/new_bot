@@ -85,7 +85,11 @@ def export_session_pack(
         mode,
         news_sha256,
     )
-    brain_context = ContextAssembler(settings.project_root, store=store)._brain_context_files(
+    brain_context = ContextAssembler(
+        settings.project_root,
+        store=store,
+        shard_episode_count=settings.limits.shard_episode_count,
+    )._brain_context_files(
         run_id=context_run_id,
         cutoff_at=cutoff_at,
         accepted=available,

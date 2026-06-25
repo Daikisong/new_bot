@@ -42,9 +42,16 @@ class BrainContextFiles:
 
 
 class ContextAssembler:
-    def __init__(self, root: Path, store: ResearchStore | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        store: ResearchStore | None = None,
+        *,
+        shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+    ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
+        self.shard_episode_count = max(1, shard_episode_count)
 
     def assemble(
         self,
@@ -194,6 +201,8 @@ class ContextAssembler:
             return False
         if accepted_ids and not shard_brain_file_hashes:
             return False
+        if self._current_shard_episode_count() != self.shard_episode_count:
+            return False
         future_episode_ids = [
             episode.episode_id
             for episode in self.store.list_accepted()
@@ -219,6 +228,19 @@ class ContextAssembler:
         if not isinstance(covered, list):
             return None
         return [episode_id for episode_id in covered if isinstance(episode_id, str)]
+
+    def _current_shard_episode_count(self) -> int | None:
+        manifest_path = self.root / "memory" / "shard_brains" / "current" / "manifest.json"
+        if not manifest_path.exists():
+            return None
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        value = payload.get("shard_episode_count")
+        return value if isinstance(value, int) else None
 
     def _context_files_contain_any_episode_id(
         self,
@@ -292,9 +314,14 @@ class ContextAssembler:
             cutoff_at.isoformat(),
             accepted_ids,
             canonical_json(source_hashes),
+            self.shard_episode_count,
             length=10,
         )
-        compiler = BrainCompiler(self.root, store=self.store)
+        compiler = BrainCompiler(
+            self.root,
+            store=self.store,
+            shard_episode_count=self.shard_episode_count,
+        )
         claims = _dedupe_claims(
             [
                 claim
@@ -347,7 +374,9 @@ class ContextAssembler:
         )
         write_json(brain_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
 
-        for shard_index, shard in enumerate(_episode_shards(accepted), start=1):
+        for shard_index, shard in enumerate(
+            _episode_shards(accepted, self.shard_episode_count), start=1
+        ):
             (shard_dir / f"shard_{shard_index:04d}.md").write_text(
                 compiler._shard_brain_body(
                     manifest=manifest,
@@ -374,10 +403,14 @@ def current_shard_brain_file_hashes(root: Path) -> dict[str, str]:
     }
 
 
-def _episode_shards(episodes: list[ResearchEpisode]) -> list[list[ResearchEpisode]]:
+def _episode_shards(
+    episodes: list[ResearchEpisode],
+    shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+) -> list[list[ResearchEpisode]]:
+    shard_size = max(1, shard_episode_count)
     return [
-        episodes[index : index + SHARD_BRAIN_EPISODE_COUNT]
-        for index in range(0, len(episodes), SHARD_BRAIN_EPISODE_COUNT)
+        episodes[index : index + shard_size]
+        for index in range(0, len(episodes), shard_size)
     ]
 
 

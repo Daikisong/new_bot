@@ -44,9 +44,16 @@ SHARD_BRAIN_EPISODE_COUNT = 10
 
 
 class BrainCompiler:
-    def __init__(self, root: Path, store: ResearchStore | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        store: ResearchStore | None = None,
+        *,
+        shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+    ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
+        self.shard_episode_count = max(1, shard_episode_count)
         self.current_dir = root / "brain" / "current"
         self.snapshots_dir = root / "brain" / "snapshots"
         self.diffs_dir = root / "brain" / "diffs"
@@ -76,6 +83,7 @@ class BrainCompiler:
         version = _deterministic_brain_version(
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
+            shard_episode_count=self.shard_episode_count,
         )
         claims = _dedupe_claims(
             [
@@ -141,11 +149,15 @@ class BrainCompiler:
             current_manifest = self._read_current_manifest()
         except ValueError:
             current_manifest = None
-        if current_manifest is None or not _can_incrementally_update(
-            current_manifest=current_manifest,
-            episode_id=episode.episode_id,
-            episodes=episodes,
-            source_hashes=source_hashes,
+        if (
+            current_manifest is None
+            or self._current_shard_episode_count() != self.shard_episode_count
+            or not _can_incrementally_update(
+                current_manifest=current_manifest,
+                episode_id=episode.episode_id,
+                episodes=episodes,
+                source_hashes=source_hashes,
+            )
         ):
             return self.rebuild(mode="full")
 
@@ -163,6 +175,7 @@ class BrainCompiler:
         version = _deterministic_brain_version(
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
+            shard_episode_count=self.shard_episode_count,
         )
         try:
             claims = _sort_claims_by_episode_order(
@@ -385,7 +398,9 @@ class BrainCompiler:
             shutil.rmtree(self.current_shard_brains_dir)
         self.current_shard_brains_dir.mkdir(parents=True, exist_ok=True)
         shard_files: list[str] = []
-        for shard_index, shard in enumerate(_episode_shards(episodes), start=1):
+        for shard_index, shard in enumerate(
+            _episode_shards(episodes, self.shard_episode_count), start=1
+        ):
             path = self.current_shard_brains_dir / f"shard_{shard_index:04d}.md"
             path.write_text(
                 self._shard_brain_body(
@@ -401,7 +416,7 @@ class BrainCompiler:
             {
                 "schema_version": "nslab.shard_brain_manifest.v1",
                 "brain_version": manifest.brain_version,
-                "shard_episode_count": SHARD_BRAIN_EPISODE_COUNT,
+                "shard_episode_count": self.shard_episode_count,
                 "shard_count": len(shard_files),
                 "shard_files": shard_files,
                 "covered_episode_ids": manifest.covered_episode_ids,
@@ -423,6 +438,14 @@ class BrainCompiler:
 
     def _read_current_mechanisms(self) -> list[MechanismMemory]:
         return _read_mechanism_jsonl(self.current_mechanisms_dir / "mechanisms.jsonl")
+
+    def _current_shard_episode_count(self) -> int | None:
+        path = self.current_shard_brains_dir / "manifest.json"
+        if not path.exists():
+            return None
+        payload = read_json(path)
+        value = payload.get("shard_episode_count") if isinstance(payload, dict) else None
+        return value if isinstance(value, int) else None
 
     def _shard_brain_body(
         self,
@@ -534,20 +557,30 @@ class BrainCompiler:
         }
 
 
-def _deterministic_brain_version(*, covered_episode_ids: list[str], source_hashes: dict[str, str]) -> str:
+def _deterministic_brain_version(
+    *,
+    covered_episode_ids: list[str],
+    source_hashes: dict[str, str],
+    shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+) -> str:
     payload = {
         "brain_files": BRAIN_FILES,
         "covered_episode_ids": covered_episode_ids,
+        "shard_episode_count": max(1, shard_episode_count),
         "source_hashes": source_hashes,
         "schema": "nslab.brain.rebuild.v1",
     }
     return stable_id("brain", canonical_json(payload), length=10)
 
 
-def _episode_shards(episodes: list[ResearchEpisode]) -> list[list[ResearchEpisode]]:
+def _episode_shards(
+    episodes: list[ResearchEpisode],
+    shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+) -> list[list[ResearchEpisode]]:
+    shard_size = max(1, shard_episode_count)
     return [
-        episodes[index : index + SHARD_BRAIN_EPISODE_COUNT]
-        for index in range(0, len(episodes), SHARD_BRAIN_EPISODE_COUNT)
+        episodes[index : index + shard_size]
+        for index in range(0, len(episodes), shard_size)
     ]
 
 

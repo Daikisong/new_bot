@@ -159,6 +159,37 @@ def test_context_assembler_filters_future_and_unknown_retrieved_episode_ids(
     assert manifest.unavailable_episode_ids == ["EP-future"]
 
 
+def test_context_assembler_uses_configurable_as_of_shard_episode_count(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    store = ResearchStore(tmp_path)
+    for index in range(3):
+        episode = ResearchEpisode(
+            episode_id=f"EP-asof-shard-{index}",
+            trade_date=date(2030, 1, 9),
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+            research_version="test",
+            price_source_snapshot={"source": "test"},
+            blind_analysis=BlindAnalysis(summary=f"As-of shard lesson {index}."),
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+
+    manifest = ContextAssembler(tmp_path, shard_episode_count=1).assemble(
+        mode="brain",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="as-of-shard-size",
+    )
+
+    assert len(manifest.shard_brain_files) == 3
+    assert all("runs/checkpoints/brain_context/" in path for path in manifest.shard_brain_files)
+
+
 @pytest.mark.asyncio
 async def test_daily_analyzer_rejects_unknown_analysis_mode_before_writing_outputs(
     tmp_path,
