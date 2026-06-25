@@ -1517,6 +1517,198 @@ def test_provenance_audit_validates_candidate_expansion_artifact(
     ) in findings
 
 
+def test_provenance_audit_validates_candidate_web_check_artifacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    artifact_dir = tmp_path / "runs" / "checkpoints" / "candidate_web_checks" / "RUN-linked"
+    artifact_dir.mkdir(parents=True)
+    candidate_path = artifact_dir / "candidate_web_checks.jsonl"
+    excluded_path = artifact_dir / "excluded_candidate_web_checks.jsonl"
+    row = {
+        "schema_version": "nslab.candidate_web_check.v1",
+        "run_id": "RUN-linked",
+        "candidate_rank": 1,
+        "candidate_company_name": "CandidateCo",
+        "candidate_path_type": "SINGLE_EVENT",
+        "verification_focus": ["listed_security_and_exact_ticker"],
+        "source_id": "WEB-1",
+        "source_url": "https://example.test/source",
+        "url": "https://example.test/source",
+        "query": "candidate verification",
+    }
+    candidate_text = canonical_json(row) + "\n"
+    candidate_path.write_text(candidate_text, encoding="utf-8")
+    excluded_row = {
+        "schema_version": "nslab.excluded_candidate_web_check.v1",
+        "run_id": "RUN-linked",
+        "candidate_rank": 1,
+        "candidate_company_name": "CandidateCo",
+        "candidate_path_type": "SINGLE_EVENT",
+        "source_id": "WEB-X",
+        "source_url": "https://example.test/excluded",
+        "url": "https://example.test/excluded",
+        "query": "candidate verification",
+    }
+    excluded_text = canonical_json(excluded_row) + "\n"
+    excluded_path.write_text(excluded_text, encoding="utf-8")
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "candidate_web_check_artifact": candidate_path.relative_to(tmp_path).as_posix(),
+            "candidate_web_check_sha256": sha256_text(candidate_text),
+            "candidate_web_check_count": 1,
+            "candidate_web_source_ids": ["WEB-1"],
+            "excluded_candidate_web_check_artifact": (
+                excluded_path.relative_to(tmp_path).as_posix()
+            ),
+            "excluded_candidate_web_check_sha256": sha256_text(excluded_text),
+            "excluded_candidate_web_check_count": 1,
+            "excluded_candidate_web_source_ids": ["WEB-X"],
+            "candidate_web_check_summary": {
+                "source_count": 1,
+                "excluded_source_count": 1,
+                "verification_focus": ["listed_security_and_exact_ticker"],
+            },
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_row = {
+        "schema_version": "bad.candidate_web_check",
+        "run_id": "RUN-other",
+        "candidate_rank": "1",
+        "candidate_company_name": "",
+        "verification_focus": [],
+        "source_id": "WEB-1",
+        "source_url": "https://example.test/source-a",
+        "url": "https://example.test/source-b",
+        "query": "",
+        "opened_text": "raw copied text",
+    }
+    bad_candidate_text = canonical_json(bad_row) + "\n"
+    candidate_path.write_text(bad_candidate_text, encoding="utf-8")
+    bad_excluded_row = {
+        **excluded_row,
+        "schema_version": "bad.excluded_candidate_web_check",
+        "run_id": "RUN-other",
+        "source_id": "WEB-Y",
+    }
+    bad_excluded_text = canonical_json(bad_excluded_row) + "\n"
+    excluded_path.write_text(bad_excluded_text, encoding="utf-8")
+    manifest = read_json(manifest_path)
+    manifest["candidate_web_check_sha256"] = "0" * 64
+    manifest["candidate_web_check_count"] = 2
+    manifest["candidate_web_source_ids"] = ["WEB-OTHER"]
+    manifest["excluded_candidate_web_check_sha256"] = "1" * 64
+    manifest["excluded_candidate_web_check_count"] = 2
+    manifest["excluded_candidate_web_source_ids"] = ["WEB-X"]
+    manifest["candidate_web_check_summary"] = {
+        "source_count": 2,
+        "excluded_source_count": 2,
+        "verification_focus": ["listed_security_and_exact_ticker"],
+    }
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "schema_version mismatch"
+    ) in findings
+    assert "2030-01-10.json: context manifest candidate_web_check:1 run_id mismatch" in findings
+    assert "2030-01-10.json: context manifest candidate_web_check count mismatch" in findings
+    assert "2030-01-10.json: context manifest candidate_web_check source_ids mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "required_fields missing"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "candidate_company_name invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "candidate_path_type invalid"
+    ) in findings
+    assert "2030-01-10.json: context manifest candidate_web_check:1 query invalid" in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "candidate_rank invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 source_url mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 opened_text present"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check:1 "
+        "verification_focus invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest excluded_candidate_web_check_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest excluded_candidate_web_check:1 "
+        "schema_version mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest excluded_candidate_web_check:1 "
+        "run_id mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest excluded_candidate_web_check count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest excluded_candidate_web_check "
+        "source_ids mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check source_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check "
+        "excluded_source_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check "
+        "verification_focus mismatch"
+    ) in findings
+
+
 def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

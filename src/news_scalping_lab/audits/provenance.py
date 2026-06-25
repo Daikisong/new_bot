@@ -1906,6 +1906,7 @@ def _check_manifest_output_artifacts(
             findings,
         )
     _check_candidate_expansion_artifact(root, prediction_path, manifest, findings)
+    _check_candidate_web_check_artifacts(root, prediction_path, manifest, findings)
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
@@ -2697,6 +2698,190 @@ def _check_candidate_expansion_row(
         findings.append(
             f"{prediction_path.name}: context manifest candidate_expansion:{index} "
             "d_minus_one_market_data_only invalid"
+        )
+
+
+def _check_candidate_web_check_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    rows = _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="candidate_web_check_artifact",
+        sha_field="candidate_web_check_sha256",
+        count_field="candidate_web_check_count",
+        expected_schema="nslab.candidate_web_check.v1",
+        label="candidate_web_check",
+        findings=findings,
+    )
+    excluded_rows = _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="excluded_candidate_web_check_artifact",
+        sha_field="excluded_candidate_web_check_sha256",
+        count_field="excluded_candidate_web_check_count",
+        expected_schema="nslab.excluded_candidate_web_check.v1",
+        label="excluded_candidate_web_check",
+        findings=findings,
+    )
+    if rows is not None:
+        _check_candidate_web_check_source_ids(
+            prediction_path,
+            manifest,
+            rows,
+            manifest_field="candidate_web_source_ids",
+            label="candidate_web_check",
+            findings=findings,
+        )
+        _check_candidate_web_check_rows(
+            prediction_path,
+            rows,
+            label="candidate_web_check",
+            findings=findings,
+        )
+    if excluded_rows is not None:
+        _check_candidate_web_check_source_ids(
+            prediction_path,
+            manifest,
+            excluded_rows,
+            manifest_field="excluded_candidate_web_source_ids",
+            label="excluded_candidate_web_check",
+            findings=findings,
+        )
+        _check_candidate_web_check_rows(
+            prediction_path,
+            excluded_rows,
+            label="excluded_candidate_web_check",
+            findings=findings,
+        )
+    if rows is not None:
+        _check_candidate_web_check_summary(
+            prediction_path,
+            manifest,
+            rows,
+            excluded_rows or [],
+            findings,
+        )
+
+
+def _check_candidate_web_check_source_ids(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    manifest_field: str,
+    label: str,
+    findings: list[str],
+) -> None:
+    row_source_ids = _unique_strings(row.get("source_id") for row in rows)
+    expected_source_ids = _string_list(manifest.get(manifest_field))
+    if row_source_ids != expected_source_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} source_ids mismatch"
+        )
+    if len(row_source_ids) != len(rows):
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} duplicate source_id"
+        )
+
+
+def _check_candidate_web_check_rows(
+    prediction_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    label: str,
+    findings: list[str],
+) -> None:
+    required_fields = {
+        "candidate_rank",
+        "candidate_company_name",
+        "candidate_path_type",
+        "source_id",
+        "source_url",
+        "url",
+        "query",
+    }
+    for index, row in enumerate(rows, start=1):
+        missing = sorted(required_fields - set(row))
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "required_fields missing"
+            )
+        for field in ("candidate_company_name", "candidate_path_type", "source_id", "query"):
+            if not isinstance(row.get(field), str) or not row.get(field):
+                findings.append(
+                    f"{prediction_path.name}: context manifest {label}:{index} "
+                    f"{field} invalid"
+                )
+        if not isinstance(row.get("candidate_rank"), int) or isinstance(
+            row.get("candidate_rank"), bool
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "candidate_rank invalid"
+            )
+        if not (
+            isinstance(row.get("source_url"), str)
+            and row.get("source_url") == row.get("url")
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "source_url mismatch"
+            )
+        if "opened_text" in row:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "opened_text present"
+            )
+        if "verification_focus" in row and not _string_list(row.get("verification_focus")):
+            findings.append(
+                f"{prediction_path.name}: context manifest {label}:{index} "
+                "verification_focus invalid"
+            )
+
+
+def _check_candidate_web_check_summary(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    excluded_rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("candidate_web_check_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_web_check_summary invalid"
+        )
+        return
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "source_count",
+        len(rows),
+        label="candidate_web_check",
+        findings=findings,
+    )
+    _check_summary_int(
+        prediction_path,
+        summary,
+        "excluded_source_count",
+        len(excluded_rows),
+        label="candidate_web_check",
+        findings=findings,
+    )
+    expected_focus = _string_list(summary.get("verification_focus"))
+    if expected_focus and any(
+        _string_list(row.get("verification_focus")) != expected_focus for row in rows
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_web_check "
+            "verification_focus mismatch"
         )
 
 
