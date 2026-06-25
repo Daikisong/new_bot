@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
@@ -3081,22 +3082,59 @@ def _check_candidate_web_check_summary(
             f"{prediction_path.name}: context manifest candidate_web_check_summary invalid"
         )
         return
-    _check_summary_int(
+    _check_candidate_web_check_summary_int(
         prediction_path,
         summary,
         "source_count",
         len(rows),
-        label="candidate_web_check",
         findings=findings,
     )
-    _check_summary_int(
+    _check_candidate_web_check_summary_int(
         prediction_path,
         summary,
         "excluded_source_count",
         len(excluded_rows),
-        label="candidate_web_check",
         findings=findings,
     )
+    subject_rows = [*rows, *excluded_rows]
+    subject_keys = _candidate_web_check_subject_keys(subject_rows)
+    final_candidate_keys = _candidate_web_check_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "final_candidate"
+    )
+    expansion_subject_keys = _candidate_web_check_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "candidate_expansion"
+    )
+    _check_candidate_web_check_summary_int(
+        prediction_path,
+        summary,
+        "subject_count",
+        len(subject_keys),
+        findings=findings,
+    )
+    _check_candidate_web_check_summary_int(
+        prediction_path,
+        summary,
+        "final_candidate_subject_count",
+        len(final_candidate_keys),
+        findings=findings,
+    )
+    _check_candidate_web_check_summary_int(
+        prediction_path,
+        summary,
+        "candidate_expansion_subject_count",
+        len(expansion_subject_keys),
+        findings=findings,
+    )
+    expansion_paths = _candidate_web_check_expansion_paths(subject_rows)
+    if _string_list(summary.get("expansion_paths")) != expansion_paths:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_web_check "
+            "expansion_paths mismatch"
+        )
     expected_focus = _string_list(summary.get("verification_focus"))
     if expected_focus and any(
         _string_list(row.get("verification_focus")) != expected_focus for row in rows
@@ -3105,6 +3143,52 @@ def _check_candidate_web_check_summary(
             f"{prediction_path.name}: context manifest candidate_web_check "
             "verification_focus mismatch"
         )
+
+
+def _check_candidate_web_check_summary_int(
+    prediction_path: Path,
+    summary: dict[str, Any],
+    field: str,
+    expected: int,
+    *,
+    findings: list[str],
+) -> None:
+    if _non_bool_int(summary.get(field)) != expected:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_web_check "
+            f"{field} mismatch"
+        )
+
+
+def _candidate_web_check_subject_keys(
+    rows: Iterable[dict[str, Any]],
+) -> set[tuple[str, int, str, str, str, str | None]]:
+    return {_candidate_web_check_subject_key(row) for row in rows}
+
+
+def _candidate_web_check_subject_key(
+    row: dict[str, Any],
+) -> tuple[str, int, str, str, str, str | None]:
+    rank = row.get("candidate_rank")
+    expansion_path = row.get("candidate_expansion_path")
+    return (
+        str(row.get("candidate_subject_type") or ""),
+        rank if isinstance(rank, int) and not isinstance(rank, bool) else 0,
+        str(row.get("candidate_ticker") or ""),
+        str(row.get("candidate_company_name") or ""),
+        str(row.get("candidate_path_type") or ""),
+        str(expansion_path) if expansion_path is not None else None,
+    )
+
+
+def _candidate_web_check_expansion_paths(rows: Iterable[dict[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            str(row["candidate_expansion_path"])
+            for row in rows
+            if row.get("candidate_expansion_path") is not None
+        }
+    )
 
 
 def _check_candidate_verification_artifact(

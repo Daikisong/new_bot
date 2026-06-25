@@ -1428,6 +1428,7 @@ def _check_candidate_web_check_artifact(
         findings.append(f"{manifest_name}: candidate_web_check_sha256 mismatch")
     manifest_cutoff_at = _manifest_cutoff_at(manifest)
     row_source_ids: set[str] = set()
+    rows: list[dict[object, object]] = []
     row_count = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
@@ -1441,6 +1442,7 @@ def _check_candidate_web_check_artifact(
         if not isinstance(row, dict):
             findings.append(f"{manifest_name}: candidate_web_check:{line_number} must be object")
             continue
+        rows.append(row)
         source_id = row.get("source_id")
         if isinstance(source_id, str):
             row_source_ids.add(source_id)
@@ -1485,7 +1487,16 @@ def _check_candidate_web_check_artifact(
     expected_count = manifest.get("candidate_web_check_count")
     if isinstance(expected_count, int) and expected_count != row_count:
         findings.append(f"{manifest_name}: candidate_web_check_count mismatch")
-    _check_excluded_candidate_web_check_artifact(root, manifest_name, manifest, findings)
+    excluded_rows = _check_excluded_candidate_web_check_artifact(
+        root, manifest_name, manifest, findings
+    )
+    _check_candidate_web_check_summary(
+        manifest_name,
+        manifest,
+        rows,
+        excluded_rows,
+        findings,
+    )
 
 
 def _check_excluded_candidate_web_check_artifact(
@@ -1493,24 +1504,25 @@ def _check_excluded_candidate_web_check_artifact(
     manifest_name: str,
     manifest: dict[object, object],
     findings: list[str],
-) -> None:
+) -> list[dict[object, object]]:
     excluded = set(_string_list(manifest.get("excluded_candidate_web_source_ids")))
     relative_path = manifest.get("excluded_candidate_web_check_artifact")
     if not isinstance(relative_path, str):
         if excluded:
             findings.append(f"{manifest_name}: excluded_candidate_web_check_artifact missing")
-        return
+        return []
     path = root / relative_path
     if not path.exists():
         findings.append(
             f"{manifest_name}: excluded_candidate_web_check_artifact missing: {relative_path}"
         )
-        return
+        return []
     text = path.read_text(encoding="utf-8")
     expected_sha = manifest.get("excluded_candidate_web_check_sha256")
     if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
         findings.append(f"{manifest_name}: excluded_candidate_web_check_sha256 mismatch")
     row_source_ids: set[str] = set()
+    rows: list[dict[object, object]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
@@ -1526,6 +1538,7 @@ def _check_excluded_candidate_web_check_artifact(
                 f"{manifest_name}: excluded_candidate_web_check:{line_number} must be object"
             )
             continue
+        rows.append(row)
         source_id = row.get("source_id")
         if isinstance(source_id, str):
             row_source_ids.add(source_id)
@@ -1565,6 +1578,83 @@ def _check_excluded_candidate_web_check_artifact(
     expected_count = manifest.get("excluded_candidate_web_check_count")
     if isinstance(expected_count, int) and expected_count != len(row_source_ids):
         findings.append(f"{manifest_name}: excluded_candidate_web_check_count mismatch")
+    return rows
+
+
+def _check_candidate_web_check_summary(
+    manifest_name: str,
+    manifest: dict[object, object],
+    rows: list[dict[object, object]],
+    excluded_rows: list[dict[object, object]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("candidate_web_check_summary")
+    if not isinstance(summary, dict):
+        if rows or excluded_rows:
+            findings.append(f"{manifest_name}: candidate_web_check_summary invalid")
+        return
+    _check_candidate_web_check_summary_int(
+        manifest_name,
+        summary,
+        "source_count",
+        len(rows),
+        findings,
+    )
+    _check_candidate_web_check_summary_int(
+        manifest_name,
+        summary,
+        "excluded_source_count",
+        len(excluded_rows),
+        findings,
+    )
+    subject_rows = [*rows, *excluded_rows]
+    subject_keys = _candidate_web_check_subject_keys(subject_rows)
+    final_candidate_keys = _candidate_web_check_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "final_candidate"
+    )
+    expansion_subject_keys = _candidate_web_check_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "candidate_expansion"
+    )
+    _check_candidate_web_check_summary_int(
+        manifest_name,
+        summary,
+        "subject_count",
+        len(subject_keys),
+        findings,
+    )
+    _check_candidate_web_check_summary_int(
+        manifest_name,
+        summary,
+        "final_candidate_subject_count",
+        len(final_candidate_keys),
+        findings,
+    )
+    _check_candidate_web_check_summary_int(
+        manifest_name,
+        summary,
+        "candidate_expansion_subject_count",
+        len(expansion_subject_keys),
+        findings,
+    )
+    if _string_list(summary.get("expansion_paths")) != _candidate_web_check_expansion_paths(
+        subject_rows
+    ):
+        findings.append(f"{manifest_name}: candidate_web_check expansion_paths mismatch")
+
+
+def _check_candidate_web_check_summary_int(
+    manifest_name: str,
+    summary: dict[object, object],
+    field: str,
+    expected: int,
+    findings: list[str],
+) -> None:
+    if _non_bool_int(summary.get(field)) != expected:
+        findings.append(f"{manifest_name}: candidate_web_check {field} mismatch")
 
 
 def _check_candidate_verification_artifact(
@@ -1830,6 +1920,39 @@ def _candidate_verification_required_dimensions(
         if required_dimensions:
             return required_dimensions
     return _candidate_web_verification_focus(manifest)
+
+
+def _candidate_web_check_subject_keys(
+    rows: Iterator[dict[object, object]] | list[dict[object, object]],
+) -> set[tuple[str, int, str, str, str, str | None]]:
+    return {_candidate_web_check_subject_key(row) for row in rows}
+
+
+def _candidate_web_check_subject_key(
+    row: dict[object, object],
+) -> tuple[str, int, str, str, str, str | None]:
+    rank = row.get("candidate_rank")
+    expansion_path = row.get("candidate_expansion_path")
+    return (
+        str(row.get("candidate_subject_type") or ""),
+        rank if isinstance(rank, int) and not isinstance(rank, bool) else 0,
+        str(row.get("candidate_ticker") or ""),
+        str(row.get("candidate_company_name") or ""),
+        str(row.get("candidate_path_type") or ""),
+        str(expansion_path) if expansion_path is not None else None,
+    )
+
+
+def _candidate_web_check_expansion_paths(
+    rows: list[dict[object, object]],
+) -> list[str]:
+    return sorted(
+        {
+            str(row["candidate_expansion_path"])
+            for row in rows
+            if row.get("candidate_expansion_path") is not None
+        }
+    )
 
 
 def _candidate_verification_dimension_names(

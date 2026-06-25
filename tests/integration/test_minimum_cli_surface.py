@@ -210,6 +210,19 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_web_check"]["row_count_verified"] is True
     assert supporting["candidate_web_check"]["source_ids_verified"] is True
     assert supporting["candidate_web_check"]["summary_source_count_verified"] is True
+    assert supporting["candidate_web_check"]["summary_excluded_source_count_verified"] is True
+    assert supporting["candidate_web_check"]["summary_subject_count_verified"] is True
+    assert (
+        supporting["candidate_web_check"]["summary_final_candidate_subject_count_verified"]
+        is True
+    )
+    assert (
+        supporting["candidate_web_check"][
+            "summary_candidate_expansion_subject_count_verified"
+        ]
+        is True
+    )
+    assert supporting["candidate_web_check"]["summary_expansion_paths_verified"] is True
     assert supporting["candidate_web_check"]["verification_focus_verified"] is True
     assert supporting["candidate_web_check"]["required_fields_verified"] is True
     assert supporting["candidate_web_check"]["source_url_verified"] is True
@@ -915,6 +928,52 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_candidate_web_timestamp)
+
+    original_manifest_for_candidate_web_summary = read_json(manifest_file)
+    tampered_candidate_web_summary = {
+        **original_manifest_for_candidate_web_summary["candidate_web_check_summary"],
+        "subject_count": (
+            original_manifest_for_candidate_web_summary["candidate_web_check_summary"][
+                "subject_count"
+            ]
+            + 1
+        ),
+    }
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_web_summary,
+            "candidate_web_check_summary": tampered_candidate_web_summary,
+        },
+    )
+    tampered_candidate_web_summary_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate web summary",
+        tampered_candidate_web_summary_context,
+    )
+    tampered_candidate_web_summary_inspection = json.loads(
+        tampered_candidate_web_summary_context.output
+    )["inspection"]
+    assert (
+        tampered_candidate_web_summary_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_candidate_web_summary_status = (
+        tampered_candidate_web_summary_inspection["supporting_artifacts"][
+            "candidate_web_check"
+        ]
+    )
+    assert tampered_candidate_web_summary_status["hash_verified"] is True
+    assert (
+        tampered_candidate_web_summary_status["summary_subject_count_verified"]
+        is False
+    )
+    assert "candidate_web_check_summary_subject_count_mismatch" in (
+        tampered_candidate_web_summary_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_candidate_web_summary)
 
     excluded_candidate_web_check_file = (
         tmp_path / context_payload["excluded_candidate_web_check_artifact"]

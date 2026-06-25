@@ -931,6 +931,11 @@ def _inspect_candidate_web_check_artifact(
             "row_count_verified": None,
             "source_ids_verified": None,
             "summary_source_count_verified": None,
+            "summary_excluded_source_count_verified": None,
+            "summary_subject_count_verified": None,
+            "summary_final_candidate_subject_count_verified": None,
+            "summary_candidate_expansion_subject_count_verified": None,
+            "summary_expansion_paths_verified": None,
             "verification_focus_verified": None,
             "required_fields_verified": None,
             "source_url_verified": None,
@@ -990,6 +995,75 @@ def _inspect_candidate_web_check_artifact(
     )
     if not status["summary_source_count_verified"]:
         status["errors"].append("candidate_web_check_summary_source_count_mismatch")
+
+    excluded_rows = _read_candidate_web_excluded_rows_for_summary(root, manifest)
+    subject_rows = [*rows, *excluded_rows]
+    subject_keys = _candidate_web_subject_keys(subject_rows)
+    final_candidate_keys = _candidate_web_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "final_candidate"
+    )
+    expansion_subject_keys = _candidate_web_subject_keys(
+        row
+        for row in subject_rows
+        if row.get("candidate_subject_type") == "candidate_expansion"
+    )
+    summary_excluded_source_count = (
+        summary.get("excluded_source_count") if isinstance(summary, dict) else None
+    )
+    status["summary_excluded_source_count_verified"] = (
+        isinstance(summary_excluded_source_count, int)
+        and summary_excluded_source_count == len(excluded_rows)
+    )
+    if not status["summary_excluded_source_count_verified"]:
+        status["errors"].append(
+            "candidate_web_check_summary_excluded_source_count_mismatch"
+        )
+
+    summary_subject_count = summary.get("subject_count") if isinstance(summary, dict) else None
+    status["summary_subject_count_verified"] = (
+        isinstance(summary_subject_count, int)
+        and summary_subject_count == len(subject_keys)
+    )
+    if not status["summary_subject_count_verified"]:
+        status["errors"].append("candidate_web_check_summary_subject_count_mismatch")
+
+    summary_final_candidate_count = (
+        summary.get("final_candidate_subject_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["summary_final_candidate_subject_count_verified"] = (
+        isinstance(summary_final_candidate_count, int)
+        and summary_final_candidate_count == len(final_candidate_keys)
+    )
+    if not status["summary_final_candidate_subject_count_verified"]:
+        status["errors"].append(
+            "candidate_web_check_summary_final_candidate_subject_count_mismatch"
+        )
+
+    summary_expansion_subject_count = (
+        summary.get("candidate_expansion_subject_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["summary_candidate_expansion_subject_count_verified"] = (
+        isinstance(summary_expansion_subject_count, int)
+        and summary_expansion_subject_count == len(expansion_subject_keys)
+    )
+    if not status["summary_candidate_expansion_subject_count_verified"]:
+        status["errors"].append(
+            "candidate_web_check_summary_candidate_expansion_subject_count_mismatch"
+        )
+
+    expansion_paths = _candidate_web_expansion_paths(subject_rows)
+    status["summary_expansion_paths_verified"] = (
+        isinstance(summary, dict)
+        and _string_list(summary.get("expansion_paths")) == expansion_paths
+    )
+    if not status["summary_expansion_paths_verified"]:
+        status["errors"].append("candidate_web_check_summary_expansion_paths_mismatch")
 
     expected_focus = _candidate_web_verification_focus(manifest)
     status["verification_focus_verified"] = bool(expected_focus) and all(
@@ -3620,6 +3694,11 @@ def _candidate_web_check_status_passed(status: dict[str, Any]) -> bool:
         and status.get("row_count_verified")
         and status.get("source_ids_verified")
         and status.get("summary_source_count_verified")
+        and status.get("summary_excluded_source_count_verified")
+        and status.get("summary_subject_count_verified")
+        and status.get("summary_final_candidate_subject_count_verified")
+        and status.get("summary_candidate_expansion_subject_count_verified")
+        and status.get("summary_expansion_paths_verified")
         and status.get("verification_focus_verified")
         and status.get("required_fields_verified")
         and status.get("source_url_verified")
@@ -3882,6 +3961,54 @@ def _candidate_web_verification_focus(manifest: dict[str, Any]) -> list[str]:
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("verification_focus"))
+
+
+def _read_candidate_web_excluded_rows_for_summary(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    artifact_ref = manifest.get("excluded_candidate_web_check_artifact")
+    if not isinstance(artifact_ref, str):
+        return []
+    scratch_status: dict[str, Any] = {"errors": []}
+    rows = _read_artifact_jsonl_rows(
+        root,
+        artifact_ref,
+        scratch_status,
+        label="excluded_candidate_web_check",
+    )
+    return rows or []
+
+
+def _candidate_web_subject_keys(
+    rows: Iterable[dict[str, Any]],
+) -> set[tuple[str, int, str, str, str, str | None]]:
+    return {_candidate_web_subject_key(row) for row in rows}
+
+
+def _candidate_web_subject_key(
+    row: dict[str, Any],
+) -> tuple[str, int, str, str, str, str | None]:
+    rank = row.get("candidate_rank")
+    expansion_path = row.get("candidate_expansion_path")
+    return (
+        str(row.get("candidate_subject_type") or ""),
+        rank if isinstance(rank, int) and not isinstance(rank, bool) else 0,
+        str(row.get("candidate_ticker") or ""),
+        str(row.get("candidate_company_name") or ""),
+        str(row.get("candidate_path_type") or ""),
+        str(expansion_path) if expansion_path is not None else None,
+    )
+
+
+def _candidate_web_expansion_paths(rows: Iterable[dict[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            str(row["candidate_expansion_path"])
+            for row in rows
+            if row.get("candidate_expansion_path") is not None
+        }
+    )
 
 
 def _source_url_valid(row: dict[str, Any]) -> bool:

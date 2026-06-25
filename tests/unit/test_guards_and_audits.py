@@ -1658,6 +1658,8 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
         "candidate_ticker": "UNKNOWN",
         "candidate_company_name": "CandidateCo",
         "candidate_path_type": "SINGLE_EVENT",
+        "candidate_subject_type": "final_candidate",
+        "candidate_expansion_path": None,
         "verification_focus": ["listed_security_and_exact_ticker"],
         "source_id": "WEB-1",
         "title": "candidate source",
@@ -1680,6 +1682,8 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
         "candidate_ticker": "UNKNOWN",
         "candidate_company_name": "CandidateCo",
         "candidate_path_type": "SINGLE_EVENT",
+        "candidate_subject_type": "final_candidate",
+        "candidate_expansion_path": None,
         "source_id": "WEB-X",
         "title": "excluded candidate source",
         "source_url": "https://example.test/excluded",
@@ -1713,6 +1717,10 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
             "candidate_web_check_summary": {
                 "source_count": 1,
                 "excluded_source_count": 1,
+                "subject_count": 1,
+                "final_candidate_subject_count": 1,
+                "candidate_expansion_subject_count": 0,
+                "expansion_paths": [],
                 "verification_focus": ["listed_security_and_exact_ticker"],
             },
         },
@@ -1755,6 +1763,10 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
     manifest["candidate_web_check_summary"] = {
         "source_count": 2,
         "excluded_source_count": 2,
+        "subject_count": 1,
+        "final_candidate_subject_count": 2,
+        "candidate_expansion_subject_count": 1,
+        "expansion_paths": ["CONTINUATION"],
         "verification_focus": ["listed_security_and_exact_ticker"],
     }
     write_json(manifest_path, manifest)
@@ -1806,6 +1818,22 @@ def test_provenance_audit_validates_candidate_web_check_artifacts(
     assert (
         "2030-01-10.json: context manifest candidate_web_check:1 "
         "verification_focus invalid"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check subject_count mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check "
+        "final_candidate_subject_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check "
+        "candidate_expansion_subject_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_web_check "
+        "expansion_paths mismatch"
     ) in findings
     assert (
         "2030-01-10.json: context manifest excluded_candidate_web_check_sha256 mismatch"
@@ -2662,6 +2690,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "candidate_web_check_summary": {
                 "source_count": 1,
                 "excluded_source_count": 0,
+                "subject_count": 1,
+                "final_candidate_subject_count": 1,
+                "candidate_expansion_subject_count": 0,
+                "expansion_paths": [],
                 "verification_focus": ["listed_security_and_exact_ticker"],
             },
             "news_novelty_review_artifact": novelty_path.relative_to(
@@ -5926,6 +5958,8 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "candidate_ticker": "UNKNOWN",
                 "candidate_company_name": "CandidateCo",
                 "candidate_path_type": "SINGLE_EVENT",
+                "candidate_subject_type": "final_candidate",
+                "candidate_expansion_path": None,
                 "verification_focus": ["listed_security_and_exact_ticker"],
                 "source_id": "WEB-CANDIDATE-FUTURE",
                 "query": "candidate verification",
@@ -5956,6 +5990,8 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "candidate_ticker": "UNKNOWN",
                 "candidate_company_name": "CandidateCo",
                 "candidate_path_type": "SINGLE_EVENT",
+                "candidate_subject_type": "final_candidate",
+                "candidate_expansion_path": None,
                 "source_id": "WEB-CANDIDATE-EXCLUDED",
                 "query": "candidate verification",
                 "title": "excluded source",
@@ -6029,6 +6065,15 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
             "candidate_web_check_artifact": artifact.relative_to(tmp_path).as_posix(),
             "candidate_web_check_sha256": sha256_text(payload),
             "candidate_web_check_count": 2,
+            "candidate_web_check_summary": {
+                "source_count": 2,
+                "excluded_source_count": 2,
+                "subject_count": 2,
+                "final_candidate_subject_count": 2,
+                "candidate_expansion_subject_count": 1,
+                "expansion_paths": ["CONTINUATION"],
+                "verification_focus": ["listed_security_and_exact_ticker"],
+            },
             "excluded_candidate_web_source_ids": ["WEB-CANDIDATE-OTHER-EXCLUDED"],
             "excluded_candidate_web_check_artifact": excluded_artifact.relative_to(
                 tmp_path
@@ -6089,6 +6134,21 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
         in findings
     )
     assert "RUN-candidate.json: excluded_candidate_web_check_count mismatch" in findings
+    assert "RUN-candidate.json: candidate_web_check source_count mismatch" in findings
+    assert (
+        "RUN-candidate.json: candidate_web_check excluded_source_count mismatch"
+        in findings
+    )
+    assert "RUN-candidate.json: candidate_web_check subject_count mismatch" in findings
+    assert (
+        "RUN-candidate.json: candidate_web_check final_candidate_subject_count mismatch"
+        in findings
+    )
+    assert (
+        "RUN-candidate.json: candidate_web_check "
+        "candidate_expansion_subject_count mismatch"
+    ) in findings
+    assert "RUN-candidate.json: candidate_web_check expansion_paths mismatch" in findings
     assert "RUN-candidate.json: candidate_verification_sha256 mismatch" in findings
     assert "RUN-candidate.json: candidate_verification_count mismatch" in findings
     assert "RUN-candidate.json: candidate_verification finding_count mismatch" in findings
