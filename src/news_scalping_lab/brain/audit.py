@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import current_brain_version
-from news_scalping_lab.contracts.models import MemoryClaim, ResearchEpisode
+from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import is_available_as_of, read_json
 
@@ -24,12 +24,17 @@ def audit_brain(root: Path) -> dict[str, object]:
     missing = sorted(accepted_ids - covered)
     extra = sorted(covered - accepted_ids)
     claim_audit = _audit_claims(root, accepted)
+    mechanism_audit = _audit_mechanisms(root, accepted)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *claim_audit["claims_without_support"],
         *claim_audit["claims_with_unknown_support"],
         *claim_audit["claim_temporal_leaks"],
         *claim_audit["claims_without_provenance"],
+        *mechanism_audit["invalid_mechanism_lines"],
+        *mechanism_audit["mechanisms_without_cases"],
+        *mechanism_audit["mechanisms_with_unknown_success_cases"],
+        *mechanism_audit["mechanisms_without_provenance"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     return {
@@ -38,10 +43,58 @@ def audit_brain(root: Path) -> dict[str, object]:
         "missing_episode_ids": missing,
         "extra_episode_ids": extra,
         **claim_audit,
+        **mechanism_audit,
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
         "brain_version": current_brain_version(root),
         "last_full_rebuild": manifest.get("created_at"),
+    }
+
+
+def _audit_mechanisms(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list[str]]:
+    accepted_ids = {episode.episode_id for episode in accepted}
+    mechanisms_path = root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    invalid_mechanism_lines: list[str] = []
+    mechanisms_without_cases: list[str] = []
+    mechanisms_with_unknown_success_cases: list[str] = []
+    mechanisms_without_provenance: list[str] = []
+    if not mechanisms_path.exists():
+        return {
+            "invalid_mechanism_lines": invalid_mechanism_lines,
+            "mechanisms_without_cases": mechanisms_without_cases,
+            "mechanisms_with_unknown_success_cases": mechanisms_with_unknown_success_cases,
+            "mechanisms_without_provenance": mechanisms_without_provenance,
+        }
+    for line_number, line in enumerate(
+        mechanisms_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+            mechanism = MechanismMemory.model_validate(raw)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            invalid_mechanism_lines.append(f"mechanisms.jsonl:{line_number}: {exc}")
+            continue
+        if not mechanism.successful_cases and not mechanism.failed_cases:
+            mechanisms_without_cases.append(mechanism.mechanism_id)
+        unknown_success_cases = [
+            episode_id
+            for episode_id in mechanism.successful_cases
+            if episode_id not in accepted_ids
+        ]
+        if unknown_success_cases:
+            mechanisms_with_unknown_success_cases.append(
+                f"{mechanism.mechanism_id}: {', '.join(sorted(unknown_success_cases))}"
+            )
+        if not mechanism.provenance:
+            mechanisms_without_provenance.append(mechanism.mechanism_id)
+    return {
+        "invalid_mechanism_lines": invalid_mechanism_lines,
+        "mechanisms_without_cases": mechanisms_without_cases,
+        "mechanisms_with_unknown_success_cases": mechanisms_with_unknown_success_cases,
+        "mechanisms_without_provenance": mechanisms_without_provenance,
     }
 
 

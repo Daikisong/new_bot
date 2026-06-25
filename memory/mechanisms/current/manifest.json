@@ -1,0 +1,14 @@
+{
+  "brain_version": "brain-75addb59ec",
+  "covered_episode_ids": [
+    "EP-5d101eb64102"
+  ],
+  "mechanism_count": 3,
+  "mechanism_ids": [
+    "MM-4a239b5534e5",
+    "MM-c81ae85266ea",
+    "MM-40c2b14764e2"
+  ],
+  "mechanisms_sha256": "0622e43d637894fc5cc4ff2e0460bb75c9de2cba9c56301530eeea0fb184871b",
+  "schema_version": "nslab.mechanism_memory_manifest.v1"
+}

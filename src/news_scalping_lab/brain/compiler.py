@@ -11,7 +11,9 @@ from news_scalping_lab.contracts.models import (
     BrainManifest,
     ClaimStatus,
     ConfidenceLabel,
+    MechanismMemory,
     MemoryClaim,
+    Provenance,
     ResearchEpisode,
 )
 from news_scalping_lab.storage import ResearchStore
@@ -41,6 +43,8 @@ class BrainCompiler:
         self.snapshots_dir = root / "brain" / "snapshots"
         self.diffs_dir = root / "brain" / "diffs"
         self.claims_dir = root / "memory" / "claims"
+        self.mechanisms_dir = root / "memory" / "mechanisms"
+        self.current_mechanisms_dir = self.mechanisms_dir / "current"
         self.shard_brains_dir = root / "memory" / "shard_brains"
         self.current_shard_brains_dir = self.shard_brains_dir / "current"
         for directory in (
@@ -48,6 +52,7 @@ class BrainCompiler:
             self.snapshots_dir,
             self.diffs_dir,
             self.claims_dir,
+            self.current_mechanisms_dir,
             self.current_shard_brains_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
@@ -74,6 +79,16 @@ class BrainCompiler:
                 )
             ]
         )
+        mechanisms = _dedupe_mechanisms(
+            [
+                mechanism
+                for episode in episodes
+                for mechanism in self._mechanisms_from_episode(
+                    episode=episode,
+                    source_hash=source_hashes.get(episode.episode_id),
+                )
+            ]
+        )
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -85,6 +100,7 @@ class BrainCompiler:
             coverage_complete=len(covered_ids) == len(episodes),
         )
         self._write_current(manifest, claims)
+        self._write_mechanism_memory(manifest, mechanisms)
         self._write_shard_brains(manifest, episodes)
         snapshot_dir = self.snapshots_dir / version
         if snapshot_dir.exists():
@@ -184,6 +200,42 @@ class BrainCompiler:
             ],
         ]
 
+    def _mechanisms_from_episode(
+        self,
+        *,
+        episode: ResearchEpisode,
+        source_hash: str | None,
+    ) -> list[MechanismMemory]:
+        mechanism_texts = episode.blind_analysis.open_world_mechanisms or [
+            episode.blind_analysis.summary
+        ]
+        provenance = _episode_provenance(episode=episode, source_hash=source_hash)
+        memories: list[MechanismMemory] = []
+        for index, mechanism_text in enumerate(mechanism_texts, start=1):
+            description = mechanism_text.strip()
+            if not description:
+                continue
+            causal_chain = _causal_chain(description)
+            memories.append(
+                MechanismMemory(
+                    mechanism_id=stable_id("MM", episode.episode_id, index, description),
+                    natural_language_description=description,
+                    causal_chain=causal_chain,
+                    observed_variations=[episode.blind_analysis.summary],
+                    successful_cases=[episode.episode_id],
+                    failed_cases=episode.misses,
+                    boundary_conditions=[
+                        "available only on or after source episode available_from",
+                        *episode.blind_analysis.initial_uncertainties,
+                    ],
+                    leader_selection_notes=[
+                        "Preserve as an abstract mechanism; do not translate into ticker or theme maps."
+                    ],
+                    provenance=provenance,
+                )
+            )
+        return memories
+
     def _write_current(self, manifest: BrainManifest, claims: list[MemoryClaim]) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
@@ -201,6 +253,35 @@ class BrainCompiler:
         )
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
         write_json(self.current_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
+
+    def _write_mechanism_memory(
+        self,
+        manifest: BrainManifest,
+        mechanisms: list[MechanismMemory],
+    ) -> None:
+        if self.current_mechanisms_dir.exists():
+            shutil.rmtree(self.current_mechanisms_dir)
+        self.current_mechanisms_dir.mkdir(parents=True, exist_ok=True)
+        mechanisms_path = self.current_mechanisms_dir / "mechanisms.jsonl"
+        mechanisms_path.write_text(
+            "".join(memory.model_dump_json() + "\n" for memory in mechanisms),
+            encoding="utf-8",
+        )
+        write_json(
+            self.current_mechanisms_dir / "manifest.json",
+            {
+                "schema_version": "nslab.mechanism_memory_manifest.v1",
+                "brain_version": manifest.brain_version,
+                "mechanism_count": len(mechanisms),
+                "covered_episode_ids": manifest.covered_episode_ids,
+                "mechanism_ids": [memory.mechanism_id for memory in mechanisms],
+                "mechanisms_sha256": file_sha256(mechanisms_path),
+            },
+        )
+        versioned_dir = self.mechanisms_dir / manifest.brain_version
+        if versioned_dir.exists():
+            shutil.rmtree(versioned_dir)
+        shutil.copytree(self.current_mechanisms_dir, versioned_dir)
 
     def _write_shard_brains(
         self,
@@ -383,6 +464,41 @@ def _dedupe_claims(claims: list[MemoryClaim]) -> list[MemoryClaim]:
         seen.add(claim.claim_id)
         deduped.append(claim)
     return deduped
+
+
+def _dedupe_mechanisms(mechanisms: list[MechanismMemory]) -> list[MechanismMemory]:
+    deduped: list[MechanismMemory] = []
+    seen: set[str] = set()
+    for mechanism in mechanisms:
+        if mechanism.mechanism_id in seen:
+            continue
+        seen.add(mechanism.mechanism_id)
+        deduped.append(mechanism)
+    return deduped
+
+
+def _causal_chain(description: str) -> list[str]:
+    parts = [part.strip(" -") for part in description.split("->")]
+    return [part for part in parts if part] or [description]
+
+
+def _episode_provenance(
+    *,
+    episode: ResearchEpisode,
+    source_hash: str | None,
+) -> list[Provenance]:
+    if episode.provenance:
+        return episode.provenance
+    return [
+        Provenance(
+            source_id=stable_id("SRC", "accepted_episode", episode.episode_id),
+            source_type="accepted_research_episode",
+            uri=f"research/accepted/{episode.episode_id}.json",
+            content_sha256=source_hash,
+            excerpt=episode.blind_analysis.summary,
+            observed_at=_ensure_timezone(episode.created_at),
+        )
+    ]
 
 
 def _deterministic_rebuild_timestamp(episodes: list[ResearchEpisode]) -> datetime:

@@ -17,6 +17,7 @@ from news_scalping_lab.cli import brain_audit as cli_brain_audit
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
+    MechanismMemory,
     MemoryClaim,
     Provenance,
     ResearchEpisode,
@@ -95,6 +96,20 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     shard_path = tmp_path / shard_manifest["shard_files"][0]
     assert episode.episode_id in shard_path.read_text(encoding="utf-8")
     assert (tmp_path / "memory" / "shard_brains" / manifest.brain_version).exists()
+    mechanisms_manifest = read_json(tmp_path / "memory" / "mechanisms" / "current" / "manifest.json")
+    mechanisms_path = tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+    mechanisms = [
+        MechanismMemory.model_validate(json.loads(line))
+        for line in mechanisms_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    assert mechanisms_manifest["brain_version"] == manifest.brain_version
+    assert mechanisms_manifest["mechanism_count"] == len(mechanisms) == 3
+    assert mechanisms_manifest["covered_episode_ids"] == [episode.episode_id]
+    assert mechanisms_manifest["mechanisms_sha256"] == file_sha256(mechanisms_path)
+    assert mechanisms[0].successful_cases == [episode.episode_id]
+    assert mechanisms[0].provenance
+    assert (tmp_path / "memory" / "mechanisms" / manifest.brain_version).exists()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
 
 
@@ -332,13 +347,20 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     first_manifest = compiler.rebuild(mode="full")
     first_hashes = current_brain_file_hashes(tmp_path)
     first_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+    first_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
+        encoding="utf-8"
+    )
     second_manifest = compiler.rebuild(mode="full")
     second_hashes = current_brain_file_hashes(tmp_path)
     second_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+    second_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
+        encoding="utf-8"
+    )
 
     assert second_manifest.model_dump(mode="json") == first_manifest.model_dump(mode="json")
     assert second_hashes == first_hashes
     assert second_claims == first_claims
+    assert second_mechanisms == first_mechanisms
 
 
 def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_path) -> None:
@@ -422,6 +444,45 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
         "CL-no-provenance",
         "CL-temporal-leak",
         "CL-single-support-warning",
+    ]
+
+
+def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Mechanism audit note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    mechanisms = [
+        MechanismMemory(
+            mechanism_id="MM-no-cases",
+            natural_language_description="case-free mechanism should fail audit",
+            provenance=[],
+        ),
+        MechanismMemory(
+            mechanism_id="MM-unknown-success",
+            natural_language_description="unknown success case should fail audit",
+            successful_cases=["EP-unknown"],
+            provenance=[],
+        ),
+    ]
+    (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").write_text(
+        "".join(mechanism.model_dump_json() + "\n" for mechanism in mechanisms),
+        encoding="utf-8",
+    )
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["mechanisms_without_cases"] == ["MM-no-cases"]
+    assert audit["mechanisms_with_unknown_success_cases"] == [
+        "MM-unknown-success: EP-unknown"
+    ]
+    assert audit["mechanisms_without_provenance"] == [
+        "MM-no-cases",
+        "MM-unknown-success",
     ]
 
 
