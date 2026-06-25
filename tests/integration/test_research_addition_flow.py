@@ -15,10 +15,26 @@ from news_scalping_lab.utils import KST, file_sha256, read_json
 
 def _src_hashes(repo_root: Path) -> dict[str, str]:
     source_root = repo_root / "src"
+    if not source_root.exists():
+        return {}
     return {
         path.relative_to(repo_root).as_posix(): file_sha256(path)
         for path in sorted(source_root.rglob("*.py"))
     }
+
+
+def _file_hashes(root: Path) -> dict[str, str]:
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    return sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
 
 
 @pytest.mark.asyncio
@@ -30,6 +46,13 @@ async def test_research_addition_updates_brain_and_future_context_without_source
     settings = Settings(project_root=tmp_path)
     settings.limits.shard_episode_count = 1
     ensure_project_dirs(settings)
+    project_source_dir = tmp_path / "src" / "news_scalping_lab"
+    project_source_dir.mkdir(parents=True)
+    (project_source_dir / "sentinel.py").write_text(
+        '"""Sentinel production source that research import must not edit."""\n',
+        encoding="utf-8",
+    )
+    project_src_before = _src_hashes(tmp_path)
     importer = ResearchImporter(tmp_path)
     store = ResearchStore(tmp_path)
     compiler = BrainCompiler(tmp_path)
@@ -52,11 +75,23 @@ async def test_research_addition_updates_brain_and_future_context_without_source
         "Postmortem: counterexample kept the indirect beneficiary thesis tentative.",
         encoding="utf-8",
     )
+    project_before_second_import = _file_hashes(tmp_path)
+    brain_before_second_import = _file_hashes(tmp_path / "brain")
+    memory_before_second_import = _file_hashes(tmp_path / "memory")
     second_episode = await importer.import_path_async(second_source, mode="semantic")
     store.accept(second_episode.episode_id)
     second_manifest = compiler.update(episode_id=second_episode.episode_id)
 
     assert _src_hashes(repo_root) == src_before
+    assert _src_hashes(tmp_path) == project_src_before
+    changed_after_second_import = _changed_paths(
+        project_before_second_import,
+        _file_hashes(tmp_path),
+    )
+    assert not any(path.startswith("src/") for path in changed_after_second_import)
+    assert any(path.startswith("research/") for path in changed_after_second_import)
+    assert _file_hashes(tmp_path / "brain") != brain_before_second_import
+    assert _file_hashes(tmp_path / "memory") != memory_before_second_import
     assert second_manifest.brain_version != first_manifest.brain_version
     assert second_manifest.accepted_episode_count == first_manifest.accepted_episode_count + 1
     assert second_manifest.covered_episode_count == 2
@@ -91,3 +126,4 @@ async def test_research_addition_updates_brain_and_future_context_without_source
     }
     assert second_episode.episode_id in manifest.swept_episode_ids
     assert _src_hashes(repo_root) == src_before
+    assert _src_hashes(tmp_path) == project_src_before
