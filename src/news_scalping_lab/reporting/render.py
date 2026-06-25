@@ -57,6 +57,7 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 "",
             ]
         )
+    row_summary = manifest.row_disposition_summary
 
     return "\n".join(
         [
@@ -75,6 +76,12 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "## 3. News Range And Cutoff",
             "",
             "Only pre-cutoff news rows are eligible for blind evidence.",
+            f"- Total input rows: {row_summary.get('total_rows', 'unknown')}",
+            f"- Included pre-cutoff rows: {row_summary.get('included_before_cutoff', 'unknown')}",
+            f"- Excluded after-cutoff rows: {row_summary.get('excluded_after_cutoff', 'unknown')}",
+            f"- Row coverage ratio: {row_summary.get('coverage_ratio', 'unknown')}",
+            f"- Row disposition artifact: {manifest.row_disposition_artifact or 'none'}",
+            f"- Row disposition SHA256: {manifest.row_disposition_sha256 or 'none'}",
             "",
             "## 4. Dominant Sector Hypotheses",
             "",

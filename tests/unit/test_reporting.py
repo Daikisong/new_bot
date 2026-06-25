@@ -86,6 +86,15 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         swept_episode_ids=["EP-positive", "EP-negative"],
         retrieved_episode_ids=["EP-positive"],
         counterexample_episode_ids=["EP-negative"],
+        row_disposition_artifact="runs/checkpoints/row_disposition/RUN-report/row_disposition.jsonl",
+        row_disposition_sha256="row-sha",
+        row_disposition_coverage_ratio=0.5,
+        row_disposition_summary={
+            "total_rows": 2,
+            "included_before_cutoff": 1,
+            "excluded_after_cutoff": 1,
+            "coverage_ratio": 0.5,
+        },
         web_sources=["mock://source"],
         price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
     )
@@ -102,6 +111,15 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Source URLs: news://EVT-report" in report
     assert "- Provenance sources: SRC-report-candidate" in report
     assert "- Provenance sources: SRC-report-sector" in report
+    assert "- Total input rows: 2" in report
+    assert "- Included pre-cutoff rows: 1" in report
+    assert "- Excluded after-cutoff rows: 1" in report
+    assert "- Row coverage ratio: 0.5" in report
+    assert (
+        "- Row disposition artifact: runs/checkpoints/row_disposition/RUN-report/row_disposition.jsonl"
+        in report
+    )
+    assert "- Row disposition SHA256: row-sha" in report
     assert "Counterexample episode ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report
