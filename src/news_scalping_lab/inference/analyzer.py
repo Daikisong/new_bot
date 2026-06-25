@@ -457,7 +457,9 @@ class DailyAnalyzer:
             known_at=prediction.cutoff_at,
         )
         write_json(manifest_path, manifest.model_dump(mode="json"))
-        WarehouseStore(self.root).write_prediction(prediction)
+        warehouse = WarehouseStore(self.root)
+        warehouse.write_prediction(prediction)
+        warehouse.write_company_memory_from_files()
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report_text, encoding="utf-8")
         return DailyAnalysis(

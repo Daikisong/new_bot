@@ -21,6 +21,7 @@ from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BrainManifest,
+    CompanyMemory,
     MechanismMemory,
     MemoryClaim,
     Postmortem,
@@ -33,7 +34,14 @@ from news_scalping_lab.research_import.semantic import (
     SemanticResearchDraft,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, file_sha256, next_trading_day, read_json, sha256_text
+from news_scalping_lab.utils import (
+    KST,
+    file_sha256,
+    next_trading_day,
+    read_json,
+    sha256_text,
+    write_json,
+)
 from news_scalping_lab.warehouse import WarehouseStore
 
 T = TypeVar("T", bound=BaseModel)
@@ -696,6 +704,24 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
         json.dumps({"trade_date": "2030-01-10"}, ensure_ascii=False),
         encoding="utf-8",
     )
+    write_json(
+        tmp_path / "memory" / "company_memory" / "CM-unsynced.json",
+        CompanyMemory(
+            ticker="999998",
+            company_name="Unsynced Memory Co",
+            known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        ).model_dump(mode="json"),
+    )
+    mechanisms_dir = tmp_path / "memory" / "mechanisms" / "current"
+    mechanisms_dir.mkdir(parents=True, exist_ok=True)
+    (mechanisms_dir / "mechanisms.jsonl").write_text(
+        MechanismMemory(
+            mechanism_id="MM-unsynced",
+            natural_language_description="Unsynced mechanism memory source.",
+        ).model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
 
     failed = audit_coverage(tmp_path)
 
@@ -705,7 +731,9 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert failed["warehouse_synced"] is False
     assert failed["warehouse_projection_synced"] is False
     assert failed["warehouse_count_mismatches"] == {
+        "company_memory.parquet": {"actual": 0, "expected": 1},
         "daily_outcomes.parquet": {"actual": 0, "expected": 1},
+        "mechanism_memory.parquet": {"actual": 3, "expected": 1},
         "predictions.parquet": {"actual": 0, "expected": 1},
     }
     assert failed["warehouse_required_files_present"] is False
@@ -727,6 +755,14 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     )
     assert (
         "warehouse: daily_outcomes.parquet count 0 != source postmortem reports count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: company_memory.parquet count 0 != source company memory files count 1"
+        in failed["findings"]
+    )
+    assert (
+        "warehouse: mechanism_memory.parquet count 3 != source mechanism memory records count 1"
         in failed["findings"]
     )
 

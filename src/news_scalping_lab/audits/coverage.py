@@ -112,7 +112,23 @@ def _warehouse_expected_source_counts(root: Path) -> dict[str, dict[str, int | s
             "expected": len(list((root / "reports").glob("*_postmortem.json"))),
             "source_label": "source postmortem reports",
         },
+        "company_memory.parquet": {
+            "expected": len(list((root / "memory" / "company_memory").glob("*.json"))),
+            "source_label": "source company memory files",
+        },
+        "mechanism_memory.parquet": {
+            "expected": _nonempty_jsonl_line_count(
+                root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+            ),
+            "source_label": "source mechanism memory records",
+        },
     }
+
+
+def _nonempty_jsonl_line_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
 
 
 def _warehouse_count_mismatches(
