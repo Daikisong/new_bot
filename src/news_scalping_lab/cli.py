@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -474,6 +475,10 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         )
         for label, artifact_field, hash_field, required in specs
     }
+    statuses["semantic_retrieval_plan"] = _inspect_semantic_retrieval_plan_artifact(
+        root, manifest
+    )
+    statuses["semantic_retrieval"] = _inspect_semantic_retrieval_artifact(root, manifest)
     statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
         root, manifest
     )
@@ -512,6 +517,191 @@ def _inspect_text_hashed_artifact(
     if not isinstance(expected_hash, str) or not expected_hash:
         status["errors"].append(f"{hash_field}_missing")
     status["passed"] = _text_hashed_artifact_status_passed(status)
+    return status
+
+
+def _inspect_semantic_retrieval_plan_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="semantic_retrieval_plan_artifact",
+        hash_field="semantic_retrieval_plan_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "prompt_hash_verified": None,
+            "required_categories_verified": None,
+            "query_count_verified": None,
+            "category_coverage_verified": None,
+        }
+    )
+    payload = _read_artifact_object(root, manifest.get("semantic_retrieval_plan_artifact"), status)
+    if payload is None:
+        status["passed"] = _semantic_retrieval_plan_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.semantic_retrieval_plan.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("semantic_retrieval_plan_schema_version_mismatch")
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("semantic_retrieval_plan_run_id_mismatch")
+    prompt_hash = _manifest_prompt_hash(manifest, "semantic_retrieval_plan")
+    status["prompt_hash_verified"] = (
+        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
+    )
+    if not status["prompt_hash_verified"]:
+        status["errors"].append("semantic_retrieval_plan_prompt_hash_mismatch")
+    expected_categories = _semantic_retrieval_required_categories(manifest)
+    observed_required_categories = _string_list(payload.get("required_categories"))
+    status["required_categories_verified"] = (
+        bool(expected_categories) and observed_required_categories == expected_categories
+    )
+    if not status["required_categories_verified"]:
+        status["errors"].append("semantic_retrieval_plan_required_categories_mismatch")
+    queries = payload.get("queries")
+    if not isinstance(queries, list):
+        status["errors"].append("semantic_retrieval_plan_queries_invalid")
+        status["passed"] = _semantic_retrieval_plan_status_passed(status)
+        return status
+    status["query_count"] = len(queries)
+    expected_query_count = manifest.get("semantic_retrieval_query_count")
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
+        queries
+    ) == expected_query_count
+    if not status["query_count_verified"]:
+        status["errors"].append("semantic_retrieval_plan_query_count_mismatch")
+    query_categories = [
+        query.get("category")
+        for query in queries
+        if isinstance(query, dict) and isinstance(query.get("category"), str)
+    ]
+    status["category_coverage_verified"] = (
+        bool(expected_categories) and set(query_categories) == set(expected_categories)
+    )
+    if not status["category_coverage_verified"]:
+        status["errors"].append("semantic_retrieval_plan_category_coverage_mismatch")
+    status["passed"] = _semantic_retrieval_plan_status_passed(status)
+    return status
+
+
+def _inspect_semantic_retrieval_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="semantic_retrieval_artifact",
+        hash_field="semantic_retrieval_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "query_count_verified": None,
+            "category_counts_verified": None,
+            "included_episode_ids_verified": None,
+            "excluded_episode_ids_verified": None,
+            "summary_verified": None,
+            "retrieval_zero_is_valid": None,
+        }
+    )
+    artifact_ref = manifest.get("semantic_retrieval_artifact")
+    artifact_path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
+    if artifact_path is None or not artifact_path.exists():
+        status["passed"] = _semantic_retrieval_status_passed(status)
+        return status
+    try:
+        rows = [
+            json.loads(line)
+            for line in artifact_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        status["errors"].append("semantic_retrieval_invalid_jsonl")
+        status["passed"] = _semantic_retrieval_status_passed(status)
+        return status
+    if not all(isinstance(row, dict) for row in rows):
+        status["errors"].append("semantic_retrieval_rows_not_objects")
+        status["passed"] = _semantic_retrieval_status_passed(status)
+        return status
+
+    status["row_count"] = len(rows)
+    run_id = manifest.get("run_id")
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.semantic_retrieval_result.v1" for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("semantic_retrieval_schema_version_mismatch")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("semantic_retrieval_run_id_mismatch")
+    expected_query_count = manifest.get("semantic_retrieval_query_count")
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
+        rows
+    ) == expected_query_count
+    if not status["query_count_verified"]:
+        status["errors"].append("semantic_retrieval_query_count_mismatch")
+    category_counts = Counter(
+        row.get("category") for row in rows if isinstance(row.get("category"), str)
+    )
+    summary = manifest.get("semantic_retrieval_summary")
+    expected_category_counts = (
+        summary.get("category_query_counts") if isinstance(summary, dict) else None
+    )
+    status["category_counts_verified"] = (
+        isinstance(expected_category_counts, dict)
+        and dict(category_counts) == expected_category_counts
+    )
+    if not status["category_counts_verified"]:
+        status["errors"].append("semantic_retrieval_category_counts_mismatch")
+    included_ids = _unique_strings(
+        episode_id
+        for row in rows
+        for episode_id in _string_list(row.get("included_episode_ids"))
+    )
+    excluded_ids = _unique_strings(
+        episode_id
+        for row in rows
+        for episode_id in _string_list(row.get("excluded_episode_ids"))
+    )
+    status["included_episode_ids_verified"] = included_ids == _string_list(
+        manifest.get("semantic_retrieval_episode_ids")
+    )
+    if not status["included_episode_ids_verified"]:
+        status["errors"].append("semantic_retrieval_included_episode_ids_mismatch")
+    status["excluded_episode_ids_verified"] = excluded_ids == _string_list(
+        manifest.get("excluded_semantic_retrieval_episode_ids")
+    )
+    if not status["excluded_episode_ids_verified"]:
+        status["errors"].append("semantic_retrieval_excluded_episode_ids_mismatch")
+    status["retrieval_zero_is_valid"] = (
+        isinstance(summary, dict) and summary.get("retrieval_zero_is_valid") is True
+    )
+    if not status["retrieval_zero_is_valid"]:
+        status["errors"].append("semantic_retrieval_zero_policy_missing")
+    status["summary_verified"] = _semantic_retrieval_summary_verified(
+        summary,
+        query_count=len(rows),
+        included_episode_count=len(included_ids),
+        excluded_episode_count=len(excluded_ids),
+    )
+    if not status["summary_verified"]:
+        status["errors"].append("semantic_retrieval_summary_mismatch")
+    status["passed"] = _semantic_retrieval_status_passed(status)
     return status
 
 
@@ -1589,6 +1779,32 @@ def _text_hashed_artifact_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _semantic_retrieval_plan_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("prompt_hash_verified")
+        and status.get("required_categories_verified")
+        and status.get("query_count_verified")
+        and status.get("category_coverage_verified")
+    )
+
+
+def _semantic_retrieval_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("query_count_verified")
+        and status.get("category_counts_verified")
+        and status.get("included_episode_ids_verified")
+        and status.get("excluded_episode_ids_verified")
+        and status.get("summary_verified")
+        and status.get("retrieval_zero_is_valid")
+    )
+
+
 def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         _text_hashed_artifact_status_passed(status)
@@ -1613,6 +1829,78 @@ def _red_team_artifact_status_passed(status: dict[str, Any]) -> bool:
 
 def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+def _read_artifact_object(
+    root: Path,
+    artifact_ref: object,
+    status: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifact_path = (
+        _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
+    )
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    try:
+        payload = read_json(artifact_path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        status["errors"].append("artifact_invalid_json")
+        return None
+    if not isinstance(payload, dict):
+        status["errors"].append("artifact_not_object")
+        return None
+    return payload
+
+
+def _manifest_prompt_hash(manifest: dict[str, Any], key: str) -> str | None:
+    prompt_hashes = manifest.get("prompt_hashes")
+    if not isinstance(prompt_hashes, dict):
+        return None
+    value = prompt_hashes.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _semantic_retrieval_required_categories(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("semantic_retrieval_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("required_categories"))
+
+
+def _semantic_retrieval_summary_verified(
+    summary: object,
+    *,
+    query_count: int,
+    included_episode_count: int,
+    excluded_episode_count: int,
+) -> bool:
+    if not isinstance(summary, dict):
+        return False
+    return (
+        summary.get("query_count") == query_count
+        and summary.get("included_episode_count") == included_episode_count
+        and summary.get("excluded_episode_count") == excluded_episode_count
+        and summary.get("retrieval_zero_is_valid") is True
+        and isinstance(summary.get("category_query_counts"), dict)
+        and bool(summary.get("required_categories"))
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _unique_strings(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def _token_counts_valid(value: object) -> bool:
