@@ -216,4 +216,6 @@ warehouse/event_ticker_edges.parquet
 warehouse/predictions.parquet
 warehouse/daily_outcomes.parquet
 warehouse/market_memory.parquet
+warehouse/mechanism_memory.parquet
+warehouse/company_memory.parquet
 ```

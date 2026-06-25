@@ -16,7 +16,12 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from news_scalping_lab.contracts.models import BlindPrediction, ResearchEpisode
+from news_scalping_lab.contracts.models import (
+    BlindPrediction,
+    CompanyMemory,
+    MechanismMemory,
+    ResearchEpisode,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
 
@@ -36,6 +41,8 @@ class WarehouseStore:
             "research_episodes": self.write_research_episodes(episodes),
             "event_ticker_edges": self.write_event_ticker_edges(episodes),
             "market_memory": self.write_market_memory(episodes),
+            "mechanism_memory": self.write_mechanism_memory_from_files(),
+            "company_memory": self.write_company_memory_from_files(),
             "predictions": self.write_predictions_from_files(),
             "daily_outcomes": self.write_daily_outcomes_from_files(),
         }
@@ -149,6 +156,53 @@ class WarehouseStore:
                     }
                 )
         self._write_rows("market_memory.parquet", rows)
+        return len(rows)
+
+    def write_mechanism_memory_from_files(self) -> int:
+        rows: list[dict[str, Any]] = []
+        path = self.root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                memory = MechanismMemory.model_validate(json.loads(line))
+                rows.append(
+                    {
+                        "mechanism_id": memory.mechanism_id,
+                        "natural_language_description": memory.natural_language_description,
+                        "causal_chain_json": _json(memory.causal_chain),
+                        "observed_variations_json": _json(memory.observed_variations),
+                        "successful_cases_json": _json(memory.successful_cases),
+                        "failed_cases_json": _json(memory.failed_cases),
+                        "boundary_conditions_json": _json(memory.boundary_conditions),
+                        "leader_selection_notes_json": _json(memory.leader_selection_notes),
+                        "provenance_json": _json(memory.provenance),
+                    }
+                )
+        self._write_rows("mechanism_memory.parquet", rows)
+        return len(rows)
+
+    def write_company_memory_from_files(self) -> int:
+        rows: list[dict[str, Any]] = []
+        for path in sorted((self.root / "memory" / "company_memory").glob("*.json")):
+            memory = CompanyMemory.model_validate(read_json(path))
+            rows.append(
+                {
+                    "ticker": memory.ticker,
+                    "company_name": memory.company_name,
+                    "known_at": memory.known_at.isoformat(),
+                    "aliases_json": _json(memory.aliases),
+                    "business_descriptions_json": _json(memory.business_descriptions),
+                    "locations_json": _json(memory.locations),
+                    "customers_json": _json(memory.customers),
+                    "supply_chain_roles_json": _json(memory.supply_chain_roles),
+                    "prior_market_narratives_json": _json(memory.prior_market_narratives),
+                    "prior_leader_occurrences_json": _json(memory.prior_leader_occurrences),
+                    "contradictory_relations_json": _json(memory.contradictory_relations),
+                    "provenance_json": _json(memory.provenance),
+                }
+            )
+        self._write_rows("company_memory.parquet", rows)
         return len(rows)
 
     def write_prediction(self, prediction: BlindPrediction) -> None:
