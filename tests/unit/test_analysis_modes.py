@@ -4,11 +4,12 @@ from datetime import date, datetime
 
 import pytest
 
+from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
-from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST
@@ -108,3 +109,46 @@ def test_session_pack_rejects_unknown_analysis_mode_before_writing_pack(tmp_path
         )
 
     assert not (tmp_path / "session_packs" / "2030-01-10").exists()
+
+
+@pytest.mark.asyncio
+async def test_fast_mode_keeps_open_world_candidates_when_retrieval_misses(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "fast_miss_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","UnseenFastCo, new catalyst",'
+        '"No accepted research episode exists, so retrieval must miss without blocking."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    prediction = analysis.blind_prediction
+    assert manifest.mode == "fast"
+    assert manifest.accepted_episode_count == 0
+    assert manifest.swept_episode_count == 0
+    assert manifest.retrieved_episode_ids == []
+    assert prediction.candidates
+    assert {candidate.path_type for candidate in prediction.candidates} >= {
+        PathType.SINGLE_EVENT,
+        PathType.THEME_BENEFICIARY,
+        PathType.CONTINUATION,
+    }
+    beneficiary = next(
+        candidate
+        for candidate in prediction.candidates
+        if candidate.path_type == PathType.THEME_BENEFICIARY
+    )
+    assert beneficiary.memory_episode_ids == []
+    assert "memory has no exact precedent" in beneficiary.novel_reasoning
+    assert "UnseenFastCo" in {candidate.company_name for candidate in prediction.candidates}
