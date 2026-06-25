@@ -1290,6 +1290,7 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
             "provenance": [provenance],
         },
         "blind_predictions": [],
+        "outcome_labels": {},
         "observed_events": [],
         "event_ticker_edges": [],
         "lessons": [],
@@ -1346,11 +1347,13 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         research_version: str = "identity-test-v1",
         price_source_snapshot: dict[str, object] | None = None,
         blind_predictions: list[dict[str, object]] | None = None,
+        outcome_labels: dict[str, object] | None = None,
         postmortem: dict[str, object] | None = None,
         observed_events: list[dict[str, object]] | None = None,
         event_ticker_edges: list[dict[str, object]] | None = None,
         lessons: list[dict[str, object]] | None = None,
         counterexamples: list[dict[str, object]] | None = None,
+        misses: list[object] | None = None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "schema_version": schema_version,
@@ -1377,11 +1380,12 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
                 ],
             },
             "blind_predictions": [] if blind_predictions is None else blind_predictions,
+            "outcome_labels": {} if outcome_labels is None else outcome_labels,
             "observed_events": [] if observed_events is None else observed_events,
             "event_ticker_edges": [] if event_ticker_edges is None else event_ticker_edges,
             "lessons": [] if lessons is None else lessons,
             "counterexamples": [] if counterexamples is None else counterexamples,
-            "misses": [],
+            "misses": [] if misses is None else misses,
             "provenance": [
                 {
                     "source_id": "SRC-episode",
@@ -1589,6 +1593,79 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
     valid_postmortem_result = audit_provenance(tmp_path)
 
     assert valid_postmortem_result["passed"], valid_postmortem_result["findings"]
+
+    valid_outcome_labels = {
+        "UNKNOWN": {
+            "open_gap_pct": 1.5,
+            "intraday_high_return_pct": 8.0,
+            "close_return_pct": None,
+            "upper_limit_touched": False,
+            "upper_limit_closed": False,
+            "upper_limit_released": None,
+            "one_price_upper_limit": None,
+            "volume": 1000.0,
+            "amount": 2500000.0,
+            "turnover_ratio": 0.2,
+            "market_cap_previous_close": 100000000.0,
+            "intraday_fields_unavailable": ["upper_limit_first_touch_time"],
+            "flags": ["daily_only"],
+        }
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            outcome_labels=valid_outcome_labels,
+            misses=["MISSED-UNKNOWN"],
+        ),
+    )
+    valid_outcome_result = audit_provenance(tmp_path)
+
+    assert valid_outcome_result["passed"], valid_outcome_result["findings"]
+
+    invalid_outcome_labels = {
+        "": {},
+        "UNKNOWN": {
+            "open_gap_pct": "1.5",
+            "upper_limit_touched": "false",
+            "intraday_fields_unavailable": ["valid", 1],
+            "flags": "daily_only",
+        },
+    }
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            outcome_labels=invalid_outcome_labels,
+            misses=["valid", 1],
+        ),
+    )
+    outcome_shape_failed = audit_provenance(tmp_path)
+
+    assert not outcome_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode outcome label key "
+        "missing or invalid"
+    ) in outcome_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode outcome label UNKNOWN "
+        "open_gap_pct invalid"
+    ) in outcome_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode outcome label UNKNOWN "
+        "upper_limit_touched invalid"
+    ) in outcome_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode outcome label UNKNOWN "
+        "intraday_fields_unavailable missing or invalid"
+    ) in outcome_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode outcome label UNKNOWN "
+        "flags missing or invalid"
+    ) in outcome_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode misses missing or invalid"
+    ) in outcome_shape_failed["findings"]
 
     invalid_postmortem = {
         **valid_postmortem,
@@ -1840,6 +1917,7 @@ def test_provenance_audit_validates_accepted_episode_top_level_sources(
                 ],
             },
             "blind_predictions": [],
+            "outcome_labels": {},
             "observed_events": [],
             "event_ticker_edges": [],
             "lessons": [],
@@ -1911,6 +1989,7 @@ def test_provenance_audit_validates_research_episode_input_news_hash(
                 ],
             },
             "blind_predictions": [],
+            "outcome_labels": {},
             "observed_events": [],
             "event_ticker_edges": [],
             "lessons": [],

@@ -76,6 +76,25 @@ RELATION_EVIDENCE_SEQUENCE_FIELDS = (
     "narrative_evidence",
     "market_memory_evidence",
 )
+OUTCOME_NUMERIC_FIELDS = (
+    "open_gap_pct",
+    "intraday_high_return_pct",
+    "close_return_pct",
+    "volume",
+    "amount",
+    "turnover_ratio",
+    "market_cap_previous_close",
+)
+OUTCOME_BOOLEAN_FIELDS = (
+    "upper_limit_touched",
+    "upper_limit_closed",
+    "upper_limit_released",
+    "one_price_upper_limit",
+)
+OUTCOME_STRING_SEQUENCE_FIELDS = (
+    "intraday_fields_unavailable",
+    "flags",
+)
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -389,6 +408,13 @@ def _check_research_episode_blind_decision_provenance(
                 findings,
                 kind="research episode postmortem",
             )
+    _check_research_episode_outcome_labels_shape(label, episode.get("outcome_labels"), findings)
+    _check_string_list_field(
+        f"{label}: research episode",
+        "misses",
+        episode.get("misses"),
+        findings,
+    )
     for field_name, kind in (
         ("observed_events", "research episode observed event"),
         ("event_ticker_edges", "research episode event ticker edge"),
@@ -525,6 +551,38 @@ def _check_research_episode_relation_edge_shape(
         findings.append(f"{prefix} confidence_label missing or invalid")
     for field_name in RELATION_EVIDENCE_SEQUENCE_FIELDS:
         _check_string_list_field(prefix, field_name, edge.get(field_name), findings)
+
+
+def _check_research_episode_outcome_labels_shape(
+    label: str,
+    outcome_labels: Any,
+    findings: list[str],
+) -> None:
+    if not isinstance(outcome_labels, dict):
+        findings.append(f"{label}: research episode outcome_labels missing or invalid")
+        return
+    for outcome_key, outcome in outcome_labels.items():
+        if not isinstance(outcome_key, str) or not outcome_key.strip():
+            findings.append(f"{label}: research episode outcome label key missing or invalid")
+            continue
+        if not isinstance(outcome, dict):
+            findings.append(
+                f"{label}: research episode outcome label {outcome_key} is not an object"
+            )
+            continue
+        prefix = f"{label}: research episode outcome label {outcome_key}"
+        for field_name in OUTCOME_NUMERIC_FIELDS:
+            value = outcome.get(field_name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int | float)
+            ):
+                findings.append(f"{prefix} {field_name} invalid")
+        for field_name in OUTCOME_BOOLEAN_FIELDS:
+            value = outcome.get(field_name)
+            if value is not None and not isinstance(value, bool):
+                findings.append(f"{prefix} {field_name} invalid")
+        for field_name in OUTCOME_STRING_SEQUENCE_FIELDS:
+            _check_string_list_field(prefix, field_name, outcome.get(field_name), findings)
 
 
 def _check_research_episode_blind_prediction_shape(
