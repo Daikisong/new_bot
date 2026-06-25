@@ -19,6 +19,7 @@ REQUIRED_BUNDLE_BLOCKS = {
     "row_disposition.jsonl",
     "brain_delta.jsonl",
     "source_ledger.jsonl",
+    "phase_state.json",
     "bundle_manifest.json",
 }
 
@@ -87,6 +88,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "blind_seal_receipt hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["phase_state_hash_verified"]:
+        raise BundleImportError("phase_state.json hash does not match bundle_manifest.json")
+    if not parsed.validation["phase_state_receipt_link_verified"]:
+        raise BundleImportError("phase_state.json is not linked to blind_seal_receipt")
     if not parsed.validation["id_reference_integrity_verified"]:
         raise BundleImportError("bundle ID reference integrity check failed")
     if "research_episode.json" not in parsed.json_blocks:
@@ -170,6 +175,15 @@ def parse_bundle(path: Path) -> BundleParseResult:
             block_name="research_episode.json",
             embedded_field="blind_seal_receipt",
             manifest_field="blind_seal_receipt_sha256",
+        ),
+        "phase_state_hash_verified": _verify_payload_hash(
+            json_blocks,
+            payload_blocks,
+            block_name="phase_state.json",
+            manifest_field="phase_state_sha256",
+        ),
+        "phase_state_receipt_link_verified": _verify_phase_state_receipt_link(
+            json_blocks,
         ),
         "id_reference_integrity_verified": _verify_id_reference_integrity(
             json_blocks,
@@ -424,6 +438,28 @@ def _verify_embedded_write_json_hash(
         sort_keys=True,
     ) + "\n"
     return sha256_text(write_json_text) == expected
+
+
+def _verify_phase_state_receipt_link(json_blocks: dict[str, Any]) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    phase_state = json_blocks.get("phase_state.json")
+    if not isinstance(manifest, dict) or not isinstance(phase_state, dict):
+        return False
+    if phase_state.get("phase") != "BLIND_SEALED":
+        return False
+    receipt_sha = manifest.get("blind_seal_receipt_sha256")
+    if not isinstance(receipt_sha, str) or not receipt_sha:
+        return False
+    if phase_state.get("blind_seal_receipt_sha256") != receipt_sha:
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and phase_state.get("run_id") != manifest_run_id:
+        return False
+    manifest_trade_date = manifest.get("trade_date")
+    return not (
+        isinstance(manifest_trade_date, str)
+        and phase_state.get("trade_date") != manifest_trade_date
+    )
 
 
 def _verify_id_reference_integrity(

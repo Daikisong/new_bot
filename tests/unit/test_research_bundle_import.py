@@ -51,6 +51,8 @@ def _bundle_text(
     tamper_research_hash: bool = False,
     tamper_brain_hash: bool = False,
     tamper_seal_hash: bool = False,
+    tamper_phase_hash: bool = False,
+    phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
     source_ledger_entry_count: int | None = None,
 ) -> str:
@@ -110,8 +112,21 @@ def _bundle_text(
         for row in source_payload_rows
     )
     episode_payload = json.loads(episode.model_dump_json())
+    receipt_sha = sha256_text(_write_json_text(episode_payload["blind_seal_receipt"]))
+    phase_state = phase_state_payload or {
+        "schema_version": "nslab.phase_state.v1",
+        "run_id": "RUN-bundle-test",
+        "phase": "BLIND_SEALED",
+        "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+        "trade_date": episode.trade_date.isoformat(),
+        "cutoff_at": episode.cutoff_at.isoformat(),
+        "sealed_at": episode.created_at.isoformat(),
+        "blind_seal_receipt_sha256": receipt_sha,
+    }
+    phase_state_json = _write_json_text(phase_state)
     manifest = {
         "schema_version": "nslab.bundle_manifest.v1",
+        "run_id": "RUN-bundle-test",
         "trade_date": episode.trade_date.isoformat(),
         "blind_artifact_sha256": blind_hash,
         "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
@@ -129,8 +144,9 @@ def _bundle_text(
         "blind_seal_receipt_sha256": (
             "0" * 64
             if tamper_seal_hash
-            else sha256_text(_write_json_text(episode_payload["blind_seal_receipt"]))
+            else receipt_sha
         ),
+        "phase_state_sha256": "0" * 64 if tamper_phase_hash else sha256_text(phase_state_json),
     }
     return f"""---
 schema_version: nslab.research_bundle.v1
@@ -176,6 +192,12 @@ Blind report body.
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
+<!-- NSLAB:BEGIN phase_state.json -->
+```json
+{phase_state_json}
+```
+<!-- NSLAB:END phase_state.json -->
+
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 ```json
 {json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)}
@@ -200,6 +222,8 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["phase_state_hash_verified"]
+    assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
     assert parsed.jsonl_blocks["row_disposition.jsonl"][0]["row_number"] == 1
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "memory_claim"
@@ -283,6 +307,43 @@ def test_bundle_import_rejects_mismatched_blind_seal_receipt_hash(tmp_path) -> N
 
     assert not parsed.validation["blind_seal_receipt_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_seal_receipt hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_mismatched_phase_state_hash(tmp_path) -> None:
+    source = tmp_path / "tampered_phase_bundle.md"
+    source.write_text(_bundle_text(_episode(), tamper_phase_hash=True), encoding="utf-8")
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["phase_state_hash_verified"]
+    with pytest.raises(BundleImportError, match="phase_state.json hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_unlinked_phase_state(tmp_path) -> None:
+    source = tmp_path / "unlinked_phase_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            phase_state_payload={
+                "schema_version": "nslab.phase_state.v1",
+                "run_id": "RUN-bundle-test",
+                "phase": "BLIND_SEALED",
+                "completed_phases": ["PHASE_A_NEWS_ONLY_BLIND"],
+                "trade_date": "2030-01-10",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "sealed_at": "2030-01-10T09:00:00+09:00",
+                "blind_seal_receipt_sha256": "bad",
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["phase_state_receipt_link_verified"]
+    with pytest.raises(BundleImportError, match="phase_state.json is not linked"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

@@ -139,6 +139,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "row_disposition.jsonl",
         "brain_delta.jsonl",
         "source_ledger.jsonl",
+        "phase_state.json",
         "bundle_manifest.json",
     }
     assert parsed.validation["blind_hash_verified"]
@@ -149,6 +150,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["phase_state_hash_verified"]
+    assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
     manifest = parsed.json_blocks["bundle_manifest.json"]
     assert isinstance(manifest, dict)
@@ -158,9 +161,12 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["brain_delta_hash_verified"] is True
     assert manifest["validation"]["row_disposition_coverage_verified"] is True
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True
+    assert manifest["validation"]["phase_state_hash_verified"] is True
+    assert manifest["validation"]["phase_state_receipt_link_verified"] is True
     assert manifest["validation"]["id_reference_integrity_verified"] is True
     episode = parsed.json_blocks["research_episode.json"]
     assert isinstance(episode, dict)
     assert episode["blind_seal_receipt"]["phase"] == "BLIND_SEALED"
+    assert parsed.json_blocks["phase_state.json"]["phase"] == "BLIND_SEALED"
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "bundle_incomplete"
     assert json.loads(parsed.blocks["row_disposition.jsonl"].splitlines()[1])["row_number"] == 1

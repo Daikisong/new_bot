@@ -2534,6 +2534,23 @@ Excluded after-cutoff web source ids:
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
+<!-- NSLAB:BEGIN phase_state.json -->
+```json
+{
+  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
+  "completed_phases": [
+    "PHASE_A_NEWS_ONLY_BLIND"
+  ],
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "phase": "BLIND_SEALED",
+  "run_id": "RUN-a5840d2def32",
+  "schema_version": "nslab.phase_state.v1",
+  "sealed_at": "2026-06-25T10:35:17.257228+09:00",
+  "trade_date": "2026-06-24"
+}
+```
+<!-- NSLAB:END phase_state.json -->
+
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 ```json
 {
@@ -2586,6 +2603,8 @@ Excluded after-cutoff web source ids:
     "json_valid": true,
     "jsonl_valid": true,
     "markers_complete": true,
+    "phase_state_hash_verified": true,
+    "phase_state_receipt_link_verified": true,
     "phase_state_recorded": true,
     "research_episode_hash_verified": true,
     "row_disposition_coverage_verified": true,

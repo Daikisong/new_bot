@@ -349,6 +349,7 @@ research_episode.json
 row_disposition.jsonl
 brain_delta.jsonl
 source_ledger.jsonl
+phase_state.json
 bundle_manifest.json
 ```
 
@@ -376,6 +377,9 @@ bundle_manifest.json
 
 <!-- NSLAB:BEGIN source_ledger.jsonl -->
 <!-- NSLAB:END source_ledger.jsonl -->
+
+<!-- NSLAB:BEGIN phase_state.json -->
+<!-- NSLAB:END phase_state.json -->
 
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 <!-- NSLAB:END bundle_manifest.json -->

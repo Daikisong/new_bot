@@ -44,6 +44,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         manifest,
         "blind_seal_receipt_artifact",
     )
+    phase_state = _read_manifest_artifact(settings, manifest, "phase_state_artifact")
     brain_delta = _brain_delta_jsonl(run_id=run_id, reason="postmortem_not_run")
     research_episode = _build_research_episode(
         run_id=run_id,
@@ -61,6 +62,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         row_disposition=row_disposition,
         source_ledger=source_ledger,
         blind_seal_receipt=blind_seal_receipt,
+        phase_state=phase_state,
         brain_delta=brain_delta,
         research_episode=research_episode,
     )
@@ -78,6 +80,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             row_disposition=row_disposition,
             brain_delta=brain_delta,
             source_ledger=source_ledger,
+            phase_state=phase_state,
             bundle_manifest=bundle_manifest,
         ),
         encoding="utf-8",
@@ -196,6 +199,7 @@ def _build_bundle_manifest(
     row_disposition: str,
     source_ledger: str,
     blind_seal_receipt: str,
+    phase_state: str,
     brain_delta: str,
     research_episode: ResearchEpisode,
 ) -> dict[str, Any]:
@@ -227,7 +231,7 @@ def _build_bundle_manifest(
         "source_ledger_sha256": sha256_text(source_ledger),
         "source_ledger_entry_count": manifest.get("source_ledger_entry_count", 0),
         "blind_seal_receipt_sha256": sha256_text(blind_seal_receipt),
-        "phase_state_sha256": manifest.get("phase_state_sha256"),
+        "phase_state_sha256": sha256_text(phase_state),
         "brain_delta_sha256": sha256_text(brain_delta),
         "outcome_coverage_status": "NOT_RUN",
         "outcome_slice_sha256": None,
@@ -245,8 +249,10 @@ def _build_bundle_manifest(
             "research_episode_hash_verified": True,
             "brain_delta_hash_verified": True,
             "blind_seal_receipt_hash_verified": True,
+            "phase_state_hash_verified": True,
+            "phase_state_receipt_link_verified": True,
             "id_reference_integrity_verified": True,
-            "phase_state_recorded": bool(manifest.get("phase_state_artifact")),
+            "phase_state_recorded": True,
         },
         "bundle_incomplete": True,
         "incomplete_reasons": ["postmortem outcome evaluation has not been run"],
@@ -273,6 +279,7 @@ def _render_bundle(
     row_disposition: str,
     brain_delta: str,
     source_ledger: str,
+    phase_state: str,
     bundle_manifest: dict[str, Any],
 ) -> str:
     blind_json = json.dumps(
@@ -302,6 +309,7 @@ def _render_bundle(
         f"{_block('row_disposition.jsonl', row_disposition, fence='jsonl')}\n\n"
         f"{_block('brain_delta.jsonl', brain_delta, fence='jsonl')}\n\n"
         f"{_block('source_ledger.jsonl', source_ledger, fence='jsonl')}\n\n"
+        f"{_block('phase_state.json', phase_state, fence='json')}\n\n"
         f"{_block('bundle_manifest.json', manifest_json, fence='json')}\n"
     )
 
