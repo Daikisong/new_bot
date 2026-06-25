@@ -79,7 +79,7 @@ def _final_synthesis_payload() -> dict[str, object]:
 
 
 def _candidate_web_context_row(row: dict[str, object]) -> dict[str, object]:
-    return {
+    context_row = {
         "candidate_rank": row.get("candidate_rank"),
         "candidate_ticker": row.get("candidate_ticker"),
         "candidate_company_name": row.get("candidate_company_name"),
@@ -101,6 +101,9 @@ def _candidate_web_context_row(row: dict[str, object]) -> dict[str, object]:
         "content_sha256": row.get("content_sha256"),
         "opened_text_excerpt": row.get("opened_text_excerpt"),
     }
+    if "timestamp_precision" in row:
+        context_row["timestamp_precision"] = row.get("timestamp_precision")
+    return context_row
 
 
 def _bundle_text(
@@ -315,6 +318,7 @@ def _bundle_text(
             "url": "https://example.test/candidate",
             "source_url": "https://example.test/candidate",
             "published_at": "2030-01-10T08:30:00+09:00",
+            "timestamp_precision": "datetime",
             "retrieved_at": "2030-01-10T08:31:00+09:00",
             "cutoff_at": candidate_cutoff_at,
             "time_verified": True,

@@ -17,7 +17,7 @@ from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_tex
 
 
 def _candidate_web_context_row(row: dict[str, object]) -> dict[str, object]:
-    return {
+    context_row = {
         "candidate_rank": row.get("candidate_rank"),
         "candidate_ticker": row.get("candidate_ticker"),
         "candidate_company_name": row.get("candidate_company_name"),
@@ -39,6 +39,9 @@ def _candidate_web_context_row(row: dict[str, object]) -> dict[str, object]:
         "content_sha256": row.get("content_sha256"),
         "opened_text_excerpt": row.get("opened_text_excerpt"),
     }
+    if "timestamp_precision" in row:
+        context_row["timestamp_precision"] = row.get("timestamp_precision")
+    return context_row
 
 
 def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
@@ -111,6 +114,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "source_url": "https://example.test/candidate",
         "snippet": "candidate",
         "published_at": "2030-01-10T08:30:00+09:00",
+        "timestamp_precision": "datetime",
         "retrieved_at": "2030-01-10T08:31:00+09:00",
         "cutoff_at": cutoff_at.isoformat(),
         "time_verified": True,
