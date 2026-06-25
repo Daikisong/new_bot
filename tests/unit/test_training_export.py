@@ -262,11 +262,46 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert sft_manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
     assert sft_manifest["output_file"] == "training_exports/sft/sft.jsonl"
     assert sft_manifest["output_sha256"]
+    assert set(sft_manifest["phase_outputs"]) == {"BLIND", "POSTMORTEM"}
+    assert sft_manifest["phase_outputs"]["BLIND"]["output_file"] == (
+        "training_exports/sft/blind_sft.jsonl"
+    )
+    assert sft_manifest["phase_outputs"]["BLIND"]["row_count"] == 4
+    assert sft_manifest["phase_outputs"]["BLIND"]["source_phase"] == "BLIND"
+    assert (
+        sft_manifest["phase_outputs"]["BLIND"]["hindsight_safe_for_blind_sft"] is True
+    )
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"] == (
+        "training_exports/sft/postmortem_sft.jsonl"
+    )
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 1
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["source_phase"] == "POSTMORTEM"
+    assert (
+        sft_manifest["phase_outputs"]["POSTMORTEM"]["hindsight_safe_for_blind_sft"]
+        is False
+    )
+    assert (
+        _jsonl(tmp_path / sft_manifest["phase_outputs"]["BLIND"]["output_file"])
+        == blind_rows
+    )
+    assert _jsonl(
+        tmp_path / sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"]
+    ) == failure_rows
+    assert sft_manifest["phase_outputs"]["BLIND"]["output_sha256"]
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_sha256"]
+    assert (
+        "The combined output_file is for audit and compatibility; use phase_outputs.BLIND "
+        "for blind-only SFT."
+    ) in sft_manifest["notes"]
     assert "Do not train postmortem labels as if they were blind answers." in sft_manifest["notes"]
     preference_manifest = read_json(preference.manifest_path)
     evals_manifest = read_json(evals.manifest_path)
     assert preference_manifest["output_file"] == "training_exports/preference/preference.jsonl"
     assert evals_manifest["output_file"] == "training_exports/evals/evals.jsonl"
+    assert preference_manifest["phase_outputs"]["BLIND"]["row_count"] == 0
+    assert preference_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 1
+    assert evals_manifest["phase_outputs"]["BLIND"]["row_count"] == 0
+    assert evals_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 3
     assert preference_manifest["category_counts"] == {
         "positive_vs_negative_candidate_preferences": 1
     }

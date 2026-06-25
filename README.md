@@ -182,7 +182,10 @@ nslab training export-preference
 nslab training export-evals
 ```
 
-Each export writes JSONL rows plus a manifest under `training_exports/<kind>/`.
+Each export writes a compatibility JSONL plus a manifest under `training_exports/<kind>/`.
+The manifest also records `phase_outputs.BLIND` and `phase_outputs.POSTMORTEM`
+JSONL files with independent hashes and row counts. Use the BLIND phase file for
+blind-only SFT; failure-correction rows stay in the POSTMORTEM phase file.
 Rows carry `training_category`, and manifests include `required_training_categories`,
 `category_counts`, and `missing_training_categories` so blind reasoning, theme formation,
 beneficiary discovery, leader comparison, preference, and failure-correction examples

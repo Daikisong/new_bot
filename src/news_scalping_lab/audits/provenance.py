@@ -4627,6 +4627,7 @@ def _check_training_export_manifest(
         findings=findings,
     )
     _check_training_export_manifest_counts(label, kind, manifest, rows, findings)
+    _check_training_export_phase_outputs(root, label, manifest, rows, findings)
 
 
 def _training_export_source_hashes(
@@ -5013,6 +5014,66 @@ def _check_training_export_manifest_counts(
         findings.append(f"{label}: training export blind_safe_row_count mismatch")
     if manifest.get("hindsight_row_count") != hindsight_count:
         findings.append(f"{label}: training export hindsight_row_count mismatch")
+
+
+def _check_training_export_phase_outputs(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    raw = manifest.get("phase_outputs")
+    if not isinstance(raw, dict):
+        findings.append(f"{label}: training export phase_outputs invalid")
+        return
+    expected_phases = {"BLIND", "POSTMORTEM"}
+    if set(raw) != expected_phases:
+        findings.append(f"{label}: training export phase_outputs phase set mismatch")
+    for phase in sorted(expected_phases):
+        entry = raw.get(phase)
+        if not isinstance(entry, dict):
+            findings.append(f"{label}: training export phase output {phase} invalid")
+            continue
+        if entry.get("source_phase") != phase:
+            findings.append(
+                f"{label}: training export phase output {phase} source_phase mismatch"
+            )
+        expected_hindsight_safe = phase == "BLIND"
+        if entry.get("hindsight_safe_for_blind_sft") is not expected_hindsight_safe:
+            findings.append(
+                f"{label}: training export phase output {phase} hindsight flag mismatch"
+            )
+        output_file = entry.get("output_file")
+        if not isinstance(output_file, str) or not output_file:
+            findings.append(f"{label}: training export phase output {phase} output_file missing")
+            continue
+        if Path(output_file).is_absolute():
+            findings.append(
+                f"{label}: training export phase output {phase} output_file must be project-relative"
+            )
+        output_path = _resolve_training_export_output_path(root, output_file)
+        if output_path is None:
+            findings.append(
+                f"{label}: training export phase output {phase} output_file escapes project root"
+            )
+            continue
+        if not output_path.exists():
+            findings.append(
+                f"{label}: training export phase output {phase} output_file not found"
+            )
+            continue
+        expected_sha = entry.get("output_sha256")
+        if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
+            findings.append(
+                f"{label}: training export phase output {phase} output_sha256 mismatch"
+            )
+        phase_rows = _read_training_export_rows(output_path, label, findings)
+        expected_rows = [row for row in rows if row.get("source_phase") == phase]
+        if entry.get("row_count") != len(expected_rows):
+            findings.append(f"{label}: training export phase output {phase} row_count mismatch")
+        if phase_rows != expected_rows:
+            findings.append(f"{label}: training export phase output {phase} rows mismatch")
 
 
 def _training_task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

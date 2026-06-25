@@ -83,6 +83,12 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
     )
+    phase_outputs = _write_phase_outputs(
+        root,
+        target_dir,
+        kind,
+        rows,
+    )
     manifest_path = target_dir / "manifest.json"
     write_json(
         manifest_path,
@@ -99,6 +105,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "source_hashes": source_hashes,
             "output_file": _project_relative_path(root, path),
             "output_sha256": file_sha256(path),
+            "phase_outputs": phase_outputs,
             "task_counts": _task_counts(rows),
             "required_training_categories": REQUIRED_TRAINING_CATEGORIES,
             "training_categories": KIND_TRAINING_CATEGORIES[kind],
@@ -112,7 +119,15 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             ),
             "source_phase_counts": _source_phase_counts(rows),
             "notes": [
-                "SFT rows use only blind inputs and blind outputs.",
+                (
+                    "The combined output_file is for audit and compatibility; "
+                    "use phase_outputs.BLIND for blind-only SFT."
+                ),
+                "Blind SFT rows use only blind inputs and blind outputs.",
+                (
+                    "Failure-correction SFT rows are POSTMORTEM rows and are "
+                    "written to phase_outputs.POSTMORTEM."
+                ),
                 "Preference and eval rows may include postmortem/outcome labels.",
                 "Do not train postmortem labels as if they were blind answers.",
                 "Rows with source_phase=POSTMORTEM must not be mixed into blind SFT.",
@@ -124,6 +139,37 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
 
 def _project_relative_path(root: Path, path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def _write_phase_outputs(
+    root: Path,
+    target_dir: Path,
+    kind: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    outputs: dict[str, dict[str, Any]] = {}
+    file_names = {
+        "BLIND": f"blind_{kind}.jsonl",
+        "POSTMORTEM": f"postmortem_{kind}.jsonl",
+    }
+    for phase, file_name in file_names.items():
+        phase_rows = [row for row in rows if row.get("source_phase") == phase]
+        path = target_dir / file_name
+        path.write_text(
+            "".join(
+                json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+                for row in phase_rows
+            ),
+            encoding="utf-8",
+        )
+        outputs[phase] = {
+            "output_file": _project_relative_path(root, path),
+            "output_sha256": file_sha256(path),
+            "row_count": len(phase_rows),
+            "source_phase": phase,
+            "hindsight_safe_for_blind_sft": phase == "BLIND",
+        }
+    return outputs
 
 
 def _rows_for_kind(

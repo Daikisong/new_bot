@@ -5240,6 +5240,7 @@ def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path
     assert f"{label}: training export source_phase_counts mismatch" in findings
     assert f"{label}: training export blind_safe_row_count mismatch" in findings
     assert f"{label}: training export hindsight_row_count mismatch" in findings
+    assert f"{label}: training export phase_outputs invalid" in findings
 
 
 def test_provenance_audit_verifies_training_export_source_hashes(
