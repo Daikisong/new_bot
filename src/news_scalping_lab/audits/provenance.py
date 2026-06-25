@@ -12,7 +12,12 @@ from pydantic import ValidationError
 
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
-from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
+from news_scalping_lab.contracts.models import (
+    CompanyMemory,
+    ConfidenceLabel,
+    MechanismMemory,
+    PathType,
+)
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
@@ -32,6 +37,8 @@ from news_scalping_lab.utils import (
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
 STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
+ALLOWED_CONFIDENCE_LABELS = {label.value for label in ConfidenceLabel}
+ALLOWED_CANDIDATE_PATH_TYPES = {path_type.value for path_type in PathType}
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -313,6 +320,7 @@ def _check_research_episode_blind_decision_provenance(
         if not isinstance(candidate, dict):
             findings.append(f"{label}: research episode blind prediction {index} is not an object")
             continue
+        _check_research_episode_blind_prediction_shape(label, index, candidate, findings)
         _check_nested_provenance_entries(
             root,
             label,
@@ -416,6 +424,34 @@ def _check_research_episode_blind_analysis_shape(
         findings.append(
             f"{label}: research episode blind_analysis initial_uncertainties invalid"
         )
+
+
+def _check_research_episode_blind_prediction_shape(
+    label: str,
+    index: int,
+    candidate: dict[str, Any],
+    findings: list[str],
+) -> None:
+    prefix = f"{label}: research episode blind prediction {index}"
+    rank = candidate.get("rank")
+    if not isinstance(rank, int) or rank < 1:
+        findings.append(f"{prefix} rank missing or invalid")
+    for field_name in ("ticker", "company_name", "thesis", "why_now"):
+        value = candidate.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            findings.append(f"{prefix} {field_name} missing or invalid")
+    path_type = candidate.get("path_type")
+    if not isinstance(path_type, str) or path_type not in ALLOWED_CANDIDATE_PATH_TYPES:
+        findings.append(f"{prefix} path_type missing or invalid")
+    confidence_label = candidate.get("confidence_label")
+    if (
+        not isinstance(confidence_label, str)
+        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
+    ):
+        findings.append(f"{prefix} confidence_label missing or invalid")
+    evidence_quality = candidate.get("evidence_quality")
+    if not isinstance(evidence_quality, str) or evidence_quality not in ALLOWED_CONFIDENCE_LABELS:
+        findings.append(f"{prefix} evidence_quality missing or invalid")
 
 
 def _check_research_episode_claim_available_from(

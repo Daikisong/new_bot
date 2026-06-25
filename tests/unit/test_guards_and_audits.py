@@ -1345,6 +1345,7 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         created_at: str = "2030-01-11T00:00:00+09:00",
         research_version: str = "identity-test-v1",
         price_source_snapshot: dict[str, object] | None = None,
+        blind_predictions: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         return {
             "schema_version": schema_version,
@@ -1370,7 +1371,7 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
                     }
                 ],
             },
-            "blind_predictions": [],
+            "blind_predictions": [] if blind_predictions is None else blind_predictions,
             "observed_events": [],
             "event_ticker_edges": [],
             "lessons": [],
@@ -1457,6 +1458,75 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "research/accepted/EP-identity.json: research episode "
         "blind_analysis initial_uncertainties invalid"
     ) in blind_shape_failed["findings"]
+
+    valid_candidate = {
+        "rank": 1,
+        "ticker": "UNKNOWN",
+        "company_name": "CandidateCo",
+        "path_type": "SINGLE_EVENT",
+        "event_ids": ["EVT-identity"],
+        "thesis": "Current evidence creates a blind-safe candidate hypothesis.",
+        "why_now": "The candidate is tied to the current pre-cutoff event.",
+        "confidence_label": "speculative",
+        "evidence_quality": "low",
+        "source_urls": ["news://EVT-identity"],
+        "memory_episode_ids": [],
+        "provenance": [
+            {
+                "source_id": "SRC-candidate",
+                "source_type": "daily_blind_analysis_candidate",
+                "uri": "candidate://daily_blind_analysis/test/1",
+            }
+        ],
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", blind_predictions=[valid_candidate]),
+    )
+    valid_prediction = audit_provenance(tmp_path)
+
+    assert valid_prediction["passed"], valid_prediction["findings"]
+
+    invalid_candidate = {
+        **valid_candidate,
+        "rank": 0,
+        "ticker": "",
+        "path_type": "STATIC_MAP",
+        "why_now": "",
+        "confidence_label": "73%",
+        "evidence_quality": "unknownish",
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", blind_predictions=[invalid_candidate]),
+    )
+    candidate_shape_failed = audit_provenance(tmp_path)
+
+    assert not candidate_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "rank missing or invalid"
+    ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "ticker missing or invalid"
+    ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "path_type missing or invalid"
+    ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "why_now missing or invalid"
+    ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "confidence_label missing or invalid"
+    ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "evidence_quality missing or invalid"
+    ) in candidate_shape_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(
