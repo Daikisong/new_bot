@@ -1248,9 +1248,20 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
         "schema_mismatches": [],
         "run_id_mismatches": [],
         "prompt_hash_mismatches": [],
+        "candidate_count_mismatches": [],
+        "finding_count_mismatches": [],
+        "required_attack_check_mismatches": [],
+        "attack_check_coverage_mismatches": [],
+        "passed_to_synthesis_failures": [],
         "path_within_project": None,
         "exists_verified": None,
         "metadata_verified": None,
+        "candidate_count_verified": None,
+        "finding_count_verified": None,
+        "required_attack_checks_verified": None,
+        "attack_check_coverage_verified": None,
+        "passed_to_synthesis_verified": None,
+        "summary_verified": None,
         "errors": [],
     }
     if raw_artifacts is None:
@@ -1291,6 +1302,12 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
             and payload.get("prompt_sha256") != expected_prompt_hash
         ):
             status["prompt_hash_mismatches"].append(artifact_ref)
+        _inspect_red_team_payload_contract(
+            artifact_ref=artifact_ref,
+            payload=payload,
+            manifest=manifest,
+            status=status,
+        )
     status["path_within_project"] = not status["path_escape_errors"]
     status["exists_verified"] = status["path_within_project"] and not status["missing_files"]
     status["metadata_verified"] = (
@@ -1299,6 +1316,24 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
         and not status["schema_mismatches"]
         and not status["run_id_mismatches"]
         and not status["prompt_hash_mismatches"]
+    )
+    status["candidate_count_verified"] = not status["candidate_count_mismatches"]
+    status["finding_count_verified"] = not status["finding_count_mismatches"]
+    status["required_attack_checks_verified"] = not status[
+        "required_attack_check_mismatches"
+    ]
+    status["attack_check_coverage_verified"] = not status[
+        "attack_check_coverage_mismatches"
+    ]
+    status["passed_to_synthesis_verified"] = not status[
+        "passed_to_synthesis_failures"
+    ]
+    status["summary_verified"] = (
+        status["candidate_count_verified"]
+        and status["finding_count_verified"]
+        and status["required_attack_checks_verified"]
+        and status["attack_check_coverage_verified"]
+        and status["passed_to_synthesis_verified"]
     )
     if status["path_escape_errors"]:
         status["errors"].append("red_team_artifact_path_escapes_project_root")
@@ -1312,8 +1347,100 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
         status["errors"].append("red_team_artifact_run_id_mismatches")
     if status["prompt_hash_mismatches"]:
         status["errors"].append("red_team_artifact_prompt_hash_mismatches")
+    if status["candidate_count_mismatches"]:
+        status["errors"].append("red_team_artifact_candidate_count_mismatches")
+    if status["finding_count_mismatches"]:
+        status["errors"].append("red_team_artifact_finding_count_mismatches")
+    if status["required_attack_check_mismatches"]:
+        status["errors"].append("red_team_artifact_required_attack_check_mismatches")
+    if status["attack_check_coverage_mismatches"]:
+        status["errors"].append("red_team_artifact_attack_check_coverage_mismatches")
+    if status["passed_to_synthesis_failures"]:
+        status["errors"].append("red_team_artifact_not_passed_to_synthesis")
     status["passed"] = _red_team_artifact_status_passed(status)
     return status
+
+
+def _inspect_red_team_payload_contract(
+    *,
+    artifact_ref: str,
+    payload: dict[str, Any],
+    manifest: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    summary = manifest.get("red_team_summary")
+    expected_candidate_count = (
+        summary.get("candidate_count") if isinstance(summary, dict) else None
+    )
+    observed_candidate_count = _non_bool_int(payload.get("candidate_count"))
+    if (
+        not isinstance(expected_candidate_count, int)
+        or observed_candidate_count != expected_candidate_count
+    ):
+        status["candidate_count_mismatches"].append(artifact_ref)
+
+    candidate_findings = payload.get("candidate_findings")
+    if not isinstance(candidate_findings, list) or not all(
+        isinstance(finding, dict) for finding in candidate_findings
+    ):
+        status["finding_count_mismatches"].append(artifact_ref)
+        status["attack_check_coverage_mismatches"].append(artifact_ref)
+        status["passed_to_synthesis_failures"].append(artifact_ref)
+        return
+
+    expected_finding_count = summary.get("finding_count") if isinstance(summary, dict) else None
+    if (
+        not isinstance(expected_finding_count, int)
+        or len(candidate_findings) != expected_finding_count
+        or observed_candidate_count != len(candidate_findings)
+    ):
+        status["finding_count_mismatches"].append(artifact_ref)
+
+    expected_required_checks = (
+        _string_list(summary.get("required_attack_checks"))
+        if isinstance(summary, dict)
+        else []
+    )
+    observed_required_checks = _string_list(payload.get("required_attack_checks"))
+    expected_required_count = (
+        summary.get("required_attack_check_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    if (
+        not expected_required_checks
+        or observed_required_checks != expected_required_checks
+        or len(observed_required_checks) != expected_required_count
+    ):
+        status["required_attack_check_mismatches"].append(artifact_ref)
+
+    for index, finding in enumerate(candidate_findings, start=1):
+        attack_checks = finding.get("attack_checks")
+        if not isinstance(attack_checks, list) or not all(
+            isinstance(check, dict) for check in attack_checks
+        ):
+            status["attack_check_coverage_mismatches"].append(
+                {"path": artifact_ref, "finding": index}
+            )
+            continue
+        observed_names = [
+            str(check["name"])
+            for check in attack_checks
+            if isinstance(check.get("name"), str)
+        ]
+        if observed_names != observed_required_checks:
+            status["attack_check_coverage_mismatches"].append(
+                {"path": artifact_ref, "finding": index}
+            )
+        if finding.get("passed_to_synthesis") is not True or any(
+            check.get("passed_to_synthesis") is not True for check in attack_checks
+        ):
+            status["passed_to_synthesis_failures"].append(
+                {"path": artifact_ref, "finding": index}
+            )
+
+    if not (isinstance(summary, dict) and summary.get("all_findings_passed_to_synthesis") is True):
+        status["passed_to_synthesis_failures"].append(artifact_ref)
 
 
 def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -2307,6 +2434,12 @@ def _red_team_artifact_status_passed(status: dict[str, Any]) -> bool:
         and status.get("path_within_project")
         and status.get("exists_verified")
         and status.get("metadata_verified")
+        and status.get("candidate_count_verified")
+        and status.get("finding_count_verified")
+        and status.get("required_attack_checks_verified")
+        and status.get("attack_check_coverage_verified")
+        and status.get("passed_to_synthesis_verified")
+        and status.get("summary_verified")
         and not status.get("errors")
     )
 

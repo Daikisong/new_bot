@@ -220,6 +220,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
     assert supporting["red_team"]["metadata_verified"] is True
+    assert supporting["red_team"]["candidate_count_verified"] is True
+    assert supporting["red_team"]["finding_count_verified"] is True
+    assert supporting["red_team"]["required_attack_checks_verified"] is True
+    assert supporting["red_team"]["attack_check_coverage_verified"] is True
+    assert supporting["red_team"]["passed_to_synthesis_verified"] is True
+    assert supporting["red_team"]["summary_verified"] is True
     memory_sweep = inspection["memory_sweep"]
     assert memory_sweep["passed"] is True
     assert memory_sweep["hashes_verified"] is True
@@ -386,6 +392,47 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     write_json(candidate_verification_file, original_candidate_verification)
     write_json(manifest_file, original_manifest_for_candidate_verification)
+    red_team_file = tmp_path / context_payload["red_team_artifacts"][0]
+    original_red_team = read_json(red_team_file)
+    tampered_red_team = {
+        **original_red_team,
+        "candidate_findings": [
+            (
+                {
+                    **finding,
+                    "attack_checks": [
+                        (
+                            {**check, "passed_to_synthesis": False}
+                            if check_index == 0
+                            else check
+                        )
+                        for check_index, check in enumerate(finding["attack_checks"])
+                    ],
+                }
+                if finding_index == 0
+                else finding
+            )
+            for finding_index, finding in enumerate(
+                original_red_team["candidate_findings"]
+            )
+        ],
+    }
+    write_json(red_team_file, tampered_red_team)
+    tampered_red_team_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered red team", tampered_red_team_context)
+    tampered_red_team_inspection = json.loads(tampered_red_team_context.output)[
+        "inspection"
+    ]
+    assert tampered_red_team_inspection["reproducibility_checks_passed"] is False
+    tampered_red_team_status = tampered_red_team_inspection["supporting_artifacts"][
+        "red_team"
+    ]
+    assert tampered_red_team_status["metadata_verified"] is True
+    assert tampered_red_team_status["passed_to_synthesis_verified"] is False
+    assert "red_team_artifact_not_passed_to_synthesis" in (
+        tampered_red_team_status["errors"]
+    )
+    write_json(red_team_file, original_red_team)
     semantic_retrieval_file = tmp_path / context_payload["semantic_retrieval_artifact"]
     original_semantic_retrieval = semantic_retrieval_file.read_text(encoding="utf-8")
     original_manifest_for_semantic = read_json(manifest_file)
