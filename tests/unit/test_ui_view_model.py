@@ -178,6 +178,16 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     assert view.memory_sweep_shards[1].from_cache is True
     assert view.memory_sweep_shards[2].error == "artifact does not exist"
     assert view.dominant_sectors[0].name == "open-world cluster"
+    assert [candidate.company_name for candidate in view.all_watchlist_candidates] == [
+        "DirectCo",
+        "BenefitCo",
+    ]
+    assert [item.candidate.company_name for item in view.excluded_but_watch] == ["BenefitCo"]
+    assert view.excluded_but_watch[0].reasons == [
+        "counterarguments: relation may be narrative only",
+        "disconfirming_conditions: no listed beneficiary found",
+        "prior_negative_cases: EP-negative",
+    ]
     assert [candidate.company_name for candidate in view.candidates_by_path["SINGLE_EVENT"]] == [
         "DirectCo"
     ]

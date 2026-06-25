@@ -93,6 +93,38 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     for sector in view.dominant_sectors:
         _render_sector(sector, st)
 
+    st.subheader("All Pre-Open Watchlist Candidates")
+    if not view.all_watchlist_candidates:
+        st.write("No watchlist candidates.")
+    else:
+        st.dataframe(
+            [
+                {
+                    "rank": candidate.rank,
+                    "company": candidate.company_name,
+                    "ticker": candidate.ticker,
+                    "path_type": candidate.path_type,
+                    "confidence": candidate.confidence_label,
+                    "evidence_quality": candidate.evidence_quality,
+                    "memory_cases": ", ".join(candidate.memory_episode_ids),
+                }
+                for candidate in view.all_watchlist_candidates
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    st.subheader("Excluded But Watch")
+    if not view.excluded_but_watch:
+        st.write("No candidates with retained exclusion or caution reasons.")
+    for item in view.excluded_but_watch:
+        with st.expander(
+            f"{item.candidate.rank}. {item.candidate.company_name} ({item.candidate.ticker})",
+            expanded=False,
+        ):
+            st.write({"reasons": item.reasons})
+            _render_candidate(item.candidate, st)
+
     st.subheader("Candidates")
     labels = {
         PathType.SINGLE_EVENT.value: "Single-news candidates",

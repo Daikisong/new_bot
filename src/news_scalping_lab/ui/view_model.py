@@ -62,6 +62,12 @@ class CandidateEvidenceView:
 
 
 @dataclass(frozen=True)
+class ExcludedButWatchView:
+    candidate: CandidateEvidenceView
+    reasons: list[str]
+
+
+@dataclass(frozen=True)
 class AnalysisViewModel:
     run_id: str
     mode: str
@@ -73,12 +79,15 @@ class AnalysisViewModel:
     memory_sweep_shards: list[SweepShardStatus]
     coverage_errors: list[str]
     dominant_sectors: list[DominantSectorHypothesis]
+    all_watchlist_candidates: list[CandidateEvidenceView]
+    excluded_but_watch: list[ExcludedButWatchView]
     candidates_by_path: dict[str, list[CandidateEvidenceView]]
     artifacts: ArtifactLinks
 
 
 def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisViewModel:
     manifest = analysis.context_manifest
+    candidates = sorted(analysis.blind_prediction.candidates, key=lambda item: item.rank)
     return AnalysisViewModel(
         run_id=analysis.run_id,
         mode=analysis.mode,
@@ -90,7 +99,9 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
         memory_sweep_shards=_memory_sweep_shards(root, manifest.memory_sweep_artifacts),
         coverage_errors=manifest.errors,
         dominant_sectors=analysis.blind_prediction.dominant_sectors,
-        candidates_by_path=_candidates_by_path(analysis.blind_prediction.candidates),
+        all_watchlist_candidates=[_candidate_evidence_view(candidate) for candidate in candidates],
+        excluded_but_watch=_excluded_but_watch(candidates),
+        candidates_by_path=_candidates_by_path(candidates),
         artifacts=ArtifactLinks(
             prediction_json=root / analysis.prediction_path,
             report_markdown=root / analysis.report_path,
@@ -114,7 +125,7 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
 
 def _candidates_by_path(candidates: list[Candidate]) -> dict[str, list[CandidateEvidenceView]]:
     grouped: dict[str, list[Candidate]] = {path_type.value: [] for path_type in PathType}
-    for candidate in sorted(candidates, key=lambda item: item.rank):
+    for candidate in candidates:
         grouped.setdefault(str(candidate.path_type), []).append(candidate)
     return {
         path_type: [_candidate_evidence_view(candidate) for candidate in path_candidates]
@@ -144,6 +155,28 @@ def _candidate_evidence_view(candidate: Candidate) -> CandidateEvidenceView:
         memory_episode_ids=candidate.memory_episode_ids,
         source_urls=candidate.source_urls,
     )
+
+
+def _excluded_but_watch(candidates: list[Candidate]) -> list[ExcludedButWatchView]:
+    watched: list[ExcludedButWatchView] = []
+    for candidate in candidates:
+        reasons: list[str] = []
+        if candidate.counterarguments:
+            reasons.append("counterarguments: " + "; ".join(candidate.counterarguments))
+        if candidate.disconfirming_conditions:
+            reasons.append(
+                "disconfirming_conditions: " + "; ".join(candidate.disconfirming_conditions)
+            )
+        if candidate.prior_negative_cases:
+            reasons.append("prior_negative_cases: " + ", ".join(candidate.prior_negative_cases))
+        if reasons:
+            watched.append(
+                ExcludedButWatchView(
+                    candidate=_candidate_evidence_view(candidate),
+                    reasons=reasons,
+                )
+            )
+    return watched
 
 
 def _memory_sweep_shards(root: Path, artifact_paths: list[str]) -> list[SweepShardStatus]:
