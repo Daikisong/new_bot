@@ -128,13 +128,34 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
     checked = 0
     for path in _iter_research_episode_paths(root):
         episode = _read_json_object(path, findings)
-        if episode is None or not _has_import_provenance(episode):
+        if episode is None:
+            continue
+        has_import_provenance = _has_import_provenance(episode)
+        is_accepted_episode = path.parent.name == "accepted"
+        if not has_import_provenance and not is_accepted_episode:
             continue
         checked += 1
+        _check_research_episode_top_level_provenance(root, path, episode, findings)
         if _has_semantic_import_provenance(episode):
             _check_semantic_import_audit(root, path, episode, findings)
-        _check_strict_import_provenance(root, path, episode, findings)
+        if has_import_provenance:
+            _check_strict_import_provenance(root, path, episode, findings)
     return checked
+
+
+def _check_research_episode_top_level_provenance(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    provenance_entries = _top_level_provenance_entries(episode)
+    if not provenance_entries:
+        findings.append(f"{label}: research episode missing top-level provenance")
+        return
+    for index, entry in enumerate(provenance_entries, start=1):
+        _check_memory_source(root, label, index, entry, findings, kind="research episode")
 
 
 def _check_evaluation_episode_provenance(root: Path, findings: list[str]) -> int:

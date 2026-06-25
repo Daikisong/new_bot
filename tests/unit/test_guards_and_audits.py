@@ -1336,6 +1336,67 @@ def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Pa
     ) in failed["findings"]
 
 
+def test_provenance_audit_validates_accepted_episode_top_level_sources(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "runs" / "checkpoints" / "evaluations" / "EP-accepted"
+    source_path.mkdir(parents=True)
+    sealed_prediction = source_path / "sealed_blind_prediction.json"
+    sealed_prediction.write_text('{"prediction":"sealed"}\n', encoding="utf-8")
+    episode_path = tmp_path / "research" / "accepted" / "EP-accepted.json"
+    write_json(
+        episode_path,
+        {
+            "episode_id": "EP-accepted",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "evaluation-postmortem-v1",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Accepted episode with sealed provenance.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-sealed",
+                    "source_type": "sealed_blind_prediction",
+                    "uri": sealed_prediction.relative_to(tmp_path).as_posix(),
+                    "content_sha256": file_sha256(sealed_prediction),
+                }
+            ],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+    assert result["checked_research_episode_files"] == 1
+
+    tampered = read_json(episode_path)
+    tampered["provenance"][0]["content_sha256"] = "0" * 64
+    write_json(episode_path, tampered)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    assert (
+        "research/accepted/EP-accepted.json: research episode provenance 1 "
+        "content_sha256 mismatch"
+    ) in failed["findings"]
+
+
 def test_provenance_audit_requires_blind_sector_and_candidate_provenance(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
