@@ -1403,6 +1403,75 @@ def test_provenance_audit_validates_accepted_episode_top_level_sources(
     ) in failed["findings"]
 
 
+def test_provenance_audit_validates_research_episode_input_news_hash(
+    tmp_path: Path,
+) -> None:
+    news_path = tmp_path / "data" / "inbox" / "news" / "accepted_news.csv"
+    news_path.parent.mkdir(parents=True)
+    news_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","Accepted input","Source-backed news."\n',
+        encoding="utf-8",
+    )
+    episode_path = tmp_path / "research" / "accepted" / "EP-news.json"
+    write_json(
+        episode_path,
+        {
+            "episode_id": "EP-news",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "input-news-test-v1",
+            "input_news_files": [news_path.relative_to(tmp_path).as_posix()],
+            "input_news_hashes": [file_sha256(news_path)],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Accepted episode with input news hash.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [
+                    {
+                        "source_id": "SRC-blind-analysis",
+                        "source_type": "daily_blind_analysis_blind_analysis",
+                        "uri": "prompt://daily_blind_analysis/test",
+                    }
+                ],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-episode",
+                    "source_type": "accepted_research_episode",
+                    "uri": "prompt://accepted_episode/test",
+                }
+            ],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+    assert result["checked_research_episode_files"] == 1
+
+    tampered = read_json(episode_path)
+    tampered["input_news_hashes"][0] = "0" * 64
+    write_json(episode_path, tampered)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    assert (
+        "research/accepted/EP-news.json: research episode input news hash mismatch: "
+        "data/inbox/news/accepted_news.csv"
+    ) in failed["findings"]
+
+
 def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
     tmp_path: Path,
 ) -> None:

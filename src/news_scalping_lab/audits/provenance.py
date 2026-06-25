@@ -136,6 +136,7 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
             continue
         checked += 1
         _check_research_episode_top_level_provenance(root, path, episode, findings)
+        _check_research_episode_input_news_sources(root, path, episode, findings)
         if is_accepted_episode:
             _check_research_episode_blind_decision_provenance(root, path, episode, findings)
         if _has_semantic_import_provenance(episode):
@@ -158,6 +159,45 @@ def _check_research_episode_top_level_provenance(
         return
     for index, entry in enumerate(provenance_entries, start=1):
         _check_memory_source(root, label, index, entry, findings, kind="research episode")
+
+
+def _check_research_episode_input_news_sources(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    input_news_files = episode.get("input_news_files")
+    input_news_hashes = episode.get("input_news_hashes")
+    if not isinstance(input_news_files, list):
+        findings.append(f"{label}: research episode input_news_files missing")
+        return
+    if not isinstance(input_news_hashes, list):
+        findings.append(f"{label}: research episode input_news_hashes missing")
+        return
+    if len(input_news_files) != len(input_news_hashes):
+        findings.append(f"{label}: research episode input_news_files/hash count mismatch")
+        return
+    for index, (path_ref, expected_hash) in enumerate(
+        zip(input_news_files, input_news_hashes, strict=True),
+        start=1,
+    ):
+        if not isinstance(path_ref, str) or not path_ref:
+            findings.append(f"{label}: research episode input_news_files {index} invalid")
+            continue
+        if not isinstance(expected_hash, str) or not expected_hash:
+            findings.append(f"{label}: research episode input_news_hashes {index} invalid")
+            continue
+        source_path = _resolve_project_path(root, path_ref)
+        if source_path is None:
+            findings.append(f"{label}: research episode input news path escapes project root: {path_ref}")
+            continue
+        if not source_path.exists():
+            findings.append(f"{label}: research episode input news file not found: {path_ref}")
+            continue
+        if file_sha256(source_path) != expected_hash:
+            findings.append(f"{label}: research episode input news hash mismatch: {path_ref}")
 
 
 def _check_research_episode_blind_decision_provenance(
