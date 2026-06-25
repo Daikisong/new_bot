@@ -6175,7 +6175,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "source_url": "https://example.test/excluded",
                 "snippet": "excluded",
                 "published_at": "2030-01-10T08:30:00+09:00",
-                "timestamp_precision": "unexpected_precision",
+                "timestamp_precision": "relative_age",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
                 "cutoff_at": "2030-01-10T08:59:59+09:00",
                 "exclusion_reason": "timestamp_verification_failed",

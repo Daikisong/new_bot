@@ -1330,6 +1330,26 @@ def test_bundle_candidate_web_checks_reject_invalid_timestamp_precision(
         parse_bundle(source)
 
 
+def test_bundle_candidate_web_checks_reject_relative_age_timestamp_precision(
+    tmp_path,
+) -> None:
+    source = tmp_path / "relative_age_candidate_web_precision_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_candidate_verification=True,
+            candidate_web_timestamp_precision="relative_age",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        BundleImportError,
+        match="candidate_web_checks.jsonl:1 invalid timestamp_precision",
+    ):
+        parse_bundle(source)
+
+
 def test_bundle_candidate_web_checks_reject_after_cutoff_timestamp(tmp_path) -> None:
     candidate_jsonl = json.dumps(
         {

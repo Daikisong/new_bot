@@ -115,6 +115,34 @@ async def test_brave_search_provider_maps_results_and_temporal_guard_excludes_un
 
 
 @pytest.mark.asyncio
+async def test_brave_search_provider_does_not_anchor_relative_age_to_runtime() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    client = FakeHTTPClient(
+        {
+            "results": [
+                {
+                    "title": "relative-only source",
+                    "url": "https://example.test/relative",
+                    "description": "Relative metadata is not cutoff-safe proof.",
+                    "page_age": "2 hours ago",
+                }
+            ]
+        }
+    )
+    provider = BraveSearchWebResearchProvider(api_key="brave-key", client=client)
+    guard = TemporalWebGuard(provider)
+
+    kept = await guard.search("relative age", cutoff_at=cutoff)
+
+    assert kept == []
+    assert len(guard.excluded_sources) == 1
+    exclusion = guard.excluded_sources[0]
+    assert exclusion.reason == "missing_published_at"
+    assert exclusion.result.published_at is None
+    assert exclusion.result.timestamp_precision is None
+
+
+@pytest.mark.asyncio
 async def test_brave_search_provider_reads_nested_web_results() -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     client = FakeHTTPClient(

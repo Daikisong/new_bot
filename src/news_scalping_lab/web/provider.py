@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -15,7 +14,6 @@ from news_scalping_lab.utils import KST, as_kst, now_kst, parse_datetime, sha256
 
 BRAVE_NEWS_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/news/search"
 DEFAULT_USER_AGENT = "news-scalping-lab/0.1 (+https://github.com/Daikisong/new_bot)"
-RELATIVE_AGE_RE = re.compile(r"(?P<count>\d+)\s+(?P<unit>minute|hour|day|week|month|year)s?\s+ago")
 
 
 @dataclass(frozen=True)
@@ -334,9 +332,8 @@ def _parse_web_datetime(value: str) -> ParsedWebTimestamp:
         return ParsedWebTimestamp(published_at=as_kst(parsed_email), precision="datetime")
     except (TypeError, ValueError, IndexError):
         pass
-    relative = _parse_relative_age(cleaned)
-    if relative is not None:
-        return ParsedWebTimestamp(published_at=relative, precision="relative_age")
+    # Relative ages like "2 hours ago" are not cutoff-safe without a provider retrieval
+    # timestamp from the same response, so leave them unverifiable.
     return ParsedWebTimestamp(published_at=None, precision=None)
 
 
@@ -352,24 +349,3 @@ def _parse_date_only(value: str) -> datetime | None:
         except ValueError:
             continue
     return None
-
-
-def _parse_relative_age(value: str) -> datetime | None:
-    match = RELATIVE_AGE_RE.search(value.lower())
-    if match is None:
-        return None
-    count = int(match.group("count"))
-    unit = match.group("unit")
-    if unit == "minute":
-        delta = timedelta(minutes=count)
-    elif unit == "hour":
-        delta = timedelta(hours=count)
-    elif unit == "day":
-        delta = timedelta(days=count)
-    elif unit == "week":
-        delta = timedelta(weeks=count)
-    elif unit == "month":
-        delta = timedelta(days=30 * count)
-    else:
-        delta = timedelta(days=365 * count)
-    return now_kst() - delta

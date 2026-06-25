@@ -53,9 +53,7 @@ SOURCE_LEDGER_REQUIRED_FIELDS = {
     "notes",
 }
 SOURCE_LEDGER_USAGE_PHASES = {"BLIND", "OUTCOME", "POSTMORTEM"}
-WEB_TIMESTAMP_PRECISIONS = frozenset(
-    {"datetime", "date_only_end_of_day", "relative_age"}
-)
+WEB_TIMESTAMP_PRECISIONS = frozenset({"datetime", "date_only_end_of_day"})
 CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
     "schema_version",
     "run_id",

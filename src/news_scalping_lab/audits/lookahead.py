@@ -30,9 +30,7 @@ SESSION_PACK_FILES = (
     "company_memory.md",
     "market_context.md",
 )
-WEB_TIMESTAMP_PRECISIONS = frozenset(
-    {"datetime", "date_only_end_of_day", "relative_age"}
-)
+WEB_TIMESTAMP_PRECISIONS = frozenset({"datetime", "date_only_end_of_day"})
 
 
 def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
