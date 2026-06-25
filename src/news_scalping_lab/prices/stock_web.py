@@ -214,12 +214,25 @@ class StockWebPriceSource:
         return sorted(tickers)
 
     def _available_years(self, ticker: str) -> list[int]:
+        years = set(self._profile_available_years(ticker))
+        years.update(self._discover_shard_years(ticker))
+        return sorted(years)
+
+    def _profile_available_years(self, ticker: str) -> list[int]:
         profile_path = self.atlas_root / "symbol_profiles" / ticker[:3] / f"{ticker}.json"
+        years: set[int] = set()
         if profile_path.exists():
             profile = read_json(profile_path)
             profile_years = profile.get("available_years", [])
             if isinstance(profile_years, list):
-                return sorted(int(year) for year in profile_years)
+                for year in profile_years:
+                    try:
+                        years.add(int(year))
+                    except (TypeError, ValueError):
+                        continue
+        return sorted(years)
+
+    def _discover_shard_years(self, ticker: str) -> list[int]:
         discovered_years: set[int] = set()
         for root in self._preferred_shard_roots():
             symbol_dir = root / ticker[:3] / ticker

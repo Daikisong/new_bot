@@ -198,6 +198,66 @@ def test_stock_web_uses_schema_column_aliases_when_csv_headers_are_not_short_cod
     assert outcome.upper_limit_touched is True
 
 
+def test_stock_web_unions_profile_years_with_discovered_shard_years(tmp_path) -> None:
+    atlas = tmp_path / "atlas"
+    shard_dir = atlas / "ohlcv_tradable_by_symbol_year" / "222" / "222222"
+    shard_dir.mkdir(parents=True)
+    (atlas / "symbol_profiles" / "222").mkdir(parents=True)
+    (atlas / "manifest.json").write_text(
+        """
+{
+  "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "schema.json").write_text(
+        """
+{
+  "tradable_shard_columns": {
+    "d": "date",
+    "o": "open",
+    "h": "high",
+    "l": "low",
+    "c": "close"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "symbol_profiles" / "222" / "222222.json").write_text(
+        '{"code":"222222","available_years":[2030,"bad-year"]}',
+        encoding="utf-8",
+    )
+    (shard_dir / "2030.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c",
+                "2030-01-08,100,101,99,100",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (shard_dir / "2031.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c",
+                "2031-01-08,110,111,109,110",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    history = StockWebPriceSource(tmp_path).get_history("222222", through=date(2031, 1, 8))
+
+    assert [record.trade_date for record in history] == [
+        date(2030, 1, 8),
+        date(2031, 1, 8),
+    ]
+
+
 def test_stock_web_cache_clones_remote_when_cache_is_missing(tmp_path) -> None:
     commands: list[tuple[list[str], Path | None]] = []
 
