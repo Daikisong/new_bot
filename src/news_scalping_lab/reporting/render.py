@@ -184,6 +184,13 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Excluded sources: {manifest.excluded_candidate_web_check_count}",
             f"- Excluded source ids: {list_text(manifest.excluded_candidate_web_source_ids)}",
             "",
+            "News event clusters:",
+            "",
+            f"- Artifact: {manifest.event_cluster_artifact or 'none'}",
+            f"- SHA256: {manifest.event_cluster_sha256 or 'none'}",
+            f"- Clusters: {manifest.event_cluster_count}",
+            f"- Exact duplicates: {manifest.event_cluster_summary.get('exact_duplicate_count', 0)}",
+            "",
             "Excluded after-cutoff web source ids:",
             "",
             "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)

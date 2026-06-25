@@ -410,6 +410,10 @@ class ContextManifest(StrictModel):
     row_disposition_sha256: str | None = None
     row_disposition_coverage_ratio: float = 0.0
     row_disposition_summary: dict[str, Any] = Field(default_factory=dict)
+    event_cluster_artifact: str | None = None
+    event_cluster_sha256: str | None = None
+    event_cluster_count: int = 0
+    event_cluster_summary: dict[str, Any] = Field(default_factory=dict)
     source_ledger_artifact: str | None = None
     source_ledger_sha256: str | None = None
     source_ledger_entry_count: int = 0

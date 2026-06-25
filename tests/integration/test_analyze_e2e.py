@@ -393,6 +393,41 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert "body" not in row_dispositions[0]
     assert row_dispositions[0]["title_sha256"]
     assert row_dispositions[0]["body_sha256"]
+    assert saved_manifest["event_cluster_artifact"]
+    assert saved_manifest["event_cluster_count"] == 1
+    assert saved_manifest["event_cluster_summary"] == {
+        "source_row_count": 1,
+        "cluster_count": 1,
+        "exact_duplicate_count": 0,
+        "exact_duplicate_cluster_count": 0,
+        "semantic_duplicate_cluster_count": 0,
+        "cluster_method": "exact_normalized_title_body_v1",
+        "novelty_review_required": True,
+    }
+    event_cluster_path = tmp_path / saved_manifest["event_cluster_artifact"]
+    event_cluster_text = event_cluster_path.read_text(encoding="utf-8")
+    event_clusters = [
+        json.loads(line) for line in event_cluster_text.splitlines() if line.strip()
+    ]
+    assert sha256_text(event_cluster_text) == saved_manifest["event_cluster_sha256"]
+    assert len(event_clusters) == 1
+    assert event_clusters[0]["schema_version"] == "nslab.news_event_cluster.v1"
+    assert event_clusters[0]["row_numbers"] == [2]
+    assert event_clusters[0]["row_count"] == 1
+    assert event_clusters[0]["exact_duplicate_count"] == 0
+    assert event_clusters[0]["first_published_at"] == "2030-01-10T08:00:00+09:00"
+    assert (
+        event_clusters[0]["last_published_at_before_cutoff"]
+        == "2030-01-10T08:00:00+09:00"
+    )
+    assert event_clusters[0]["cutoff_at"] == "2030-01-10T08:59:59+09:00"
+    assert event_clusters[0]["time_verified"] is True
+    assert event_clusters[0]["novelty"] == "unclear"
+    assert event_clusters[0]["requires_llm_novelty_review"] is True
+    assert "title" not in event_clusters[0]
+    assert "body" not in event_clusters[0]
+    assert event_clusters[0]["representative_title_sha256"]
+    assert event_clusters[0]["representative_body_sha256"]
     assert saved_manifest["source_ledger_artifact"]
     assert saved_manifest["source_ledger_entry_count"] == 1
     assert saved_manifest["source_ledger_summary"] == {

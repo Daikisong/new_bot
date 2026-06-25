@@ -127,6 +127,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert inspection["context_files"]["shard_brain"]["hashes_verified"] is True
     supporting = inspection["supporting_artifacts"]
     assert supporting["row_disposition"]["hash_verified"] is True
+    assert supporting["event_cluster"]["hash_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True

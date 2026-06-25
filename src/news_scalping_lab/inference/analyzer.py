@@ -162,6 +162,11 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
+        self._write_event_cluster_artifact(
+            news_items=batch.items,
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
         self._fail_if_brain_context_contains_unavailable_episodes(
             cutoff_at=cutoff_at,
             manifest=manifest,
@@ -225,6 +230,8 @@ class DailyAnalyzer:
                 "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
                 "counterexample_episode_ids": manifest.counterexample_episode_ids,
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
+                "event_cluster_artifact": manifest.event_cluster_artifact,
+                "event_cluster_summary": manifest.event_cluster_summary,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
@@ -420,6 +427,79 @@ class DailyAnalyzer:
         manifest.row_disposition_summary = {
             **summary,
             "coverage_ratio": coverage_ratio,
+        }
+
+    def _write_event_cluster_artifact(
+        self,
+        *,
+        news_items: list[NewsItem],
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> None:
+        clusters: dict[str, list[NewsItem]] = {}
+        for item in news_items:
+            clusters.setdefault(_event_cluster_fingerprint(item), []).append(item)
+        rows: list[dict[str, Any]] = []
+        for cluster_index, (fingerprint, items) in enumerate(clusters.items(), start=1):
+            published = sorted(item.published_at for item in items)
+            cutoff_safe_published = [value for value in published if value <= cutoff_at]
+            rows.append(
+                {
+                    "schema_version": "nslab.news_event_cluster.v1",
+                    "run_id": manifest.run_id,
+                    "cluster_id": stable_id("EVCL", manifest.run_id, fingerprint),
+                    "cluster_index": cluster_index,
+                    "cluster_method": "exact_normalized_title_body_v1",
+                    "cluster_key_sha256": fingerprint,
+                    "row_numbers": [item.row_number for item in items],
+                    "event_ids": [item.event_id for item in items],
+                    "source_ids": [item.source_id for item in items],
+                    "row_count": len(items),
+                    "exact_duplicate_count": max(0, len(items) - 1),
+                    "first_published_at": published[0].isoformat(),
+                    "last_published_at_before_cutoff": (
+                        max(cutoff_safe_published).isoformat()
+                        if cutoff_safe_published
+                        else None
+                    ),
+                    "cutoff_at": cutoff_at.isoformat(),
+                    "time_verified": bool(cutoff_safe_published)
+                    and max(cutoff_safe_published) <= cutoff_at,
+                    "representative_title_sha256": sha256_text(items[0].title),
+                    "representative_body_sha256": sha256_text(items[0].body),
+                    "novelty": "unclear",
+                    "novelty_basis": (
+                        "Deterministic exact duplicate clustering only; final novelty "
+                        "requires LLM/web review."
+                    ),
+                    "requires_llm_novelty_review": True,
+                }
+            )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "event_clusters"
+            / manifest.run_id
+            / "event_clusters.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        exact_duplicate_cluster_count = sum(
+            1 for row in rows if int(row["exact_duplicate_count"]) > 0
+        )
+        manifest.event_cluster_artifact = artifact_relative.as_posix()
+        manifest.event_cluster_sha256 = sha256_text(payload)
+        manifest.event_cluster_count = len(rows)
+        manifest.event_cluster_summary = {
+            "source_row_count": len(news_items),
+            "cluster_count": len(rows),
+            "exact_duplicate_count": sum(int(row["exact_duplicate_count"]) for row in rows),
+            "exact_duplicate_cluster_count": exact_duplicate_cluster_count,
+            "semantic_duplicate_cluster_count": 0,
+            "cluster_method": "exact_normalized_title_body_v1",
+            "novelty_review_required": True,
         }
 
     async def _collect_cutoff_safe_web_sources(
@@ -1058,6 +1138,7 @@ class DailyAnalyzer:
             "cutoff_at": prediction.cutoff_at.isoformat(),
             "current_news": news_texts,
             "open_world_first_analysis": first_pass_mechanisms,
+            "event_clusters": self._read_event_cluster_context(manifest),
             "web_research": {
                 "queries": manifest.web_queries,
                 "included_sources": manifest.web_sources,
@@ -1093,6 +1174,19 @@ class DailyAnalyzer:
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
+
+    def _read_event_cluster_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        if not manifest.event_cluster_artifact:
+            return []
+        path = self.root / manifest.event_cluster_artifact
+        if not path.exists():
+            return [{"path": manifest.event_cluster_artifact, "missing": True}]
+        rows: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rows.append(json.loads(line))
+        return rows
 
     def _collect_company_memory_context(
         self,
@@ -2038,6 +2132,16 @@ def _candidate_case_refs(prediction: BlindPrediction, field_name: str) -> list[s
             seen.add(item)
             refs.append(item)
     return refs
+
+
+def _event_cluster_fingerprint(item: NewsItem) -> str:
+    normalized = "\n".join(
+        [
+            " ".join(item.title.casefold().split()),
+            " ".join(item.body.casefold().split()),
+        ]
+    )
+    return sha256_text(normalized)
 
 
 def _append_unique_provenance(

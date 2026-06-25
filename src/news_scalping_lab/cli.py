@@ -364,6 +364,7 @@ def _inspect_context_manifest(
 def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     specs = (
         ("row_disposition", "row_disposition_artifact", "row_disposition_sha256", True),
+        ("event_cluster", "event_cluster_artifact", "event_cluster_sha256", True),
         ("source_ledger", "source_ledger_artifact", "source_ledger_sha256", True),
         (
             "blind_seal_receipt",

@@ -141,6 +141,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert shard_context["file_count"] >= 1
     supporting = inspection["supporting_artifacts"]
     assert supporting["row_disposition"]["hash_verified"] is True
+    assert supporting["event_cluster"]["hash_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True

@@ -434,6 +434,40 @@
           "title": "Errors",
           "type": "array"
         },
+        "event_cluster_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Cluster Artifact"
+        },
+        "event_cluster_count": {
+          "default": 0,
+          "title": "Event Cluster Count",
+          "type": "integer"
+        },
+        "event_cluster_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Cluster Sha256"
+        },
+        "event_cluster_summary": {
+          "additionalProperties": true,
+          "title": "Event Cluster Summary",
+          "type": "object"
+        },
         "excluded_candidate_web_check_artifact": {
           "anyOf": [
             {

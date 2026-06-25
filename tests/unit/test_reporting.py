@@ -137,6 +137,12 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
             "missing_collected_at": 1,
             "coverage_ratio": 0.5,
         },
+        event_cluster_artifact=(
+            "runs/checkpoints/event_clusters/RUN-report/event_clusters.jsonl"
+        ),
+        event_cluster_sha256="event-cluster-sha",
+        event_cluster_count=1,
+        event_cluster_summary={"exact_duplicate_count": 0},
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
         source_ledger_sha256="ledger-sha",
         source_ledger_entry_count=3,
@@ -208,6 +214,14 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         in report
     )
     assert "- Row disposition SHA256: row-sha" in report
+    assert "News event clusters:" in report
+    assert (
+        "- Artifact: runs/checkpoints/event_clusters/RUN-report/event_clusters.jsonl"
+        in report
+    )
+    assert "- SHA256: event-cluster-sha" in report
+    assert "- Clusters: 1" in report
+    assert "- Exact duplicates: 0" in report
     assert "Source ledger:" in report
     assert "- Artifact: runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl" in report
     assert "- SHA256: ledger-sha" in report
