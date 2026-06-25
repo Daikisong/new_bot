@@ -89,6 +89,10 @@ EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
     "cutoff_at",
     "exclusion_reason",
 }
+LEGACY_OPTIONAL_VALIDATION_KEYS = {
+    "final_synthesis_context_candidate_web_checks_verified",
+    "final_synthesis_context_candidate_verification_verified",
+}
 
 
 class BundleImportError(ValueError):
@@ -157,6 +161,22 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
     if not parsed.validation.get("final_synthesis_context_contract_verified", True):
         raise BundleImportError(
             "final_synthesis_context.json content does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get(
+        "final_synthesis_context_candidate_web_checks_verified",
+        True,
+    ):
+        raise BundleImportError(
+            "final_synthesis_context.json candidate_web_checks do not match "
+            "candidate_web_checks.jsonl"
+        )
+    if not parsed.validation.get(
+        "final_synthesis_context_candidate_verification_verified",
+        True,
+    ):
+        raise BundleImportError(
+            "final_synthesis_context.json candidate_verification does not match "
+            "candidate_verification.json"
         )
     if not parsed.validation.get("excluded_candidate_web_check_hash_verified", True):
         raise BundleImportError(
@@ -329,6 +349,15 @@ def parse_bundle(path: Path) -> BundleParseResult:
         )
         validation["final_synthesis_context_contract_verified"] = (
             _verify_final_synthesis_context_contract(json_blocks)
+        )
+        validation["final_synthesis_context_candidate_web_checks_verified"] = (
+            _verify_final_synthesis_candidate_web_checks_context(
+                json_blocks,
+                jsonl_blocks,
+            )
+        )
+        validation["final_synthesis_context_candidate_verification_verified"] = (
+            _verify_final_synthesis_candidate_verification_context(json_blocks)
         )
     _add_optional_jsonl_validation(
         validation,
@@ -986,6 +1015,66 @@ def _verify_final_synthesis_context_contract(json_blocks: dict[str, Any]) -> boo
     return manifest_summary is None or manifest_summary == expected_summary
 
 
+def _verify_final_synthesis_candidate_web_checks_context(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> bool:
+    payload = _final_synthesis_context_payload(json_blocks)
+    if payload is None:
+        return False
+    expected_rows = [
+        _candidate_web_check_context_row(row)
+        for row in jsonl_blocks.get("candidate_web_checks.jsonl", [])
+    ]
+    return payload.get("candidate_web_checks") == expected_rows
+
+
+def _verify_final_synthesis_candidate_verification_context(
+    json_blocks: dict[str, Any],
+) -> bool:
+    payload = _final_synthesis_context_payload(json_blocks)
+    if payload is None:
+        return False
+    verification = json_blocks.get("candidate_verification.json")
+    expected = verification if isinstance(verification, dict) else {}
+    return payload.get("candidate_verification") == expected
+
+
+def _final_synthesis_context_payload(
+    json_blocks: dict[str, Any],
+) -> dict[str, Any] | None:
+    context = json_blocks.get("final_synthesis_context.json")
+    if not isinstance(context, dict):
+        return None
+    payload = context.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_rank": row.get("candidate_rank"),
+        "candidate_ticker": row.get("candidate_ticker"),
+        "candidate_company_name": row.get("candidate_company_name"),
+        "candidate_path_type": row.get("candidate_path_type"),
+        "candidate_subject_type": row.get("candidate_subject_type"),
+        "candidate_expansion_path": row.get("candidate_expansion_path"),
+        "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
+        "candidate_investigation_questions": row.get(
+            "candidate_investigation_questions"
+        ),
+        "verification_focus": row.get("verification_focus"),
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
+
+
 def _verify_candidate_verification_contract(
     json_blocks: dict[str, Any],
     jsonl_blocks: dict[str, list[dict[str, Any]]],
@@ -1125,6 +1214,8 @@ def _verify_manifest_validation_self_consistency(
     if not isinstance(manifest_validation, dict):
         return False
     for key, recomputed in recomputed_validation.items():
+        if key not in manifest_validation and key in LEGACY_OPTIONAL_VALIDATION_KEYS:
+            continue
         if manifest_validation.get(key) is not recomputed:
             return False
     self_key = "manifest_validation_self_consistent_verified"

@@ -446,6 +446,18 @@ def _build_bundle_manifest(
         )
         validation["final_synthesis_context_hash_verified"] = True
         validation["final_synthesis_context_contract_verified"] = True
+        validation["final_synthesis_context_candidate_web_checks_verified"] = (
+            _verify_final_synthesis_candidate_web_checks_context(
+                final_synthesis_context,
+                candidate_web_checks,
+            )
+        )
+        validation["final_synthesis_context_candidate_verification_verified"] = (
+            _verify_final_synthesis_candidate_verification_context(
+                final_synthesis_context,
+                candidate_verification,
+            )
+        )
     if excluded_candidate_web_checks is not None:
         payload["excluded_candidate_web_check_sha256"] = sha256_text(
             excluded_candidate_web_checks
@@ -457,6 +469,95 @@ def _build_bundle_manifest(
         validation["excluded_candidate_web_check_hash_verified"] = True
         validation["excluded_candidate_web_check_count_verified"] = True
     return payload
+
+
+def _verify_final_synthesis_candidate_web_checks_context(
+    final_synthesis_context: str,
+    candidate_web_checks: str | None,
+) -> bool:
+    payload = _final_synthesis_context_payload(final_synthesis_context)
+    if payload is None:
+        return False
+    expected_rows = _candidate_web_check_context_rows(candidate_web_checks)
+    return (
+        expected_rows is not None
+        and payload.get("candidate_web_checks") == expected_rows
+    )
+
+
+def _verify_final_synthesis_candidate_verification_context(
+    final_synthesis_context: str,
+    candidate_verification: str | None,
+) -> bool:
+    payload = _final_synthesis_context_payload(final_synthesis_context)
+    if payload is None:
+        return False
+    expected = (
+        _json_object(candidate_verification)
+        if candidate_verification is not None
+        else {}
+    )
+    return expected is not None and payload.get("candidate_verification") == expected
+
+
+def _final_synthesis_context_payload(text: str) -> dict[str, Any] | None:
+    context = _json_object(text)
+    if context is None:
+        return None
+    payload = context.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _json_object(text: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _candidate_web_check_context_rows(
+    candidate_web_checks: str | None,
+) -> list[dict[str, Any]] | None:
+    if candidate_web_checks is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in candidate_web_checks.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(row, dict):
+            return None
+        rows.append(_candidate_web_check_context_row(row))
+    return rows
+
+
+def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_rank": row.get("candidate_rank"),
+        "candidate_ticker": row.get("candidate_ticker"),
+        "candidate_company_name": row.get("candidate_company_name"),
+        "candidate_path_type": row.get("candidate_path_type"),
+        "candidate_subject_type": row.get("candidate_subject_type"),
+        "candidate_expansion_path": row.get("candidate_expansion_path"),
+        "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
+        "candidate_investigation_questions": row.get(
+            "candidate_investigation_questions"
+        ),
+        "verification_focus": row.get("verification_focus"),
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
 
 
 def _brain_delta_jsonl(*, run_id: str, reason: str) -> str:
