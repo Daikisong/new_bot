@@ -479,6 +479,9 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         root, manifest
     )
     statuses["semantic_retrieval"] = _inspect_semantic_retrieval_artifact(root, manifest)
+    statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(
+        root, manifest
+    )
     statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
         root, manifest
     )
@@ -702,6 +705,122 @@ def _inspect_semantic_retrieval_artifact(
     if not status["summary_verified"]:
         status["errors"].append("semantic_retrieval_summary_mismatch")
     status["passed"] = _semantic_retrieval_status_passed(status)
+    return status
+
+
+def _inspect_candidate_expansion_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="candidate_expansion_artifact",
+        hash_field="candidate_expansion_sha256",
+        required=True,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "prompt_hash_verified": None,
+            "required_paths_verified": None,
+            "finding_count_verified": None,
+            "path_coverage_verified": None,
+            "path_counts_verified": None,
+            "manifest_count_verified": None,
+            "continuation_d_minus_one_verified": None,
+        }
+    )
+    payload = _read_artifact_object(root, manifest.get("candidate_expansion_artifact"), status)
+    if payload is None:
+        status["passed"] = _candidate_expansion_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.candidate_expansion.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("candidate_expansion_schema_version_mismatch")
+
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("candidate_expansion_run_id_mismatch")
+
+    prompt_hash = _manifest_prompt_hash(manifest, "candidate_expansion")
+    status["prompt_hash_verified"] = (
+        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
+    )
+    if not status["prompt_hash_verified"]:
+        status["errors"].append("candidate_expansion_prompt_hash_mismatch")
+
+    expected_paths = _candidate_expansion_required_paths(manifest)
+    observed_required_paths = _string_list(payload.get("required_paths"))
+    status["required_paths_verified"] = (
+        bool(expected_paths) and observed_required_paths == expected_paths
+    )
+    if not status["required_paths_verified"]:
+        status["errors"].append("candidate_expansion_required_paths_mismatch")
+
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or not all(
+        isinstance(finding, dict) for finding in findings
+    ):
+        status["errors"].append("candidate_expansion_findings_invalid")
+        status["passed"] = _candidate_expansion_status_passed(status)
+        return status
+
+    observed_paths = [
+        str(finding["path"])
+        for finding in findings
+        if isinstance(finding.get("path"), str)
+    ]
+    status["finding_count"] = len(findings)
+    summary = manifest.get("candidate_expansion_summary")
+    expected_finding_count = (
+        summary.get("finding_count") if isinstance(summary, dict) else None
+    )
+    status["finding_count_verified"] = not isinstance(expected_finding_count, int) or len(
+        findings
+    ) == expected_finding_count
+    if not status["finding_count_verified"]:
+        status["errors"].append("candidate_expansion_finding_count_mismatch")
+
+    status["path_coverage_verified"] = (
+        bool(expected_paths) and set(observed_paths) == set(expected_paths)
+    )
+    if not status["path_coverage_verified"]:
+        status["errors"].append("candidate_expansion_path_coverage_mismatch")
+
+    observed_path_counts = dict(Counter(observed_paths))
+    expected_path_counts = summary.get("path_counts") if isinstance(summary, dict) else None
+    status["path_counts"] = observed_path_counts
+    status["path_counts_verified"] = (
+        isinstance(expected_path_counts, dict)
+        and observed_path_counts == expected_path_counts
+    )
+    if not status["path_counts_verified"]:
+        status["errors"].append("candidate_expansion_path_counts_mismatch")
+
+    expected_manifest_count = manifest.get("candidate_expansion_count")
+    status["manifest_count_verified"] = not isinstance(expected_manifest_count, int) or len(
+        findings
+    ) == expected_manifest_count
+    if not status["manifest_count_verified"]:
+        status["errors"].append("candidate_expansion_manifest_count_mismatch")
+
+    continuation_findings = [
+        finding for finding in findings if finding.get("path") == "CONTINUATION"
+    ]
+    status["continuation_d_minus_one_verified"] = bool(continuation_findings) and all(
+        finding.get("d_minus_one_market_data_only") is True
+        for finding in continuation_findings
+    )
+    if not status["continuation_d_minus_one_verified"]:
+        status["errors"].append("candidate_expansion_continuation_d_minus_one_missing")
+
+    status["passed"] = _candidate_expansion_status_passed(status)
     return status
 
 
@@ -1805,6 +1924,21 @@ def _semantic_retrieval_status_passed(status: dict[str, Any]) -> bool:
     )
 
 
+def _candidate_expansion_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("prompt_hash_verified")
+        and status.get("required_paths_verified")
+        and status.get("finding_count_verified")
+        and status.get("path_coverage_verified")
+        and status.get("path_counts_verified")
+        and status.get("manifest_count_verified")
+        and status.get("continuation_d_minus_one_verified")
+    )
+
+
 def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         _text_hashed_artifact_status_passed(status)
@@ -1865,6 +1999,13 @@ def _semantic_retrieval_required_categories(manifest: dict[str, Any]) -> list[st
     if not isinstance(summary, dict):
         return []
     return _string_list(summary.get("required_categories"))
+
+
+def _candidate_expansion_required_paths(manifest: dict[str, Any]) -> list[str]:
+    summary = manifest.get("candidate_expansion_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("required_paths"))
 
 
 def _semantic_retrieval_summary_verified(

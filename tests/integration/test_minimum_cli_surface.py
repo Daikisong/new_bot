@@ -166,6 +166,15 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["semantic_retrieval"]["summary_verified"] is True
     assert supporting["semantic_retrieval"]["retrieval_zero_is_valid"] is True
     assert supporting["candidate_expansion"]["hash_verified"] is True
+    assert supporting["candidate_expansion"]["schema_version_verified"] is True
+    assert supporting["candidate_expansion"]["run_id_verified"] is True
+    assert supporting["candidate_expansion"]["prompt_hash_verified"] is True
+    assert supporting["candidate_expansion"]["required_paths_verified"] is True
+    assert supporting["candidate_expansion"]["finding_count_verified"] is True
+    assert supporting["candidate_expansion"]["path_coverage_verified"] is True
+    assert supporting["candidate_expansion"]["path_counts_verified"] is True
+    assert supporting["candidate_expansion"]["manifest_count_verified"] is True
+    assert supporting["candidate_expansion"]["continuation_d_minus_one_verified"] is True
     assert supporting["candidate_web_check"]["hash_verified"] is True
     assert supporting["candidate_verification"]["hash_verified"] is True
     assert supporting["final_synthesis_context"]["hash_verified"] is True
@@ -211,6 +220,46 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
     manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
+    candidate_expansion_file = tmp_path / context_payload["candidate_expansion_artifact"]
+    original_candidate_expansion = read_json(candidate_expansion_file)
+    original_manifest_for_candidate_expansion = read_json(manifest_file)
+    tampered_candidate_expansion = {
+        **original_candidate_expansion,
+        "findings": [
+            (
+                {**finding, "d_minus_one_market_data_only": False}
+                if finding.get("path") == "CONTINUATION"
+                else finding
+            )
+            for finding in original_candidate_expansion["findings"]
+        ],
+    }
+    write_json(candidate_expansion_file, tampered_candidate_expansion)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_expansion,
+            "candidate_expansion_sha256": sha256_text(
+                candidate_expansion_file.read_text(encoding="utf-8")
+            ),
+        },
+    )
+    tampered_candidate_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered candidate expansion", tampered_candidate_context)
+    tampered_candidate_inspection = json.loads(
+        tampered_candidate_context.output
+    )["inspection"]
+    assert tampered_candidate_inspection["reproducibility_checks_passed"] is False
+    tampered_candidate_status = tampered_candidate_inspection["supporting_artifacts"][
+        "candidate_expansion"
+    ]
+    assert tampered_candidate_status["hash_verified"] is True
+    assert tampered_candidate_status["continuation_d_minus_one_verified"] is False
+    assert "candidate_expansion_continuation_d_minus_one_missing" in (
+        tampered_candidate_status["errors"]
+    )
+    write_json(candidate_expansion_file, original_candidate_expansion)
+    write_json(manifest_file, original_manifest_for_candidate_expansion)
     semantic_retrieval_file = tmp_path / context_payload["semantic_retrieval_artifact"]
     original_semantic_retrieval = semantic_retrieval_file.read_text(encoding="utf-8")
     original_manifest_for_semantic = read_json(manifest_file)
