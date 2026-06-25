@@ -62,7 +62,8 @@ for manual validation first.
 `brain rebuild` also refreshes `memory/vector_index/manifest.json` and
 `memory/vector_index/episodes.jsonl`. The local index is a deterministic
 embedding-style projection of accepted episodes; it supports retrieval but is never
-a candidate gate.
+a candidate gate. `nslab audit coverage` fails if brain coverage is incomplete, the
+vector index is stale, or the warehouse research episode projection is out of sync.
 
 Free-form semantic imports preserve the raw source under `data/raw/research/`
 and record a source-segment audit in `ResearchEpisode.input_audit.semantic_import`.

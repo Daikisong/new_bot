@@ -10,6 +10,7 @@ import typer
 from pydantic import BaseModel, ValidationError
 from typer.testing import CliRunner
 
+from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
@@ -537,6 +538,44 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
         "CL-temporal-leak",
         "CL-single-support-warning",
     ]
+
+
+def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Coverage audit derivative state note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    passed = audit_coverage(tmp_path)
+
+    assert passed["passed"] is True
+    assert passed["coverage_complete"] is True
+    assert passed["vector_index_current"] is True
+    assert passed["warehouse_synced"] is True
+    assert passed["warehouse_research_episode_count"] == 1
+
+    (tmp_path / "memory" / "vector_index" / "episodes.jsonl").write_text(
+        "tampered vector payload\n",
+        encoding="utf-8",
+    )
+    WarehouseStore(tmp_path).write_empty("research_episodes.parquet")
+
+    failed = audit_coverage(tmp_path)
+
+    assert failed["passed"] is False
+    assert failed["coverage_complete"] is True
+    assert failed["vector_index_current"] is False
+    assert failed["warehouse_synced"] is False
+    assert "vector_index: status is invalid" in failed["findings"]
+    assert (
+        "warehouse: research_episodes.parquet count 0 != accepted_episode_count 1"
+        in failed["findings"]
+    )
 
 
 def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:
