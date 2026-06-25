@@ -109,7 +109,17 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     ] == "CUTOFF_SAFE_WEB_BLIND"
     inspected_context = RUNNER.invoke(app, ["context", "inspect", run_id])
     _assert_ok("context inspect", inspected_context)
-    assert json.loads(inspected_context.output)["run_id"] == run_id
+    context_payload = json.loads(inspected_context.output)
+    assert context_payload["run_id"] == run_id
+    inspection = context_payload["inspection"]
+    assert inspection["reproducibility_checks_passed"] is True
+    assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
+    assert (
+        inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
+        is True
+    )
+    assert inspection["output_artifacts"]["report"]["hash_verified"] is True
+    assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
 
     session_pack = RUNNER.invoke(
         app,

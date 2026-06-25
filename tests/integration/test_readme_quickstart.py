@@ -102,6 +102,15 @@ def test_readme_quick_start_commands_produce_demo_outputs(
 
     context_payload = json.loads(inspected_context.output)
     assert context_payload["run_id"] == run_id
+    inspection = context_payload["inspection"]
+    assert inspection["reproducibility_checks_passed"] is True
+    assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
+    assert (
+        inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
+        is True
+    )
+    assert inspection["output_artifacts"]["report"]["hash_verified"] is True
+    assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     pack_payload = json.loads(session_pack.output)
     pack_dir = tmp_path / pack_payload["session_pack"]
     assert read_json(pack_dir / "manifest.json")["blocked"] is False

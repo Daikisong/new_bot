@@ -6,7 +6,7 @@ import asyncio
 import json
 from datetime import date
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -38,7 +38,7 @@ from news_scalping_lab.ui.launcher import (
     StreamlitLaunchError,
     run_streamlit_ui,
 )
-from news_scalping_lab.utils import parse_datetime, read_json
+from news_scalping_lab.utils import file_sha256, parse_datetime, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 app = typer.Typer(help="news-scalping-lab CLI")
@@ -273,7 +273,149 @@ def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
 def context_inspect(run_id: str) -> None:
     settings = load_settings()
     path = settings.path("runs/manifests") / f"{run_id}.json"
-    _echo(read_json(path))
+    manifest = read_json(path)
+    if not isinstance(manifest, dict):
+        raise typer.BadParameter("context manifest must be a JSON object")
+    _echo(
+        {
+            **manifest,
+            "inspection": _inspect_context_manifest(settings.project_root, path, manifest),
+        }
+    )
+
+
+def _inspect_context_manifest(
+    root: Path,
+    manifest_path: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    prediction = _inspect_prediction_artifact(root, manifest)
+    report = _inspect_report_artifact(root, manifest)
+    return {
+        "context_manifest": {
+            "path": _display_path(root, manifest_path),
+            "exists": manifest_path.exists(),
+            "sha256": file_sha256(manifest_path) if manifest_path.exists() else None,
+        },
+        "output_artifacts": {
+            "prediction": prediction,
+            "report": report,
+        },
+        "reproducibility_checks_passed": _artifact_status_passed(
+            prediction,
+            required_extra_key="context_manifest_id_verified",
+        )
+        and _artifact_status_passed(report, required_extra_key="contains_run_id"),
+    }
+
+
+def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    status = _base_artifact_status(root, manifest.get("prediction_artifact"))
+    expected_hash = manifest.get("prediction_sha256")
+    status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
+    if not status["configured"]:
+        return status
+    artifact_path = status.pop("_artifact_path", None)
+    if not isinstance(artifact_path, Path) or not status["exists"]:
+        return status
+    observed_hash = file_sha256(artifact_path)
+    status["observed_sha256"] = observed_hash
+    status["hash_verified"] = observed_hash == expected_hash
+    try:
+        payload = read_json(artifact_path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        status["errors"].append("prediction_artifact_invalid_json")
+        status["context_manifest_id_verified"] = False
+        return status
+    if not isinstance(payload, dict):
+        status["errors"].append("prediction_artifact_not_object")
+        status["context_manifest_id_verified"] = False
+        return status
+    run_id = manifest.get("run_id")
+    context_manifest_id = payload.get("context_manifest_id")
+    status["context_manifest_id"] = (
+        context_manifest_id if isinstance(context_manifest_id, str) else None
+    )
+    status["context_manifest_id_verified"] = (
+        isinstance(run_id, str) and context_manifest_id == run_id
+    )
+    return status
+
+
+def _inspect_report_artifact(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    status = _base_artifact_status(root, manifest.get("report_artifact"))
+    expected_hash = manifest.get("report_sha256")
+    status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
+    if not status["configured"]:
+        return status
+    artifact_path = status.pop("_artifact_path", None)
+    if not isinstance(artifact_path, Path) or not status["exists"]:
+        return status
+    report_text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    observed_hash = sha256_text(report_text)
+    status["observed_sha256"] = observed_hash
+    status["hash_verified"] = observed_hash == expected_hash
+    run_id = manifest.get("run_id")
+    status["contains_run_id"] = isinstance(run_id, str) and run_id in report_text
+    return status
+
+
+def _base_artifact_status(root: Path, artifact_ref: object) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "configured": False,
+        "path": artifact_ref if isinstance(artifact_ref, str) else None,
+        "path_within_project": None,
+        "exists": False,
+        "expected_sha256": None,
+        "observed_sha256": None,
+        "hash_verified": None,
+        "errors": [],
+    }
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return status
+    status["configured"] = True
+    artifact_path = _resolve_project_artifact(root, artifact_ref)
+    if artifact_path is None:
+        status["path_within_project"] = False
+        status["errors"].append("artifact_path_escapes_project_root")
+        return status
+    status["path_within_project"] = True
+    status["_artifact_path"] = artifact_path
+    status["exists"] = artifact_path.exists()
+    if not status["exists"]:
+        status["errors"].append("artifact_missing")
+    return status
+
+
+def _resolve_project_artifact(root: Path, artifact_ref: str) -> Path | None:
+    root_resolved = root.resolve()
+    candidate = Path(artifact_ref)
+    resolved = (
+        candidate if candidate.is_absolute() else root_resolved / candidate
+    ).resolve()
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        return None
+    return resolved
+
+
+def _display_path(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _artifact_status_passed(status: dict[str, Any], *, required_extra_key: str) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists")
+        and status.get("hash_verified")
+        and status.get(required_extra_key)
+        and not status.get("errors")
+    )
 
 
 @context_app.command("export-session-pack")
