@@ -81,7 +81,9 @@ class DailyAnalyzer:
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
-        self.llm = self._trace_llm(llm or create_llm_provider(settings))
+        base_llm = llm or create_llm_provider(settings)
+        self.llm_model_config = self._llm_model_config(base_llm)
+        self.llm = self._trace_llm(base_llm)
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
         self.price_source = price_source
@@ -124,6 +126,7 @@ class DailyAnalyzer:
             retrieved_episode_ids=retrieved_ids,
             web_queries=web_queries,
         )
+        manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
         self._write_row_disposition_artifact(
             full_items=full_batch.items,
@@ -1245,7 +1248,7 @@ class DailyAnalyzer:
         return TracingLLMProvider(
             provider,
             trace_dir=self.settings.path(self.settings.output_dirs.traces),
-            model_config={"provider": type(provider).__name__, "configured": self.settings.llm_provider},
+            model_config=self.llm_model_config,
             default_metadata={"prompt_version": DAILY_BLIND_PROMPT_VERSION},
             purpose_metadata={
                 "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
@@ -1253,6 +1256,23 @@ class DailyAnalyzer:
                 "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
             },
         )
+
+    def _llm_model_config(self, provider: LLMProvider) -> dict[str, Any]:
+        if isinstance(provider, TracingLLMProvider):
+            return dict(provider.model_config)
+        config: dict[str, Any] = {
+            "configured_provider": self.settings.llm_provider,
+            "provider_class": type(provider).__name__,
+            "max_concurrency": self.settings.limits.max_concurrency,
+            "shard_episode_count": self.settings.limits.shard_episode_count,
+        }
+        model = getattr(provider, "model", None)
+        if isinstance(model, str) and model:
+            config["model"] = model
+        embedding_model = getattr(provider, "embedding_model", None)
+        if isinstance(embedding_model, str) and embedding_model:
+            config["embedding_model"] = embedding_model
+        return config
 
     def _make_prediction(
         self,

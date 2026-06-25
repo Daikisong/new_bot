@@ -84,6 +84,8 @@ uses `CUTOFF_SAFE_WEB_BLIND`: every web result is timestamp-filtered by the temp
 guard, cutoff-after or unverified sources are excluded, and admitted web evidence is
 recorded in the manifest and source ledger. Price repositories and D-day outcomes
 remain unavailable during BLIND in both modes.
+The context manifest records the LLM provider/model settings used for the run, and
+`nslab audit provenance` cross-checks those settings against persisted LLM traces.
 
 ## Evaluation
 

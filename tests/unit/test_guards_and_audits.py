@@ -507,6 +507,56 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
     ) in result["findings"]
 
 
+def test_provenance_audit_flags_trace_model_config_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "model_config": {
+                "configured_provider": "mock",
+                "provider_class": "DeterministicMockLLMProvider",
+                "max_concurrency": 4,
+                "shard_episode_count": 20,
+            },
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    trace = _trace_payload(prompt_sha256="blind-hash")
+    trace["model_config"] = {
+        "configured_provider": "openai",
+        "provider_class": "OpenAIResponsesProvider",
+        "max_concurrency": 4,
+        "shard_episode_count": 20,
+    }
+    write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", trace)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: trace model_config mismatch for daily_blind_analysis: "
+        "configured_provider, provider_class"
+    ) in result["findings"]
+
+
 def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

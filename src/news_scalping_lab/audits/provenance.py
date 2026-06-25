@@ -31,7 +31,8 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: context manifest missing price_snapshot")
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
-            _check_prompt_hash_traces(root, path, prompt_hashes, findings)
+            _check_manifest_model_config(path, manifest, findings)
+            _check_prompt_hash_traces(root, path, prompt_hashes, manifest, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
         blind_analysis = prediction.get("blind_analysis", {})
         if not isinstance(blind_analysis, dict) or not blind_analysis.get("provenance"):
@@ -376,10 +377,23 @@ def _check_manifest_blind_hash(
         findings.append(f"{prediction_path.name}: context manifest blind_artifact_sha256 mismatch")
 
 
+def _check_manifest_model_config(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    model_config = manifest.get("model_config")
+    if model_config is not None and (
+        not isinstance(model_config, dict) or not model_config
+    ):
+        findings.append(f"{prediction_path.name}: context manifest model_config is invalid")
+
+
 def _check_prompt_hash_traces(
     root: Path,
     prediction_path: Path,
     prompt_hashes: dict[str, Any],
+    manifest: dict[str, Any],
     findings: list[str],
 ) -> None:
     purpose_by_hash_key = {
@@ -387,14 +401,64 @@ def _check_prompt_hash_traces(
         "red_team_candidate_review": "red_team_candidate_review",
         "final_synthesis": "final_synthesis",
     }
-    traces_by_purpose = _trace_prompt_hashes_by_purpose(root, findings)
+    traces_by_purpose = _trace_metadata_by_purpose(root, findings)
     for hash_key, purpose in purpose_by_hash_key.items():
         manifest_hash = prompt_hashes.get(hash_key)
         if not manifest_hash or purpose not in traces_by_purpose:
             continue
-        if manifest_hash not in traces_by_purpose[purpose]:
+        trace_metadata = traces_by_purpose[purpose]
+        prompt_hashes_for_purpose = trace_metadata["prompt_hashes"]
+        if manifest_hash not in prompt_hashes_for_purpose:
             findings.append(
                 f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
+            )
+        _check_trace_model_config_matches_manifest(
+            prediction_path,
+            manifest,
+            purpose,
+            trace_metadata["model_configs"],
+            findings,
+        )
+
+
+def _check_trace_model_config_matches_manifest(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    purpose: str,
+    trace_model_configs: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    manifest_model_config = manifest.get("model_config")
+    if not isinstance(manifest_model_config, dict):
+        return
+    comparable_keys = [
+        "configured_provider",
+        "provider_class",
+        "model",
+        "embedding_model",
+        "max_concurrency",
+        "shard_episode_count",
+    ]
+    expected = {
+        key: manifest_model_config[key]
+        for key in comparable_keys
+        if key in manifest_model_config
+    }
+    if not expected:
+        return
+    if not trace_model_configs:
+        findings.append(f"{prediction_path.name}: trace model_config missing for {purpose}")
+        return
+    for trace_model_config in trace_model_configs:
+        mismatches = [
+            key
+            for key, expected_value in expected.items()
+            if trace_model_config.get(key) != expected_value
+        ]
+        if mismatches:
+            findings.append(
+                f"{prediction_path.name}: trace model_config mismatch for {purpose}: "
+                f"{', '.join(mismatches)}"
             )
 
 
@@ -419,8 +483,8 @@ def _check_context_manifest(
     return manifest
 
 
-def _trace_prompt_hashes_by_purpose(root: Path, findings: list[str]) -> dict[str, set[str]]:
-    traces: dict[str, set[str]] = {}
+def _trace_metadata_by_purpose(root: Path, findings: list[str]) -> dict[str, dict[str, Any]]:
+    traces: dict[str, dict[str, Any]] = {}
     for path in sorted((root / "runs" / "traces").glob("*.json")):
         payload = _read_json_object(path, findings)
         if payload is None:
@@ -433,7 +497,14 @@ def _trace_prompt_hashes_by_purpose(root: Path, findings: list[str]) -> dict[str
         prompt_sha256 = trace_input.get("prompt_sha256")
         if not isinstance(prompt_sha256, str) or not prompt_sha256:
             continue
-        traces.setdefault(purpose, set()).add(prompt_sha256)
+        trace_metadata = traces.setdefault(
+            purpose,
+            {"prompt_hashes": set(), "model_configs": []},
+        )
+        trace_metadata["prompt_hashes"].add(prompt_sha256)
+        model_config = payload.get("model_config")
+        if isinstance(model_config, dict):
+            trace_metadata["model_configs"].append(model_config)
     return traces
 
 

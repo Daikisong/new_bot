@@ -308,6 +308,13 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["trade_date"] == "2030-01-10"
     assert saved_manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
+    assert saved_manifest["model_config"] == {
+        "analysis_mode": "exhaustive",
+        "configured_provider": "mock",
+        "max_concurrency": 4,
+        "provider_class": "DeterministicMockLLMProvider",
+        "shard_episode_count": 20,
+    }
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]
@@ -378,6 +385,12 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         for trace in traces
         if "prompt_sha256" in trace["input"]
     }
+    trace_model_config_by_purpose = {
+        trace["purpose"]: trace["model_config"]
+        for trace in traces
+        if trace["purpose"]
+        in {"daily_blind_analysis", "red_team_candidate_review", "final_synthesis"}
+    }
     assert saved_manifest["prompt_hashes"]["blind_analysis"] == prompt_hash_by_purpose[
         "daily_blind_analysis"
     ]
@@ -387,6 +400,10 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["prompt_hashes"]["final_synthesis"] == prompt_hash_by_purpose[
         "final_synthesis"
     ]
+    assert all(
+        config == {key: value for key, value in saved_manifest["model_config"].items() if key != "analysis_mode"}
+        for config in trace_model_config_by_purpose.values()
+    )
     red_team_path = tmp_path / analysis.context_manifest.red_team_artifacts[0]
     red_team = read_json(red_team_path)
     assert red_team["schema_version"] == "nslab.red_team_artifact.v1"
