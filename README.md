@@ -205,13 +205,15 @@ set NSLAB_STOCK_WEB_CACHE_PATH=data/cache/stock-web
 set NSLAB_STOCK_WEB_REMOTE_URL=https://github.com/Songdaiki/stock-web.git
 ```
 
-The adapter reads `atlas/manifest.json` and `atlas/schema.json`, then uses:
+The adapter reads `atlas/manifest.json` and `atlas/schema.json`, then uses the
+configured shard roots such as:
 
 ```text
 atlas/ohlcv_tradable_by_symbol_year/{prefix}/{code}/{year}.csv
 ```
 
-It expects the stock-web shard columns:
+It recognizes the standard stock-web short columns and schema-declared aliases for
+the same fields:
 
 ```text
 d,o,h,l,c,v,a,mc,s,m

@@ -136,6 +136,68 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     assert universe["999999"].one_price_upper_limit is True
 
 
+def test_stock_web_uses_schema_column_aliases_when_csv_headers_are_not_short_codes(
+    tmp_path,
+) -> None:
+    atlas = tmp_path / "atlas"
+    shard_dir = atlas / "custom_tradable" / "111" / "111111"
+    shard_dir.mkdir(parents=True)
+    (atlas / "symbol_profiles" / "111").mkdir(parents=True)
+    (atlas / "manifest.json").write_text(
+        """
+{
+  "source_name": "stock-web-custom-schema",
+  "calibration_shard_root": "atlas/custom_tradable"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "schema.json").write_text(
+        """
+{
+  "tradable_shard_columns": {
+    "d": "trade_day",
+    "o": "open_px",
+    "h": "high_px",
+    "l": "low_px",
+    "c": "close_px",
+    "v": "trade_volume",
+    "a": "trade_amount",
+    "mc": "market_value",
+    "s": "shares_listed"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "symbol_profiles" / "111" / "111111.json").write_text(
+        '{"code":"111111","available_years":[2030]}',
+        encoding="utf-8",
+    )
+    (shard_dir / "2030.csv").write_text(
+        "\n".join(
+            [
+                "trade_day,open_px,high_px,low_px,close_px,trade_volume,trade_amount,market_value,shares_listed",
+                "2030-01-08,100,100,100,100,1,100,1000000,1000",
+                "2030-01-10,105,130,100,129,10,1290,1290000,1000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    source = StockWebPriceSource(tmp_path)
+    history = source.get_history("111111", through=date(2030, 1, 10))
+    outcome = source.get_outcome("111111", trade_date=date(2030, 1, 10))
+
+    assert [record.open for record in history] == [100.0, 105.0]
+    assert history[-1].amount == 1290.0
+    assert history[-1].market_cap == 1290000.0
+    assert history[-1].listed_shares == 1000.0
+    assert outcome.intraday_high_return_pct == pytest.approx(30.0)
+    assert outcome.upper_limit_touched is True
+
+
 def test_stock_web_cache_clones_remote_when_cache_is_missing(tmp_path) -> None:
     commands: list[tuple[list[str], Path | None]] = []
 

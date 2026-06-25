@@ -139,8 +139,9 @@ class StockWebPriceSource:
         return records
 
     def _row_to_record(self, ticker: str, row: dict[str, str]) -> PriceRecord | None:
-        lowered = {key.lower(): value for key, value in row.items()}
-        date_value = lowered.get("d") or lowered.get("date")
+        lowered = {_normalize_column_name(key): value for key, value in row.items()}
+        aliases = self._column_aliases()
+        date_value = _first_value(lowered, aliases["date"])
         if not date_value:
             return None
         try:
@@ -148,13 +149,14 @@ class StockWebPriceSource:
         except ValueError:
             return None
 
-        def number(*keys: str) -> float | None:
+        def number(field: str) -> float | None:
+            keys = aliases[field]
             for key in keys:
                 raw = lowered.get(key)
                 if raw in (None, ""):
                     continue
                 try:
-                    value = str(raw)
+                    value = str(raw).replace(",", "")
                     return float(value)
                 except ValueError:
                     return None
@@ -163,14 +165,14 @@ class StockWebPriceSource:
         return PriceRecord(
             ticker=ticker,
             trade_date=trade_day,
-            open=number("o", "open"),
-            high=number("h", "high"),
-            low=number("l", "low"),
-            close=number("c", "close"),
-            volume=number("v", "volume"),
-            amount=number("a", "amount"),
-            market_cap=number("mc", "market_cap"),
-            listed_shares=number("s", "listed_shares"),
+            open=number("open"),
+            high=number("high"),
+            low=number("low"),
+            close=number("close"),
+            volume=number("volume"),
+            amount=number("amount"),
+            market_cap=number("market_cap"),
+            listed_shares=number("listed_shares"),
         )
 
     def _ticker_shard_paths(self, ticker: str) -> list[Path]:
@@ -245,6 +247,63 @@ class StockWebPriceSource:
             if candidate.exists() and candidate not in roots:
                 roots.append(candidate)
         return roots
+
+    def _column_aliases(self) -> dict[str, list[str]]:
+        aliases = {
+            field: {_normalize_column_name(value) for value in values}
+            for field, values in DEFAULT_COLUMN_ALIASES.items()
+        }
+        atlas_schema = self.inspect_atlas_schema()
+        for key in ("tradable_shard_columns", "raw_shard_columns"):
+            column_map = atlas_schema.get(key)
+            if not isinstance(column_map, dict):
+                continue
+            for raw_key, raw_value in column_map.items():
+                canonical = _canonical_price_field(raw_key, raw_value)
+                if canonical is None:
+                    continue
+                aliases[canonical].add(_normalize_column_name(str(raw_key)))
+                aliases[canonical].add(_normalize_column_name(str(raw_value)))
+        return {field: sorted(values) for field, values in aliases.items()}
+
+
+DEFAULT_COLUMN_ALIASES: dict[str, set[str]] = {
+    "date": {"d", "date", "trade_date", "tradedate"},
+    "open": {"o", "open", "open_price", "openprice"},
+    "high": {"h", "high", "high_price", "highprice"},
+    "low": {"l", "low", "low_price", "lowprice"},
+    "close": {"c", "close", "close_price", "closeprice"},
+    "volume": {"v", "volume", "vol"},
+    "amount": {"a", "amount", "value", "trading_value"},
+    "market_cap": {"mc", "market_cap", "marketcap", "marcap"},
+    "listed_shares": {"s", "listed_shares", "listedshares", "stocks", "shares"},
+}
+
+
+def _normalize_column_name(value: str | None) -> str:
+    if value is None:
+        return ""
+    return "".join(character for character in value.strip().lower() if character.isalnum())
+
+
+def _canonical_price_field(raw_key: object, raw_value: object) -> str | None:
+    candidates = [
+        _normalize_column_name(str(raw_key)),
+        _normalize_column_name(str(raw_value)),
+    ]
+    for field, aliases in DEFAULT_COLUMN_ALIASES.items():
+        normalized_aliases = {_normalize_column_name(alias) for alias in aliases}
+        if any(candidate in normalized_aliases for candidate in candidates):
+            return field
+    return None
+
+
+def _first_value(row: dict[str, str], aliases: list[str]) -> str | None:
+    for alias in aliases:
+        value = row.get(alias)
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def _normalize_ticker(ticker: str) -> str | None:
