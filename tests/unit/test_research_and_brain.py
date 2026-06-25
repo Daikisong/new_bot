@@ -23,6 +23,7 @@ from news_scalping_lab.contracts.models import (
     BrainManifest,
     MechanismMemory,
     MemoryClaim,
+    Postmortem,
     Provenance,
     ResearchEpisode,
 )
@@ -233,8 +234,37 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
     source = tmp_path / "strict_episode.json"
+    source_episode = _batch_episode(
+        "EP-strict-source",
+        "Strict source preservation lesson.",
+    )
+    source_episode = source_episode.model_copy(
+        update={
+            "postmortem": Postmortem(summary="Strict postmortem.", provenance=[]),
+            "lessons": [
+                MemoryClaim(
+                    claim_id="CL-strict-lesson",
+                    statement="Strict imported lesson.",
+                    mechanism="strict import",
+                    scope="test",
+                    available_from=source_episode.available_from,
+                    provenance=[],
+                )
+            ],
+            "counterexamples": [
+                MemoryClaim(
+                    claim_id="CL-strict-counterexample",
+                    statement="Strict imported counterexample.",
+                    mechanism="strict import",
+                    scope="test",
+                    available_from=source_episode.available_from,
+                    provenance=[],
+                )
+            ],
+        }
+    )
     source.write_text(
-        _batch_episode("EP-strict-source", "Strict source preservation lesson.").model_dump_json(),
+        source_episode.model_dump_json(),
         encoding="utf-8",
     )
 
@@ -249,6 +279,10 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     assert preserved_raw.parent == tmp_path / "data" / "raw" / "research"
     assert strict_provenance[0].content_sha256 == file_sha256(preserved_raw)
     assert episode.blind_analysis.provenance == strict_provenance
+    assert episode.postmortem is not None
+    assert episode.postmortem.provenance == strict_provenance
+    assert episode.lessons[0].provenance == strict_provenance
+    assert episode.counterexamples[0].provenance == strict_provenance
     assert ResearchStore(tmp_path).get_episode("EP-strict-source").episode_id == (
         "EP-strict-source"
     )

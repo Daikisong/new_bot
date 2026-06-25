@@ -1436,10 +1436,19 @@ def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
                     "source_urls": [],
                 }
             ],
-            "observed_events": [],
-            "event_ticker_edges": [],
-            "lessons": [],
-            "counterexamples": [],
+            "observed_events": [{"event_id": "EVT-missing", "provenance": []}],
+            "event_ticker_edges": [{"edge_id": "EDGE-missing", "provenance": []}],
+            "postmortem": {
+                "summary": "Missing postmortem provenance.",
+                "hits": [],
+                "misses": [],
+                "false_positives": [],
+                "failure_codes": [],
+                "lessons": [],
+                "provenance": [],
+            },
+            "lessons": [{"claim_id": "CL-missing-lesson", "provenance": []}],
+            "counterexamples": [{"claim_id": "CL-missing-counterexample", "provenance": []}],
             "misses": [],
             "provenance": [
                 {
@@ -1467,6 +1476,26 @@ def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
     assert (
         "research/accepted/EP-blind.json: research episode blind prediction "
         "lacks provenance anchors: CandidateWithoutSource"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode postmortem "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode observed event 1 "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode event ticker edge 1 "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode lesson 1 "
+        "missing provenance"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-blind.json: research episode counterexample 1 "
+        "missing provenance"
     ) in result["findings"]
 
 

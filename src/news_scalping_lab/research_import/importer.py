@@ -103,11 +103,35 @@ class ResearchImporter:
             else candidate.model_copy(update={"provenance": [provenance]})
             for candidate in episode.blind_predictions
         ]
+        postmortem = episode.postmortem
+        if postmortem is not None and not postmortem.provenance:
+            postmortem = postmortem.model_copy(update={"provenance": [provenance]})
+        observed_events = [
+            item if item.provenance else item.model_copy(update={"provenance": [provenance]})
+            for item in episode.observed_events
+        ]
+        event_ticker_edges = [
+            edge if edge.provenance else edge.model_copy(update={"provenance": [provenance]})
+            for edge in episode.event_ticker_edges
+        ]
+        lessons = [
+            claim if claim.provenance else claim.model_copy(update={"provenance": [provenance]})
+            for claim in episode.lessons
+        ]
+        counterexamples = [
+            claim if claim.provenance else claim.model_copy(update={"provenance": [provenance]})
+            for claim in episode.counterexamples
+        ]
         return episode.model_copy(
             update={
                 "provenance": [*episode.provenance, provenance],
                 "blind_analysis": blind_analysis,
                 "blind_predictions": blind_predictions,
+                "postmortem": postmortem,
+                "observed_events": observed_events,
+                "event_ticker_edges": event_ticker_edges,
+                "lessons": lessons,
+                "counterexamples": counterexamples,
             }
         )
 

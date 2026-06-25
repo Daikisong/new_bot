@@ -203,6 +203,57 @@ def _check_research_episode_blind_decision_provenance(
                 f"{label}: research episode blind prediction lacks provenance anchors: "
                 f"{candidate.get('company_name')}"
             )
+    postmortem = episode.get("postmortem")
+    if postmortem is not None:
+        if not isinstance(postmortem, dict):
+            findings.append(f"{label}: research episode postmortem is not an object")
+        else:
+            _check_nested_provenance_entries(
+                root,
+                label,
+                postmortem,
+                findings,
+                kind="research episode postmortem",
+            )
+    for field_name, kind in (
+        ("observed_events", "research episode observed event"),
+        ("event_ticker_edges", "research episode event ticker edge"),
+        ("lessons", "research episode lesson"),
+        ("counterexamples", "research episode counterexample"),
+    ):
+        _check_research_episode_nested_list_provenance(
+            root,
+            label,
+            episode.get(field_name),
+            findings,
+            field_name=field_name,
+            kind=kind,
+        )
+
+
+def _check_research_episode_nested_list_provenance(
+    root: Path,
+    label: str,
+    value: Any,
+    findings: list[str],
+    *,
+    field_name: str,
+    kind: str,
+) -> None:
+    if not isinstance(value, list):
+        findings.append(f"{label}: research episode {field_name} missing")
+        return
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            findings.append(f"{label}: {kind} {index} is not an object")
+            continue
+        _check_nested_provenance_entries(
+            root,
+            label,
+            item,
+            findings,
+            kind=f"{kind} {index}",
+        )
 
 
 def _check_nested_provenance_entries(
