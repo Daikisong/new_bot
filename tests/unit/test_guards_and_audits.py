@@ -84,6 +84,7 @@ def _sector_with_provenance() -> dict[str, object]:
 def _blind_analysis_with_provenance() -> dict[str, object]:
     return {
         "summary": "Test blind analysis.",
+        "open_world_mechanisms": ["current catalyst -> open-world mechanism"],
         "provenance": _provenance("test_blind_analysis"),
     }
 
@@ -1691,6 +1692,112 @@ def test_provenance_audit_validates_candidate_expansion_artifact(
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+    retrieval_miss_manifest = {
+        **read_json(manifest_path),
+        "semantic_retrieval_episode_ids": [],
+        "semantic_retrieval_summary": {
+            "category_query_counts": {},
+            "query_count": 0,
+            "included_episode_count": 0,
+            "excluded_episode_count": 0,
+            "retrieval_zero_is_valid": True,
+        },
+    }
+    write_json(manifest_path, retrieval_miss_manifest)
+    empty_retrieval_miss_prediction = {
+        **prediction,
+        "blind_analysis": {
+            "summary": "Test blind analysis.",
+            "provenance": _provenance("test_blind_analysis"),
+        },
+        "dominant_sectors": [],
+        "candidates": [],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", empty_retrieval_miss_prediction)
+
+    empty_retrieval_result = audit_provenance(tmp_path)
+
+    assert not empty_retrieval_result["passed"]
+    assert (
+        "2030-01-10.json: retrieval miss missing open-world mechanisms"
+        in empty_retrieval_result["findings"]
+    )
+    assert (
+        "2030-01-10.json: retrieval miss produced no candidates"
+        in empty_retrieval_result["findings"]
+    )
+    assert (
+        "2030-01-10.json: retrieval miss produced no dominant sectors"
+        in empty_retrieval_result["findings"]
+    )
+
+    retrieval_miss_prediction = {
+        **prediction,
+        "blind_analysis": {
+            **_blind_analysis_with_provenance(),
+            "open_world_mechanisms": ["current catalyst -> open-world review"],
+        },
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", retrieval_miss_prediction)
+    retrieval_miss_payload = json.loads(json.dumps(payload))
+    retrieval_miss_payload["findings"][0]["candidate_names"] = []
+    retrieval_miss_payload["findings"][0]["sector_hypotheses"] = []
+    retrieval_miss_payload["findings"][0]["investigation_questions"] = []
+    retrieval_miss_payload["findings"][0]["requires_web_company_discovery"] = False
+    write_json(artifact_path, retrieval_miss_payload)
+    retrieval_miss_artifact_text = artifact_path.read_text(encoding="utf-8")
+    retrieval_miss_manifest["candidate_expansion_sha256"] = sha256_text(
+        retrieval_miss_artifact_text
+    )
+    retrieval_miss_manifest["candidate_expansion_summary"] = {
+        "required_paths": required_paths,
+        "path_counts": {"SINGLE_EVENT": 1, "CONTINUATION": 1},
+        "finding_count": 2,
+        "candidate_name_count": 1,
+        "requires_web_company_discovery_count": 0,
+        "continuation_d_minus_one_only_verified": True,
+    }
+    write_json(manifest_path, retrieval_miss_manifest)
+
+    retrieval_miss_artifact_result = audit_provenance(tmp_path)
+
+    assert not retrieval_miss_artifact_result["passed"]
+    retrieval_findings = retrieval_miss_artifact_result["findings"]
+    assert (
+        "2030-01-10.json: retrieval miss missing web company discovery plan"
+        in retrieval_findings
+    )
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "retrieval miss candidate_names empty"
+    ) in retrieval_findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "retrieval miss sector_hypotheses empty"
+    ) in retrieval_findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "retrieval miss investigation_questions empty"
+    ) in retrieval_findings
+    assert (
+        "2030-01-10.json: context manifest candidate_expansion:1 "
+        "retrieval miss web discovery missing"
+    ) in retrieval_findings
+
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    write_json(artifact_path, payload)
+    write_json(manifest_path, read_json(manifest_path) | {
+        "candidate_expansion_sha256": sha256_text(artifact_text),
+        "candidate_expansion_summary": {
+            "required_paths": required_paths,
+            "path_counts": {"SINGLE_EVENT": 1, "CONTINUATION": 1},
+            "finding_count": 2,
+            "candidate_name_count": 2,
+            "requires_web_company_discovery_count": 1,
+            "continuation_d_minus_one_only_verified": True,
+        },
+    })
 
     bad_payload = {
         **payload,

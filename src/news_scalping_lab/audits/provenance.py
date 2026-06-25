@@ -150,6 +150,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
+            _check_retrieval_miss_open_world_outputs(path, prediction, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
             _check_manifest_news_input(root, path, manifest, findings)
             _check_prompt_hash_traces(root, path, prompt_hashes, manifest, findings)
@@ -2672,6 +2673,56 @@ def _check_manifest_output_artifacts(
     _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
+def _check_retrieval_miss_open_world_outputs(
+    prediction_path: Path,
+    prediction: dict[str, Any],
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if not _manifest_has_semantic_retrieval_miss(manifest):
+        return
+    blind_analysis = prediction.get("blind_analysis")
+    mechanisms = (
+        _string_list(blind_analysis.get("open_world_mechanisms"))
+        if isinstance(blind_analysis, dict)
+        else []
+    )
+    if not mechanisms:
+        findings.append(
+            f"{prediction_path.name}: retrieval miss missing open-world mechanisms"
+        )
+    candidates = prediction.get("candidates")
+    if not isinstance(candidates, list) or not any(
+        isinstance(candidate, dict) for candidate in candidates
+    ):
+        findings.append(f"{prediction_path.name}: retrieval miss produced no candidates")
+    sectors = prediction.get("dominant_sectors")
+    if not isinstance(sectors, list) or not any(isinstance(sector, dict) for sector in sectors):
+        findings.append(
+            f"{prediction_path.name}: retrieval miss produced no dominant sectors"
+        )
+    candidate_expansion_count = _non_bool_int(manifest.get("candidate_expansion_count"))
+    if candidate_expansion_count is not None and candidate_expansion_count < 1:
+        findings.append(
+            f"{prediction_path.name}: retrieval miss produced no candidate expansion"
+        )
+    summary = manifest.get("candidate_expansion_summary")
+    if not isinstance(summary, dict):
+        return
+    candidate_name_count = _non_bool_int(summary.get("candidate_name_count"))
+    if candidate_name_count is not None and candidate_name_count < 1:
+        findings.append(
+            f"{prediction_path.name}: retrieval miss candidate expansion has no candidates"
+        )
+    web_discovery_count = _non_bool_int(
+        summary.get("requires_web_company_discovery_count")
+    )
+    if web_discovery_count is not None and web_discovery_count < 1:
+        findings.append(
+            f"{prediction_path.name}: retrieval miss missing web company discovery plan"
+        )
+
+
 def _check_manifest_jsonl_artifact(
     root: Path,
     prediction_path: Path,
@@ -3304,6 +3355,15 @@ def _check_semantic_retrieval_artifact_summary(
         _check_semantic_retrieval_row(prediction_path, index, row, findings)
 
 
+def _manifest_has_semantic_retrieval_miss(manifest: dict[str, Any]) -> bool:
+    summary = manifest.get("semantic_retrieval_summary")
+    return (
+        isinstance(summary, dict)
+        and summary.get("retrieval_zero_is_valid") is True
+        and _string_list(manifest.get("semantic_retrieval_episode_ids")) == []
+    )
+
+
 def _check_semantic_retrieval_row(
     prediction_path: Path,
     index: int,
@@ -3499,6 +3559,12 @@ def _check_candidate_expansion_counts(
         )
     for index, row in enumerate(findings_rows, start=1):
         _check_candidate_expansion_row(prediction_path, index, row, findings)
+    if _manifest_has_semantic_retrieval_miss(manifest):
+        _check_candidate_expansion_retrieval_miss_rows(
+            prediction_path,
+            findings_rows,
+            findings,
+        )
 
 
 def _check_candidate_expansion_row(
@@ -3538,6 +3604,28 @@ def _check_candidate_expansion_row(
             f"{prediction_path.name}: context manifest candidate_expansion:{index} "
             "d_minus_one_market_data_only invalid"
         )
+
+
+def _check_candidate_expansion_retrieval_miss_rows(
+    prediction_path: Path,
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    for index, row in enumerate(rows, start=1):
+        for field in ("candidate_names", "sector_hypotheses", "investigation_questions"):
+            if not _string_list(row.get(field)):
+                findings.append(
+                    f"{prediction_path.name}: context manifest "
+                    f"candidate_expansion:{index} retrieval miss {field} empty"
+                )
+        path = row.get("path")
+        if path in {"SINGLE_EVENT", "THEME_FORMATION", "BENEFICIARY_DISCOVERY"} and (
+            row.get("requires_web_company_discovery") is not True
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest candidate_expansion:{index} "
+                "retrieval miss web discovery missing"
+            )
 
 
 def _check_candidate_web_check_artifacts(
