@@ -322,6 +322,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["trade_date"] == "2030-01-10"
     assert saved_manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
+    assert saved_manifest["as_of"] == "2030-01-10T08:59:59+09:00"
+    assert saved_manifest["price_snapshot"]["as_of"] == "2030-01-10T08:59:59+09:00"
     assert saved_manifest["news_file"] == "news.csv"
     assert saved_manifest["news_sha256"] == file_sha256(csv_path)
     assert saved_manifest["news_row_count"] == 2
@@ -1135,6 +1137,9 @@ async def test_blind_analyze_does_not_request_d_day_outcomes(tmp_path) -> None:
     assert analysis.context_manifest.blind_current_price_access_count == 0
     assert analysis.context_manifest.no_d_outcome_exposed is True
     assert analysis.context_manifest.price_snapshot.source_name == "outcome-trap"
+    assert analysis.context_manifest.price_snapshot.as_of == datetime(
+        2030, 1, 10, 8, 59, 59, tzinfo=KST
+    )
     assert analysis.context_manifest.price_snapshot.allowed_through == date(2030, 1, 9)
 
 

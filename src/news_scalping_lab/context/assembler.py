@@ -97,6 +97,7 @@ class ContextAssembler:
             mode=mode,
             trade_date=trade_date,
             cutoff_at=cutoff_at,
+            as_of=cutoff_at,
             brain_version=brain_context.brain_version,
             brain_files=list(brain_context.brain_file_hashes.keys()),
             brain_file_hashes=brain_context.brain_file_hashes,
@@ -113,6 +114,7 @@ class ContextAssembler:
             web_sources=[],
             price_snapshot=PriceSnapshot(
                 source_name="blind-guarded",
+                as_of=cutoff_at,
                 allowed_through=date.fromordinal(trade_date.toordinal() - 1),
             ),
             llm_model_config={"provider": "mock-compatible", "mode": mode},

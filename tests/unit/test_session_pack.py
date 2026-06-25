@@ -95,6 +95,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     assert manifest["blocked"] is True
     assert manifest["accepted_episode_count"] == 4
     assert manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
+    assert manifest["as_of"] == "2030-01-10T08:59:59+09:00"
     assert manifest["available_episode_count"] == 2
     assert manifest["included_episode_ids"] == []
     assert manifest["brain_version"].startswith("brain-asof-")

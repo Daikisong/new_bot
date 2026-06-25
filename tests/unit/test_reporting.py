@@ -116,6 +116,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         mode="exhaustive",
         trade_date=trade_day,
         cutoff_at=cutoff,
+        as_of=cutoff,
         brain_version="brain-report",
         accepted_episode_count=2,
         swept_episode_count=2,
@@ -148,7 +149,11 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         excluded_candidate_web_check_sha256="excluded-candidate-web-sha",
         excluded_candidate_web_check_count=1,
         excluded_candidate_web_source_ids=["WEB-CANDIDATE-EXCLUDED"],
-        price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
+        price_snapshot=PriceSnapshot(
+            source_name="mock",
+            as_of=cutoff,
+            allowed_through=date(2030, 1, 9),
+        ),
     )
 
     report = render_preopen_report(prediction, manifest)

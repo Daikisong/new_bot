@@ -37,10 +37,19 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         manifest = read_json(path)
         manifest_trade_date = _manifest_trade_date(manifest, fallback=trade_date)
         manifest_cutoff_at = _manifest_cutoff_at(manifest)
+        manifest_as_of = _manifest_as_of(manifest)
         if manifest_trade_date is None:
             findings.append(f"{manifest_name}: missing trade_date")
         if manifest_cutoff_at is None:
             findings.append(f"{manifest_name}: missing cutoff_at")
+        if _requires_as_of(manifest) and manifest_as_of is None:
+            findings.append(f"{manifest_name}: missing as_of")
+        if (
+            manifest_as_of is not None
+            and manifest_cutoff_at is not None
+            and manifest_as_of > manifest_cutoff_at
+        ):
+            findings.append(f"{manifest_name}: as_of is after cutoff_at")
         price_snapshot = manifest.get("price_snapshot", {})
         allowed = price_snapshot.get("allowed_through")
         if (
@@ -114,6 +123,23 @@ def _manifest_cutoff_at(manifest: dict[object, object]) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+def _manifest_as_of(manifest: dict[object, object]) -> datetime | None:
+    raw = manifest.get("as_of")
+    if isinstance(raw, str):
+        try:
+            return parse_datetime(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _requires_as_of(manifest: dict[object, object]) -> bool:
+    return manifest.get("schema_version") in {
+        "nslab.context_manifest.v1",
+        "nslab.session_pack_manifest.v1",
+    }
 
 
 def _accepted_episode_available_from(root: Path) -> dict[str, datetime]:

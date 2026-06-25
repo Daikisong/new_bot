@@ -39,6 +39,7 @@
   "continuation_analysis_status": "LIMITED_OR_UNAVAILABLE",
   "counterexample_episode_ids": [],
   "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "as_of": "2026-06-24T08:59:59+09:00",
   "errors": [],
   "excluded_retrieved_episode_ids": [
     "EP-5d101eb64102"
@@ -57,7 +58,7 @@
   "phase_state_sha256": "293fab64c341ed16767e9fa76d598007216a52040f0904d9c0bce6d0c501d788",
   "price_snapshot": {
     "allowed_through": "2026-06-23",
-    "as_of": null,
+    "as_of": "2026-06-24T08:59:59+09:00",
     "notes": [],
     "source_name": "mock-price",
     "source_ref": null

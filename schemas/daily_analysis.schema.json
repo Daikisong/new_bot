@@ -287,6 +287,11 @@
           "title": "Accepted Episode Count",
           "type": "integer"
         },
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
         "blind_artifact_sha256": {
           "anyOf": [
             {
@@ -880,6 +885,7 @@
         "mode",
         "trade_date",
         "cutoff_at",
+        "as_of",
         "accepted_episode_count",
         "swept_episode_count",
         "price_snapshot"

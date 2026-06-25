@@ -367,6 +367,7 @@ class ContextManifest(StrictModel):
     mode: str
     trade_date: date
     cutoff_at: datetime
+    as_of: datetime
     news_file: str | None = None
     news_sha256: str | None = None
     news_row_count: int = 0

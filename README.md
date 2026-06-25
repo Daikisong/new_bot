@@ -102,6 +102,9 @@ recorded in the manifest and source ledger. Price repositories and D-day outcome
 remain unavailable during BLIND in both modes.
 The context manifest records the LLM provider/model settings used for the run, and
 `nslab audit provenance` cross-checks those settings against persisted LLM traces.
+It also records `trade_date`, `cutoff_at`, and the execution `as_of` timestamp used
+to filter time-available evidence; `nslab audit lookahead` fails schema-versioned
+manifests that omit `as_of` or set it after the cutoff.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates

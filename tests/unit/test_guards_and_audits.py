@@ -1239,6 +1239,7 @@ def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> N
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-missing-time.json",
         {
+            "schema_version": "nslab.context_manifest.v1",
             "run_id": "RUN-missing-time",
             "mode": "brain",
             "price_snapshot": {"allowed_through": "2030-01-09"},
@@ -1250,6 +1251,28 @@ def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> N
     assert not result["passed"]
     assert "RUN-missing-time.json: missing trade_date" in result["findings"]
     assert "RUN-missing-time.json: missing cutoff_at" in result["findings"]
+    assert "RUN-missing-time.json: missing as_of" in result["findings"]
+
+
+def test_lookahead_audit_flags_manifest_as_of_after_cutoff(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-as-of-leak.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-as-of-leak",
+            "mode": "brain",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T09:00:00+09:00",
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert "RUN-as-of-leak.json: as_of is after cutoff_at" in result["findings"]
 
 
 def test_lookahead_audit_flags_news_only_blind_protocol_violations(tmp_path: Path) -> None:
@@ -1704,6 +1727,7 @@ def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> No
             "schema_version": "nslab.session_pack_manifest.v1",
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
             "mode": "brain",
             "brain_files": ["brain/current/00_world_model.md"],
             "shard_brain_files": [],
@@ -1745,6 +1769,7 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
             "schema_version": "nslab.session_pack_manifest.v1",
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
             "mode": "brain",
             "included_company_memory_files": ["memory/company_memory/CM-future.json"],
             "included_market_context_files": ["memory/market_memory/claims.jsonl#L1"],
@@ -1784,6 +1809,7 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
             "schema_version": "nslab.session_pack_manifest.v1",
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
             "mode": "brain",
             "pack_file_hashes": pack_file_hashes,
             "pack_sha256": sha256_text(
@@ -1831,6 +1857,7 @@ def test_lookahead_audit_checks_daily_manifest_company_memory_refs(tmp_path: Pat
             "mode": "brain",
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
             "included_company_memory_files": ["memory/company_memory/CM-future.json"],
         },
     )
@@ -1862,6 +1889,7 @@ def test_lookahead_audit_checks_daily_manifest_market_memory_refs(tmp_path: Path
             "mode": "brain",
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
             "included_market_context_files": ["memory/market_memory/claims.jsonl#L1"],
         },
     )

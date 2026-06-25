@@ -99,6 +99,7 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         mode="exhaustive",
         trade_date=trade_day,
         cutoff_at=cutoff,
+        as_of=cutoff,
         brain_version="brain-ui",
         accepted_episode_count=2,
         swept_episode_count=2,
@@ -116,7 +117,11 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         excluded_candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-ui/excluded_candidate_web_checks.jsonl"
         ),
-        price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
+        price_snapshot=PriceSnapshot(
+            source_name="mock",
+            as_of=cutoff,
+            allowed_through=date(2030, 1, 9),
+        ),
     )
     sweep_dir = tmp_path / "runs" / "checkpoints" / "memory_sweep" / "RUN-ui"
     sweep_dir.mkdir(parents=True)
