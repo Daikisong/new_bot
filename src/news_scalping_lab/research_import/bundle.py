@@ -96,6 +96,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError("phase_state.json is not linked to blind_seal_receipt")
     if not parsed.validation["id_reference_integrity_verified"]:
         raise BundleImportError("bundle ID reference integrity check failed")
+    if not parsed.validation["manifest_validation_self_consistent_verified"]:
+        raise BundleImportError(
+            "bundle_manifest.json validation does not match recomputed validation"
+        )
     if "research_episode.json" not in parsed.json_blocks:
         raise BundleImportError("bundle is missing research_episode.json")
     try:
@@ -193,6 +197,9 @@ def parse_bundle(path: Path) -> BundleParseResult:
             jsonl_blocks,
         ),
     }
+    validation["manifest_validation_self_consistent_verified"] = (
+        _verify_manifest_validation_self_consistency(json_blocks, validation)
+    )
     return BundleParseResult(
         blocks=blocks,
         json_blocks=json_blocks,
@@ -500,6 +507,25 @@ def _verify_phase_state_receipt_link(json_blocks: dict[str, Any]) -> bool:
     return not (
         isinstance(manifest_trade_date, str)
         and phase_state.get("trade_date") != manifest_trade_date
+    )
+
+
+def _verify_manifest_validation_self_consistency(
+    json_blocks: dict[str, Any],
+    recomputed_validation: dict[str, bool],
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return False
+    manifest_validation = manifest.get("validation")
+    if not isinstance(manifest_validation, dict):
+        return False
+    for key, recomputed in recomputed_validation.items():
+        if manifest_validation.get(key) is not recomputed:
+            return False
+    self_key = "manifest_validation_self_consistent_verified"
+    return not (
+        self_key in manifest_validation and manifest_validation[self_key] is not True
     )
 
 

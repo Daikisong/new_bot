@@ -2604,6 +2604,7 @@ Excluded after-cutoff web source ids:
     "id_reference_integrity_verified": true,
     "json_valid": true,
     "jsonl_valid": true,
+    "manifest_validation_self_consistent_verified": true,
     "markers_complete": true,
     "phase_state_hash_verified": true,
     "phase_state_receipt_link_verified": true,

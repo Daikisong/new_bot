@@ -67,6 +67,7 @@ def _bundle_text(
     blind_current_price_access_count: int = 0,
     no_d_outcome_exposed: bool = True,
     source_ledger_entry_count: int | None = None,
+    manifest_validation_overrides: dict[str, bool] | None = None,
 ) -> str:
     blind = BlindPrediction(
         prediction_id="BP-bundle-20300110",
@@ -136,6 +137,25 @@ def _bundle_text(
         "blind_seal_receipt_sha256": receipt_sha,
     }
     phase_state_json = _write_json_text(phase_state)
+    manifest_validation = {
+        "markers_complete": True,
+        "json_valid": True,
+        "jsonl_valid": True,
+        "blind_hash_verified": True,
+        "blind_execution_guard_verified": True,
+        "row_disposition_hash_verified": True,
+        "row_disposition_coverage_verified": True,
+        "source_ledger_hash_verified": True,
+        "source_ledger_entry_count_verified": True,
+        "research_episode_hash_verified": True,
+        "brain_delta_hash_verified": True,
+        "blind_seal_receipt_hash_verified": True,
+        "phase_state_hash_verified": True,
+        "phase_state_receipt_link_verified": True,
+        "id_reference_integrity_verified": True,
+        "manifest_validation_self_consistent_verified": True,
+    }
+    manifest_validation.update(manifest_validation_overrides or {})
     manifest = {
         "schema_version": "nslab.bundle_manifest.v1",
         "run_id": "RUN-bundle-test",
@@ -164,6 +184,7 @@ def _bundle_text(
             else receipt_sha
         ),
         "phase_state_sha256": "0" * 64 if tamper_phase_hash else sha256_text(phase_state_json),
+        "validation": manifest_validation,
     }
     return f"""---
 schema_version: nslab.research_bundle.v1
@@ -243,6 +264,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["phase_state_hash_verified"]
     assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
+    assert parsed.validation["manifest_validation_self_consistent_verified"]
     assert parsed.jsonl_blocks["row_disposition.jsonl"][0]["row_number"] == 1
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "memory_claim"
     assert imported.episode_id == episode.episode_id
@@ -428,6 +450,23 @@ def test_bundle_import_rejects_invalid_id_references(tmp_path) -> None:
 
     assert not parsed.validation["id_reference_integrity_verified"]
     with pytest.raises(BundleImportError, match="ID reference integrity"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_manifest_validation_mismatch(tmp_path) -> None:
+    source = tmp_path / "bad_manifest_validation_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            manifest_validation_overrides={"blind_hash_verified": False},
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["manifest_validation_self_consistent_verified"]
+    with pytest.raises(BundleImportError, match="validation does not match"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
