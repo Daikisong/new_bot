@@ -3443,6 +3443,28 @@ def _check_final_synthesis_embedded_artifacts(
     context_payload: dict[str, Any],
     findings: list[str],
 ) -> None:
+    event_clusters = _read_optional_manifest_jsonl_rows(
+        root,
+        manifest.get("event_cluster_artifact"),
+    )
+    if event_clusters is not None and context_payload.get("event_clusters") != event_clusters:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context event_clusters mismatch"
+        )
+
+    semantic_retrieval_rows = _read_optional_manifest_jsonl_rows(
+        root,
+        manifest.get("semantic_retrieval_artifact"),
+    )
+    if semantic_retrieval_rows is not None:
+        _check_final_synthesis_semantic_retrieval_context(
+            prediction_path,
+            manifest,
+            context_payload,
+            semantic_retrieval_rows,
+            findings,
+        )
+
     candidate_verification = _read_optional_manifest_object(
         root,
         manifest.get("candidate_verification_artifact"),
@@ -3521,6 +3543,61 @@ def _read_optional_manifest_object(root: Path, artifact_ref: object) -> dict[str
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _read_optional_manifest_jsonl_rows(
+    root: Path,
+    artifact_ref: object,
+) -> list[dict[str, Any]] | None:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return None
+    artifact_path = _resolve_manifest_path(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = artifact_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(row, dict):
+            return None
+        rows.append(row)
+    return rows
+
+
+def _check_final_synthesis_semantic_retrieval_context(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    semantic_retrieval_rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    context = context_payload.get("additional_semantic_retrieval")
+    if not isinstance(context, dict):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "additional_semantic_retrieval mismatch"
+        )
+        return
+    expected_fields = {
+        "plan_artifact": manifest.get("semantic_retrieval_plan_artifact"),
+        "artifact": manifest.get("semantic_retrieval_artifact"),
+        "summary": manifest.get("semantic_retrieval_summary"),
+        "rows": semantic_retrieval_rows,
+        "excluded_episode_ids": manifest.get("excluded_semantic_retrieval_episode_ids"),
+    }
+    if any(context.get(field) != expected for field, expected in expected_fields.items()):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "additional_semantic_retrieval mismatch"
+        )
 
 
 def _read_candidate_web_check_context_rows(

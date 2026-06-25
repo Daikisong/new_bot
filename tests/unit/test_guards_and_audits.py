@@ -2097,6 +2097,73 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     write_json(run_prediction_path, prediction)
     run_report_path.write_text(report_text, encoding="utf-8")
 
+    event_cluster = {
+        "schema_version": "nslab.news_event_cluster.v1",
+        "run_id": "RUN-linked",
+        "cluster_id": "EVCL-1",
+        "cluster_index": 1,
+        "cluster_method": "exact_test_v1",
+        "row_numbers": [1],
+        "event_ids": ["EVT-1"],
+        "source_ids": ["SRC-1"],
+        "row_count": 1,
+        "exact_duplicate_count": 0,
+    }
+    event_cluster_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "event_clusters"
+        / "RUN-linked"
+        / "event_clusters.jsonl"
+    )
+    event_cluster_text = canonical_json(event_cluster) + "\n"
+    event_cluster_path.parent.mkdir(parents=True)
+    event_cluster_path.write_text(event_cluster_text, encoding="utf-8")
+
+    semantic_plan = {
+        "schema_version": "nslab.semantic_retrieval_plan.v1",
+        "run_id": "RUN-linked",
+        "prompt_sha256": "semantic-plan-hash",
+        "required_categories": ["positive_analogs"],
+        "queries": [
+            {
+                "category": "positive_analogs",
+                "query": "positive structural analog",
+                "rationale": "positive cases",
+            }
+        ],
+    }
+    semantic_row = {
+        "schema_version": "nslab.semantic_retrieval_result.v1",
+        "run_id": "RUN-linked",
+        "query_index": 1,
+        "category": "positive_analogs",
+        "query": "positive structural analog",
+        "query_sha256": sha256_text("positive structural analog"),
+        "included_episode_ids": [],
+        "excluded_episode_ids": [],
+        "result_count": 0,
+        "excluded_count": 0,
+    }
+    semantic_summary = {
+        "required_categories": ["positive_analogs"],
+        "category_query_counts": {"positive_analogs": 1},
+        "query_count": 1,
+        "included_episode_count": 0,
+        "excluded_episode_count": 0,
+        "retrieval_zero_is_valid": True,
+    }
+    semantic_dir = (
+        tmp_path / "runs" / "checkpoints" / "semantic_retrieval" / "RUN-linked"
+    )
+    semantic_plan_path = semantic_dir / "semantic_retrieval_plan.json"
+    semantic_path = semantic_dir / "semantic_retrieval.jsonl"
+    semantic_dir.mkdir(parents=True)
+    write_json(semantic_plan_path, semantic_plan)
+    semantic_text = canonical_json(semantic_row) + "\n"
+    semantic_path.write_text(semantic_text, encoding="utf-8")
+
     candidate_web_check = {
         "schema_version": "nslab.candidate_web_check.v1",
         "run_id": "RUN-linked",
@@ -2281,6 +2348,15 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     final_payload = {
         "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
         "current_news": ["pre-cutoff news"],
+        "event_clusters": [event_cluster],
+        "additional_semantic_retrieval": {
+            "plan_artifact": semantic_plan_path.relative_to(tmp_path).as_posix(),
+            "artifact": semantic_path.relative_to(tmp_path).as_posix(),
+            "summary": semantic_summary,
+            "rows": [semantic_row],
+            "episodes": [],
+            "excluded_episode_ids": [],
+        },
         "candidate_research": {"candidates": prediction["candidates"]},
         "news_novelty_review": news_novelty_review,
         "open_world_candidate_expansion": candidate_expansion,
@@ -2323,6 +2399,7 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "blind_artifact_sha256": prediction["blind_artifact_sha256"],
             "prompt_hashes": {
                 "blind_analysis": "blind-hash",
+                "semantic_retrieval_plan": "semantic-plan-hash",
                 "news_novelty_review": "novelty-hash",
                 "candidate_expansion": "candidate-expansion-hash",
                 "red_team_candidate_review": "red-team-hash",
@@ -2334,6 +2411,32 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "prediction_sha256": file_sha256(run_prediction_path),
             "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
             "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "event_cluster_artifact": event_cluster_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "event_cluster_sha256": sha256_text(event_cluster_text),
+            "event_cluster_count": 1,
+            "event_cluster_summary": {
+                "cluster_count": 1,
+                "source_row_count": 1,
+                "exact_duplicate_count": 0,
+                "exact_duplicate_cluster_count": 0,
+                "cluster_method": "exact_test_v1",
+            },
+            "semantic_retrieval_plan_artifact": semantic_plan_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "semantic_retrieval_plan_sha256": sha256_text(
+                semantic_plan_path.read_text(encoding="utf-8")
+            ),
+            "semantic_retrieval_artifact": semantic_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "semantic_retrieval_sha256": sha256_text(semantic_text),
+            "semantic_retrieval_query_count": 1,
+            "semantic_retrieval_episode_ids": [],
+            "excluded_semantic_retrieval_episode_ids": [],
+            "semantic_retrieval_summary": semantic_summary,
             "candidate_web_check_artifact": candidate_web_path.relative_to(
                 tmp_path
             ).as_posix(),
@@ -2408,6 +2511,11 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     assert result["passed"], result["findings"]
 
     bad_payload = json.loads(canonical_json(final_payload))
+    bad_payload["event_clusters"] = []
+    bad_payload["additional_semantic_retrieval"] = {
+        **bad_payload["additional_semantic_retrieval"],
+        "rows": [],
+    }
     bad_payload["news_novelty_review"] = {
         **news_novelty_review,
         "findings": [],
@@ -2437,6 +2545,14 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
 
     assert not failed["passed"]
     findings = failed["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context event_clusters mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: final_synthesis_context "
+        "additional_semantic_retrieval mismatch"
+    ) in findings
     assert (
         "2030-01-10.json: final_synthesis_context candidate_web_checks mismatch"
         in findings
