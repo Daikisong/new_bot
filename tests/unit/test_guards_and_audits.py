@@ -10,7 +10,14 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.prices.base import BlindPriceAccessError, BlindPriceGuard
 from news_scalping_lab.prices.mock import MockPriceSource
-from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    write_json,
+)
 from news_scalping_lab.web.provider import TemporalWebGuard, WebSearchResult
 
 
@@ -249,6 +256,100 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+
+def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Path) -> None:
+    raw_path = tmp_path / "data" / "raw" / "research" / "source.md"
+    first_segment = "First sentence."
+    second_segment = "Second sentence."
+    raw_text = f"{first_segment}\n{second_segment}"
+    raw_path.parent.mkdir(parents=True)
+    raw_path.write_text(raw_text, encoding="utf-8")
+    source_hash = file_sha256(raw_path)
+    source_id = "SRC-semantic-source"
+    source_segments = [
+        {
+            "index": 1,
+            "char_start": 0,
+            "char_end": len(first_segment),
+            "text_sha256": sha256_text(first_segment),
+            "excerpt": first_segment,
+        },
+        {
+            "index": 2,
+            "char_start": len(first_segment) + 1,
+            "char_end": len(raw_text),
+            "text_sha256": sha256_text(second_segment),
+            "excerpt": second_segment,
+        },
+    ]
+    provenance = {
+        "source_id": source_id,
+        "source_type": "semantic_llm_structured_import",
+        "uri": raw_path.as_posix(),
+        "content_sha256": source_hash,
+    }
+    episode_path = tmp_path / "research" / "accepted" / "EP-semantic.json"
+    write_json(
+        episode_path,
+        {
+            "episode_id": "EP-semantic",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-10T09:00:00+09:00",
+            "research_version": "semantic-test",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "input_audit": {
+                "semantic_import": {
+                    "prompt_version": "semantic_import.v1",
+                    "source_path": raw_path.as_posix(),
+                    "source_sha256": source_hash,
+                    "source_text_sha256": sha256_text(raw_text),
+                    "source_segment_count": len(source_segments),
+                    "source_segments_sha256": sha256_text(canonical_json(source_segments)),
+                    "source_segments": source_segments,
+                    "output_field_source_ids": {
+                        "blind_analysis.summary": [source_id],
+                    },
+                }
+            },
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Imported from source.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [provenance],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [provenance],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+    assert result["checked_research_episode_files"] == 1
+
+    tampered = read_json(episode_path)
+    tampered["input_audit"]["semantic_import"]["source_segments"][0]["text_sha256"] = "0" * 64
+    write_json(episode_path, tampered)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import source_segments_sha256 mismatch"
+    ) in failed["findings"]
+    assert (
+        "research/accepted/EP-semantic.json: semantic_import segment 1 text_sha256 mismatch"
+    ) in failed["findings"]
 
 
 def test_provenance_audit_requires_blind_sector_and_candidate_provenance(tmp_path: Path) -> None:

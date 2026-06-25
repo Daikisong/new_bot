@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from news_scalping_lab.utils import canonical_json, read_json, sha256_text
+from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
+
+SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -67,11 +69,245 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(
                     f"{path.name}: candidate lacks provenance anchors: {candidate.get('company_name')}"
                 )
+    checked_research_episode_files = _check_research_episode_provenance(root, findings)
     return {
         "passed": not findings,
         "findings": findings,
         "checked_predictions": checked_predictions,
+        "checked_research_episode_files": checked_research_episode_files,
     }
+
+
+def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for path in _iter_research_episode_paths(root):
+        episode = _read_json_object(path, findings)
+        if episode is None or not _has_semantic_import_provenance(episode):
+            continue
+        checked += 1
+        _check_semantic_import_audit(root, path, episode, findings)
+    return checked
+
+
+def _iter_research_episode_paths(root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for directory in (
+        root / "research" / "episodes",
+        root / "research" / "accepted",
+        root / "research" / "rejected",
+    ):
+        paths.extend(sorted(directory.glob("*.json")))
+    return paths
+
+
+def _has_semantic_import_provenance(episode: dict[str, Any]) -> bool:
+    input_audit = episode.get("input_audit")
+    if isinstance(input_audit, dict) and "semantic_import" in input_audit:
+        return True
+    return any(
+        entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
+        for entry in _iter_provenance_entries(episode)
+    )
+
+
+def _check_semantic_import_audit(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    input_audit = episode.get("input_audit")
+    if not isinstance(input_audit, dict):
+        findings.append(f"{label}: semantic_import input_audit missing")
+        return
+    semantic = input_audit.get("semantic_import")
+    if not isinstance(semantic, dict):
+        findings.append(f"{label}: semantic_import audit missing")
+        return
+
+    provenance_entries = [
+        entry
+        for entry in _iter_provenance_entries(episode)
+        if entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
+    ]
+    if not provenance_entries:
+        findings.append(f"{label}: semantic_import provenance entry missing")
+
+    source_path = _resolve_semantic_source_path(root, label, semantic, findings)
+    source_text: str | None = None
+    source_hash: str | None = None
+    if source_path is not None and source_path.exists():
+        source_hash = file_sha256(source_path)
+        source_text = source_path.read_text(encoding="utf-8", errors="replace")
+        if semantic.get("source_sha256") != source_hash:
+            findings.append(f"{label}: semantic_import source_sha256 mismatch")
+        if semantic.get("source_text_sha256") != sha256_text(source_text):
+            findings.append(f"{label}: semantic_import source_text_sha256 mismatch")
+
+    _check_semantic_provenance_entries(root, label, semantic, source_hash, provenance_entries, findings)
+    _check_semantic_source_segments(label, semantic, source_text, findings)
+    _check_semantic_output_sources(label, episode, semantic, findings)
+
+
+def _resolve_semantic_source_path(
+    root: Path,
+    label: str,
+    semantic: dict[str, Any],
+    findings: list[str],
+) -> Path | None:
+    source_ref = semantic.get("source_path")
+    if not isinstance(source_ref, str) or not source_ref:
+        findings.append(f"{label}: semantic_import source_path missing")
+        return None
+    source_path = _resolve_project_path(root, source_ref)
+    if source_path is None:
+        findings.append(f"{label}: semantic_import source_path escapes project root")
+        return None
+    if not source_path.exists():
+        findings.append(f"{label}: semantic_import source file not found: {source_ref}")
+        return None
+    return source_path
+
+
+def _check_semantic_provenance_entries(
+    root: Path,
+    label: str,
+    semantic: dict[str, Any],
+    source_hash: str | None,
+    provenance_entries: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    source_ref = semantic.get("source_path")
+    for entry in provenance_entries:
+        if source_hash is not None and entry.get("content_sha256") != source_hash:
+            findings.append(f"{label}: semantic_import provenance content_sha256 mismatch")
+        uri = entry.get("uri")
+        if (
+            isinstance(source_ref, str)
+            and isinstance(uri, str)
+            and not _same_project_path(root, source_ref, uri)
+        ):
+            findings.append(f"{label}: semantic_import provenance uri mismatch")
+
+
+def _check_semantic_source_segments(
+    label: str,
+    semantic: dict[str, Any],
+    source_text: str | None,
+    findings: list[str],
+) -> None:
+    source_segments = semantic.get("source_segments")
+    if not isinstance(source_segments, list) or not source_segments:
+        findings.append(f"{label}: semantic_import source_segments missing")
+        return
+    if semantic.get("source_segment_count") != len(source_segments):
+        findings.append(f"{label}: semantic_import source_segment_count mismatch")
+    if semantic.get("source_segments_sha256") != sha256_text(canonical_json(source_segments)):
+        findings.append(f"{label}: semantic_import source_segments_sha256 mismatch")
+    if source_text is None:
+        return
+
+    previous_end = -1
+    for expected_index, segment in enumerate(source_segments, start=1):
+        if not isinstance(segment, dict):
+            findings.append(f"{label}: semantic_import segment {expected_index} is invalid")
+            continue
+        start = segment.get("char_start")
+        end = segment.get("char_end")
+        index = segment.get("index")
+        if index != expected_index:
+            findings.append(f"{label}: semantic_import segment {expected_index} index mismatch")
+        if (
+            not isinstance(start, int)
+            or not isinstance(end, int)
+            or start < 0
+            or end <= start
+            or end > len(source_text)
+        ):
+            findings.append(f"{label}: semantic_import segment {expected_index} span invalid")
+            continue
+        if start < previous_end:
+            findings.append(f"{label}: semantic_import segment {expected_index} overlaps previous")
+        previous_end = end
+        segment_text = source_text[start:end]
+        if segment_text != segment_text.strip():
+            findings.append(f"{label}: semantic_import segment {expected_index} span not trimmed")
+        if segment.get("text_sha256") != sha256_text(segment_text):
+            findings.append(f"{label}: semantic_import segment {expected_index} text_sha256 mismatch")
+        if segment.get("excerpt") != segment_text[:240]:
+            findings.append(f"{label}: semantic_import segment {expected_index} excerpt mismatch")
+
+
+def _check_semantic_output_sources(
+    label: str,
+    episode: dict[str, Any],
+    semantic: dict[str, Any],
+    findings: list[str],
+) -> None:
+    output_field_source_ids = semantic.get("output_field_source_ids")
+    if not isinstance(output_field_source_ids, dict) or not output_field_source_ids:
+        findings.append(f"{label}: semantic_import output_field_source_ids missing")
+        return
+    known_source_ids = {
+        entry.get("source_id")
+        for entry in _iter_provenance_entries(episode)
+        if isinstance(entry.get("source_id"), str)
+    }
+    for field_name, source_ids in output_field_source_ids.items():
+        if not isinstance(field_name, str) or not field_name:
+            findings.append(f"{label}: semantic_import output field name invalid")
+            continue
+        if not isinstance(source_ids, list) or not source_ids:
+            findings.append(f"{label}: semantic_import output field source ids invalid: {field_name}")
+            continue
+        for source_id in source_ids:
+            if not isinstance(source_id, str) or source_id not in known_source_ids:
+                findings.append(
+                    f"{label}: semantic_import output field source id unknown: {field_name}"
+                )
+
+
+def _iter_provenance_entries(value: Any) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        provenance = value.get("provenance")
+        if isinstance(provenance, list):
+            entries.extend(entry for entry in provenance if isinstance(entry, dict))
+        for child in value.values():
+            if isinstance(child, dict | list):
+                entries.extend(_iter_provenance_entries(child))
+    elif isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict | list):
+                entries.extend(_iter_provenance_entries(item))
+    return entries
+
+
+def _resolve_project_path(root: Path, path_ref: str) -> Path | None:
+    resolved_root = root.resolve()
+    path = Path(path_ref)
+    resolved_path = path.resolve() if path.is_absolute() else (root / path).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return resolved_path
+
+
+def _same_project_path(root: Path, left: str, right: str) -> bool:
+    left_path = _resolve_project_path(root, left)
+    right_path = _resolve_project_path(root, right)
+    if left_path is None or right_path is None:
+        return left == right
+    return left_path == right_path
+
+
+def _display_path(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _check_manifest_basics(

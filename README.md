@@ -63,6 +63,7 @@ Free-form semantic imports preserve the raw source under `data/raw/research/`
 and record a source-segment audit in `ResearchEpisode.input_audit.semantic_import`.
 The audit stores source hashes, non-empty segment hashes, and the episode fields
 that were derived from the preserved source provenance.
+`nslab audit provenance` verifies those source files, hashes, segments, and source IDs.
 
 ## Daily Blind Analysis
 
