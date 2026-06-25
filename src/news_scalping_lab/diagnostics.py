@@ -63,7 +63,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         else None
     )
     schema_dir = settings.path("schemas")
-    return {
+    report = {
         "project_root": settings.project_root.as_posix(),
         "providers": {
             "llm": settings.llm_provider,
@@ -120,6 +120,75 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "files": _schema_file_status(schema_dir),
         },
     }
+    report["readiness"] = _doctor_readiness(
+        report,
+        settings=settings,
+        accepted_episode_count=accepted_episode_count,
+    )
+    return report
+
+
+def _doctor_readiness(
+    report: dict[str, Any],
+    *,
+    settings: Settings,
+    accepted_episode_count: int,
+) -> dict[str, Any]:
+    findings: list[str] = []
+    api_connections = report.get("api_connections")
+    if isinstance(api_connections, dict):
+        for name, api_status in sorted(api_connections.items()):
+            if isinstance(api_status, dict) and api_status.get("status") == "missing_api_key":
+                findings.append(f"{name}: required API key is missing")
+
+    schema_files = _nested_dict(report, "schemas", "files")
+    if schema_files.get("status") != "ok":
+        findings.append("schemas: missing, invalid, or stale schema files")
+
+    stock_web = report.get("stock_web")
+    if settings.price_provider == "stock-web":
+        if not isinstance(stock_web, dict) or stock_web.get("effective_path_exists") is not True:
+            findings.append("stock_web: configured price provider has no readable path")
+        elif not isinstance(stock_web.get("schema"), dict):
+            findings.append("stock_web: atlas schema is missing or unreadable")
+
+    warehouse = report.get("warehouse")
+    if not isinstance(warehouse, dict) or warehouse.get("status") != "ok":
+        findings.append("warehouse: status is not ok")
+    else:
+        counts = warehouse.get("counts")
+        if not isinstance(counts, dict) or any(
+            not isinstance(count, int) or isinstance(count, bool)
+            for count in counts.values()
+        ):
+            findings.append("warehouse: one or more projections are missing or unreadable")
+
+    brain_coverage = _nested_dict(report, "brain", "coverage")
+    if accepted_episode_count > 0 and brain_coverage.get("status") != "complete":
+        findings.append("brain: accepted episodes are not fully covered")
+
+    vector_index = report.get("vector_index")
+    vector_status = vector_index.get("status") if isinstance(vector_index, dict) else None
+    if accepted_episode_count > 0 and vector_status != "current":
+        findings.append("vector_index: accepted episodes are not indexed by a current index")
+    elif accepted_episode_count == 0 and vector_status not in {"current", "missing"}:
+        findings.append("vector_index: empty project index is invalid or stale")
+
+    return {
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+    }
+
+
+def _nested_dict(source: dict[str, Any], *keys: str) -> dict[str, Any]:
+    current: object = source
+    for key in keys:
+        if not isinstance(current, dict):
+            return {}
+        current = current.get(key)
+    return current if isinstance(current, dict) else {}
 
 
 def _resolved_optional_path(settings: Settings, path: Path | None) -> Path | None:

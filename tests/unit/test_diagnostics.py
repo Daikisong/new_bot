@@ -56,6 +56,12 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
 
     report = build_doctor_report(settings)
 
+    assert report["readiness"] == {
+        "passed": True,
+        "status": "ready",
+        "finding_count": 0,
+        "findings": [],
+    }
     assert report["providers"]["llm"] == "openai"
     assert report["providers"]["web"] == "brave"
     assert report["llm_model"] == {
@@ -130,6 +136,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
 def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
     episode = ResearchEpisode(
         episode_id="EP-doctor-coverage",
         trade_date=date(2030, 1, 10),
@@ -150,6 +157,7 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
 
     report = build_doctor_report(settings)
 
+    assert report["readiness"]["passed"] is True
     assert report["brain"]["head"] == manifest.brain_version
     assert report["brain"]["accepted_episode_count"] == 1
     assert report["brain"]["coverage"] == {
@@ -178,6 +186,12 @@ def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:
 
     report = build_doctor_report(settings)
 
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["schemas: missing, invalid, or stale schema files"],
+    }
     schema_status = report["schemas"]["files"]
     assert schema_status["status"] == "attention"
     assert schema_status["missing_files"] == ["blind_prediction.schema.json"]
@@ -199,6 +213,7 @@ def test_doctor_report_inspects_stock_web_cache_when_no_explicit_path(tmp_path) 
         stock_web_cache_path=tmp_path / "cache" / "stock-web",
     )
     ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
     atlas = tmp_path / "cache" / "stock-web" / "atlas"
     atlas.mkdir(parents=True)
     write_json(
@@ -212,6 +227,7 @@ def test_doctor_report_inspects_stock_web_cache_when_no_explicit_path(tmp_path) 
 
     report = build_doctor_report(settings)
 
+    assert report["readiness"]["passed"] is True
     assert report["stock_web"]["path"] is None
     assert report["stock_web"]["path_exists"] is False
     assert report["stock_web"]["cache_enabled"] is True
@@ -223,3 +239,48 @@ def test_doctor_report_inspects_stock_web_cache_when_no_explicit_path(tmp_path) 
     assert report["stock_web"]["effective_path_exists"] is True
     assert report["stock_web"]["effective_path_source"] == "cache"
     assert report["stock_web"]["schema"]["source_name"] == "stock-web-cache-test"
+
+
+def test_doctor_report_readiness_flags_missing_required_api_keys(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    report = build_doctor_report(settings)
+
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 2,
+        "findings": [
+            "brave_search: required API key is missing",
+            "openai: required API key is missing",
+        ],
+    }
+
+
+def test_doctor_report_readiness_requires_stock_web_path_when_price_provider_enabled(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        project_root=tmp_path,
+        price_provider="stock-web",
+        stock_web_path=tmp_path / "missing-stock-web",
+    )
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    report = build_doctor_report(settings)
+
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["stock_web: configured price provider has no readable path"],
+    }
