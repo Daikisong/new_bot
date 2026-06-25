@@ -1088,6 +1088,113 @@ def test_provenance_audit_validates_mechanism_memory_source_hash(tmp_path: Path)
     ) in failed["findings"]
 
 
+def test_provenance_audit_validates_evaluation_episode_sources(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "runs" / "checkpoints" / "evaluations" / "EP-evaluation"
+    prediction_source = checkpoint_dir / "sealed_blind_prediction.json"
+    write_json(prediction_source, {"prediction_id": "PRED-eval"})
+    report_path = checkpoint_dir / "postmortem_report.json"
+    postmortem = {
+        "summary": "Evaluation learning from sealed blind prediction.",
+        "hits": ["HitCo"],
+        "misses": [],
+        "false_positives": [],
+        "failure_codes": ["UNKNOWN"],
+        "lessons": ["Use only after the evaluated trade date."],
+        "provenance": [],
+    }
+    eligibility = {
+        "forecast_evaluation_eligible": True,
+        "direct_supervised_cases_eligible": True,
+        "theme_supervised_cases_eligible": False,
+        "leader_pair_training_eligible": False,
+        "retrospective_memory_eligible": True,
+        "brain_eligible": True,
+        "reasons": {},
+    }
+    write_json(
+        report_path,
+        {
+            "schema_version": "nslab.evaluation.v1",
+            "trade_date": "2030-01-10",
+            "outcome_coverage_status": "PREDICTED_CANDIDATES_ONLY",
+            "postmortem": postmortem,
+            "eligibility_matrix": eligibility,
+        },
+    )
+    evaluation_provenance = {
+        "source_id": "SRC-evaluation",
+        "source_type": "evaluation_postmortem",
+        "uri": "runs/checkpoints/evaluations/EP-evaluation/postmortem_report.json",
+        "content_sha256": file_sha256(report_path),
+        "observed_at": "2030-01-11T00:00:00+09:00",
+    }
+    prediction_provenance = {
+        "source_id": "SRC-sealed",
+        "source_type": "sealed_blind_prediction",
+        "uri": "runs/checkpoints/evaluations/EP-evaluation/sealed_blind_prediction.json",
+        "content_sha256": file_sha256(prediction_source),
+        "observed_at": "2030-01-10T08:59:30+09:00",
+    }
+    episode_path = tmp_path / "research" / "episodes" / "EP-evaluation.json"
+    write_json(
+        episode_path,
+        {
+            "episode_id": "EP-evaluation",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:01:00+09:00",
+            "research_version": "evaluation-postmortem-v1",
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Sealed blind analysis.",
+                "provenance": [prediction_provenance],
+            },
+            "blind_predictions": [],
+            "outcome_labels": {},
+            "postmortem": postmortem,
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "eligibility_matrix": eligibility,
+            "outcome_coverage_status": "PREDICTED_CANDIDATES_ONLY",
+            "provenance": [prediction_provenance, evaluation_provenance],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"] is True, result["findings"]
+    assert result["checked_evaluation_episode_files"] == 1
+
+    report = read_json(report_path)
+    report["postmortem"]["summary"] = "Tampered postmortem."
+    write_json(report_path, report)
+    failed = audit_provenance(tmp_path)
+
+    assert failed["passed"] is False
+    assert (
+        "research/episodes/EP-evaluation.json: evaluation postmortem provenance 2 "
+        "content_sha256 mismatch"
+    ) in failed["findings"]
+    assert (
+        "research/episodes/EP-evaluation.json: evaluation report postmortem mismatch"
+    ) in failed["findings"]
+
+    write_json(report_path, read_json(report_path) | {"postmortem": postmortem})
+    episode = read_json(episode_path)
+    episode["available_from"] = "2030-01-10T00:00:00+09:00"
+    write_json(episode_path, episode)
+    failed_available_from = audit_provenance(tmp_path)
+
+    assert (
+        "research/episodes/EP-evaluation.json: evaluation available_from is not "
+        "next trading day"
+    ) in failed_available_from["findings"]
+
+
 def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

@@ -147,16 +147,23 @@ class Evaluator:
         eligibility_matrix: EligibilityMatrix,
         outcome_coverage_status: str,
     ) -> ResearchEpisode:
-        prediction_hash = file_sha256(prediction_path)
-        postmortem_hash = file_sha256(postmortem_path)
-        prediction_uri = relative_to_root(prediction_path, self.root)
-        postmortem_uri = relative_to_root(postmortem_path, self.root)
         episode_id = stable_id(
             "EP",
             "evaluation",
             trade_date.isoformat(),
             prediction.prediction_id,
         )
+        prediction_snapshot_path, postmortem_snapshot_path = (
+            self._write_evaluation_source_snapshots(
+                episode_id=episode_id,
+                prediction_path=prediction_path,
+                postmortem_path=postmortem_path,
+            )
+        )
+        prediction_hash = file_sha256(prediction_snapshot_path)
+        postmortem_hash = file_sha256(postmortem_snapshot_path)
+        prediction_uri = relative_to_root(prediction_snapshot_path, self.root)
+        postmortem_uri = relative_to_root(postmortem_snapshot_path, self.root)
         evaluation_provenance = Provenance(
             source_id=stable_id("SRC", postmortem_uri, postmortem_hash),
             source_type="evaluation_postmortem",
@@ -216,6 +223,20 @@ class Evaluator:
             provenance=[prediction_provenance, evaluation_provenance],
             available_from=available_from,
         )
+
+    def _write_evaluation_source_snapshots(
+        self,
+        *,
+        episode_id: str,
+        prediction_path: Path,
+        postmortem_path: Path,
+    ) -> tuple[Path, Path]:
+        snapshot_dir = self.root / "runs" / "checkpoints" / "evaluations" / episode_id
+        prediction_snapshot_path = snapshot_dir / "sealed_blind_prediction.json"
+        postmortem_snapshot_path = snapshot_dir / "postmortem_report.json"
+        write_json(prediction_snapshot_path, read_json(prediction_path))
+        write_json(postmortem_snapshot_path, read_json(postmortem_path))
+        return prediction_snapshot_path, postmortem_snapshot_path
 
 
 def _build_metrics(

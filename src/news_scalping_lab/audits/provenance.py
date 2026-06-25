@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +15,11 @@ from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.utils import (
+    KST,
     canonical_json,
     default_news_window_start,
     file_sha256,
+    next_trading_day,
     parse_datetime,
     read_json,
     sha256_text,
@@ -92,6 +94,9 @@ def audit_provenance(root: Path) -> dict[str, object]:
                     f"{path.name}: candidate lacks provenance anchors: {candidate.get('company_name')}"
                 )
     checked_research_episode_files = _check_research_episode_provenance(root, findings)
+    checked_evaluation_episode_files = _check_evaluation_episode_provenance(
+        root, findings
+    )
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
     checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
     return {
@@ -99,6 +104,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
         "findings": findings,
         "checked_predictions": checked_predictions,
         "checked_research_episode_files": checked_research_episode_files,
+        "checked_evaluation_episode_files": checked_evaluation_episode_files,
         "checked_company_memory_files": checked_company_memory_files,
         "checked_mechanism_memory_records": checked_mechanism_memory_records,
     }
@@ -114,6 +120,21 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         if _has_semantic_import_provenance(episode):
             _check_semantic_import_audit(root, path, episode, findings)
         _check_strict_import_provenance(root, path, episode, findings)
+    return checked
+
+
+def _check_evaluation_episode_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for path in _iter_research_episode_paths(root):
+        episode = _read_json_object(path, findings)
+        if episode is None or not _has_current_evaluation_postmortem_provenance(
+            episode
+        ):
+            continue
+        checked += 1
+        label = _display_path(root, path)
+        _check_evaluation_episode_sources(root, label, episode, findings)
+        _check_evaluation_episode_available_from(label, episode, findings)
     return checked
 
 
@@ -244,6 +265,123 @@ def _has_import_provenance(episode: dict[str, Any]) -> bool:
         entry.get("source_type") == STRICT_IMPORT_SOURCE_TYPE
         for entry in _iter_provenance_entries(episode)
     )
+
+
+def _has_current_evaluation_postmortem_provenance(episode: dict[str, Any]) -> bool:
+    entries = _top_level_provenance_entries(episode)
+    return any(
+        entry.get("source_type") == "evaluation_postmortem"
+        and _is_evaluation_checkpoint_uri(entry.get("uri"))
+        for entry in entries
+    ) and any(
+        entry.get("source_type") == "sealed_blind_prediction"
+        and _is_evaluation_checkpoint_uri(entry.get("uri"))
+        for entry in entries
+    )
+
+
+def _is_evaluation_checkpoint_uri(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.replace("\\", "/")
+    return "/runs/checkpoints/evaluations/" in normalized or normalized.startswith(
+        "runs/checkpoints/evaluations/"
+    )
+
+
+def _check_evaluation_episode_sources(
+    root: Path,
+    label: str,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    provenance_entries = _top_level_provenance_entries(episode)
+    source_types = {
+        entry.get("source_type")
+        for entry in provenance_entries
+        if isinstance(entry.get("source_type"), str)
+    }
+    for required_type in ("sealed_blind_prediction", "evaluation_postmortem"):
+        if required_type not in source_types:
+            findings.append(f"{label}: {required_type} provenance entry missing")
+    postmortem = episode.get("postmortem")
+    if not isinstance(postmortem, dict):
+        findings.append(f"{label}: evaluation postmortem payload missing")
+    if not isinstance(episode.get("eligibility_matrix"), dict):
+        findings.append(f"{label}: evaluation eligibility_matrix missing")
+    if not isinstance(episode.get("outcome_coverage_status"), str):
+        findings.append(f"{label}: evaluation outcome_coverage_status missing")
+    for index, entry in enumerate(provenance_entries, start=1):
+        source_type = entry.get("source_type")
+        if source_type == "evaluation_postmortem":
+            _check_memory_source(root, label, index, entry, findings, kind="evaluation postmortem")
+            _check_evaluation_report_payload(root, label, entry, episode, findings)
+        elif source_type == "sealed_blind_prediction":
+            _check_memory_source(root, label, index, entry, findings, kind="sealed blind prediction")
+
+
+def _check_evaluation_report_payload(
+    root: Path,
+    label: str,
+    entry: dict[str, Any],
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    uri = entry.get("uri")
+    if not isinstance(uri, str) or not uri or _is_external_uri(uri):
+        return
+    report_path = _resolve_project_path(root, uri)
+    if report_path is None or not report_path.exists():
+        return
+    report = _read_json_object(report_path, findings)
+    if report is None:
+        return
+    if report.get("schema_version") != "nslab.evaluation.v1":
+        findings.append(f"{label}: evaluation report schema_version invalid")
+    if report.get("trade_date") != episode.get("trade_date"):
+        findings.append(f"{label}: evaluation report trade_date mismatch")
+    if _postmortem_content(report.get("postmortem")) != _postmortem_content(
+        episode.get("postmortem")
+    ):
+        findings.append(f"{label}: evaluation report postmortem mismatch")
+    if report.get("eligibility_matrix") != episode.get("eligibility_matrix"):
+        findings.append(f"{label}: evaluation report eligibility_matrix mismatch")
+    if report.get("outcome_coverage_status") != episode.get("outcome_coverage_status"):
+        findings.append(f"{label}: evaluation report outcome_coverage_status mismatch")
+
+
+def _top_level_provenance_entries(episode: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = episode.get("provenance")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _postmortem_content(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    return {key: item for key, item in value.items() if key != "provenance"}
+
+
+def _check_evaluation_episode_available_from(
+    label: str,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    raw_trade_date = episode.get("trade_date")
+    raw_available_from = episode.get("available_from")
+    if not isinstance(raw_trade_date, str) or not isinstance(raw_available_from, str):
+        findings.append(f"{label}: evaluation available_from or trade_date missing")
+        return
+    try:
+        trade_date = date.fromisoformat(raw_trade_date)
+        available_from = parse_datetime(raw_available_from)
+    except ValueError:
+        findings.append(f"{label}: evaluation available_from or trade_date invalid")
+        return
+    expected = datetime.combine(next_trading_day(trade_date), time(0, 0, 0), tzinfo=KST)
+    if available_from.astimezone(KST) != expected:
+        findings.append(f"{label}: evaluation available_from is not next trading day")
 
 
 def _check_strict_import_provenance(

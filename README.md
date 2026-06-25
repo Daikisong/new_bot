@@ -158,6 +158,9 @@ one-price upper-limit, volume, amount, turnover, and prior-close market cap.
 Intraday-only fields remain marked unavailable when only daily bars are present.
 When the price source exposes a full D-day outcome universe, evaluation also fills UpperLimit Recall@5/10/20.
 Without that universe it leaves recall empty with an explicit unavailable reason instead of faking recall from predicted candidates only.
+Provenance audit verifies evaluation episodes against their sealed prediction and
+postmortem report source hashes stored under immutable evaluation checkpoints,
+and checks that evaluation learning is only available from the next trading day.
 
 ## Training Exports
 

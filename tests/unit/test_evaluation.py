@@ -137,10 +137,13 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
         "sealed_blind_prediction",
         "evaluation_postmortem",
     }
+    expected_source_dir = f"runs/checkpoints/evaluations/{episode.episode_id}"
     assert {item.uri for item in episode.provenance} == {
-        "predictions/2030-01-10.json",
-        "reports/2030-01-10_postmortem.json",
+        f"{expected_source_dir}/sealed_blind_prediction.json",
+        f"{expected_source_dir}/postmortem_report.json",
     }
+    assert (tmp_path / expected_source_dir / "sealed_blind_prediction.json").exists()
+    assert (tmp_path / expected_source_dir / "postmortem_report.json").exists()
 
     store.accept(episode.episode_id)
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")
