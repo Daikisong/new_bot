@@ -56,13 +56,30 @@ class ContextAssembler:
         web_queries: list[str] | None = None,
     ) -> ContextManifest:
         mode = normalize_analysis_mode(mode)
-        run_id = stable_id("RUN", trade_date.isoformat(), mode, run_seed)
+        retrieved_ids = retrieved_episode_ids or []
+        web_query_list = web_queries or []
         accepted = [
             episode
             for episode in self.store.list_accepted()
             if is_available_as_of(episode.available_from, cutoff_at)
         ]
         accepted_ids = [episode.episode_id for episode in accepted]
+        accepted_hashes = self._accepted_hashes_for(accepted_ids)
+        run_id = stable_id(
+            "RUN",
+            canonical_json(
+                {
+                    "accepted_episode_hashes": accepted_hashes,
+                    "accepted_episode_ids": accepted_ids,
+                    "cutoff_at": cutoff_at.isoformat(),
+                    "mode": mode,
+                    "retrieved_episode_ids": retrieved_ids,
+                    "run_seed": run_seed,
+                    "trade_date": trade_date.isoformat(),
+                    "web_queries": web_query_list,
+                }
+            ),
+        )
         counterexample_ids = [
             episode.episode_id for episode in accepted if episode.counterexamples
         ]
@@ -88,11 +105,11 @@ class ContextAssembler:
             accepted_episode_count=len(accepted_ids),
             swept_episode_count=len(swept_ids),
             swept_episode_ids=swept_ids,
-            retrieved_episode_ids=retrieved_episode_ids or [],
+            retrieved_episode_ids=retrieved_ids,
             counterexample_episode_ids=counterexample_ids,
             token_counts={},
             truncations=[],
-            web_queries=web_queries or [],
+            web_queries=web_query_list,
             web_sources=[],
             price_snapshot=PriceSnapshot(
                 source_name="blind-guarded",
@@ -105,6 +122,14 @@ class ContextAssembler:
         if mode == "exhaustive" and manifest.swept_episode_count != manifest.accepted_episode_count:
             manifest.errors.append("swept_episode_count must equal accepted_episode_count")
         return manifest
+
+    def _accepted_hashes_for(self, accepted_ids: list[str]) -> dict[str, str]:
+        hashes = self.store.accepted_hashes()
+        return {
+            episode_id: hashes[episode_id]
+            for episode_id in accepted_ids
+            if episode_id in hashes
+        }
 
     def _brain_context_files(
         self,

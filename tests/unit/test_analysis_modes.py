@@ -8,7 +8,9 @@ from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
+from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST
 
 
@@ -31,6 +33,45 @@ def test_context_assembler_rejects_unknown_analysis_mode(tmp_path) -> None:
             cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
             run_seed="seed",
         )
+
+
+def test_context_run_id_changes_when_available_research_changes(tmp_path) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    assembler = ContextAssembler(tmp_path)
+
+    before = assembler.assemble(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="same-news-and-model",
+    )
+
+    episode = ResearchEpisode(
+        episode_id="EP-available",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Available lesson."),
+        available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+
+    after = ContextAssembler(tmp_path).assemble(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="same-news-and-model",
+    )
+
+    assert before.run_id != after.run_id
+    assert before.accepted_episode_count == 0
+    assert after.accepted_episode_count == 1
+    assert after.swept_episode_ids == ["EP-available"]
 
 
 @pytest.mark.asyncio
