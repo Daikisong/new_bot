@@ -64,6 +64,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_row_disposition(root, manifest_name, manifest, findings)
         _check_source_ledger(root, manifest_name, manifest, findings)
         _check_web_source_artifact(root, manifest_name, manifest, findings)
+        _check_candidate_web_check_artifact(root, manifest_name, manifest, findings)
         _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
@@ -534,6 +535,148 @@ def _check_excluded_web_source_artifact(
     entry_count = manifest.get("excluded_web_source_count")
     if isinstance(entry_count, int) and entry_count != len(row_source_ids):
         findings.append(f"{manifest_name}: excluded_web_source_count mismatch")
+
+
+def _check_candidate_web_check_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    source_ids = set(_string_list(manifest.get("candidate_web_source_ids")))
+    relative_path = manifest.get("candidate_web_check_artifact")
+    if not isinstance(relative_path, str):
+        if source_ids:
+            findings.append(f"{manifest_name}: candidate_web_check_artifact missing")
+        _check_excluded_candidate_web_check_artifact(root, manifest_name, manifest, findings)
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(
+            f"{manifest_name}: candidate_web_check_artifact missing: {relative_path}"
+        )
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("candidate_web_check_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: candidate_web_check_sha256 mismatch")
+    manifest_cutoff_at = _manifest_cutoff_at(manifest)
+    row_source_ids: set[str] = set()
+    row_count = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        row_count += 1
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(f"{manifest_name}: candidate_web_check:{line_number} invalid JSON")
+            continue
+        if not isinstance(row, dict):
+            findings.append(f"{manifest_name}: candidate_web_check:{line_number} must be object")
+            continue
+        source_id = row.get("source_id")
+        if isinstance(source_id, str):
+            row_source_ids.add(source_id)
+        missing = sorted(
+            {
+                "candidate_rank",
+                "candidate_company_name",
+                "candidate_path_type",
+                "verification_focus",
+                "source_id",
+            }
+            - set(row)
+        )
+        if missing:
+            findings.append(
+                f"{manifest_name}: candidate_web_check:{line_number} missing fields: "
+                f"{', '.join(missing)}"
+            )
+        if "opened_text" in row:
+            findings.append(
+                f"{manifest_name}: candidate_web_check:{line_number} must not duplicate opened_text"
+            )
+        if row.get("available_before_cutoff") is not True or row.get("time_verified") is not True:
+            findings.append(
+                f"{manifest_name}: candidate_web_check:{line_number} is not cutoff verified"
+            )
+        raw_published_at = row.get("published_at")
+        if isinstance(raw_published_at, str) and manifest_cutoff_at is not None:
+            try:
+                published_at = parse_datetime(raw_published_at)
+            except ValueError:
+                findings.append(
+                    f"{manifest_name}: candidate_web_check:{line_number} invalid published_at"
+                )
+                continue
+            if not is_available_as_of(published_at, manifest_cutoff_at):
+                findings.append(f"{manifest_name}: candidate_web_check:{line_number} after cutoff")
+    if source_ids and source_ids != row_source_ids:
+        findings.append(f"{manifest_name}: candidate_web_source_ids do not match artifact")
+    expected_count = manifest.get("candidate_web_check_count")
+    if isinstance(expected_count, int) and expected_count != row_count:
+        findings.append(f"{manifest_name}: candidate_web_check_count mismatch")
+    _check_excluded_candidate_web_check_artifact(root, manifest_name, manifest, findings)
+
+
+def _check_excluded_candidate_web_check_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    excluded = set(_string_list(manifest.get("excluded_candidate_web_source_ids")))
+    relative_path = manifest.get("excluded_candidate_web_check_artifact")
+    if not isinstance(relative_path, str):
+        if excluded:
+            findings.append(f"{manifest_name}: excluded_candidate_web_check_artifact missing")
+        return
+    path = root / relative_path
+    if not path.exists():
+        findings.append(
+            f"{manifest_name}: excluded_candidate_web_check_artifact missing: {relative_path}"
+        )
+        return
+    text = path.read_text(encoding="utf-8")
+    expected_sha = manifest.get("excluded_candidate_web_check_sha256")
+    if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
+        findings.append(f"{manifest_name}: excluded_candidate_web_check_sha256 mismatch")
+    row_source_ids: set[str] = set()
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            findings.append(
+                f"{manifest_name}: excluded_candidate_web_check:{line_number} invalid JSON"
+            )
+            continue
+        if not isinstance(row, dict):
+            findings.append(
+                f"{manifest_name}: excluded_candidate_web_check:{line_number} must be object"
+            )
+            continue
+        source_id = row.get("source_id")
+        if isinstance(source_id, str):
+            row_source_ids.add(source_id)
+        if not isinstance(row.get("exclusion_reason"), str):
+            findings.append(
+                f"{manifest_name}: excluded_candidate_web_check:{line_number} "
+                "missing exclusion_reason"
+            )
+        if row.get("time_verified") is True or row.get("available_before_cutoff") is True:
+            findings.append(
+                f"{manifest_name}: excluded_candidate_web_check:{line_number} is cutoff verified"
+            )
+    if excluded != row_source_ids:
+        findings.append(
+            f"{manifest_name}: excluded_candidate_web_source_ids do not match artifact"
+        )
+    expected_count = manifest.get("excluded_candidate_web_check_count")
+    if isinstance(expected_count, int) and expected_count != len(row_source_ids):
+        findings.append(f"{manifest_name}: excluded_candidate_web_check_count mismatch")
 
 
 def _check_blind_seal(

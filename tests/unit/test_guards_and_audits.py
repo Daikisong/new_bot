@@ -1212,6 +1212,115 @@ def test_lookahead_audit_checks_excluded_web_source_artifact(tmp_path: Path) -> 
     assert "RUN-web.json: excluded_web_source_count mismatch" in findings
 
 
+def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    web_dir = tmp_path / "runs" / "checkpoints" / "candidate_web_checks" / "RUN-candidate"
+    web_dir.mkdir(parents=True)
+    artifact = web_dir / "candidate_web_checks.jsonl"
+    payload = (
+        canonical_json(
+            {
+                "schema_version": "nslab.candidate_web_check.v1",
+                "run_id": "RUN-candidate",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "verification_focus": ["listed_security_and_exact_ticker"],
+                "source_id": "WEB-CANDIDATE-FUTURE",
+                "query": "candidate verification",
+                "title": "future source",
+                "url": "https://example.test/future",
+                "snippet": "future",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "retrieved_at": "2030-01-10T09:31:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "time_verified": False,
+                "available_before_cutoff": False,
+                "content_sha256": "abc",
+                "opened_text": "raw opened text must not be copied",
+            }
+        )
+        + "\n"
+    )
+    artifact.write_text(payload, encoding="utf-8")
+    excluded_artifact = web_dir / "excluded_candidate_web_checks.jsonl"
+    excluded_payload = (
+        canonical_json(
+            {
+                "schema_version": "nslab.excluded_candidate_web_check.v1",
+                "run_id": "RUN-candidate",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "source_id": "WEB-CANDIDATE-EXCLUDED",
+                "query": "candidate verification",
+                "title": "excluded source",
+                "url": "https://example.test/excluded",
+                "snippet": "excluded",
+                "published_at": "2030-01-10T08:30:00+09:00",
+                "retrieved_at": "2030-01-10T08:31:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "exclusion_reason": "timestamp_verification_failed",
+                "time_verified": True,
+                "available_before_cutoff": True,
+            }
+        )
+        + "\n"
+    )
+    excluded_artifact.write_text(excluded_payload, encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-candidate.json",
+        {
+            "run_id": "RUN-candidate",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "candidate_web_source_ids": ["WEB-CANDIDATE-OTHER"],
+            "candidate_web_check_artifact": artifact.relative_to(tmp_path).as_posix(),
+            "candidate_web_check_sha256": sha256_text(payload),
+            "candidate_web_check_count": 2,
+            "excluded_candidate_web_source_ids": ["WEB-CANDIDATE-OTHER-EXCLUDED"],
+            "excluded_candidate_web_check_artifact": excluded_artifact.relative_to(
+                tmp_path
+            ).as_posix(),
+            "excluded_candidate_web_check_sha256": "bad",
+            "excluded_candidate_web_check_count": 2,
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "RUN-candidate.json: candidate_web_check:1 is not cutoff verified" in findings
+    assert "RUN-candidate.json: candidate_web_check:1 after cutoff" in findings
+    assert (
+        "RUN-candidate.json: candidate_web_check:1 must not duplicate opened_text"
+        in findings
+    )
+    assert "RUN-candidate.json: candidate_web_source_ids do not match artifact" in findings
+    assert "RUN-candidate.json: candidate_web_check_count mismatch" in findings
+    assert "RUN-candidate.json: excluded_candidate_web_check_sha256 mismatch" in findings
+    assert (
+        "RUN-candidate.json: excluded_candidate_web_check:1 is cutoff verified"
+        in findings
+    )
+    assert (
+        "RUN-candidate.json: excluded_candidate_web_source_ids do not match artifact"
+        in findings
+    )
+    assert "RUN-candidate.json: excluded_candidate_web_check_count mismatch" in findings
+
+
 def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
     artifact_dir = tmp_path / "runs" / "checkpoints" / "row_disposition" / "RUN-row"

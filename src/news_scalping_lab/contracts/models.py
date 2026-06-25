@@ -408,6 +408,14 @@ class ContextManifest(StrictModel):
     excluded_web_source_artifact: str | None = None
     excluded_web_source_sha256: str | None = None
     excluded_web_source_count: int = 0
+    candidate_web_check_artifact: str | None = None
+    candidate_web_check_sha256: str | None = None
+    candidate_web_check_count: int = 0
+    candidate_web_source_ids: list[str] = Field(default_factory=list)
+    excluded_candidate_web_check_artifact: str | None = None
+    excluded_candidate_web_check_sha256: str | None = None
+    excluded_candidate_web_source_ids: list[str] = Field(default_factory=list)
+    excluded_candidate_web_check_count: int = 0
     included_company_memory_files: list[str] = Field(default_factory=list)
     omitted_company_memory_files: list[dict[str, str]] = Field(default_factory=list)
     included_market_context_files: list[str] = Field(default_factory=list)

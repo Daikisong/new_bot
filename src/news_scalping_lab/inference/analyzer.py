@@ -214,10 +214,21 @@ class DailyAnalyzer:
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
                 "web_source_artifact": manifest.web_source_artifact,
+                "candidate_web_source_ids": manifest.candidate_web_source_ids,
+                "excluded_candidate_web_source_ids": (
+                    manifest.excluded_candidate_web_source_ids
+                ),
+                "candidate_web_check_artifact": manifest.candidate_web_check_artifact,
             },
         )
         manifest.token_counts["blind_analysis_prompt"] = blind_prompt_tokens
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
+        if web_search:
+            await self._collect_candidate_web_checks(
+                prediction=prediction,
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
         red_team = await run_red_team_pass(
             root=self.root,
             llm=self.llm,
@@ -493,6 +504,149 @@ class DailyAnalyzer:
                     }
                 )
             ),
+        }
+
+    async def _collect_candidate_web_checks(
+        self,
+        *,
+        prediction: BlindPrediction,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> None:
+        guard = TemporalWebGuard(self.web_provider)
+        rows: list[dict[str, Any]] = []
+        excluded_rows: list[dict[str, Any]] = []
+        for candidate in sorted(prediction.candidates, key=lambda item: item.rank):
+            query = self._candidate_web_check_query(candidate)
+            manifest.blind_web_search_call_count += 1
+            prior_exclusion_count = len(guard.excluded_sources)
+            for result in await guard.search(query, cutoff_at=cutoff_at):
+                rows.append(
+                    self._candidate_web_check_row(
+                        result,
+                        candidate=candidate,
+                        manifest=manifest,
+                        query=query,
+                        cutoff_at=cutoff_at,
+                        opened_text=await guard.open(result.url, cutoff_at=cutoff_at),
+                    )
+                )
+            for exclusion in guard.excluded_sources[prior_exclusion_count:]:
+                excluded_rows.append(
+                    self._excluded_candidate_web_check_row(
+                        exclusion,
+                        candidate=candidate,
+                        manifest=manifest,
+                        query=query,
+                        cutoff_at=cutoff_at,
+                    )
+                )
+        manifest.candidate_web_source_ids = _unique_preserving_order(
+            [row["source_id"] for row in rows if isinstance(row.get("source_id"), str)]
+        )
+        manifest.excluded_candidate_web_source_ids = _unique_preserving_order(
+            [*manifest.excluded_candidate_web_source_ids, *guard.excluded_source_ids]
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "candidate_web_checks"
+            / manifest.run_id
+            / "candidate_web_checks.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        manifest.candidate_web_check_artifact = artifact_relative.as_posix()
+        manifest.candidate_web_check_sha256 = sha256_text(payload)
+        manifest.candidate_web_check_count = len(rows)
+        excluded_artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "candidate_web_checks"
+            / manifest.run_id
+            / "excluded_candidate_web_checks.jsonl"
+        )
+        excluded_artifact_path = self.root / excluded_artifact_relative
+        excluded_payload = "".join(canonical_json(row) + "\n" for row in excluded_rows)
+        excluded_artifact_path.write_text(excluded_payload, encoding="utf-8")
+        manifest.excluded_candidate_web_check_artifact = (
+            excluded_artifact_relative.as_posix()
+        )
+        manifest.excluded_candidate_web_check_sha256 = sha256_text(excluded_payload)
+        manifest.excluded_candidate_web_check_count = len(excluded_rows)
+
+    def _candidate_web_check_query(self, candidate: Candidate) -> str:
+        focus = " ".join(
+            [
+                candidate.company_name,
+                candidate.ticker,
+                str(candidate.path_type),
+                candidate.thesis,
+                candidate.why_now,
+            ]
+        )
+        return (
+            "candidate verification listing ticker direct relation novelty disclosure "
+            f"D-1 absorption liquidity competing leaders {focus[:500]}"
+        )
+
+    def _candidate_web_check_row(
+        self,
+        result: WebSearchResult,
+        *,
+        candidate: Candidate,
+        manifest: ContextManifest,
+        query: str,
+        cutoff_at: datetime,
+        opened_text: str,
+    ) -> dict[str, Any]:
+        source_row = self._web_source_row(
+            result,
+            query=query,
+            cutoff_at=cutoff_at,
+            opened_text=opened_text,
+        )
+        return {
+            **source_row,
+            "schema_version": "nslab.candidate_web_check.v1",
+            "run_id": manifest.run_id,
+            "candidate_rank": candidate.rank,
+            "candidate_ticker": candidate.ticker,
+            "candidate_company_name": candidate.company_name,
+            "candidate_path_type": str(candidate.path_type),
+            "verification_focus": [
+                "listed_security_and_exact_ticker",
+                "direct_relation_to_current_news",
+                "novelty_and_recent_disclosure",
+                "D_minus_one_absorption",
+                "liquidity_and_competing_leaders",
+            ],
+        }
+
+    def _excluded_candidate_web_check_row(
+        self,
+        exclusion: WebSearchExclusion,
+        *,
+        candidate: Candidate,
+        manifest: ContextManifest,
+        query: str,
+        cutoff_at: datetime,
+    ) -> dict[str, Any]:
+        row = self._excluded_web_source_row(
+            exclusion,
+            query=query,
+            cutoff_at=cutoff_at,
+        )
+        return {
+            **row,
+            "schema_version": "nslab.excluded_candidate_web_check.v1",
+            "run_id": manifest.run_id,
+            "candidate_rank": candidate.rank,
+            "candidate_ticker": candidate.ticker,
+            "candidate_company_name": candidate.company_name,
+            "candidate_path_type": str(candidate.path_type),
         }
 
     def _write_source_ledger_artifact(
@@ -791,6 +945,7 @@ class DailyAnalyzer:
                 "negative_cases",
                 "counterexamples",
                 "candidate_research",
+                "candidate_web_checks",
                 "red_team_output",
                 "d_minus_one_market_data",
                 "company_memory",
@@ -819,6 +974,7 @@ class DailyAnalyzer:
             "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
             "counterexamples": self._read_counterexample_context(manifest),
             "candidate_research": prediction.model_dump(mode="json"),
+            "candidate_web_checks": self._read_candidate_web_check_context(manifest),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
             "company_memory": company_memory_context,
@@ -828,9 +984,10 @@ class DailyAnalyzer:
             f"{self._load_synthesis_prompt().strip()}\n"
             "Return the final BlindPrediction. Keep qualitative confidence only, "
             "preserve red-team objections in candidate counterarguments, use only "
-            "timestamp-verified web_research.sources, cutoff-safe company_memory, "
-            "and cutoff-safe market_memory. Do not use D-day prices, outcomes, "
-            "unverified web results, or cutoff-after sources during BLIND.\n"
+            "timestamp-verified web_research.sources, candidate_web_checks, "
+            "cutoff-safe company_memory, and cutoff-safe market_memory. Do not use "
+            "D-day prices, outcomes, unverified web results, or cutoff-after "
+            "sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -1163,6 +1320,40 @@ class DailyAnalyzer:
                 }
             )
         return sources
+
+    def _read_candidate_web_check_context(
+        self,
+        manifest: ContextManifest,
+    ) -> list[dict[str, Any]]:
+        if not manifest.candidate_web_check_artifact:
+            return []
+        path = self.root / manifest.candidate_web_check_artifact
+        if not path.exists() or not path.is_file():
+            return [{"path": manifest.candidate_web_check_artifact, "missing": True}]
+        checks: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            checks.append(
+                {
+                    "candidate_rank": row.get("candidate_rank"),
+                    "candidate_ticker": row.get("candidate_ticker"),
+                    "candidate_company_name": row.get("candidate_company_name"),
+                    "candidate_path_type": row.get("candidate_path_type"),
+                    "verification_focus": row.get("verification_focus"),
+                    "source_id": row.get("source_id"),
+                    "query": row.get("query"),
+                    "title": row.get("title"),
+                    "url": row.get("url"),
+                    "snippet": row.get("snippet"),
+                    "published_at": row.get("published_at"),
+                    "time_verified": row.get("time_verified"),
+                    "content_sha256": row.get("content_sha256"),
+                    "opened_text_excerpt": row.get("opened_text_excerpt"),
+                }
+            )
+        return checks
 
     def _load_synthesis_prompt(self) -> str:
         path = self.root / "prompts" / "synthesis" / "final.md"

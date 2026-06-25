@@ -109,6 +109,7 @@ class RecordingBlindLLM:
         if purpose == "final_synthesis":
             assert "red_team_output" in prompt
             assert "d_minus_one_market_data" in prompt
+            assert "candidate_web_checks" in prompt
             assert "NEWS_ONLY_STRICT_NO_PRICE_ACCESS" in prompt
             assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
@@ -455,11 +456,12 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         web_search=True,
     )
 
-    assert len(web_provider.search_calls) == len(analysis.context_manifest.web_queries)
-    assert analysis.context_manifest.blind_context_mode == "CUTOFF_SAFE_WEB_BLIND"
-    assert analysis.context_manifest.blind_web_search_call_count == len(
-        analysis.context_manifest.web_queries
+    expected_web_search_calls = len(analysis.context_manifest.web_queries) + len(
+        analysis.blind_prediction.candidates
     )
+    assert len(web_provider.search_calls) == expected_web_search_calls
+    assert analysis.context_manifest.blind_context_mode == "CUTOFF_SAFE_WEB_BLIND"
+    assert analysis.context_manifest.blind_web_search_call_count == expected_web_search_calls
     assert analysis.context_manifest.web_sources
     assert all(
         source_id.startswith("WEB-SAFE-")
@@ -475,7 +477,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
     saved_manifest = read_json(manifest_path)
     assert saved_manifest["blind_context_mode"] == "CUTOFF_SAFE_WEB_BLIND"
-    assert saved_manifest["blind_web_search_call_count"] == len(saved_manifest["web_queries"])
+    assert saved_manifest["blind_web_search_call_count"] == expected_web_search_calls
     assert saved_manifest["web_sources"] == analysis.context_manifest.web_sources
     assert saved_manifest["excluded_web_source_ids"] == (
         analysis.context_manifest.excluded_web_source_ids
@@ -486,7 +488,28 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     ]
     assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
     assert all(row["available_before_cutoff"] is True for row in web_source_rows)
-    assert all("cutoff-safe opened verification text" in row["opened_text_excerpt"] for row in web_source_rows)
+    assert all(
+        "cutoff-safe opened verification text" in row["opened_text_excerpt"]
+        for row in web_source_rows
+    )
+    candidate_check_path = tmp_path / saved_manifest["candidate_web_check_artifact"]
+    candidate_check_rows = [
+        json.loads(line)
+        for line in candidate_check_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert saved_manifest["candidate_web_check_count"] == len(candidate_check_rows)
+    assert saved_manifest["candidate_web_check_count"] == len(
+        analysis.blind_prediction.candidates
+    )
+    assert {row["source_id"] for row in candidate_check_rows} == set(
+        saved_manifest["candidate_web_source_ids"]
+    )
+    assert {row["candidate_rank"] for row in candidate_check_rows} == {
+        candidate.rank for candidate in analysis.blind_prediction.candidates
+    }
+    assert all(row["available_before_cutoff"] is True for row in candidate_check_rows)
+    assert all(row["time_verified"] is True for row in candidate_check_rows)
+    assert all("opened_text" not in row for row in candidate_check_rows)
     excluded_web_source_path = tmp_path / saved_manifest["excluded_web_source_artifact"]
     excluded_web_source_rows = [
         json.loads(line)
@@ -502,6 +525,26 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     )
     assert all(row["available_before_cutoff"] is False for row in excluded_web_source_rows)
     assert all(row["time_verified"] is False for row in excluded_web_source_rows)
+    excluded_candidate_check_path = (
+        tmp_path / saved_manifest["excluded_candidate_web_check_artifact"]
+    )
+    excluded_candidate_check_rows = [
+        json.loads(line)
+        for line in excluded_candidate_check_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert saved_manifest["excluded_candidate_web_check_count"] == len(
+        excluded_candidate_check_rows
+    )
+    assert saved_manifest["excluded_candidate_web_check_count"] == len(
+        analysis.blind_prediction.candidates
+    )
+    assert {row["source_id"] for row in excluded_candidate_check_rows} == set(
+        saved_manifest["excluded_candidate_web_source_ids"]
+    )
+    assert all(
+        row["exclusion_reason"] == "published_after_cutoff"
+        for row in excluded_candidate_check_rows
+    )
     source_ledger = (
         tmp_path / saved_manifest["source_ledger_artifact"]
     ).read_text(encoding="utf-8")
