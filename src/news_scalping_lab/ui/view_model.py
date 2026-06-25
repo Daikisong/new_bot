@@ -20,6 +20,9 @@ class ArtifactLinks:
     prediction_json: Path
     report_markdown: Path
     context_manifest_json: Path
+    source_ledger_jsonl: Path | None = None
+    candidate_web_checks_jsonl: Path | None = None
+    excluded_candidate_web_checks_jsonl: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,13 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
             prediction_json=root / analysis.prediction_path,
             report_markdown=root / analysis.report_path,
             context_manifest_json=root / "runs" / "manifests" / f"{analysis.run_id}.json",
+            source_ledger_jsonl=_optional_artifact_path(root, manifest.source_ledger_artifact),
+            candidate_web_checks_jsonl=_optional_artifact_path(
+                root, manifest.candidate_web_check_artifact
+            ),
+            excluded_candidate_web_checks_jsonl=_optional_artifact_path(
+                root, manifest.excluded_candidate_web_check_artifact
+            ),
         ),
     )
 
@@ -185,3 +195,9 @@ def _sweep_status_from_payload(artifact_path: Path, payload: dict[str, Any]) -> 
 
 def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+def _optional_artifact_path(root: Path, relative_path: str | None) -> Path | None:
+    if not relative_path:
+        return None
+    return root / relative_path

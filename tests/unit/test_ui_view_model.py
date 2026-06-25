@@ -109,6 +109,13 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
             "runs/checkpoints/memory_sweep/RUN-ui/shard_0001.json",
             "runs/checkpoints/memory_sweep/RUN-ui/missing.json",
         ],
+        source_ledger_artifact="runs/checkpoints/source_ledger/RUN-ui/source_ledger.jsonl",
+        candidate_web_check_artifact=(
+            "runs/checkpoints/candidate_web_checks/RUN-ui/candidate_web_checks.jsonl"
+        ),
+        excluded_candidate_web_check_artifact=(
+            "runs/checkpoints/candidate_web_checks/RUN-ui/excluded_candidate_web_checks.jsonl"
+        ),
         price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
     )
     sweep_dir = tmp_path / "runs" / "checkpoints" / "memory_sweep" / "RUN-ui"
@@ -182,6 +189,26 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     assert view.artifacts.prediction_json == tmp_path / "predictions" / "2030-01-10.json"
     assert view.artifacts.report_markdown == tmp_path / "reports" / "2030-01-10_preopen.md"
     assert view.artifacts.context_manifest_json == tmp_path / "runs" / "manifests" / "RUN-ui.json"
+    assert (
+        view.artifacts.source_ledger_jsonl
+        == tmp_path / "runs" / "checkpoints" / "source_ledger" / "RUN-ui" / "source_ledger.jsonl"
+    )
+    assert view.artifacts.candidate_web_checks_jsonl == (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_web_checks"
+        / "RUN-ui"
+        / "candidate_web_checks.jsonl"
+    )
+    assert view.artifacts.excluded_candidate_web_checks_jsonl == (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_web_checks"
+        / "RUN-ui"
+        / "excluded_candidate_web_checks.jsonl"
+    )
 
 
 def test_render_candidate_includes_full_evidence_and_objection_payload() -> None:

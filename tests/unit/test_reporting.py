@@ -131,7 +131,23 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
             "excluded_after_cutoff": 1,
             "coverage_ratio": 0.5,
         },
+        source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
+        source_ledger_sha256="ledger-sha",
+        source_ledger_entry_count=3,
         web_sources=["mock://source"],
+        candidate_web_check_artifact=(
+            "runs/checkpoints/candidate_web_checks/RUN-report/candidate_web_checks.jsonl"
+        ),
+        candidate_web_check_sha256="candidate-web-sha",
+        candidate_web_check_count=2,
+        candidate_web_source_ids=["WEB-CANDIDATE-1", "WEB-CANDIDATE-2"],
+        excluded_candidate_web_check_artifact=(
+            "runs/checkpoints/candidate_web_checks/RUN-report/"
+            "excluded_candidate_web_checks.jsonl"
+        ),
+        excluded_candidate_web_check_sha256="excluded-candidate-web-sha",
+        excluded_candidate_web_check_count=1,
+        excluded_candidate_web_source_ids=["WEB-CANDIDATE-EXCLUDED"],
         price_snapshot=PriceSnapshot(source_name="mock", allowed_through=date(2030, 1, 9)),
     )
 
@@ -176,6 +192,27 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         in report
     )
     assert "- Row disposition SHA256: row-sha" in report
+    assert "Source ledger:" in report
+    assert "- Artifact: runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl" in report
+    assert "- SHA256: ledger-sha" in report
+    assert "- Entries: 3" in report
+    assert "Candidate web verification:" in report
+    assert (
+        "- Artifact: runs/checkpoints/candidate_web_checks/RUN-report/"
+        "candidate_web_checks.jsonl"
+        in report
+    )
+    assert "- SHA256: candidate-web-sha" in report
+    assert "- Accepted sources: 2" in report
+    assert "- Accepted source ids: WEB-CANDIDATE-1, WEB-CANDIDATE-2" in report
+    assert (
+        "- Excluded artifact: runs/checkpoints/candidate_web_checks/RUN-report/"
+        "excluded_candidate_web_checks.jsonl"
+        in report
+    )
+    assert "- Excluded SHA256: excluded-candidate-web-sha" in report
+    assert "- Excluded sources: 1" in report
+    assert "- Excluded source ids: WEB-CANDIDATE-EXCLUDED" in report
     assert "Counterexample episode ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report

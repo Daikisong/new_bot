@@ -113,6 +113,17 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     _download_if_exists(st, "Context manifest JSON", view.artifacts.context_manifest_json)
     _download_if_exists(st, "Prediction JSON", view.artifacts.prediction_json)
     _download_if_exists(st, "Pre-open report Markdown", view.artifacts.report_markdown)
+    _download_optional(st, "Source ledger JSONL", view.artifacts.source_ledger_jsonl)
+    _download_optional(
+        st,
+        "Candidate web checks JSONL",
+        view.artifacts.candidate_web_checks_jsonl,
+    )
+    _download_optional(
+        st,
+        "Excluded candidate web checks JSONL",
+        view.artifacts.excluded_candidate_web_checks_jsonl,
+    )
 
 
 def _render_sector(sector: DominantSectorHypothesis, st: Any) -> None:
@@ -161,6 +172,12 @@ def _download_if_exists(st: Any, label: str, path: Path) -> None:
         data=path.read_bytes(),
         file_name=path.name,
     )
+
+
+def _download_optional(st: Any, label: str, path: Path | None) -> None:
+    if path is None:
+        return
+    _download_if_exists(st, label, path)
 
 
 if __name__ == "__main__":  # pragma: no cover
