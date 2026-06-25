@@ -331,12 +331,14 @@ def _inspect_context_manifest(
     supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
     memory_sweep = _inspect_memory_sweep_artifacts(root, manifest)
     llm_traces = _inspect_llm_traces(root, manifest)
+    manifest_reproducibility = _inspect_manifest_reproducibility_fields(manifest)
     return {
         "context_manifest": {
             "path": _display_path(root, manifest_path),
             "exists": manifest_path.exists(),
             "sha256": file_sha256(manifest_path) if manifest_path.exists() else None,
         },
+        "manifest_reproducibility": manifest_reproducibility,
         "news_input": news_input,
         "context_files": {
             "brain": brain_files,
@@ -359,8 +361,39 @@ def _inspect_context_manifest(
         and _context_file_group_status_passed(shard_brain_files)
         and _supporting_artifacts_status_passed(supporting_artifacts)
         and _memory_sweep_status_passed(memory_sweep)
-        and _llm_trace_status_passed(llm_traces),
+        and _llm_trace_status_passed(llm_traces)
+        and _manifest_reproducibility_status_passed(manifest_reproducibility),
     }
+
+
+def _inspect_manifest_reproducibility_fields(manifest: dict[str, Any]) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "schema_version": manifest.get("schema_version"),
+        "configured": manifest.get("schema_version") == "nslab.context_manifest.v1",
+        "model_config_valid": False,
+        "token_counts_valid": False,
+        "truncations_valid": False,
+        "web_queries_valid": False,
+        "web_sources_valid": False,
+        "errors": [],
+    }
+    if not status["configured"]:
+        status["errors"].append("context_manifest_schema_version_missing_or_invalid")
+        return status
+    model_config = manifest.get("model_config")
+    status["model_config_valid"] = isinstance(model_config, dict) and bool(model_config)
+    if not status["model_config_valid"]:
+        status["errors"].append("model_config_missing_or_invalid")
+    token_counts = manifest.get("token_counts")
+    status["token_counts_valid"] = _token_counts_valid(token_counts)
+    if not status["token_counts_valid"]:
+        status["errors"].append("token_counts_missing_or_invalid")
+    for field in ("truncations", "web_queries", "web_sources"):
+        valid = _string_list_field_valid(manifest.get(field))
+        status[f"{field}_valid"] = valid
+        if not valid:
+            status["errors"].append(f"{field}_missing_or_invalid")
+    return status
 
 
 def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -1494,6 +1527,18 @@ def _supporting_artifacts_status_passed(statuses: dict[str, Any]) -> bool:
     )
 
 
+def _manifest_reproducibility_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("model_config_valid")
+        and status.get("token_counts_valid")
+        and status.get("truncations_valid")
+        and status.get("web_queries_valid")
+        and status.get("web_sources_valid")
+        and not status.get("errors")
+    )
+
+
 def _memory_sweep_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         status.get("configured")
@@ -1568,6 +1613,23 @@ def _red_team_artifact_status_passed(status: dict[str, Any]) -> bool:
 
 def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) else None
+
+
+def _token_counts_valid(value: object) -> bool:
+    if not isinstance(value, dict) or not value:
+        return False
+    return all(
+        isinstance(key, str)
+        and bool(key)
+        and isinstance(count, int)
+        and not isinstance(count, bool)
+        and count >= 0
+        for key, count in value.items()
+    )
+
+
+def _string_list_field_valid(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 @context_app.command("export-session-pack")

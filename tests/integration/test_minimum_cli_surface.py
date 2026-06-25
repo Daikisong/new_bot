@@ -196,6 +196,33 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert inspection["output_artifacts"]["report"]["hash_verified"] is True
     assert inspection["output_artifacts"]["report"]["contains_run_id"] is True
     assert inspection["output_artifacts"]["report"]["required_sections"]["passed"] is True
+    manifest_reproducibility = inspection["manifest_reproducibility"]
+    assert manifest_reproducibility["configured"] is True
+    assert manifest_reproducibility["model_config_valid"] is True
+    assert manifest_reproducibility["token_counts_valid"] is True
+    assert manifest_reproducibility["truncations_valid"] is True
+    assert manifest_reproducibility["web_queries_valid"] is True
+    assert manifest_reproducibility["web_sources_valid"] is True
+    manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
+    original_manifest_for_reproducibility = read_json(manifest_file)
+    tampered_manifest_reproducibility = {
+        **original_manifest_for_reproducibility,
+        "token_counts": {"current_news": -1},
+        "web_queries": "tampered",
+    }
+    write_json(manifest_file, tampered_manifest_reproducibility)
+    tampered_manifest_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered manifest reproducibility", tampered_manifest_context)
+    tampered_manifest_inspection = json.loads(
+        tampered_manifest_context.output
+    )["inspection"]
+    assert tampered_manifest_inspection["reproducibility_checks_passed"] is False
+    tampered_manifest_status = tampered_manifest_inspection["manifest_reproducibility"]
+    assert tampered_manifest_status["token_counts_valid"] is False
+    assert tampered_manifest_status["web_queries_valid"] is False
+    assert "token_counts_missing_or_invalid" in tampered_manifest_status["errors"]
+    assert "web_queries_missing_or_invalid" in tampered_manifest_status["errors"]
+    write_json(manifest_file, original_manifest_for_reproducibility)
     brain_context_file = tmp_path / context_payload["brain_files"][0]
     original_brain_context = brain_context_file.read_text(encoding="utf-8")
     brain_context_file.write_text(
@@ -228,7 +255,6 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     source_ledger_file.write_text(original_source_ledger, encoding="utf-8")
     final_context_file = tmp_path / context_payload["final_synthesis_context_artifact"]
-    manifest_file = tmp_path / "runs" / "manifests" / f"{run_id}.json"
     original_final_context = read_json(final_context_file)
     original_manifest = read_json(manifest_file)
     tampered_final_context = {
