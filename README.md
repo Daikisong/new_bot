@@ -145,6 +145,8 @@ manifest hashes so replay context drift is detected. `context inspect` also chec
 the news CSV hash, row counts, blind news-window inclusion counts, memory-sweep shard
 artifacts, their hashes, cache-hit count, swept episode coverage, and required
 pre-open report sections.
+Use `nslab context inspect <run_id> --strict` in automation when context drift should
+fail the command instead of only being reported in JSON.
 Final synthesis inputs are also checkpointed as
 `final_synthesis_context.json`, including the exact payload hash and input
 summary that the synthesis prompt used. `context inspect` and provenance audit

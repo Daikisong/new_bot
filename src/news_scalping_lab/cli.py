@@ -299,18 +299,25 @@ def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
 
 
 @context_app.command("inspect")
-def context_inspect(run_id: str) -> None:
+def context_inspect(
+    run_id: str,
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Exit non-zero when reproducibility checks fail.",
+        ),
+    ] = False,
+) -> None:
     settings = load_settings()
     path = settings.path("runs/manifests") / f"{run_id}.json"
     manifest = read_json(path)
     if not isinstance(manifest, dict):
         raise typer.BadParameter("context manifest must be a JSON object")
-    _echo(
-        {
-            **manifest,
-            "inspection": _inspect_context_manifest(settings.project_root, path, manifest),
-        }
-    )
+    inspection = _inspect_context_manifest(settings.project_root, path, manifest)
+    _echo({**manifest, "inspection": inspection})
+    if strict and not inspection["reproducibility_checks_passed"]:
+        raise typer.Exit(code=1)
 
 
 def _inspect_context_manifest(

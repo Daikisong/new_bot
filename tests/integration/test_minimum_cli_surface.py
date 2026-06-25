@@ -327,6 +327,14 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert "prediction_artifact_blind_hash_mismatch" in (
         tampered_prediction_status["errors"]
     )
+    strict_tampered_prediction_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id, "--strict"]
+    )
+    assert strict_tampered_prediction_context.exit_code == 1
+    strict_tampered_prediction_inspection = json.loads(
+        strict_tampered_prediction_context.output
+    )["inspection"]
+    assert strict_tampered_prediction_inspection["reproducibility_checks_passed"] is False
     write_json(prediction_file, original_prediction)
     write_json(manifest_file, original_manifest_for_prediction)
     candidate_expansion_file = tmp_path / context_payload["candidate_expansion_artifact"]
