@@ -34,6 +34,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         {
             "row_number": 1,
             "event_id": "EVT-1",
+            "source_id": "SRC-1",
+            "provenance_source_ids": ["SRC-1"],
             "disposition": "INCLUDED_BEFORE_CUTOFF",
         }
     ) + "\n"
@@ -53,6 +55,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
             "available_before_cutoff": True,
             "usage_phase": "BLIND",
             "input_row_ids": [1],
+            "event_ids": ["EVT-1"],
             "content_sha256": "abc",
             "notes": "test source",
         }
@@ -144,12 +147,14 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["id_reference_integrity_verified"]
     manifest = parsed.json_blocks["bundle_manifest.json"]
     assert isinstance(manifest, dict)
     assert manifest["bundle_incomplete"] is True
     assert manifest["blind_seal_receipt_sha256"]
     assert manifest["validation"]["research_episode_hash_verified"] is True
     assert manifest["validation"]["brain_delta_hash_verified"] is True
+    assert manifest["validation"]["id_reference_integrity_verified"] is True
     episode = parsed.json_blocks["research_episode.json"]
     assert isinstance(episode, dict)
     assert episode["blind_seal_receipt"]["phase"] == "BLIND_SEALED"

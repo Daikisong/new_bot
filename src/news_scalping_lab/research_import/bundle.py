@@ -64,6 +64,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "blind_seal_receipt hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["id_reference_integrity_verified"]:
+        raise BundleImportError("bundle ID reference integrity check failed")
     if "research_episode.json" not in parsed.json_blocks:
         raise BundleImportError("bundle is missing research_episode.json")
     try:
@@ -135,6 +137,10 @@ def parse_bundle(path: Path) -> BundleParseResult:
             block_name="research_episode.json",
             embedded_field="blind_seal_receipt",
             manifest_field="blind_seal_receipt_sha256",
+        ),
+        "id_reference_integrity_verified": _verify_id_reference_integrity(
+            json_blocks,
+            jsonl_blocks,
         ),
     }
     return BundleParseResult(
@@ -300,3 +306,66 @@ def _verify_embedded_write_json_hash(
         sort_keys=True,
     ) + "\n"
     return sha256_text(write_json_text) == expected
+
+
+def _verify_id_reference_integrity(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> bool:
+    row_dispositions = jsonl_blocks.get("row_disposition.jsonl", [])
+    source_ledger = jsonl_blocks.get("source_ledger.jsonl", [])
+    row_numbers = {row.get("row_number") for row in row_dispositions}
+    if len(row_numbers) != len(row_dispositions):
+        return False
+    event_ids = _row_string_values(row_dispositions, "event_id")
+    row_source_ids = _row_string_values(row_dispositions, "source_id")
+    for row in row_dispositions:
+        row_source_ids.update(_string_list(row.get("provenance_source_ids")))
+    if not row_numbers or not event_ids:
+        return False
+
+    for source in source_ledger:
+        input_row_ids = source.get("input_row_ids")
+        if not isinstance(input_row_ids, list) or not input_row_ids:
+            return False
+        if any(row_id not in row_numbers for row_id in input_row_ids):
+            return False
+        ledger_event_ids = _string_list(source.get("event_ids"))
+        if ledger_event_ids and any(event_id not in event_ids for event_id in ledger_event_ids):
+            return False
+        source_id = source.get("source_id")
+        if isinstance(source_id, str) and source_id and row_source_ids and source_id not in row_source_ids:
+            return False
+
+    referenced_event_ids = _prediction_event_ids(json_blocks.get("blind_prediction.json"))
+    referenced_event_ids.update(
+        _prediction_event_ids(json_blocks.get("research_episode.json"), field_name="blind_predictions")
+    )
+    return not any(event_id not in event_ids for event_id in referenced_event_ids)
+
+
+def _prediction_event_ids(payload: Any, *, field_name: str = "candidates") -> set[str]:
+    if not isinstance(payload, dict):
+        return set()
+    event_ids: set[str] = set()
+    for sector in payload.get("dominant_sectors", []):
+        if isinstance(sector, dict):
+            event_ids.update(_string_list(sector.get("triggering_events")))
+    for candidate in payload.get(field_name, []):
+        if not isinstance(candidate, dict):
+            continue
+        event_ids.update(_string_list(candidate.get("event_ids")))
+        for source_url in _string_list(candidate.get("source_urls")):
+            if source_url.startswith("news://"):
+                event_ids.add(source_url.removeprefix("news://"))
+    return event_ids
+
+
+def _row_string_values(rows: list[dict[str, Any]], field_name: str) -> set[str]:
+    return {value for row in rows if isinstance((value := row.get(field_name)), str) and value}
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

@@ -243,6 +243,7 @@ def _build_bundle_manifest(
             "research_episode_hash_verified": True,
             "brain_delta_hash_verified": True,
             "blind_seal_receipt_hash_verified": True,
+            "id_reference_integrity_verified": True,
             "phase_state_recorded": bool(manifest.get("phase_state_artifact")),
         },
         "bundle_incomplete": True,

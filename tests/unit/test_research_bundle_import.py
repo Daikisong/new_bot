@@ -71,6 +71,8 @@ def _bundle_text(
                 {
                     "row_number": 1,
                     "event_id": "EVT-1",
+                    "source_id": "SRC-1",
+                    "provenance_source_ids": ["SRC-1"],
                     "disposition": "INCLUDED_BEFORE_CUTOFF",
                 }
             ]
@@ -97,6 +99,7 @@ def _bundle_text(
                     "available_before_cutoff": True,
                     "usage_phase": "BLIND",
                     "input_row_ids": [1],
+                    "event_ids": ["EVT-1"],
                     "content_sha256": "abc",
                     "notes": "test source",
                 }
@@ -186,6 +189,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["id_reference_integrity_verified"]
     assert parsed.jsonl_blocks["row_disposition.jsonl"][0]["row_number"] == 1
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_type"] == "memory_claim"
     assert imported.episode_id == episode.episode_id
@@ -254,6 +258,40 @@ def test_bundle_import_rejects_mismatched_blind_seal_receipt_hash(tmp_path) -> N
 
     assert not parsed.validation["blind_seal_receipt_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_seal_receipt hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_invalid_id_references(tmp_path) -> None:
+    source = tmp_path / "bad_references_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            source_rows=[
+                {
+                    "source_id": "SRC-1",
+                    "source_type": "news_csv_row",
+                    "title": "source title",
+                    "publisher": None,
+                    "url": "file://news.csv#row=99",
+                    "published_at": "2030-01-10T08:00:00+09:00",
+                    "retrieved_at": "2030-01-10T08:00:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [99],
+                    "event_ids": ["EVT-1"],
+                    "content_sha256": "abc",
+                    "notes": "bad row reference",
+                }
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["id_reference_integrity_verified"]
+    with pytest.raises(BundleImportError, match="ID reference integrity"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 
