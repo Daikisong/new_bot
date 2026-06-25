@@ -46,6 +46,7 @@ from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
+    default_news_window_start,
     file_sha256,
     is_available_as_of,
     now_kst,
@@ -116,7 +117,8 @@ class DailyAnalyzer:
     ) -> DailyAnalysis:
         mode = normalize_analysis_mode(mode)
         full_batch = load_news_csv(news_csv, trade_date=trade_date)
-        batch = full_batch.before_or_at(cutoff_at)
+        news_window_start_at = default_news_window_start(trade_date)
+        batch = full_batch.within_window(news_window_start_at, cutoff_at)
         run_seed = sha256_text(
             canonical_json(
                 {
@@ -146,6 +148,8 @@ class DailyAnalyzer:
         )
         manifest.news_file = relative_to_root(full_batch.path, self.root)
         manifest.news_sha256 = full_batch.sha256
+        manifest.news_window_start_at = news_window_start_at
+        manifest.news_window_end_at = cutoff_at
         manifest.news_row_count = full_batch.row_count
         manifest.included_news_row_count = batch.row_count
         manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
@@ -154,6 +158,7 @@ class DailyAnalyzer:
         self._write_row_disposition_artifact(
             full_items=full_batch.items,
             included_items=batch.items,
+            news_window_start_at=news_window_start_at,
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
@@ -338,6 +343,7 @@ class DailyAnalyzer:
         *,
         full_items: list[NewsItem],
         included_items: list[NewsItem],
+        news_window_start_at: datetime,
         cutoff_at: datetime,
         manifest: ContextManifest,
     ) -> None:
@@ -345,14 +351,30 @@ class DailyAnalyzer:
         rows: list[dict[str, Any]] = []
         summary = {
             "total_rows": len(full_items),
+            "included_in_news_window": 0,
             "included_before_cutoff": 0,
+            "excluded_before_window": 0,
             "excluded_after_cutoff": 0,
+            "missing_collected_at": 0,
         }
         for item in full_items:
-            included = item.event_id in included_event_ids and item.published_at <= cutoff_at
-            disposition = "INCLUDED_BEFORE_CUTOFF" if included else "EXCLUDED_AFTER_CUTOFF"
-            summary_key = "included_before_cutoff" if included else "excluded_after_cutoff"
-            summary[summary_key] += 1
+            in_news_window = news_window_start_at <= item.published_at <= cutoff_at
+            included = item.event_id in included_event_ids and in_news_window
+            if included:
+                disposition = "INCLUDED_IN_NEWS_WINDOW"
+                reason = "news_window_start_at <= published_at <= cutoff_at"
+                summary["included_in_news_window"] += 1
+                summary["included_before_cutoff"] += 1
+            elif item.published_at > cutoff_at:
+                disposition = "EXCLUDED_AFTER_CUTOFF"
+                reason = "published_at > cutoff_at"
+                summary["excluded_after_cutoff"] += 1
+            else:
+                disposition = "EXCLUDED_BEFORE_WINDOW"
+                reason = "published_at < news_window_start_at"
+                summary["excluded_before_window"] += 1
+            if item.collected_at is None:
+                summary["missing_collected_at"] += 1
             rows.append(
                 {
                     "schema_version": "nslab.row_disposition.v1",
@@ -360,14 +382,17 @@ class DailyAnalyzer:
                     "row_number": item.row_number,
                     "event_id": item.event_id,
                     "published_at": item.published_at.isoformat(),
+                    "collected_at": (
+                        item.collected_at.isoformat() if item.collected_at is not None else None
+                    ),
+                    "collected_at_present": item.collected_at is not None,
+                    "news_window_start_at": news_window_start_at.isoformat(),
+                    "cutoff_at": cutoff_at.isoformat(),
+                    "within_news_window": in_news_window,
                     "source_id": item.source_id,
                     "disposition": disposition,
                     "eligible_for_blind_evidence": included,
-                    "reason": (
-                        "published_at <= cutoff_at"
-                        if included
-                        else "published_at > cutoff_at"
-                    ),
+                    "reason": reason,
                     "title_sha256": sha256_text(item.title),
                     "body_sha256": sha256_text(item.body),
                     "title_chars": len(item.title),
@@ -710,6 +735,10 @@ class DailyAnalyzer:
                     "publisher": None,
                     "url": provenance.uri if provenance else f"news://{item.event_id}",
                     "published_at": item.published_at.isoformat(),
+                    "collected_at": (
+                        item.collected_at.isoformat() if item.collected_at is not None else None
+                    ),
+                    "collected_at_present": item.collected_at is not None,
                     "retrieved_at": retrieved_at.isoformat(),
                     "time_verified": True,
                     "available_before_cutoff": item.published_at <= cutoff_at,

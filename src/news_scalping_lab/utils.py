@@ -43,6 +43,10 @@ def combine_kst(day: date, value: str) -> datetime:
     return datetime.combine(day, time(hour, minute, second), tzinfo=KST)
 
 
+def default_news_window_start(trade_date: date) -> datetime:
+    return combine_kst(trade_date - timedelta(days=1), "15:30:00")
+
+
 def next_calendar_day(day: date) -> date:
     return day + timedelta(days=1)
 

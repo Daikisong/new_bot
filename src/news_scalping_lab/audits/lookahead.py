@@ -411,6 +411,8 @@ def _check_row_disposition(
     expected_sha = manifest.get("row_disposition_sha256")
     if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
         findings.append(f"{manifest_name}: row_disposition_sha256 mismatch")
+    manifest_cutoff_at = _manifest_cutoff_at(manifest)
+    manifest_news_window_start_at = _manifest_news_window_start_at(manifest)
     rows: list[dict[str, object]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
@@ -427,6 +429,15 @@ def _check_row_disposition(
             findings.append(
                 f"{manifest_name}: row_disposition:{line_number} must not duplicate title/body"
             )
+        if manifest_news_window_start_at is not None and manifest_cutoff_at is not None:
+            _check_row_disposition_news_window_contract(
+                manifest_name,
+                line_number,
+                row,
+                manifest_news_window_start_at,
+                manifest_cutoff_at,
+                findings,
+            )
         rows.append(row)
     row_numbers = [row.get("row_number") for row in rows]
     if len(row_numbers) != len(set(row_numbers)):
@@ -439,6 +450,101 @@ def _check_row_disposition(
     coverage_ratio = manifest.get("row_disposition_coverage_ratio")
     if isinstance(coverage_ratio, (int, float)) and float(coverage_ratio) != 1.0:
         findings.append(f"{manifest_name}: row_disposition coverage ratio must be 1.0")
+
+
+def _manifest_news_window_start_at(manifest: dict[object, object]) -> datetime | None:
+    raw = manifest.get("news_window_start_at")
+    if isinstance(raw, str):
+        try:
+            return parse_datetime(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def _check_row_disposition_news_window_contract(
+    manifest_name: str,
+    line_number: int,
+    row: dict[str, object],
+    manifest_news_window_start_at: datetime,
+    manifest_cutoff_at: datetime,
+    findings: list[str],
+) -> None:
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        findings.append(f"{manifest_name}: row_disposition:{line_number} missing published_at")
+        return
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        findings.append(f"{manifest_name}: row_disposition:{line_number} invalid published_at")
+        return
+
+    raw_window_start = row.get("news_window_start_at")
+    raw_cutoff_at = row.get("cutoff_at")
+    if not isinstance(raw_window_start, str):
+        findings.append(
+            f"{manifest_name}: row_disposition:{line_number} missing news_window_start_at"
+        )
+    else:
+        try:
+            row_window_start = parse_datetime(raw_window_start)
+        except ValueError:
+            findings.append(
+                f"{manifest_name}: row_disposition:{line_number} invalid news_window_start_at"
+            )
+        else:
+            if row_window_start != manifest_news_window_start_at:
+                findings.append(
+                    f"{manifest_name}: row_disposition:{line_number} news_window_start_at mismatch"
+                )
+    if not isinstance(raw_cutoff_at, str):
+        findings.append(f"{manifest_name}: row_disposition:{line_number} missing cutoff_at")
+    else:
+        try:
+            row_cutoff_at = parse_datetime(raw_cutoff_at)
+        except ValueError:
+            findings.append(f"{manifest_name}: row_disposition:{line_number} invalid cutoff_at")
+        else:
+            if row_cutoff_at != manifest_cutoff_at:
+                findings.append(f"{manifest_name}: row_disposition:{line_number} cutoff_at mismatch")
+
+    collected_at_present = row.get("collected_at_present")
+    if not isinstance(collected_at_present, bool):
+        findings.append(
+            f"{manifest_name}: row_disposition:{line_number} missing collected_at_present"
+        )
+    raw_collected_at = row.get("collected_at")
+    if collected_at_present is True:
+        if not isinstance(raw_collected_at, str):
+            findings.append(f"{manifest_name}: row_disposition:{line_number} missing collected_at")
+        else:
+            try:
+                parse_datetime(raw_collected_at)
+            except ValueError:
+                findings.append(
+                    f"{manifest_name}: row_disposition:{line_number} invalid collected_at"
+                )
+
+    expected_within = manifest_news_window_start_at <= published_at <= manifest_cutoff_at
+    if row.get("within_news_window") is not expected_within:
+        findings.append(
+            f"{manifest_name}: row_disposition:{line_number} within_news_window mismatch"
+        )
+    expected_disposition = (
+        "INCLUDED_IN_NEWS_WINDOW"
+        if expected_within
+        else "EXCLUDED_AFTER_CUTOFF"
+        if published_at > manifest_cutoff_at
+        else "EXCLUDED_BEFORE_WINDOW"
+    )
+    if row.get("disposition") != expected_disposition:
+        findings.append(f"{manifest_name}: row_disposition:{line_number} disposition mismatch")
+    expected_eligible = expected_within
+    if row.get("eligible_for_blind_evidence") is not expected_eligible:
+        findings.append(
+            f"{manifest_name}: row_disposition:{line_number} eligible_for_blind_evidence mismatch"
+        )
 
 
 def _check_source_ledger(

@@ -1585,6 +1585,61 @@ def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) 
     assert "RUN-row.json: row_disposition coverage ratio must be 1.0" in findings
 
 
+def test_lookahead_audit_flags_news_window_row_disposition_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    artifact_dir = tmp_path / "runs" / "checkpoints" / "row_disposition" / "RUN-window"
+    artifact_dir.mkdir(parents=True)
+    artifact = artifact_dir / "row_disposition.jsonl"
+    row = {
+        "schema_version": "nslab.row_disposition.v1",
+        "run_id": "RUN-window",
+        "row_number": 1,
+        "event_id": "EVT-window",
+        "published_at": "2030-01-09T14:59:00+09:00",
+        "collected_at": None,
+        "collected_at_present": False,
+        "news_window_start_at": "2030-01-09T15:30:00+09:00",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "within_news_window": True,
+        "source_id": "SRC-window",
+        "disposition": "INCLUDED_IN_NEWS_WINDOW",
+        "eligible_for_blind_evidence": True,
+    }
+    row_text = canonical_json(row) + "\n"
+    artifact.write_text(row_text, encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-window.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-window",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "news_window_start_at": "2030-01-09T15:30:00+09:00",
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "row_disposition_artifact": artifact.relative_to(tmp_path).as_posix(),
+            "row_disposition_sha256": sha256_text(row_text),
+            "row_disposition_coverage_ratio": 1.0,
+            "row_disposition_summary": {"total_rows": 1},
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert "RUN-window.json: row_disposition:1 within_news_window mismatch" in findings
+    assert "RUN-window.json: row_disposition:1 disposition mismatch" in findings
+    assert (
+        "RUN-window.json: row_disposition:1 eligible_for_blind_evidence mismatch"
+        in findings
+    )
+
+
 def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
     artifact_dir = tmp_path / "runs" / "checkpoints" / "source_ledger" / "RUN-ledger"

@@ -378,6 +378,32 @@
       "default": null,
       "title": "News Sha256"
     },
+    "news_window_end_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "News Window End At"
+    },
+    "news_window_start_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "News Window Start At"
+    },
     "no_d_outcome_exposed": {
       "default": true,
       "title": "No D Outcome Exposed",

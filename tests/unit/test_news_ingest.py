@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
+from news_scalping_lab.utils import KST, default_news_window_start
 
 
 def test_load_news_csv_detects_trade_date_as_latest_date_in_preopen_window(tmp_path) -> None:
@@ -28,6 +29,47 @@ def test_load_news_csv_detects_trade_date_as_latest_date_in_preopen_window(tmp_p
         date(2030, 1, 9),
         date(2030, 1, 10),
     ]
+
+
+def test_load_news_csv_parses_collected_at_and_filters_default_news_window(tmp_path) -> None:
+    csv_path = tmp_path / "collected.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "page,row,date,time,collected_at,title,body",
+                '1,1,"2030-01-09","14:59:00","2030-01-09T15:00:00+09:00","Too old","before window"',
+                '1,2,"2030-01-09","15:30:00","2030-01-09T15:30:05+09:00","Window start","included"',
+                '1,3,"2030-01-10","09:00:00","2030-01-10T09:00:05+09:00","After cutoff","excluded"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+
+    batch = load_news_csv(csv_path, trade_date=date(2030, 1, 10))
+    windowed = batch.within_window(default_news_window_start(batch.trade_date), cutoff)
+
+    assert batch.items[0].collected_at == datetime(2030, 1, 9, 15, 0, 0, tzinfo=KST)
+    assert [item.row_number for item in windowed.items] == [2]
+
+
+def test_load_news_csv_parses_split_collected_date_time(tmp_path) -> None:
+    csv_path = tmp_path / "split_collected.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "page,row,date,time,collected_date,collected_time,title,body",
+                '1,1,"2030-01-10","08:30:00","2030-01-10","08:31:02","Split collected","body"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = load_news_csv(csv_path)
+
+    assert batch.items[0].collected_at == datetime(2030, 1, 10, 8, 31, 2, tzinfo=KST)
 
 
 def test_news_import_uses_detected_latest_trade_date_in_raw_filename(tmp_path) -> None:

@@ -78,6 +78,7 @@ class NewsItem(StrictModel):
     event_id: str
     row_number: int
     published_at: datetime
+    collected_at: datetime | None = None
     title: str
     body: str
     source_id: str
@@ -370,6 +371,8 @@ class ContextManifest(StrictModel):
     as_of: datetime
     news_file: str | None = None
     news_sha256: str | None = None
+    news_window_start_at: datetime | None = None
+    news_window_end_at: datetime | None = None
     news_row_count: int = 0
     included_news_row_count: int = 0
     excluded_news_row_count: int = 0

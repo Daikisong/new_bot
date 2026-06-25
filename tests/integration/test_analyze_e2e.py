@@ -282,6 +282,13 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         '1,2,"2030-01-10","09:30:00","장중 결과성 기사","cutoff 이후 행은 BLIND 근거에서 제외한다."\n',
         encoding="utf-8",
     )
+    csv_path.write_text(
+        "page,row,date,time,collected_at,title,body\n"
+        '1,1,"2030-01-09","14:59:00","2030-01-09T15:00:00+09:00","Old catalyst","before window row must be excluded."\n'
+        '1,2,"2030-01-10","08:00:00","2030-01-10T08:00:30+09:00","Current catalyst","included pre-open row."\n'
+        '1,3,"2030-01-10","09:30:00","2030-01-10T09:30:30+09:00","After cutoff","cutoff-after row must be excluded."\n',
+        encoding="utf-8",
+    )
     BrainCompiler(tmp_path).rebuild(mode="full")
     analyzer = DailyAnalyzer(settings, retrieval=LocalRetrievalStore(tmp_path, force_empty=True))
     analysis = await analyzer.analyze(
@@ -324,11 +331,13 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert saved_manifest["as_of"] == "2030-01-10T08:59:59+09:00"
     assert saved_manifest["price_snapshot"]["as_of"] == "2030-01-10T08:59:59+09:00"
+    assert saved_manifest["news_window_start_at"] == "2030-01-09T15:30:00+09:00"
+    assert saved_manifest["news_window_end_at"] == "2030-01-10T08:59:59+09:00"
     assert saved_manifest["news_file"] == "news.csv"
     assert saved_manifest["news_sha256"] == file_sha256(csv_path)
-    assert saved_manifest["news_row_count"] == 2
+    assert saved_manifest["news_row_count"] == 3
     assert saved_manifest["included_news_row_count"] == 1
-    assert saved_manifest["excluded_news_row_count"] == 1
+    assert saved_manifest["excluded_news_row_count"] == 2
     assert saved_manifest["model_config"] == {
         "analysis_mode": "exhaustive",
         "configured_provider": "mock",
@@ -357,9 +366,12 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["row_disposition_coverage_ratio"] == 1.0
     assert saved_manifest["row_disposition_summary"] == {
         "coverage_ratio": 1.0,
+        "excluded_before_window": 1,
         "excluded_after_cutoff": 1,
+        "included_in_news_window": 1,
         "included_before_cutoff": 1,
-        "total_rows": 2,
+        "missing_collected_at": 0,
+        "total_rows": 3,
     }
     row_disposition_path = tmp_path / saved_manifest["row_disposition_artifact"]
     row_disposition_text = row_disposition_path.read_text(encoding="utf-8")
@@ -367,11 +379,16 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         json.loads(line) for line in row_disposition_text.splitlines() if line.strip()
     ]
     assert sha256_text(row_disposition_text) == saved_manifest["row_disposition_sha256"]
-    assert [row["row_number"] for row in row_dispositions] == [1, 2]
+    assert [row["row_number"] for row in row_dispositions] == [1, 2, 3]
     assert [row["disposition"] for row in row_dispositions] == [
-        "INCLUDED_BEFORE_CUTOFF",
+        "EXCLUDED_BEFORE_WINDOW",
+        "INCLUDED_IN_NEWS_WINDOW",
         "EXCLUDED_AFTER_CUTOFF",
     ]
+    assert [row["within_news_window"] for row in row_dispositions] == [False, True, False]
+    assert [row["collected_at_present"] for row in row_dispositions] == [True, True, True]
+    assert row_dispositions[1]["news_window_start_at"] == "2030-01-09T15:30:00+09:00"
+    assert row_dispositions[1]["cutoff_at"] == "2030-01-10T08:59:59+09:00"
     assert "title" not in row_dispositions[0]
     assert "body" not in row_dispositions[0]
     assert row_dispositions[0]["title_sha256"]
@@ -394,7 +411,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert source_ledger_rows[0]["source_type"] == "news_csv_row"
     assert source_ledger_rows[0]["usage_phase"] == "BLIND"
     assert source_ledger_rows[0]["available_before_cutoff"] is True
-    assert source_ledger_rows[0]["input_row_ids"] == [1]
+    assert source_ledger_rows[0]["collected_at_present"] is True
+    assert source_ledger_rows[0]["input_row_ids"] == [2]
     assert "body" not in source_ledger_rows[0]
     assert saved_manifest["blind_artifact_sha256"] == saved_prediction["blind_artifact_sha256"]
     receipt_path = tmp_path / saved_manifest["blind_seal_receipt_artifact"]

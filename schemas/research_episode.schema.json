@@ -464,6 +464,19 @@
           "title": "Body",
           "type": "string"
         },
+        "collected_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collected At"
+        },
         "event_id": {
           "title": "Event Id",
           "type": "string"

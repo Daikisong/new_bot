@@ -26,6 +26,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
+    default_news_window_start,
     file_sha256,
     is_available_as_of,
     stable_id,
@@ -98,6 +99,8 @@ class ContextAssembler:
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             as_of=cutoff_at,
+            news_window_start_at=default_news_window_start(trade_date),
+            news_window_end_at=cutoff_at,
             brain_version=brain_context.brain_version,
             brain_files=list(brain_context.brain_file_hashes.keys()),
             brain_file_hashes=brain_context.brain_file_hashes,

@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from news_scalping_lab.contracts.models import NewsItem, Provenance
-from news_scalping_lab.utils import KST, combine_kst, file_sha256, stable_id
+from news_scalping_lab.utils import KST, combine_kst, file_sha256, parse_datetime, stable_id
 
 NEWS_CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr")
 
@@ -27,6 +27,10 @@ class NewsBatch:
 
     def before_or_at(self, cutoff_at: datetime) -> NewsBatch:
         kept = [item for item in self.items if item.published_at <= cutoff_at]
+        return NewsBatch(path=self.path, sha256=self.sha256, trade_date=self.trade_date, items=kept)
+
+    def within_window(self, start_at: datetime, end_at: datetime) -> NewsBatch:
+        kept = [item for item in self.items if start_at <= item.published_at <= end_at]
         return NewsBatch(path=self.path, sha256=self.sha256, trade_date=self.trade_date, items=kept)
 
 
@@ -52,6 +56,7 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
         row_date = date.fromisoformat(row.get("date", str(detected_trade_date)))
         row_time = row.get("time", "00:00:00")
         published_at = combine_kst(row_date, row_time)
+        collected_at = _parse_collected_at(row)
         source_id = stable_id("SRC", resolved.as_posix(), index, content_hash)
         event_id = stable_id(
             "EVT", row.get("title", ""), row.get("body", ""), published_at.isoformat()
@@ -69,6 +74,7 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
                 event_id=event_id,
                 row_number=index,
                 published_at=published_at,
+                collected_at=collected_at,
                 title=row.get("title", "").strip(),
                 body=row.get("body", "").strip(),
                 source_id=source_id,
@@ -95,6 +101,36 @@ def _read_news_csv_rows(path: Path) -> list[dict[str, str]]:
             + ", ".join(NEWS_CSV_ENCODINGS)
         ) from last_error
     return []
+
+
+def _parse_collected_at(row: dict[str, str]) -> datetime | None:
+    raw = _first_present(
+        row,
+        "collected_at",
+        "collected_datetime",
+        "retrieved_at",
+        "crawl_at",
+        "crawled_at",
+        "scraped_at",
+    )
+    if raw is not None:
+        return parse_datetime(raw)
+    collected_date = _first_present(row, "collected_date", "retrieved_date", "crawl_date")
+    if collected_date is None:
+        return None
+    collected_time = _first_present(row, "collected_time", "retrieved_time", "crawl_time")
+    return combine_kst(date.fromisoformat(collected_date), collected_time or "00:00:00")
+
+
+def _first_present(row: dict[str, str], *names: str) -> str | None:
+    for name in names:
+        value = row.get(name)
+        if value is None:
+            continue
+        cleaned = value.strip().strip('"')
+        if cleaned:
+            return cleaned
+    return None
 
 
 def import_news_csv(path: Path, raw_news_dir: Path, trade_date: date | None = None) -> NewsBatch:

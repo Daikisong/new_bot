@@ -71,6 +71,14 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             ]
         )
     row_summary = manifest.row_disposition_summary
+    news_window_start = (
+        manifest.news_window_start_at.isoformat() if manifest.news_window_start_at else "unknown"
+    )
+    news_window_end = manifest.news_window_end_at.isoformat() if manifest.news_window_end_at else "unknown"
+    included_window_rows = row_summary.get(
+        "included_in_news_window",
+        row_summary.get("included_before_cutoff", "unknown"),
+    )
 
     return "\n".join(
         [
@@ -88,10 +96,14 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "",
             "## 3. News Range And Cutoff",
             "",
-            "Only pre-cutoff news rows are eligible for blind evidence.",
+            "Only news rows inside the configured blind news window are eligible for blind evidence.",
+            f"- News window start: {news_window_start}",
+            f"- News window end: {news_window_end}",
             f"- Total input rows: {row_summary.get('total_rows', 'unknown')}",
-            f"- Included pre-cutoff rows: {row_summary.get('included_before_cutoff', 'unknown')}",
+            f"- Included news-window rows: {included_window_rows}",
+            f"- Excluded before-window rows: {row_summary.get('excluded_before_window', 'unknown')}",
             f"- Excluded after-cutoff rows: {row_summary.get('excluded_after_cutoff', 'unknown')}",
+            f"- Rows missing collected_at: {row_summary.get('missing_collected_at', 'unknown')}",
             f"- Row coverage ratio: {row_summary.get('coverage_ratio', 'unknown')}",
             f"- Row disposition artifact: {manifest.row_disposition_artifact or 'none'}",
             f"- Row disposition SHA256: {manifest.row_disposition_sha256 or 'none'}",

@@ -117,6 +117,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         trade_date=trade_day,
         cutoff_at=cutoff,
         as_of=cutoff,
+        news_window_start_at=datetime(2030, 1, 9, 15, 30, 0, tzinfo=KST),
+        news_window_end_at=cutoff,
         brain_version="brain-report",
         accepted_episode_count=2,
         swept_episode_count=2,
@@ -128,8 +130,11 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         row_disposition_coverage_ratio=0.5,
         row_disposition_summary={
             "total_rows": 2,
+            "included_in_news_window": 1,
             "included_before_cutoff": 1,
+            "excluded_before_window": 0,
             "excluded_after_cutoff": 1,
+            "missing_collected_at": 1,
             "coverage_ratio": 0.5,
         },
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
@@ -191,8 +196,12 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Contradicting cases: EP-sector-negative" in report
     assert "- Provenance sources: SRC-report-sector" in report
     assert "- Total input rows: 2" in report
-    assert "- Included pre-cutoff rows: 1" in report
+    assert "- News window start: 2030-01-09T15:30:00+09:00" in report
+    assert "- News window end: 2030-01-10T08:59:59+09:00" in report
+    assert "- Included news-window rows: 1" in report
+    assert "- Excluded before-window rows: 0" in report
     assert "- Excluded after-cutoff rows: 1" in report
+    assert "- Rows missing collected_at: 1" in report
     assert "- Row coverage ratio: 0.5" in report
     assert (
         "- Row disposition artifact: runs/checkpoints/row_disposition/RUN-report/row_disposition.jsonl"
