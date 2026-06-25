@@ -393,6 +393,38 @@ def test_evaluate_rejects_unsealed_prediction(tmp_path) -> None:
         Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
 
 
+def test_evaluate_rejects_tampered_sealed_prediction_hash(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    prediction = _sealed_prediction(trade_day)
+    tampered_analysis = prediction.blind_analysis.model_copy(
+        update={"summary": "Posthoc rewrite after the blind artifact was sealed."}
+    )
+    tampered = prediction.model_copy(update={"blind_analysis": tampered_analysis})
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        tampered.model_dump(mode="json"),
+    )
+
+    with pytest.raises(ValueError, match="sealed blind prediction hash mismatch"):
+        Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+
+
+def test_evaluate_rejects_prediction_trade_date_mismatch(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 10)
+    mismatched_prediction = _sealed_prediction(date(2030, 1, 11))
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        mismatched_prediction.model_dump(mode="json"),
+    )
+
+    with pytest.raises(ValueError, match="trade_date must match"):
+        Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+
+
 def test_evaluation_provenance_audit_verifies_sealed_snapshot_and_report(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

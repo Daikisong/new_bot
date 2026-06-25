@@ -27,11 +27,13 @@ from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
+    canonical_json,
     file_sha256,
     next_trading_day,
     now_kst,
     read_json,
     relative_to_root,
+    sha256_text,
     stable_id,
     write_json,
 )
@@ -61,8 +63,7 @@ class Evaluator:
             raise FileNotFoundError(f"blind prediction not found: {prediction_path}")
         prediction_data = read_json(prediction_path)
         prediction = BlindPrediction.model_validate(prediction_data)
-        if prediction.sealed_at is None or not prediction.blind_artifact_sha256:
-            raise ValueError("evaluation requires a sealed blind prediction")
+        _validate_sealed_blind_prediction(prediction, trade_date=trade_date)
         episode_id = stable_id(
             "EP",
             "evaluation",
@@ -254,6 +255,26 @@ class Evaluator:
         write_json(prediction_snapshot_path, read_json(prediction_path))
         write_json(postmortem_snapshot_path, read_json(postmortem_path))
         return prediction_snapshot_path, postmortem_snapshot_path
+
+
+def _validate_sealed_blind_prediction(
+    prediction: BlindPrediction,
+    *,
+    trade_date: date,
+) -> None:
+    if prediction.trade_date != trade_date:
+        raise ValueError("evaluation trade_date must match sealed blind prediction")
+    if prediction.sealed_at is None or not prediction.blind_artifact_sha256:
+        raise ValueError("evaluation requires a sealed blind prediction")
+    expected_hash = sha256_text(
+        canonical_json(
+            prediction.model_copy(update={"blind_artifact_sha256": None}).model_dump(
+                mode="json"
+            )
+        )
+    )
+    if prediction.blind_artifact_sha256 != expected_hash:
+        raise ValueError("sealed blind prediction hash mismatch")
 
 
 def _build_metrics(
