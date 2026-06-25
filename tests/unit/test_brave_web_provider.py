@@ -137,7 +137,38 @@ async def test_brave_search_provider_reads_nested_web_results() -> None:
 
     assert len(results) == 1
     assert results[0].title == "nested web source"
-    assert results[0].published_at == datetime(2030, 1, 9, 0, 0, 0, tzinfo=KST)
+    assert results[0].published_at == datetime(2030, 1, 9, 23, 59, 59, tzinfo=KST)
+
+
+@pytest.mark.asyncio
+async def test_temporal_guard_excludes_trade_day_date_only_results_before_cutoff() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    client = FakeHTTPClient(
+        {
+            "results": [
+                {
+                    "title": "previous date-only source",
+                    "url": "https://example.test/previous-date-only",
+                    "description": "Prior-day date-only metadata is safe before cutoff.",
+                    "published_at": "2030-01-09",
+                },
+                {
+                    "title": "trade date-only source",
+                    "url": "https://example.test/trade-date-only",
+                    "description": "Same-day date-only metadata is not pre-cutoff proof.",
+                    "published_at": "2030-01-10",
+                },
+            ]
+        }
+    )
+    provider = BraveSearchWebResearchProvider(api_key="brave-key", client=client)
+    guard = TemporalWebGuard(provider)
+
+    kept = await guard.search("date-only", cutoff_at=cutoff)
+
+    assert [result.title for result in kept] == ["previous date-only source"]
+    assert guard.excluded_sources[0].result.title == "trade date-only source"
+    assert guard.excluded_sources[0].reason == "published_after_cutoff"
 
 
 def test_create_web_provider_selects_brave_when_api_key_is_configured(

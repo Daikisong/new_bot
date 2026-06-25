@@ -312,6 +312,9 @@ def _parse_web_datetime(value: str) -> datetime | None:
     cleaned = value.strip()
     if not cleaned:
         return None
+    date_only = _parse_date_only(cleaned)
+    if date_only is not None:
+        return date_only
     iso_candidate = cleaned.replace("Z", "+00:00")
     try:
         parsed_iso = parse_datetime(iso_candidate)
@@ -323,9 +326,6 @@ def _parse_web_datetime(value: str) -> datetime | None:
         return as_kst(parsed_email)
     except (TypeError, ValueError, IndexError):
         pass
-    date_only = _parse_date_only(cleaned)
-    if date_only is not None:
-        return date_only
     relative = _parse_relative_age(cleaned)
     if relative is not None:
         return relative
@@ -335,7 +335,12 @@ def _parse_web_datetime(value: str) -> datetime | None:
 def _parse_date_only(value: str) -> datetime | None:
     for pattern in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
         try:
-            return datetime.strptime(value, pattern).replace(tzinfo=KST)
+            return datetime.strptime(value, pattern).replace(
+                hour=23,
+                minute=59,
+                second=59,
+                tzinfo=KST,
+            )
         except ValueError:
             continue
     return None
