@@ -2097,6 +2097,68 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     write_json(run_prediction_path, prediction)
     run_report_path.write_text(report_text, encoding="utf-8")
 
+    web_source = {
+        "schema_version": "nslab.web_source.v1",
+        "source_id": "WEB-1",
+        "query": "cutoff safe source",
+        "title": "Cutoff-safe source",
+        "url": "https://example.test/source",
+        "source_url": "https://example.test/source",
+        "snippet": "Source snippet.",
+        "published_at": "2030-01-10T08:30:00+09:00",
+        "retrieved_at": "2030-01-10T08:40:00+09:00",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "time_verified": True,
+        "available_before_cutoff": True,
+        "content_sha256": "b" * 64,
+        "opened_text_sha256": "d" * 64,
+        "opened_text_excerpt": "web excerpt",
+    }
+    web_source_context = {
+        "source_id": "WEB-1",
+        "query": "cutoff safe source",
+        "title": "Cutoff-safe source",
+        "url": "https://example.test/source",
+        "snippet": "Source snippet.",
+        "published_at": "2030-01-10T08:30:00+09:00",
+        "time_verified": True,
+        "content_sha256": "b" * 64,
+        "opened_text_excerpt": "web excerpt",
+    }
+    web_source_2 = {
+        **web_source,
+        "source_id": "WEB-2",
+        "query": "second cutoff safe source",
+        "title": "Second cutoff-safe source",
+        "url": "https://example.test/source-2",
+        "source_url": "https://example.test/source-2",
+        "snippet": "Second source snippet.",
+        "content_sha256": "e" * 64,
+        "opened_text_sha256": "f" * 64,
+        "opened_text_excerpt": "second web excerpt",
+    }
+    web_source_context_2 = {
+        **web_source_context,
+        "source_id": "WEB-2",
+        "query": "second cutoff safe source",
+        "title": "Second cutoff-safe source",
+        "url": "https://example.test/source-2",
+        "snippet": "Second source snippet.",
+        "content_sha256": "e" * 64,
+        "opened_text_excerpt": "second web excerpt",
+    }
+    web_source_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "web_sources"
+        / "RUN-linked"
+        / "web_sources.jsonl"
+    )
+    web_source_text = canonical_json(web_source_2) + "\n" + canonical_json(web_source) + "\n"
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(web_source_text, encoding="utf-8")
+
     event_cluster = {
         "schema_version": "nslab.news_event_cluster.v1",
         "run_id": "RUN-linked",
@@ -2348,6 +2410,12 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     final_payload = {
         "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
         "current_news": ["pre-cutoff news"],
+        "web_research": {
+            "queries": ["second cutoff safe source", "cutoff safe source"],
+            "included_sources": ["WEB-2", "WEB-1"],
+            "sources": [web_source_context_2, web_source_context],
+            "excluded_after_cutoff_source_ids": [],
+        },
         "event_clusters": [event_cluster],
         "additional_semantic_retrieval": {
             "plan_artifact": semantic_plan_path.relative_to(tmp_path).as_posix(),
@@ -2411,6 +2479,11 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "prediction_sha256": file_sha256(run_prediction_path),
             "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
             "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "web_queries": ["second cutoff safe source", "cutoff safe source"],
+            "web_sources": ["WEB-1", "WEB-2"],
+            "excluded_web_source_ids": [],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": sha256_text(web_source_text),
             "event_cluster_artifact": event_cluster_path.relative_to(
                 tmp_path
             ).as_posix(),
@@ -2511,6 +2584,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     assert result["passed"], result["findings"]
 
     bad_payload = json.loads(canonical_json(final_payload))
+    bad_payload["web_research"] = {
+        **bad_payload["web_research"],
+        "sources": [],
+    }
     bad_payload["event_clusters"] = []
     bad_payload["additional_semantic_retrieval"] = {
         **bad_payload["additional_semantic_retrieval"],
@@ -2545,6 +2622,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
 
     assert not failed["passed"]
     findings = failed["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context web_research mismatch"
+        in findings
+    )
     assert (
         "2030-01-10.json: final_synthesis_context event_clusters mismatch"
         in findings

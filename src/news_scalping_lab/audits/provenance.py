@@ -3205,6 +3205,18 @@ def _unique_strings(values: Any) -> list[str]:
     return result
 
 
+def _same_unique_string_set(left: Any, right: Any) -> bool:
+    if not isinstance(left, list) or not isinstance(right, list):
+        return False
+    left_strings = _unique_strings(left)
+    right_strings = _unique_strings(right)
+    return (
+        len(left_strings) == len(left)
+        and len(right_strings) == len(right)
+        and set(left_strings) == set(right_strings)
+    )
+
+
 def _check_payload_int(
     prediction_path: Path,
     payload: dict[str, Any],
@@ -3465,6 +3477,19 @@ def _check_final_synthesis_embedded_artifacts(
             findings,
         )
 
+    web_source_rows = _read_web_source_context_rows(
+        root,
+        manifest.get("web_source_artifact"),
+    )
+    if web_source_rows is not None:
+        _check_final_synthesis_web_research_context(
+            prediction_path,
+            manifest,
+            context_payload,
+            web_source_rows,
+            findings,
+        )
+
     candidate_verification = _read_optional_manifest_object(
         root,
         manifest.get("candidate_verification_artifact"),
@@ -3598,6 +3623,60 @@ def _check_final_synthesis_semantic_retrieval_context(
             f"{prediction_path.name}: final_synthesis_context "
             "additional_semantic_retrieval mismatch"
         )
+
+
+def _check_final_synthesis_web_research_context(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    web_source_rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    context = context_payload.get("web_research")
+    if not isinstance(context, dict):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context web_research mismatch"
+        )
+        return
+    if (
+        context.get("queries") != manifest.get("web_queries")
+        or not _same_unique_string_set(
+            context.get("included_sources"),
+            manifest.get("web_sources"),
+        )
+        or context.get("sources") != web_source_rows
+        or not _same_unique_string_set(
+            context.get("excluded_after_cutoff_source_ids"),
+            manifest.get("excluded_web_source_ids"),
+        )
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context web_research mismatch"
+        )
+
+
+def _read_web_source_context_rows(
+    root: Path,
+    artifact_ref: object,
+) -> list[dict[str, Any]] | None:
+    rows = _read_optional_manifest_jsonl_rows(root, artifact_ref)
+    if rows is None:
+        return None
+    return [_web_source_context_row(row) for row in rows]
+
+
+def _web_source_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
 
 
 def _read_candidate_web_check_context_rows(
