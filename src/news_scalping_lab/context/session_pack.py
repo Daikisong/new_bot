@@ -226,6 +226,10 @@ def export_session_pack(
         "company_memory.md",
         "market_context.md",
     ]
+    token_counts = {
+        file_name: _estimate_tokens((output_dir / file_name).read_text(encoding="utf-8"))
+        for file_name in pack_files
+    }
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
         "blocked": bool(omitted_ids),
@@ -252,10 +256,10 @@ def export_session_pack(
         "included_market_context_files": market_context.included_paths,
         "omitted_market_context_files": market_context.omitted,
         "token_budget": token_budget,
-        "token_counts": {
-            file_name: _estimate_tokens((output_dir / file_name).read_text(encoding="utf-8"))
-            for file_name in pack_files
-        },
+        "token_counts": token_counts,
+        "token_count_total": sum(token_counts.values()),
+        "pack_files": pack_files,
+        "pack_file_count": len(pack_files),
         "pack_file_hashes": {
             file_name: file_sha256(output_dir / file_name) for file_name in pack_files
         },

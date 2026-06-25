@@ -139,7 +139,17 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
         "company_memory.md",
         "market_context.md",
     }
+    assert manifest["pack_files"] == [
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    ]
+    assert manifest["pack_file_count"] == len(manifest["pack_files"])
     assert manifest["pack_sha256"]
+    assert manifest["token_count_total"] == sum(manifest["token_counts"].values())
     assert manifest["token_counts"]["memory_cases.md"] > 0
     assert "session pack omitted available episodes due to token budget" in exc_info.value.errors
 

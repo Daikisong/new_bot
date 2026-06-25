@@ -2657,6 +2657,10 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
     for file_name in pack_files:
         (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
     pack_file_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
+    token_counts = {
+        file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
+        for file_name in pack_files
+    }
     write_json(
         pack_dir / "manifest.json",
         {
@@ -2665,16 +2669,31 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
             "cutoff_at": "2030-01-10T08:59:59+09:00",
             "as_of": "2030-01-10T08:59:59+09:00",
             "mode": "brain",
+            "pack_files": list(pack_files),
+            "pack_file_count": len(pack_files),
             "pack_file_hashes": pack_file_hashes,
             "pack_sha256": sha256_text(
                 "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
             ),
+            "token_counts": token_counts,
+            "token_count_total": sum(token_counts.values()),
         },
     )
 
     clean = audit_lookahead(tmp_path)
 
     assert clean["passed"], clean["findings"]
+
+    manifest = read_json(pack_dir / "manifest.json")
+    write_json(pack_dir / "manifest.json", {**manifest, "token_count_total": 1})
+    bad_token_total = audit_lookahead(tmp_path)
+
+    assert not bad_token_total["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: token_count_total mismatch"
+        in bad_token_total["findings"]
+    )
+    write_json(pack_dir / "manifest.json", manifest)
 
     (pack_dir / "current_news.md").write_text("tampered current news\n", encoding="utf-8")
 

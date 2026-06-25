@@ -373,6 +373,18 @@ def _check_session_pack_hashes(
 ) -> None:
     if manifest_path.parent.parent != root / "session_packs":
         return
+    pack_files = manifest.get("pack_files")
+    if pack_files is not None:
+        if not isinstance(pack_files, list) or not all(
+            isinstance(item, str) for item in pack_files
+        ):
+            findings.append(f"{manifest_name}: pack_files is invalid")
+        elif pack_files != list(SESSION_PACK_FILES):
+            findings.append(f"{manifest_name}: pack_files mismatch")
+    pack_file_count = manifest.get("pack_file_count")
+    if pack_file_count is not None and pack_file_count != len(SESSION_PACK_FILES):
+        findings.append(f"{manifest_name}: pack_file_count mismatch")
+
     pack_hashes = manifest.get("pack_file_hashes")
     if pack_hashes is None and manifest.get("pack_sha256") is None:
         return
@@ -380,6 +392,7 @@ def _check_session_pack_hashes(
         findings.append(f"{manifest_name}: pack_file_hashes is invalid")
         return
     observed_hashes: dict[str, str] = {}
+    observed_token_counts: dict[str, int] = {}
     for file_name in SESSION_PACK_FILES:
         expected_hash = pack_hashes.get(file_name)
         if not isinstance(expected_hash, str):
@@ -391,11 +404,18 @@ def _check_session_pack_hashes(
             continue
         observed_hash = file_sha256(path)
         observed_hashes[file_name] = observed_hash
+        observed_token_counts[file_name] = _estimate_tokens(path.read_text(encoding="utf-8"))
         if observed_hash != expected_hash:
             findings.append(f"{manifest_name}: pack_file_hashes mismatch: {file_name}")
     extra_hashes = sorted(str(key) for key in pack_hashes if key not in SESSION_PACK_FILES)
     if extra_hashes:
         findings.append(f"{manifest_name}: unlisted pack_file_hashes: {', '.join(extra_hashes)}")
+    _check_session_pack_token_counts(
+        manifest_name,
+        manifest,
+        observed_token_counts,
+        findings,
+    )
     expected_pack_sha = manifest.get("pack_sha256")
     if not isinstance(expected_pack_sha, str):
         findings.append(f"{manifest_name}: missing pack_sha256")
@@ -407,6 +427,54 @@ def _check_session_pack_hashes(
     )
     if observed_pack_sha != expected_pack_sha:
         findings.append(f"{manifest_name}: pack_sha256 mismatch")
+
+
+def _check_session_pack_token_counts(
+    manifest_name: str,
+    manifest: dict[object, object],
+    observed_token_counts: dict[str, int],
+    findings: list[str],
+) -> None:
+    token_counts = manifest.get("token_counts")
+    if token_counts is None:
+        return
+    if not isinstance(token_counts, dict):
+        findings.append(f"{manifest_name}: token_counts is invalid")
+        return
+    for file_name in SESSION_PACK_FILES:
+        expected_count = token_counts.get(file_name)
+        if not isinstance(expected_count, int) or isinstance(expected_count, bool):
+            findings.append(f"{manifest_name}: missing token_counts: {file_name}")
+            continue
+        observed_count = observed_token_counts.get(file_name)
+        if observed_count is not None and observed_count != expected_count:
+            findings.append(f"{manifest_name}: token_counts mismatch: {file_name}")
+    extra_counts = sorted(str(key) for key in token_counts if key not in SESSION_PACK_FILES)
+    if extra_counts:
+        findings.append(f"{manifest_name}: unlisted token_counts: {', '.join(extra_counts)}")
+    token_count_total = manifest.get("token_count_total")
+    if token_count_total is None:
+        return
+    if not isinstance(token_count_total, int) or isinstance(token_count_total, bool):
+        findings.append(f"{manifest_name}: token_count_total is invalid")
+        return
+    expected_total = 0
+    all_required_counts_valid = True
+    for file_name in SESSION_PACK_FILES:
+        value = token_counts.get(file_name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            all_required_counts_valid = False
+            break
+        expected_total += value
+    observed_total = sum(observed_token_counts.get(file_name, 0) for file_name in SESSION_PACK_FILES)
+    if all_required_counts_valid and (
+        token_count_total != expected_total or token_count_total != observed_total
+    ):
+        findings.append(f"{manifest_name}: token_count_total mismatch")
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4) if text else 0
 
 
 def _check_news_only_blind_protocol(
