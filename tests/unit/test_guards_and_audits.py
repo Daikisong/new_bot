@@ -3179,6 +3179,70 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
     ) in result["findings"]
 
 
+def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True)
+    write_json(
+        accepted_dir / "EP-available-a.json",
+        {
+            "episode_id": "EP-available-a",
+            "available_from": "2030-01-10T08:00:00+09:00",
+        },
+    )
+    write_json(
+        accepted_dir / "EP-available-b.json",
+        {
+            "episode_id": "EP-available-b",
+            "available_from": "2030-01-10T08:30:00+09:00",
+        },
+    )
+    write_json(
+        accepted_dir / "EP-future.json",
+        {
+            "episode_id": "EP-future",
+            "available_from": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    manifest = {
+        "schema_version": "nslab.session_pack_manifest.v1",
+        "blocked": False,
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "as_of": "2030-01-10T08:59:59+09:00",
+        "mode": "brain",
+        "accepted_episode_count": 3,
+        "available_episode_count": 2,
+        "included_episode_count": 1,
+        "included_episode_ids": ["EP-available-a"],
+        "omitted_episode_ids": ["EP-future"],
+        "unavailable_episode_ids": ["EP-future"],
+    }
+    write_json(pack_dir / "manifest.json", manifest)
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack available episode coverage mismatch"
+        in result["findings"]
+    )
+
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            **manifest,
+            "included_episode_count": 2,
+            "included_episode_ids": ["EP-available-a", "EP-available-b"],
+        },
+    )
+
+    clean = audit_lookahead(tmp_path)
+
+    assert clean["passed"], clean["findings"]
+
+
 def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> None:
     pack_dir = tmp_path / "session_packs" / "2030-01-10"
     pack_dir.mkdir(parents=True)

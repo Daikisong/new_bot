@@ -52,6 +52,15 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             accepted_episode_available_from,
             findings,
         )
+        _check_session_pack_episode_scope(
+            root,
+            path,
+            manifest_name,
+            manifest,
+            manifest_cutoff_at,
+            accepted_episode_available_from,
+            findings,
+        )
         if (
             manifest_as_of is not None
             and manifest_cutoff_at is not None
@@ -230,6 +239,122 @@ def _check_context_manifest_episode_scope(
         available_from = accepted_episode_available_from.get(episode_id)
         if available_from is not None and not is_available_as_of(available_from, manifest_cutoff_at):
             findings.append(f"{manifest_name}: future swept episode: {episode_id}")
+
+
+def _check_session_pack_episode_scope(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_cutoff_at: datetime | None,
+    accepted_episode_available_from: dict[str, datetime],
+    findings: list[str],
+) -> None:
+    if (
+        manifest_path.parent.parent != root / "session_packs"
+        or manifest.get("schema_version") != "nslab.session_pack_manifest.v1"
+    ):
+        return
+    scope_fields = {
+        "blocked",
+        "accepted_episode_count",
+        "available_episode_count",
+        "included_episode_count",
+        "included_episode_ids",
+        "omitted_episode_ids",
+        "unavailable_episode_ids",
+    }
+    if not any(field in manifest for field in scope_fields):
+        return
+
+    accepted_ids = set(accepted_episode_available_from)
+    accepted_count = _non_bool_int(manifest.get("accepted_episode_count"))
+    if accepted_count is None or accepted_count < 0:
+        findings.append(f"{manifest_name}: session pack accepted_episode_count invalid")
+    elif accepted_count != len(accepted_ids):
+        findings.append(f"{manifest_name}: session pack accepted_episode_count mismatch")
+    if manifest_cutoff_at is None:
+        return
+
+    available_ids = {
+        episode_id
+        for episode_id, available_from in accepted_episode_available_from.items()
+        if is_available_as_of(available_from, manifest_cutoff_at)
+    }
+    unavailable_ids = accepted_ids - available_ids
+    available_count = _non_bool_int(manifest.get("available_episode_count"))
+    if available_count is None or available_count < 0:
+        findings.append(f"{manifest_name}: session pack available_episode_count invalid")
+    elif available_count != len(available_ids):
+        findings.append(f"{manifest_name}: session pack available_episode_count mismatch")
+
+    manifest_unavailable_ids = _string_list_or_none(manifest.get("unavailable_episode_ids"))
+    if manifest_unavailable_ids is None:
+        findings.append(f"{manifest_name}: session pack unavailable_episode_ids invalid")
+    elif set(manifest_unavailable_ids) != unavailable_ids:
+        findings.append(f"{manifest_name}: session pack unavailable_episode_ids mismatch")
+
+    included_ids = _string_list_or_none(manifest.get("included_episode_ids"))
+    if included_ids is None:
+        findings.append(f"{manifest_name}: session pack included_episode_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "included_episode_ids",
+            included_ids,
+            findings,
+        )
+        included_set = set(included_ids)
+        if not included_set <= accepted_ids:
+            findings.append(f"{manifest_name}: session pack included_episode_ids unknown")
+        for episode_id in sorted(included_set & unavailable_ids):
+            findings.append(f"{manifest_name}: session pack future included episode: {episode_id}")
+        included_count = _non_bool_int(manifest.get("included_episode_count"))
+        if included_count is None or included_count < 0:
+            findings.append(f"{manifest_name}: session pack included_episode_count invalid")
+        elif included_count != len(included_ids):
+            findings.append(f"{manifest_name}: session pack included_episode_count mismatch")
+
+    omitted_ids = _string_list_or_none(manifest.get("omitted_episode_ids"))
+    if omitted_ids is None:
+        findings.append(f"{manifest_name}: session pack omitted_episode_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "omitted_episode_ids",
+            omitted_ids,
+            findings,
+        )
+        if not set(omitted_ids) <= accepted_ids:
+            findings.append(f"{manifest_name}: session pack omitted_episode_ids unknown")
+
+    blocked = manifest.get("blocked")
+    if not isinstance(blocked, bool):
+        findings.append(f"{manifest_name}: session pack blocked invalid")
+        return
+    if included_ids is None or omitted_ids is None:
+        return
+    included_set = set(included_ids)
+    omitted_set = set(omitted_ids)
+    if included_set & omitted_set:
+        findings.append(f"{manifest_name}: session pack included omitted episode overlap")
+    if blocked is False:
+        if included_set != available_ids:
+            findings.append(f"{manifest_name}: session pack available episode coverage mismatch")
+        if omitted_set != unavailable_ids:
+            findings.append(f"{manifest_name}: session pack omitted_episode_ids mismatch")
+    elif not unavailable_ids <= omitted_set:
+        findings.append(f"{manifest_name}: session pack omitted_episode_ids mismatch")
+
+
+def _check_duplicate_session_pack_ids(
+    manifest_name: str,
+    field: str,
+    values: list[str],
+    findings: list[str],
+) -> None:
+    if len(values) != len(set(values)):
+        findings.append(f"{manifest_name}: session pack {field} duplicate")
 
 
 def _accepted_episode_available_from(root: Path) -> dict[str, datetime]:
