@@ -85,11 +85,13 @@ class MemorySweeper:
         run_dir.mkdir(parents=True, exist_ok=True)
         brain_version = current_brain_version(self.root) or "none"
         news_hash = sha256_text("\n---NEWS---\n".join(current_news_texts))
+        accepted_hashes = self.store.accepted_hashes()
         shards = list(self._shards(accepted))
 
         for shard_index, shard in enumerate(shards, start=1):
             episode_ids = [episode.episode_id for episode in shard]
-            shard_hash = sha256_text("|".join(episode_ids))
+            episode_source_hashes = _episode_source_hashes(shard, accepted_hashes)
+            shard_hash = _episode_shard_hash(episode_source_hashes)
             cache_key = stable_id(
                 "SWEEP",
                 brain_version,
@@ -112,6 +114,7 @@ class MemorySweeper:
                 news_hash=news_hash,
                 shard_hash=shard_hash,
                 episode_ids=episode_ids,
+                episode_source_hashes=episode_source_hashes,
                 prompt_version=prompt_version,
                 model_config_hash=model_config_hash,
             )
@@ -130,6 +133,7 @@ class MemorySweeper:
                     shard_index=shard_index,
                     episode_count=len(shard),
                     episodes=shard,
+                    episode_source_hashes=episode_source_hashes,
                     first_pass_mechanisms=first_pass_mechanisms,
                     prompt_version=prompt_version,
                     model_config_hash=model_config_hash,
@@ -199,6 +203,7 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         episode_ids: list[str],
+        episode_source_hashes: dict[str, str],
         prompt_version: str,
         model_config_hash: str,
     ) -> dict[str, object] | None:
@@ -220,6 +225,7 @@ class MemorySweeper:
             news_hash=news_hash,
             shard_hash=shard_hash,
             episode_ids=episode_ids,
+            episode_source_hashes=episode_source_hashes,
             prompt_version=prompt_version,
             model_config_hash=model_config_hash,
         ):
@@ -240,6 +246,7 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         episode_ids: list[str],
+        episode_source_hashes: dict[str, str],
         prompt_version: str,
         model_config_hash: str,
     ) -> bool:
@@ -253,6 +260,7 @@ class MemorySweeper:
             and payload.get("current_news_sha256") == news_hash
             and payload.get("episode_shard_sha256") == shard_hash
             and payload.get("episode_ids") == episode_ids
+            and payload.get("episode_shard_source_hashes") == episode_source_hashes
             and payload.get("prompt_version") == prompt_version
             and payload.get("model_config_sha256") == model_config_hash
         )
@@ -270,6 +278,7 @@ class MemorySweeper:
         shard_index: int,
         episode_count: int,
         episodes: list[ResearchEpisode],
+        episode_source_hashes: dict[str, str],
         first_pass_mechanisms: list[str],
         prompt_version: str,
         model_config_hash: str,
@@ -292,6 +301,7 @@ class MemorySweeper:
             "model_config_sha256": model_config_hash,
             "current_news_sha256": news_hash,
             "episode_shard_sha256": shard_hash,
+            "episode_shard_source_hashes": episode_source_hashes,
             "shard_index": shard_index,
             "episode_count": episode_count,
             "episode_ids": episode_ids,
@@ -322,3 +332,25 @@ class MemorySweeper:
             if path.exists():
                 char_count += len(path.read_text(encoding="utf-8"))
         return max(1, char_count // 4) if char_count else 0
+
+
+def _episode_source_hashes(
+    episodes: list[ResearchEpisode],
+    accepted_hashes: dict[str, str],
+) -> dict[str, str]:
+    return {
+        episode.episode_id: accepted_hashes.get(episode.episode_id)
+        or sha256_text(canonical_json(episode.model_dump(mode="json")))
+        for episode in episodes
+    }
+
+
+def _episode_shard_hash(episode_source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"episode_id": episode_id, "source_sha256": source_hash}
+                for episode_id, source_hash in sorted(episode_source_hashes.items())
+            ]
+        )
+    )

@@ -10,7 +10,7 @@ from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.sweep import MemorySweeper
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, read_json, write_json
 
 
 def test_memory_sweep_cache_key_uses_news_prompt_and_model_config(tmp_path) -> None:
@@ -78,6 +78,52 @@ def test_memory_sweep_cache_key_uses_news_prompt_and_model_config(tmp_path) -> N
     repeat_payload = read_json(tmp_path / repeat.artifact_paths[0])
     assert repeat_payload["from_cache"] is True
     assert repeat_payload["episode_ids"] == ["EP-cache-000", "EP-cache-001"]
+    assert set(repeat_payload["episode_shard_source_hashes"]) == {
+        "EP-cache-000",
+        "EP-cache-001",
+    }
+
+
+def test_memory_sweep_cache_key_uses_episode_source_hashes(tmp_path) -> None:
+    _seed_accepted_episodes(tmp_path, count=1)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    cutoff = datetime(2030, 1, 12, 8, 59, 59, tzinfo=KST)
+    sweeper = MemorySweeper(tmp_path, shard_episode_count=10)
+
+    first = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 12),
+        cutoff_at=cutoff,
+        run_id="RUN-source-hash-first",
+        current_news_texts=["same current news"],
+        first_pass_mechanisms=["same mechanism"],
+        model_config={"provider": "mock"},
+    )
+    first_payload = read_json(tmp_path / first.artifact_paths[0])
+    accepted_path = tmp_path / "research" / "accepted" / "EP-cache-000.json"
+    accepted_payload = read_json(accepted_path)
+    accepted_payload["blind_analysis"]["summary"] = "Mutated lesson with same episode ID."
+    write_json(accepted_path, accepted_payload)
+
+    after_mutation = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 12),
+        cutoff_at=cutoff,
+        run_id="RUN-source-hash-mutated",
+        current_news_texts=["same current news"],
+        first_pass_mechanisms=["same mechanism"],
+        model_config={"provider": "mock"},
+    )
+
+    assert first.cache_hits == 0
+    assert after_mutation.cache_hits == 0
+    mutated_payload = read_json(tmp_path / after_mutation.artifact_paths[0])
+    assert mutated_payload["from_cache"] is False
+    assert (
+        mutated_payload["episode_shard_source_hashes"]["EP-cache-000"]
+        != first_payload["episode_shard_source_hashes"]["EP-cache-000"]
+    )
+    assert mutated_payload["episode_shard_sha256"] != first_payload["episode_shard_sha256"]
 
 
 def test_memory_sweep_reuses_completed_shard_after_intermediate_failure(
