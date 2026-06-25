@@ -1249,6 +1249,50 @@ def _check_red_team_artifact(
         findings.append(
             f"{prediction_path.name}: red-team artifact finding count mismatch: {artifact_ref}"
         )
+    prompt_version = artifact.get("prompt_version")
+    if prompt_version == "red_team.candidate_attack.v1":
+        return
+    required_attack_checks = artifact.get("required_attack_checks")
+    if not isinstance(required_attack_checks, list) or not all(
+        isinstance(item, str) and item for item in required_attack_checks
+    ):
+        findings.append(
+            f"{prediction_path.name}: red-team artifact required_attack_checks is invalid: "
+            f"{artifact_ref}"
+        )
+        return
+    for index, item in enumerate(candidate_findings, start=1):
+        if not isinstance(item, dict):
+            findings.append(
+                f"{prediction_path.name}: red-team artifact finding {index} is invalid: "
+                f"{artifact_ref}"
+            )
+            continue
+        attack_checks = item.get("attack_checks")
+        if not isinstance(attack_checks, list):
+            findings.append(
+                f"{prediction_path.name}: red-team artifact finding {index} "
+                f"missing attack_checks: {artifact_ref}"
+            )
+            continue
+        observed_names = [
+            check.get("name")
+            for check in attack_checks
+            if isinstance(check, dict)
+        ]
+        if observed_names != required_attack_checks:
+            findings.append(
+                f"{prediction_path.name}: red-team artifact finding {index} "
+                f"attack_checks mismatch: {artifact_ref}"
+            )
+        if any(
+            not isinstance(check, dict) or check.get("passed_to_synthesis") is not True
+            for check in attack_checks
+        ):
+            findings.append(
+                f"{prediction_path.name}: red-team artifact finding {index} "
+                f"attack_checks not passed to synthesis: {artifact_ref}"
+            )
 
 
 def _resolve_manifest_path(root: Path, artifact_ref: str) -> Path | None:

@@ -364,6 +364,17 @@ class DailyAnalyzer:
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
         manifest.red_team_artifacts = [red_team.artifact_path]
+        manifest.red_team_summary = {
+            "candidate_count": red_team.artifact.candidate_count,
+            "required_attack_checks": red_team.artifact.required_attack_checks,
+            "required_attack_check_count": len(red_team.artifact.required_attack_checks),
+            "finding_count": len(red_team.artifact.candidate_findings),
+            "all_findings_passed_to_synthesis": all(
+                finding.passed_to_synthesis
+                and all(check.passed_to_synthesis for check in finding.attack_checks)
+                for finding in red_team.artifact.candidate_findings
+            ),
+        }
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
         d_minus_one_market_data = self._collect_d_minus_one_market_data(
             candidates=prediction.candidates,

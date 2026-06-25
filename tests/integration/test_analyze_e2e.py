@@ -753,7 +753,36 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert red_team["run_id"] == analysis.context_manifest.run_id
     assert red_team["candidate_count"] == len(analysis.blind_prediction.candidates)
     assert len(red_team["candidate_findings"]) == len(analysis.blind_prediction.candidates)
+    assert red_team["required_attack_checks"] == [
+        "good_company_news_not_limit_up_language",
+        "novelty_not_recycled",
+        "economic_amount_attributable_to_listed_company",
+        "weak_stage_mou_planned_prototype",
+        "already_pre_absorbed",
+        "market_cap_float_liquidity_drag",
+        "dilution_or_financing_risk",
+        "forced_indirect_relation",
+        "market_memory_relation_currently_broken",
+        "purer_same_theme_leader_exists",
+    ]
+    assert saved_manifest["red_team_summary"] == {
+        "candidate_count": len(analysis.blind_prediction.candidates),
+        "required_attack_checks": red_team["required_attack_checks"],
+        "required_attack_check_count": len(red_team["required_attack_checks"]),
+        "finding_count": len(red_team["candidate_findings"]),
+        "all_findings_passed_to_synthesis": True,
+    }
     assert all(finding["passed_to_synthesis"] for finding in red_team["candidate_findings"])
+    assert all(
+        [check["name"] for check in finding["attack_checks"]]
+        == red_team["required_attack_checks"]
+        for finding in red_team["candidate_findings"]
+    )
+    assert all(
+        check["passed_to_synthesis"]
+        for finding in red_team["candidate_findings"]
+        for check in finding["attack_checks"]
+    )
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert audit_provenance(tmp_path)["passed"]
 
@@ -1088,6 +1117,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert "additional_semantic_retrieval" in str(final_call["prompt"])
     assert "open_world_candidate_expansion" in str(final_call["prompt"])
     assert "candidate_verification" in str(final_call["prompt"])
+    assert "required_attack_checks" in str(final_call["prompt"])
     assert "red_team_output" in str(final_call["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
@@ -1148,7 +1178,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v1"
     assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
-    assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v1"
+    assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v2"
     assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
 
 

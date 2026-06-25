@@ -28,6 +28,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyReview,
     PathType,
     RedTeamArtifact,
+    RedTeamAttackCheck,
     RedTeamFinding,
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
@@ -292,6 +293,7 @@ class DeterministicMockLLMProvider:
     def _red_team_artifact(self, prompt: str) -> RedTeamArtifact:
         payload = self._red_team_payload(prompt)
         candidates = payload.get("candidates", [])
+        required_attack_checks = self._payload_string_list(payload, "required_attack_checks")
         findings: list[RedTeamFinding] = []
         if isinstance(candidates, list):
             for raw_candidate in candidates:
@@ -336,6 +338,23 @@ class DeterministicMockLLMProvider:
                         attack_summary=(
                             "Mock red-team review retained the candidate and passed objections forward."
                         ),
+                        attack_checks=[
+                            RedTeamAttackCheck(
+                                name=check_name,
+                                status="needs_synthesis_review",
+                                objection=f"Mock red-team required check: {check_name}",
+                                evidence_source_ids=[
+                                    item
+                                    for item in [
+                                        *raw_candidate.get("source_urls", []),
+                                        *prior_negative_cases,
+                                    ]
+                                    if isinstance(item, str)
+                                ][:10],
+                                passed_to_synthesis=True,
+                            )
+                            for check_name in required_attack_checks
+                        ],
                         objections=self._dedupe_strings(objections),
                         contrary_evidence=[
                             f"negative memory case: {case}" for case in prior_negative_cases
@@ -357,10 +376,11 @@ class DeterministicMockLLMProvider:
         return RedTeamArtifact(
             run_id=str(payload.get("run_id") or "RUN-mock-red-team"),
             source_prediction_id=str(payload.get("source_prediction_id") or "PRED-mock"),
-            prompt_version="red_team.candidate_attack.v1",
+            prompt_version="red_team.candidate_attack.v2",
             prompt_sha256=sha256_text(prompt),
             created_at=now_kst(),
             candidate_count=len(findings),
+            required_attack_checks=required_attack_checks,
             candidate_findings=findings,
             notes=["Mock structured red-team pass."],
         )

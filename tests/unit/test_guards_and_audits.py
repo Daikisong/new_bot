@@ -1108,11 +1108,24 @@ def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> Non
             "schema_version": "nslab.red_team_artifact.v1",
             "run_id": "RUN-linked",
             "source_prediction_id": "PRED-linked",
-            "prompt_version": "red_team.candidate_attack.v1",
+            "prompt_version": "red_team.candidate_attack.v2",
             "prompt_sha256": "red-team-hash",
             "created_at": "2030-01-10T08:59:59+09:00",
             "candidate_count": 1,
-            "candidate_findings": [{"candidate_rank": 1, "passed_to_synthesis": True}],
+            "required_attack_checks": ["novelty_not_recycled"],
+            "candidate_findings": [
+                {
+                    "candidate_rank": 1,
+                    "passed_to_synthesis": True,
+                    "attack_checks": [
+                        {
+                            "name": "novelty_not_recycled",
+                            "status": "needs_synthesis_review",
+                            "passed_to_synthesis": True,
+                        }
+                    ],
+                }
+            ],
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
@@ -1158,7 +1171,7 @@ def test_provenance_audit_flags_red_team_artifact_mismatch(tmp_path: Path) -> No
             "schema_version": "nslab.red_team_artifact.v1",
             "run_id": "RUN-other",
             "source_prediction_id": "",
-            "prompt_version": "red_team.candidate_attack.v1",
+            "prompt_version": "red_team.candidate_attack.v2",
             "prompt_sha256": "wrong-hash",
             "created_at": "2030-01-10T08:59:59+09:00",
             "candidate_count": 0,
@@ -1185,6 +1198,10 @@ def test_provenance_audit_flags_red_team_artifact_mismatch(tmp_path: Path) -> No
     ) in result["findings"]
     assert (
         "2030-01-10.json: red-team artifact candidate_count mismatch: "
+        "runs/checkpoints/red_team/RUN-linked.json"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: red-team artifact required_attack_checks is invalid: "
         "runs/checkpoints/red_team/RUN-linked.json"
     ) in result["findings"]
 

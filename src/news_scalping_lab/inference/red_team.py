@@ -10,12 +10,32 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     ContextManifest,
     RedTeamArtifact,
+    RedTeamAttackCheck,
     RedTeamFinding,
 )
 from news_scalping_lab.llm.base import LLMProvider
-from news_scalping_lab.utils import canonical_json, now_kst, relative_to_root, sha256_text, write_json
+from news_scalping_lab.utils import (
+    canonical_json,
+    now_kst,
+    read_json,
+    relative_to_root,
+    sha256_text,
+    write_json,
+)
 
-PROMPT_VERSION = "red_team.candidate_attack.v1"
+PROMPT_VERSION = "red_team.candidate_attack.v2"
+REQUIRED_ATTACK_CHECKS = (
+    "good_company_news_not_limit_up_language",
+    "novelty_not_recycled",
+    "economic_amount_attributable_to_listed_company",
+    "weak_stage_mou_planned_prototype",
+    "already_pre_absorbed",
+    "market_cap_float_liquidity_drag",
+    "dilution_or_financing_risk",
+    "forced_indirect_relation",
+    "market_memory_relation_currently_broken",
+    "purer_same_theme_leader_exists",
+)
 
 
 @dataclass(frozen=True)
@@ -35,6 +55,7 @@ async def run_red_team_pass(
 ) -> RedTeamPassResult:
     prompt_text = _load_prompt(root)
     prompt = _build_prompt(
+        root=root,
         prompt_text=prompt_text,
         prediction=prediction,
         manifest=manifest,
@@ -130,6 +151,7 @@ def build_deterministic_red_team_artifact(
         prompt_sha256=prompt_sha256,
         created_at=now_kst(),
         candidate_count=len(prediction.candidates),
+        required_attack_checks=list(REQUIRED_ATTACK_CHECKS),
         candidate_findings=findings,
         notes=notes
         or [
@@ -145,6 +167,14 @@ def _normalize_artifact(
     manifest: ContextManifest,
     prompt_sha256: str,
 ) -> RedTeamArtifact:
+    candidates_by_rank = {candidate.rank: candidate for candidate in prediction.candidates}
+    candidate_findings = [
+        _normalize_finding(
+            finding,
+            candidate=candidates_by_rank.get(finding.candidate_rank),
+        )
+        for finding in artifact.candidate_findings
+    ]
     return artifact.model_copy(
         update={
             "run_id": manifest.run_id,
@@ -153,6 +183,8 @@ def _normalize_artifact(
             "prompt_sha256": prompt_sha256,
             "created_at": now_kst(),
             "candidate_count": len(prediction.candidates),
+            "required_attack_checks": list(REQUIRED_ATTACK_CHECKS),
+            "candidate_findings": candidate_findings,
         }
     )
 
@@ -187,12 +219,117 @@ def _fallback_finding(candidate: Candidate) -> RedTeamFinding:
             f"Rank {candidate.rank} remains eligible, but synthesis must weigh "
             f"{len(objections)} objections before treating it as actionable."
         ),
+        attack_checks=[
+            _fallback_attack_check(candidate, check_name)
+            for check_name in REQUIRED_ATTACK_CHECKS
+        ],
         objections=objections,
         contrary_evidence=contrary_evidence,
         disconfirming_conditions=disconfirming_conditions,
         verification_questions=verification_questions,
         passed_to_synthesis=True,
     )
+
+
+def _normalize_finding(
+    finding: RedTeamFinding,
+    *,
+    candidate: Candidate | None,
+) -> RedTeamFinding:
+    checks_by_name = {check.name: check for check in finding.attack_checks}
+    normalized_checks: list[RedTeamAttackCheck] = []
+    for check_name in REQUIRED_ATTACK_CHECKS:
+        existing = checks_by_name.get(check_name)
+        if existing is not None:
+            normalized_checks.append(
+                existing.model_copy(update={"passed_to_synthesis": True})
+            )
+            continue
+        if candidate is not None:
+            normalized_checks.append(_fallback_attack_check(candidate, check_name))
+        else:
+            normalized_checks.append(
+                RedTeamAttackCheck(
+                    name=check_name,
+                    status="needs_review",
+                    objection="LLM output omitted this required attack check.",
+                    passed_to_synthesis=True,
+                )
+            )
+    update: dict[str, object] = {
+        "attack_checks": normalized_checks,
+        "passed_to_synthesis": True,
+    }
+    if candidate is not None:
+        update.update(
+            {
+                "ticker": candidate.ticker,
+                "company_name": candidate.company_name,
+                "path_type": candidate.path_type,
+            }
+        )
+    return finding.model_copy(update=update)
+
+
+def _fallback_attack_check(candidate: Candidate, check_name: str) -> RedTeamAttackCheck:
+    objection = _attack_check_objection(candidate, check_name)
+    return RedTeamAttackCheck(
+        name=check_name,
+        status="needs_synthesis_review",
+        objection=objection,
+        evidence_source_ids=_unique(
+            [
+                *candidate.source_urls,
+                *candidate.memory_episode_ids,
+                *candidate.prior_negative_cases,
+            ]
+        )[:10],
+        passed_to_synthesis=True,
+    )
+
+
+def _attack_check_objection(candidate: Candidate, check_name: str) -> str:
+    objections = {
+        "good_company_news_not_limit_up_language": (
+            "Good company news may lack market language strong enough for a limit-up move."
+        ),
+        "novelty_not_recycled": (
+            "The catalyst may be recycled or already known before the blind window."
+        ),
+        "economic_amount_attributable_to_listed_company": (
+            "Headline amount or benefit may not be economically attributable to this listed entity."
+        ),
+        "weak_stage_mou_planned_prototype": (
+            "The event may be an MOU, plan, agreement, or prototype rather than realized revenue."
+        ),
+        "already_pre_absorbed": (
+            "D-1 and earlier market action may already have absorbed the catalyst."
+        ),
+        "market_cap_float_liquidity_drag": (
+            "Market cap, free float, turnover, or liquidity may be too heavy for limit-up behavior."
+        ),
+        "dilution_or_financing_risk": (
+            "Dilution, financing, conversion, or supply overhang could offset the catalyst."
+        ),
+        "forced_indirect_relation": (
+            "The candidate may be an overextended indirect beneficiary rather than a direct winner."
+        ),
+        "market_memory_relation_currently_broken": (
+            "Prior market memory may exist while the current business relation is stale or broken."
+        ),
+        "purer_same_theme_leader_exists": (
+            "A cleaner same-theme leader may have stronger directness or market memory."
+        ),
+    }
+    base = objections[check_name]
+    if check_name == "forced_indirect_relation" and str(candidate.path_type) == "SINGLE_EVENT":
+        return f"{base} Direct-path evidence still needs verification."
+    if check_name == "market_cap_float_liquidity_drag" and candidate.ticker.upper() in {
+        "UNKNOWN",
+        "UNVERIFIED",
+    }:
+        return f"{base} Exact listing and tradable float remain unresolved."
+    return base
 
 
 def _candidate_specific_objections(candidate: Candidate) -> list[str]:
@@ -220,6 +357,7 @@ def _load_prompt(root: Path) -> str:
 
 def _build_prompt(
     *,
+    root: Path,
     prompt_text: str,
     prediction: BlindPrediction,
     manifest: ContextManifest,
@@ -227,6 +365,7 @@ def _build_prompt(
     payload = {
         "schema": "nslab.red_team_artifact.v1",
         "prompt_version": PROMPT_VERSION,
+        "required_attack_checks": list(REQUIRED_ATTACK_CHECKS),
         "run_id": manifest.run_id,
         "source_prediction_id": prediction.prediction_id,
         "trade_date": prediction.trade_date.isoformat(),
@@ -236,6 +375,10 @@ def _build_prompt(
         "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
         "web_sources": manifest.web_sources,
         "excluded_web_source_ids": manifest.excluded_web_source_ids,
+        "candidate_verification": _read_candidate_verification_context(
+            root=root,
+            manifest=manifest,
+        ),
         "blind_uncertainties": prediction.blind_analysis.initial_uncertainties,
         "candidates": [
             candidate.model_dump(mode="json")
@@ -244,12 +387,27 @@ def _build_prompt(
     }
     return (
         "Review each candidate as an adversarial red-team pass. "
-        "Return one RedTeamFinding per candidate. Keep candidates, but pass objections "
-        "and contrary evidence forward to final synthesis.\n"
+        "Return one RedTeamFinding per candidate and cover every required_attack_checks "
+        "entry in attack_checks. Keep candidates, but pass objections and contrary "
+        "evidence forward to final synthesis.\n"
         f"{prompt_text.strip()}\n"
         "---RED_TEAM_PAYLOAD---\n"
         f"{canonical_json(payload)}"
     )
+
+
+def _read_candidate_verification_context(
+    *,
+    root: Path,
+    manifest: ContextManifest,
+) -> dict[str, object]:
+    if not manifest.candidate_verification_artifact:
+        return {}
+    path = root / manifest.candidate_verification_artifact
+    if not path.exists() or not path.is_file():
+        return {"path": manifest.candidate_verification_artifact, "missing": True}
+    payload = read_json(path)
+    return payload if isinstance(payload, dict) else {}
 
 
 def _unique(items: list[str]) -> list[str]:

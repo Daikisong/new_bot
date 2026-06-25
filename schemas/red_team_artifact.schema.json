@@ -10,9 +10,52 @@
       "title": "PathType",
       "type": "string"
     },
+    "RedTeamAttackCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Source Ids",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "objection": {
+          "default": "",
+          "title": "Objection",
+          "type": "string"
+        },
+        "passed_to_synthesis": {
+          "default": true,
+          "title": "Passed To Synthesis",
+          "type": "boolean"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "title": "RedTeamAttackCheck",
+      "type": "object"
+    },
     "RedTeamFinding": {
       "additionalProperties": false,
       "properties": {
+        "attack_checks": {
+          "items": {
+            "$ref": "#/$defs/RedTeamAttackCheck"
+          },
+          "title": "Attack Checks",
+          "type": "array"
+        },
         "attack_summary": {
           "title": "Attack Summary",
           "type": "string"
@@ -109,6 +152,13 @@
     "prompt_version": {
       "title": "Prompt Version",
       "type": "string"
+    },
+    "required_attack_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Attack Checks",
+      "type": "array"
     },
     "run_id": {
       "title": "Run Id",

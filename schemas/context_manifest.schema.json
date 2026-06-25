@@ -642,6 +642,11 @@
       "title": "Red Team Artifacts",
       "type": "array"
     },
+    "red_team_summary": {
+      "additionalProperties": true,
+      "title": "Red Team Summary",
+      "type": "object"
+    },
     "report_artifact": {
       "anyOf": [
         {

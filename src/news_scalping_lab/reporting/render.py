@@ -129,6 +129,14 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "",
             "No automatic exclusions. Red-team objections are retained with each candidate.",
             f"Red-team artifacts: {', '.join(manifest.red_team_artifacts) or 'none'}",
+            (
+                "- Required attack checks: "
+                f"{manifest.red_team_summary.get('required_attack_check_count', 0)}"
+            ),
+            (
+                "- All passed to synthesis: "
+                f"{manifest.red_team_summary.get('all_findings_passed_to_synthesis', False)}"
+            ),
             "",
             "## 10. Key Counterexamples And Uncertainty",
             "",

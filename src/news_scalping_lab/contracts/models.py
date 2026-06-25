@@ -148,12 +148,21 @@ class Candidate(StrictModel):
         return value
 
 
+class RedTeamAttackCheck(StrictModel):
+    name: str
+    status: str
+    objection: str = ""
+    evidence_source_ids: list[str] = Field(default_factory=list)
+    passed_to_synthesis: bool = True
+
+
 class RedTeamFinding(StrictModel):
     candidate_rank: int
     ticker: str
     company_name: str
     path_type: PathType
     attack_summary: str
+    attack_checks: list[RedTeamAttackCheck] = Field(default_factory=list)
     objections: list[str] = Field(default_factory=list)
     contrary_evidence: list[str] = Field(default_factory=list)
     disconfirming_conditions: list[str] = Field(default_factory=list)
@@ -169,6 +178,7 @@ class RedTeamArtifact(StrictModel):
     prompt_sha256: str
     created_at: datetime
     candidate_count: int
+    required_attack_checks: list[str] = Field(default_factory=list)
     candidate_findings: list[RedTeamFinding] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
@@ -572,6 +582,7 @@ class ContextManifest(StrictModel):
     source_ledger_entry_count: int = 0
     source_ledger_summary: dict[str, Any] = Field(default_factory=dict)
     red_team_artifacts: list[str] = Field(default_factory=list)
+    red_team_summary: dict[str, Any] = Field(default_factory=dict)
     token_counts: dict[str, int] = Field(default_factory=dict)
     truncations: list[str] = Field(default_factory=list)
     web_queries: list[str] = Field(default_factory=list)

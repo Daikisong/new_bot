@@ -180,6 +180,11 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
         source_ledger_sha256="ledger-sha",
         source_ledger_entry_count=3,
+        red_team_artifacts=["runs/checkpoints/red_team/RUN-report.json"],
+        red_team_summary={
+            "required_attack_check_count": 10,
+            "all_findings_passed_to_synthesis": True,
+        },
         web_sources=["mock://source"],
         candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-report/candidate_web_checks.jsonl"
@@ -251,6 +256,9 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Supporting cases: EP-sector-positive" in report
     assert "- Contradicting cases: EP-sector-negative" in report
     assert "- Provenance sources: SRC-report-sector" in report
+    assert "Red-team artifacts: runs/checkpoints/red_team/RUN-report.json" in report
+    assert "- Required attack checks: 10" in report
+    assert "- All passed to synthesis: True" in report
     assert "- Total input rows: 2" in report
     assert "- News window start: 2030-01-09T15:30:00+09:00" in report
     assert "- News window end: 2030-01-10T08:59:59+09:00" in report

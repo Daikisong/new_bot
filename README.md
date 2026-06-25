@@ -129,6 +129,8 @@ business and supply-chain relation, prior market narratives, recent disclosure,
 market cap, shares, D-1 turnover, limit-up status, and multi-day absorption.
 Those checks are summarized per subject in `candidate_verification.json`, with
 status counts and unresolved company-discovery items carried into final synthesis.
+The red-team pass records the required attack checklist for every candidate and
+keeps each objection marked as passed to synthesis rather than deleting candidates.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates
