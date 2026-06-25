@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, time
+from pathlib import Path
 from typing import TypeVar
 
 import pytest
@@ -73,6 +74,15 @@ def _batch_episode(episode_id: str, summary: str) -> ResearchEpisode:
         ),
         available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
     )
+
+
+def _tree_hashes(root: Path, relative_dir: str) -> dict[str, str]:
+    base = root / relative_dir
+    return {
+        path.relative_to(base).as_posix(): file_sha256(path)
+        for path in sorted(base.rglob("*"))
+        if path.is_file()
+    }
 
 
 def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
@@ -346,12 +356,46 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     compiler = BrainCompiler(tmp_path)
     first_manifest = compiler.rebuild(mode="full")
     first_hashes = current_brain_file_hashes(tmp_path)
+    first_snapshot_hashes = _tree_hashes(
+        tmp_path,
+        f"brain/snapshots/{first_manifest.brain_version}",
+    )
+    first_shard_current_hashes = _tree_hashes(tmp_path, "memory/shard_brains/current")
+    first_shard_version_hashes = _tree_hashes(
+        tmp_path,
+        f"memory/shard_brains/{first_manifest.brain_version}",
+    )
+    first_mechanism_current_hashes = _tree_hashes(tmp_path, "memory/mechanisms/current")
+    first_mechanism_version_hashes = _tree_hashes(
+        tmp_path,
+        f"memory/mechanisms/{first_manifest.brain_version}",
+    )
+    first_diff_hash = file_sha256(
+        tmp_path / "brain" / "diffs" / f"{first_manifest.brain_version}.md"
+    )
     first_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
     first_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
         encoding="utf-8"
     )
     second_manifest = compiler.rebuild(mode="full")
     second_hashes = current_brain_file_hashes(tmp_path)
+    second_snapshot_hashes = _tree_hashes(
+        tmp_path,
+        f"brain/snapshots/{second_manifest.brain_version}",
+    )
+    second_shard_current_hashes = _tree_hashes(tmp_path, "memory/shard_brains/current")
+    second_shard_version_hashes = _tree_hashes(
+        tmp_path,
+        f"memory/shard_brains/{second_manifest.brain_version}",
+    )
+    second_mechanism_current_hashes = _tree_hashes(tmp_path, "memory/mechanisms/current")
+    second_mechanism_version_hashes = _tree_hashes(
+        tmp_path,
+        f"memory/mechanisms/{second_manifest.brain_version}",
+    )
+    second_diff_hash = file_sha256(
+        tmp_path / "brain" / "diffs" / f"{second_manifest.brain_version}.md"
+    )
     second_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
     second_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
         encoding="utf-8"
@@ -359,6 +403,12 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
 
     assert second_manifest.model_dump(mode="json") == first_manifest.model_dump(mode="json")
     assert second_hashes == first_hashes
+    assert second_snapshot_hashes == first_snapshot_hashes
+    assert second_shard_current_hashes == first_shard_current_hashes
+    assert second_shard_version_hashes == first_shard_version_hashes
+    assert second_mechanism_current_hashes == first_mechanism_current_hashes
+    assert second_mechanism_version_hashes == first_mechanism_version_hashes
+    assert second_diff_hash == first_diff_hash
     assert second_claims == first_claims
     assert second_mechanisms == first_mechanisms
 
