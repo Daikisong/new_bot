@@ -77,6 +77,7 @@ TEXT_DOMAIN_COLLECTION_RE = re.compile(
     r"(?:map|mapping|list|whitelist|allowlist|table)\b\s*[:=]\s*(?:\[|\{)",
     re.IGNORECASE,
 )
+TEXT_HANGUL_COLLECTION_RE = re.compile(r"[\uac00-\ud7a3].*[:=]\s*(?:\[|\{)")
 TEXT_POLICY_FILE_SUFFIXES = {".md", ".txt"}
 
 
@@ -107,6 +108,16 @@ def audit_hardcoding(root: Path) -> dict[str, object]:
             if TEXT_DOMAIN_COLLECTION_RE.search(line):
                 findings.append(
                     _finding(root, path, line_number, "guidance_domain_collection", line)
+                )
+            if TEXT_HANGUL_COLLECTION_RE.search(line):
+                findings.append(
+                    _finding(
+                        root,
+                        path,
+                        line_number,
+                        "guidance_hangul_domain_collection",
+                        line,
+                    )
                 )
     return {"passed": not findings, "findings": findings}
 

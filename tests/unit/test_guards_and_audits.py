@@ -436,6 +436,32 @@ SECTOR_BENEFICIARIES = {
     }
 
 
+def test_hardcoding_audit_flags_actual_hangul_domain_literals(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src" / "news_scalping_lab"
+    source_dir.mkdir(parents=True)
+    (source_dir / "candidate_lists.py").write_text(
+        "\n".join(
+            [
+                r'CANDIDATES = list(["\uac74\uc124", "\ubc18\ub3c4\uccb4"])',
+                (
+                    r'SECTOR_BENEFICIARIES = {"\uc9c0\uc5ed \ud14c\ub9c8": '
+                    r'["\ubb3c\ub958"]}'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert {finding["rule"] for finding in findings} == {
+        "hangul_domain_literal_collection"
+    }
+
+
 def test_hardcoding_audit_flags_fixed_news_expression_scores(tmp_path: Path) -> None:
     source_dir = tmp_path / "src" / "news_scalping_lab"
     source_dir.mkdir(parents=True)
@@ -485,6 +511,24 @@ def test_hardcoding_audit_scans_prompts_and_repo_guidance(tmp_path: Path) -> Non
     rules = {finding["rule"] for finding in findings}
     assert "guidance_six_digit_ticker" in rules
     assert "guidance_domain_collection" in rules
+
+
+def test_hardcoding_audit_flags_hangul_collections_in_prompts(tmp_path: Path) -> None:
+    prompt_dir = tmp_path / "prompts" / "blind_analysis"
+    prompt_dir.mkdir(parents=True)
+    (prompt_dir / "regional_rules.md").write_text(
+        '\uc9c0\uc5ed_\ud14c\ub9c8 = ["\uac74\uc124", "\ubb3c\ub958"]\n',
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert {finding["rule"] for finding in findings} == {
+        "guidance_hangul_domain_collection"
+    }
 
 
 def test_provenance_audit_requires_prediction_context_manifest(tmp_path: Path) -> None:
