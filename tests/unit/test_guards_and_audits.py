@@ -951,6 +951,53 @@ def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) 
     ) in manifest_mismatch["findings"]
 
 
+def test_provenance_audit_verifies_manifest_prediction_artifact_blind_hash(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = _sealed_prediction_payload()
+    prediction_path = tmp_path / "predictions" / "2030-01-10.json"
+    write_json(prediction_path, prediction)
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    tampered_run_prediction = {
+        **prediction,
+        "blind_artifact_sha256": "0" * 64,
+    }
+    write_json(run_prediction_path, tampered_run_prediction)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: context manifest prediction_artifact "
+        "blind_artifact_sha256 mismatch"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: context manifest prediction_artifact "
+        "manifest blind_artifact_sha256 mismatch"
+    ) in result["findings"]
+
+
 def test_provenance_audit_validates_semantic_import_source_segments(tmp_path: Path) -> None:
     raw_path = tmp_path / "data" / "raw" / "research" / "source.md"
     first_segment = "First sentence."

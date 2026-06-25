@@ -1026,6 +1026,22 @@ def _check_manifest_prediction_artifact(
         findings.append(
             f"{prediction_path.name}: context manifest prediction_artifact run_id mismatch"
         )
+    artifact_blind_hash = payload.get("blind_artifact_sha256")
+    if isinstance(payload.get("sealed_at"), str) and isinstance(artifact_blind_hash, str):
+        expected_blind_hash = sha256_text(
+            canonical_json({**payload, "blind_artifact_sha256": None})
+        )
+        if artifact_blind_hash != expected_blind_hash:
+            findings.append(
+                f"{prediction_path.name}: context manifest prediction_artifact "
+                "blind_artifact_sha256 mismatch"
+            )
+    manifest_blind_hash = manifest.get("blind_artifact_sha256")
+    if isinstance(manifest_blind_hash, str) and artifact_blind_hash != manifest_blind_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest prediction_artifact "
+            "manifest blind_artifact_sha256 mismatch"
+        )
 
 
 def _check_manifest_report_artifact(
