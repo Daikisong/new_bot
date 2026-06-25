@@ -110,3 +110,23 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     parsed_bundle = parse_bundle(bundle_path)
     assert parsed_bundle.validation["blind_hash_verified"]
     assert parsed_bundle.validation["manifest_validation_self_consistent_verified"]
+
+    evaluated = RUNNER.invoke(app, ["evaluate", "--trade-date", "2026-06-24"])
+    assert evaluated.exit_code == 0, evaluated.output
+    evaluation_payload = json.loads(evaluated.output)
+    postmortem_path = tmp_path / evaluation_payload["postmortem"]
+    episode_id = evaluation_payload["research_episode_id"]
+    assert postmortem_path.exists()
+    assert (tmp_path / evaluation_payload["research_episode_path"]).exists()
+
+    updated = RUNNER.invoke(
+        app,
+        ["brain", "update", "--episode", "2026-06-24"],
+    )
+    assert updated.exit_code == 0, updated.output
+    update_manifest = json.loads(updated.output)
+    assert update_manifest["coverage_complete"] is True
+    assert episode_id in update_manifest["covered_episode_ids"]
+    assert read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")[
+        "coverage_complete"
+    ] is True
