@@ -1469,6 +1469,14 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "why_now": "The candidate is tied to the current pre-cutoff event.",
         "confidence_label": "speculative",
         "evidence_quality": "low",
+        "causal_chain": ["current event", "blind-safe candidate hypothesis"],
+        "direct_evidence": ["current-news mention"],
+        "inferred_evidence": ["open-world mechanism"],
+        "market_memory_evidence": [],
+        "prior_positive_cases": [],
+        "prior_negative_cases": [],
+        "counterarguments": ["listing status may be unverified"],
+        "disconfirming_conditions": ["cutoff-after evidence only"],
         "source_urls": ["news://EVT-identity"],
         "memory_episode_ids": [],
         "provenance": [
@@ -1495,6 +1503,7 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "why_now": "",
         "confidence_label": "73%",
         "evidence_quality": "unknownish",
+        "direct_evidence": ["valid", 123],
     }
     write_json(
         episode_path,
@@ -1527,6 +1536,28 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "research/accepted/EP-identity.json: research episode blind prediction 1 "
         "evidence_quality missing or invalid"
     ) in candidate_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction 1 "
+        "direct_evidence missing or invalid"
+    ) in candidate_shape_failed["findings"]
+
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            blind_predictions=[
+                {**valid_candidate, "rank": 2},
+                {**valid_candidate, "rank": 2},
+            ],
+        ),
+    )
+    rank_shape_failed = audit_provenance(tmp_path)
+
+    assert not rank_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode blind prediction "
+        "ranks are not sequential"
+    ) in rank_shape_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(

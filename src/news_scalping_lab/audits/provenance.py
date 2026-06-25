@@ -39,6 +39,19 @@ SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
 STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
 ALLOWED_CONFIDENCE_LABELS = {label.value for label in ConfidenceLabel}
 ALLOWED_CANDIDATE_PATH_TYPES = {path_type.value for path_type in PathType}
+PREDICTION_STRING_SEQUENCE_FIELDS = (
+    "event_ids",
+    "causal_chain",
+    "direct_evidence",
+    "inferred_evidence",
+    "market_memory_evidence",
+    "prior_positive_cases",
+    "prior_negative_cases",
+    "counterarguments",
+    "disconfirming_conditions",
+    "source_urls",
+    "memory_episode_ids",
+)
 
 
 def audit_provenance(root: Path) -> dict[str, object]:
@@ -316,6 +329,7 @@ def _check_research_episode_blind_decision_provenance(
     if not isinstance(blind_predictions, list):
         findings.append(f"{label}: research episode blind_predictions missing")
         return
+    _check_research_episode_blind_prediction_ranks(label, blind_predictions, findings)
     for index, candidate in enumerate(blind_predictions, start=1):
         if not isinstance(candidate, dict):
             findings.append(f"{label}: research episode blind prediction {index} is not an object")
@@ -452,6 +466,32 @@ def _check_research_episode_blind_prediction_shape(
     evidence_quality = candidate.get("evidence_quality")
     if not isinstance(evidence_quality, str) or evidence_quality not in ALLOWED_CONFIDENCE_LABELS:
         findings.append(f"{prefix} evidence_quality missing or invalid")
+    for field_name in PREDICTION_STRING_SEQUENCE_FIELDS:
+        _check_string_list_field(prefix, field_name, candidate.get(field_name), findings)
+
+
+def _check_research_episode_blind_prediction_ranks(
+    label: str,
+    blind_predictions: list[Any],
+    findings: list[str],
+) -> None:
+    ranks = [
+        candidate.get("rank")
+        for candidate in blind_predictions
+        if isinstance(candidate, dict)
+    ]
+    if ranks != list(range(1, len(ranks) + 1)):
+        findings.append(f"{label}: research episode blind prediction ranks are not sequential")
+
+
+def _check_string_list_field(
+    label: str,
+    field_name: str,
+    value: Any,
+    findings: list[str],
+) -> None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        findings.append(f"{label} {field_name} missing or invalid")
 
 
 def _check_research_episode_claim_available_from(
