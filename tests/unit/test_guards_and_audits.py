@@ -1346,8 +1346,9 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         research_version: str = "identity-test-v1",
         price_source_snapshot: dict[str, object] | None = None,
         blind_predictions: list[dict[str, object]] | None = None,
+        postmortem: dict[str, object] | None = None,
     ) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema_version": schema_version,
             "episode_id": episode_id,
             "trade_date": "2030-01-10",
@@ -1386,6 +1387,9 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
             ],
             "available_from": "2030-01-11T00:00:00+09:00",
         }
+        if postmortem is not None:
+            payload["postmortem"] = postmortem
+        return payload
 
     episode_path = tmp_path / "research" / "accepted" / "EP-identity.json"
     write_json(episode_path, episode_payload("EP-identity"))
@@ -1558,6 +1562,55 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         "research/accepted/EP-identity.json: research episode blind prediction "
         "ranks are not sequential"
     ) in rank_shape_failed["findings"]
+
+    valid_postmortem = {
+        "summary": "Evaluation-only postmortem learning.",
+        "hits": ["CandidateCo"],
+        "misses": [],
+        "false_positives": [],
+        "failure_codes": ["UNKNOWN"],
+        "lessons": ["Use only after the evaluated trade date."],
+        "provenance": [
+            {
+                "source_id": "SRC-postmortem",
+                "source_type": "evaluation_postmortem",
+                "uri": "prompt://postmortem/test",
+            }
+        ],
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", postmortem=valid_postmortem),
+    )
+    valid_postmortem_result = audit_provenance(tmp_path)
+
+    assert valid_postmortem_result["passed"], valid_postmortem_result["findings"]
+
+    invalid_postmortem = {
+        **valid_postmortem,
+        "summary": "",
+        "hits": ["valid", 1],
+        "failure_codes": ["NOT_A_FAILURE_CODE"],
+    }
+    write_json(
+        episode_path,
+        episode_payload("EP-identity", postmortem=invalid_postmortem),
+    )
+    postmortem_shape_failed = audit_provenance(tmp_path)
+
+    assert not postmortem_shape_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode postmortem "
+        "summary missing or invalid"
+    ) in postmortem_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode postmortem "
+        "hits missing or invalid"
+    ) in postmortem_shape_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode postmortem "
+        "failure_codes invalid"
+    ) in postmortem_shape_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(

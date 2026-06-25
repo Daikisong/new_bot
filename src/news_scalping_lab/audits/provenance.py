@@ -15,6 +15,7 @@ from news_scalping_lab.context.final_synthesis import final_synthesis_input_summ
 from news_scalping_lab.contracts.models import (
     CompanyMemory,
     ConfidenceLabel,
+    FailureCode,
     MechanismMemory,
     PathType,
 )
@@ -39,6 +40,7 @@ SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
 STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
 ALLOWED_CONFIDENCE_LABELS = {label.value for label in ConfidenceLabel}
 ALLOWED_CANDIDATE_PATH_TYPES = {path_type.value for path_type in PathType}
+ALLOWED_FAILURE_CODES = {code.value for code in FailureCode}
 PREDICTION_STRING_SEQUENCE_FIELDS = (
     "event_ids",
     "causal_chain",
@@ -51,6 +53,12 @@ PREDICTION_STRING_SEQUENCE_FIELDS = (
     "disconfirming_conditions",
     "source_urls",
     "memory_episode_ids",
+)
+POSTMORTEM_STRING_SEQUENCE_FIELDS = (
+    "hits",
+    "misses",
+    "false_positives",
+    "lessons",
 )
 
 
@@ -357,6 +365,7 @@ def _check_research_episode_blind_decision_provenance(
         if not isinstance(postmortem, dict):
             findings.append(f"{label}: research episode postmortem is not an object")
         else:
+            _check_research_episode_postmortem_shape(label, postmortem, findings)
             _check_nested_provenance_entries(
                 root,
                 label,
@@ -492,6 +501,28 @@ def _check_string_list_field(
 ) -> None:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         findings.append(f"{label} {field_name} missing or invalid")
+
+
+def _check_research_episode_postmortem_shape(
+    label: str,
+    postmortem: dict[str, Any],
+    findings: list[str],
+) -> None:
+    summary = postmortem.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        findings.append(f"{label}: research episode postmortem summary missing or invalid")
+    for field_name in POSTMORTEM_STRING_SEQUENCE_FIELDS:
+        _check_string_list_field(
+            f"{label}: research episode postmortem",
+            field_name,
+            postmortem.get(field_name),
+            findings,
+        )
+    failure_codes = postmortem.get("failure_codes")
+    if not isinstance(failure_codes, list) or not all(
+        isinstance(code, str) and code in ALLOWED_FAILURE_CODES for code in failure_codes
+    ):
+        findings.append(f"{label}: research episode postmortem failure_codes invalid")
 
 
 def _check_research_episode_claim_available_from(
