@@ -584,6 +584,61 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
     write_json(manifest_file, original_manifest_for_candidate_web_check)
 
+    original_manifest_for_candidate_web_cutoff_contract = read_json(manifest_file)
+    tampered_candidate_web_cutoff_rows = [
+        json.loads(line)
+        for line in original_candidate_web_check.splitlines()
+        if line.strip()
+    ]
+    tampered_candidate_web_cutoff_rows[0] = {
+        **tampered_candidate_web_cutoff_rows[0],
+        "time_verified": True,
+        "available_before_cutoff": True,
+        "published_at": "2030-01-12T09:30:00+09:00",
+    }
+    tampered_candidate_web_cutoff_payload = "".join(
+        canonical_json(row) + "\n" for row in tampered_candidate_web_cutoff_rows
+    )
+    candidate_web_check_file.write_text(
+        tampered_candidate_web_cutoff_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_candidate_web_cutoff_contract,
+            "candidate_web_check_sha256": sha256_text(
+                tampered_candidate_web_cutoff_payload
+            ),
+        },
+    )
+    tampered_candidate_web_cutoff_context = RUNNER.invoke(
+        app, ["context", "inspect", run_id]
+    )
+    _assert_ok(
+        "context inspect tampered candidate web cutoff contract",
+        tampered_candidate_web_cutoff_context,
+    )
+    tampered_candidate_web_cutoff_inspection = json.loads(
+        tampered_candidate_web_cutoff_context.output
+    )["inspection"]
+    assert (
+        tampered_candidate_web_cutoff_inspection["reproducibility_checks_passed"]
+        is False
+    )
+    tampered_candidate_web_cutoff_status = (
+        tampered_candidate_web_cutoff_inspection["supporting_artifacts"][
+            "candidate_web_check"
+        ]
+    )
+    assert tampered_candidate_web_cutoff_status["hash_verified"] is True
+    assert tampered_candidate_web_cutoff_status["cutoff_verified"] is False
+    assert "candidate_web_check_cutoff_not_verified" in (
+        tampered_candidate_web_cutoff_status["errors"]
+    )
+    candidate_web_check_file.write_text(original_candidate_web_check, encoding="utf-8")
+    write_json(manifest_file, original_manifest_for_candidate_web_cutoff_contract)
+
     original_manifest_for_candidate_web_raw_content = read_json(manifest_file)
     tampered_candidate_web_raw_content_rows = [
         json.loads(line)

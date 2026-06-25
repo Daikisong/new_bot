@@ -1020,10 +1020,9 @@ def _inspect_candidate_web_check_artifact(
     if not status["source_url_verified"]:
         status["errors"].append("candidate_web_check_source_url_mismatch")
 
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
     status["cutoff_verified"] = all(
-        row.get("available_before_cutoff") is True
-        and row.get("time_verified") is True
-        for row in rows
+        _web_source_cutoff_valid(row, cutoff_at) for row in rows
     )
     if not status["cutoff_verified"]:
         status["errors"].append("candidate_web_check_cutoff_not_verified")
