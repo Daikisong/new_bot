@@ -549,7 +549,18 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         tmp_path / saved_manifest["source_ledger_artifact"]
     ).read_text(encoding="utf-8")
     source_ledger_rows = [json.loads(line) for line in source_ledger.splitlines()]
+    assert saved_manifest["source_ledger_entry_count"] == len(source_ledger_rows)
     assert any(row["source_type"] == "web_search_result" for row in source_ledger_rows)
+    candidate_ledger_rows = [
+        row for row in source_ledger_rows if row["source_type"] == "candidate_web_check"
+    ]
+    assert len(candidate_ledger_rows) == saved_manifest["candidate_web_check_count"]
+    assert {row["source_id"] for row in candidate_ledger_rows} == set(
+        saved_manifest["candidate_web_source_ids"]
+    )
+    assert all(row["usage_phase"] == "BLIND" for row in candidate_ledger_rows)
+    assert all(row["available_before_cutoff"] is True for row in candidate_ledger_rows)
+    assert all("content" not in row for row in candidate_ledger_rows)
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
 
 

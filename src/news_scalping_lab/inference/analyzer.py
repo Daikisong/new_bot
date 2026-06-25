@@ -703,6 +703,9 @@ class DailyAnalyzer:
                 }
             )
         rows.extend(self._web_source_ledger_rows(manifest, retrieved_at=retrieved_at))
+        rows.extend(
+            self._candidate_web_check_ledger_rows(manifest, retrieved_at=retrieved_at)
+        )
 
         artifact_relative = (
             Path("runs")
@@ -761,6 +764,50 @@ class DailyAnalyzer:
                     "notes": (
                         "Cutoff-safe web source admitted by TemporalWebGuard; body/content "
                         "is represented only by hashes in the source ledger."
+                    ),
+                }
+            )
+        return rows
+
+    def _candidate_web_check_ledger_rows(
+        self,
+        manifest: ContextManifest,
+        *,
+        retrieved_at: datetime,
+    ) -> list[dict[str, Any]]:
+        if not manifest.candidate_web_check_artifact:
+            return []
+        artifact_path = self.root / manifest.candidate_web_check_artifact
+        if not artifact_path.exists():
+            return []
+        rows: list[dict[str, Any]] = []
+        for line in artifact_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            rows.append(
+                {
+                    "schema_version": "nslab.source_ledger.v1",
+                    "run_id": manifest.run_id,
+                    "source_id": payload["source_id"],
+                    "source_type": "candidate_web_check",
+                    "title": payload["title"],
+                    "publisher": None,
+                    "url": payload["url"],
+                    "published_at": payload["published_at"],
+                    "retrieved_at": retrieved_at.isoformat(),
+                    "time_verified": payload["time_verified"],
+                    "available_before_cutoff": payload["available_before_cutoff"],
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [],
+                    "event_ids": [],
+                    "candidate_rank": payload["candidate_rank"],
+                    "candidate_company_name": payload["candidate_company_name"],
+                    "candidate_ticker": payload["candidate_ticker"],
+                    "content_sha256": payload["content_sha256"],
+                    "notes": (
+                        "Cutoff-safe candidate-specific web verification source; "
+                        "opened content is represented only by hashes and excerpt artifacts."
                     ),
                 }
             )
