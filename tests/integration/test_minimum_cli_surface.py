@@ -227,6 +227,14 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["final_synthesis_context"]["input_summary_verified"] is True
     assert supporting["final_synthesis_context"]["manifest_summary_verified"] is True
     assert supporting["final_synthesis_context"]["manifest_counts_verified"] is True
+    assert supporting["final_synthesis_context"]["web_research_queries_verified"] is True
+    assert supporting["final_synthesis_context"]["web_research_source_ids_verified"] is True
+    assert supporting["final_synthesis_context"]["web_research_sources_verified"] is True
+    assert (
+        supporting["final_synthesis_context"]["web_research_excluded_ids_verified"]
+        is True
+    )
+    assert supporting["final_synthesis_context"]["web_research_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["schema_version_verified"] is True
@@ -747,6 +755,67 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert tampered_final_inputs_status["required_input_set_verified"] is False
     assert "final_synthesis_context_required_input_set_mismatch" in (
         tampered_final_inputs_status["errors"]
+    )
+    write_json(final_context_file, original_final_context)
+    write_json(manifest_file, original_manifest)
+    original_final_sources = original_final_context["payload"]["web_research"]["sources"]
+    assert original_final_sources
+    tampered_web_sources = [
+        (
+            {**source, "title": f"{source['title']} tampered"}
+            if index == 0
+            else source
+        )
+        for index, source in enumerate(original_final_sources)
+    ]
+    tampered_web_payload = {
+        **original_final_context["payload"],
+        "web_research": {
+            **original_final_context["payload"]["web_research"],
+            "sources": tampered_web_sources,
+        },
+    }
+    tampered_web_summary = final_synthesis_input_summary(tampered_web_payload)
+    tampered_web_context = {
+        **original_final_context,
+        "payload_sha256": sha256_text(canonical_json(tampered_web_payload)),
+        "input_summary": tampered_web_summary,
+        "payload": tampered_web_payload,
+    }
+    write_json(final_context_file, tampered_web_context)
+    write_json(
+        manifest_file,
+        {
+            **original_manifest,
+            "final_synthesis_context_sha256": sha256_text(
+                final_context_file.read_text(encoding="utf-8")
+            ),
+            "final_synthesis_context_summary": tampered_web_summary,
+        },
+    )
+    tampered_web_context_result = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok(
+        "context inspect tampered final synthesis web research",
+        tampered_web_context_result,
+    )
+    tampered_web_inspection = json.loads(tampered_web_context_result.output)[
+        "inspection"
+    ]
+    assert tampered_web_inspection["reproducibility_checks_passed"] is False
+    tampered_web_status = tampered_web_inspection["supporting_artifacts"][
+        "final_synthesis_context"
+    ]
+    assert tampered_web_status["hash_verified"] is True
+    assert tampered_web_status["payload_hash_verified"] is True
+    assert tampered_web_status["input_summary_verified"] is True
+    assert tampered_web_status["manifest_summary_verified"] is True
+    assert tampered_web_status["manifest_counts_verified"] is True
+    assert tampered_web_status["web_research_queries_verified"] is True
+    assert tampered_web_status["web_research_source_ids_verified"] is True
+    assert tampered_web_status["web_research_sources_verified"] is False
+    assert tampered_web_status["web_research_verified"] is False
+    assert "final_synthesis_context_web_research_sources_mismatch" in (
+        tampered_web_status["errors"]
     )
     write_json(final_context_file, original_final_context)
     write_json(manifest_file, original_manifest)

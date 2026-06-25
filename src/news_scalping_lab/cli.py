@@ -1187,6 +1187,11 @@ def _inspect_final_synthesis_context_artifact(
             "input_summary_verified": None,
             "manifest_summary_verified": None,
             "manifest_counts_verified": None,
+            "web_research_queries_verified": None,
+            "web_research_source_ids_verified": None,
+            "web_research_sources_verified": None,
+            "web_research_excluded_ids_verified": None,
+            "web_research_verified": None,
         }
     )
     if not (
@@ -1279,8 +1284,99 @@ def _inspect_final_synthesis_context_artifact(
     if not status["manifest_counts_verified"]:
         status["errors"].append("final_synthesis_context_manifest_count_mismatches")
 
+    _inspect_final_synthesis_web_research_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
+
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
+
+
+def _inspect_final_synthesis_web_research_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    context = context_payload.get("web_research")
+    if not isinstance(context, dict):
+        status["web_research_verified"] = False
+        status["errors"].append("final_synthesis_context_web_research_invalid")
+        return
+
+    status["web_research_queries_verified"] = context.get("queries") == manifest.get(
+        "web_queries"
+    )
+    if not status["web_research_queries_verified"]:
+        status["errors"].append("final_synthesis_context_web_research_queries_mismatch")
+
+    status["web_research_source_ids_verified"] = _same_unique_string_set(
+        context.get("included_sources"),
+        manifest.get("web_sources"),
+    )
+    if not status["web_research_source_ids_verified"]:
+        status["errors"].append(
+            "final_synthesis_context_web_research_source_ids_mismatch"
+        )
+
+    status["web_research_excluded_ids_verified"] = _same_unique_string_set(
+        context.get("excluded_after_cutoff_source_ids"),
+        manifest.get("excluded_web_source_ids"),
+    )
+    if not status["web_research_excluded_ids_verified"]:
+        status["errors"].append(
+            "final_synthesis_context_web_research_excluded_ids_mismatch"
+        )
+
+    web_source_rows = _read_web_source_context_rows(root, manifest, status)
+    status["web_research_sources_verified"] = context.get("sources") == web_source_rows
+    if not status["web_research_sources_verified"]:
+        status["errors"].append("final_synthesis_context_web_research_sources_mismatch")
+
+    status["web_research_verified"] = bool(
+        status["web_research_queries_verified"]
+        and status["web_research_source_ids_verified"]
+        and status["web_research_sources_verified"]
+        and status["web_research_excluded_ids_verified"]
+    )
+
+
+def _read_web_source_context_rows(
+    root: Path,
+    manifest: dict[str, Any],
+    status: dict[str, Any],
+) -> list[dict[str, Any]]:
+    web_sources = _string_list(manifest.get("web_sources"))
+    artifact_ref = manifest.get("web_source_artifact")
+    if not web_sources and not isinstance(artifact_ref, str):
+        return []
+    rows = _read_artifact_jsonl_rows(
+        root,
+        artifact_ref,
+        status,
+        label="web_source",
+    )
+    if rows is None:
+        status["errors"].append("final_synthesis_context_web_source_rows_unavailable")
+        return []
+    return [_web_source_context_row(row) for row in rows]
+
+
+def _web_source_context_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_id": row.get("source_id"),
+        "query": row.get("query"),
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "snippet": row.get("snippet"),
+        "published_at": row.get("published_at"),
+        "time_verified": row.get("time_verified"),
+        "content_sha256": row.get("content_sha256"),
+        "opened_text_excerpt": row.get("opened_text_excerpt"),
+    }
 
 
 def _inspect_blind_seal_receipt_artifact(
@@ -2674,6 +2770,7 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")
+        and status.get("web_research_verified")
     )
 
 
@@ -2984,6 +3081,20 @@ def _unique_strings(values: Iterable[str]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _same_unique_string_set(left: object, right: object) -> bool:
+    if not _string_list_field_valid(left) or not _string_list_field_valid(right):
+        return False
+    left_values = _string_list(left)
+    right_values = _string_list(right)
+    left_unique = _unique_strings(left_values)
+    right_unique = _unique_strings(right_values)
+    return (
+        len(left_unique) == len(left_values)
+        and len(right_unique) == len(right_values)
+        and set(left_unique) == set(right_unique)
+    )
 
 
 def _token_counts_valid(value: object) -> bool:
