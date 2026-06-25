@@ -7,10 +7,17 @@ import re
 from pathlib import Path
 
 TICKER_LITERAL_RE = re.compile(r"[\"'][0-9]{6}[\"']")
+HANGUL_RE = re.compile(r"[가-힣]")
 DOMAIN_TOKENS = {
     "beneficiary",
+    "beneficiaries",
+    "candidate",
+    "candidates",
+    "companies",
     "company",
     "event",
+    "leader",
+    "leaders",
     "policy",
     "region",
     "sector",
@@ -88,6 +95,17 @@ def _ast_findings(root: Path, path: Path, tree: ast.AST, lines: list[str]) -> li
                         )
                     )
                     break
+                if target_name and _is_hangul_domain_collection(target_name, value):
+                    findings.append(
+                        _finding(
+                            root,
+                            path,
+                            node.lineno,
+                            "hangul_domain_literal_collection",
+                            _line_at(lines, node.lineno),
+                        )
+                    )
+                    break
         if isinstance(node, ast.If) and _has_literal_condition_scoring(node):
             findings.append(
                 _finding(root, path, node.lineno, "fixed_expression_score", _line_at(lines, node.lineno))
@@ -119,6 +137,22 @@ def _is_forbidden_domain_assignment(name: str, value: ast.AST) -> bool:
         return True
     domain_token_count = len(tokens & DOMAIN_TOKENS)
     return domain_token_count >= 2 and "to" in tokens
+
+
+def _is_hangul_domain_collection(name: str, value: ast.AST) -> bool:
+    tokens = set(_identifier_tokens(name))
+    if not _is_collection_literal(value) or not tokens & DOMAIN_TOKENS:
+        return False
+    return _contains_hangul_domain_literal(value)
+
+
+def _contains_hangul_domain_literal(value: ast.AST) -> bool:
+    for child in ast.walk(value):
+        if not isinstance(child, ast.Constant) or not isinstance(child.value, str):
+            continue
+        if HANGUL_RE.search(child.value) and "가-힣" not in child.value:
+            return True
+    return False
 
 
 def _is_score_table_name(tokens: set[str]) -> bool:

@@ -200,6 +200,29 @@ BENEFICIARY_WHITELIST = ["222222", "FictionalInfra"]
     assert "quoted_six_digit_ticker" in rules
 
 
+def test_hardcoding_audit_flags_hangul_candidate_collections(tmp_path: Path) -> None:
+    source_dir = tmp_path / "src" / "news_scalping_lab"
+    source_dir.mkdir(parents=True)
+    (source_dir / "candidate_lists.py").write_text(
+        """
+CANDIDATES = ["가상전자", "샘플모빌리티"]
+SECTOR_BENEFICIARIES = {
+    "가상첨단산업": ["샘플전력", "예시 장비"]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    assert {finding["rule"] for finding in findings} == {
+        "hangul_domain_literal_collection"
+    }
+
+
 def test_hardcoding_audit_flags_fixed_news_expression_scores(tmp_path: Path) -> None:
     source_dir = tmp_path / "src" / "news_scalping_lab"
     source_dir.mkdir(parents=True)
