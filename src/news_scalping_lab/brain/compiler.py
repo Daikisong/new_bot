@@ -121,10 +121,7 @@ class BrainCompiler:
         self._write_current(manifest, claims)
         self._write_mechanism_memory(manifest, mechanisms)
         self._write_shard_brains(manifest, episodes)
-        snapshot_dir = self.snapshots_dir / version
-        if snapshot_dir.exists():
-            shutil.rmtree(snapshot_dir)
-        shutil.copytree(self.current_dir, snapshot_dir)
+        self._write_immutable_snapshot(version)
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
         if previous_version != version:
             write_rebuild_diff(self.root, previous_version, version)
@@ -222,10 +219,7 @@ class BrainCompiler:
         self._write_current(manifest, claims)
         self._write_mechanism_memory(manifest, mechanisms)
         self._write_shard_brains(manifest, episodes)
-        snapshot_dir = self.snapshots_dir / version
-        if snapshot_dir.exists():
-            shutil.rmtree(snapshot_dir)
-        shutil.copytree(self.current_dir, snapshot_dir)
+        self._write_immutable_snapshot(version)
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
         if previous_version != version:
             write_rebuild_diff(self.root, previous_version, version)
@@ -385,9 +379,11 @@ class BrainCompiler:
             },
         )
         versioned_dir = self.mechanisms_dir / manifest.brain_version
-        if versioned_dir.exists():
-            shutil.rmtree(versioned_dir)
-        shutil.copytree(self.current_mechanisms_dir, versioned_dir)
+        _copy_immutable_directory(
+            source_dir=self.current_mechanisms_dir,
+            target_dir=versioned_dir,
+            label="mechanism memory",
+        )
 
     def _write_shard_brains(
         self,
@@ -423,9 +419,11 @@ class BrainCompiler:
             },
         )
         versioned_dir = self.shard_brains_dir / manifest.brain_version
-        if versioned_dir.exists():
-            shutil.rmtree(versioned_dir)
-        shutil.copytree(self.current_shard_brains_dir, versioned_dir)
+        _copy_immutable_directory(
+            source_dir=self.current_shard_brains_dir,
+            target_dir=versioned_dir,
+            label="shard brain memory",
+        )
 
     def _read_current_manifest(self) -> BrainManifest | None:
         path = self.current_dir / "brain_manifest.json"
@@ -438,6 +436,13 @@ class BrainCompiler:
 
     def _read_current_mechanisms(self) -> list[MechanismMemory]:
         return _read_mechanism_jsonl(self.current_mechanisms_dir / "mechanisms.jsonl")
+
+    def _write_immutable_snapshot(self, version: str) -> None:
+        _copy_immutable_directory(
+            source_dir=self.current_dir,
+            target_dir=self.snapshots_dir / version,
+            label="brain snapshot",
+        )
 
     def _current_shard_episode_count(self) -> int | None:
         path = self.current_shard_brains_dir / "manifest.json"
@@ -778,3 +783,22 @@ def current_brain_file_hashes(root: Path) -> dict[str, str]:
         for path in sorted(current_dir.glob("*"))
         if path.is_file()
     }
+
+
+def _directory_file_hashes(directory: Path) -> dict[str, str]:
+    return {
+        path.relative_to(directory).as_posix(): file_sha256(path)
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _copy_immutable_directory(*, source_dir: Path, target_dir: Path, label: str) -> None:
+    if target_dir.exists():
+        if _directory_file_hashes(target_dir) != _directory_file_hashes(source_dir):
+            raise ValueError(
+                f"immutable {label} already exists with different content: "
+                f"{target_dir.name}"
+            )
+        return
+    shutil.copytree(source_dir, target_dir)

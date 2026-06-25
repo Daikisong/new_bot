@@ -496,6 +496,31 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     assert second_mechanisms == first_mechanisms
 
 
+def test_brain_rebuild_refuses_to_overwrite_existing_snapshot(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Immutable snapshot note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+
+    compiler = BrainCompiler(tmp_path)
+    manifest = compiler.rebuild(mode="full")
+    snapshot_manifest = (
+        tmp_path / "brain" / "snapshots" / manifest.brain_version / "brain_manifest.json"
+    )
+    original_snapshot = snapshot_manifest.read_text(encoding="utf-8")
+    snapshot_manifest.write_text(
+        original_snapshot.replace(manifest.brain_version, "brain-corrupted", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="immutable brain snapshot"):
+        compiler.rebuild(mode="full")
+
+    assert "brain-corrupted" in snapshot_manifest.read_text(encoding="utf-8")
+
+
 def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
