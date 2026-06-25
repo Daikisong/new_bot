@@ -542,6 +542,7 @@ class ContextManifest(StrictModel):
     candidate_web_check_artifact: str | None = None
     candidate_web_check_sha256: str | None = None
     candidate_web_check_count: int = 0
+    candidate_web_check_summary: dict[str, Any] = Field(default_factory=dict)
     candidate_web_source_ids: list[str] = Field(default_factory=list)
     excluded_candidate_web_check_artifact: str | None = None
     excluded_candidate_web_check_sha256: str | None = None

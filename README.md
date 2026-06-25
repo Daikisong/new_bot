@@ -123,6 +123,10 @@ The open-world candidate expansion pass then writes `candidate_expansion.json`
 with single-event, theme-formation, beneficiary-discovery, and continuation
 routes. Continuation routes are explicitly limited to D-1 market data so the
 next verification pass can investigate companies without using D-day prices.
+When web search is enabled, candidate verification now covers both final
+candidates and expansion subjects, checking listing/ticker identity, actual
+business and supply-chain relation, prior market narratives, recent disclosure,
+market cap, shares, D-1 turnover, limit-up status, and multi-day absorption.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates

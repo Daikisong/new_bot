@@ -178,6 +178,14 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Artifact: {manifest.candidate_web_check_artifact or 'none'}",
             f"- SHA256: {manifest.candidate_web_check_sha256 or 'none'}",
             f"- Accepted sources: {manifest.candidate_web_check_count}",
+            (
+                "- Subjects: "
+                f"{manifest.candidate_web_check_summary.get('subject_count', 0)}"
+            ),
+            (
+                "- Expansion subjects: "
+                f"{manifest.candidate_web_check_summary.get('candidate_expansion_subject_count', 0)}"
+            ),
             f"- Accepted source ids: {list_text(manifest.candidate_web_source_ids)}",
             f"- Excluded artifact: {manifest.excluded_candidate_web_check_artifact or 'none'}",
             f"- Excluded SHA256: {manifest.excluded_candidate_web_check_sha256 or 'none'}",

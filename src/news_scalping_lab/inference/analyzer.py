@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,32 @@ CANDIDATE_EXPANSION_REQUIRED_PATHS = (
     CandidateExpansionPath.BENEFICIARY_DISCOVERY,
     CandidateExpansionPath.CONTINUATION,
 )
+CANDIDATE_WEB_VERIFICATION_FOCUS = (
+    "listed_security_and_exact_ticker",
+    "business_location_customer_supply_chain_relation",
+    "prior_market_narratives_and_theme_memory",
+    "current_news_relation_vs_name_similarity",
+    "recent_disclosures_and_news",
+    "market_cap_and_shares_outstanding",
+    "D_minus_one_trading_value_turnover_limit_up",
+    "multi_day_pre_absorption",
+    "liquidity_and_competing_leaders",
+)
+
+
+@dataclass(frozen=True)
+class CandidateWebCheckSubject:
+    subject_type: str
+    rank: int
+    ticker: str
+    company_name: str
+    path_type: str
+    thesis: str
+    why_now: str
+    expansion_path: str | None = None
+    expansion_hypothesis: str | None = None
+    investigation_questions: tuple[str, ...] = ()
+    sector_hypotheses: tuple[str, ...] = ()
 
 
 class DailyAnalyzer:
@@ -1505,15 +1532,16 @@ class DailyAnalyzer:
         guard = TemporalWebGuard(self.web_provider)
         rows: list[dict[str, Any]] = []
         excluded_rows: list[dict[str, Any]] = []
-        for candidate in sorted(prediction.candidates, key=lambda item: item.rank):
-            query = self._candidate_web_check_query(candidate)
+        subjects = self._candidate_web_check_subjects(prediction, manifest)
+        for subject in subjects:
+            query = self._candidate_web_check_query(subject)
             manifest.blind_web_search_call_count += 1
             prior_exclusion_count = len(guard.excluded_sources)
             for result in await guard.search(query, cutoff_at=cutoff_at):
                 rows.append(
                     self._candidate_web_check_row(
                         result,
-                        candidate=candidate,
+                        subject=subject,
                         manifest=manifest,
                         query=query,
                         cutoff_at=cutoff_at,
@@ -1524,7 +1552,7 @@ class DailyAnalyzer:
                 excluded_rows.append(
                     self._excluded_candidate_web_check_row(
                         exclusion,
-                        candidate=candidate,
+                        subject=subject,
                         manifest=manifest,
                         query=query,
                         cutoff_at=cutoff_at,
@@ -1550,6 +1578,25 @@ class DailyAnalyzer:
         manifest.candidate_web_check_artifact = artifact_relative.as_posix()
         manifest.candidate_web_check_sha256 = sha256_text(payload)
         manifest.candidate_web_check_count = len(rows)
+        manifest.candidate_web_check_summary = {
+            "subject_count": len(subjects),
+            "final_candidate_subject_count": sum(
+                1 for subject in subjects if subject.subject_type == "final_candidate"
+            ),
+            "candidate_expansion_subject_count": sum(
+                1 for subject in subjects if subject.subject_type == "candidate_expansion"
+            ),
+            "verification_focus": list(CANDIDATE_WEB_VERIFICATION_FOCUS),
+            "source_count": len(rows),
+            "excluded_source_count": len(excluded_rows),
+            "expansion_paths": sorted(
+                {
+                    str(subject.expansion_path)
+                    for subject in subjects
+                    if subject.expansion_path
+                }
+            ),
+        }
         excluded_artifact_relative = (
             Path("runs")
             / "checkpoints"
@@ -1566,26 +1613,83 @@ class DailyAnalyzer:
         manifest.excluded_candidate_web_check_sha256 = sha256_text(excluded_payload)
         manifest.excluded_candidate_web_check_count = len(excluded_rows)
 
-    def _candidate_web_check_query(self, candidate: Candidate) -> str:
+    def _candidate_web_check_subjects(
+        self,
+        prediction: BlindPrediction,
+        manifest: ContextManifest,
+    ) -> list[CandidateWebCheckSubject]:
+        subjects: list[CandidateWebCheckSubject] = [
+            CandidateWebCheckSubject(
+                subject_type="final_candidate",
+                rank=candidate.rank,
+                ticker=candidate.ticker,
+                company_name=candidate.company_name,
+                path_type=str(candidate.path_type),
+                thesis=candidate.thesis,
+                why_now=candidate.why_now,
+            )
+            for candidate in sorted(prediction.candidates, key=lambda item: item.rank)
+        ]
+        expansion = self._read_candidate_expansion_context(manifest)
+        findings = expansion.get("findings") if isinstance(expansion, dict) else None
+        if not isinstance(findings, list):
+            return subjects
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            path = str(finding.get("path") or "UNKNOWN")
+            candidate_names = _string_values(finding.get("candidate_names"))
+            if not candidate_names:
+                candidate_names = _string_values(finding.get("sector_hypotheses"))[:1]
+            if not candidate_names:
+                candidate_names = [f"{path}_DISCOVERY_REQUIRED"]
+            for candidate_name in candidate_names:
+                subjects.append(
+                    CandidateWebCheckSubject(
+                        subject_type="candidate_expansion",
+                        rank=0,
+                        ticker="",
+                        company_name=candidate_name,
+                        path_type=path,
+                        thesis=str(finding.get("hypothesis") or ""),
+                        why_now=str(finding.get("hypothesis") or ""),
+                        expansion_path=path,
+                        expansion_hypothesis=str(finding.get("hypothesis") or ""),
+                        investigation_questions=tuple(
+                            _string_values(finding.get("investigation_questions"))[:5]
+                        ),
+                        sector_hypotheses=tuple(
+                            _string_values(finding.get("sector_hypotheses"))[:5]
+                        ),
+                    )
+                )
+        return _dedupe_candidate_web_check_subjects(subjects)
+
+    def _candidate_web_check_query(self, subject: CandidateWebCheckSubject) -> str:
         focus = " ".join(
             [
-                candidate.company_name,
-                candidate.ticker,
-                str(candidate.path_type),
-                candidate.thesis,
-                candidate.why_now,
+                subject.company_name,
+                subject.ticker,
+                subject.path_type,
+                subject.thesis,
+                subject.why_now,
+                " ".join(subject.investigation_questions),
+                " ".join(subject.sector_hypotheses),
             ]
         )
         return (
-            "candidate verification listing ticker direct relation novelty disclosure "
-            f"D-1 absorption liquidity competing leaders {focus[:500]}"
+            "candidate verification listed security exact ticker business location "
+            "customer supply chain relation prior market narrative theme memory "
+            "current news relation name similarity recent disclosure news market cap "
+            "shares outstanding D-1 trading value turnover limit up multi-day "
+            f"pre-absorption liquidity competing leaders {focus[:700]}"
         )
 
     def _candidate_web_check_row(
         self,
         result: WebSearchResult,
         *,
-        candidate: Candidate,
+        subject: CandidateWebCheckSubject,
         manifest: ContextManifest,
         query: str,
         cutoff_at: datetime,
@@ -1601,24 +1705,23 @@ class DailyAnalyzer:
             **source_row,
             "schema_version": "nslab.candidate_web_check.v1",
             "run_id": manifest.run_id,
-            "candidate_rank": candidate.rank,
-            "candidate_ticker": candidate.ticker,
-            "candidate_company_name": candidate.company_name,
-            "candidate_path_type": str(candidate.path_type),
-            "verification_focus": [
-                "listed_security_and_exact_ticker",
-                "direct_relation_to_current_news",
-                "novelty_and_recent_disclosure",
-                "D_minus_one_absorption",
-                "liquidity_and_competing_leaders",
-            ],
+            "candidate_subject_type": subject.subject_type,
+            "candidate_rank": subject.rank,
+            "candidate_ticker": subject.ticker,
+            "candidate_company_name": subject.company_name,
+            "candidate_path_type": subject.path_type,
+            "candidate_expansion_path": subject.expansion_path,
+            "candidate_expansion_hypothesis": subject.expansion_hypothesis,
+            "candidate_investigation_questions": list(subject.investigation_questions),
+            "candidate_sector_hypotheses": list(subject.sector_hypotheses),
+            "verification_focus": list(CANDIDATE_WEB_VERIFICATION_FOCUS),
         }
 
     def _excluded_candidate_web_check_row(
         self,
         exclusion: WebSearchExclusion,
         *,
-        candidate: Candidate,
+        subject: CandidateWebCheckSubject,
         manifest: ContextManifest,
         query: str,
         cutoff_at: datetime,
@@ -1632,10 +1735,12 @@ class DailyAnalyzer:
             **row,
             "schema_version": "nslab.excluded_candidate_web_check.v1",
             "run_id": manifest.run_id,
-            "candidate_rank": candidate.rank,
-            "candidate_ticker": candidate.ticker,
-            "candidate_company_name": candidate.company_name,
-            "candidate_path_type": str(candidate.path_type),
+            "candidate_subject_type": subject.subject_type,
+            "candidate_rank": subject.rank,
+            "candidate_ticker": subject.ticker,
+            "candidate_company_name": subject.company_name,
+            "candidate_path_type": subject.path_type,
+            "candidate_expansion_path": subject.expansion_path,
         }
 
     def _write_source_ledger_artifact(
@@ -1798,8 +1903,11 @@ class DailyAnalyzer:
                     "input_row_ids": [],
                     "event_ids": [],
                     "candidate_rank": payload["candidate_rank"],
+                    "candidate_subject_type": payload.get("candidate_subject_type"),
                     "candidate_company_name": payload["candidate_company_name"],
                     "candidate_ticker": payload["candidate_ticker"],
+                    "candidate_path_type": payload.get("candidate_path_type"),
+                    "candidate_expansion_path": payload.get("candidate_expansion_path"),
                     "content_sha256": payload["content_sha256"],
                     "notes": (
                         "Cutoff-safe candidate-specific web verification source; "
@@ -2452,6 +2560,14 @@ class DailyAnalyzer:
                     "candidate_ticker": row.get("candidate_ticker"),
                     "candidate_company_name": row.get("candidate_company_name"),
                     "candidate_path_type": row.get("candidate_path_type"),
+                    "candidate_subject_type": row.get("candidate_subject_type"),
+                    "candidate_expansion_path": row.get("candidate_expansion_path"),
+                    "candidate_expansion_hypothesis": row.get(
+                        "candidate_expansion_hypothesis"
+                    ),
+                    "candidate_investigation_questions": row.get(
+                        "candidate_investigation_questions"
+                    ),
                     "verification_focus": row.get("verification_focus"),
                     "source_id": row.get("source_id"),
                     "query": row.get("query"),
@@ -3114,6 +3230,31 @@ def _unique_preserving_order(values: Sequence[str]) -> list[str]:
             continue
         seen.add(value)
         unique.append(value)
+    return unique
+
+
+def _string_values(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _dedupe_candidate_web_check_subjects(
+    subjects: Sequence[CandidateWebCheckSubject],
+) -> list[CandidateWebCheckSubject]:
+    unique: list[CandidateWebCheckSubject] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for subject in subjects:
+        key = (
+            subject.subject_type,
+            subject.ticker.strip().casefold(),
+            subject.company_name.strip().casefold(),
+            subject.path_type.strip().casefold(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(subject)
     return unique
 
 

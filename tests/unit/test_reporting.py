@@ -186,6 +186,10 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         ),
         candidate_web_check_sha256="candidate-web-sha",
         candidate_web_check_count=2,
+        candidate_web_check_summary={
+            "subject_count": 6,
+            "candidate_expansion_subject_count": 4,
+        },
         candidate_web_source_ids=["WEB-CANDIDATE-1", "WEB-CANDIDATE-2"],
         excluded_candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-report/"
@@ -308,6 +312,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     )
     assert "- SHA256: candidate-web-sha" in report
     assert "- Accepted sources: 2" in report
+    assert "- Subjects: 6" in report
+    assert "- Expansion subjects: 4" in report
     assert "- Accepted source ids: WEB-CANDIDATE-1, WEB-CANDIDATE-2" in report
     assert (
         "- Excluded artifact: runs/checkpoints/candidate_web_checks/RUN-report/"

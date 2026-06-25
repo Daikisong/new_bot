@@ -781,8 +781,12 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         web_search=True,
     )
 
-    expected_web_search_calls = len(analysis.context_manifest.web_queries) + len(
-        analysis.blind_prediction.candidates
+    expected_candidate_web_subjects = (
+        len(analysis.blind_prediction.candidates)
+        + analysis.context_manifest.candidate_expansion_count
+    )
+    expected_web_search_calls = (
+        len(analysis.context_manifest.web_queries) + expected_candidate_web_subjects
     )
     assert len(web_provider.search_calls) == expected_web_search_calls
     assert analysis.context_manifest.blind_context_mode == "CUTOFF_SAFE_WEB_BLIND"
@@ -803,6 +807,26 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     saved_manifest = read_json(manifest_path)
     assert saved_manifest["blind_context_mode"] == "CUTOFF_SAFE_WEB_BLIND"
     assert saved_manifest["blind_web_search_call_count"] == expected_web_search_calls
+    assert saved_manifest["candidate_web_check_summary"]["subject_count"] == (
+        expected_candidate_web_subjects
+    )
+    assert saved_manifest["candidate_web_check_summary"][
+        "final_candidate_subject_count"
+    ] == len(analysis.blind_prediction.candidates)
+    assert saved_manifest["candidate_web_check_summary"][
+        "candidate_expansion_subject_count"
+    ] == analysis.context_manifest.candidate_expansion_count
+    assert saved_manifest["candidate_web_check_summary"]["verification_focus"] == [
+        "listed_security_and_exact_ticker",
+        "business_location_customer_supply_chain_relation",
+        "prior_market_narratives_and_theme_memory",
+        "current_news_relation_vs_name_similarity",
+        "recent_disclosures_and_news",
+        "market_cap_and_shares_outstanding",
+        "D_minus_one_trading_value_turnover_limit_up",
+        "multi_day_pre_absorption",
+        "liquidity_and_competing_leaders",
+    ]
     assert saved_manifest["web_sources"] == analysis.context_manifest.web_sources
     assert saved_manifest["excluded_web_source_ids"] == (
         analysis.context_manifest.excluded_web_source_ids
@@ -826,14 +850,41 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert saved_manifest["candidate_web_check_count"] == len(candidate_check_rows)
     assert saved_manifest["candidate_web_check_count"] == len(
         analysis.blind_prediction.candidates
+    ) + analysis.context_manifest.candidate_expansion_count
+    assert saved_manifest["candidate_web_check_count"] == (
+        saved_manifest["candidate_web_check_summary"]["source_count"]
     )
     assert {row["source_id"] for row in candidate_check_rows} == set(
         saved_manifest["candidate_web_source_ids"]
     )
     assert all(row["source_url"] == row["url"] for row in candidate_check_rows)
-    assert {row["candidate_rank"] for row in candidate_check_rows} == {
+    final_candidate_check_rows = [
+        row for row in candidate_check_rows if row["candidate_subject_type"] == "final_candidate"
+    ]
+    expansion_candidate_check_rows = [
+        row
+        for row in candidate_check_rows
+        if row["candidate_subject_type"] == "candidate_expansion"
+    ]
+    assert {row["candidate_rank"] for row in final_candidate_check_rows} == {
         candidate.rank for candidate in analysis.blind_prediction.candidates
     }
+    assert len(expansion_candidate_check_rows) == (
+        analysis.context_manifest.candidate_expansion_count
+    )
+    assert {row["candidate_expansion_path"] for row in expansion_candidate_check_rows} == {
+        "SINGLE_EVENT",
+        "THEME_FORMATION",
+        "BENEFICIARY_DISCOVERY",
+        "CONTINUATION",
+    }
+    assert all(row["candidate_rank"] == 0 for row in expansion_candidate_check_rows)
+    assert all(
+        "market_cap_and_shares_outstanding" in row["verification_focus"]
+        and "D_minus_one_trading_value_turnover_limit_up" in row["verification_focus"]
+        and "current_news_relation_vs_name_similarity" in row["verification_focus"]
+        for row in candidate_check_rows
+    )
     assert all(row["available_before_cutoff"] is True for row in candidate_check_rows)
     assert all(row["time_verified"] is True for row in candidate_check_rows)
     assert all("opened_text" not in row for row in candidate_check_rows)
@@ -865,6 +916,9 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     )
     assert saved_manifest["excluded_candidate_web_check_count"] == len(
         analysis.blind_prediction.candidates
+    ) + analysis.context_manifest.candidate_expansion_count
+    assert saved_manifest["excluded_candidate_web_check_count"] == (
+        saved_manifest["candidate_web_check_summary"]["excluded_source_count"]
     )
     assert {row["source_id"] for row in excluded_candidate_check_rows} == set(
         saved_manifest["excluded_candidate_web_source_ids"]

@@ -216,6 +216,11 @@
       "default": null,
       "title": "Candidate Web Check Sha256"
     },
+    "candidate_web_check_summary": {
+      "additionalProperties": true,
+      "title": "Candidate Web Check Summary",
+      "type": "object"
+    },
     "candidate_web_source_ids": {
       "items": {
         "type": "string"
