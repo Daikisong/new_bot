@@ -16,6 +16,9 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     Candidate,
+    CandidateExpansionFinding,
+    CandidateExpansionPath,
+    CandidateExpansionReview,
     CompanyMemory,
     ConfidenceLabel,
     ContextManifest,
@@ -83,6 +86,7 @@ class FutureContextLeakError(RuntimeError):
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
 SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v1"
+CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
 FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
 SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
     "positive_analogs",
@@ -91,6 +95,12 @@ SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
     "counterexamples",
     "leader_selection_cases",
     "theme_formation_failures",
+)
+CANDIDATE_EXPANSION_REQUIRED_PATHS = (
+    CandidateExpansionPath.SINGLE_EVENT,
+    CandidateExpansionPath.THEME_FORMATION,
+    CandidateExpansionPath.BENEFICIARY_DISCOVERY,
+    CandidateExpansionPath.CONTINUATION,
 )
 
 
@@ -246,6 +256,15 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
         )
         manifest.token_counts["semantic_retrieval_plan_prompt"] = semantic_prompt_tokens
+        _candidate_expansion, expansion_prompt_hash, expansion_prompt_tokens = (
+            await self._run_candidate_expansion(
+                news_texts=news_texts,
+                first_pass_mechanisms=first_pass_mechanisms,
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
+        )
+        manifest.token_counts["candidate_expansion_prompt"] = expansion_prompt_tokens
 
         prediction, blind_prompt_hash, blind_prompt_tokens = await self._generate_prediction(
             trade_date=trade_date,
@@ -279,6 +298,8 @@ class DailyAnalyzer:
                     manifest.excluded_semantic_retrieval_episode_ids
                 ),
                 "semantic_retrieval_summary": manifest.semantic_retrieval_summary,
+                "candidate_expansion_artifact": manifest.candidate_expansion_artifact,
+                "candidate_expansion_summary": manifest.candidate_expansion_summary,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
@@ -346,6 +367,7 @@ class DailyAnalyzer:
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["news_novelty_review"] = novelty_prompt_hash
         manifest.prompt_hashes["semantic_retrieval_plan"] = semantic_prompt_hash
+        manifest.prompt_hashes["candidate_expansion"] = expansion_prompt_hash
         manifest.prompt_hashes["blind_analysis"] = blind_prompt_hash
         manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
         manifest.prompt_hashes["final_synthesis"] = final_synthesis_prompt_hash
@@ -1078,6 +1100,269 @@ class DailyAnalyzer:
         payload = read_json(self.root / manifest.semantic_retrieval_plan_artifact)
         return SemanticRetrievalPlan.model_validate(payload)
 
+    async def _run_candidate_expansion(
+        self,
+        *,
+        news_texts: list[str],
+        first_pass_mechanisms: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> tuple[CandidateExpansionReview, str, int]:
+        prompt = self._build_candidate_expansion_prompt(
+            news_texts=news_texts,
+            first_pass_mechanisms=first_pass_mechanisms,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+        )
+        prompt_sha256 = sha256_text(prompt)
+        try:
+            review = await self.llm.generate_structured(
+                prompt=prompt,
+                response_model=CandidateExpansionReview,
+                purpose="candidate_expansion",
+            )
+        except NotImplementedError:
+            review = self._fallback_candidate_expansion(
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+                prompt_sha256=prompt_sha256,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
+        normalized = self._normalize_candidate_expansion(
+            review,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+            first_pass_mechanisms=first_pass_mechanisms,
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "candidate_expansion"
+            / manifest.run_id
+            / "candidate_expansion.json"
+        )
+        artifact_path = self.root / artifact_relative
+        write_json(artifact_path, normalized.model_dump(mode="json"))
+        artifact_text = artifact_path.read_text(encoding="utf-8")
+        path_counts = {
+            path.value: sum(1 for finding in normalized.findings if finding.path == path)
+            for path in CANDIDATE_EXPANSION_REQUIRED_PATHS
+        }
+        manifest.candidate_expansion_artifact = artifact_relative.as_posix()
+        manifest.candidate_expansion_sha256 = sha256_text(artifact_text)
+        manifest.candidate_expansion_count = len(normalized.findings)
+        manifest.candidate_expansion_summary = {
+            "required_paths": [path.value for path in CANDIDATE_EXPANSION_REQUIRED_PATHS],
+            "path_counts": path_counts,
+            "finding_count": len(normalized.findings),
+            "candidate_name_count": len(
+                {
+                    candidate
+                    for finding in normalized.findings
+                    for candidate in finding.candidate_names
+                }
+            ),
+            "requires_web_company_discovery_count": sum(
+                1 for finding in normalized.findings if finding.requires_web_company_discovery
+            ),
+            "continuation_d_minus_one_only_verified": all(
+                finding.d_minus_one_market_data_only
+                for finding in normalized.findings
+                if finding.path == CandidateExpansionPath.CONTINUATION
+            ),
+        }
+        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+
+    def _build_candidate_expansion_prompt(
+        self,
+        *,
+        news_texts: list[str],
+        first_pass_mechanisms: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> str:
+        payload = {
+            "schema": "nslab.candidate_expansion.v1",
+            "prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION,
+            "run_id": manifest.run_id,
+            "cutoff_at": cutoff_at.isoformat(),
+            "required_paths": [path.value for path in CANDIDATE_EXPANSION_REQUIRED_PATHS],
+            "current_news": news_texts,
+            "open_world_first_analysis": first_pass_mechanisms,
+            "news_novelty_review": self._read_news_novelty_review_context(manifest),
+            "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
+            "d_minus_one_only_for_continuation": True,
+        }
+        return (
+            "Expand open-world candidate routes as CandidateExpansionReview. Execute "
+            "four independent paths: SINGLE_EVENT, THEME_FORMATION, "
+            "BENEFICIARY_DISCOVERY, and CONTINUATION. Do not restrict candidates to "
+            "existing memory. Do not use D-day prices or cutoff-after information. "
+            "For CONTINUATION, mark d_minus_one_market_data_only true. Return "
+            "investigation questions for web/company verification instead of hardcoded "
+            "ticker or theme maps.\n"
+            "---CANDIDATE_EXPANSION_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _normalize_candidate_expansion(
+        self,
+        review: CandidateExpansionReview,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+        first_pass_mechanisms: list[str],
+    ) -> CandidateExpansionReview:
+        findings: list[CandidateExpansionFinding] = []
+        existing_paths: set[CandidateExpansionPath] = set()
+        allowed_source_ids = self._candidate_expansion_allowed_source_ids(manifest)
+        allowed_cluster_ids = self._candidate_expansion_allowed_cluster_ids(manifest)
+        allowed_episode_ids = set(manifest.semantic_retrieval_episode_ids) | set(
+            manifest.retrieved_episode_ids
+        )
+        for finding in review.findings:
+            if finding.path not in CANDIDATE_EXPANSION_REQUIRED_PATHS:
+                continue
+            unknown_sources = sorted(
+                source_id
+                for source_id in finding.evidence_source_ids
+                if source_id not in allowed_source_ids
+            )
+            if unknown_sources:
+                raise ValueError(
+                    "candidate expansion referenced unknown evidence_source_ids: "
+                    + ", ".join(unknown_sources)
+                )
+            unknown_clusters = sorted(
+                cluster_id
+                for cluster_id in finding.related_cluster_ids
+                if cluster_id not in allowed_cluster_ids
+            )
+            if unknown_clusters:
+                raise ValueError(
+                    "candidate expansion referenced unknown related_cluster_ids: "
+                    + ", ".join(unknown_clusters)
+                )
+            unknown_episodes = sorted(
+                episode_id
+                for episode_id in finding.memory_episode_ids
+                if episode_id not in allowed_episode_ids
+            )
+            if unknown_episodes:
+                raise ValueError(
+                    "candidate expansion referenced unavailable memory_episode_ids: "
+                    + ", ".join(unknown_episodes)
+                )
+            if (
+                finding.path == CandidateExpansionPath.CONTINUATION
+                and not finding.d_minus_one_market_data_only
+            ):
+                finding = finding.model_copy(update={"d_minus_one_market_data_only": True})
+            findings.append(finding)
+            existing_paths.add(finding.path)
+        for path in CANDIDATE_EXPANSION_REQUIRED_PATHS:
+            if path in existing_paths:
+                continue
+            findings.append(
+                self._fallback_candidate_expansion_finding(
+                    path=path,
+                    manifest=manifest,
+                    first_pass_mechanisms=first_pass_mechanisms,
+                )
+            )
+        findings.sort(key=lambda item: CANDIDATE_EXPANSION_REQUIRED_PATHS.index(item.path))
+        return review.model_copy(
+            update={
+                "run_id": manifest.run_id,
+                "prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION,
+                "prompt_sha256": prompt_sha256,
+                "cutoff_at": cutoff_at,
+                "required_paths": list(CANDIDATE_EXPANSION_REQUIRED_PATHS),
+                "findings": findings,
+            }
+        )
+
+    def _fallback_candidate_expansion(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+        first_pass_mechanisms: list[str],
+    ) -> CandidateExpansionReview:
+        findings = [
+            self._fallback_candidate_expansion_finding(
+                path=path,
+                manifest=manifest,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
+            for path in CANDIDATE_EXPANSION_REQUIRED_PATHS
+        ]
+        return CandidateExpansionReview(
+            run_id=manifest.run_id,
+            prompt_version=CANDIDATE_EXPANSION_PROMPT_VERSION,
+            prompt_sha256=prompt_sha256,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            required_paths=list(CANDIDATE_EXPANSION_REQUIRED_PATHS),
+            findings=findings,
+            notes=["Fallback candidate expansion: LLM route expansion was unavailable."],
+        )
+
+    def _fallback_candidate_expansion_finding(
+        self,
+        *,
+        path: CandidateExpansionPath,
+        manifest: ContextManifest,
+        first_pass_mechanisms: list[str],
+    ) -> CandidateExpansionFinding:
+        mechanism = first_pass_mechanisms[0] if first_pass_mechanisms else "current catalyst"
+        cluster_ids = [
+            str(row["cluster_id"])
+            for row in self._read_event_cluster_context(manifest)
+            if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+        ][:3]
+        source_ids = self._candidate_expansion_allowed_source_ids(manifest)
+        path_text = path.value.lower().replace("_", " ")
+        return CandidateExpansionFinding(
+            path=path,
+            hypothesis=f"{path_text} route requires open-world review of {mechanism}.",
+            candidate_names=[f"{path.value}_DISCOVERY_REQUIRED"],
+            sector_hypotheses=[f"{path_text} hypothesis from current catalyst"],
+            investigation_questions=[
+                f"Which listed entities fit the {path_text} route before cutoff?",
+                "Which directness, novelty, and market-memory checks can disconfirm it?",
+            ],
+            evidence_source_ids=sorted(source_ids)[:5],
+            related_cluster_ids=cluster_ids,
+            memory_episode_ids=manifest.semantic_retrieval_episode_ids[:5],
+            requires_web_company_discovery=path
+            in {
+                CandidateExpansionPath.SINGLE_EVENT,
+                CandidateExpansionPath.THEME_FORMATION,
+                CandidateExpansionPath.BENEFICIARY_DISCOVERY,
+            },
+            d_minus_one_market_data_only=path == CandidateExpansionPath.CONTINUATION,
+            uncertainties=["candidate route must be verified by Pass 5 web/company checks"],
+        )
+
+    def _candidate_expansion_allowed_source_ids(self, manifest: ContextManifest) -> set[str]:
+        source_ids: set[str] = set(manifest.web_sources)
+        for row in self._read_event_cluster_context(manifest):
+            for source_id in row.get("source_ids", []):
+                if isinstance(source_id, str):
+                    source_ids.add(source_id)
+        return source_ids
+
+    def _candidate_expansion_allowed_cluster_ids(self, manifest: ContextManifest) -> set[str]:
+        return {
+            str(row["cluster_id"])
+            for row in self._read_event_cluster_context(manifest)
+            if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+        }
+
     async def _collect_cutoff_safe_web_sources(
         self,
         *,
@@ -1696,6 +1981,7 @@ class DailyAnalyzer:
                 "open_world_first_analysis",
                 "news_novelty_review",
                 "additional_semantic_retrieval",
+                "open_world_candidate_expansion",
                 "web_research",
                 "global_brain",
                 "all_shard_brains",
@@ -1719,6 +2005,9 @@ class DailyAnalyzer:
             "event_clusters": self._read_event_cluster_context(manifest),
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(
+                manifest
+            ),
+            "open_world_candidate_expansion": self._read_candidate_expansion_context(
                 manifest
             ),
             "web_research": {
@@ -1804,6 +2093,15 @@ class DailyAnalyzer:
             "episodes": episodes,
             "excluded_episode_ids": manifest.excluded_semantic_retrieval_episode_ids,
         }
+
+    def _read_candidate_expansion_context(self, manifest: ContextManifest) -> dict[str, Any]:
+        if not manifest.candidate_expansion_artifact:
+            return {}
+        path = self.root / manifest.candidate_expansion_artifact
+        if not path.exists():
+            return {"path": manifest.candidate_expansion_artifact, "missing": True}
+        payload = read_json(path)
+        return payload if isinstance(payload, dict) else {}
 
     def _collect_company_memory_context(
         self,
@@ -2544,6 +2842,9 @@ class DailyAnalyzer:
                 },
                 "semantic_retrieval_plan": {
                     "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION
+                },
+                "candidate_expansion": {
+                    "prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION
                 },
                 "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
                 "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},

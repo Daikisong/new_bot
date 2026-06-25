@@ -218,6 +218,25 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"{list_text(manifest.excluded_semantic_retrieval_episode_ids)}"
             ),
             "",
+            "Candidate expansion:",
+            "",
+            f"- Artifact: {manifest.candidate_expansion_artifact or 'none'}",
+            f"- SHA256: {manifest.candidate_expansion_sha256 or 'none'}",
+            f"- Findings: {manifest.candidate_expansion_count}",
+            (
+                "- Path counts: "
+                f"{manifest.candidate_expansion_summary.get('path_counts', {})}"
+            ),
+            (
+                "- Continuation D-1 only: "
+                + str(
+                    manifest.candidate_expansion_summary.get(
+                        "continuation_d_minus_one_only_verified",
+                        False,
+                    )
+                )
+            ),
+            "",
             "Excluded after-cutoff web source ids:",
             "",
             "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)

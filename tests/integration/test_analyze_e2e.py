@@ -17,6 +17,9 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     Candidate,
+    CandidateExpansionFinding,
+    CandidateExpansionPath,
+    CandidateExpansionReview,
     ClaimStatus,
     ConfidenceLabel,
     MemoryClaim,
@@ -147,6 +150,38 @@ class RecordingBlindLLM:
                 ],
             )
             return plan  # type: ignore[return-value]
+        if response_model is CandidateExpansionReview:
+            review = CandidateExpansionReview(
+                run_id="RUN-provider-candidate-expansion",
+                prompt_version="test",
+                prompt_sha256="test",
+                created_at=datetime(1999, 1, 1, 8, 42, 0, tzinfo=KST),
+                cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
+                required_paths=[
+                    CandidateExpansionPath.SINGLE_EVENT,
+                    CandidateExpansionPath.THEME_FORMATION,
+                    CandidateExpansionPath.BENEFICIARY_DISCOVERY,
+                    CandidateExpansionPath.CONTINUATION,
+                ],
+                findings=[
+                    CandidateExpansionFinding(
+                        path=path,
+                        hypothesis=f"{path.value} provider route",
+                        candidate_names=[f"{path.value}_DISCOVERY_REQUIRED"],
+                        investigation_questions=["provider route question"],
+                        d_minus_one_market_data_only=(
+                            path == CandidateExpansionPath.CONTINUATION
+                        ),
+                    )
+                    for path in [
+                        CandidateExpansionPath.SINGLE_EVENT,
+                        CandidateExpansionPath.THEME_FORMATION,
+                        CandidateExpansionPath.BENEFICIARY_DISCOVERY,
+                        CandidateExpansionPath.CONTINUATION,
+                    ]
+                ],
+            )
+            return review  # type: ignore[return-value]
         if response_model is RedTeamArtifact:
             artifact = RedTeamArtifact(
                 run_id="RUN-provider-red-team",
@@ -637,6 +672,38 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert len(semantic_rows) == 6
     assert all(row["schema_version"] == "nslab.semantic_retrieval_result.v1" for row in semantic_rows)
     assert all(row["included_episode_ids"] == [] for row in semantic_rows)
+    assert saved_manifest["candidate_expansion_artifact"]
+    assert saved_manifest["candidate_expansion_count"] == 4
+    assert saved_manifest["candidate_expansion_summary"] == {
+        "required_paths": [
+            "SINGLE_EVENT",
+            "THEME_FORMATION",
+            "BENEFICIARY_DISCOVERY",
+            "CONTINUATION",
+        ],
+        "path_counts": {
+            "SINGLE_EVENT": 1,
+            "THEME_FORMATION": 1,
+            "BENEFICIARY_DISCOVERY": 1,
+            "CONTINUATION": 1,
+        },
+        "finding_count": 4,
+        "candidate_name_count": 4,
+        "requires_web_company_discovery_count": 3,
+        "continuation_d_minus_one_only_verified": True,
+    }
+    candidate_expansion_path = tmp_path / saved_manifest["candidate_expansion_artifact"]
+    candidate_expansion_text = candidate_expansion_path.read_text(encoding="utf-8")
+    candidate_expansion = json.loads(candidate_expansion_text)
+    assert sha256_text(candidate_expansion_text) == saved_manifest["candidate_expansion_sha256"]
+    assert candidate_expansion["schema_version"] == "nslab.candidate_expansion.v1"
+    assert [finding["path"] for finding in candidate_expansion["findings"]] == [
+        "SINGLE_EVENT",
+        "THEME_FORMATION",
+        "BENEFICIARY_DISCOVERY",
+        "CONTINUATION",
+    ]
+    assert candidate_expansion["findings"][-1]["d_minus_one_market_data_only"] is True
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     prompt_hash_by_purpose = {
@@ -651,6 +718,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         in {
             "news_novelty_review",
             "semantic_retrieval_plan",
+            "candidate_expansion",
             "daily_blind_analysis",
             "red_team_candidate_review",
             "final_synthesis",
@@ -661,6 +729,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     ]
     assert saved_manifest["prompt_hashes"]["semantic_retrieval_plan"] == prompt_hash_by_purpose[
         "semantic_retrieval_plan"
+    ]
+    assert saved_manifest["prompt_hashes"]["candidate_expansion"] == prompt_hash_by_purpose[
+        "candidate_expansion"
     ]
     assert saved_manifest["prompt_hashes"]["blind_analysis"] == prompt_hash_by_purpose[
         "daily_blind_analysis"
@@ -903,6 +974,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert [call["purpose"] for call in llm.calls] == [
         "news_novelty_review",
         "semantic_retrieval_plan",
+        "candidate_expansion",
         "daily_blind_analysis",
         "red_team_candidate_review",
         "final_synthesis",
@@ -912,6 +984,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert "ProviderCo" in str(blind_call["prompt"])
     assert "news_novelty_review" in str(final_call["prompt"])
     assert "additional_semantic_retrieval" in str(final_call["prompt"])
+    assert "open_world_candidate_expansion" in str(final_call["prompt"])
     assert "red_team_output" in str(final_call["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
@@ -963,12 +1036,14 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     assert any(trace["purpose"] == "news_novelty_review" for trace in traces)
     assert any(trace["purpose"] == "semantic_retrieval_plan" for trace in traces)
+    assert any(trace["purpose"] == "candidate_expansion" for trace in traces)
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
     assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
     assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v1"
+    assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v1"
     assert prompt_versions["final_synthesis"] == "synthesis.final.v1"

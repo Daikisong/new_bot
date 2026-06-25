@@ -41,6 +41,13 @@ class NewsNoveltyLabel(StrEnum):
     UNCLEAR = "unclear"
 
 
+class CandidateExpansionPath(StrEnum):
+    SINGLE_EVENT = "SINGLE_EVENT"
+    THEME_FORMATION = "THEME_FORMATION"
+    BENEFICIARY_DISCOVERY = "BENEFICIARY_DISCOVERY"
+    CONTINUATION = "CONTINUATION"
+
+
 class RelationClass(StrEnum):
     DIRECT = "DIRECT"
     FUNDAMENTAL = "FUNDAMENTAL"
@@ -211,6 +218,32 @@ class SemanticRetrievalPlan(StrictModel):
     cutoff_at: datetime
     queries: list[SemanticRetrievalQuery] = Field(default_factory=list)
     required_categories: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class CandidateExpansionFinding(StrictModel):
+    path: CandidateExpansionPath
+    hypothesis: str
+    candidate_names: list[str] = Field(default_factory=list)
+    sector_hypotheses: list[str] = Field(default_factory=list)
+    investigation_questions: list[str] = Field(default_factory=list)
+    evidence_source_ids: list[str] = Field(default_factory=list)
+    related_cluster_ids: list[str] = Field(default_factory=list)
+    memory_episode_ids: list[str] = Field(default_factory=list)
+    requires_web_company_discovery: bool = True
+    d_minus_one_market_data_only: bool = False
+    uncertainties: list[str] = Field(default_factory=list)
+
+
+class CandidateExpansionReview(StrictModel):
+    schema_version: str = "nslab.candidate_expansion.v1"
+    run_id: str
+    prompt_version: str
+    prompt_sha256: str
+    created_at: datetime
+    cutoff_at: datetime
+    required_paths: list[CandidateExpansionPath] = Field(default_factory=list)
+    findings: list[CandidateExpansionFinding] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -487,6 +520,10 @@ class ContextManifest(StrictModel):
     semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
     excluded_semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
     semantic_retrieval_summary: dict[str, Any] = Field(default_factory=dict)
+    candidate_expansion_artifact: str | None = None
+    candidate_expansion_sha256: str | None = None
+    candidate_expansion_count: int = 0
+    candidate_expansion_summary: dict[str, Any] = Field(default_factory=dict)
     source_ledger_artifact: str | None = None
     source_ledger_sha256: str | None = None
     source_ledger_entry_count: int = 0

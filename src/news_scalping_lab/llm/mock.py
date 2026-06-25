@@ -18,6 +18,9 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     Candidate,
+    CandidateExpansionFinding,
+    CandidateExpansionPath,
+    CandidateExpansionReview,
     ConfidenceLabel,
     DominantSectorHypothesis,
     NewsNoveltyFinding,
@@ -66,11 +69,14 @@ class DeterministicMockLLMProvider:
             artifact = self._red_team_artifact(prompt)
             return artifact  # type: ignore[return-value]
         if response_model is NewsNoveltyReview:
-            review = self._news_novelty_review(prompt)
-            return review  # type: ignore[return-value]
+            novelty_review = self._news_novelty_review(prompt)
+            return novelty_review  # type: ignore[return-value]
         if response_model is SemanticRetrievalPlan:
             plan = self._semantic_retrieval_plan(prompt)
             return plan  # type: ignore[return-value]
+        if response_model is CandidateExpansionReview:
+            expansion_review = self._candidate_expansion_review(prompt)
+            return expansion_review  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
@@ -533,6 +539,85 @@ class DeterministicMockLLMProvider:
 
     def _semantic_retrieval_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _candidate_expansion_review(self, prompt: str) -> CandidateExpansionReview:
+        payload = self._candidate_expansion_payload(prompt)
+        cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
+        mechanisms = self._payload_string_list(payload, "open_world_first_analysis")
+        mechanism = mechanisms[0] if mechanisms else "current catalyst"
+        required_paths = [
+            CandidateExpansionPath(path)
+            for path in self._payload_string_list(payload, "required_paths")
+            if path in {item.value for item in CandidateExpansionPath}
+        ]
+        novelty_review = payload.get("news_novelty_review")
+        clusters = (
+            novelty_review.get("findings", [])
+            if isinstance(novelty_review, dict)
+            else []
+        )
+        cluster_ids = [
+            str(cluster.get("cluster_id"))
+            for cluster in clusters
+            if isinstance(cluster, dict) and cluster.get("cluster_id")
+        ]
+        findings = [
+            self._candidate_expansion_finding(
+                path=path,
+                mechanism=mechanism,
+                cluster_ids=cluster_ids,
+            )
+            for path in required_paths
+        ]
+        return CandidateExpansionReview(
+            run_id=str(payload.get("run_id") or "RUN-mock-candidate-expansion"),
+            prompt_version=str(payload.get("prompt_version") or "candidate_expansion.v1"),
+            prompt_sha256=sha256_text(prompt),
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            required_paths=required_paths,
+            findings=findings,
+            notes=["Mock structured candidate expansion review."],
+        )
+
+    def _candidate_expansion_finding(
+        self,
+        *,
+        path: CandidateExpansionPath,
+        mechanism: str,
+        cluster_ids: list[str],
+    ) -> CandidateExpansionFinding:
+        path_text = path.value.lower().replace("_", " ")
+        return CandidateExpansionFinding(
+            path=path,
+            hypothesis=f"Mock {path_text} route derived from {mechanism}.",
+            candidate_names=[f"{path.value}_DISCOVERY_REQUIRED"],
+            sector_hypotheses=[f"{path_text} sector hypothesis"],
+            investigation_questions=[
+                f"Which listed entities match the {path_text} route?",
+                "What cutoff-safe evidence would disconfirm directness or novelty?",
+            ],
+            related_cluster_ids=cluster_ids[:3],
+            requires_web_company_discovery=path
+            in {
+                CandidateExpansionPath.SINGLE_EVENT,
+                CandidateExpansionPath.THEME_FORMATION,
+                CandidateExpansionPath.BENEFICIARY_DISCOVERY,
+            },
+            d_minus_one_market_data_only=path == CandidateExpansionPath.CONTINUATION,
+            uncertainties=["requires candidate-specific web verification"],
+        )
+
+    def _candidate_expansion_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---CANDIDATE_EXPANSION_PAYLOAD---"
         if marker not in prompt:
             return {}
         payload_text = prompt.split(marker, maxsplit=1)[-1].strip()

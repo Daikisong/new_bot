@@ -19,6 +19,7 @@ EXPECTED_SCHEMA_FILES = {
     "blind_prediction.schema.json",
     "brain_manifest.schema.json",
     "candidate.schema.json",
+    "candidate_expansion_review.schema.json",
     "company_memory.schema.json",
     "context_manifest.schema.json",
     "daily_analysis.schema.json",

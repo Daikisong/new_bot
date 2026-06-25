@@ -119,6 +119,10 @@ After the exhaustive memory sweep, the LLM writes `semantic_retrieval_plan.json`
 with the required positive/negative/near-miss/counterexample/leader/theme-failure
 query categories. The engine executes those queries against accepted episodes,
 filters unavailable future episodes, and persists `semantic_retrieval.jsonl`.
+The open-world candidate expansion pass then writes `candidate_expansion.json`
+with single-event, theme-formation, beneficiary-discovery, and continuation
+routes. Continuation routes are explicitly limited to D-1 market data so the
+next verification pass can investigate companies without using D-day prices.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates

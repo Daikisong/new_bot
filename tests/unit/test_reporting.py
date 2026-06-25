@@ -163,6 +163,20 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         semantic_retrieval_sha256="semantic-result-sha",
         semantic_retrieval_episode_ids=["EP-semantic-positive"],
         excluded_semantic_retrieval_episode_ids=["EP-semantic-future"],
+        candidate_expansion_artifact=(
+            "runs/checkpoints/candidate_expansion/RUN-report/candidate_expansion.json"
+        ),
+        candidate_expansion_sha256="candidate-expansion-sha",
+        candidate_expansion_count=4,
+        candidate_expansion_summary={
+            "path_counts": {
+                "SINGLE_EVENT": 1,
+                "THEME_FORMATION": 1,
+                "BENEFICIARY_DISCOVERY": 1,
+                "CONTINUATION": 1,
+            },
+            "continuation_d_minus_one_only_verified": True,
+        },
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
         source_ledger_sha256="ledger-sha",
         source_ledger_entry_count=3,
@@ -268,6 +282,20 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Queries: 6" in report
     assert "- Retrieved episodes: EP-semantic-positive" in report
     assert "- Excluded semantic episodes: EP-semantic-future" in report
+    assert "Candidate expansion:" in report
+    assert (
+        "- Artifact: runs/checkpoints/candidate_expansion/RUN-report/"
+        "candidate_expansion.json"
+        in report
+    )
+    assert "- SHA256: candidate-expansion-sha" in report
+    assert "- Findings: 4" in report
+    assert (
+        "- Path counts: {'SINGLE_EVENT': 1, 'THEME_FORMATION': 1, "
+        "'BENEFICIARY_DISCOVERY': 1, 'CONTINUATION': 1}"
+        in report
+    )
+    assert "- Continuation D-1 only: True" in report
     assert "Source ledger:" in report
     assert "- Artifact: runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl" in report
     assert "- SHA256: ledger-sha" in report

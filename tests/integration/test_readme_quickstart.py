@@ -16,6 +16,12 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     monkeypatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "mock")
+    monkeypatch.setenv("NSLAB_WEB_PROVIDER", "mock")
+    monkeypatch.delenv("NSLAB_STOCK_WEB_PATH", raising=False)
+    monkeypatch.setenv("NSLAB_STOCK_WEB_CACHE", "false")
+    monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE_PATH", raising=False)
+    monkeypatch.delenv("NSLAB_STOCK_WEB_REMOTE_URL", raising=False)
     csv_path = tmp_path / "docs" / "csv" / "news_20260624.csv"
     csv_path.parent.mkdir(parents=True)
     csv_path.write_text(
@@ -131,6 +137,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert supporting["news_novelty_review"]["hash_verified"] is True
     assert supporting["semantic_retrieval_plan"]["hash_verified"] is True
     assert supporting["semantic_retrieval"]["hash_verified"] is True
+    assert supporting["candidate_expansion"]["hash_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True
@@ -144,10 +151,11 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert memory_sweep["swept_episode_ids_verified"] is True
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
-    assert llm_traces["matched_prompt_count"] == 5
+    assert llm_traces["matched_prompt_count"] == 6
     for purpose in (
         "news_novelty_review",
         "semantic_retrieval_plan",
+        "candidate_expansion",
         "daily_blind_analysis",
         "red_team_candidate_review",
         "final_synthesis",

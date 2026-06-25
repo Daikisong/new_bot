@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "CandidateExpansionFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Names",
+          "type": "array"
+        },
+        "d_minus_one_market_data_only": {
+          "default": false,
+          "title": "D Minus One Market Data Only",
+          "type": "boolean"
+        },
+        "evidence_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Source Ids",
+          "type": "array"
+        },
+        "hypothesis": {
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "investigation_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Investigation Questions",
+          "type": "array"
+        },
+        "memory_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Episode Ids",
+          "type": "array"
+        },
+        "path": {
+          "$ref": "#/$defs/CandidateExpansionPath"
+        },
+        "related_cluster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Cluster Ids",
+          "type": "array"
+        },
+        "requires_web_company_discovery": {
+          "default": true,
+          "title": "Requires Web Company Discovery",
+          "type": "boolean"
+        },
+        "sector_hypotheses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sector Hypotheses",
+          "type": "array"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertainties",
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "hypothesis"
+      ],
+      "title": "CandidateExpansionFinding",
+      "type": "object"
+    },
+    "CandidateExpansionPath": {
+      "enum": [
+        "SINGLE_EVENT",
+        "THEME_FORMATION",
+        "BENEFICIARY_DISCOVERY",
+        "CONTINUATION"
+      ],
+      "title": "CandidateExpansionPath",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/CandidateExpansionFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "prompt_sha256": {
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "required_paths": {
+      "items": {
+        "$ref": "#/$defs/CandidateExpansionPath"
+      },
+      "title": "Required Paths",
+      "type": "array"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.candidate_expansion.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "prompt_version",
+    "prompt_sha256",
+    "created_at",
+    "cutoff_at"
+  ],
+  "title": "CandidateExpansionReview",
+  "type": "object"
+}
