@@ -208,6 +208,12 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"{manifest.candidate_verification_summary.get('status_counts', {})}"
             ),
             "",
+            "Final synthesis context:",
+            "",
+            f"- Artifact: {manifest.final_synthesis_context_artifact or 'none'}",
+            f"- SHA256: {manifest.final_synthesis_context_sha256 or 'none'}",
+            f"- Summary: {manifest.final_synthesis_context_summary or {}}",
+            "",
             "News event clusters:",
             "",
             f"- Artifact: {manifest.event_cluster_artifact or 'none'}",

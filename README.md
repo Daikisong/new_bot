@@ -140,6 +140,9 @@ manifest hashes so replay context drift is detected. `context inspect` also chec
 the news CSV hash, row counts, blind news-window inclusion counts, memory-sweep shard
 artifacts, their hashes, cache-hit count, swept episode coverage, and required
 pre-open report sections.
+Final synthesis inputs are also checkpointed as
+`final_synthesis_context.json`, including the exact payload hash and input
+summary that the synthesis prompt used.
 
 ## Evaluation
 

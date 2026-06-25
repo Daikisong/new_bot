@@ -42,7 +42,14 @@ from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    write_json,
+)
 from news_scalping_lab.web.provider import WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
@@ -483,6 +490,30 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
     assert saved_manifest["prompt_hashes"]["final_synthesis"]
+    assert saved_manifest["final_synthesis_context_artifact"]
+    final_context_path = tmp_path / saved_manifest["final_synthesis_context_artifact"]
+    final_context = read_json(final_context_path)
+    assert (
+        sha256_text(final_context_path.read_text(encoding="utf-8"))
+        == saved_manifest["final_synthesis_context_sha256"]
+    )
+    assert final_context["schema_version"] == "nslab.final_synthesis_context.v1"
+    assert final_context["run_id"] == analysis.run_id
+    assert final_context["prompt_version"] == "synthesis.final.v1"
+    assert final_context["payload_sha256"] == sha256_text(
+        canonical_json(final_context["payload"])
+    )
+    assert final_context["required_inputs"] == final_context["payload"]["required_inputs"]
+    assert "current_news" in final_context["required_inputs"]
+    assert "red_team_output" in final_context["required_inputs"]
+    assert "d_minus_one_market_data" in final_context["required_inputs"]
+    assert final_context["input_summary"]["current_news_count"] == 1
+    assert final_context["input_summary"]["candidate_count"] >= 1
+    assert final_context["input_summary"]["red_team_finding_count"] >= 1
+    assert (
+        saved_manifest["final_synthesis_context_summary"]
+        == final_context["input_summary"]
+    )
     run_prediction_path = tmp_path / saved_manifest["prediction_artifact"]
     run_report_path = tmp_path / saved_manifest["report_artifact"]
     assert run_prediction_path.exists()

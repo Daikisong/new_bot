@@ -411,6 +411,35 @@
       "default": null,
       "title": "Excluded Web Source Sha256"
     },
+    "final_synthesis_context_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Synthesis Context Artifact"
+    },
+    "final_synthesis_context_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Final Synthesis Context Sha256"
+    },
+    "final_synthesis_context_summary": {
+      "additionalProperties": true,
+      "title": "Final Synthesis Context Summary",
+      "type": "object"
+    },
     "included_company_memory_files": {
       "items": {
         "type": "string"

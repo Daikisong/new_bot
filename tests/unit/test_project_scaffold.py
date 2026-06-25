@@ -25,6 +25,7 @@ EXPECTED_SCHEMA_FILES = {
     "context_manifest.schema.json",
     "daily_analysis.schema.json",
     "event_ticker_edge.schema.json",
+    "final_synthesis_context.schema.json",
     "mechanism_memory.schema.json",
     "memory_claim.schema.json",
     "news_novelty_review.schema.json",

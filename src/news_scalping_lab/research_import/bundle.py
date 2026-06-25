@@ -133,6 +133,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "candidate_verification.json finding count does not match bundle_manifest.json"
         )
+    if not parsed.validation.get("final_synthesis_context_hash_verified", True):
+        raise BundleImportError(
+            "final_synthesis_context.json hash does not match bundle_manifest.json"
+        )
     if not parsed.validation.get("excluded_candidate_web_check_hash_verified", True):
         raise BundleImportError(
             "excluded_candidate_web_checks.jsonl hash does not match bundle_manifest.json"
@@ -280,6 +284,13 @@ def parse_bundle(path: Path) -> BundleParseResult:
         hash_key="candidate_verification_hash_verified",
         count_key="candidate_verification_count_verified",
     )
+    if "final_synthesis_context.json" in payload_blocks:
+        validation["final_synthesis_context_hash_verified"] = _verify_payload_hash(
+            json_blocks,
+            payload_blocks,
+            block_name="final_synthesis_context.json",
+            manifest_field="final_synthesis_context_sha256",
+        )
     _add_optional_jsonl_validation(
         validation,
         json_blocks,
@@ -463,6 +474,22 @@ def _validate_jsonl_contracts(
         findings = candidate_verification.get("findings")
         if not isinstance(findings, list):
             raise BundleImportError("candidate_verification.json findings must be a list")
+    final_synthesis_context = json_blocks.get("final_synthesis_context.json")
+    if isinstance(final_synthesis_context, dict):
+        if (
+            final_synthesis_context.get("schema_version")
+            != "nslab.final_synthesis_context.v1"
+        ):
+            raise BundleImportError("final_synthesis_context.json invalid schema_version")
+        if not isinstance(final_synthesis_context.get("payload"), dict):
+            raise BundleImportError("final_synthesis_context.json payload must be an object")
+        required_inputs = final_synthesis_context.get("required_inputs")
+        if not isinstance(required_inputs, list) or not all(
+            isinstance(item, str) for item in required_inputs
+        ):
+            raise BundleImportError(
+                "final_synthesis_context.json required_inputs must be a string list"
+            )
 
 
 def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:

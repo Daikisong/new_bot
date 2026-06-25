@@ -45,6 +45,11 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         manifest,
         "candidate_verification_artifact",
     )
+    final_synthesis_context = _read_optional_manifest_artifact(
+        settings,
+        manifest,
+        "final_synthesis_context_artifact",
+    )
     excluded_candidate_web_checks = _read_optional_manifest_artifact(
         settings,
         manifest,
@@ -100,6 +105,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         source_ledger=source_ledger,
         candidate_web_checks=candidate_web_checks,
         candidate_verification=candidate_verification,
+        final_synthesis_context=final_synthesis_context,
         excluded_candidate_web_checks=excluded_candidate_web_checks,
         blind_seal_receipt=blind_seal_receipt,
         phase_state=phase_state,
@@ -122,6 +128,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             source_ledger=source_ledger,
             candidate_web_checks=candidate_web_checks,
             candidate_verification=candidate_verification,
+            final_synthesis_context=final_synthesis_context,
             excluded_candidate_web_checks=excluded_candidate_web_checks,
             phase_state=phase_state,
             bundle_manifest=bundle_manifest,
@@ -327,6 +334,7 @@ def _bundle_input_artifacts(manifest: dict[str, Any]) -> list[str]:
         "source_ledger_artifact",
         "candidate_web_check_artifact",
         "candidate_verification_artifact",
+        "final_synthesis_context_artifact",
         "excluded_candidate_web_check_artifact",
     ):
         artifact = manifest.get(field_name)
@@ -346,6 +354,7 @@ def _build_bundle_manifest(
     source_ledger: str,
     candidate_web_checks: str | None,
     candidate_verification: str | None,
+    final_synthesis_context: str | None,
     excluded_candidate_web_checks: str | None,
     blind_seal_receipt: str,
     phase_state: str,
@@ -424,6 +433,15 @@ def _build_bundle_manifest(
         )
         validation["candidate_verification_hash_verified"] = True
         validation["candidate_verification_count_verified"] = True
+    if final_synthesis_context is not None:
+        payload["final_synthesis_context_sha256"] = sha256_text(
+            final_synthesis_context
+        )
+        payload["final_synthesis_context_summary"] = manifest.get(
+            "final_synthesis_context_summary",
+            {},
+        )
+        validation["final_synthesis_context_hash_verified"] = True
     if excluded_candidate_web_checks is not None:
         payload["excluded_candidate_web_check_sha256"] = sha256_text(
             excluded_candidate_web_checks
@@ -472,6 +490,7 @@ def _render_bundle(
     source_ledger: str,
     candidate_web_checks: str | None,
     candidate_verification: str | None,
+    final_synthesis_context: str | None,
     excluded_candidate_web_checks: str | None,
     phase_state: str,
     bundle_manifest: dict[str, Any],
@@ -497,6 +516,10 @@ def _render_bundle(
     if candidate_verification is not None:
         optional_blocks += (
             f"{_block('candidate_verification.json', candidate_verification, fence='json')}\n\n"
+        )
+    if final_synthesis_context is not None:
+        optional_blocks += (
+            f"{_block('final_synthesis_context.json', final_synthesis_context, fence='json')}\n\n"
         )
     if excluded_candidate_web_checks is not None:
         optional_blocks += (

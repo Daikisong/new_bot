@@ -300,6 +300,16 @@ class CandidateVerificationReview(StrictModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class FinalSynthesisContextArtifact(StrictModel):
+    schema_version: str = "nslab.final_synthesis_context.v1"
+    run_id: str
+    prompt_version: str
+    required_inputs: list[str] = Field(default_factory=list)
+    payload_sha256: str
+    input_summary: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class DominantSectorHypothesis(StrictModel):
     name: str
     triggering_events: list[str] = Field(default_factory=list)
@@ -602,6 +612,9 @@ class ContextManifest(StrictModel):
     candidate_verification_sha256: str | None = None
     candidate_verification_count: int = 0
     candidate_verification_summary: dict[str, Any] = Field(default_factory=dict)
+    final_synthesis_context_artifact: str | None = None
+    final_synthesis_context_sha256: str | None = None
+    final_synthesis_context_summary: dict[str, Any] = Field(default_factory=dict)
     excluded_candidate_web_check_artifact: str | None = None
     excluded_candidate_web_check_sha256: str | None = None
     excluded_candidate_web_source_ids: list[str] = Field(default_factory=list)

@@ -547,6 +547,88 @@ def test_provenance_audit_requires_report_sections(tmp_path: Path) -> None:
     ) in result["findings"]
 
 
+def test_provenance_audit_validates_final_synthesis_context_artifact(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        _preopen_report_text(), encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(_preopen_report_text(), encoding="utf-8")
+    final_context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-linked"
+        / "final_synthesis_context.json"
+    )
+    write_json(
+        final_context_path,
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-other",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": ["wrong_input"],
+            "payload_sha256": "bad-payload-hash",
+            "input_summary": {},
+            "payload": {
+                "required_inputs": ["current_news"],
+                "current_news": ["pre-cutoff news"],
+            },
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "final_synthesis_context_artifact": final_context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": "0" * 64,
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert (
+        "2030-01-10.json: context manifest final_synthesis_context_sha256 mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: final_synthesis_context run_id mismatch" in findings
+    assert (
+        "2030-01-10.json: final_synthesis_context payload_sha256 mismatch"
+        in findings
+    )
+    assert (
+        "2030-01-10.json: final_synthesis_context required_inputs mismatch"
+        in findings
+    )
+
+
 def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

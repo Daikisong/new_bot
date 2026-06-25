@@ -815,6 +815,7 @@ def _check_manifest_output_artifacts(
 ) -> None:
     _check_manifest_prediction_artifact(root, prediction_path, manifest, findings)
     _check_manifest_report_artifact(root, prediction_path, manifest, findings)
+    _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
 
 
 def _check_manifest_prediction_artifact(
@@ -890,6 +891,69 @@ def _check_manifest_report_artifact(
         findings.append(
             f"{prediction_path.name}: context manifest report_artifact required "
             "sections out of order"
+        )
+
+
+def _check_manifest_final_synthesis_context_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("final_synthesis_context_artifact")
+    expected_hash = manifest.get("final_synthesis_context_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="final_synthesis_context_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing "
+            "final_synthesis_context_sha256"
+        )
+    elif sha256_text(artifact_path.read_text(encoding="utf-8", errors="replace")) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest final_synthesis_context_sha256 mismatch"
+        )
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.final_synthesis_context.v1":
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context invalid schema_version"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context run_id mismatch"
+        )
+    context_payload = payload.get("payload")
+    if not isinstance(context_payload, dict):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context payload must be object"
+        )
+        return
+    if payload.get("payload_sha256") != sha256_text(canonical_json(context_payload)):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context payload_sha256 mismatch"
+        )
+    required_inputs = context_payload.get("required_inputs")
+    if not isinstance(required_inputs, list) or not all(
+        isinstance(item, str) for item in required_inputs
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context required_inputs invalid"
+        )
+    elif payload.get("required_inputs") != required_inputs:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context required_inputs mismatch"
         )
 
 

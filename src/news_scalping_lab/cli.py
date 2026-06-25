@@ -418,6 +418,12 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
             False,
         ),
         (
+            "final_synthesis_context",
+            "final_synthesis_context_artifact",
+            "final_synthesis_context_sha256",
+            True,
+        ),
+        (
             "excluded_candidate_web_check",
             "excluded_candidate_web_check_artifact",
             "excluded_candidate_web_check_sha256",

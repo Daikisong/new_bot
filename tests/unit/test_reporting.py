@@ -209,6 +209,17 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 "needs_company_discovery": 4,
             },
         },
+        final_synthesis_context_artifact=(
+            "runs/checkpoints/final_synthesis_context/RUN-report/"
+            "final_synthesis_context.json"
+        ),
+        final_synthesis_context_sha256="final-synthesis-context-sha",
+        final_synthesis_context_summary={
+            "required_input_count": 20,
+            "current_news_count": 1,
+            "candidate_count": 2,
+            "red_team_finding_count": 2,
+        },
         excluded_candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-report/"
             "excluded_candidate_web_checks.jsonl"
@@ -361,6 +372,18 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert (
         "- Verification status counts: {'source_collected': 12, "
         "'needs_company_discovery': 4}"
+        in report
+    )
+    assert "Final synthesis context:" in report
+    assert (
+        "- Artifact: runs/checkpoints/final_synthesis_context/RUN-report/"
+        "final_synthesis_context.json"
+        in report
+    )
+    assert "- SHA256: final-synthesis-context-sha" in report
+    assert (
+        "- Summary: {'required_input_count': 20, 'current_news_count': 1, "
+        "'candidate_count': 2, 'red_team_finding_count': 2}"
         in report
     )
     assert "Counterexample episode ids:" in report

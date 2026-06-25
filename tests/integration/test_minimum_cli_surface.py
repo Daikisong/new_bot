@@ -154,6 +154,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["candidate_expansion"]["hash_verified"] is True
     assert supporting["candidate_web_check"]["hash_verified"] is True
     assert supporting["candidate_verification"]["hash_verified"] is True
+    assert supporting["final_synthesis_context"]["hash_verified"] is True
     assert supporting["source_ledger"]["hash_verified"] is True
     assert supporting["blind_seal_receipt"]["hash_verified"] is True
     assert supporting["phase_state"]["hash_verified"] is True

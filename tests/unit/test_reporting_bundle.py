@@ -176,6 +176,43 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         / "excluded_candidate_web_checks.jsonl"
     )
     excluded_candidate_path.write_text(excluded_candidate_web_checks, encoding="utf-8")
+    final_synthesis_context = json.dumps(
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": run_id,
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": ["current_news", "red_team_output"],
+            "payload_sha256": sha256_text(
+                canonical_json(
+                    {
+                        "required_inputs": ["current_news", "red_team_output"],
+                        "current_news": ["bundle news"],
+                    }
+                )
+            ),
+            "input_summary": {
+                "required_input_count": 2,
+                "current_news_count": 1,
+            },
+            "payload": {
+                "required_inputs": ["current_news", "red_team_output"],
+                "current_news": ["bundle news"],
+            },
+        },
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    final_context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / run_id
+        / "final_synthesis_context.json"
+    )
+    final_context_path.parent.mkdir(parents=True)
+    final_context_path.write_text(final_synthesis_context, encoding="utf-8")
     receipt = {
         "schema_version": "nslab.blind_seal_receipt.v1",
         "run_id": run_id,
@@ -249,6 +286,14 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         ).as_posix(),
         "candidate_verification_sha256": sha256_text(candidate_verification),
         "candidate_verification_count": 1,
+        "final_synthesis_context_artifact": final_context_path.relative_to(
+            tmp_path
+        ).as_posix(),
+        "final_synthesis_context_sha256": sha256_text(final_synthesis_context),
+        "final_synthesis_context_summary": {
+            "required_input_count": 2,
+            "current_news_count": 1,
+        },
         "excluded_candidate_web_check_artifact": excluded_candidate_path.relative_to(
             tmp_path
         ).as_posix(),
@@ -272,6 +317,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "source_ledger.jsonl",
         "candidate_web_checks.jsonl",
         "candidate_verification.json",
+        "final_synthesis_context.json",
         "excluded_candidate_web_checks.jsonl",
         "phase_state.json",
         "bundle_manifest.json",
@@ -286,6 +332,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["candidate_web_check_count_verified"]
     assert parsed.validation["candidate_verification_hash_verified"]
     assert parsed.validation["candidate_verification_count_verified"]
+    assert parsed.validation["final_synthesis_context_hash_verified"]
     assert parsed.validation["excluded_candidate_web_check_hash_verified"]
     assert parsed.validation["excluded_candidate_web_check_count_verified"]
     assert parsed.validation["research_episode_hash_verified"]
@@ -308,6 +355,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["candidate_web_check_count_verified"] is True
     assert manifest["validation"]["candidate_verification_hash_verified"] is True
     assert manifest["validation"]["candidate_verification_count_verified"] is True
+    assert manifest["validation"]["final_synthesis_context_hash_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_hash_verified"] is True
     assert manifest["validation"]["excluded_candidate_web_check_count_verified"] is True
     assert manifest["validation"]["phase_state_hash_verified"] is True
@@ -325,6 +373,9 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.json_blocks["candidate_verification.json"]["findings"][0][
         "accepted_source_ids"
     ] == ["WEB-CANDIDATE-1"]
+    assert parsed.json_blocks["final_synthesis_context.json"]["input_summary"][
+        "current_news_count"
+    ] == 1
     assert parsed.jsonl_blocks["excluded_candidate_web_checks.jsonl"][0]["source_id"] == (
         "WEB-CANDIDATE-EXCLUDED"
     )
