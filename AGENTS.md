@@ -9,3 +9,11 @@
 - Blind inference must not access D-day prices or information after the cutoff.
 - Every output must include provenance and a context manifest.
 - Completion requires `ruff`, `mypy`, and `pytest` to pass.
+
+Test commands:
+
+```bash
+python -m ruff check .
+python -m mypy src/news_scalping_lab
+python -m pytest
+```

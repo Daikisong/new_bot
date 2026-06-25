@@ -71,6 +71,14 @@ nslab audit coverage
 - `brain/current/brain_manifest.json`
 - `brain/current/coverage_manifest.json`
 
+## Quality Gates
+
+```bash
+python -m ruff check .
+python -m mypy src/news_scalping_lab
+python -m pytest
+```
+
 ## Recovery
 
 - If `brain audit` fails, run `nslab brain rebuild --mode full`.

@@ -53,6 +53,12 @@ def test_repository_agent_guidance_stays_short_and_operational() -> None:
     ]
 
     assert all(rule in guidance for rule in required_rules)
+    for command in (
+        "python -m ruff check .",
+        "python -m mypy src/news_scalping_lab",
+        "python -m pytest",
+    ):
+        assert command in guidance
     assert len([line for line in guidance.splitlines() if line.startswith("- ")]) == len(
         required_rules
     )
@@ -84,6 +90,9 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
         "nslab audit hardcoding",
         "`predictions/YYYY-MM-DD.json`",
         "`runs/manifests/<run_id>.json`",
+        "python -m ruff check .",
+        "python -m mypy src/news_scalping_lab",
+        "python -m pytest",
         "If `brain audit` fails, run `nslab brain rebuild --mode full`.",
         "If lookahead audit fails, inspect the manifest `price_snapshot.allowed_through`",
     ]
