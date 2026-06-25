@@ -400,3 +400,19 @@ def test_doctor_report_readiness_requires_stock_web_path_when_price_provider_ena
         "finding_count": 1,
         "findings": ["stock_web: configured price provider has no readable path"],
     }
+
+
+def test_doctor_report_readiness_flags_unsupported_price_provider(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, price_provider="unknown-price")
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    report = build_doctor_report(settings)
+
+    assert report["providers"]["price"] == "unknown-price"
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["price: unsupported provider unknown-price"],
+    }

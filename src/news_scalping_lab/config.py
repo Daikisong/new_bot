@@ -246,6 +246,9 @@ def load_settings(project_root: Path | None = None) -> Settings:
     web_provider = os.getenv("NSLAB_WEB_PROVIDER")
     if web_provider:
         settings.web_provider = web_provider
+    price_provider = os.getenv("NSLAB_PRICE_PROVIDER")
+    if price_provider:
+        settings.price_provider = price_provider
     brave_search_count = os.getenv("NSLAB_BRAVE_SEARCH_COUNT")
     if brave_search_count:
         settings.brave_search_count = int(brave_search_count)

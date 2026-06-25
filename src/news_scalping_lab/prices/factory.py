@@ -9,6 +9,11 @@ from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock
 
 
 def create_price_source(settings: Settings) -> PriceSource:
+    provider = settings.price_provider.strip().lower()
+    if provider == "mock":
+        return MockPriceSource()
+    if provider not in {"stock-web", "stock_web", "stockweb"}:
+        raise ValueError(f"unsupported price provider: {settings.price_provider}")
     if settings.stock_web_path is not None:
         stock_web_path = settings.path(settings.stock_web_path)
         if stock_web_path.exists():
@@ -20,4 +25,5 @@ def create_price_source(settings: Settings) -> PriceSource:
         )
         if cache_path.exists():
             return StockWebPriceSource(cache_path)
-    return MockPriceSource()
+    details = "set NSLAB_STOCK_WEB_PATH or enable NSLAB_STOCK_WEB_CACHE=1"
+    raise ValueError(f"stock-web price provider is configured but unavailable; {details}")

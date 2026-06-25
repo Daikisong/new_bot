@@ -167,11 +167,9 @@ class DailyAnalyzer:
         self.web_provider = web_provider or create_web_provider(self.settings)
 
     def _configured_blind_price_source(self, settings: Settings) -> PriceSource | None:
-        if settings.stock_web_path is None and not settings.stock_web_cache_enabled:
+        if settings.price_provider.strip().lower() == "mock":
             return None
         source = create_price_source(settings)
-        if source.source_name == "mock-price":
-            return None
         return source
 
     def _blind_price_source_name(self) -> str:

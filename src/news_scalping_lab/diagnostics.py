@@ -27,6 +27,7 @@ from news_scalping_lab.storage import ResearchStore
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
     "NSLAB_WEB_PROVIDER",
+    "NSLAB_PRICE_PROVIDER",
     "NSLAB_BRAVE_SEARCH_API_KEY_ENV",
     "NSLAB_BRAVE_SEARCH_COUNT",
     "NSLAB_BRAVE_SEARCH_COUNTRY",
@@ -159,6 +160,9 @@ def _doctor_readiness(
     accepted_episode_count: int,
 ) -> dict[str, Any]:
     findings: list[str] = []
+    price_provider = settings.price_provider.strip().lower()
+    if price_provider not in {"mock", "stock-web", "stock_web", "stockweb"}:
+        findings.append(f"price: unsupported provider {settings.price_provider}")
     api_connections = report.get("api_connections")
     if isinstance(api_connections, dict):
         for name, api_status in sorted(api_connections.items()):

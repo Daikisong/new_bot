@@ -1735,7 +1735,11 @@ def test_d_minus_one_market_data_uses_blind_price_guard(tmp_path) -> None:
 def test_daily_analyzer_uses_configured_stock_web_price_source(tmp_path) -> None:
     stock_web_path = tmp_path / "stock-web"
     (stock_web_path / "atlas").mkdir(parents=True)
-    settings = Settings(project_root=tmp_path, stock_web_path=stock_web_path)
+    settings = Settings(
+        project_root=tmp_path,
+        price_provider="stock-web",
+        stock_web_path=stock_web_path,
+    )
 
     analyzer = DailyAnalyzer(settings)
 

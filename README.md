@@ -242,6 +242,7 @@ NSLAB_LLM_MAX_RETRIES=0
 OPENAI_API_KEY=
 NSLAB_OPENAI_MODEL=gpt-5-mini
 NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+NSLAB_PRICE_PROVIDER=mock
 NSLAB_STOCK_WEB_PATH=
 NSLAB_WEB_PROVIDER=mock
 BRAVE_SEARCH_API_KEY=
@@ -282,6 +283,7 @@ result without a parseable publication timestamp is excluded from BLIND evidence
 Set `NSLAB_STOCK_WEB_PATH` to a local checkout or cache of `https://github.com/Songdaiki/stock-web`.
 
 ```bash
+set NSLAB_PRICE_PROVIDER=stock-web
 set NSLAB_STOCK_WEB_PATH=data/cache/stock-web
 nslab doctor
 ```
@@ -289,11 +291,16 @@ nslab doctor
 To let the price factory prepare a GitHub-backed cache on demand, opt in explicitly:
 
 ```bash
+set NSLAB_PRICE_PROVIDER=stock-web
 set NSLAB_STOCK_WEB_CACHE=1
 set NSLAB_STOCK_WEB_CACHE_PATH=data/cache/stock-web
 set NSLAB_STOCK_WEB_REMOTE_URL=https://github.com/Songdaiki/stock-web.git
 ```
 
+When `NSLAB_STOCK_WEB_PATH` or `NSLAB_STOCK_WEB_CACHE=1` is set, the config loader
+also selects `stock-web` for compatibility. Setting `NSLAB_PRICE_PROVIDER=stock-web`
+directly is stricter: if neither an explicit path nor an enabled cache is
+available, the price factory fails instead of falling back to mock data.
 `nslab doctor` reports the effective stock-web path it will inspect: the explicit
 path when present, otherwise the enabled cache path.
 

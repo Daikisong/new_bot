@@ -259,6 +259,7 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
 ) -> None:
     monkeypatch.delenv("NSLAB_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("NSLAB_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("NSLAB_PRICE_PROVIDER", raising=False)
     monkeypatch.delenv("NSLAB_BRAVE_SEARCH_COUNT", raising=False)
     monkeypatch.delenv("NSLAB_BRAVE_SEARCH_COUNTRY", raising=False)
     monkeypatch.delenv("NSLAB_BRAVE_SEARCH_LANG", raising=False)
@@ -283,6 +284,7 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
                 "# local secrets and runtime settings",
                 "NSLAB_LLM_PROVIDER=openai",
                 "NSLAB_WEB_PROVIDER=brave",
+                "NSLAB_PRICE_PROVIDER=stock-web",
                 "NSLAB_BRAVE_SEARCH_COUNT=15",
                 "NSLAB_BRAVE_SEARCH_COUNTRY=KR",
                 "NSLAB_BRAVE_SEARCH_LANG=ko",

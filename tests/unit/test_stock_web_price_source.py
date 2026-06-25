@@ -7,6 +7,7 @@ import pytest
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.prices.mock import MockPriceSource
 from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock_web_cache
 
 
@@ -337,6 +338,7 @@ def test_price_factory_can_prepare_stock_web_cache(
     )
     settings = Settings(
         project_root=tmp_path,
+        price_provider="stock-web",
         stock_web_cache_enabled=True,
         stock_web_cache_path=Path("cache/stock-web"),
         stock_web_remote_url="https://example.test/stock-web.git",
@@ -346,3 +348,28 @@ def test_price_factory_can_prepare_stock_web_cache(
 
     assert isinstance(source, StockWebPriceSource)
     assert calls == [(tmp_path / "cache" / "stock-web", "https://example.test/stock-web.git")]
+
+
+def test_price_factory_uses_mock_when_provider_is_mock_even_with_stock_web_path(
+    tmp_path,
+) -> None:
+    stock_web_path = tmp_path / "stock-web"
+    (stock_web_path / "atlas").mkdir(parents=True)
+    settings = Settings(
+        project_root=tmp_path,
+        price_provider="mock",
+        stock_web_path=stock_web_path,
+    )
+
+    source = create_price_source(settings)
+
+    assert isinstance(source, MockPriceSource)
+
+
+def test_price_factory_fails_when_stock_web_provider_has_no_source(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, price_provider="stock-web")
+
+    with pytest.raises(ValueError, match="stock-web price provider is configured"):
+        create_price_source(settings)
