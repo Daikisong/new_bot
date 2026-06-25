@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,7 @@ ENV_KEYS = [
     "OPENAI_API_KEY",
     "BRAVE_SEARCH_API_KEY",
 ]
+OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 
 
 def build_doctor_report(settings: Settings) -> dict[str, Any]:
@@ -79,8 +82,9 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         "environment": _environment_status(),
         "api_connections": {
             "openai": {
-                "required": settings.llm_provider == "openai",
+                "required": _openai_required(settings),
                 "configured": bool(os.getenv("OPENAI_API_KEY")),
+                "sdk": _openai_sdk_status(),
                 "status": _openai_status(settings),
             },
             "brave_search": {
@@ -158,8 +162,17 @@ def _doctor_readiness(
     api_connections = report.get("api_connections")
     if isinstance(api_connections, dict):
         for name, api_status in sorted(api_connections.items()):
-            if isinstance(api_status, dict) and api_status.get("status") == "missing_api_key":
+            if not isinstance(api_status, dict):
+                continue
+            status = api_status.get("status")
+            if status == "missing_api_key":
                 findings.append(f"{name}: required API key is missing")
+            elif status == "missing_sdk":
+                findings.append(f"{name}: required SDK extra is not installed")
+            elif status == "sdk_missing_async_client":
+                findings.append(f"{name}: SDK does not expose AsyncOpenAI")
+            elif status == "sdk_import_error":
+                findings.append(f"{name}: SDK could not be imported")
 
     schema_files = _nested_dict(report, "schemas", "files")
     if schema_files.get("status") != "ok":
@@ -281,11 +294,54 @@ def _environment_status() -> dict[str, dict[str, object]]:
 
 
 def _openai_status(settings: Settings) -> str:
-    if settings.llm_provider != "openai":
+    if not _openai_required(settings):
         return "not_required"
-    if os.getenv("OPENAI_API_KEY"):
-        return "configured_not_called"
-    return "missing_api_key"
+    if not os.getenv("OPENAI_API_KEY"):
+        return "missing_api_key"
+    sdk_status = _openai_sdk_status()
+    if sdk_status.get("available") is not True:
+        return "missing_sdk" if sdk_status.get("error") is None else "sdk_import_error"
+    if sdk_status.get("async_client_available") is not True:
+        return "sdk_missing_async_client"
+    return "configured_not_called"
+
+
+def _openai_required(settings: Settings) -> bool:
+    return settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES
+
+
+def _openai_sdk_status() -> dict[str, Any]:
+    try:
+        spec = find_spec("openai")
+    except (ImportError, ValueError) as exc:
+        return {
+            "available": False,
+            "version": None,
+            "async_client_available": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    if spec is None:
+        return {
+            "available": False,
+            "version": None,
+            "async_client_available": False,
+            "error": None,
+        }
+    try:
+        module = import_module("openai")
+    except Exception as exc:
+        return {
+            "available": False,
+            "version": None,
+            "async_client_available": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "available": True,
+        "version": getattr(module, "__version__", None),
+        "async_client_available": hasattr(module, "AsyncOpenAI"),
+        "error": None,
+    }
 
 
 def _brave_search_required(settings: Settings) -> bool:

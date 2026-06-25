@@ -53,6 +53,15 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     monkeypatch.setenv("NSLAB_LLM_REASONING_EFFORT", "medium")
     monkeypatch.setenv("NSLAB_LLM_MAX_RETRIES", "2")
     monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-secret")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics._openai_sdk_status",
+        lambda: {
+            "available": True,
+            "version": "fake-openai",
+            "async_client_available": True,
+            "error": None,
+        },
+    )
 
     report = build_doctor_report(settings)
 
@@ -92,6 +101,12 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["api_connections"]["openai"] == {
         "required": True,
         "configured": True,
+        "sdk": {
+            "available": True,
+            "version": "fake-openai",
+            "async_client_available": True,
+            "error": None,
+        },
         "status": "configured_not_called",
     }
     assert report["api_connections"]["brave_search"] == {
@@ -299,6 +314,71 @@ def test_doctor_report_readiness_flags_missing_required_api_keys(
             "openai: required API key is missing",
         ],
     }
+
+
+def test_doctor_report_readiness_flags_missing_openai_sdk_when_provider_enabled(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    settings = Settings(project_root=tmp_path, llm_provider="responses")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics._openai_sdk_status",
+        lambda: {
+            "available": False,
+            "version": None,
+            "async_client_available": False,
+            "error": None,
+        },
+    )
+
+    report = build_doctor_report(settings)
+
+    assert report["api_connections"]["openai"] == {
+        "required": True,
+        "configured": True,
+        "sdk": {
+            "available": False,
+            "version": None,
+            "async_client_available": False,
+            "error": None,
+        },
+        "status": "missing_sdk",
+    }
+    assert report["readiness"] == {
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["openai: required SDK extra is not installed"],
+    }
+
+
+def test_doctor_report_readiness_flags_openai_sdk_without_async_client(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics._openai_sdk_status",
+        lambda: {
+            "available": True,
+            "version": "legacy-fake",
+            "async_client_available": False,
+            "error": None,
+        },
+    )
+
+    report = build_doctor_report(settings)
+
+    assert report["api_connections"]["openai"]["status"] == "sdk_missing_async_client"
+    assert report["readiness"]["findings"] == ["openai: SDK does not expose AsyncOpenAI"]
 
 
 def test_doctor_report_readiness_requires_stock_web_path_when_price_provider_enabled(
