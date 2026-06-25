@@ -3598,6 +3598,29 @@ def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> No
     )
     write_json(pack_dir / "manifest.json", manifest)
 
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            **manifest,
+            "blocked": False,
+            "accepted_episode_count": 0,
+            "available_episode_count": 0,
+            "included_episode_count": 0,
+            "included_episode_ids": [],
+            "omitted_episode_ids": [],
+            "unavailable_episode_ids": [],
+            "token_budget": sum(token_counts.values()) - 1,
+        },
+    )
+    unblocked_over_budget = audit_lookahead(tmp_path)
+
+    assert not unblocked_over_budget["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack token budget exceeded without blocked"
+        in unblocked_over_budget["findings"]
+    )
+    write_json(pack_dir / "manifest.json", manifest)
+
     (pack_dir / "current_news.md").write_text("tampered current news\n", encoding="utf-8")
 
     tampered = audit_lookahead(tmp_path)

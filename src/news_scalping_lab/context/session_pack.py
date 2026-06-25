@@ -255,9 +255,21 @@ def export_session_pack(
         file_name: _estimate_tokens((output_dir / file_name).read_text(encoding="utf-8"))
         for file_name in pack_files
     }
+    token_count_total = sum(token_counts.values())
+    required_context_over_budget = not omitted_ids and token_count_total > token_budget
+    if required_context_over_budget:
+        truncations.append(
+            {
+                "artifact": "session_pack",
+                "reason": "session_pack_required_context_exceeds_token_budget",
+                "token_budget": token_budget,
+                "token_count_total": token_count_total,
+            }
+        )
+        errors.append("session pack required context exceeds token budget")
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
-        "blocked": bool(omitted_ids),
+        "blocked": bool(omitted_ids or required_context_over_budget),
         "trade_date": trade_date.isoformat(),
         "cutoff_at": cutoff_at.isoformat(),
         "as_of": cutoff_at.isoformat(),
@@ -289,7 +301,7 @@ def export_session_pack(
         "omitted_market_context_files": market_context.omitted,
         "token_budget": token_budget,
         "token_counts": token_counts,
-        "token_count_total": sum(token_counts.values()),
+        "token_count_total": token_count_total,
         "pack_files": pack_files,
         "pack_file_count": len(pack_files),
         "pack_file_hashes": {
@@ -302,7 +314,7 @@ def export_session_pack(
         "errors": errors,
     }
     write_json(output_dir / "manifest.json", manifest)
-    if omitted_ids:
+    if omitted_ids or required_context_over_budget:
         raise SessionPackBudgetExceededError(output_dir, errors)
     return output_dir
 

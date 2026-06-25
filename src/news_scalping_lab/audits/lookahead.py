@@ -830,6 +830,14 @@ def _check_session_pack_token_counts(
         token_count_total != expected_total or token_count_total != observed_total
     ):
         findings.append(f"{manifest_name}: token_count_total mismatch")
+    token_budget = manifest.get("token_budget")
+    if token_budget is None:
+        return
+    if not isinstance(token_budget, int) or isinstance(token_budget, bool) or token_budget < 1:
+        findings.append(f"{manifest_name}: token_budget is invalid")
+        return
+    if token_count_total > token_budget and manifest.get("blocked") is not True:
+        findings.append(f"{manifest_name}: session pack token budget exceeded without blocked")
 
 
 def _estimate_tokens(text: str) -> int:
