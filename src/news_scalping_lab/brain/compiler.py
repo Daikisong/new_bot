@@ -100,6 +100,9 @@ class BrainCompiler:
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
+            build_mode="full",
+            last_full_rebuild_at=created_at,
+            updated_episode_id=None,
             accepted_episode_count=len(episodes),
             covered_episode_count=len(covered_ids),
             covered_episode_ids=covered_ids,
@@ -191,6 +194,11 @@ class BrainCompiler:
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
+            build_mode="incremental",
+            last_full_rebuild_at=(
+                current_manifest.last_full_rebuild_at or current_manifest.created_at
+            ),
+            updated_episode_id=episode.episode_id,
             accepted_episode_count=len(episodes),
             covered_episode_count=len(covered_ids),
             covered_episode_ids=covered_ids,
@@ -511,6 +519,13 @@ class BrainCompiler:
         return {
             "brain_version": manifest.brain_version,
             "created_at": manifest.created_at.isoformat(),
+            "build_mode": manifest.build_mode,
+            "last_full_rebuild_at": (
+                manifest.last_full_rebuild_at.isoformat()
+                if manifest.last_full_rebuild_at is not None
+                else None
+            ),
+            "updated_episode_id": manifest.updated_episode_id,
             "accepted_episode_count": manifest.accepted_episode_count,
             "covered_episode_count": manifest.covered_episode_count,
             "covered_episode_ids": manifest.covered_episode_ids,

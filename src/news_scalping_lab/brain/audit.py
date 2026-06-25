@@ -47,7 +47,9 @@ def audit_brain(root: Path) -> dict[str, object]:
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
         "brain_version": current_brain_version(root),
-        "last_full_rebuild": manifest.get("created_at"),
+        "brain_build_mode": _brain_build_mode(manifest),
+        "updated_episode_id": manifest.get("updated_episode_id"),
+        "last_full_rebuild": manifest.get("last_full_rebuild_at") or manifest.get("created_at"),
     }
 
 
@@ -171,3 +173,12 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _brain_build_mode(manifest: dict[str, Any]) -> str:
+    value = manifest.get("build_mode")
+    if isinstance(value, str) and value:
+        return value
+    if manifest.get("created_at") is not None:
+        return "full"
+    return "unknown"

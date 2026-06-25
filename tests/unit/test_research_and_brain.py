@@ -101,7 +101,12 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
 
     assert manifest.accepted_episode_count == 1
     assert manifest.coverage_complete
+    assert manifest.build_mode == "full"
+    assert manifest.last_full_rebuild_at == manifest.created_at
+    assert manifest.updated_episode_id is None
     assert audit["coverage_complete"]
+    assert audit["brain_build_mode"] == "full"
+    assert audit["last_full_rebuild"] == manifest.created_at.isoformat()
     assert episode.episode_id in manifest.covered_episode_ids
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
     assert shard_manifest["brain_version"] == manifest.brain_version
@@ -712,8 +717,12 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     monkeypatch.setattr(BrainCompiler, "rebuild", fail_rebuild)
 
     updated = compiler.update(episode_id=episode_b.episode_id)
+    brain_audit = audit_brain(tmp_path)
 
     assert updated.brain_version != first_manifest.brain_version
+    assert updated.build_mode == "incremental"
+    assert updated.last_full_rebuild_at == first_manifest.created_at
+    assert updated.updated_episode_id == episode_b.episode_id
     assert updated.accepted_episode_count == 2
     assert updated.covered_episode_ids == [
         episode_a.episode_id,
@@ -742,6 +751,9 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     assert coverage["passed"] is True
     assert coverage["vector_index_current"] is True
     assert coverage["warehouse_synced"] is True
+    assert brain_audit["brain_build_mode"] == "incremental"
+    assert brain_audit["updated_episode_id"] == episode_b.episode_id
+    assert brain_audit["last_full_rebuild"] == first_manifest.created_at.isoformat()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 2
 
 

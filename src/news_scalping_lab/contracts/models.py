@@ -342,6 +342,9 @@ class BrainManifest(StrictModel):
     schema_version: str = "nslab.brain_manifest.v1"
     brain_version: str
     created_at: datetime
+    build_mode: str = "full"
+    last_full_rebuild_at: datetime | None = None
+    updated_episode_id: str | None = None
     accepted_episode_count: int
     covered_episode_count: int
     covered_episode_ids: list[str] = Field(default_factory=list)

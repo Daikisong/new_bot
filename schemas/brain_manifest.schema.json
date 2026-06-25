@@ -9,6 +9,11 @@
       "title": "Brain Version",
       "type": "string"
     },
+    "build_mode": {
+      "default": "full",
+      "title": "Build Mode",
+      "type": "string"
+    },
     "claim_ids": {
       "items": {
         "type": "string"
@@ -36,6 +41,19 @@
       "title": "Created At",
       "type": "string"
     },
+    "last_full_rebuild_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Full Rebuild At"
+    },
     "schema_version": {
       "default": "nslab.brain_manifest.v1",
       "title": "Schema Version",
@@ -47,6 +65,18 @@
       },
       "title": "Source Hashes",
       "type": "object"
+    },
+    "updated_episode_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Updated Episode Id"
     }
   },
   "required": [

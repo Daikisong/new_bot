@@ -62,7 +62,9 @@ for manual validation first.
 `brain update --episode` performs a safe incremental merge when the current brain
 already covers the prior accepted set exactly. If the current manifest is missing
 or drift is detected, it falls back to `brain rebuild --mode full`; full rebuilds
-remain reproducible from accepted source episodes.
+remain reproducible from accepted source episodes. `brain audit` reports the
+current build mode while preserving the last full rebuild timestamp across
+incremental updates.
 
 `brain rebuild` also refreshes `memory/vector_index/manifest.json` and
 `memory/vector_index/episodes.jsonl`. The local index is a deterministic
