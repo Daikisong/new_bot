@@ -46,6 +46,12 @@ class Settings(BaseModel):
     llm_provider: str = "mock"
     web_provider: str = "mock"
     price_provider: str = "mock"
+    brave_search_api_key_env: str = "BRAVE_SEARCH_API_KEY"
+    brave_search_count: int = 10
+    brave_search_country: str = "KR"
+    brave_search_lang: str = "ko"
+    brave_search_ui_lang: str = "ko-KR"
+    brave_search_freshness_days: int = 7
     stock_web_path: Path | None = None
     stock_web_remote_url: str = "https://github.com/Songdaiki/stock-web.git"
     stock_web_cache_path: Path = Path("data/cache/stock-web")
@@ -111,6 +117,12 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
         "llm_provider": "mock",
         "web_provider": "mock",
         "price_provider": "mock",
+        "brave_search_api_key_env": "BRAVE_SEARCH_API_KEY",
+        "brave_search_count": 10,
+        "brave_search_country": "KR",
+        "brave_search_lang": "ko",
+        "brave_search_ui_lang": "ko-KR",
+        "brave_search_freshness_days": 7,
         "stock_web_path": None,
         "stock_web_remote_url": "https://github.com/Songdaiki/stock-web.git",
         "stock_web_cache_path": "data/cache/stock-web",
@@ -222,6 +234,24 @@ def load_settings(project_root: Path | None = None) -> Settings:
     web_provider = os.getenv("NSLAB_WEB_PROVIDER")
     if web_provider:
         settings.web_provider = web_provider
+    brave_search_count = os.getenv("NSLAB_BRAVE_SEARCH_COUNT")
+    if brave_search_count:
+        settings.brave_search_count = int(brave_search_count)
+    brave_search_country = os.getenv("NSLAB_BRAVE_SEARCH_COUNTRY")
+    if brave_search_country:
+        settings.brave_search_country = brave_search_country
+    brave_search_lang = os.getenv("NSLAB_BRAVE_SEARCH_LANG")
+    if brave_search_lang:
+        settings.brave_search_lang = brave_search_lang
+    brave_search_ui_lang = os.getenv("NSLAB_BRAVE_SEARCH_UI_LANG")
+    if brave_search_ui_lang:
+        settings.brave_search_ui_lang = brave_search_ui_lang
+    brave_search_freshness_days = os.getenv("NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS")
+    if brave_search_freshness_days:
+        settings.brave_search_freshness_days = int(brave_search_freshness_days)
+    brave_search_api_key_env = os.getenv("NSLAB_BRAVE_SEARCH_API_KEY_ENV")
+    if brave_search_api_key_env:
+        settings.brave_search_api_key_env = brave_search_api_key_env
     stock_path = os.getenv("NSLAB_STOCK_WEB_PATH")
     if stock_path:
         settings.stock_web_path = Path(stock_path)

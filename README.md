@@ -178,6 +178,8 @@ OPENAI_API_KEY=
 NSLAB_OPENAI_MODEL=gpt-5-mini
 NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 NSLAB_STOCK_WEB_PATH=
+NSLAB_WEB_PROVIDER=mock
+BRAVE_SEARCH_API_KEY=
 ```
 
 Without API keys, the deterministic mock providers are used. To use OpenAI for structured semantic import and daily blind analysis:
@@ -196,6 +198,19 @@ the selected model, reasoning effort, and max output tokens into the SDK calls.
 The trace wrapper records the same settings and the actual retry count in context
 manifests, checkpoints, and LLM traces.
 Structured outputs are validated against the project Pydantic contracts.
+
+For live cutoff-filtered web research, set Brave Search credentials and opt into
+the live provider:
+
+```bash
+set NSLAB_WEB_PROVIDER=brave
+set BRAVE_SEARCH_API_KEY=...
+nslab doctor
+```
+
+The live provider calls Brave Search's news endpoint, records only hashed/excerpted
+source artifacts, and still passes every result through `TemporalWebGuard`; any
+result without a parseable publication timestamp is excluded from BLIND evidence.
 
 ## stock-web Price Source
 

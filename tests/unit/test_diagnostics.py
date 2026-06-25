@@ -20,6 +20,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     settings = Settings(
         project_root=tmp_path,
         llm_provider="openai",
+        web_provider="brave",
         stock_web_path=tmp_path / "stock-web",
         stock_web_cache_enabled=True,
     )
@@ -48,12 +49,15 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     WarehouseStore(tmp_path).rebuild_all()
     monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("NSLAB_WEB_PROVIDER", "brave")
     monkeypatch.setenv("NSLAB_LLM_REASONING_EFFORT", "medium")
     monkeypatch.setenv("NSLAB_LLM_MAX_RETRIES", "2")
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-secret")
 
     report = build_doctor_report(settings)
 
     assert report["providers"]["llm"] == "openai"
+    assert report["providers"]["web"] == "brave"
     assert report["llm_model"] == {
         "provider": "openai",
         "model": "gpt-diagnostic",
@@ -75,7 +79,16 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
         "set": True,
         "value": "2",
     }
+    assert report["environment"]["BRAVE_SEARCH_API_KEY"] == {
+        "set": True,
+        "value": "***",
+    }
     assert report["api_connections"]["openai"] == {
+        "required": True,
+        "configured": True,
+        "status": "configured_not_called",
+    }
+    assert report["api_connections"]["brave_search"] == {
         "required": True,
         "configured": True,
         "status": "configured_not_called",

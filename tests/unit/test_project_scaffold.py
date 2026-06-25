@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from news_scalping_lab.config import (
+    DEFAULT_CONFIG_FILES,
     Settings,
     ensure_project_dirs,
     load_settings,
@@ -165,6 +166,11 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
     assert models["default"]["max_retries"] == 0
     assert models["openai"]["model"] == "gpt-5-mini"
     assert models["openai"]["max_retries"] == 2
+    default_config = yaml.safe_load(existing_default.read_text(encoding="utf-8"))
+    assert default_config["project_name"] == "custom-lab"
+    generated_default = DEFAULT_CONFIG_FILES["default.yaml"]
+    assert generated_default["web_provider"] == "mock"
+    assert generated_default["brave_search_api_key_env"] == "BRAVE_SEARCH_API_KEY"
     assert inference["default_mode"] == "exhaustive"
 
 
@@ -231,6 +237,12 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
 ) -> None:
     monkeypatch.delenv("NSLAB_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("NSLAB_WEB_PROVIDER", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_COUNT", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_COUNTRY", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_LANG", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_UI_LANG", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS", raising=False)
+    monkeypatch.delenv("NSLAB_BRAVE_SEARCH_API_KEY_ENV", raising=False)
     monkeypatch.delenv("NSLAB_STOCK_WEB_PATH", raising=False)
     monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE", raising=False)
     monkeypatch.delenv("NSLAB_STOCK_WEB_CACHE_PATH", raising=False)
@@ -248,7 +260,12 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
             [
                 "# local secrets and runtime settings",
                 "NSLAB_LLM_PROVIDER=openai",
-                "NSLAB_WEB_PROVIDER=mock",
+                "NSLAB_WEB_PROVIDER=brave",
+                "NSLAB_BRAVE_SEARCH_COUNT=15",
+                "NSLAB_BRAVE_SEARCH_COUNTRY=KR",
+                "NSLAB_BRAVE_SEARCH_LANG=ko",
+                "NSLAB_BRAVE_SEARCH_UI_LANG=ko-KR",
+                "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS=3",
                 "NSLAB_STOCK_WEB_PATH='data/cache/stock-web'",
                 "NSLAB_STOCK_WEB_CACHE=1",
                 "NSLAB_STOCK_WEB_CACHE_PATH=data/cache/custom-stock-web",
@@ -269,7 +286,12 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
     settings = load_settings(tmp_path)
 
     assert settings.llm_provider == "openai"
-    assert settings.web_provider == "mock"
+    assert settings.web_provider == "brave"
+    assert settings.brave_search_count == 15
+    assert settings.brave_search_country == "KR"
+    assert settings.brave_search_lang == "ko"
+    assert settings.brave_search_ui_lang == "ko-KR"
+    assert settings.brave_search_freshness_days == 3
     assert settings.price_provider == "stock-web"
     assert settings.stock_web_path == Path("data/cache/stock-web")
     assert settings.stock_web_cache_enabled is True

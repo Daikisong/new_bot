@@ -24,6 +24,12 @@ from news_scalping_lab.warehouse import WarehouseStore
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
     "NSLAB_WEB_PROVIDER",
+    "NSLAB_BRAVE_SEARCH_API_KEY_ENV",
+    "NSLAB_BRAVE_SEARCH_COUNT",
+    "NSLAB_BRAVE_SEARCH_COUNTRY",
+    "NSLAB_BRAVE_SEARCH_LANG",
+    "NSLAB_BRAVE_SEARCH_UI_LANG",
+    "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS",
     "NSLAB_STOCK_WEB_PATH",
     "NSLAB_STOCK_WEB_CACHE",
     "NSLAB_STOCK_WEB_CACHE_PATH",
@@ -36,6 +42,7 @@ ENV_KEYS = [
     "NSLAB_OPENAI_MODEL",
     "NSLAB_OPENAI_EMBEDDING_MODEL",
     "OPENAI_API_KEY",
+    "BRAVE_SEARCH_API_KEY",
 ]
 
 
@@ -69,7 +76,12 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
                 "required": settings.llm_provider == "openai",
                 "configured": bool(os.getenv("OPENAI_API_KEY")),
                 "status": _openai_status(settings),
-            }
+            },
+            "brave_search": {
+                "required": _brave_search_required(settings),
+                "configured": bool(os.getenv(settings.brave_search_api_key_env)),
+                "status": _brave_search_status(settings),
+            },
         },
         "stock_web": {
             "path": stock_web_path.as_posix() if stock_web_path is not None else None,
@@ -146,6 +158,18 @@ def _openai_status(settings: Settings) -> str:
     if settings.llm_provider != "openai":
         return "not_required"
     if os.getenv("OPENAI_API_KEY"):
+        return "configured_not_called"
+    return "missing_api_key"
+
+
+def _brave_search_required(settings: Settings) -> bool:
+    return settings.web_provider.strip().lower() in {"brave", "brave-search", "brave-news"}
+
+
+def _brave_search_status(settings: Settings) -> str:
+    if not _brave_search_required(settings):
+        return "not_required"
+    if os.getenv(settings.brave_search_api_key_env):
         return "configured_not_called"
     return "missing_api_key"
 
