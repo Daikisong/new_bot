@@ -43,11 +43,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
     for path in manifest_paths:
         manifest_name = _manifest_display_name(root, path)
         manifest = read_json(path)
-        manifest_trade_date = _manifest_trade_date(manifest, fallback=trade_date)
+        manifest_trade_date = _manifest_trade_date(manifest)
         manifest_cutoff_at = _manifest_cutoff_at(manifest)
         manifest_as_of = _manifest_as_of(manifest)
         if manifest_trade_date is None:
             findings.append(f"{manifest_name}: missing trade_date")
+        elif trade_date is not None and manifest_trade_date != trade_date:
+            findings.append(f"{manifest_name}: trade_date does not match requested audit date")
         if manifest_cutoff_at is None:
             findings.append(f"{manifest_name}: missing cutoff_at")
         if _requires_as_of(manifest) and manifest_as_of is None:
@@ -147,14 +149,14 @@ def _manifest_display_name(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _manifest_trade_date(manifest: dict[object, object], *, fallback: date | None) -> date | None:
+def _manifest_trade_date(manifest: dict[object, object]) -> date | None:
     raw = manifest.get("trade_date")
     if isinstance(raw, str):
         try:
             return date.fromisoformat(raw)
         except ValueError:
             return None
-    return fallback
+    return None
 
 
 def _manifest_cutoff_at(manifest: dict[object, object]) -> datetime | None:

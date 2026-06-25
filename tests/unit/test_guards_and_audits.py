@@ -6173,6 +6173,48 @@ def test_lookahead_audit_flags_missing_manifest_time_fields(tmp_path: Path) -> N
     assert "RUN-missing-time.json: missing cutoff_at" in result["findings"]
     assert "RUN-missing-time.json: missing as_of" in result["findings"]
 
+    with_requested_date = audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))
+    assert not with_requested_date["passed"]
+    assert "RUN-missing-time.json: missing trade_date" in with_requested_date["findings"]
+
+
+def test_lookahead_audit_flags_manifest_trade_date_request_mismatch(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-date-mismatch.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-date-mismatch",
+            "mode": "brain",
+            "trade_date": "2030-01-11",
+            "cutoff_at": "2030-01-11T08:59:59+09:00",
+            "as_of": "2030-01-11T08:59:59+09:00",
+            "accepted_episode_count": 0,
+            "total_accepted_episode_count": 0,
+            "available_episode_count": 0,
+            "unavailable_episode_count": 0,
+            "unavailable_episode_ids": [],
+            "swept_episode_count": 0,
+            "swept_episode_ids": [],
+            "price_snapshot": {
+                "allowed_through": "2030-01-10",
+                "as_of": "2030-01-11T08:59:59+09:00",
+            },
+        },
+    )
+
+    clean = audit_lookahead(tmp_path)
+    mismatch = audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))
+
+    assert clean["passed"], clean["findings"]
+    assert not mismatch["passed"]
+    assert (
+        "RUN-date-mismatch.json: trade_date does not match requested audit date"
+        in mismatch["findings"]
+    )
+
 
 def test_lookahead_audit_flags_manifest_as_of_after_cutoff(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
