@@ -142,9 +142,21 @@ def init() -> None:
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Exit non-zero when readiness checks report attention.",
+        ),
+    ] = False,
+) -> None:
     settings = load_settings()
-    _echo(build_doctor_report(settings))
+    report = build_doctor_report(settings)
+    _echo(report)
+    readiness = report.get("readiness")
+    if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
+        raise typer.Exit(code=1)
 
 
 @app.command("ui")

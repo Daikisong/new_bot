@@ -16,6 +16,11 @@ python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
 ```
 
+`doctor` prints a JSON readiness report for environment variables, API provider
+readiness, DuckDB/warehouse state, stock-web configuration, brain HEAD, accepted
+episode count, vector index state, and schema versions. Use `doctor --strict` in
+automation when readiness findings should fail the command.
+
 Outputs:
 
 ```text

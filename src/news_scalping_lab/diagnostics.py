@@ -72,6 +72,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         coverage_audit,
         accepted_episode_count=accepted_episode_count,
     )
+    database_status = _database_status(settings, coverage_audit)
     report = {
         "project_root": settings.project_root.as_posix(),
         "providers": {
@@ -131,6 +132,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
                 {},
             ),
         },
+        "database": database_status,
         "brain": {
             "head": current_brain_version(settings.project_root),
             "accepted_episode_count": accepted_episode_count,
@@ -200,6 +202,12 @@ def _doctor_readiness(
         ):
             findings.append("warehouse: one or more projections are missing or unreadable")
 
+    database = report.get("database")
+    if not isinstance(database, dict) or database.get("status") != "ok":
+        findings.append(
+            "database: DuckDB engine is unavailable or cannot query warehouse projections"
+        )
+
     brain_coverage = _nested_dict(report, "brain", "coverage")
     if accepted_episode_count > 0 and brain_coverage.get("status") != "complete":
         findings.append("brain: accepted episodes are not fully covered")
@@ -261,6 +269,58 @@ def _has_expected_warehouse_sources(value: object) -> bool:
         if isinstance(expected, int) and not isinstance(expected, bool) and expected > 0:
             return True
     return False
+
+
+def _database_status(settings: Settings, coverage_audit: dict[str, object]) -> dict[str, Any]:
+    warehouse_counts = coverage_audit.get("warehouse_counts")
+    counts_readable = isinstance(warehouse_counts, dict) and not any(
+        isinstance(value, str) for value in warehouse_counts.values()
+    )
+    warehouse_path = settings.path("warehouse")
+    base: dict[str, Any] = {
+        "engine": "duckdb",
+        "available": False,
+        "version": None,
+        "connection": "unavailable",
+        "warehouse_path": warehouse_path.as_posix(),
+        "warehouse_path_exists": warehouse_path.exists(),
+        "warehouse_counts_readable": counts_readable,
+        "status": "attention",
+    }
+    try:
+        module = import_module("duckdb")
+    except Exception as exc:
+        return {
+            **base,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    connect = getattr(module, "connect", None)
+    base.update(
+        {
+            "available": True,
+            "version": getattr(module, "__version__", None),
+        }
+    )
+    if not callable(connect):
+        return {
+            **base,
+            "connection": "missing_connect",
+        }
+    try:
+        with connect(database=":memory:") as connection:
+            row = connection.execute("select 1").fetchone()
+    except Exception as exc:
+        return {
+            **base,
+            "connection": "failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    connection_ok = bool(row and row[0] == 1)
+    return {
+        **base,
+        "connection": "ok" if connection_ok else "failed",
+        "status": "ok" if connection_ok and counts_readable else "attention",
+    }
 
 
 def _resolved_optional_path(settings: Settings, path: Path | None) -> Path | None:

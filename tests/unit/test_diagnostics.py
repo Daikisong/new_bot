@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 
+from typer.testing import CliRunner
+
 from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.contracts.schemas import export_json_schemas
@@ -11,6 +15,8 @@ from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, write_json
 from news_scalping_lab.warehouse import WarehouseStore
+
+RUNNER = CliRunner()
 
 
 def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
@@ -121,6 +127,14 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["stock_web"]["schema"]["source_name"] == "stock-web-test"
     assert report["warehouse"]["status"] == "ok"
     assert "research_episodes.parquet" in report["warehouse"]["counts"]
+    assert report["database"]["engine"] == "duckdb"
+    assert report["database"]["available"] is True
+    assert isinstance(report["database"]["version"], str)
+    assert report["database"]["connection"] == "ok"
+    assert report["database"]["warehouse_path"] == (tmp_path / "warehouse").as_posix()
+    assert report["database"]["warehouse_path_exists"] is True
+    assert report["database"]["warehouse_counts_readable"] is True
+    assert report["database"]["status"] == "ok"
     assert report["brain"]["accepted_episode_count"] == 0
     assert report["brain"]["coverage"] == {
         "manifest_exists": False,
@@ -416,3 +430,24 @@ def test_doctor_report_readiness_flags_unsupported_price_provider(tmp_path) -> N
         "finding_count": 1,
         "findings": ["price: unsupported provider unknown-price"],
     }
+
+
+def test_doctor_strict_exits_nonzero_when_readiness_has_findings(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("NSLAB_WEB_PROVIDER", "mock")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    initialized = RUNNER.invoke(app, ["init"])
+    non_strict = RUNNER.invoke(app, ["doctor"])
+    strict = RUNNER.invoke(app, ["doctor", "--strict"])
+
+    assert initialized.exit_code == 0, initialized.output
+    assert non_strict.exit_code == 0, non_strict.output
+    assert strict.exit_code == 1, strict.output
+    payload = json.loads(strict.output)
+    assert payload["readiness"]["passed"] is False
+    assert "openai: required API key is missing" in payload["readiness"]["findings"]
