@@ -11,6 +11,10 @@ from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.cli import _final_synthesis_manifest_count_mismatches
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    final_synthesis_input_summary,
+)
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.prices.base import (
@@ -2071,6 +2075,213 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
     )
     assert (
         "2030-01-10.json: context manifest final_synthesis_context_summary mismatch"
+        in findings
+    )
+
+
+def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = _sealed_prediction_payload()
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    report_text = _preopen_report_text()
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        report_text, encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(report_text, encoding="utf-8")
+
+    candidate_verification = {
+        "schema_version": "nslab.candidate_verification.v1",
+        "run_id": "RUN-linked",
+        "required_dimensions": ["listed_security_and_exact_ticker"],
+        "subject_count": 1,
+        "findings": [
+            {
+                "subject_type": "final_candidate",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "query": "candidate verification",
+                "source_count": 1,
+                "excluded_source_count": 0,
+                "accepted_source_ids": ["WEB-1"],
+                "excluded_source_ids": [],
+                "verification_dimensions": [
+                    {
+                        "name": "listed_security_and_exact_ticker",
+                        "status": "source_collected",
+                        "evidence_source_ids": ["WEB-1"],
+                    }
+                ],
+                "d_minus_one_market_data_only": False,
+                "uncertainties": [],
+            }
+        ],
+    }
+    verification_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "candidate_verifications"
+        / "RUN-linked"
+        / "candidate_verification.json"
+    )
+    verification_text = canonical_json(candidate_verification)
+    verification_path.parent.mkdir(parents=True)
+    verification_path.write_text(verification_text, encoding="utf-8")
+
+    red_team = {
+        "schema_version": "nslab.red_team_artifact.v1",
+        "run_id": "RUN-linked",
+        "source_prediction_id": "PRED-sealed",
+        "prompt_version": "red_team.candidate_attack.v2",
+        "prompt_sha256": "red-team-hash",
+        "created_at": "2030-01-10T08:59:59+09:00",
+        "candidate_count": 1,
+        "required_attack_checks": ["novelty_not_recycled"],
+        "candidate_findings": [
+            {
+                "candidate_rank": 1,
+                "passed_to_synthesis": True,
+                "attack_checks": [
+                    {
+                        "name": "novelty_not_recycled",
+                        "status": "needs_synthesis_review",
+                        "passed_to_synthesis": True,
+                    }
+                ],
+            }
+        ],
+    }
+    red_team_path = tmp_path / "runs" / "checkpoints" / "red_team" / "RUN-linked.json"
+    red_team_path.parent.mkdir(parents=True)
+    red_team_path.write_text(canonical_json(red_team), encoding="utf-8")
+
+    final_payload = {
+        "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
+        "current_news": ["pre-cutoff news"],
+        "candidate_research": {"candidates": prediction["candidates"]},
+        "candidate_verification": candidate_verification,
+        "red_team_output": red_team,
+    }
+    final_context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-linked"
+        / "final_synthesis_context.json"
+    )
+
+    def write_final_context(payload: dict[str, object]) -> str:
+        artifact = {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-linked",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": payload["required_inputs"],
+            "payload_sha256": sha256_text(canonical_json(payload)),
+            "input_summary": final_synthesis_input_summary(payload),
+            "payload": payload,
+        }
+        artifact_text = canonical_json(artifact)
+        final_context_path.parent.mkdir(parents=True, exist_ok=True)
+        final_context_path.write_text(artifact_text, encoding="utf-8")
+        return artifact_text
+
+    final_context_text = write_final_context(final_payload)
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    write_json(
+        manifest_path,
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "blind_artifact_sha256": prediction["blind_artifact_sha256"],
+            "prompt_hashes": {
+                "blind_analysis": "blind-hash",
+                "red_team_candidate_review": "red-team-hash",
+                "final_synthesis": "final-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "candidate_web_check_count": 1,
+            "candidate_web_source_ids": ["WEB-1"],
+            "excluded_candidate_web_check_count": 0,
+            "excluded_candidate_web_source_ids": [],
+            "candidate_verification_artifact": verification_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "candidate_verification_sha256": sha256_text(verification_text),
+            "candidate_verification_count": 1,
+            "candidate_verification_summary": {
+                "required_dimensions": ["listed_security_and_exact_ticker"],
+                "finding_count": 1,
+                "subject_count": 1,
+                "status_counts": {"source_collected": 1},
+                "candidate_expansion_subject_count": 0,
+                "d_minus_one_only_subject_count": 0,
+            },
+            "red_team_artifacts": [red_team_path.relative_to(tmp_path).as_posix()],
+            "red_team_summary": {
+                "candidate_count": 1,
+                "required_attack_checks": ["novelty_not_recycled"],
+                "required_attack_check_count": 1,
+                "finding_count": 1,
+                "all_findings_passed_to_synthesis": True,
+            },
+            "final_synthesis_context_artifact": final_context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": sha256_text(final_context_text),
+            "final_synthesis_context_summary": final_synthesis_input_summary(
+                final_payload
+            ),
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    bad_payload = json.loads(canonical_json(final_payload))
+    bad_payload["candidate_verification"] = {
+        **candidate_verification,
+        "findings": [],
+    }
+    bad_payload["red_team_output"] = {
+        **red_team,
+        "candidate_findings": [],
+    }
+    bad_context_text = write_final_context(bad_payload)
+    manifest = read_json(manifest_path)
+    manifest["final_synthesis_context_sha256"] = sha256_text(bad_context_text)
+    manifest["final_synthesis_context_summary"] = final_synthesis_input_summary(
+        bad_payload
+    )
+    write_json(manifest_path, manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context "
+        "candidate_verification mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: final_synthesis_context red_team_output mismatch"
         in findings
     )
 

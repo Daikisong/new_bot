@@ -3427,6 +3427,61 @@ def _check_manifest_final_synthesis_context_artifact(
             f"{prediction_path.name}: context manifest final_synthesis_context_summary "
             "mismatch"
         )
+    _check_final_synthesis_embedded_artifacts(
+        root,
+        prediction_path,
+        manifest,
+        context_payload,
+        findings,
+    )
+
+
+def _check_final_synthesis_embedded_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    candidate_verification = _read_optional_manifest_object(
+        root,
+        manifest.get("candidate_verification_artifact"),
+    )
+    if (
+        candidate_verification is not None
+        and context_payload.get("candidate_verification") != candidate_verification
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "candidate_verification mismatch"
+        )
+
+    red_team_artifacts = manifest.get("red_team_artifacts")
+    if not (
+        isinstance(red_team_artifacts, list)
+        and len(red_team_artifacts) == 1
+        and isinstance(red_team_artifacts[0], str)
+        and red_team_artifacts[0]
+    ):
+        return
+    red_team = _read_optional_manifest_object(root, red_team_artifacts[0])
+    if red_team is not None and context_payload.get("red_team_output") != red_team:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context red_team_output mismatch"
+        )
+
+
+def _read_optional_manifest_object(root: Path, artifact_ref: object) -> dict[str, Any] | None:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        return None
+    artifact_path = _resolve_manifest_path(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    try:
+        payload = read_json(artifact_path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _resolve_required_manifest_artifact(
