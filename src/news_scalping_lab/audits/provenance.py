@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
             _check_manifest_context_file_hashes(root, path, manifest, findings)
+            _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
             _check_manifest_news_input(root, path, manifest, findings)
@@ -594,6 +596,137 @@ def _check_manifest_context_file_hashes(
         label="shard brain file",
         findings=findings,
     )
+
+
+def _check_manifest_memory_sweep_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    raw_artifacts = manifest.get("memory_sweep_artifacts")
+    if raw_artifacts is None:
+        return
+    if not isinstance(raw_artifacts, list) or not all(
+        isinstance(item, str) and item for item in raw_artifacts
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest memory_sweep_artifacts is invalid"
+        )
+        return
+    artifact_refs = [str(item) for item in raw_artifacts]
+    if not artifact_refs:
+        return
+    raw_hashes = manifest.get("memory_sweep_artifact_hashes")
+    hashes: dict[str, str] = {}
+    if (
+        not isinstance(raw_hashes, dict)
+        or not raw_hashes
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in raw_hashes.items()
+        )
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest memory_sweep_artifact_hashes is invalid"
+        )
+    else:
+        hashes = {str(key): str(value) for key, value in raw_hashes.items()}
+
+    if len(artifact_refs) != len(set(artifact_refs)):
+        findings.append(f"{prediction_path.name}: context manifest duplicate memory sweep artifact")
+    missing_hashes = sorted(set(artifact_refs) - set(hashes))
+    extra_hashes = sorted(set(hashes) - set(artifact_refs))
+    if missing_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing memory_sweep_artifact_hashes: "
+            f"{', '.join(missing_hashes)}"
+        )
+    if extra_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest unlisted memory_sweep_artifact_hashes: "
+            f"{', '.join(extra_hashes)}"
+        )
+
+    expected_mode = manifest.get("mode")
+    expected_trade_date = manifest.get("trade_date")
+    expected_cutoff_at = manifest.get("cutoff_at")
+    expected_brain_version = manifest.get("brain_version")
+    observed_episode_ids: list[str] = []
+    observed_cache_hits = 0
+    for artifact_ref in artifact_refs:
+        artifact_path = _resolve_manifest_path(root, artifact_ref)
+        if artifact_path is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest memory sweep artifact path "
+                f"escapes project root: {artifact_ref}"
+            )
+            continue
+        if not artifact_path.exists():
+            findings.append(
+                f"{prediction_path.name}: context manifest memory sweep artifact not found: "
+                f"{artifact_ref}"
+            )
+            continue
+        expected_hash = hashes.get(artifact_ref)
+        if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
+            findings.append(
+                f"{prediction_path.name}: context manifest memory sweep artifact sha256 "
+                f"mismatch: {artifact_ref}"
+            )
+        payload = _read_json_object(artifact_path, findings)
+        if payload is None:
+            continue
+        if payload.get("schema_version") != "nslab.memory_sweep_contribution.v1":
+            findings.append(
+                f"{prediction_path.name}: memory sweep artifact schema mismatch: "
+                f"{artifact_ref}"
+            )
+        for field, expected in (
+            ("mode", expected_mode),
+            ("trade_date", expected_trade_date),
+            ("cutoff_at", expected_cutoff_at),
+            ("brain_version", expected_brain_version),
+        ):
+            if expected is not None and payload.get(field) != expected:
+                findings.append(
+                    f"{prediction_path.name}: memory sweep artifact {field} mismatch: "
+                    f"{artifact_ref}"
+                )
+        episode_ids = payload.get("episode_ids")
+        if not isinstance(episode_ids, list) or not all(
+            isinstance(episode_id, str) for episode_id in episode_ids
+        ):
+            findings.append(
+                f"{prediction_path.name}: memory sweep artifact episode_ids invalid: "
+                f"{artifact_ref}"
+            )
+            continue
+        observed_episode_ids.extend(episode_ids)
+        if payload.get("episode_count") != len(episode_ids):
+            findings.append(
+                f"{prediction_path.name}: memory sweep artifact episode_count mismatch: "
+                f"{artifact_ref}"
+            )
+        if payload.get("from_cache") is True:
+            observed_cache_hits += 1
+
+    expected_shard_count = manifest.get("memory_sweep_shard_count")
+    if isinstance(expected_shard_count, int) and expected_shard_count != len(artifact_refs):
+        findings.append(f"{prediction_path.name}: context manifest memory_sweep_shard_count mismatch")
+    expected_cache_hits = manifest.get("memory_sweep_cache_hits")
+    if isinstance(expected_cache_hits, int) and expected_cache_hits != observed_cache_hits:
+        findings.append(f"{prediction_path.name}: context manifest memory_sweep_cache_hits mismatch")
+    expected_swept_ids = manifest.get("swept_episode_ids")
+    if isinstance(expected_swept_ids, list) and all(
+        isinstance(episode_id, str) for episode_id in expected_swept_ids
+    ):
+        if Counter(observed_episode_ids) != Counter(expected_swept_ids):
+            findings.append(
+                f"{prediction_path.name}: context manifest memory_sweep swept episode ids mismatch"
+            )
+    else:
+        findings.append(f"{prediction_path.name}: context manifest swept_episode_ids is invalid")
 
 
 def _check_manifest_output_artifacts(

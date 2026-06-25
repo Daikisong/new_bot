@@ -536,6 +536,95 @@ def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> 
     )
 
 
+def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    sweep_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "memory_sweep"
+        / "RUN-linked"
+        / "shard_0001.json"
+    )
+    sweep_ref = sweep_path.relative_to(tmp_path).as_posix()
+    sweep_payload = {
+        "schema_version": "nslab.memory_sweep_contribution.v1",
+        "cache_key": "SWEEP-linked",
+        "mode": "exhaustive",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "brain_version": "brain-linked",
+        "episode_count": 2,
+        "episode_ids": ["EP-sweep-1", "EP-sweep-2"],
+        "from_cache": False,
+    }
+    write_json(sweep_path, sweep_payload)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "dominant_sectors": [_sector_with_provenance()],
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "brain_version": "brain-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "swept_episode_ids": ["EP-sweep-1", "EP-sweep-2"],
+            "memory_sweep_artifacts": [sweep_ref],
+            "memory_sweep_artifact_hashes": {sweep_ref: file_sha256(sweep_path)},
+            "memory_sweep_shard_count": 1,
+            "memory_sweep_cache_hits": 0,
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    tampered_sweep = {
+        **sweep_payload,
+        "schema_version": "tampered.memory_sweep",
+        "episode_ids": ["EP-sweep-1"],
+    }
+    write_json(sweep_path, tampered_sweep)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    findings = failed["findings"]
+    assert (
+        "2030-01-10.json: context manifest memory sweep artifact sha256 mismatch: "
+        f"{sweep_ref}"
+    ) in findings
+    assert (
+        "2030-01-10.json: memory sweep artifact schema mismatch: "
+        f"{sweep_ref}"
+    ) in findings
+    assert (
+        "2030-01-10.json: memory sweep artifact episode_count mismatch: "
+        f"{sweep_ref}"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest memory_sweep swept episode ids mismatch"
+    ) in findings
+
+
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
