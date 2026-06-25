@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import date, datetime
 from pathlib import Path
 from typing import cast
@@ -99,6 +100,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_web_source_artifact(root, manifest_name, manifest, findings)
         _check_candidate_web_check_artifact(root, manifest_name, manifest, findings)
         _check_candidate_verification_artifact(root, manifest_name, manifest, findings)
+        _check_final_synthesis_context_artifact(root, manifest_name, manifest, findings)
         _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
@@ -1009,6 +1011,89 @@ def _check_candidate_verification_artifact(
                 f"{manifest_name}: candidate_verification:{index} "
                 "verification_dimensions missing"
             )
+
+
+def _check_final_synthesis_context_artifact(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+) -> None:
+    artifact = _read_manifest_json_artifact(
+        root,
+        manifest_name,
+        manifest,
+        path_field="final_synthesis_context_artifact",
+        sha_field="final_synthesis_context_sha256",
+        label="final_synthesis_context",
+        findings=findings,
+    )
+    if artifact is None:
+        return
+    if artifact.get("schema_version") != "nslab.final_synthesis_context.v1":
+        findings.append(f"{manifest_name}: final_synthesis_context schema_version invalid")
+    payload = artifact.get("payload")
+    if not isinstance(payload, dict):
+        findings.append(f"{manifest_name}: final_synthesis_context payload must be object")
+        return
+    manifest_cutoff_at = _manifest_cutoff_at(manifest)
+    if manifest_cutoff_at is None:
+        return
+    excluded_source_ids = {
+        *_string_list(manifest.get("excluded_web_source_ids")),
+        *_string_list(manifest.get("excluded_candidate_web_source_ids")),
+    }
+    for item in _walk_json_objects(payload):
+        source_id = item.get("source_id")
+        source_label = source_id if isinstance(source_id, str) and source_id else "unknown"
+        if isinstance(source_id, str) and source_id in excluded_source_ids:
+            findings.append(
+                f"{manifest_name}: final_synthesis_context references excluded source: "
+                f"{source_id}"
+            )
+        raw_published_at = item.get("published_at")
+        if isinstance(raw_published_at, str):
+            try:
+                published_at = parse_datetime(raw_published_at)
+            except ValueError:
+                findings.append(
+                    f"{manifest_name}: final_synthesis_context source {source_label} "
+                    "invalid published_at"
+                )
+                continue
+            if not is_available_as_of(published_at, manifest_cutoff_at):
+                findings.append(
+                    f"{manifest_name}: final_synthesis_context source {source_label} "
+                    "after cutoff"
+                )
+        if item.get("time_verified") is False and _looks_like_web_source(item):
+            findings.append(
+                f"{manifest_name}: final_synthesis_context source {source_label} "
+                "is not cutoff verified"
+            )
+
+
+def _walk_json_objects(value: object) -> Iterator[dict[object, object]]:
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_json_objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_json_objects(child)
+
+
+def _looks_like_web_source(item: dict[object, object]) -> bool:
+    return any(
+        key in item
+        for key in (
+            "published_at",
+            "source_url",
+            "url",
+            "query",
+            "time_verified",
+        )
+    )
 
 
 def _check_blind_seal(

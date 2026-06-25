@@ -1942,6 +1942,182 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
     )
 
 
+def test_lookahead_audit_checks_final_synthesis_context_sources(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    web_dir = tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-final-context"
+    candidate_web_dir = (
+        tmp_path / "runs" / "checkpoints" / "candidate_web_checks" / "RUN-final-context"
+    )
+    final_context_dir = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-final-context"
+    )
+    web_dir.mkdir(parents=True)
+    candidate_web_dir.mkdir(parents=True)
+    final_context_dir.mkdir(parents=True)
+    excluded_web_artifact = web_dir / "excluded_web_sources.jsonl"
+    excluded_web_text = (
+        canonical_json(
+            {
+                "schema_version": "nslab.excluded_web_source.v1",
+                "run_id": "RUN-final-context",
+                "source_id": "WEB-FUTURE",
+                "query": "future web source",
+                "title": "future",
+                "url": "https://example.test/future",
+                "source_url": "https://example.test/future",
+                "snippet": "future",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "retrieved_at": "2030-01-10T09:31:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "exclusion_reason": "published_after_cutoff",
+                "time_verified": False,
+                "available_before_cutoff": False,
+            }
+        )
+        + "\n"
+    )
+    excluded_web_artifact.write_text(excluded_web_text, encoding="utf-8")
+    excluded_candidate_artifact = candidate_web_dir / "excluded_candidate_web_checks.jsonl"
+    excluded_candidate_text = (
+        canonical_json(
+            {
+                "schema_version": "nslab.excluded_candidate_web_check.v1",
+                "run_id": "RUN-final-context",
+                "candidate_rank": 1,
+                "candidate_ticker": "UNKNOWN",
+                "candidate_company_name": "CandidateCo",
+                "candidate_path_type": "SINGLE_EVENT",
+                "source_id": "WEB-CANDIDATE-FUTURE",
+                "query": "future candidate source",
+                "title": "future candidate",
+                "url": "https://example.test/candidate-future",
+                "source_url": "https://example.test/candidate-future",
+                "snippet": "future candidate",
+                "published_at": "2030-01-10T09:45:00+09:00",
+                "retrieved_at": "2030-01-10T09:46:00+09:00",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "exclusion_reason": "published_after_cutoff",
+                "time_verified": False,
+                "available_before_cutoff": False,
+            }
+        )
+        + "\n"
+    )
+    excluded_candidate_artifact.write_text(excluded_candidate_text, encoding="utf-8")
+    final_payload = {
+        "run_id": "RUN-final-context",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "web_research": {
+            "sources": [
+                {
+                    "source_id": "WEB-FUTURE",
+                    "url": "https://example.test/future",
+                    "published_at": "2030-01-10T09:30:00+09:00",
+                    "time_verified": True,
+                },
+                {
+                    "source_id": "WEB-UNVERIFIED",
+                    "url": "https://example.test/unverified",
+                    "published_at": "2030-01-10T08:30:00+09:00",
+                    "time_verified": False,
+                },
+            ]
+        },
+        "candidate_web_checks": [
+            {
+                "source_id": "WEB-CANDIDATE-FUTURE",
+                "source_url": "https://example.test/candidate-future",
+                "published_at": "2030-01-10T09:45:00+09:00",
+                "time_verified": False,
+            }
+        ],
+    }
+    final_context_artifact = final_context_dir / "final_synthesis_context.json"
+    write_json(
+        final_context_artifact,
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-final-context",
+            "prompt_version": "test",
+            "required_inputs": ["web_research", "candidate_web_checks"],
+            "payload_sha256": sha256_text(canonical_json(final_payload)),
+            "input_summary": {},
+            "payload": final_payload,
+        },
+    )
+    final_context_text = final_context_artifact.read_text(encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-final-context.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-final-context",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+            "accepted_episode_count": 0,
+            "swept_episode_count": 0,
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "excluded_web_source_ids": ["WEB-FUTURE"],
+            "excluded_web_source_artifact": excluded_web_artifact.relative_to(
+                tmp_path
+            ).as_posix(),
+            "excluded_web_source_sha256": sha256_text(excluded_web_text),
+            "excluded_web_source_count": 1,
+            "excluded_candidate_web_source_ids": ["WEB-CANDIDATE-FUTURE"],
+            "excluded_candidate_web_check_artifact": (
+                excluded_candidate_artifact.relative_to(tmp_path).as_posix()
+            ),
+            "excluded_candidate_web_check_sha256": sha256_text(excluded_candidate_text),
+            "excluded_candidate_web_check_count": 1,
+            "final_synthesis_context_artifact": final_context_artifact.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": sha256_text(final_context_text),
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert (
+        "RUN-final-context.json: final_synthesis_context references excluded source: "
+        "WEB-FUTURE"
+        in findings
+    )
+    assert (
+        "RUN-final-context.json: final_synthesis_context source WEB-FUTURE after cutoff"
+        in findings
+    )
+    assert (
+        "RUN-final-context.json: final_synthesis_context source WEB-UNVERIFIED "
+        "is not cutoff verified"
+        in findings
+    )
+    assert (
+        "RUN-final-context.json: final_synthesis_context references excluded source: "
+        "WEB-CANDIDATE-FUTURE"
+        in findings
+    )
+    assert (
+        "RUN-final-context.json: final_synthesis_context source WEB-CANDIDATE-FUTURE "
+        "after cutoff"
+        in findings
+    )
+
+
 def test_lookahead_audit_flags_invalid_row_disposition_artifact(tmp_path: Path) -> None:
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
     artifact_dir = tmp_path / "runs" / "checkpoints" / "row_disposition" / "RUN-row"
