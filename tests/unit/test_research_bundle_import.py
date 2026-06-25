@@ -26,10 +26,18 @@ def _episode() -> ResearchEpisode:
         input_news_files=["news_20300110.csv"],
         input_news_hashes=["f" * 64],
         blind_artifact_sha256="bundle-test-hash",
+        blind_integrity={
+            "blind_context_mode": "NEWS_ONLY_STRICT",
+            "blind_web_search_call_count": 0,
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
+        },
         blind_seal_receipt={
             "schema_version": "nslab.blind_seal_receipt.v1",
             "phase": "BLIND_SEALED",
             "blind_artifact_sha256": "bundle-test-hash",
+            "no_d_outcome_exposed": True,
         },
         price_source_snapshot={"source": "mock", "allowed_through": "2030-01-09"},
         blind_analysis=BlindAnalysis(
@@ -54,6 +62,10 @@ def _bundle_text(
     tamper_phase_hash: bool = False,
     phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
+    blind_web_search_call_count: int = 0,
+    blind_price_repository_access_count: int = 0,
+    blind_current_price_access_count: int = 0,
+    no_d_outcome_exposed: bool = True,
     source_ledger_entry_count: int | None = None,
 ) -> str:
     blind = BlindPrediction(
@@ -128,6 +140,11 @@ def _bundle_text(
         "schema_version": "nslab.bundle_manifest.v1",
         "run_id": "RUN-bundle-test",
         "trade_date": episode.trade_date.isoformat(),
+        "blind_context_mode": "NEWS_ONLY_STRICT",
+        "blind_web_search_call_count": blind_web_search_call_count,
+        "blind_price_repository_access_count": blind_price_repository_access_count,
+        "blind_current_price_access_count": blind_current_price_access_count,
+        "no_d_outcome_exposed": no_d_outcome_exposed,
         "blind_artifact_sha256": blind_hash,
         "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
         "row_disposition_coverage_ratio": row_disposition_coverage_ratio,
@@ -215,6 +232,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     imported = ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
     assert parsed.validation["blind_hash_verified"]
+    assert parsed.validation["blind_execution_guard_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["row_disposition_coverage_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
@@ -249,6 +267,24 @@ def test_bundle_import_rejects_mismatched_blind_hash(tmp_path) -> None:
 
     assert not parsed.validation["blind_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_prediction.json hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_blind_execution_guard_violation(tmp_path) -> None:
+    source = tmp_path / "blind_guard_violation_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            blind_web_search_call_count=1,
+            no_d_outcome_exposed=False,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert not parsed.validation["blind_execution_guard_verified"]
+    with pytest.raises(BundleImportError, match="blind execution guard"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

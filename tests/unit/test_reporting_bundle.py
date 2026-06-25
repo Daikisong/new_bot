@@ -111,6 +111,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
             "blind_web_search_call_count": 0,
             "blind_price_repository_access_count": 0,
             "blind_current_price_access_count": 0,
+            "no_d_outcome_exposed": True,
             "blind_artifact_sha256": blind_hash,
             "blind_seal_receipt_artifact": receipt_path.relative_to(tmp_path).as_posix(),
             "blind_seal_receipt_sha256": sha256_text(
@@ -143,6 +144,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "bundle_manifest.json",
     }
     assert parsed.validation["blind_hash_verified"]
+    assert parsed.validation["blind_execution_guard_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["row_disposition_coverage_verified"]
     assert parsed.validation["source_ledger_hash_verified"]
@@ -158,6 +160,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["bundle_incomplete"] is True
     assert manifest["blind_seal_receipt_sha256"]
     assert manifest["validation"]["research_episode_hash_verified"] is True
+    assert manifest["validation"]["blind_execution_guard_verified"] is True
     assert manifest["validation"]["brain_delta_hash_verified"] is True
     assert manifest["validation"]["row_disposition_coverage_verified"] is True
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True

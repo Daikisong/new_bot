@@ -66,6 +66,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "blind_prediction.json hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["blind_execution_guard_verified"]:
+        raise BundleImportError("bundle blind execution guard check failed")
     if not parsed.validation["row_disposition_hash_verified"]:
         raise BundleImportError(
             "row_disposition.jsonl hash does not match bundle_manifest.json"
@@ -137,6 +139,7 @@ def parse_bundle(path: Path) -> BundleParseResult:
         "json_valid": True,
         "jsonl_valid": True,
         "blind_hash_verified": _verify_blind_hash(json_blocks),
+        "blind_execution_guard_verified": _verify_blind_execution_guard(json_blocks),
         "row_disposition_hash_verified": _verify_payload_hash(
             json_blocks,
             payload_blocks,
@@ -334,6 +337,44 @@ def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
         return False
     candidate["blind_artifact_sha256"] = None
     return sha256_text(canonical_json(candidate)) == expected
+
+
+def _verify_blind_execution_guard(json_blocks: dict[str, Any]) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    episode = json_blocks.get("research_episode.json", {})
+    if not isinstance(manifest, dict) or not isinstance(episode, dict):
+        return False
+
+    mode = manifest.get("blind_context_mode")
+    guard_fields = {
+        "blind_web_search_call_count": 0,
+        "blind_price_repository_access_count": 0,
+        "blind_current_price_access_count": 0,
+    }
+    if mode == "NEWS_ONLY_STRICT":
+        for field_name, expected in guard_fields.items():
+            if manifest.get(field_name) != expected:
+                return False
+    if manifest.get("no_d_outcome_exposed") is not True:
+        return False
+
+    blind_integrity = episode.get("blind_integrity")
+    if not isinstance(blind_integrity, dict):
+        return False
+    if blind_integrity.get("blind_context_mode") != mode:
+        return False
+    if blind_integrity.get("no_d_outcome_exposed") is not True:
+        return False
+    for field_name, expected in guard_fields.items():
+        if blind_integrity.get(field_name) != expected:
+            return False
+
+    receipt = episode.get("blind_seal_receipt")
+    if not isinstance(receipt, dict):
+        return False
+    if receipt.get("phase") != "BLIND_SEALED":
+        return False
+    return receipt.get("no_d_outcome_exposed") is True
 
 
 def _verify_payload_hash(

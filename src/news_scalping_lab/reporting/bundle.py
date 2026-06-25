@@ -207,6 +207,13 @@ def _build_bundle_manifest(
     observed_blind_hash = prediction.blind_artifact_sha256
     prediction_payload["blind_artifact_sha256"] = None
     blind_hash = sha256_text(canonical_json(prediction_payload))
+    blind_execution_guard_verified = (
+        manifest.get("blind_context_mode") == "NEWS_ONLY_STRICT"
+        and manifest.get("blind_web_search_call_count", 0) == 0
+        and manifest.get("blind_price_repository_access_count", 0) == 0
+        and manifest.get("blind_current_price_access_count", 0) == 0
+        and manifest.get("no_d_outcome_exposed") is True
+    )
     return {
         "schema_version": "nslab.bundle_manifest.v1",
         "execution_protocol_version": EXECUTION_PROTOCOL_VERSION,
@@ -219,6 +226,7 @@ def _build_bundle_manifest(
             "blind_price_repository_access_count", 0
         ),
         "blind_current_price_access_count": manifest.get("blind_current_price_access_count", 0),
+        "no_d_outcome_exposed": manifest.get("no_d_outcome_exposed"),
         "blind_artifact_sha256": observed_blind_hash or blind_hash,
         "blind_hash_recomputed": blind_hash,
         "prediction_sha256": file_sha256(prediction_path),
@@ -242,6 +250,7 @@ def _build_bundle_manifest(
             "json_valid": True,
             "jsonl_valid": True,
             "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
+            "blind_execution_guard_verified": blind_execution_guard_verified,
             "row_disposition_hash_verified": True,
             "row_disposition_coverage_verified": True,
             "source_ledger_hash_verified": True,

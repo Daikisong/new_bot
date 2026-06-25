@@ -2579,6 +2579,7 @@ Excluded after-cutoff web source ids:
   "incomplete_reasons": [
     "postmortem outcome evaluation has not been run"
   ],
+  "no_d_outcome_exposed": true,
   "outcome_completeness_audit": {
     "status": "NOT_RUN"
   },
@@ -2596,6 +2597,7 @@ Excluded after-cutoff web source ids:
   "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
   "trade_date": "2026-06-24",
   "validation": {
+    "blind_execution_guard_verified": true,
     "blind_hash_verified": true,
     "blind_seal_receipt_hash_verified": true,
     "brain_delta_hash_verified": true,
