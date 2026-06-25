@@ -914,6 +914,38 @@ def test_bundle_source_ledger_rejects_source_url_mismatch(tmp_path) -> None:
         parse_bundle(source)
 
 
+def test_bundle_source_ledger_rejects_blind_source_after_cutoff_timestamp(tmp_path) -> None:
+    source = tmp_path / "after_cutoff_source_ledger_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            source_rows=[
+                {
+                    "source_id": "SRC-1",
+                    "source_type": "news_csv_row",
+                    "title": "source title",
+                    "publisher": None,
+                    "url": "file://news.csv#row=1",
+                    "source_url": "file://news.csv#row=1",
+                    "published_at": "2030-01-10T09:30:00+09:00",
+                    "retrieved_at": "2030-01-10T09:30:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [1],
+                    "event_ids": ["EVT-1"],
+                    "content_sha256": "abc",
+                    "notes": "misflagged after-cutoff source",
+                }
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleImportError, match="source_ledger.jsonl:1 BLIND source after cutoff"):
+        parse_bundle(source)
+
+
 def test_bundle_source_ledger_rejects_raw_body_duplication(tmp_path) -> None:
     source = tmp_path / "duplicated_source_body_bundle.md"
     source.write_text(

@@ -877,6 +877,7 @@ def _check_source_ledger(
     expected_sha = manifest.get("source_ledger_sha256")
     if isinstance(expected_sha, str) and sha256_text(text) != expected_sha:
         findings.append(f"{manifest_name}: source_ledger_sha256 mismatch")
+    manifest_cutoff_at = _manifest_cutoff_at(manifest)
     rows: list[dict[str, object]] = []
     required = {
         "source_id",
@@ -923,6 +924,18 @@ def _check_source_ledger(
             findings.append(
                 f"{manifest_name}: source_ledger:{line_number} BLIND source after cutoff"
             )
+        if usage_phase == "BLIND" and row.get("time_verified") is not True:
+            findings.append(
+                f"{manifest_name}: source_ledger:{line_number} BLIND source without verified time"
+            )
+        if usage_phase == "BLIND" and manifest_cutoff_at is not None:
+            _check_source_ledger_published_at(
+                manifest_name,
+                line_number,
+                row,
+                manifest_cutoff_at,
+                findings,
+            )
         rows.append(row)
     source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
     if len(source_ids) != len(set(source_ids)):
@@ -930,6 +943,26 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+
+
+def _check_source_ledger_published_at(
+    manifest_name: str,
+    line_number: int,
+    row: dict[str, object],
+    manifest_cutoff_at: datetime,
+    findings: list[str],
+) -> None:
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        findings.append(f"{manifest_name}: source_ledger:{line_number} missing published_at")
+        return
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError:
+        findings.append(f"{manifest_name}: source_ledger:{line_number} invalid published_at")
+        return
+    if not is_available_as_of(published_at, manifest_cutoff_at):
+        findings.append(f"{manifest_name}: source_ledger:{line_number} after cutoff")
 
 
 def _check_source_url_contract(

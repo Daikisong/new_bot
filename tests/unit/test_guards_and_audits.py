@@ -2985,6 +2985,7 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert "RUN-ledger.json: source_ledger:1 must not duplicate body/content" in findings
     assert "RUN-ledger.json: source_ledger:1 source_url mismatch" in findings
     assert "RUN-ledger.json: source_ledger:1 BLIND source after cutoff" in findings
+    assert "RUN-ledger.json: source_ledger:1 after cutoff" in findings
     assert any(
         finding.startswith("RUN-ledger.json: source_ledger:2 missing fields:")
         for finding in findings

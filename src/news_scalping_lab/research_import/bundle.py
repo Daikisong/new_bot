@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,15 @@ from news_scalping_lab.context.final_synthesis import (
     final_synthesis_input_summary,
 )
 from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
-from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, sha256_text, stable_id
+from news_scalping_lab.utils import (
+    canonical_json,
+    file_sha256,
+    is_available_as_of,
+    now_kst,
+    parse_datetime,
+    sha256_text,
+    stable_id,
+)
 
 REQUIRED_BUNDLE_BLOCKS = {
     "research_report.md",
@@ -414,6 +423,7 @@ def _validate_jsonl_contracts(
     json_blocks: dict[str, Any],
     jsonl_blocks: dict[str, list[dict[str, Any]]],
 ) -> None:
+    bundle_cutoff_at = _bundle_manifest_cutoff_at(json_blocks)
     for index, row in enumerate(jsonl_blocks.get("row_disposition.jsonl", []), start=1):
         if "row_number" not in row:
             raise BundleImportError(f"row_disposition.jsonl:{index} missing row_number")
@@ -454,6 +464,13 @@ def _validate_jsonl_contracts(
         if usage_phase == "BLIND" and row.get("time_verified") is not True:
             raise BundleImportError(
                 f"source_ledger.jsonl:{index} BLIND source without verified time"
+            )
+        if usage_phase == "BLIND" and bundle_cutoff_at is not None:
+            _validate_blind_published_at_before_cutoff(
+                "source_ledger.jsonl",
+                index,
+                row,
+                bundle_cutoff_at,
             )
         input_row_ids = row.get("input_row_ids")
         source_type = row.get("source_type")
@@ -519,6 +536,36 @@ def _validate_jsonl_contracts(
             raise BundleImportError(
                 "final_synthesis_context.json required_inputs must be a string list"
             )
+
+
+def _bundle_manifest_cutoff_at(json_blocks: dict[str, Any]) -> datetime | None:
+    manifest = json_blocks.get("bundle_manifest.json")
+    if not isinstance(manifest, dict):
+        return None
+    raw_cutoff = manifest.get("cutoff_at")
+    if not isinstance(raw_cutoff, str):
+        return None
+    try:
+        return parse_datetime(raw_cutoff)
+    except ValueError:
+        return None
+
+
+def _validate_blind_published_at_before_cutoff(
+    block_name: str,
+    index: int,
+    row: dict[str, Any],
+    cutoff_at: datetime,
+) -> None:
+    raw_published_at = row.get("published_at")
+    if not isinstance(raw_published_at, str):
+        raise BundleImportError(f"{block_name}:{index} missing published_at")
+    try:
+        published_at = parse_datetime(raw_published_at)
+    except ValueError as exc:
+        raise BundleImportError(f"{block_name}:{index} invalid published_at") from exc
+    if not is_available_as_of(published_at, cutoff_at):
+        raise BundleImportError(f"{block_name}:{index} BLIND source after cutoff")
 
 
 def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
