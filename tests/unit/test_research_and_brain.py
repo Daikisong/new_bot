@@ -567,6 +567,7 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     second_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
         encoding="utf-8"
     )
+    audit = audit_brain(tmp_path)
 
     assert second_manifest.model_dump(mode="json") == first_manifest.model_dump(mode="json")
     assert second_hashes == first_hashes
@@ -578,6 +579,84 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
     assert second_diff_hash == first_diff_hash
     assert second_claims == first_claims
     assert second_mechanisms == first_mechanisms
+    assert audit["deterministic_rebuild_verified"] is True
+    assert audit["expected_brain_version"] == first_manifest.brain_version
+    assert audit["manifest_brain_version"] == first_manifest.brain_version
+    assert audit["head_matches_manifest"] is True
+    assert audit["source_hashes_verified"] is True
+    assert audit["version_matches_expected"] is True
+    assert audit["snapshot_matches_current"] is True
+
+
+def test_brain_audit_flags_non_deterministic_current_state(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Determinism audit note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    manifest_path = tmp_path / "brain" / "current" / "brain_manifest.json"
+    original_manifest = read_json(manifest_path)
+
+    write_json(
+        manifest_path,
+        {
+            **original_manifest,
+            "source_hashes": {episode.episode_id: "0" * 64},
+        },
+    )
+    tampered_hash_audit = audit_brain(tmp_path)
+
+    assert tampered_hash_audit["passed"] is False
+    assert tampered_hash_audit["source_hashes_verified"] is False
+    assert tampered_hash_audit["version_matches_expected"] is True
+    assert (
+        "brain source_hashes do not match accepted episode files"
+        in tampered_hash_audit["determinism_findings"]
+    )
+
+    write_json(
+        manifest_path,
+        {
+            **original_manifest,
+            "brain_version": "brain-tampered",
+        },
+    )
+    tampered_version_audit = audit_brain(tmp_path)
+
+    assert tampered_version_audit["passed"] is False
+    assert tampered_version_audit["version_matches_expected"] is False
+    assert tampered_version_audit["head_matches_manifest"] is False
+    assert (
+        "brain_version does not match deterministic accepted source state"
+        in tampered_version_audit["determinism_findings"]
+    )
+
+    write_json(manifest_path, original_manifest)
+    snapshot_file = (
+        tmp_path / "brain" / "snapshots" / manifest.brain_version / "00_world_model.md"
+    )
+    snapshot_file.write_text(
+        snapshot_file.read_text(encoding="utf-8") + "\nTampered snapshot.\n",
+        encoding="utf-8",
+    )
+    tampered_snapshot_audit = audit_brain(tmp_path)
+    coverage = audit_coverage(tmp_path)
+
+    assert tampered_snapshot_audit["passed"] is False
+    assert tampered_snapshot_audit["source_hashes_verified"] is True
+    assert tampered_snapshot_audit["version_matches_expected"] is True
+    assert tampered_snapshot_audit["snapshot_matches_current"] is False
+    assert (
+        "brain immutable snapshot does not match current brain files"
+        in tampered_snapshot_audit["determinism_findings"]
+    )
+    assert coverage["passed"] is False
+    assert any(
+        "brain immutable snapshot does not match current brain files" in finding
+        for finding in coverage["findings"]
+    )
 
 
 def test_brain_rebuild_refuses_to_overwrite_existing_snapshot(tmp_path) -> None:

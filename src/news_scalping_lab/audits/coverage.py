@@ -70,6 +70,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
             "mechanisms_without_provenance",
             "invalid_claim_lines",
             "invalid_mechanism_lines",
+            "determinism_findings",
         )
         for finding in _string_items(brain.get(field))
     ]

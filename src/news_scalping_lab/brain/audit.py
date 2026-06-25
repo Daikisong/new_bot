@@ -8,23 +8,36 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from news_scalping_lab.brain.compiler import current_brain_version
+from news_scalping_lab.brain.compiler import (
+    current_brain_file_hashes,
+    current_brain_version,
+    expected_brain_version,
+)
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import is_available_as_of, read_json
+from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json
 
 
 def audit_brain(root: Path) -> dict[str, object]:
     store = ResearchStore(root)
     accepted = store.list_accepted()
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
-    manifest = read_json(coverage_path) if coverage_path.exists() else {}
-    covered = set(_string_list(manifest.get("covered_episode_ids", [])))
+    coverage_manifest = read_json(coverage_path) if coverage_path.exists() else {}
+    brain_manifest_path = root / "brain" / "current" / "brain_manifest.json"
+    brain_manifest = read_json(brain_manifest_path) if brain_manifest_path.exists() else {}
+    covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
     accepted_ids = {episode.episode_id for episode in accepted}
+    source_hashes = store.accepted_hashes()
     missing = sorted(accepted_ids - covered)
     extra = sorted(covered - accepted_ids)
     claim_audit = _audit_claims(root, accepted)
     mechanism_audit = _audit_mechanisms(root, accepted)
+    determinism_audit = _audit_deterministic_brain_state(
+        root=root,
+        current_manifest=brain_manifest,
+        accepted=accepted,
+        source_hashes=source_hashes,
+    )
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *claim_audit["claims_without_support"],
@@ -35,6 +48,7 @@ def audit_brain(root: Path) -> dict[str, object]:
         *mechanism_audit["mechanisms_without_cases"],
         *mechanism_audit["mechanisms_with_unknown_success_cases"],
         *mechanism_audit["mechanisms_without_provenance"],
+        *determinism_audit["determinism_findings"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     return {
@@ -44,12 +58,69 @@ def audit_brain(root: Path) -> dict[str, object]:
         "extra_episode_ids": extra,
         **claim_audit,
         **mechanism_audit,
+        **determinism_audit,
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
         "brain_version": current_brain_version(root),
-        "brain_build_mode": _brain_build_mode(manifest),
-        "updated_episode_id": manifest.get("updated_episode_id"),
-        "last_full_rebuild": manifest.get("last_full_rebuild_at") or manifest.get("created_at"),
+        "brain_build_mode": _brain_build_mode(brain_manifest or coverage_manifest),
+        "updated_episode_id": (brain_manifest or coverage_manifest).get("updated_episode_id"),
+        "last_full_rebuild": (brain_manifest or coverage_manifest).get("last_full_rebuild_at")
+        or (brain_manifest or coverage_manifest).get("created_at"),
+    }
+
+
+def _audit_deterministic_brain_state(
+    *,
+    root: Path,
+    current_manifest: dict[str, Any],
+    accepted: list[ResearchEpisode],
+    source_hashes: dict[str, str],
+) -> dict[str, Any]:
+    findings: list[str] = []
+    head_version = current_brain_version(root)
+    manifest_version = _string_value(current_manifest.get("brain_version"))
+    manifest_source_hashes = _string_dict(current_manifest.get("source_hashes"))
+    source_hashes_verified = manifest_source_hashes == source_hashes
+    if not source_hashes_verified:
+        findings.append("brain source_hashes do not match accepted episode files")
+    shard_episode_count = _current_shard_episode_count(root)
+    if shard_episode_count is None:
+        findings.append("brain shard_episode_count missing or invalid")
+    expected_version = (
+        expected_brain_version(
+            covered_episode_ids=[episode.episode_id for episode in accepted],
+            source_hashes=source_hashes,
+            shard_episode_count=shard_episode_count,
+        )
+        if shard_episode_count is not None
+        else None
+    )
+    version_matches_expected = (
+        manifest_version is not None
+        and expected_version is not None
+        and manifest_version == expected_version
+    )
+    if not version_matches_expected:
+        findings.append("brain_version does not match deterministic accepted source state")
+    head_matches_manifest = head_version is not None and head_version == manifest_version
+    if not head_matches_manifest:
+        findings.append("brain HEAD does not match current brain_manifest")
+    snapshot_matches_current = _snapshot_matches_current(
+        root=root,
+        brain_version=manifest_version,
+    )
+    if not snapshot_matches_current:
+        findings.append("brain immutable snapshot does not match current brain files")
+    return {
+        "determinism_findings": findings,
+        "deterministic_rebuild_verified": not findings,
+        "expected_brain_version": expected_version,
+        "manifest_brain_version": manifest_version,
+        "head_matches_manifest": head_matches_manifest,
+        "source_hashes_verified": source_hashes_verified,
+        "shard_episode_count": shard_episode_count,
+        "version_matches_expected": version_matches_expected,
+        "snapshot_matches_current": snapshot_matches_current,
     }
 
 
@@ -175,6 +246,20 @@ def _string_list(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
+def _string_value(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _string_dict(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, str)
+    }
+
+
 def _brain_build_mode(manifest: dict[str, Any]) -> str:
     value = manifest.get("build_mode")
     if isinstance(value, str) and value:
@@ -182,3 +267,25 @@ def _brain_build_mode(manifest: dict[str, Any]) -> str:
     if manifest.get("created_at") is not None:
         return "full"
     return "unknown"
+
+
+def _current_shard_episode_count(root: Path) -> int | None:
+    manifest_path = root / "memory" / "shard_brains" / "current" / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    payload = read_json(manifest_path)
+    value = payload.get("shard_episode_count") if isinstance(payload, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _snapshot_matches_current(*, root: Path, brain_version: str | None) -> bool:
+    if brain_version is None:
+        return False
+    snapshot_dir = root / "brain" / "snapshots" / brain_version
+    if not snapshot_dir.exists():
+        return False
+    return current_brain_file_hashes(root) == {
+        f"brain/current/{path.name}": file_sha256(path)
+        for path in sorted(snapshot_dir.glob("*"))
+        if path.is_file()
+    }

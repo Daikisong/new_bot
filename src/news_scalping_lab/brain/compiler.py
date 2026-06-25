@@ -578,6 +578,19 @@ def _deterministic_brain_version(
     return stable_id("brain", canonical_json(payload), length=10)
 
 
+def expected_brain_version(
+    *,
+    covered_episode_ids: list[str],
+    source_hashes: dict[str, str],
+    shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+) -> str:
+    return _deterministic_brain_version(
+        covered_episode_ids=covered_episode_ids,
+        source_hashes=source_hashes,
+        shard_episode_count=shard_episode_count,
+    )
+
+
 def _episode_shards(
     episodes: list[ResearchEpisode],
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
