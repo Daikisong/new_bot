@@ -43,6 +43,28 @@ class CountingProvider:
         return await DeterministicMockLLMProvider().embed(texts=texts, purpose=purpose)
 
 
+class FlakyTextProvider:
+    def __init__(self, failures_before_success: int) -> None:
+        self.failures_before_success = failures_before_success
+        self.calls = 0
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise RuntimeError(f"temporary text failure {self.calls}")
+        return f"recovered:{purpose}:{prompt}"
+
+    async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        return await DeterministicMockLLMProvider().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return await DeterministicMockLLMProvider().embed(texts=texts, purpose=purpose)
+
+
 @pytest.mark.asyncio
 async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_path) -> None:
     provider = TracingLLMProvider(
@@ -164,3 +186,46 @@ async def test_tracing_llm_provider_writes_error_checkpoint(tmp_path) -> None:
     traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
     assert traces[0]["status"] == "error"
     assert traces[0]["checkpoint_id"] == checkpoints[0]["checkpoint_id"]
+
+
+@pytest.mark.asyncio
+async def test_tracing_llm_provider_records_successful_retry_count(tmp_path) -> None:
+    provider_impl = FlakyTextProvider(failures_before_success=2)
+    provider = TracingLLMProvider(
+        provider_impl,
+        trace_dir=tmp_path / "traces",
+        checkpoint_dir=tmp_path / "checkpoints",
+        max_retries=2,
+    )
+
+    text = await provider.generate_text(prompt="recover", purpose="trace.retry")
+
+    assert text == "recovered:trace.retry:recover"
+    assert provider_impl.calls == 3
+    traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
+    assert len(traces) == 1
+    assert traces[0]["status"] == "ok"
+    assert traces[0]["retries"] == 2
+    checkpoint = read_json(next((tmp_path / "checkpoints").glob("LLMCKPT-*.json")))
+    assert checkpoint["retries"] == 2
+
+
+@pytest.mark.asyncio
+async def test_tracing_llm_provider_records_exhausted_retry_count(tmp_path) -> None:
+    provider_impl = FlakyTextProvider(failures_before_success=3)
+    provider = TracingLLMProvider(
+        provider_impl,
+        trace_dir=tmp_path / "traces",
+        checkpoint_dir=tmp_path / "checkpoints",
+        max_retries=2,
+    )
+
+    with pytest.raises(RuntimeError, match="temporary text failure 3"):
+        await provider.generate_text(prompt="still bad", purpose="trace.retry_failure")
+
+    assert provider_impl.calls == 3
+    traces = [read_json(path) for path in sorted((tmp_path / "traces").glob("TRACE-*.json"))]
+    assert len(traces) == 1
+    assert traces[0]["status"] == "error"
+    assert traces[0]["retries"] == 2
+    assert traces[0]["error"]["message"] == "temporary text failure 3"

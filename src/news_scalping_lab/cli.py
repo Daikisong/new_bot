@@ -149,6 +149,7 @@ def research_import(path: Path, mode: str = "auto") -> None:
     episode = ResearchImporter(
         settings.project_root,
         llm=create_llm_provider(settings),
+        llm_max_retries=settings.llm.max_retries,
     ).import_path(path, mode=mode)
     _echo(
         {
@@ -169,6 +170,7 @@ def research_import_batch(
     importer = ResearchImporter(
         settings.project_root,
         llm=create_llm_provider(settings),
+        llm_max_retries=settings.llm.max_retries,
     )
     store = ResearchStore(settings.project_root)
     imported: list[str] = []

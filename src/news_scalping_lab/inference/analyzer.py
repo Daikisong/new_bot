@@ -1798,6 +1798,7 @@ class DailyAnalyzer:
                 "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},
                 "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
             },
+            max_retries=self.settings.llm.max_retries,
         )
 
     def _llm_model_config(self, provider: LLMProvider) -> dict[str, Any]:
@@ -1821,6 +1822,7 @@ class DailyAnalyzer:
         max_output_tokens = getattr(provider, "max_output_tokens", None)
         if isinstance(max_output_tokens, int):
             config["max_output_tokens"] = max_output_tokens
+        config["max_retries"] = self.settings.llm.max_retries
         return config
 
     def _make_prediction(

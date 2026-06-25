@@ -332,6 +332,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "configured_provider": "mock",
         "max_output_tokens": 4096,
         "max_concurrency": 4,
+        "max_retries": 0,
         "model": "deterministic-mock",
         "provider_class": "DeterministicMockLLMProvider",
         "reasoning_effort": "low",

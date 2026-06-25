@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -11,6 +12,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.utils import canonical_json, now_kst, read_json, sha256_text, stable_id, write_json
 
 T = TypeVar("T", bound=BaseModel)
+U = TypeVar("U")
 TRACE_SCHEMA_VERSION = "nslab.llm_trace.v1"
 
 
@@ -27,6 +29,7 @@ class TracingLLMProvider:
         default_metadata: dict[str, Any] | None = None,
         purpose_metadata: dict[str, dict[str, Any]] | None = None,
         resume_from_checkpoints: bool = True,
+        max_retries: int = 0,
     ) -> None:
         self.provider = provider
         self.trace_dir = trace_dir
@@ -35,6 +38,7 @@ class TracingLLMProvider:
         self.default_metadata = default_metadata or {}
         self.purpose_metadata = purpose_metadata or {}
         self.resume_from_checkpoints = resume_from_checkpoints
+        self.max_retries = max(0, max_retries)
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,14 +66,17 @@ class TracingLLMProvider:
                 )
                 return output
         try:
-            output = await self.provider.generate_text(prompt=prompt, purpose=purpose)
-        except Exception as exc:
+            provider_output, retries = await self._call_with_retries(
+                lambda: self.provider.generate_text(prompt=prompt, purpose=purpose)
+            )
+        except _RetryExhausted as exc:
             checkpoint_id = self._write_checkpoint(
                 operation="generate_text",
                 purpose=purpose,
                 status="error",
                 input_payload=input_payload,
-                error=exc,
+                error=exc.original,
+                retries=exc.retries,
             )
             self._write_trace(
                 operation="generate_text",
@@ -78,16 +85,18 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
-                error=exc,
+                error=exc.original,
                 checkpoint_id=checkpoint_id,
+                retries=exc.retries,
             )
-            raise
+            raise exc.original from exc
         checkpoint_id = self._write_checkpoint(
             operation="generate_text",
             purpose=purpose,
             status="ok",
             input_payload=input_payload,
-            output=output,
+            output=provider_output,
+            retries=retries,
         )
         self._write_trace(
             operation="generate_text",
@@ -95,14 +104,15 @@ class TracingLLMProvider:
             started_at=started_at,
             status="ok",
             input_payload=input_payload,
-            output=output,
+            output=provider_output,
             token_usage={
                 "prompt_tokens_estimate": _estimate_tokens(prompt),
-                "completion_tokens_estimate": _estimate_tokens(output),
+                "completion_tokens_estimate": _estimate_tokens(provider_output),
             },
             checkpoint_id=checkpoint_id,
+            retries=retries,
         )
-        return output
+        return provider_output
 
     async def generate_structured(
         self, *, prompt: str, response_model: type[T], purpose: str
@@ -137,18 +147,21 @@ class TracingLLMProvider:
                 )
                 return restored
         try:
-            output = await self.provider.generate_structured(
-                prompt=prompt,
-                response_model=response_model,
-                purpose=purpose,
+            provider_output, retries = await self._call_with_retries(
+                lambda: self.provider.generate_structured(
+                    prompt=prompt,
+                    response_model=response_model,
+                    purpose=purpose,
+                )
             )
-        except Exception as exc:
+        except _RetryExhausted as exc:
             checkpoint_id = self._write_checkpoint(
                 operation="generate_structured",
                 purpose=purpose,
                 status="error",
                 input_payload=input_payload,
-                error=exc,
+                error=exc.original,
+                retries=exc.retries,
             )
             self._write_trace(
                 operation="generate_structured",
@@ -157,17 +170,19 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
-                error=exc,
+                error=exc.original,
                 checkpoint_id=checkpoint_id,
+                retries=exc.retries,
             )
-            raise
-        json_output = output.model_dump(mode="json")
+            raise exc.original from exc
+        json_output = provider_output.model_dump(mode="json")
         checkpoint_id = self._write_checkpoint(
             operation="generate_structured",
             purpose=purpose,
             status="ok",
             input_payload=input_payload,
             output=json_output,
+            retries=retries,
         )
         self._write_trace(
             operation="generate_structured",
@@ -181,8 +196,9 @@ class TracingLLMProvider:
                 "completion_tokens_estimate": _estimate_tokens(canonical_json(json_output)),
             },
             checkpoint_id=checkpoint_id,
+            retries=retries,
         )
-        return output
+        return provider_output
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         started_at = now_kst()
@@ -212,14 +228,17 @@ class TracingLLMProvider:
                 )
                 return output
         try:
-            output = await self.provider.embed(texts=texts, purpose=purpose)
-        except Exception as exc:
+            provider_output, retries = await self._call_with_retries(
+                lambda: self.provider.embed(texts=texts, purpose=purpose)
+            )
+        except _RetryExhausted as exc:
             checkpoint_id = self._write_checkpoint(
                 operation="embed",
                 purpose=purpose,
                 status="error",
                 input_payload=input_payload,
-                error=exc,
+                error=exc.original,
+                retries=exc.retries,
             )
             self._write_trace(
                 operation="embed",
@@ -230,17 +249,19 @@ class TracingLLMProvider:
                 token_usage={
                     "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
                 },
-                error=exc,
+                error=exc.original,
                 checkpoint_id=checkpoint_id,
+                retries=exc.retries,
             )
-            raise
-        output_summary = _embedding_summary(output)
+            raise exc.original from exc
+        output_summary = _embedding_summary(provider_output)
         checkpoint_id = self._write_checkpoint(
             operation="embed",
             purpose=purpose,
             status="ok",
             input_payload=input_payload,
-            output=output,
+            output=provider_output,
+            retries=retries,
         )
         self._write_trace(
             operation="embed",
@@ -251,8 +272,19 @@ class TracingLLMProvider:
             output=output_summary,
             token_usage={"prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)},
             checkpoint_id=checkpoint_id,
+            retries=retries,
         )
-        return output
+        return provider_output
+
+    async def _call_with_retries(self, call: Callable[[], Awaitable[U]]) -> tuple[U, int]:
+        retries = 0
+        while True:
+            try:
+                return await call(), retries
+            except Exception as exc:
+                if retries >= self.max_retries:
+                    raise _RetryExhausted(exc, retries) from exc
+                retries += 1
 
     def _write_trace(
         self,
@@ -266,6 +298,7 @@ class TracingLLMProvider:
         token_usage: dict[str, int] | None = None,
         error: Exception | None = None,
         checkpoint_id: str | None = None,
+        retries: int = 0,
     ) -> None:
         finished_at = now_kst()
         trace_seed = canonical_json(
@@ -293,7 +326,7 @@ class TracingLLMProvider:
             "output_sha256": sha256_text(canonical_json(output)) if output is not None else None,
             "checkpoint_id": checkpoint_id,
             "tool_calls": [],
-            "retries": 0,
+            "retries": retries,
             "token_usage": token_usage or {},
             "started_at": started_at.isoformat(),
             "finished_at": finished_at.isoformat(),
@@ -374,6 +407,7 @@ class TracingLLMProvider:
         input_payload: dict[str, Any],
         output: Any | None = None,
         error: Exception | None = None,
+        retries: int = 0,
     ) -> str:
         checkpoint_id = self._checkpoint_id(
             operation=operation,
@@ -394,6 +428,7 @@ class TracingLLMProvider:
             "input_sha256": sha256_text(canonical_json(input_payload)),
             "output": output,
             "output_sha256": sha256_text(canonical_json(output)) if output is not None else None,
+            "retries": retries,
             "updated_at": now_kst().isoformat(),
         }
         if error is not None:
@@ -434,3 +469,10 @@ def _restore_vectors(value: Any) -> list[list[float]] | None:
             row.append(float(element))
         restored.append(row)
     return restored
+
+
+class _RetryExhausted(Exception):
+    def __init__(self, original: Exception, retries: int) -> None:
+        super().__init__(str(original))
+        self.original = original
+        self.retries = retries

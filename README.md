@@ -173,6 +173,7 @@ CLI commands automatically load `.env` from the project root without overwriting
 NSLAB_LLM_PROVIDER=mock
 NSLAB_LLM_REASONING_EFFORT=low
 NSLAB_LLM_MAX_OUTPUT_TOKENS=4096
+NSLAB_LLM_MAX_RETRIES=0
 OPENAI_API_KEY=
 NSLAB_OPENAI_MODEL=gpt-5-mini
 NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
@@ -189,10 +190,11 @@ nslab research import data/inbox/research/example.md --mode semantic
 nslab analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
 ```
 
-Model, reasoning, and output-token defaults live in `configs/models.yaml`.
+Model, reasoning, output-token, and LLM retry defaults live in `configs/models.yaml`.
 Environment variables override them for local runs. The OpenAI adapter passes
-the selected model, reasoning effort, and max output tokens into the SDK calls,
-then records the same settings in context manifests and LLM traces.
+the selected model, reasoning effort, and max output tokens into the SDK calls.
+The trace wrapper records the same settings and the actual retry count in context
+manifests, checkpoints, and LLM traces.
 Structured outputs are validated against the project Pydantic contracts.
 
 ## stock-web Price Source

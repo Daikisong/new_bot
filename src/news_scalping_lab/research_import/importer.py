@@ -39,6 +39,7 @@ class ResearchImporter:
         root: Path,
         store: ResearchStore | None = None,
         llm: LLMProvider | None = None,
+        llm_max_retries: int = 0,
     ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
@@ -50,6 +51,7 @@ class ResearchImporter:
             llm or DeterministicMockLLMProvider(),
             trace_dir=self.trace_dir,
             default_metadata={"prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION},
+            max_retries=llm_max_retries,
         )
 
     def import_path(self, path: Path, *, mode: str = "auto") -> ResearchEpisode:

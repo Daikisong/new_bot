@@ -162,7 +162,9 @@ def test_write_default_config_files_bootstraps_missing_configs_without_overwrite
         (tmp_path / "configs" / "inference.yaml").read_text(encoding="utf-8")
     )
     assert models["default"]["provider"] == "mock"
+    assert models["default"]["max_retries"] == 0
     assert models["openai"]["model"] == "gpt-5-mini"
+    assert models["openai"]["max_retries"] == 2
     assert inference["default_mode"] == "exhaustive"
 
 
@@ -173,6 +175,7 @@ def test_load_settings_reads_selected_llm_model_profile(tmp_path, monkeypatch) -
     monkeypatch.delenv("NSLAB_OPENAI_EMBEDDING_MODEL", raising=False)
     monkeypatch.delenv("NSLAB_LLM_REASONING_EFFORT", raising=False)
     monkeypatch.delenv("NSLAB_LLM_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MAX_RETRIES", raising=False)
     configs = tmp_path / "configs"
     configs.mkdir()
     (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
@@ -188,6 +191,7 @@ def test_load_settings_reads_selected_llm_model_profile(tmp_path, monkeypatch) -
                 "  embedding_model: embed-configured",
                 "  reasoning_effort: high",
                 "  max_output_tokens: 12345",
+                "  max_retries: 3",
             ]
         ),
         encoding="utf-8",
@@ -201,6 +205,7 @@ def test_load_settings_reads_selected_llm_model_profile(tmp_path, monkeypatch) -
     assert settings.llm.embedding_model == "embed-configured"
     assert settings.llm.reasoning_effort == "high"
     assert settings.llm.max_output_tokens == 12345
+    assert settings.llm.max_retries == 3
 
 
 def test_tracked_json_schemas_match_contract_export(tmp_path) -> None:
@@ -236,6 +241,7 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
     monkeypatch.delenv("NSLAB_OPENAI_EMBEDDING_MODEL", raising=False)
     monkeypatch.delenv("NSLAB_LLM_REASONING_EFFORT", raising=False)
     monkeypatch.delenv("NSLAB_LLM_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("NSLAB_LLM_MAX_RETRIES", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     (tmp_path / ".env").write_text(
         "\n".join(
@@ -252,6 +258,7 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
                 "NSLAB_OPENAI_EMBEDDING_MODEL=embed-dotenv",
                 "NSLAB_LLM_REASONING_EFFORT=medium",
                 "NSLAB_LLM_MAX_OUTPUT_TOKENS=9876",
+                "NSLAB_LLM_MAX_RETRIES=4",
                 "OPENAI_API_KEY=secret-from-dotenv",
                 "MALFORMED LINE",
             ]
@@ -273,6 +280,7 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
     assert settings.llm.embedding_model == "embed-dotenv"
     assert settings.llm.reasoning_effort == "medium"
     assert settings.llm.max_output_tokens == 9876
+    assert settings.llm.max_retries == 4
     assert settings.path(settings.stock_web_cache_path) == (
         tmp_path / "data/cache/custom-stock-web"
     )

@@ -37,6 +37,7 @@ class LLMModelSettings(BaseModel):
     embedding_model: str | None = None
     reasoning_effort: str | None = "low"
     max_output_tokens: int | None = 4096
+    max_retries: int = 0
 
 
 class Settings(BaseModel):
@@ -137,12 +138,14 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "model": "deterministic-mock",
             "reasoning_effort": "low",
             "max_output_tokens": 4096,
+            "max_retries": 0,
         },
         "openai": {
             "provider": "openai",
             "model": "gpt-5-mini",
             "reasoning_effort": "medium",
             "max_output_tokens": 8192,
+            "max_retries": 2,
         },
     },
     "context_budget.yaml": {
@@ -279,6 +282,9 @@ def _apply_llm_env_overrides(settings: Settings) -> None:
     max_output_tokens = os.getenv("NSLAB_LLM_MAX_OUTPUT_TOKENS")
     if max_output_tokens:
         settings.llm.max_output_tokens = int(max_output_tokens)
+    max_retries = os.getenv("NSLAB_LLM_MAX_RETRIES")
+    if max_retries:
+        settings.llm.max_retries = int(max_retries)
 
 
 def _load_dotenv(path: Path) -> None:

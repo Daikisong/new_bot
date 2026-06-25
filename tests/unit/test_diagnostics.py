@@ -49,6 +49,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
     monkeypatch.setenv("NSLAB_LLM_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("NSLAB_LLM_MAX_RETRIES", "2")
 
     report = build_doctor_report(settings)
 
@@ -59,6 +60,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
         "embedding_model": "embed-diagnostic",
         "reasoning_effort": "medium",
         "max_output_tokens": 8192,
+        "max_retries": 0,
     }
     assert report["environment"]["OPENAI_API_KEY"] == {"set": True, "value": "***"}
     assert report["environment"]["NSLAB_LLM_PROVIDER"] == {
@@ -68,6 +70,10 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["environment"]["NSLAB_LLM_REASONING_EFFORT"] == {
         "set": True,
         "value": "medium",
+    }
+    assert report["environment"]["NSLAB_LLM_MAX_RETRIES"] == {
+        "set": True,
+        "value": "2",
     }
     assert report["api_connections"]["openai"] == {
         "required": True,
