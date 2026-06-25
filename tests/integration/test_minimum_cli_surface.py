@@ -502,6 +502,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         assert purpose_trace["matching_trace_count"] >= 1
         assert purpose_trace["trace_payloads_valid"] is True
         assert purpose_trace["model_config_verified"] is True
+        assert purpose_trace["token_counts_verified"] is True
     assert inspection["output_artifacts"]["prediction"]["hash_verified"] is True
     assert (
         inspection["output_artifacts"]["prediction"]["context_manifest_id_verified"]
@@ -2055,6 +2056,42 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         "configured_provider"
     ]
     write_json(daily_trace_file, original_daily_trace)
+
+    original_manifest_for_trace_tokens = read_json(manifest_file)
+    tampered_trace_token_counts = {
+        **original_manifest_for_trace_tokens["token_counts"],
+        "blind_analysis_prompt": (
+            original_manifest_for_trace_tokens["token_counts"]["blind_analysis_prompt"]
+            + 1
+        ),
+    }
+    write_json(
+        manifest_file,
+        {
+            **original_manifest_for_trace_tokens,
+            "token_counts": tampered_trace_token_counts,
+        },
+    )
+    tampered_trace_tokens_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok(
+        "context inspect tampered llm trace token counts",
+        tampered_trace_tokens_context,
+    )
+    tampered_trace_tokens_inspection = json.loads(
+        tampered_trace_tokens_context.output
+    )["inspection"]
+    assert tampered_trace_tokens_inspection["reproducibility_checks_passed"] is False
+    tampered_trace_tokens_status = tampered_trace_tokens_inspection["llm_traces"][
+        "purposes"
+    ]["daily_blind_analysis"]
+    assert tampered_trace_tokens_status["token_counts_verified"] is False
+    assert tampered_trace_tokens_status["token_count_mismatches"][0][
+        "manifest_token_count_key"
+    ] == "blind_analysis_prompt"
+    assert "matching_trace_token_count_mismatch" in (
+        tampered_trace_tokens_status["errors"]
+    )
+    write_json(manifest_file, original_manifest_for_trace_tokens)
 
     session_pack = RUNNER.invoke(
         app,

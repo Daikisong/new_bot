@@ -3264,6 +3264,15 @@ _CONTEXT_PROMPT_TRACE_PURPOSES = {
     "final_synthesis": "final_synthesis",
 }
 
+_CONTEXT_PROMPT_TRACE_TOKEN_KEYS = {
+    "news_novelty_review": "news_novelty_review_prompt",
+    "semantic_retrieval_plan": "semantic_retrieval_plan_prompt",
+    "candidate_expansion": "candidate_expansion_prompt",
+    "blind_analysis": "blind_analysis_prompt",
+    "red_team_candidate_review": "red_team_prompt",
+    "final_synthesis": "final_synthesis_prompt",
+}
+
 _TRACE_MODEL_CONFIG_KEYS = (
     "configured_provider",
     "provider_class",
@@ -3354,14 +3363,18 @@ def _inspect_prompt_trace(
     purpose: str,
 ) -> dict[str, Any]:
     expected_prompt_hash = prompt_hashes.get(hash_key)
+    token_count_key = _CONTEXT_PROMPT_TRACE_TOKEN_KEYS.get(hash_key)
+    expected_prompt_tokens = _manifest_prompt_token_count(manifest, token_count_key)
     expected_model_config = _expected_trace_model_config(manifest)
     status: dict[str, Any] = {
         "configured": isinstance(expected_prompt_hash, str) and bool(expected_prompt_hash),
         "manifest_hash_key": hash_key,
+        "manifest_token_count_key": token_count_key,
         "purpose": purpose,
         "expected_prompt_sha256": expected_prompt_hash
         if isinstance(expected_prompt_hash, str)
         else None,
+        "expected_prompt_tokens_estimate": expected_prompt_tokens,
         "matching_trace_count": 0,
         "matching_trace_ids": [],
         "matching_trace_paths": [],
@@ -3369,6 +3382,8 @@ def _inspect_prompt_trace(
         "model_config_verified": None,
         "model_config_comparison": None,
         "model_config_mismatches": [],
+        "token_counts_verified": None,
+        "token_count_mismatches": [],
         "trace_validation_errors": {},
         "errors": [],
     }
@@ -3378,6 +3393,8 @@ def _inspect_prompt_trace(
         return status
     if expected_model_config is None:
         status["errors"].append("manifest_model_config_missing_or_invalid")
+    if expected_prompt_tokens is None:
+        status["errors"].append("manifest_prompt_token_count_missing_or_invalid")
 
     for trace_record in trace_records:
         payload = trace_record["payload"]
@@ -3404,6 +3421,18 @@ def _inspect_prompt_trace(
                         "keys": mismatched_keys,
                     }
                 )
+        token_count_mismatch = _trace_prompt_token_count_mismatch(
+            payload,
+            expected_prompt_tokens,
+        )
+        if token_count_mismatch:
+            status["token_count_mismatches"].append(
+                {
+                    "path": _display_path(root, trace_path),
+                    "manifest_token_count_key": token_count_key,
+                    **token_count_mismatch,
+                }
+            )
 
     if status["matching_trace_count"] == 0:
         status["errors"].append("matching_trace_missing")
@@ -3420,10 +3449,20 @@ def _inspect_prompt_trace(
             and status["matching_trace_count"] > 0
             and not status["model_config_mismatches"]
         )
+    status["token_counts_verified"] = (
+        expected_prompt_tokens is not None
+        and status["matching_trace_count"] > 0
+        and not status["token_count_mismatches"]
+    )
     if not status["trace_payloads_valid"]:
         status["errors"].append("matching_trace_payload_invalid")
     if not status["model_config_verified"]:
         status["errors"].append("matching_trace_model_config_mismatch")
+    if (
+        not status["token_counts_verified"]
+        and "manifest_prompt_token_count_missing_or_invalid" not in status["errors"]
+    ):
+        status["errors"].append("matching_trace_token_count_mismatch")
     status["passed"] = _prompt_trace_status_passed(status)
     return status
 
@@ -3462,6 +3501,72 @@ def _trace_model_config_mismatches(
         for key, expected_value in expected_model_config.items()
         if trace_model_config.get(key) != expected_value
     ]
+
+
+def _manifest_prompt_token_count(
+    manifest: dict[str, Any],
+    token_count_key: str | None,
+) -> int | None:
+    token_counts = manifest.get("token_counts")
+    if token_count_key is None or not isinstance(token_counts, dict):
+        return None
+    count = token_counts.get(token_count_key)
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    return None
+
+
+def _trace_prompt_token_count_mismatch(
+    payload: dict[str, Any],
+    expected_prompt_tokens: int | None,
+) -> dict[str, Any] | None:
+    trace_input = payload.get("input")
+    token_usage = payload.get("token_usage")
+    observed_prompt_tokens = (
+        token_usage.get("prompt_tokens_estimate")
+        if isinstance(token_usage, dict)
+        else None
+    )
+    prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
+    prompt_chars_token_estimate = _estimate_prompt_tokens_from_chars(prompt_chars)
+    reasons: list[str] = []
+    if not isinstance(observed_prompt_tokens, int) or isinstance(
+        observed_prompt_tokens, bool
+    ):
+        reasons.append("prompt_tokens_estimate_missing_or_invalid")
+    else:
+        if (
+            expected_prompt_tokens is not None
+            and observed_prompt_tokens != expected_prompt_tokens
+        ):
+            reasons.append("manifest_token_count_mismatch")
+        if (
+            prompt_chars_token_estimate is not None
+            and observed_prompt_tokens != prompt_chars_token_estimate
+        ):
+            reasons.append("prompt_chars_token_count_mismatch")
+    if prompt_chars_token_estimate is None:
+        reasons.append("prompt_chars_missing_or_invalid")
+    if not reasons:
+        return None
+    return {
+        "reasons": reasons,
+        "expected_prompt_tokens_estimate": expected_prompt_tokens,
+        "observed_prompt_tokens_estimate": observed_prompt_tokens
+        if isinstance(observed_prompt_tokens, int)
+        and not isinstance(observed_prompt_tokens, bool)
+        else None,
+        "prompt_chars": prompt_chars
+        if isinstance(prompt_chars, int) and not isinstance(prompt_chars, bool)
+        else None,
+        "prompt_chars_token_estimate": prompt_chars_token_estimate,
+    }
+
+
+def _estimate_prompt_tokens_from_chars(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    return max(1, value // 4) if value else 0
 
 
 def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
@@ -4001,6 +4106,7 @@ def _prompt_trace_status_passed(status: dict[str, Any]) -> bool:
         and status.get("matching_trace_count", 0) > 0
         and status.get("trace_payloads_valid")
         and status.get("model_config_verified")
+        and status.get("token_counts_verified")
         and not status.get("errors")
     )
 

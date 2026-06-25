@@ -4739,6 +4739,49 @@ def test_provenance_audit_flags_trace_model_config_mismatch(tmp_path: Path) -> N
     ) in result["findings"]
 
 
+def test_provenance_audit_flags_trace_prompt_token_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "token_counts": {"blind_analysis_prompt": 26},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "traces" / "TRACE-daily.json",
+        _trace_payload(prompt_sha256="blind-hash"),
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: trace prompt token count mismatch for "
+        "daily_blind_analysis: TRACE-daily.json"
+    ) in result["findings"]
+
+
 def test_provenance_audit_accepts_current_trace_when_stale_trace_shares_prompt_hash(
     tmp_path: Path,
 ) -> None:

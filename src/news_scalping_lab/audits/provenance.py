@@ -4152,6 +4152,11 @@ def _check_prompt_hash_traces(
         "red_team_candidate_review": "red_team_candidate_review",
         "final_synthesis": "final_synthesis",
     }
+    token_key_by_hash_key = {
+        "blind_analysis": "blind_analysis_prompt",
+        "red_team_candidate_review": "red_team_prompt",
+        "final_synthesis": "final_synthesis_prompt",
+    }
     traces_by_purpose = _trace_metadata_by_purpose(root, findings)
     for hash_key, purpose in purpose_by_hash_key.items():
         manifest_hash = prompt_hashes.get(hash_key)
@@ -4180,6 +4185,14 @@ def _check_prompt_hash_traces(
             model_config = trace_record["payload"].get("model_config")
             if isinstance(model_config, dict):
                 matching_model_configs.append(model_config)
+        _check_trace_prompt_token_counts_match_manifest(
+            prediction_path,
+            manifest,
+            purpose,
+            token_key_by_hash_key[hash_key],
+            matching_trace_records,
+            findings,
+        )
         _check_trace_model_config_matches_manifest(
             prediction_path,
             manifest,
@@ -4232,6 +4245,70 @@ def _check_trace_model_config_matches_manifest(
         f"{prediction_path.name}: trace model_config mismatch for {purpose}: "
         f"{', '.join(best_mismatches)}"
     )
+
+
+def _check_trace_prompt_token_counts_match_manifest(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    purpose: str,
+    token_count_key: str,
+    trace_records: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    token_counts = manifest.get("token_counts")
+    if not isinstance(token_counts, dict):
+        return
+    expected_prompt_tokens = token_counts.get(token_count_key)
+    if (
+        not isinstance(expected_prompt_tokens, int)
+        or isinstance(expected_prompt_tokens, bool)
+        or expected_prompt_tokens < 0
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest missing {token_count_key} "
+            f"token count for {purpose}"
+        )
+        return
+    for trace_record in trace_records:
+        payload = trace_record["payload"]
+        mismatch = _trace_prompt_token_count_mismatch(payload, expected_prompt_tokens)
+        if mismatch:
+            trace_path = trace_record["path"]
+            findings.append(
+                f"{prediction_path.name}: trace prompt token count mismatch for "
+                f"{purpose}: {trace_path.name}"
+            )
+
+
+def _trace_prompt_token_count_mismatch(
+    payload: dict[str, Any],
+    expected_prompt_tokens: int,
+) -> bool:
+    token_usage = payload.get("token_usage")
+    trace_input = payload.get("input")
+    observed_prompt_tokens = (
+        token_usage.get("prompt_tokens_estimate")
+        if isinstance(token_usage, dict)
+        else None
+    )
+    prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
+    if not isinstance(observed_prompt_tokens, int) or isinstance(
+        observed_prompt_tokens, bool
+    ):
+        return True
+    if observed_prompt_tokens != expected_prompt_tokens:
+        return True
+    prompt_chars_token_estimate = _estimate_prompt_tokens_from_chars(prompt_chars)
+    return (
+        prompt_chars_token_estimate is None
+        or observed_prompt_tokens != prompt_chars_token_estimate
+    )
+
+
+def _estimate_prompt_tokens_from_chars(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    return max(1, value // 4) if value else 0
 
 
 def _check_context_manifest(
