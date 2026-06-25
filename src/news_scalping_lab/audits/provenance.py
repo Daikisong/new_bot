@@ -137,6 +137,7 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         checked += 1
         _check_research_episode_top_level_provenance(root, path, episode, findings)
         _check_research_episode_input_news_sources(root, path, episode, findings)
+        _check_research_episode_available_from(path, root, episode, findings)
         if is_accepted_episode:
             _check_research_episode_blind_decision_provenance(root, path, episode, findings)
         if _has_semantic_import_provenance(episode):
@@ -198,6 +199,29 @@ def _check_research_episode_input_news_sources(
             continue
         if file_sha256(source_path) != expected_hash:
             findings.append(f"{label}: research episode input news hash mismatch: {path_ref}")
+
+
+def _check_research_episode_available_from(
+    episode_path: Path,
+    root: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    raw_trade_date = episode.get("trade_date")
+    raw_available_from = episode.get("available_from")
+    if not isinstance(raw_trade_date, str) or not isinstance(raw_available_from, str):
+        findings.append(f"{label}: research episode available_from or trade_date missing")
+        return
+    try:
+        trade_date = date.fromisoformat(raw_trade_date)
+        available_from = parse_datetime(raw_available_from)
+    except ValueError:
+        findings.append(f"{label}: research episode available_from or trade_date invalid")
+        return
+    earliest = datetime.combine(next_trading_day(trade_date), time(0, 0, 0), tzinfo=KST)
+    if available_from.astimezone(KST) < earliest:
+        findings.append(f"{label}: research episode available_from precedes next trading day")
 
 
 def _check_research_episode_blind_decision_provenance(

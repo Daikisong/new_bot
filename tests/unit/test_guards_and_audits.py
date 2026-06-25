@@ -1472,6 +1472,59 @@ def test_provenance_audit_validates_research_episode_input_news_hash(
     ) in failed["findings"]
 
 
+def test_provenance_audit_rejects_early_research_episode_available_from(
+    tmp_path: Path,
+) -> None:
+    episode_path = tmp_path / "research" / "accepted" / "EP-early.json"
+    write_json(
+        episode_path,
+        {
+            "episode_id": "EP-early",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "available-from-test-v1",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Accepted episode with early available_from.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [
+                    {
+                        "source_id": "SRC-blind-analysis",
+                        "source_type": "daily_blind_analysis_blind_analysis",
+                        "uri": "prompt://daily_blind_analysis/test",
+                    }
+                ],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [],
+            "counterexamples": [],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-episode",
+                    "source_type": "accepted_research_episode",
+                    "uri": "prompt://accepted_episode/test",
+                }
+            ],
+            "available_from": "2030-01-10T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "research/accepted/EP-early.json: research episode available_from "
+        "precedes next trading day"
+    ) in result["findings"]
+
+
 def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
     tmp_path: Path,
 ) -> None:
