@@ -137,6 +137,7 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
             continue
         checked += 1
         _check_research_episode_identity(root, path, episode, findings)
+        _check_research_episode_metadata(root, path, episode, findings)
         _check_research_episode_top_level_provenance(root, path, episode, findings)
         _check_research_episode_input_news_sources(root, path, episode, findings)
         _check_research_episode_cutoff_at(path, root, episode, findings)
@@ -165,6 +166,23 @@ def _check_research_episode_identity(
         return
     if episode_path.stem != episode_id:
         findings.append(f"{label}: research episode filename/episode_id mismatch")
+
+
+def _check_research_episode_metadata(
+    root: Path,
+    episode_path: Path,
+    episode: dict[str, Any],
+    findings: list[str],
+) -> None:
+    label = _display_path(root, episode_path)
+    if _parse_optional_datetime(episode.get("created_at")) is None:
+        findings.append(f"{label}: research episode created_at missing or invalid")
+    research_version = episode.get("research_version")
+    if not isinstance(research_version, str) or not research_version.strip():
+        findings.append(f"{label}: research episode research_version missing or invalid")
+    price_source_snapshot = episode.get("price_source_snapshot")
+    if not isinstance(price_source_snapshot, dict) or not price_source_snapshot:
+        findings.append(f"{label}: research episode price_source_snapshot missing or invalid")
 
 
 def _check_research_episode_top_level_provenance(

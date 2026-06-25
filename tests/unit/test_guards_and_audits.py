@@ -1342,17 +1342,22 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
         episode_id: str,
         *,
         schema_version: str = "nslab.research_episode.v1",
+        created_at: str = "2030-01-11T00:00:00+09:00",
+        research_version: str = "identity-test-v1",
+        price_source_snapshot: dict[str, object] | None = None,
     ) -> dict[str, object]:
         return {
             "schema_version": schema_version,
             "episode_id": episode_id,
             "trade_date": "2030-01-10",
             "cutoff_at": "2030-01-10T08:59:59+09:00",
-            "created_at": "2030-01-11T00:00:00+09:00",
-            "research_version": "identity-test-v1",
+            "created_at": created_at,
+            "research_version": research_version,
             "input_news_files": [],
             "input_news_hashes": [],
-            "price_source_snapshot": {"source": "test"},
+            "price_source_snapshot": (
+                {"source": "test"} if price_source_snapshot is None else price_source_snapshot
+            ),
             "blind_analysis": {
                 "summary": "Accepted episode with identity metadata.",
                 "open_world_mechanisms": [],
@@ -1404,6 +1409,31 @@ def test_provenance_audit_validates_research_episode_identity(tmp_path: Path) ->
     assert (
         "research/accepted/EP-identity.json: research episode schema_version invalid"
     ) in schema_failed["findings"]
+
+    write_json(
+        episode_path,
+        episode_payload(
+            "EP-identity",
+            created_at="not-a-timestamp",
+            research_version="",
+            price_source_snapshot={},
+        ),
+    )
+    metadata_failed = audit_provenance(tmp_path)
+
+    assert not metadata_failed["passed"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "created_at missing or invalid"
+    ) in metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "research_version missing or invalid"
+    ) in metadata_failed["findings"]
+    assert (
+        "research/accepted/EP-identity.json: research episode "
+        "price_source_snapshot missing or invalid"
+    ) in metadata_failed["findings"]
 
 
 def test_provenance_audit_validates_accepted_episode_top_level_sources(
