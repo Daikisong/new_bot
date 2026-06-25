@@ -25,7 +25,7 @@ from news_scalping_lab.utils import (
     KST,
     canonical_json,
     file_sha256,
-    next_calendar_day,
+    next_trading_day,
     now_kst,
     read_json,
     sha256_text,
@@ -134,7 +134,7 @@ class ResearchImporter:
             }
         }
         available_from = draft.available_from or datetime.combine(
-            next_calendar_day(draft.trade_date), time(0, 0, 0), tzinfo=KST
+            next_trading_day(draft.trade_date), time(0, 0, 0), tzinfo=KST
         )
         return ResearchEpisode(
             episode_id=episode_id,

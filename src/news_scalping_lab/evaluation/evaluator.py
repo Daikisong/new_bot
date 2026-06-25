@@ -28,7 +28,7 @@ from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
     file_sha256,
-    next_calendar_day,
+    next_trading_day,
     now_kst,
     read_json,
     stable_id,
@@ -166,7 +166,7 @@ class Evaluator:
             content_sha256=prediction_hash,
             observed_at=prediction.sealed_at or prediction.created_at,
         )
-        available_from = datetime.combine(next_calendar_day(trade_date), time(0, 0, 0), tzinfo=KST)
+        available_from = datetime.combine(next_trading_day(trade_date), time(0, 0, 0), tzinfo=KST)
         postmortem_with_provenance = postmortem.model_copy(
             update={"provenance": [*postmortem.provenance, evaluation_provenance]}
         )

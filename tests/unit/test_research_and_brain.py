@@ -24,7 +24,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, file_sha256, read_json, sha256_text
+from news_scalping_lab.utils import KST, file_sha256, next_trading_day, read_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 T = TypeVar("T", bound=BaseModel)
@@ -508,6 +508,7 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert llm.calls[0]["purpose"] == "research_import.semantic"
     assert llm.calls[0]["response_model"] is SemanticResearchDraft
     assert episode.trade_date == date(2040, 2, 3)
+    assert episode.available_from.date() == next_trading_day(episode.trade_date)
     assert episode.price_source_snapshot == {"source": "recording-test"}
     assert episode.provenance[0].source_type == "semantic_llm_structured_import"
     preserved_raw = tmp_path / episode.provenance[0].uri

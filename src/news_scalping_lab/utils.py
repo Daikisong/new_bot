@@ -47,6 +47,13 @@ def next_calendar_day(day: date) -> date:
     return day + timedelta(days=1)
 
 
+def next_trading_day(day: date) -> date:
+    next_day = next_calendar_day(day)
+    while next_day.weekday() >= 5:
+        next_day = next_calendar_day(next_day)
+    return next_day
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 

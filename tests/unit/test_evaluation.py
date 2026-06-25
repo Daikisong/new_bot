@@ -149,6 +149,24 @@ def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path
     assert "Use postmortem lessons only from the next trading day forward." in claims_text
 
 
+def test_evaluate_defers_friday_postmortem_to_next_weekday(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    trade_day = date(2030, 1, 11)
+    assert trade_day.weekday() == 4
+    prediction = _sealed_prediction(trade_day)
+    write_json(
+        tmp_path / "predictions" / f"{trade_day.isoformat()}.json",
+        prediction.model_dump(mode="json"),
+    )
+
+    result = Evaluator(tmp_path, price_source=MockPriceSource()).evaluate(trade_date=trade_day)
+    episode = ResearchStore(tmp_path).get_episode(result.episode_id)
+
+    assert episode.available_from.date() == date(2030, 1, 14)
+    assert episode.lessons[0].available_from.date() == date(2030, 1, 14)
+
+
 def test_evaluate_uses_stable_episode_id_for_same_sealed_prediction(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

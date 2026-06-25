@@ -18,7 +18,7 @@ from news_scalping_lab.utils import (
     KST,
     canonical_json,
     file_sha256,
-    next_calendar_day,
+    next_trading_day,
     read_json,
     sha256_text,
     stable_id,
@@ -115,7 +115,7 @@ def _build_research_episode(
     blind_seal_receipt: str,
 ) -> ResearchEpisode:
     available_from = datetime.combine(
-        next_calendar_day(prediction.trade_date),
+        next_trading_day(prediction.trade_date),
         time(0, 0, 0),
         tzinfo=KST,
     )
