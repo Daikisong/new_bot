@@ -53,6 +53,13 @@ SCORE_QUALIFIER_TOKENS = {
     "theme",
 }
 TEXT_FIELD_NAMES = {"article", "body", "content", "headline", "news", "snippet", "summary", "text", "title"}
+TEXT_DOMAIN_COLLECTION_RE = re.compile(
+    r"\b(?:theme|sector|region|policy|beneficiary|ticker|stock|candidate)"
+    r"[a-z0-9_\- ]{0,32}"
+    r"(?:map|mapping|list|whitelist|allowlist|table)\b\s*[:=]\s*(?:\[|\{)",
+    re.IGNORECASE,
+)
+TEXT_POLICY_FILE_SUFFIXES = {".md", ".txt"}
 
 
 def audit_hardcoding(root: Path) -> dict[str, object]:
@@ -72,7 +79,34 @@ def audit_hardcoding(root: Path) -> dict[str, object]:
             )
             continue
         findings.extend(_ast_findings(root, path, tree, lines))
+    for path in _iter_text_policy_files(root):
+        text = path.read_text(encoding="utf-8")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if TICKER_LITERAL_RE.search(line):
+                findings.append(
+                    _finding(root, path, line_number, "guidance_six_digit_ticker", line)
+                )
+            if TEXT_DOMAIN_COLLECTION_RE.search(line):
+                findings.append(
+                    _finding(root, path, line_number, "guidance_domain_collection", line)
+                )
     return {"passed": not findings, "findings": findings}
+
+
+def _iter_text_policy_files(root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for path in (root / "AGENTS.md",):
+        if path.exists():
+            candidates.append(path)
+    for directory in (root / "prompts", root / ".agents" / "skills"):
+        if not directory.exists():
+            continue
+        candidates.extend(
+            path
+            for path in sorted(directory.rglob("*"))
+            if path.is_file() and path.suffix.lower() in TEXT_POLICY_FILE_SUFFIXES
+        )
+    return sorted(candidates)
 
 
 def _ast_findings(root: Path, path: Path, tree: ast.AST, lines: list[str]) -> list[dict[str, object]]:

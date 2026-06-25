@@ -309,6 +309,34 @@ def rank(title: str) -> int:
     assert "fixed_expression_score" in rules
 
 
+def test_hardcoding_audit_scans_prompts_and_repo_guidance(tmp_path: Path) -> None:
+    prompt_dir = tmp_path / "prompts" / "blind_analysis"
+    prompt_dir.mkdir(parents=True)
+    (prompt_dir / "open_world.md").write_text(
+        'ticker_list: ["111111"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "theme_map: {policy: ['FictionalCo']}\n",
+        encoding="utf-8",
+    )
+    skill_dir = tmp_path / ".agents" / "skills" / "news-scalping-lab"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        'beneficiary_whitelist = {"fictional": ["222222"]}\n',
+        encoding="utf-8",
+    )
+
+    result = audit_hardcoding(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert isinstance(findings, list)
+    rules = {finding["rule"] for finding in findings}
+    assert "guidance_six_digit_ticker" in rules
+    assert "guidance_domain_collection" in rules
+
+
 def test_provenance_audit_requires_prediction_context_manifest(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()

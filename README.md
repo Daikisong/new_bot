@@ -2,7 +2,7 @@
 
 `news-scalping-lab` is a Python CLI system for importing long-running market-news research, compiling it into a versioned research brain, and producing reproducible pre-open analysis reports from a new news CSV.
 
-The implementation is intentionally LLM-native. Production code does not contain domain keyword maps, stock whitelists, ticker lists, or fixed theme score tables. Research knowledge is data in `research/`, `memory/`, and `brain/`.
+The implementation is intentionally LLM-native. Production code does not contain domain keyword maps, stock whitelists, ticker lists, or fixed theme score tables. Research knowledge is data in `research/`, `memory/`, and `brain/`. `nslab audit hardcoding` scans source plus production prompts and repo guidance for those hardcoding patterns.
 
 ## Quick Start
 
