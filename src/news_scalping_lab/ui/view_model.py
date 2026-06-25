@@ -34,6 +34,29 @@ class SweepShardStatus:
 
 
 @dataclass(frozen=True)
+class CandidateEvidenceView:
+    rank: int
+    ticker: str
+    company_name: str
+    path_type: str
+    thesis: str
+    why_now: str
+    confidence_label: str
+    evidence_quality: str
+    causal_chain: list[str]
+    direct_evidence: list[str]
+    inferred_evidence: list[str]
+    market_memory_evidence: list[str]
+    prior_positive_cases: list[str]
+    prior_negative_cases: list[str]
+    novel_reasoning: str
+    counterarguments: list[str]
+    disconfirming_conditions: list[str]
+    memory_episode_ids: list[str]
+    source_urls: list[str]
+
+
+@dataclass(frozen=True)
 class AnalysisViewModel:
     run_id: str
     mode: str
@@ -45,7 +68,7 @@ class AnalysisViewModel:
     memory_sweep_shards: list[SweepShardStatus]
     coverage_errors: list[str]
     dominant_sectors: list[DominantSectorHypothesis]
-    candidates_by_path: dict[str, list[Candidate]]
+    candidates_by_path: dict[str, list[CandidateEvidenceView]]
     artifacts: ArtifactLinks
 
 
@@ -71,11 +94,38 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
     )
 
 
-def _candidates_by_path(candidates: list[Candidate]) -> dict[str, list[Candidate]]:
+def _candidates_by_path(candidates: list[Candidate]) -> dict[str, list[CandidateEvidenceView]]:
     grouped: dict[str, list[Candidate]] = {path_type.value: [] for path_type in PathType}
     for candidate in sorted(candidates, key=lambda item: item.rank):
         grouped.setdefault(str(candidate.path_type), []).append(candidate)
-    return grouped
+    return {
+        path_type: [_candidate_evidence_view(candidate) for candidate in path_candidates]
+        for path_type, path_candidates in grouped.items()
+    }
+
+
+def _candidate_evidence_view(candidate: Candidate) -> CandidateEvidenceView:
+    return CandidateEvidenceView(
+        rank=candidate.rank,
+        ticker=candidate.ticker,
+        company_name=candidate.company_name,
+        path_type=str(candidate.path_type),
+        thesis=candidate.thesis,
+        why_now=candidate.why_now,
+        confidence_label=str(candidate.confidence_label),
+        evidence_quality=str(candidate.evidence_quality),
+        causal_chain=candidate.causal_chain,
+        direct_evidence=candidate.direct_evidence,
+        inferred_evidence=candidate.inferred_evidence,
+        market_memory_evidence=candidate.market_memory_evidence,
+        prior_positive_cases=candidate.prior_positive_cases,
+        prior_negative_cases=candidate.prior_negative_cases,
+        novel_reasoning=candidate.novel_reasoning,
+        counterarguments=candidate.counterarguments,
+        disconfirming_conditions=candidate.disconfirming_conditions,
+        memory_episode_ids=candidate.memory_episode_ids,
+        source_urls=candidate.source_urls,
+    )
 
 
 def _memory_sweep_shards(root: Path, artifact_paths: list[str]) -> list[SweepShardStatus]:

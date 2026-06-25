@@ -14,9 +14,13 @@ from typing import Any
 
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.config import load_settings
-from news_scalping_lab.contracts.models import Candidate, DominantSectorHypothesis, PathType
+from news_scalping_lab.contracts.models import DominantSectorHypothesis, PathType
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
-from news_scalping_lab.ui.view_model import AnalysisViewModel, build_analysis_view_model
+from news_scalping_lab.ui.view_model import (
+    AnalysisViewModel,
+    CandidateEvidenceView,
+    build_analysis_view_model,
+)
 from news_scalping_lab.utils import parse_datetime
 
 
@@ -125,18 +129,23 @@ def _render_sector(sector: DominantSectorHypothesis, st: Any) -> None:
         )
 
 
-def _render_candidate(candidate: Candidate, st: Any) -> None:
+def _render_candidate(candidate: CandidateEvidenceView, st: Any) -> None:
     st.markdown(f"**{candidate.rank}. {candidate.company_name} ({candidate.ticker})**")
     st.write(candidate.thesis)
     st.caption(f"Confidence: {candidate.confidence_label} | Evidence: {candidate.evidence_quality}")
     with st.expander("Evidence and objections"):
-        st.write({"why_now": candidate.why_now, "causal_chain": candidate.causal_chain})
         st.write(
             {
+                "why_now": candidate.why_now,
+                "causal_chain": candidate.causal_chain,
                 "direct_evidence": candidate.direct_evidence,
                 "inferred_evidence": candidate.inferred_evidence,
                 "market_memory_evidence": candidate.market_memory_evidence,
+                "prior_positive_cases": candidate.prior_positive_cases,
+                "prior_negative_cases": candidate.prior_negative_cases,
+                "novel_reasoning": candidate.novel_reasoning,
                 "counterarguments": candidate.counterarguments,
+                "disconfirming_conditions": candidate.disconfirming_conditions,
                 "memory_episode_ids": candidate.memory_episode_ids,
                 "source_urls": candidate.source_urls,
             }

@@ -13,8 +13,36 @@ from news_scalping_lab.contracts.models import (
     PathType,
     PriceSnapshot,
 )
-from news_scalping_lab.ui.view_model import build_analysis_view_model
+from news_scalping_lab.ui.app import _render_candidate
+from news_scalping_lab.ui.view_model import CandidateEvidenceView, build_analysis_view_model
 from news_scalping_lab.utils import KST, write_json
+
+
+class _FakeExpander:
+    def __enter__(self) -> _FakeExpander:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+class _FakeStreamlit:
+    def __init__(self) -> None:
+        self.writes: list[object] = []
+        self.markdowns: list[str] = []
+        self.captions: list[str] = []
+
+    def markdown(self, value: str) -> None:
+        self.markdowns.append(value)
+
+    def write(self, value: object) -> None:
+        self.writes.append(value)
+
+    def caption(self, value: str) -> None:
+        self.captions.append(value)
+
+    def expander(self, _label: str) -> _FakeExpander:
+        return _FakeExpander()
 
 
 def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> None:
@@ -42,6 +70,11 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
                 thesis="Indirect candidate.",
                 why_now="Needs beneficiary discovery.",
                 causal_chain=["catalyst", "beneficiary"],
+                inferred_evidence=["supply chain needs verification"],
+                prior_negative_cases=["EP-negative"],
+                novel_reasoning="New entity path can still be investigated.",
+                counterarguments=["relation may be narrative only"],
+                disconfirming_conditions=["no listed beneficiary found"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
             ),
             Candidate(
@@ -52,6 +85,11 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
                 thesis="Direct candidate.",
                 why_now="Direct mention.",
                 causal_chain=["news", "direct"],
+                direct_evidence=["direct pre-cutoff source"],
+                market_memory_evidence=["D-1 absorption check"],
+                prior_positive_cases=["EP-positive"],
+                memory_episode_ids=["EP-positive", "EP-negative"],
+                source_urls=["https://example.test/source"],
                 confidence_label=ConfidenceLabel.LOW,
             ),
         ],
@@ -125,9 +163,65 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     assert [candidate.company_name for candidate in view.candidates_by_path["SINGLE_EVENT"]] == [
         "DirectCo"
     ]
+    direct_candidate = view.candidates_by_path["SINGLE_EVENT"][0]
+    assert direct_candidate.path_type == "SINGLE_EVENT"
+    assert direct_candidate.direct_evidence == ["direct pre-cutoff source"]
+    assert direct_candidate.market_memory_evidence == ["D-1 absorption check"]
+    assert direct_candidate.prior_positive_cases == ["EP-positive"]
+    assert direct_candidate.memory_episode_ids == ["EP-positive", "EP-negative"]
+    assert direct_candidate.source_urls == ["https://example.test/source"]
     assert [
         candidate.company_name for candidate in view.candidates_by_path["THEME_BENEFICIARY"]
     ] == ["BenefitCo"]
+    beneficiary_candidate = view.candidates_by_path["THEME_BENEFICIARY"][0]
+    assert beneficiary_candidate.inferred_evidence == ["supply chain needs verification"]
+    assert beneficiary_candidate.prior_negative_cases == ["EP-negative"]
+    assert beneficiary_candidate.novel_reasoning == "New entity path can still be investigated."
+    assert beneficiary_candidate.counterarguments == ["relation may be narrative only"]
+    assert beneficiary_candidate.disconfirming_conditions == ["no listed beneficiary found"]
     assert view.artifacts.prediction_json == tmp_path / "predictions" / "2030-01-10.json"
     assert view.artifacts.report_markdown == tmp_path / "reports" / "2030-01-10_preopen.md"
     assert view.artifacts.context_manifest_json == tmp_path / "runs" / "manifests" / "RUN-ui.json"
+
+
+def test_render_candidate_includes_full_evidence_and_objection_payload() -> None:
+    fake_st = _FakeStreamlit()
+    candidate = CandidateEvidenceView(
+        rank=1,
+        ticker="UNKNOWN",
+        company_name="DetailCo",
+        path_type="HYBRID",
+        thesis="Detailed candidate.",
+        why_now="Current catalyst.",
+        confidence_label="medium",
+        evidence_quality="low",
+        causal_chain=["news", "mechanism"],
+        direct_evidence=["direct source"],
+        inferred_evidence=["inferred path"],
+        market_memory_evidence=["market memory"],
+        prior_positive_cases=["EP-positive"],
+        prior_negative_cases=["EP-negative"],
+        novel_reasoning="new company path",
+        counterarguments=["weak relation"],
+        disconfirming_conditions=["not listed"],
+        memory_episode_ids=["EP-positive", "EP-negative"],
+        source_urls=["https://example.test/source"],
+    )
+
+    _render_candidate(candidate, fake_st)
+
+    detail_payload = next(item for item in fake_st.writes if isinstance(item, dict))
+    assert detail_payload == {
+        "why_now": "Current catalyst.",
+        "causal_chain": ["news", "mechanism"],
+        "direct_evidence": ["direct source"],
+        "inferred_evidence": ["inferred path"],
+        "market_memory_evidence": ["market memory"],
+        "prior_positive_cases": ["EP-positive"],
+        "prior_negative_cases": ["EP-negative"],
+        "novel_reasoning": "new company path",
+        "counterarguments": ["weak relation"],
+        "disconfirming_conditions": ["not listed"],
+        "memory_episode_ids": ["EP-positive", "EP-negative"],
+        "source_urls": ["https://example.test/source"],
+    }
