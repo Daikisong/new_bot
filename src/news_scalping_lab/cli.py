@@ -29,6 +29,7 @@ from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
@@ -302,6 +303,17 @@ def context_export_session_pack(
         )
         raise typer.Exit(code=1) from exc
     _echo({"session_pack": output.as_posix()})
+
+
+@context_app.command("export-analysis-bundle")
+def context_export_analysis_bundle(run_id: Annotated[str, typer.Option("--run-id")]) -> None:
+    settings = load_settings()
+    try:
+        output = export_analysis_bundle(settings, run_id=run_id)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo({"bundle": output.as_posix(), "run_id": run_id})
 
 
 @audit_app.command("hardcoding")

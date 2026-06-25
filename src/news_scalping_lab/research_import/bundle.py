@@ -16,6 +16,7 @@ REQUIRED_BUNDLE_BLOCKS = {
     "research_report.md",
     "blind_prediction.json",
     "research_episode.json",
+    "row_disposition.jsonl",
     "brain_delta.jsonl",
     "source_ledger.jsonl",
     "bundle_manifest.json",
@@ -47,6 +48,12 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "blind_prediction.json hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["row_disposition_hash_verified"]:
+        raise BundleImportError(
+            "row_disposition.jsonl hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation["source_ledger_hash_verified"]:
+        raise BundleImportError("source_ledger.jsonl hash does not match bundle_manifest.json")
     if "research_episode.json" not in parsed.json_blocks:
         raise BundleImportError("bundle is missing research_episode.json")
     try:
@@ -75,8 +82,10 @@ def parse_bundle(path: Path) -> BundleParseResult:
 
     json_blocks: dict[str, Any] = {}
     jsonl_blocks: dict[str, list[dict[str, Any]]] = {}
+    payload_blocks: dict[str, str] = {}
     for name, block in blocks.items():
         payload = _strip_optional_fence(block)
+        payload_blocks[name] = payload
         if name.endswith(".json"):
             json_blocks[name] = _parse_json(name, payload)
         elif name.endswith(".jsonl"):
@@ -88,6 +97,18 @@ def parse_bundle(path: Path) -> BundleParseResult:
         "json_valid": True,
         "jsonl_valid": True,
         "blind_hash_verified": _verify_blind_hash(json_blocks),
+        "row_disposition_hash_verified": _verify_payload_hash(
+            json_blocks,
+            payload_blocks,
+            block_name="row_disposition.jsonl",
+            manifest_field="row_disposition_sha256",
+        ),
+        "source_ledger_hash_verified": _verify_payload_hash(
+            json_blocks,
+            payload_blocks,
+            block_name="source_ledger.jsonl",
+            manifest_field="source_ledger_sha256",
+        ),
     }
     return BundleParseResult(
         blocks=blocks,
@@ -166,6 +187,13 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
 
 
 def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> None:
+    for index, row in enumerate(jsonl_blocks.get("row_disposition.jsonl", []), start=1):
+        if "row_number" not in row:
+            raise BundleImportError(f"row_disposition.jsonl:{index} missing row_number")
+        if "title" in row or "body" in row:
+            raise BundleImportError(
+                f"row_disposition.jsonl:{index} must not duplicate title/body"
+            )
     for index, row in enumerate(jsonl_blocks.get("brain_delta.jsonl", []), start=1):
         if "record_type" not in row:
             raise BundleImportError(f"brain_delta.jsonl:{index} missing record_type")
@@ -188,3 +216,20 @@ def _verify_blind_hash(json_blocks: dict[str, Any]) -> bool:
         return False
     candidate["blind_artifact_sha256"] = None
     return sha256_text(canonical_json(candidate)) == expected
+
+
+def _verify_payload_hash(
+    json_blocks: dict[str, Any],
+    payload_blocks: dict[str, str],
+    *,
+    block_name: str,
+    manifest_field: str,
+) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict):
+        return False
+    expected = manifest.get(manifest_field)
+    payload = payload_blocks.get(block_name)
+    if not isinstance(expected, str) or not expected or payload is None:
+        return False
+    return sha256_text(payload) == expected or sha256_text(f"{payload}\n") == expected

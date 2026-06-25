@@ -103,6 +103,17 @@ the export writes a blocked manifest and exits non-zero instead of producing an 
 If the token budget would omit currently available research episodes, the command also
 writes a blocked manifest and exits non-zero so coverage loss is not missed silently.
 
+## Analysis Bundle
+
+```bash
+nslab context export-analysis-bundle --run-id RUN-a5840d2def32
+```
+
+This writes a single Markdown bundle named `<YYYYMMDD>_nslab_episode_bundle.md`
+under `reports/`. The bundle contains the report, sealed blind prediction,
+research episode JSON, row disposition JSONL, brain delta JSONL, source ledger
+JSONL, and bundle manifest blocks with machine-verified hashes.
+
 ## Environment
 
 Copy `.env.example` to `.env` and set values as needed.
