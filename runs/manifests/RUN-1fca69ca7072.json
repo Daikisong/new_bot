@@ -1,11 +1,12 @@
 {
   "accepted_episode_count": 0,
+  "as_of": "2026-06-24T08:59:59+09:00",
   "blind_artifact_sha256": "3962660d3f4caa515ec31ef2e0089b244a98c4e18717df5fb37c970262d44d09",
   "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
   "blind_current_price_access_count": 0,
   "blind_price_repository_access_count": 0,
   "blind_seal_receipt_artifact": "runs/checkpoints/blind_seal/RUN-1fca69ca7072/blind_seal_receipt.json",
-  "blind_seal_receipt_sha256": "eb8e121756b32b1e0a588fad627092462184d1cebb9bdd5f5b7b816b88d27f76",
+  "blind_seal_receipt_sha256": "0f70b1203a86ee2b8f4234fdd7e816df0b2769419a334d4079b20ea704a6cde4",
   "blind_web_search_call_count": 40,
   "brain_file_hashes": {
     "runs/checkpoints/brain_context/RUN-1fca69ca7072/brain/00_world_model.md": "954271cbc3cfed3ac3b073427f02a2af761393d6393602bae8f175aeea81f63b",
@@ -39,7 +40,6 @@
   "continuation_analysis_status": "LIMITED_OR_UNAVAILABLE",
   "counterexample_episode_ids": [],
   "cutoff_at": "2026-06-24T08:59:59+09:00",
-  "as_of": "2026-06-24T08:59:59+09:00",
   "errors": [],
   "excluded_retrieved_episode_ids": [
     "EP-5d101eb64102"
@@ -55,7 +55,7 @@
   },
   "no_d_outcome_exposed": true,
   "phase_state_artifact": "runs/checkpoints/phase_state/RUN-1fca69ca7072/phase_state.json",
-  "phase_state_sha256": "23b2c16d28569aeb3decc107d2b218cbfe8e6469f5a2b1d08745978c0d3415d1",
+  "phase_state_sha256": "f703a3fca02ba479d66ff9175e889056d27816efdc887bd443c42f41797c4669",
   "price_snapshot": {
     "allowed_through": "2026-06-23",
     "as_of": "2026-06-24T08:59:59+09:00",
@@ -73,10 +73,10 @@
   ],
   "retrieved_episode_ids": [],
   "row_disposition_artifact": "runs/checkpoints/row_disposition/RUN-1fca69ca7072/row_disposition.jsonl",
-  "row_disposition_coverage_ratio": 1.0,
+  "row_disposition_coverage_ratio": 1,
   "row_disposition_sha256": "37322a156424acf5dc79a06b0436ac5c800b9041f0663419ed8b2339909e5124",
   "row_disposition_summary": {
-    "coverage_ratio": 1.0,
+    "coverage_ratio": 1,
     "excluded_after_cutoff": 0,
     "included_before_cutoff": 1182,
     "total_rows": 1182
@@ -87,7 +87,7 @@
   "shard_brain_files": [],
   "source_ledger_artifact": "runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl",
   "source_ledger_entry_count": 45,
-  "source_ledger_sha256": "a6c693dd94d8ab45193acbbbefd32acf8f1903cbb824a54ab20b9d6fb61ca6d2",
+  "source_ledger_sha256": "90e7102abd80119668f1a0db036aa6f30a3043d4fc80c1eea06ea9a3a011b519",
   "source_ledger_summary": {
     "blind_sources": 45,
     "outcome_sources": 0,
@@ -148,7 +148,7 @@
     "leader selection cases theme formation failures"
   ],
   "web_source_artifact": "runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl",
-  "web_source_sha256": "7c4d3ac7f2057e438192188be68142792bfc6892b065bd418458a4d92ede8c39",
+  "web_source_sha256": "fcf1c910be6e1e716207c3361f1a5ea39a5f9a3eeec7fad0770c912aaaa10dd6",
   "web_sources": [
     "WEB-025ff8a9129f",
     "WEB-0bd9804d0057",

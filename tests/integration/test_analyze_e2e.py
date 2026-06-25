@@ -524,6 +524,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         json.loads(line) for line in web_source_path.read_text(encoding="utf-8").splitlines()
     ]
     assert {row["source_id"] for row in web_source_rows} == set(saved_manifest["web_sources"])
+    assert all(row["source_url"] == row["url"] for row in web_source_rows)
     assert all(row["available_before_cutoff"] is True for row in web_source_rows)
     assert all(
         "cutoff-safe opened verification text" in row["opened_text_excerpt"]
@@ -541,6 +542,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert {row["source_id"] for row in candidate_check_rows} == set(
         saved_manifest["candidate_web_source_ids"]
     )
+    assert all(row["source_url"] == row["url"] for row in candidate_check_rows)
     assert {row["candidate_rank"] for row in candidate_check_rows} == {
         candidate.rank for candidate in analysis.blind_prediction.candidates
     }
@@ -555,6 +557,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert {row["source_id"] for row in excluded_web_source_rows} == set(
         saved_manifest["excluded_web_source_ids"]
     )
+    assert all(row["source_url"] == row["url"] for row in excluded_web_source_rows)
     assert saved_manifest["excluded_web_source_count"] == len(excluded_web_source_rows)
     assert all(
         row["exclusion_reason"] == "published_after_cutoff"
@@ -579,6 +582,9 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         saved_manifest["excluded_candidate_web_source_ids"]
     )
     assert all(
+        row["source_url"] == row["url"] for row in excluded_candidate_check_rows
+    )
+    assert all(
         row["exclusion_reason"] == "published_after_cutoff"
         for row in excluded_candidate_check_rows
     )
@@ -595,6 +601,7 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert {row["source_id"] for row in candidate_ledger_rows} == set(
         saved_manifest["candidate_web_source_ids"]
     )
+    assert all(row["source_url"] == row["url"] for row in candidate_ledger_rows)
     assert all(row["usage_phase"] == "BLIND" for row in candidate_ledger_rows)
     assert all(row["available_before_cutoff"] is True for row in candidate_ledger_rows)
     assert all("content" not in row for row in candidate_ledger_rows)

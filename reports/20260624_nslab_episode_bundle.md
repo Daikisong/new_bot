@@ -768,38 +768,483 @@ Excluded after-cutoff web source ids:
 <!-- NSLAB:BEGIN research_episode.json -->
 ```json
 {
-  "schema_version": "nslab.research_episode.v1",
-  "episode_id": "EP-f55ede4d9302",
-  "trade_date": "2026-06-24",
-  "cutoff_at": "2026-06-24T08:59:59+09:00",
-  "created_at": "2026-06-25T10:35:17.256450+09:00",
-  "execution_protocol_version": "nslab.research_prompt.v5",
-  "research_version": "analysis-bundle.v1",
-  "input_news_files": [
-    "runs/checkpoints/source_ledger/RUN-a5840d2def32/source_ledger.jsonl"
-  ],
-  "input_news_hashes": [
-    "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
-    "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d"
-  ],
-  "input_audit": {
-    "row_disposition_coverage_ratio": 1.0,
-    "source_ledger_entry_count": 5
-  },
-  "row_disposition_summary": {
-    "coverage_ratio": 1.0,
-    "excluded_after_cutoff": 0,
-    "included_before_cutoff": 1182,
-    "total_rows": 1182
-  },
-  "blind_integrity": {
-    "blind_context_mode": "NEWS_ONLY_STRICT",
-    "blind_web_search_call_count": 0,
-    "blind_price_repository_access_count": 0,
-    "blind_current_price_access_count": 0,
-    "no_d_outcome_exposed": true
+  "available_from": "2026-06-25T00:00:00+09:00",
+  "blind_analysis": {
+    "excluded_after_cutoff_source_ids": [],
+    "initial_uncertainties": [
+      "ticker verification",
+      "cutoff-safe web evidence",
+      "D-1 price absorption",
+      "Mock red-team review retained the candidate and passed objections forward."
+    ],
+    "open_world_mechanisms": [
+      "broad catalyst -> direct beneficiary check -> indirect capacity path",
+      "current evidence -> market narrative expansion -> leader selection uncertainty",
+      "first-order company event -> balance-sheet or contract relevance -> red-team review"
+    ],
+    "provenance": [
+      {
+        "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
+        "observed_at": "2026-06-25T10:35:17.249236+09:00",
+        "source_id": "SRC-2740221474b3",
+        "source_type": "daily_blind_analysis_blind_analysis",
+        "uri": "prompt://daily_blind_analysis/ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c"
+      },
+      {
+        "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+        "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
+        "observed_at": "2026-06-25T10:35:17.256297+09:00",
+        "source_id": "SRC-2146402dff3b",
+        "source_type": "final_synthesis_blind_analysis",
+        "uri": "prompt://final_synthesis/f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046"
+      }
+    ],
+    "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data."
   },
   "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
+  "blind_integrity": {
+    "blind_context_mode": "NEWS_ONLY_STRICT",
+    "blind_current_price_access_count": 0,
+    "blind_price_repository_access_count": 0,
+    "blind_web_search_call_count": 0,
+    "no_d_outcome_exposed": true
+  },
+  "blind_predictions": [
+    {
+      "causal_chain": [
+        "news event observed before cutoff",
+        "direct entity relevance investigated",
+        "counterarguments retained for final synthesis"
+      ],
+      "company_name": "넥스턴앤롤코리아",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "direct_evidence": [
+        "current-news mention: 넥스턴앤롤코리아"
+      ],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "mock provider requests web and memory verification"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-dffe72ae359c",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/1"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-3b48ce471d26",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/1"
+        }
+      ],
+      "rank": 1,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "ticker": "UNKNOWN",
+      "why_now": "The entity appears in the current pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "news event observed before cutoff",
+        "direct entity relevance investigated",
+        "counterarguments retained for final synthesis"
+      ],
+      "company_name": "꼭승리한다홍명보호",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "direct_evidence": [
+        "current-news mention: 꼭승리한다홍명보호"
+      ],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "mock provider requests web and memory verification"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-c552c77a3d57",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/2"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-16028ff1580c",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/2"
+        }
+      ],
+      "rank": 2,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "ticker": "UNKNOWN",
+      "why_now": "The entity appears in the current pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "news event observed before cutoff",
+        "direct entity relevance investigated",
+        "counterarguments retained for final synthesis"
+      ],
+      "company_name": "제노코",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "direct_evidence": [
+        "current-news mention: 제노코"
+      ],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "mock provider requests web and memory verification"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-8e1050ca2ddc",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/3"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-48492edcd33f",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/3"
+        }
+      ],
+      "rank": 3,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "ticker": "UNKNOWN",
+      "why_now": "The entity appears in the current pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "news event observed before cutoff",
+        "direct entity relevance investigated",
+        "counterarguments retained for final synthesis"
+      ],
+      "company_name": "삼성",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "direct_evidence": [
+        "current-news mention: 삼성"
+      ],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "mock provider requests web and memory verification"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-7ddb30a5f464",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/4"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-1fa0389c8ecb",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/4"
+        }
+      ],
+      "rank": 4,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "ticker": "UNKNOWN",
+      "why_now": "The entity appears in the current pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "news event observed before cutoff",
+        "direct entity relevance investigated",
+        "counterarguments retained for final synthesis"
+      ],
+      "company_name": "오창테크노폴리스",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "direct_evidence": [
+        "current-news mention: 오창테크노폴리스"
+      ],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "mock provider requests web and memory verification"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
+      "path_type": "SINGLE_EVENT",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-b5c6524cdf25",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/5"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-885a52688c06",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/5"
+        }
+      ],
+      "rank": 5,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
+      "ticker": "UNKNOWN",
+      "why_now": "The entity appears in the current pre-cutoff news batch."
+    },
+    {
+      "causal_chain": [
+        "current catalyst",
+        "beneficiary path discovery",
+        "company verification"
+      ],
+      "company_name": "BENEFICIARY_DISCOVERY_REQUIRED",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "theme breadth may fail",
+        "indirect relation may be too weak",
+        "ticker or listing status is unverified",
+        "direct evidence is weak or absent",
+        "candidate depends on indirect path reasoning"
+      ],
+      "direct_evidence": [],
+      "disconfirming_conditions": [
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37",
+        "EVT-7f6b254c941c",
+        "EVT-0b438e8c2304"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "broad catalyst -> direct beneficiary check -> indirect capacity path",
+        "current evidence -> market narrative expansion -> leader selection uncertainty"
+      ],
+      "market_memory_evidence": [],
+      "memory_episode_ids": [],
+      "novel_reasoning": "A new beneficiary can be investigated even when memory has no exact precedent.",
+      "path_type": "THEME_BENEFICIARY",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-e2faa96c1c18",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/6"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-57b3f416b908",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/6"
+        }
+      ],
+      "rank": 6,
+      "source_urls": [
+        "news://EVT-2120a5a8de37"
+      ],
+      "thesis": "Policy, industry, or supply-chain beneficiaries require web/company discovery.",
+      "ticker": "UNKNOWN",
+      "why_now": "Open-world mechanisms indicate indirect paths before any retrieval gate."
+    },
+    {
+      "causal_chain": [
+        "D-1 market memory",
+        "current catalyst overlap",
+        "continuation red-team"
+      ],
+      "company_name": "D_MINUS_ONE_LEADER_REVIEW",
+      "confidence_label": "speculative",
+      "counterarguments": [
+        "already exhausted",
+        "no current catalyst overlap",
+        "ticker or listing status is unverified",
+        "direct evidence is weak or absent",
+        "candidate depends on indirect path reasoning"
+      ],
+      "direct_evidence": [],
+      "disconfirming_conditions": [
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "event_ids": [
+        "EVT-2120a5a8de37"
+      ],
+      "evidence_quality": "low",
+      "inferred_evidence": [
+        "requires blind-safe price provider"
+      ],
+      "market_memory_evidence": [
+        "D-day prices are blocked during blind analysis"
+      ],
+      "memory_episode_ids": [],
+      "novel_reasoning": "",
+      "path_type": "CONTINUATION",
+      "prior_negative_cases": [],
+      "prior_positive_cases": [],
+      "provenance": [
+        {
+          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.249236+09:00",
+          "source_id": "SRC-45ef85b42d8c",
+          "source_type": "daily_blind_analysis_candidate",
+          "uri": "candidate://daily_blind_analysis/2026-06-24/7"
+        },
+        {
+          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+          "excerpt": "EVT-2120a5a8de37",
+          "observed_at": "2026-06-25T10:35:17.256297+09:00",
+          "source_id": "SRC-4c5f7c2ca565",
+          "source_type": "final_synthesis_candidate",
+          "uri": "candidate://final_synthesis/2026-06-24/7"
+        }
+      ],
+      "rank": 7,
+      "source_urls": [
+        "price://blind-safe-d-minus-one"
+      ],
+      "thesis": "Recent leaders must be checked using only D-1 and earlier market data.",
+      "ticker": "UNKNOWN",
+      "why_now": "Continuation is evaluated separately from current-news directness."
+    }
+  ],
   "blind_seal_receipt": {
     "blind_artifact_sha256": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
     "blind_context_mode": "NEWS_ONLY_STRICT",
@@ -808,12 +1253,12 @@ Excluded after-cutoff web source ids:
     "no_d_outcome_exposed": true,
     "phase": "BLIND_SEALED",
     "prediction_id": "PRED-3bea3cbc9954",
-    "row_disposition_coverage_ratio": 1.0,
+    "row_disposition_coverage_ratio": 1,
     "row_disposition_sha256": "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
     "run_id": "RUN-a5840d2def32",
     "schema_version": "nslab.blind_seal_receipt.v1",
     "sealed_at": "2026-06-25T10:35:17.257228+09:00",
-    "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
+    "source_ledger_sha256": "b803a6a502b96ecf0ec7a777d2f36eb67cd803322f282193c469ae057e12df47",
     "trade_date": "2026-06-24",
     "validation": {
       "blind_current_price_access_count": 0,
@@ -822,6 +1267,40 @@ Excluded after-cutoff web source ids:
       "canonical_blind_hash_verified": true
     }
   },
+  "counterexamples": [],
+  "created_at": "2026-06-25T10:35:17.256450+09:00",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "eligibility_matrix": {
+    "brain_eligible": false,
+    "direct_supervised_cases_eligible": false,
+    "forecast_evaluation_eligible": false,
+    "leader_pair_training_eligible": false,
+    "reasons": {
+      "outcome": "postmortem outcome evaluation has not been run for this bundle"
+    },
+    "retrospective_memory_eligible": false,
+    "theme_supervised_cases_eligible": false
+  },
+  "episode_id": "EP-f55ede4d9302",
+  "event_ticker_edges": [],
+  "execution_protocol_version": "nslab.research_prompt.v5",
+  "input_audit": {
+    "row_disposition_coverage_ratio": 1,
+    "source_ledger_entry_count": 5
+  },
+  "input_news_files": [
+    "runs/checkpoints/source_ledger/RUN-a5840d2def32/source_ledger.jsonl"
+  ],
+  "input_news_hashes": [
+    "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
+    "b803a6a502b96ecf0ec7a777d2f36eb67cd803322f282193c469ae057e12df47"
+  ],
+  "lessons": [],
+  "misses": [],
+  "observed_events": [],
+  "outcome_coverage_status": "NOT_RUN",
+  "outcome_labels": {},
+  "postmortem": null,
   "price_source_snapshot": {
     "allowed_through": "2026-06-23",
     "as_of": null,
@@ -829,504 +1308,25 @@ Excluded after-cutoff web source ids:
     "source_name": "mock-price",
     "source_ref": null
   },
-  "blind_analysis": {
-    "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data.",
-    "open_world_mechanisms": [
-      "broad catalyst -> direct beneficiary check -> indirect capacity path",
-      "current evidence -> market narrative expansion -> leader selection uncertainty",
-      "first-order company event -> balance-sheet or contract relevance -> red-team review"
-    ],
-    "initial_uncertainties": [
-      "ticker verification",
-      "cutoff-safe web evidence",
-      "D-1 price absorption",
-      "Mock red-team review retained the candidate and passed objections forward."
-    ],
-    "excluded_after_cutoff_source_ids": [],
-    "provenance": [
-      {
-        "source_id": "SRC-2740221474b3",
-        "source_type": "daily_blind_analysis_blind_analysis",
-        "uri": "prompt://daily_blind_analysis/ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-        "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-        "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:35:17.249236+09:00"
-      },
-      {
-        "source_id": "SRC-2146402dff3b",
-        "source_type": "final_synthesis_blind_analysis",
-        "uri": "prompt://final_synthesis/f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-        "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-        "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304; EVT-7f4d06a5dcb9; EVT-9fa6cbb2e995",
-        "observed_at": "2026-06-25T10:35:17.256297+09:00"
-      }
-    ]
-  },
-  "blind_predictions": [
-    {
-      "rank": 1,
-      "ticker": "UNKNOWN",
-      "company_name": "넥스턴앤롤코리아",
-      "path_type": "SINGLE_EVENT",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "why_now": "The entity appears in the current pre-cutoff news batch.",
-      "causal_chain": [
-        "news event observed before cutoff",
-        "direct entity relevance investigated",
-        "counterarguments retained for final synthesis"
-      ],
-      "direct_evidence": [
-        "current-news mention: 넥스턴앤롤코리아"
-      ],
-      "inferred_evidence": [
-        "mock provider requests web and memory verification"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
-      "counterarguments": [
-        "listing status may be unverified",
-        "event may be stale or economically indirect",
-        "ticker or listing status is unverified"
-      ],
-      "disconfirming_conditions": [
-        "not listed",
-        "cutoff-after source only",
-        "D-1 price action already fully reflected the event",
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-dffe72ae359c",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/1",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-3b48ce471d26",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/1",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 2,
-      "ticker": "UNKNOWN",
-      "company_name": "꼭승리한다홍명보호",
-      "path_type": "SINGLE_EVENT",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "why_now": "The entity appears in the current pre-cutoff news batch.",
-      "causal_chain": [
-        "news event observed before cutoff",
-        "direct entity relevance investigated",
-        "counterarguments retained for final synthesis"
-      ],
-      "direct_evidence": [
-        "current-news mention: 꼭승리한다홍명보호"
-      ],
-      "inferred_evidence": [
-        "mock provider requests web and memory verification"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
-      "counterarguments": [
-        "listing status may be unverified",
-        "event may be stale or economically indirect",
-        "ticker or listing status is unverified"
-      ],
-      "disconfirming_conditions": [
-        "not listed",
-        "cutoff-after source only",
-        "D-1 price action already fully reflected the event",
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-c552c77a3d57",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/2",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-16028ff1580c",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/2",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 3,
-      "ticker": "UNKNOWN",
-      "company_name": "제노코",
-      "path_type": "SINGLE_EVENT",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "why_now": "The entity appears in the current pre-cutoff news batch.",
-      "causal_chain": [
-        "news event observed before cutoff",
-        "direct entity relevance investigated",
-        "counterarguments retained for final synthesis"
-      ],
-      "direct_evidence": [
-        "current-news mention: 제노코"
-      ],
-      "inferred_evidence": [
-        "mock provider requests web and memory verification"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
-      "counterarguments": [
-        "listing status may be unverified",
-        "event may be stale or economically indirect",
-        "ticker or listing status is unverified"
-      ],
-      "disconfirming_conditions": [
-        "not listed",
-        "cutoff-after source only",
-        "D-1 price action already fully reflected the event",
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-8e1050ca2ddc",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/3",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-48492edcd33f",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/3",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 4,
-      "ticker": "UNKNOWN",
-      "company_name": "삼성",
-      "path_type": "SINGLE_EVENT",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "why_now": "The entity appears in the current pre-cutoff news batch.",
-      "causal_chain": [
-        "news event observed before cutoff",
-        "direct entity relevance investigated",
-        "counterarguments retained for final synthesis"
-      ],
-      "direct_evidence": [
-        "current-news mention: 삼성"
-      ],
-      "inferred_evidence": [
-        "mock provider requests web and memory verification"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
-      "counterarguments": [
-        "listing status may be unverified",
-        "event may be stale or economically indirect",
-        "ticker or listing status is unverified"
-      ],
-      "disconfirming_conditions": [
-        "not listed",
-        "cutoff-after source only",
-        "D-1 price action already fully reflected the event",
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-7ddb30a5f464",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/4",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-1fa0389c8ecb",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/4",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 5,
-      "ticker": "UNKNOWN",
-      "company_name": "오창테크노폴리스",
-      "path_type": "SINGLE_EVENT",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Directly mentioned entity requires verification of listing status, economic ownership, novelty, and D-1 market absorption.",
-      "why_now": "The entity appears in the current pre-cutoff news batch.",
-      "causal_chain": [
-        "news event observed before cutoff",
-        "direct entity relevance investigated",
-        "counterarguments retained for final synthesis"
-      ],
-      "direct_evidence": [
-        "current-news mention: 오창테크노폴리스"
-      ],
-      "inferred_evidence": [
-        "mock provider requests web and memory verification"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
-      "counterarguments": [
-        "listing status may be unverified",
-        "event may be stale or economically indirect",
-        "ticker or listing status is unverified"
-      ],
-      "disconfirming_conditions": [
-        "not listed",
-        "cutoff-after source only",
-        "D-1 price action already fully reflected the event",
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-b5c6524cdf25",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/5",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-885a52688c06",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/5",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 6,
-      "ticker": "UNKNOWN",
-      "company_name": "BENEFICIARY_DISCOVERY_REQUIRED",
-      "path_type": "THEME_BENEFICIARY",
-      "event_ids": [
-        "EVT-2120a5a8de37",
-        "EVT-7f6b254c941c",
-        "EVT-0b438e8c2304"
-      ],
-      "thesis": "Policy, industry, or supply-chain beneficiaries require web/company discovery.",
-      "why_now": "Open-world mechanisms indicate indirect paths before any retrieval gate.",
-      "causal_chain": [
-        "current catalyst",
-        "beneficiary path discovery",
-        "company verification"
-      ],
-      "direct_evidence": [],
-      "inferred_evidence": [
-        "broad catalyst -> direct beneficiary check -> indirect capacity path",
-        "current evidence -> market narrative expansion -> leader selection uncertainty"
-      ],
-      "market_memory_evidence": [],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "A new beneficiary can be investigated even when memory has no exact precedent.",
-      "counterarguments": [
-        "theme breadth may fail",
-        "indirect relation may be too weak",
-        "ticker or listing status is unverified",
-        "direct evidence is weak or absent",
-        "candidate depends on indirect path reasoning"
-      ],
-      "disconfirming_conditions": [
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "news://EVT-2120a5a8de37"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-e2faa96c1c18",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/6",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-57b3f416b908",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/6",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37; EVT-7f6b254c941c; EVT-0b438e8c2304",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    },
-    {
-      "rank": 7,
-      "ticker": "UNKNOWN",
-      "company_name": "D_MINUS_ONE_LEADER_REVIEW",
-      "path_type": "CONTINUATION",
-      "event_ids": [
-        "EVT-2120a5a8de37"
-      ],
-      "thesis": "Recent leaders must be checked using only D-1 and earlier market data.",
-      "why_now": "Continuation is evaluated separately from current-news directness.",
-      "causal_chain": [
-        "D-1 market memory",
-        "current catalyst overlap",
-        "continuation red-team"
-      ],
-      "direct_evidence": [],
-      "inferred_evidence": [
-        "requires blind-safe price provider"
-      ],
-      "market_memory_evidence": [
-        "D-day prices are blocked during blind analysis"
-      ],
-      "prior_positive_cases": [],
-      "prior_negative_cases": [],
-      "novel_reasoning": "",
-      "counterarguments": [
-        "already exhausted",
-        "no current catalyst overlap",
-        "ticker or listing status is unverified",
-        "direct evidence is weak or absent",
-        "candidate depends on indirect path reasoning"
-      ],
-      "disconfirming_conditions": [
-        "only cutoff-after evidence is available",
-        "D-1 and earlier market action already reflected the catalyst"
-      ],
-      "confidence_label": "speculative",
-      "evidence_quality": "low",
-      "source_urls": [
-        "price://blind-safe-d-minus-one"
-      ],
-      "memory_episode_ids": [],
-      "provenance": [
-        {
-          "source_id": "SRC-45ef85b42d8c",
-          "source_type": "daily_blind_analysis_candidate",
-          "uri": "candidate://daily_blind_analysis/2026-06-24/7",
-          "content_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.249236+09:00"
-        },
-        {
-          "source_id": "SRC-4c5f7c2ca565",
-          "source_type": "final_synthesis_candidate",
-          "uri": "candidate://final_synthesis/2026-06-24/7",
-          "content_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
-          "excerpt": "EVT-2120a5a8de37",
-          "observed_at": "2026-06-25T10:35:17.256297+09:00"
-        }
-      ]
-    }
-  ],
-  "outcome_labels": {},
-  "postmortem": null,
-  "observed_events": [],
-  "event_ticker_edges": [],
-  "lessons": [],
-  "counterexamples": [],
-  "misses": [],
-  "eligibility_matrix": {
-    "forecast_evaluation_eligible": false,
-    "direct_supervised_cases_eligible": false,
-    "theme_supervised_cases_eligible": false,
-    "leader_pair_training_eligible": false,
-    "retrospective_memory_eligible": false,
-    "brain_eligible": false,
-    "reasons": {
-      "outcome": "postmortem outcome evaluation has not been run for this bundle"
-    }
-  },
-  "outcome_coverage_status": "NOT_RUN",
   "provenance": [
     {
-      "source_id": "SRC-5be92bc3ab3e",
-      "source_type": "blind_prediction_json",
-      "uri": "C:/Users/eorb9/projects/news_bot/predictions/2026-06-24.json",
       "content_sha256": "d89af5315c670c5290740a4696ce964d79be3b9be8cc16cec664cd879d08392a",
       "excerpt": null,
-      "observed_at": "2026-06-25T10:35:17.257228+09:00"
+      "observed_at": "2026-06-25T10:35:17.257228+09:00",
+      "source_id": "SRC-5be92bc3ab3e",
+      "source_type": "blind_prediction_json",
+      "uri": "C:/Users/eorb9/projects/news_bot/predictions/2026-06-24.json"
     }
   ],
-  "available_from": "2026-06-25T00:00:00+09:00"
+  "research_version": "analysis-bundle.v1",
+  "row_disposition_summary": {
+    "coverage_ratio": 1,
+    "excluded_after_cutoff": 0,
+    "included_before_cutoff": 1182,
+    "total_rows": 1182
+  },
+  "schema_version": "nslab.research_episode.v1",
+  "trade_date": "2026-06-24"
 }
 ```
 <!-- NSLAB:END research_episode.json -->
@@ -2526,18 +2526,18 @@ Excluded after-cutoff web source ids:
 
 <!-- NSLAB:BEGIN source_ledger.jsonl -->
 ```jsonl
-{"available_before_cutoff":true,"content_sha256":"03265fdb56fc9592fc8a67a77bfbc68c34cc8e85ea3e58d785434e0879a3e30c","event_ids":["EVT-2120a5a8de37"],"input_row_ids":[1],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:44+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-a5fdc92cbc69","source_type":"news_csv_row","time_verified":true,"title":"넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=1","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"dc3901f5707f270c0fc87fb76ec8c2135eea9192145df00994255db491647ebe","event_ids":["EVT-7f6b254c941c"],"input_row_ids":[2],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:43+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-fcafef4a8655","source_type":"news_csv_row","time_verified":true,"title":"“꼭 승리한다”…홍명보호, 남아공전에 32강 진출 명운 건다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=2","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"48b9480daeebbbccdea864a13e84d51b6243f260eb0887c02edff458ff141e15","event_ids":["EVT-0b438e8c2304"],"input_row_ids":[3],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-c9d2c3828d20","source_type":"news_csv_row","time_verified":true,"title":"제노코, 허성재 CTO 장내매수…KAI 시너지·기업가치 제고","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=3","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"0226760cf5897c358ab0400a70d8d5e274984b0aa8114d0d99bf4e0169145be3","event_ids":["EVT-7f4d06a5dcb9"],"input_row_ids":[4],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-195e894e5caf","source_type":"news_csv_row","time_verified":true,"title":"삼성 KODEX 글로벌비만치료제TOP2 Plus증권상장지수투자신탁[주식] ETF 괴리율 초과 발생","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=4","usage_phase":"BLIND"}
-{"available_before_cutoff":true,"content_sha256":"fae36db6a65b41aedcbeea1e2bf4bc7e68acae010ff341c07f50bcce021f107e","event_ids":["EVT-9fa6cbb2e995"],"input_row_ids":[5],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:34+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-3227c1e28c9c","source_type":"news_csv_row","time_verified":true,"title":"오창테크노폴리스 2공구 부분 준공…청주 '첨단산업 벨트' 속도 낸다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=5","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"03265fdb56fc9592fc8a67a77bfbc68c34cc8e85ea3e58d785434e0879a3e30c","event_ids":["EVT-2120a5a8de37"],"input_row_ids":[1],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:44+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-a5fdc92cbc69","source_type":"news_csv_row","source_url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=1","time_verified":true,"title":"넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=1","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"dc3901f5707f270c0fc87fb76ec8c2135eea9192145df00994255db491647ebe","event_ids":["EVT-7f6b254c941c"],"input_row_ids":[2],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:43+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-fcafef4a8655","source_type":"news_csv_row","source_url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=2","time_verified":true,"title":"“꼭 승리한다”…홍명보호, 남아공전에 32강 진출 명운 건다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=2","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"48b9480daeebbbccdea864a13e84d51b6243f260eb0887c02edff458ff141e15","event_ids":["EVT-0b438e8c2304"],"input_row_ids":[3],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-c9d2c3828d20","source_type":"news_csv_row","source_url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=3","time_verified":true,"title":"제노코, 허성재 CTO 장내매수…KAI 시너지·기업가치 제고","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=3","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"0226760cf5897c358ab0400a70d8d5e274984b0aa8114d0d99bf4e0169145be3","event_ids":["EVT-7f4d06a5dcb9"],"input_row_ids":[4],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:41+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-195e894e5caf","source_type":"news_csv_row","source_url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=4","time_verified":true,"title":"삼성 KODEX 글로벌비만치료제TOP2 Plus증권상장지수투자신탁[주식] ETF 괴리율 초과 발생","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=4","usage_phase":"BLIND"}
+{"available_before_cutoff":true,"content_sha256":"fae36db6a65b41aedcbeea1e2bf4bc7e68acae010ff341c07f50bcce021f107e","event_ids":["EVT-9fa6cbb2e995"],"input_row_ids":[5],"notes":"NEWS_ONLY_STRICT blind source; full body remains in the input CSV and is not duplicated in source_ledger.","published_at":"2026-06-24T08:58:34+09:00","publisher":null,"retrieved_at":"2026-06-25T10:35:17.256636+09:00","run_id":"RUN-a5840d2def32","schema_version":"nslab.source_ledger.v1","source_id":"SRC-3227c1e28c9c","source_type":"news_csv_row","source_url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=5","time_verified":true,"title":"오창테크노폴리스 2공구 부분 준공…청주 '첨단산업 벨트' 속도 낸다","url":"C:/Users/eorb9/projects/news_bot/docs/csv/news_20260624.csv#row=5","usage_phase":"BLIND"}
 ```
 <!-- NSLAB:END source_ledger.jsonl -->
 
 <!-- NSLAB:BEGIN phase_state.json -->
 ```json
 {
-  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
+  "blind_seal_receipt_sha256": "25dc72d41018ac9d739da189a102e2f48449f34e42ab7a8154f566ac6e6aa7fc",
   "completed_phases": [
     "PHASE_A_NEWS_ONLY_BLIND"
   ],
@@ -2559,7 +2559,7 @@ Excluded after-cutoff web source ids:
   "blind_current_price_access_count": 0,
   "blind_hash_recomputed": "28b6333f15f1141ac35530dbc5072f7e90a558bbf55678f7019cf0c07de25507",
   "blind_price_repository_access_count": 0,
-  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
+  "blind_seal_receipt_sha256": "25dc72d41018ac9d739da189a102e2f48449f34e42ab7a8154f566ac6e6aa7fc",
   "blind_web_search_call_count": 0,
   "brain_delta_sha256": "7a2e3b942ea6798f95f09eddcff9623105b7db08cba3350336fdd0d68181966f",
   "bundle_incomplete": true,
@@ -2585,16 +2585,16 @@ Excluded after-cutoff web source ids:
   },
   "outcome_coverage_status": "NOT_RUN",
   "outcome_slice_sha256": null,
-  "phase_state_sha256": "293fab64c341ed16767e9fa76d598007216a52040f0904d9c0bce6d0c501d788",
+  "phase_state_sha256": "49ce217b275ea03e78293a176b72f2b5d5c1b48ed1f0d554cfcd5d7d198e6cdd",
   "prediction_sha256": "d89af5315c670c5290740a4696ce964d79be3b9be8cc16cec664cd879d08392a",
-  "research_episode_sha256": "e85224df4177b7bf23612e77f1cb607bee9f0bec43da61a0088d33ca9193fec2",
+  "research_episode_sha256": "f8560ca116b085def17db753515a157359e62c92f88b1f2cffb2e7364da3288c",
   "research_report_sha256": "dfd2f21cf21c8ccd818fbe0e544a1c20ea30b97fbf7a40b5f15dc17626f33f63",
-  "row_disposition_coverage_ratio": 1.0,
+  "row_disposition_coverage_ratio": 1,
   "row_disposition_sha256": "8266b210e1ffa37b065c9724962ca6b76c305981a4ccbb90fc9ab4fe682a3c0c",
   "run_id": "RUN-a5840d2def32",
   "schema_version": "nslab.bundle_manifest.v1",
   "source_ledger_entry_count": 5,
-  "source_ledger_sha256": "fad43e7d5d5ce172fc5f7a82293dc67b40092cf7e360a219417756dc6205ee2d",
+  "source_ledger_sha256": "b803a6a502b96ecf0ec7a777d2f36eb67cd803322f282193c469ae057e12df47",
   "trade_date": "2026-06-24",
   "validation": {
     "blind_execution_guard_verified": true,

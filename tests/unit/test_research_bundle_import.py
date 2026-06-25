@@ -121,6 +121,12 @@ def _bundle_text(
             }
         ]
     )
+    source_payload_rows = [
+        {**row, "source_url": row["url"]}
+        if "url" in row and "source_url" not in row
+        else row
+        for row in source_payload_rows
+    ]
     source_jsonl = "\n".join(
         json.dumps(row, ensure_ascii=False)
         for row in source_payload_rows
@@ -544,6 +550,38 @@ def test_bundle_source_ledger_rejects_missing_required_fields(tmp_path) -> None:
         parse_bundle(source)
 
 
+def test_bundle_source_ledger_rejects_source_url_mismatch(tmp_path) -> None:
+    source = tmp_path / "bad_source_url_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            source_rows=[
+                {
+                    "source_id": "SRC-1",
+                    "source_type": "news_csv_row",
+                    "title": "source title",
+                    "publisher": None,
+                    "url": "file://news.csv#row=1",
+                    "source_url": "file://news.csv#row=2",
+                    "published_at": "2030-01-10T08:00:00+09:00",
+                    "retrieved_at": "2030-01-10T08:00:01+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "usage_phase": "BLIND",
+                    "input_row_ids": [1],
+                    "event_ids": ["EVT-1"],
+                    "content_sha256": "abc",
+                    "notes": "test source",
+                }
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BundleImportError, match="source_ledger.jsonl:1 source_url mismatch"):
+        parse_bundle(source)
+
+
 def test_bundle_source_ledger_rejects_raw_body_duplication(tmp_path) -> None:
     source = tmp_path / "duplicated_source_body_bundle.md"
     source.write_text(
@@ -588,6 +626,7 @@ def test_bundle_candidate_web_checks_reject_opened_text_duplication(tmp_path) ->
             "query": "candidate verification",
             "title": "candidate source",
             "url": "https://example.test/candidate",
+            "source_url": "https://example.test/candidate",
             "published_at": "2030-01-10T08:30:00+09:00",
             "retrieved_at": "2030-01-10T08:31:00+09:00",
             "cutoff_at": "2030-01-10T08:59:59+09:00",

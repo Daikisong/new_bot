@@ -1,5 +1,5 @@
 {
-  "blind_seal_receipt_sha256": "f70e48f923750a53a990f0a36af845036d9ae491f546e71ce41599b78e0606df",
+  "blind_seal_receipt_sha256": "25dc72d41018ac9d739da189a102e2f48449f34e42ab7a8154f566ac6e6aa7fc",
   "completed_phases": [
     "PHASE_A_NEWS_ONLY_BLIND"
   ],

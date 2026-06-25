@@ -1356,6 +1356,7 @@ def test_lookahead_audit_flags_cutoff_safe_web_blind_artifact_leaks(
                 "query": "future leak",
                 "title": "future source",
                 "url": "https://example.test/future",
+                "source_url": "https://example.test/future",
                 "snippet": "future",
                 "published_at": "2030-01-10T09:30:00+09:00",
                 "retrieved_at": "2030-01-10T09:31:00+09:00",
@@ -1419,6 +1420,7 @@ def test_lookahead_audit_checks_excluded_web_source_artifact(tmp_path: Path) -> 
                 "query": "verification query",
                 "title": "excluded source",
                 "url": "https://example.test/excluded",
+                "source_url": "https://example.test/excluded",
                 "snippet": "excluded",
                 "published_at": "2030-01-10T08:30:00+09:00",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
@@ -1483,6 +1485,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "query": "candidate verification",
                 "title": "future source",
                 "url": "https://example.test/future",
+                "source_url": "https://example.test/future",
                 "snippet": "future",
                 "published_at": "2030-01-10T09:30:00+09:00",
                 "retrieved_at": "2030-01-10T09:31:00+09:00",
@@ -1510,6 +1513,7 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
                 "query": "candidate verification",
                 "title": "excluded source",
                 "url": "https://example.test/excluded",
+                "source_url": "https://example.test/excluded",
                 "snippet": "excluded",
                 "published_at": "2030-01-10T08:30:00+09:00",
                 "retrieved_at": "2030-01-10T08:31:00+09:00",
@@ -1680,6 +1684,7 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
                 "title": "source one",
                 "publisher": None,
                 "url": "news://one",
+                "source_url": "news://mismatch",
                 "published_at": "2030-01-10T09:30:00+09:00",
                 "retrieved_at": "2030-01-10T10:00:00+09:00",
                 "time_verified": True,
@@ -1719,6 +1724,7 @@ def test_lookahead_audit_flags_invalid_source_ledger_artifact(tmp_path: Path) ->
     assert isinstance(findings, list)
     assert "RUN-ledger.json: source_ledger_sha256 mismatch" in findings
     assert "RUN-ledger.json: source_ledger:1 must not duplicate body/content" in findings
+    assert "RUN-ledger.json: source_ledger:1 source_url mismatch" in findings
     assert "RUN-ledger.json: source_ledger:1 BLIND source after cutoff" in findings
     assert any(
         finding.startswith("RUN-ledger.json: source_ledger:2 missing fields:")

@@ -29,6 +29,7 @@ SOURCE_LEDGER_REQUIRED_FIELDS = {
     "title",
     "publisher",
     "url",
+    "source_url",
     "published_at",
     "retrieved_at",
     "time_verified",
@@ -50,6 +51,7 @@ CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
     "query",
     "title",
     "url",
+    "source_url",
     "published_at",
     "retrieved_at",
     "cutoff_at",
@@ -68,6 +70,7 @@ EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
     "query",
     "title",
     "url",
+    "source_url",
     "published_at",
     "retrieved_at",
     "cutoff_at",
@@ -371,6 +374,7 @@ def _validate_jsonl_contracts(jsonl_blocks: dict[str, list[dict[str, Any]]]) -> 
             raise BundleImportError(
                 f"source_ledger.jsonl:{index} must not duplicate body/content"
             )
+        _validate_source_url(block_name="source_ledger.jsonl", index=index, row=row)
         source_id = row.get("source_id")
         if not isinstance(source_id, str) or not source_id:
             raise BundleImportError(f"source_ledger.jsonl:{index} invalid source_id")
@@ -604,6 +608,7 @@ def _validate_candidate_web_check_row(
         raise BundleImportError(
             f"{block_name}:{index} missing fields: {', '.join(missing)}"
         )
+    _validate_source_url(block_name=block_name, index=index, row=row)
     if row.get("schema_version") != expected_schema_version:
         raise BundleImportError(f"{block_name}:{index} invalid schema_version")
     if "opened_text" in row or "body" in row or "content" in row:
@@ -614,6 +619,15 @@ def _validate_candidate_web_check_row(
         raise BundleImportError(f"{block_name}:{index} invalid source_id")
     if not isinstance(row.get("candidate_rank"), int):
         raise BundleImportError(f"{block_name}:{index} invalid candidate_rank")
+
+
+def _validate_source_url(*, block_name: str, index: int, row: dict[str, Any]) -> None:
+    source_url = row.get("source_url")
+    if not isinstance(source_url, str) or not source_url:
+        raise BundleImportError(f"{block_name}:{index} invalid source_url")
+    url = row.get("url")
+    if isinstance(url, str) and url and source_url != url:
+        raise BundleImportError(f"{block_name}:{index} source_url mismatch")
 
 
 def _verify_canonical_json_hash(

@@ -571,6 +571,7 @@ def _check_source_ledger(
         "title",
         "publisher",
         "url",
+        "source_url",
         "published_at",
         "retrieved_at",
         "time_verified",
@@ -601,6 +602,7 @@ def _check_source_ledger(
             findings.append(
                 f"{manifest_name}: source_ledger:{line_number} must not duplicate body/content"
             )
+        _check_source_url_contract(manifest_name, "source_ledger", line_number, row, findings)
         usage_phase = row.get("usage_phase")
         if usage_phase not in {"BLIND", "OUTCOME", "POSTMORTEM"}:
             findings.append(f"{manifest_name}: source_ledger:{line_number} invalid usage_phase")
@@ -615,6 +617,22 @@ def _check_source_ledger(
     entry_count = manifest.get("source_ledger_entry_count")
     if isinstance(entry_count, int) and entry_count != len(rows):
         findings.append(f"{manifest_name}: source_ledger entry_count mismatch")
+
+
+def _check_source_url_contract(
+    manifest_name: str,
+    artifact_label: str,
+    line_number: int,
+    row: dict[str, object],
+    findings: list[str],
+) -> None:
+    source_url = row.get("source_url")
+    url = row.get("url")
+    if not isinstance(source_url, str) or not source_url:
+        findings.append(f"{manifest_name}: {artifact_label}:{line_number} missing source_url")
+        return
+    if isinstance(url, str) and url and source_url != url:
+        findings.append(f"{manifest_name}: {artifact_label}:{line_number} source_url mismatch")
 
 
 def _check_web_source_artifact(
@@ -659,6 +677,7 @@ def _check_web_source_artifact(
             row_source_ids.add(source_id)
         if row.get("available_before_cutoff") is not True or row.get("time_verified") is not True:
             findings.append(f"{manifest_name}: web_source:{line_number} is not cutoff verified")
+        _check_source_url_contract(manifest_name, "web_source", line_number, row, findings)
         raw_published_at = row.get("published_at")
         if isinstance(raw_published_at, str) and manifest_cutoff_at is not None:
             try:
@@ -717,6 +736,9 @@ def _check_excluded_web_source_artifact(
             findings.append(
                 f"{manifest_name}: excluded_web_source:{line_number} missing exclusion_reason"
             )
+        _check_source_url_contract(
+            manifest_name, "excluded_web_source", line_number, row, findings
+        )
         if row.get("available_before_cutoff") is True and row.get("time_verified") is True:
             findings.append(
                 f"{manifest_name}: excluded_web_source:{line_number} is cutoff verified"
@@ -778,6 +800,7 @@ def _check_candidate_web_check_artifact(
                 "candidate_path_type",
                 "verification_focus",
                 "source_id",
+                "source_url",
             }
             - set(row)
         )
@@ -786,6 +809,9 @@ def _check_candidate_web_check_artifact(
                 f"{manifest_name}: candidate_web_check:{line_number} missing fields: "
                 f"{', '.join(missing)}"
             )
+        _check_source_url_contract(
+            manifest_name, "candidate_web_check", line_number, row, findings
+        )
         if "opened_text" in row:
             findings.append(
                 f"{manifest_name}: candidate_web_check:{line_number} must not duplicate opened_text"
@@ -854,11 +880,33 @@ def _check_excluded_candidate_web_check_artifact(
         source_id = row.get("source_id")
         if isinstance(source_id, str):
             row_source_ids.add(source_id)
+        missing = sorted(
+            {
+                "candidate_rank",
+                "candidate_company_name",
+                "candidate_path_type",
+                "source_id",
+                "source_url",
+            }
+            - set(row)
+        )
+        if missing:
+            findings.append(
+                f"{manifest_name}: excluded_candidate_web_check:{line_number} missing fields: "
+                f"{', '.join(missing)}"
+            )
         if not isinstance(row.get("exclusion_reason"), str):
             findings.append(
                 f"{manifest_name}: excluded_candidate_web_check:{line_number} "
                 "missing exclusion_reason"
             )
+        _check_source_url_contract(
+            manifest_name,
+            "excluded_candidate_web_check",
+            line_number,
+            row,
+            findings,
+        )
         if row.get("time_verified") is True or row.get("available_before_cutoff") is True:
             findings.append(
                 f"{manifest_name}: excluded_candidate_web_check:{line_number} is cutoff verified"

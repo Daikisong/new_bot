@@ -1,5 +1,5 @@
 {
-  "blind_seal_receipt_sha256": "eb8e121756b32b1e0a588fad627092462184d1cebb9bdd5f5b7b816b88d27f76",
+  "blind_seal_receipt_sha256": "0f70b1203a86ee2b8f4234fdd7e816df0b2769419a334d4079b20ea704a6cde4",
   "completed_phases": [
     "PHASE_A_CUTOFF_SAFE_WEB_BLIND"
   ],

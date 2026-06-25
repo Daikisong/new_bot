@@ -98,8 +98,9 @@ Without `--web-search`, the BLIND phase runs in `NEWS_ONLY_STRICT` mode and does
 not call web providers or price repositories. With `--web-search`, the BLIND phase
 uses `CUTOFF_SAFE_WEB_BLIND`: every web result is timestamp-filtered by the temporal
 guard, cutoff-after or unverified sources are excluded, and admitted web evidence is
-recorded in the manifest and source ledger. Price repositories and D-day outcomes
-remain unavailable during BLIND in both modes.
+recorded in the manifest and source ledger with `source_url`, `published_at`,
+`time_verified`, and `retrieved_at`. Price repositories and D-day outcomes remain
+unavailable during BLIND in both modes.
 The context manifest records the LLM provider/model settings used for the run, and
 `nslab audit provenance` cross-checks those settings against persisted LLM traces.
 It also records `trade_date`, `cutoff_at`, and the execution `as_of` timestamp used
