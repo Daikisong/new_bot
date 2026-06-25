@@ -369,6 +369,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "bundle_manifest.json",
     }
     assert parsed.validation["blind_hash_verified"]
+    assert parsed.validation["prediction_file_hash_verified"]
+    assert parsed.validation["research_report_hash_verified"]
     assert parsed.validation["blind_execution_guard_verified"]
     assert parsed.validation["row_disposition_hash_verified"]
     assert parsed.validation["row_disposition_coverage_verified"]
@@ -402,6 +404,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["blind_seal_receipt_sha256"]
     assert manifest["validation"]["research_episode_hash_verified"] is True
     assert manifest["validation"]["blind_execution_guard_verified"] is True
+    assert manifest["validation"]["prediction_file_hash_verified"] is True
+    assert manifest["validation"]["research_report_hash_verified"] is True
     assert manifest["validation"]["brain_delta_hash_verified"] is True
     assert manifest["validation"]["row_disposition_coverage_verified"] is True
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True
@@ -448,6 +452,25 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "WEB-CANDIDATE-EXCLUDED"
     )
     assert json.loads(parsed.blocks["row_disposition.jsonl"].splitlines()[1])["row_number"] == 1
+
+    output_text = output.read_text(encoding="utf-8")
+    tampered_prediction_path = tmp_path / "reports" / "tampered_prediction_bundle.md"
+    tampered_prediction_path.write_text(
+        output_text.replace('"prediction_id": "PRED-bundle"', '"prediction_id": "PRED-tampered"', 1),
+        encoding="utf-8",
+    )
+    tampered_prediction = parse_bundle(tampered_prediction_path)
+    assert not tampered_prediction.validation["prediction_file_hash_verified"]
+    assert not tampered_prediction.validation["manifest_validation_self_consistent_verified"]
+
+    tampered_report_path = tmp_path / "reports" / "tampered_report_bundle.md"
+    tampered_report_path.write_text(
+        output_text.replace("# preopen report", "# tampered report", 1),
+        encoding="utf-8",
+    )
+    tampered_report = parse_bundle(tampered_report_path)
+    assert not tampered_report.validation["research_report_hash_verified"]
+    assert not tampered_report.validation["manifest_validation_self_consistent_verified"]
 
     bad_run_id = "RUN-other"
     write_json(

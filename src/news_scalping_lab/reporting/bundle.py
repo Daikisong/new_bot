@@ -371,6 +371,8 @@ def _build_bundle_manifest(
         "json_valid": True,
         "jsonl_valid": True,
         "blind_hash_verified": (observed_blind_hash is None or observed_blind_hash == blind_hash),
+        "prediction_file_hash_verified": True,
+        "research_report_hash_verified": True,
         "blind_execution_guard_verified": blind_execution_guard_verified,
         "row_disposition_hash_verified": True,
         "row_disposition_coverage_verified": True,

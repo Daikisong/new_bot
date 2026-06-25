@@ -95,6 +95,8 @@ EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS = {
 LEGACY_OPTIONAL_VALIDATION_KEYS = {
     "final_synthesis_context_candidate_web_checks_verified",
     "final_synthesis_context_candidate_verification_verified",
+    "prediction_file_hash_verified",
+    "research_report_hash_verified",
 }
 
 
@@ -122,6 +124,14 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
     if not parsed.validation["blind_hash_verified"]:
         raise BundleImportError(
             "blind_prediction.json hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("prediction_file_hash_verified", True):
+        raise BundleImportError(
+            "blind_prediction.json file hash does not match bundle_manifest.json"
+        )
+    if not parsed.validation.get("research_report_hash_verified", True):
+        raise BundleImportError(
+            "research_report.md hash does not match bundle_manifest.json"
         )
     if not parsed.validation["blind_execution_guard_verified"]:
         raise BundleImportError("bundle blind execution guard check failed")
@@ -318,6 +328,22 @@ def parse_bundle(path: Path) -> BundleParseResult:
             jsonl_blocks,
         ),
     }
+    _add_optional_payload_hash_validation(
+        validation,
+        json_blocks,
+        payload_blocks,
+        block_name="blind_prediction.json",
+        hash_field="prediction_sha256",
+        hash_key="prediction_file_hash_verified",
+    )
+    _add_optional_payload_hash_validation(
+        validation,
+        json_blocks,
+        payload_blocks,
+        block_name="research_report.md",
+        hash_field="research_report_sha256",
+        hash_key="research_report_hash_verified",
+    )
     _add_optional_jsonl_validation(
         validation,
         json_blocks,
@@ -727,7 +753,14 @@ def _verify_payload_hash(
     payload = payload_blocks.get(block_name)
     if not isinstance(expected, str) or not expected or payload is None:
         return False
-    return sha256_text(payload) == expected or sha256_text(f"{payload}\n") == expected
+    crlf_payload = payload.replace("\n", "\r\n")
+    candidates = (
+        payload,
+        f"{payload}\n",
+        crlf_payload,
+        f"{crlf_payload}\r\n",
+    )
+    return any(sha256_text(candidate) == expected for candidate in candidates)
 
 
 def _verify_row_disposition_coverage(
@@ -824,6 +857,26 @@ def _add_optional_jsonl_validation(
         jsonl_blocks,
         block_name=block_name,
         manifest_field=count_field,
+    )
+
+
+def _add_optional_payload_hash_validation(
+    validation: dict[str, bool],
+    json_blocks: dict[str, Any],
+    payload_blocks: dict[str, str],
+    *,
+    block_name: str,
+    hash_field: str,
+    hash_key: str,
+) -> None:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    if not isinstance(manifest, dict) or hash_field not in manifest:
+        return
+    validation[hash_key] = _verify_payload_hash(
+        json_blocks,
+        payload_blocks,
+        block_name=block_name,
+        manifest_field=hash_field,
     )
 
 
