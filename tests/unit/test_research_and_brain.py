@@ -564,12 +564,20 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert passed["vector_index_current"] is True
     assert passed["warehouse_synced"] is True
     assert passed["warehouse_research_episode_count"] == 1
+    assert passed["warehouse_missing_files"] == []
+    assert passed["warehouse_unreadable_files"] == []
+    assert passed["warehouse_required_files_present"] is True
 
     (tmp_path / "memory" / "vector_index" / "episodes.jsonl").write_text(
         "tampered vector payload\n",
         encoding="utf-8",
     )
     WarehouseStore(tmp_path).write_empty("research_episodes.parquet")
+    (tmp_path / "warehouse" / "events.parquet").unlink()
+    (tmp_path / "warehouse" / "event_sources.parquet").write_text(
+        "not a parquet file",
+        encoding="utf-8",
+    )
 
     failed = audit_coverage(tmp_path)
 
@@ -577,9 +585,17 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert failed["coverage_complete"] is True
     assert failed["vector_index_current"] is False
     assert failed["warehouse_synced"] is False
+    assert failed["warehouse_required_files_present"] is False
+    assert failed["warehouse_missing_files"] == ["events.parquet"]
+    assert failed["warehouse_unreadable_files"] == ["event_sources.parquet"]
     assert "vector_index: status is invalid" in failed["findings"]
     assert (
         "warehouse: research_episodes.parquet count 0 != accepted_episode_count 1"
+        in failed["findings"]
+    )
+    assert "warehouse: missing required parquet file: events.parquet" in failed["findings"]
+    assert (
+        "warehouse: unreadable required parquet file: event_sources.parquet"
         in failed["findings"]
     )
 

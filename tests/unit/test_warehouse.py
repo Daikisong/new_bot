@@ -17,7 +17,7 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, write_json
-from news_scalping_lab.warehouse import WarehouseStore
+from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
 def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
@@ -27,6 +27,7 @@ def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
     inspected = WarehouseStore(tmp_path).counts()
 
     assert counts["research_episodes"] == 0
+    assert sorted(inspected) == sorted(EXPECTED_WAREHOUSE_FILES)
     assert inspected["research_episodes.parquet"] == 0
     assert inspected["events.parquet"] == 0
     assert inspected["mechanism_memory.parquet"] == 0

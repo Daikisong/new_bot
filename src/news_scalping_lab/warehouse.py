@@ -25,6 +25,18 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
 
+EXPECTED_WAREHOUSE_FILES = (
+    "events.parquet",
+    "event_sources.parquet",
+    "event_ticker_edges.parquet",
+    "research_episodes.parquet",
+    "daily_outcomes.parquet",
+    "predictions.parquet",
+    "market_memory.parquet",
+    "mechanism_memory.parquet",
+    "company_memory.parquet",
+)
+
 
 class WarehouseStore:
     def __init__(self, root: Path) -> None:
@@ -260,8 +272,11 @@ class WarehouseStore:
         result: dict[str, int | str] = {}
         for path in sorted(self.dir.glob("*.parquet")):
             try:
-                count = duckdb.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchone()
-                result[path.name] = int(count[0]) if count else 0
+                with duckdb.connect(database=":memory:") as connection:
+                    count = connection.sql(
+                        f"select count(*) from read_parquet('{path.as_posix()}')"
+                    ).fetchone()
+                    result[path.name] = int(count[0]) if count else 0
             except duckdb.Error as exc:
                 result[path.name] = f"ERROR: {exc}"
         return result

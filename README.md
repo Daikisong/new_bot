@@ -315,6 +315,8 @@ Generated tables include:
 
 ```text
 warehouse/research_episodes.parquet
+warehouse/events.parquet
+warehouse/event_sources.parquet
 warehouse/event_ticker_edges.parquet
 warehouse/predictions.parquet
 warehouse/daily_outcomes.parquet
