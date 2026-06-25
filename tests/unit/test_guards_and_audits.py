@@ -1955,6 +1955,7 @@ def test_provenance_audit_validates_candidate_verification_artifact(
                     "needs_company_discovery": 1,
                     "no_cutoff_safe_source": 2,
                 },
+                "subjects_without_cutoff_safe_sources": 1,
                 "candidate_expansion_subject_count": 1,
                 "d_minus_one_only_subject_count": 1,
             },
@@ -1999,6 +2000,7 @@ def test_provenance_audit_validates_candidate_verification_artifact(
         "finding_count": 2,
         "subject_count": 2,
         "status_counts": {"source_collected": 1},
+        "subjects_without_cutoff_safe_sources": 1,
         "candidate_expansion_subject_count": 1,
         "d_minus_one_only_subject_count": 0,
     }
@@ -2063,6 +2065,10 @@ def test_provenance_audit_validates_candidate_verification_artifact(
     assert (
         "2030-01-10.json: context manifest candidate_verification "
         "candidate_expansion_subject_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest candidate_verification "
+        "subjects_without_cutoff_safe_sources mismatch"
     ) in findings
     assert (
         "2030-01-10.json: context manifest candidate_verification "
@@ -2693,6 +2699,7 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
                 "finding_count": 1,
                 "subject_count": 1,
                 "status_counts": {"source_collected": 1},
+                "subjects_without_cutoff_safe_sources": 0,
                 "candidate_expansion_subject_count": 0,
                 "d_minus_one_only_subject_count": 0,
             },
@@ -6033,6 +6040,15 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
             ).as_posix(),
             "candidate_verification_sha256": "bad-verification",
             "candidate_verification_count": 2,
+            "candidate_verification_summary": {
+                "required_dimensions": ["listed_security_and_exact_ticker"],
+                "finding_count": 2,
+                "subject_count": 2,
+                "status_counts": {"source_collected": 1},
+                "subjects_without_cutoff_safe_sources": 1,
+                "candidate_expansion_subject_count": 1,
+                "d_minus_one_only_subject_count": 1,
+            },
         },
     )
 
@@ -6075,6 +6091,26 @@ def test_lookahead_audit_checks_candidate_web_check_artifacts(tmp_path: Path) ->
     assert "RUN-candidate.json: excluded_candidate_web_check_count mismatch" in findings
     assert "RUN-candidate.json: candidate_verification_sha256 mismatch" in findings
     assert "RUN-candidate.json: candidate_verification_count mismatch" in findings
+    assert "RUN-candidate.json: candidate_verification finding_count mismatch" in findings
+    assert "RUN-candidate.json: candidate_verification subject_count mismatch" in findings
+    assert (
+        "RUN-candidate.json: candidate_verification dimension_coverage mismatch"
+        in findings
+    )
+    assert "RUN-candidate.json: candidate_verification status_counts mismatch" in findings
+    assert "RUN-candidate.json: candidate_verification source_counts mismatch" in findings
+    assert (
+        "RUN-candidate.json: candidate_verification "
+        "candidate_expansion_subject_count mismatch"
+    ) in findings
+    assert (
+        "RUN-candidate.json: candidate_verification "
+        "subjects_without_cutoff_safe_sources mismatch"
+    ) in findings
+    assert (
+        "RUN-candidate.json: candidate_verification d_minus_one_only_subject_count mismatch"
+        in findings
+    )
     assert (
         "RUN-candidate.json: candidate_verification:1 accepted_source_ids not in "
         "candidate_web_source_ids"

@@ -1573,6 +1573,18 @@ def _check_candidate_verification_artifact(
     manifest: dict[object, object],
     findings: list[str],
 ) -> None:
+    artifact_ref = manifest.get("candidate_verification_artifact")
+    candidate_count = _non_bool_int(manifest.get("candidate_verification_count"))
+    has_contract = (
+        artifact_ref is not None
+        or manifest.get("candidate_verification_sha256") is not None
+        or bool(candidate_count)
+        or bool(manifest.get("candidate_verification_summary"))
+    )
+    if not isinstance(artifact_ref, str):
+        if has_contract:
+            findings.append(f"{manifest_name}: candidate_verification_artifact missing")
+        return
     payload = _read_manifest_json_artifact(
         root,
         manifest_name,
@@ -1592,13 +1604,23 @@ def _check_candidate_verification_artifact(
     if not isinstance(findings_payload, list):
         findings.append(f"{manifest_name}: candidate_verification findings must be list")
         return
+    if not all(isinstance(item, dict) for item in findings_payload):
+        findings.append(f"{manifest_name}: candidate_verification findings must be objects")
+        return
+    candidate_findings = cast(list[dict[object, object]], findings_payload)
     expected_count = manifest.get("candidate_verification_count")
     if isinstance(expected_count, int) and expected_count != len(findings_payload):
         findings.append(f"{manifest_name}: candidate_verification_count mismatch")
-    for index, item in enumerate(findings_payload, start=1):
-        if not isinstance(item, dict):
-            findings.append(f"{manifest_name}: candidate_verification:{index} must be object")
-            continue
+
+    _check_candidate_verification_summary(
+        manifest_name,
+        manifest,
+        payload,
+        candidate_findings,
+        findings,
+    )
+
+    for index, item in enumerate(candidate_findings, start=1):
         accepted = set(_string_list(item.get("accepted_source_ids")))
         excluded = set(_string_list(item.get("excluded_source_ids")))
         if not accepted <= review_sources:
@@ -1617,6 +1639,96 @@ def _check_candidate_verification_artifact(
                 f"{manifest_name}: candidate_verification:{index} "
                 "verification_dimensions missing"
             )
+
+
+def _check_candidate_verification_summary(
+    manifest_name: str,
+    manifest: dict[object, object],
+    payload: dict[str, object],
+    candidate_findings: list[dict[object, object]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("candidate_verification_summary")
+    if not isinstance(summary, dict):
+        findings.append(f"{manifest_name}: candidate_verification_summary invalid")
+        return
+
+    finding_count = len(candidate_findings)
+    if _non_bool_int(summary.get("finding_count")) != finding_count:
+        findings.append(f"{manifest_name}: candidate_verification finding_count mismatch")
+    if (
+        _non_bool_int(payload.get("subject_count")) != finding_count
+        or _non_bool_int(summary.get("subject_count")) != finding_count
+    ):
+        findings.append(f"{manifest_name}: candidate_verification subject_count mismatch")
+
+    expected_dimensions = _candidate_verification_required_dimensions(manifest)
+    if not expected_dimensions or _string_list(
+        payload.get("required_dimensions")
+    ) != expected_dimensions:
+        findings.append(
+            f"{manifest_name}: candidate_verification required_dimensions mismatch"
+        )
+    if not expected_dimensions or any(
+        _candidate_verification_dimension_names(finding) != expected_dimensions
+        for finding in candidate_findings
+    ):
+        findings.append(f"{manifest_name}: candidate_verification dimension_coverage mismatch")
+
+    if summary.get("status_counts") != _candidate_verification_status_counts(
+        candidate_findings
+    ):
+        findings.append(f"{manifest_name}: candidate_verification status_counts mismatch")
+
+    source_count = sum(
+        _non_bool_int(finding.get("source_count")) or 0
+        for finding in candidate_findings
+    )
+    excluded_source_count = sum(
+        _non_bool_int(finding.get("excluded_source_count")) or 0
+        for finding in candidate_findings
+    )
+    if (
+        source_count != _non_bool_int(manifest.get("candidate_web_check_count"))
+        or excluded_source_count
+        != _non_bool_int(manifest.get("excluded_candidate_web_check_count"))
+    ):
+        findings.append(f"{manifest_name}: candidate_verification source_counts mismatch")
+
+    expansion_count = sum(
+        1
+        for finding in candidate_findings
+        if finding.get("subject_type") == "candidate_expansion"
+    )
+    if _non_bool_int(summary.get("candidate_expansion_subject_count")) != expansion_count:
+        findings.append(
+            f"{manifest_name}: candidate_verification "
+            "candidate_expansion_subject_count mismatch"
+        )
+
+    without_sources_count = sum(
+        1
+        for finding in candidate_findings
+        if not _string_list(finding.get("accepted_source_ids"))
+    )
+    if (
+        _non_bool_int(summary.get("subjects_without_cutoff_safe_sources"))
+        != without_sources_count
+    ):
+        findings.append(
+            f"{manifest_name}: candidate_verification "
+            "subjects_without_cutoff_safe_sources mismatch"
+        )
+
+    d_minus_one_count = sum(
+        1
+        for finding in candidate_findings
+        if finding.get("d_minus_one_market_data_only") is True
+    )
+    if _non_bool_int(summary.get("d_minus_one_only_subject_count")) != d_minus_one_count:
+        findings.append(
+            f"{manifest_name}: candidate_verification d_minus_one_only_subject_count mismatch"
+        )
 
 
 def _check_final_synthesis_context_artifact(
@@ -1700,6 +1812,55 @@ def _looks_like_web_source(item: dict[object, object]) -> bool:
             "time_verified",
         )
     )
+
+
+def _candidate_web_verification_focus(manifest: dict[object, object]) -> list[str]:
+    summary = manifest.get("candidate_web_check_summary")
+    if not isinstance(summary, dict):
+        return []
+    return _string_list(summary.get("verification_focus"))
+
+
+def _candidate_verification_required_dimensions(
+    manifest: dict[object, object],
+) -> list[str]:
+    summary = manifest.get("candidate_verification_summary")
+    if isinstance(summary, dict):
+        required_dimensions = _string_list(summary.get("required_dimensions"))
+        if required_dimensions:
+            return required_dimensions
+    return _candidate_web_verification_focus(manifest)
+
+
+def _candidate_verification_dimension_names(
+    finding: dict[object, object],
+) -> list[str]:
+    dimensions = finding.get("verification_dimensions")
+    if not isinstance(dimensions, list):
+        return []
+    return [
+        str(dimension["name"])
+        for dimension in dimensions
+        if isinstance(dimension, dict) and isinstance(dimension.get("name"), str)
+    ]
+
+
+def _candidate_verification_status_counts(
+    candidate_findings: list[dict[object, object]],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for finding in candidate_findings:
+        dimensions = finding.get("verification_dimensions")
+        if not isinstance(dimensions, list):
+            continue
+        for dimension in dimensions:
+            if not isinstance(dimension, dict) or not isinstance(
+                dimension.get("status"), str
+            ):
+                continue
+            status = str(dimension["status"])
+            counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _check_blind_seal(

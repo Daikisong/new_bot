@@ -3338,6 +3338,20 @@ def _check_candidate_verification_summary_counts(
             "candidate_expansion_subject_count mismatch"
         )
 
+    without_sources_count = sum(
+        1
+        for finding in candidate_findings
+        if not _string_list(finding.get("accepted_source_ids"))
+    )
+    if (
+        _non_bool_int(summary.get("subjects_without_cutoff_safe_sources"))
+        != without_sources_count
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "subjects_without_cutoff_safe_sources mismatch"
+        )
+
     d_minus_one_count = sum(
         1
         for finding in candidate_findings

@@ -1564,6 +1564,7 @@ def _inspect_candidate_verification_artifact(
             "source_counts_verified": None,
             "accepted_source_ids_verified": None,
             "excluded_source_ids_verified": None,
+            "subjects_without_cutoff_safe_sources_verified": None,
             "candidate_expansion_subject_count_verified": None,
             "d_minus_one_only_subject_count_verified": None,
         }
@@ -1676,6 +1677,23 @@ def _inspect_candidate_verification_artifact(
     )
     if not status["excluded_source_ids_verified"]:
         status["errors"].append("candidate_verification_excluded_source_ids_mismatch")
+
+    observed_subjects_without_sources = sum(
+        1 for finding in findings if not _string_list(finding.get("accepted_source_ids"))
+    )
+    expected_subjects_without_sources = (
+        summary.get("subjects_without_cutoff_safe_sources")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["subjects_without_cutoff_safe_sources_verified"] = (
+        isinstance(expected_subjects_without_sources, int)
+        and observed_subjects_without_sources == expected_subjects_without_sources
+    )
+    if not status["subjects_without_cutoff_safe_sources_verified"]:
+        status["errors"].append(
+            "candidate_verification_subjects_without_cutoff_safe_sources_mismatch"
+        )
 
     observed_expansion_subject_count = sum(
         1 for finding in findings if finding.get("subject_type") == "candidate_expansion"
@@ -3702,6 +3720,7 @@ def _candidate_verification_status_passed(status: dict[str, Any]) -> bool:
         and status.get("source_counts_verified")
         and status.get("accepted_source_ids_verified")
         and status.get("excluded_source_ids_verified")
+        and status.get("subjects_without_cutoff_safe_sources_verified")
         and status.get("candidate_expansion_subject_count_verified")
         and status.get("d_minus_one_only_subject_count_verified")
     )
