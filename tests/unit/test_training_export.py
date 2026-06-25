@@ -8,6 +8,7 @@ import pytest
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     Candidate,
+    EligibilityMatrix,
     EventTickerEdge,
     OutcomeLabels,
     PathType,
@@ -50,6 +51,7 @@ def _accepted_episode() -> ResearchEpisode:
         research_version="training-test-v1",
         input_news_files=["news.csv"],
         input_news_hashes=["a" * 64],
+        blind_artifact_sha256="a" * 64,
         price_source_snapshot={"source": "test"},
         blind_analysis=BlindAnalysis(
             summary="Blind reasoning without outcome knowledge.",
@@ -81,6 +83,14 @@ def _accepted_episode() -> ResearchEpisode:
                 temporal_validity="validated after outcome",
             )
         ],
+        eligibility_matrix=EligibilityMatrix(
+            forecast_evaluation_eligible=True,
+            direct_supervised_cases_eligible=True,
+            theme_supervised_cases_eligible=True,
+            leader_pair_training_eligible=True,
+            retrospective_memory_eligible=True,
+            brain_eligible=True,
+        ),
         available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
     )
 
@@ -164,9 +174,57 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert manifest["task_counts"]["leader_selection_comparison"] == 1
     assert manifest["blind_safe_row_count"] == 4
     assert manifest["hindsight_row_count"] == 1
+    assert manifest["eligible_episode_count"] == 1
+    assert manifest["skipped_episode_count"] == 0
+    assert manifest["skipped_episodes"] == []
     assert manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
     assert manifest["output_sha256"]
     assert "Do not train postmortem labels as if they were blind answers." in manifest["notes"]
+
+
+def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode().model_copy(
+        update={
+            "episode_id": "EP-ineligible",
+            "eligibility_matrix": EligibilityMatrix(
+                forecast_evaluation_eligible=False,
+                direct_supervised_cases_eligible=False,
+                theme_supervised_cases_eligible=False,
+                leader_pair_training_eligible=False,
+                retrospective_memory_eligible=False,
+                brain_eligible=False,
+                reasons={
+                    "forecast_evaluation_eligible": "sealed blind prediction is missing",
+                    "leader_pair_training_eligible": "candidate outcomes are incomplete",
+                    "direct_supervised_cases_eligible": "candidate outcomes are incomplete",
+                },
+            ),
+        }
+    )
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+
+    sft = export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    evals = export_training(tmp_path, kind="evals")
+
+    assert sft.row_count == 0
+    assert preference.row_count == 0
+    assert evals.row_count == 0
+    sft_manifest = read_json(sft.manifest_path)
+    preference_manifest = read_json(preference.manifest_path)
+    evals_manifest = read_json(evals.manifest_path)
+    assert sft_manifest["skipped_episode_count"] == 1
+    assert sft_manifest["skipped_episodes"][0]["missing_eligibility"] == [
+        "forecast_evaluation_eligible"
+    ]
+    assert preference_manifest["skipped_episodes"][0]["missing_eligibility"] == [
+        "leader_pair_training_eligible"
+    ]
+    assert evals_manifest["skipped_episodes"][0]["missing_eligibility"] == [
+        "direct_supervised_cases_eligible"
+    ]
 
 
 def test_training_export_rejects_unknown_kind(tmp_path) -> None:

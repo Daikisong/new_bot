@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from news_scalping_lab.contracts.models import Candidate, OutcomeLabels, ResearchEpisode
+from news_scalping_lab.contracts.models import (
+    Candidate,
+    EligibilityMatrix,
+    OutcomeLabels,
+    ResearchEpisode,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import file_sha256, now_kst, stable_id, write_json
 
@@ -33,6 +38,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     store = ResearchStore(root)
     episodes = store.list_accepted()
     rows = _rows_for_kind(kind, episodes)
+    skipped = _skipped_episodes(kind, episodes)
     path = target_dir / f"{kind}.jsonl"
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
@@ -48,6 +54,9 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "row_count": len(rows),
             "episode_count": len(episodes),
             "episode_ids": [episode.episode_id for episode in episodes],
+            "eligible_episode_count": len(episodes) - len(skipped),
+            "skipped_episode_count": len(skipped),
+            "skipped_episodes": skipped,
             "source_hashes": store.accepted_hashes(),
             "output_file": path.as_posix(),
             "output_sha256": file_sha256(path),
@@ -79,106 +88,113 @@ def _rows_for_kind(kind: str, episodes: list[ResearchEpisode]) -> list[dict[str,
 
 
 def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
-    rows = [
-        _training_row(
-            task="blind_reasoning",
-            episode=episode,
-            input_payload={
-                "trade_date": episode.trade_date.isoformat(),
-                "cutoff_at": episode.cutoff_at.isoformat(),
-                "observed_events": [
-                    item.model_dump(mode="json") for item in episode.observed_events
-                ],
-                "input_news_files": episode.input_news_files,
-            },
-            output_payload={
-                "summary": episode.blind_analysis.summary,
-                "open_world_mechanisms": episode.blind_analysis.open_world_mechanisms,
-                "initial_uncertainties": episode.blind_analysis.initial_uncertainties,
-                "candidates": [candidate.model_dump(mode="json") for candidate in episode.blind_predictions],
-            },
-            split="sft",
-            hindsight_safe=True,
-        ),
-        _training_row(
-            task="theme_formation",
-            episode=episode,
-            input_payload={"blind_summary": episode.blind_analysis.summary},
-            output_payload={
-                "mechanisms": episode.blind_analysis.open_world_mechanisms,
-                "failure_conditions": episode.blind_analysis.initial_uncertainties,
-            },
-            split="sft",
-            hindsight_safe=True,
-        ),
-        _training_row(
-            task="beneficiary_discovery",
-            episode=episode,
-            input_payload={
-                "blind_summary": episode.blind_analysis.summary,
-                "candidate_count": len(episode.blind_predictions),
-            },
-            output_payload={
-                "candidate_paths": [
-                    {
-                        "company_name": candidate.company_name,
-                        "path_type": str(candidate.path_type),
-                        "causal_chain": candidate.causal_chain,
-                        "counterarguments": candidate.counterarguments,
-                    }
-                    for candidate in episode.blind_predictions
-                ],
-            },
-            split="sft",
-            hindsight_safe=True,
-        ),
-        _training_row(
-            task="leader_selection_comparison",
-            episode=episode,
-            input_payload={
-                "blind_summary": episode.blind_analysis.summary,
-                "candidate_count": len(episode.blind_predictions),
-                "candidates": [
-                    {
-                        "rank": candidate.rank,
-                        "company_name": candidate.company_name,
-                        "ticker": candidate.ticker,
-                        "path_type": str(candidate.path_type),
-                        "why_now": candidate.why_now,
-                        "causal_chain": candidate.causal_chain,
-                        "counterarguments": candidate.counterarguments,
-                        "confidence_label": str(candidate.confidence_label),
-                        "evidence_quality": str(candidate.evidence_quality),
-                    }
-                    for candidate in episode.blind_predictions
-                ],
-            },
-            output_payload={
-                "preferred_order": [
-                    {
-                        "rank": candidate.rank,
-                        "company_name": candidate.company_name,
-                        "selection_reason": candidate.why_now,
-                        "risk_checks": candidate.disconfirming_conditions,
-                    }
-                    for candidate in sorted(
-                        episode.blind_predictions,
-                        key=lambda item: item.rank,
-                    )
-                ],
-                "comparison_basis": [
-                    "sealed blind rank",
-                    "pre-cutoff causal chain",
-                    "confidence label",
-                    "evidence quality",
-                    "counterarguments and disconfirming conditions",
-                ],
-            },
-            split="sft",
-            hindsight_safe=True,
-        ),
-    ]
-    if episode.postmortem is not None:
+    rows: list[dict[str, Any]] = []
+    if episode.eligibility_matrix.forecast_evaluation_eligible:
+        rows.extend(
+            [
+                _training_row(
+                    task="blind_reasoning",
+                    episode=episode,
+                    input_payload={
+                        "trade_date": episode.trade_date.isoformat(),
+                        "cutoff_at": episode.cutoff_at.isoformat(),
+                        "observed_events": [
+                            item.model_dump(mode="json") for item in episode.observed_events
+                        ],
+                        "input_news_files": episode.input_news_files,
+                    },
+                    output_payload={
+                        "summary": episode.blind_analysis.summary,
+                        "open_world_mechanisms": episode.blind_analysis.open_world_mechanisms,
+                        "initial_uncertainties": episode.blind_analysis.initial_uncertainties,
+                        "candidates": [
+                            candidate.model_dump(mode="json")
+                            for candidate in episode.blind_predictions
+                        ],
+                    },
+                    split="sft",
+                    hindsight_safe=True,
+                ),
+                _training_row(
+                    task="theme_formation",
+                    episode=episode,
+                    input_payload={"blind_summary": episode.blind_analysis.summary},
+                    output_payload={
+                        "mechanisms": episode.blind_analysis.open_world_mechanisms,
+                        "failure_conditions": episode.blind_analysis.initial_uncertainties,
+                    },
+                    split="sft",
+                    hindsight_safe=True,
+                ),
+                _training_row(
+                    task="beneficiary_discovery",
+                    episode=episode,
+                    input_payload={
+                        "blind_summary": episode.blind_analysis.summary,
+                        "candidate_count": len(episode.blind_predictions),
+                    },
+                    output_payload={
+                        "candidate_paths": [
+                            {
+                                "company_name": candidate.company_name,
+                                "path_type": str(candidate.path_type),
+                                "causal_chain": candidate.causal_chain,
+                                "counterarguments": candidate.counterarguments,
+                            }
+                            for candidate in episode.blind_predictions
+                        ],
+                    },
+                    split="sft",
+                    hindsight_safe=True,
+                ),
+                _training_row(
+                    task="leader_selection_comparison",
+                    episode=episode,
+                    input_payload={
+                        "blind_summary": episode.blind_analysis.summary,
+                        "candidate_count": len(episode.blind_predictions),
+                        "candidates": [
+                            {
+                                "rank": candidate.rank,
+                                "company_name": candidate.company_name,
+                                "ticker": candidate.ticker,
+                                "path_type": str(candidate.path_type),
+                                "why_now": candidate.why_now,
+                                "causal_chain": candidate.causal_chain,
+                                "counterarguments": candidate.counterarguments,
+                                "confidence_label": str(candidate.confidence_label),
+                                "evidence_quality": str(candidate.evidence_quality),
+                            }
+                            for candidate in episode.blind_predictions
+                        ],
+                    },
+                    output_payload={
+                        "preferred_order": [
+                            {
+                                "rank": candidate.rank,
+                                "company_name": candidate.company_name,
+                                "selection_reason": candidate.why_now,
+                                "risk_checks": candidate.disconfirming_conditions,
+                            }
+                            for candidate in sorted(
+                                episode.blind_predictions,
+                                key=lambda item: item.rank,
+                            )
+                        ],
+                        "comparison_basis": [
+                            "sealed blind rank",
+                            "pre-cutoff causal chain",
+                            "confidence label",
+                            "evidence quality",
+                            "counterarguments and disconfirming conditions",
+                        ],
+                    },
+                    split="sft",
+                    hindsight_safe=True,
+                ),
+            ]
+        )
+    if episode.postmortem is not None and episode.eligibility_matrix.retrospective_memory_eligible:
         rows.append(
             _training_row(
                 task="failure_correction",
@@ -203,6 +219,8 @@ def _sft_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
 
 
 def _preference_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
+    if not episode.eligibility_matrix.leader_pair_training_eligible:
+        return []
     positives: list[Candidate] = []
     negatives: list[Candidate] = []
     for candidate in episode.blind_predictions:
@@ -255,28 +273,29 @@ def _preference_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
 
 def _eval_rows(episode: ResearchEpisode) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for candidate in episode.blind_predictions:
-        outcome = _outcome_for_candidate(episode, candidate)
-        rows.append(
-            _training_row(
-                task="candidate_outcome_eval",
-                episode=episode,
-                input_payload={
-                    "candidate": candidate.model_dump(mode="json"),
-                    "blind_summary": episode.blind_analysis.summary,
-                },
-                output_payload={
-                    "outcome": outcome.model_dump(mode="json") if outcome is not None else None,
-                    "expected_labels": {
-                        "upper_limit_touched": outcome.upper_limit_touched if outcome else None,
-                        "upper_limit_closed": outcome.upper_limit_closed if outcome else None,
+    if episode.eligibility_matrix.direct_supervised_cases_eligible:
+        for candidate in episode.blind_predictions:
+            outcome = _outcome_for_candidate(episode, candidate)
+            rows.append(
+                _training_row(
+                    task="candidate_outcome_eval",
+                    episode=episode,
+                    input_payload={
+                        "candidate": candidate.model_dump(mode="json"),
+                        "blind_summary": episode.blind_analysis.summary,
                     },
-                },
-                split="evals",
-                hindsight_safe=False,
+                    output_payload={
+                        "outcome": outcome.model_dump(mode="json") if outcome is not None else None,
+                        "expected_labels": {
+                            "upper_limit_touched": outcome.upper_limit_touched if outcome else None,
+                            "upper_limit_closed": outcome.upper_limit_closed if outcome else None,
+                        },
+                    },
+                    split="evals",
+                    hindsight_safe=False,
+                )
             )
-        )
-    if episode.postmortem is not None:
+    if episode.postmortem is not None and episode.eligibility_matrix.retrospective_memory_eligible:
         rows.append(
             _training_row(
                 task="failure_code_eval",
@@ -333,6 +352,40 @@ def _outcome_for_candidate(
         if candidate.company_name in key or candidate.ticker in key:
             return outcome
     return None
+
+
+def _skipped_episodes(kind: str, episodes: list[ResearchEpisode]) -> list[dict[str, Any]]:
+    skipped: list[dict[str, Any]] = []
+    for episode in episodes:
+        missing = _missing_eligibility_for_kind(kind, episode.eligibility_matrix)
+        if missing:
+            skipped.append(
+                {
+                    "episode_id": episode.episode_id,
+                    "missing_eligibility": missing,
+                    "reasons": {
+                        key: episode.eligibility_matrix.reasons.get(key, "not eligible")
+                        for key in missing
+                    },
+                }
+            )
+    return skipped
+
+
+def _missing_eligibility_for_kind(kind: str, eligibility: EligibilityMatrix) -> list[str]:
+    if kind == "sft":
+        required = [
+            "forecast_evaluation_eligible",
+        ]
+        if eligibility.retrospective_memory_eligible:
+            required.append("retrospective_memory_eligible")
+    elif kind == "preference":
+        required = ["leader_pair_training_eligible"]
+    else:
+        required = ["direct_supervised_cases_eligible"]
+        if eligibility.retrospective_memory_eligible:
+            required.append("retrospective_memory_eligible")
+    return [field for field in required if not bool(getattr(eligibility, field))]
 
 
 def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
