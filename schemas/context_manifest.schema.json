@@ -71,6 +71,11 @@
       "title": "As Of",
       "type": "string"
     },
+    "available_episode_count": {
+      "default": 0,
+      "title": "Available Episode Count",
+      "type": "integer"
+    },
     "blind_artifact_sha256": {
       "anyOf": [
         {
@@ -881,6 +886,11 @@
       "title": "Token Counts",
       "type": "object"
     },
+    "total_accepted_episode_count": {
+      "default": 0,
+      "title": "Total Accepted Episode Count",
+      "type": "integer"
+    },
     "trade_date": {
       "format": "date",
       "title": "Trade Date",
@@ -891,6 +901,18 @@
         "type": "string"
       },
       "title": "Truncations",
+      "type": "array"
+    },
+    "unavailable_episode_count": {
+      "default": 0,
+      "title": "Unavailable Episode Count",
+      "type": "integer"
+    },
+    "unavailable_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unavailable Episode Ids",
       "type": "array"
     },
     "web_queries": {

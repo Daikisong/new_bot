@@ -1454,6 +1454,10 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
     assert manifest.brain_version is not None
     assert manifest.brain_version.startswith("brain-asof-")
     assert manifest.accepted_episode_count == 1
+    assert manifest.total_accepted_episode_count == 2
+    assert manifest.available_episode_count == 1
+    assert manifest.unavailable_episode_count == 1
+    assert manifest.unavailable_episode_ids == ["EP-future-brain"]
     assert manifest.swept_episode_ids == ["EP-available-brain"]
     assert manifest.errors == []
     assert all(
@@ -1478,6 +1482,10 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
     assert "ProviderCo future brain summary must stop analysis" not in final_prompt
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["brain_version"].startswith("brain-asof-")
+    assert saved_manifest["total_accepted_episode_count"] == 2
+    assert saved_manifest["available_episode_count"] == 1
+    assert saved_manifest["unavailable_episode_count"] == 1
+    assert saved_manifest["unavailable_episode_ids"] == ["EP-future-brain"]
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert (tmp_path / "predictions" / "2030-01-10.json").exists()
 

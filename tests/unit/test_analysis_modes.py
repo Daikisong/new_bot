@@ -71,8 +71,44 @@ def test_context_run_id_changes_when_available_research_changes(tmp_path) -> Non
 
     assert before.run_id != after.run_id
     assert before.accepted_episode_count == 0
+    assert before.total_accepted_episode_count == 0
+    assert before.available_episode_count == 0
+    assert before.unavailable_episode_count == 0
+    assert before.unavailable_episode_ids == []
     assert after.accepted_episode_count == 1
+    assert after.total_accepted_episode_count == 1
+    assert after.available_episode_count == 1
+    assert after.unavailable_episode_count == 0
+    assert after.unavailable_episode_ids == []
     assert after.swept_episode_ids == ["EP-available"]
+
+    future_episode = ResearchEpisode(
+        episode_id="EP-future",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 10, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Future lesson."),
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    store.save_episode(future_episode)
+    store.accept(future_episode.episode_id)
+
+    with_unavailable = ContextAssembler(tmp_path).assemble(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="same-news-and-model",
+    )
+
+    assert with_unavailable.run_id == after.run_id
+    assert with_unavailable.accepted_episode_count == 1
+    assert with_unavailable.total_accepted_episode_count == 2
+    assert with_unavailable.available_episode_count == 1
+    assert with_unavailable.unavailable_episode_count == 1
+    assert with_unavailable.unavailable_episode_ids == ["EP-future"]
+    assert with_unavailable.swept_episode_ids == ["EP-available"]
 
 
 @pytest.mark.asyncio

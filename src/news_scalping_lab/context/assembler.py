@@ -59,12 +59,19 @@ class ContextAssembler:
         mode = normalize_analysis_mode(mode)
         retrieved_ids = retrieved_episode_ids or []
         web_query_list = web_queries or []
+        all_accepted = self.store.list_accepted()
         accepted = [
             episode
-            for episode in self.store.list_accepted()
+            for episode in all_accepted
             if is_available_as_of(episode.available_from, cutoff_at)
         ]
+        unavailable = [
+            episode
+            for episode in all_accepted
+            if not is_available_as_of(episode.available_from, cutoff_at)
+        ]
         accepted_ids = [episode.episode_id for episode in accepted]
+        unavailable_ids = [episode.episode_id for episode in unavailable]
         accepted_hashes = self._accepted_hashes_for(accepted_ids)
         run_id = stable_id(
             "RUN",
@@ -107,6 +114,10 @@ class ContextAssembler:
             shard_brain_files=list(brain_context.shard_brain_file_hashes.keys()),
             shard_brain_file_hashes=brain_context.shard_brain_file_hashes,
             accepted_episode_count=len(accepted_ids),
+            total_accepted_episode_count=len(all_accepted),
+            available_episode_count=len(accepted_ids),
+            unavailable_episode_count=len(unavailable_ids),
+            unavailable_episode_ids=unavailable_ids,
             swept_episode_count=len(swept_ids),
             swept_episode_ids=swept_ids,
             retrieved_episode_ids=retrieved_ids,

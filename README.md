@@ -107,6 +107,8 @@ The context manifest records the LLM provider/model settings used for the run, a
 It also records `trade_date`, `cutoff_at`, and the execution `as_of` timestamp used
 to filter time-available evidence; `nslab audit lookahead` fails schema-versioned
 manifests that omit `as_of` or set it after the cutoff.
+It separates total accepted research from cutoff-available and unavailable future
+episodes, so walk-forward audits can verify that future memory was excluded.
 News CSV rows are additionally filtered to the default blind window from D-1 15:30:00
 KST through D 08:59:59 KST. The manifest records `news_window_start_at` and
 `news_window_end_at`, while row disposition artifacts record each row's `published_at`,
