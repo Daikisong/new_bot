@@ -25,6 +25,7 @@ EXPECTED_SCHEMA_FILES = {
     "event_ticker_edge.schema.json",
     "mechanism_memory.schema.json",
     "memory_claim.schema.json",
+    "news_novelty_review.schema.json",
     "postmortem.schema.json",
     "red_team_artifact.schema.json",
     "research_episode.schema.json",

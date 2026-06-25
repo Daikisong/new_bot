@@ -110,6 +110,11 @@ News CSV rows are additionally filtered to the default blind window from D-1 15:
 KST through D 08:59:59 KST. The manifest records `news_window_start_at` and
 `news_window_end_at`, while row disposition artifacts record each row's `published_at`,
 optional `collected_at`, window inclusion state, and exclusion reason.
+Included news rows are clustered into `event_clusters.jsonl`, then reviewed by the
+LLM as `news_novelty_review.json` using only current news and cutoff-safe web
+sources. The review records novelty, first-public evidence time, contract stage,
+customer/period/economic attribution fields, and dilution or financing risks; code
+validates schema, source IDs, hashes, and cutoff timing.
 Successful text and structured-output traces must include prompt and completion
 token estimates, tool calls, retry count, input hash, output hash, and prompt version.
 Run IDs include the model settings snapshot, so changing providers or models creates

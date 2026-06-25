@@ -20,6 +20,9 @@ from news_scalping_lab.contracts.models import (
     Candidate,
     ConfidenceLabel,
     DominantSectorHypothesis,
+    NewsNoveltyFinding,
+    NewsNoveltyLabel,
+    NewsNoveltyReview,
     PathType,
     RedTeamArtifact,
     RedTeamFinding,
@@ -60,6 +63,9 @@ class DeterministicMockLLMProvider:
         if response_model is RedTeamArtifact:
             artifact = self._red_team_artifact(prompt)
             return artifact  # type: ignore[return-value]
+        if response_model is NewsNoveltyReview:
+            review = self._news_novelty_review(prompt)
+            return review  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
@@ -359,6 +365,96 @@ class DeterministicMockLLMProvider:
             return {}
         return payload if isinstance(payload, dict) else {}
 
+    def _news_novelty_review(self, prompt: str) -> NewsNoveltyReview:
+        payload = self._news_novelty_payload(prompt)
+        cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
+        clusters = payload.get("event_clusters", [])
+        web_sources = payload.get("cutoff_safe_web_sources", [])
+        web_source_ids = [
+            str(row.get("source_id"))
+            for row in web_sources
+            if isinstance(row, dict) and row.get("source_id")
+        ]
+        findings: list[NewsNoveltyFinding] = []
+        if isinstance(clusters, list):
+            for cluster in clusters:
+                if not isinstance(cluster, dict) or not cluster.get("cluster_id"):
+                    continue
+                source_ids = [
+                    str(source_id)
+                    for source_id in cluster.get("source_ids", [])
+                    if isinstance(source_id, str)
+                ]
+                evidence_source_ids = self._dedupe_strings([*source_ids, *web_source_ids[:1]])
+                first_public = self._parse_optional_datetime(cluster.get("first_published_at"))
+                if first_public is not None and first_public.tzinfo is None:
+                    first_public = first_public.replace(tzinfo=cutoff_at.tzinfo)
+                exact_duplicate_count = cluster.get("exact_duplicate_count")
+                recycled_news = "possible_exact_duplicate" if exact_duplicate_count else "unclear"
+                findings.append(
+                    NewsNoveltyFinding(
+                        cluster_id=str(cluster["cluster_id"]),
+                        cluster_index=int(cluster.get("cluster_index") or len(findings) + 1),
+                        row_numbers=[
+                            int(row_number)
+                            for row_number in cluster.get("row_numbers", [])
+                            if isinstance(row_number, int)
+                        ],
+                        event_ids=[
+                            str(event_id)
+                            for event_id in cluster.get("event_ids", [])
+                            if isinstance(event_id, str)
+                        ],
+                        novelty=NewsNoveltyLabel.UNCLEAR,
+                        first_public_evidence_at=first_public,
+                        evidence_source_ids=evidence_source_ids,
+                        after_hours_new_disclosure="unclear",
+                        recycled_news=recycled_news,
+                        contract_stage="unclear",
+                        evidence_summary=(
+                            "Mock novelty review retained uncertainty and requires "
+                            "cutoff-safe verification of first publication, directness, "
+                            "contract economics, customer, period, approval stage, and "
+                            "dilution risks."
+                        ),
+                        uncertainties=[
+                            "semantic novelty is not deterministically knowable from hashes",
+                            "web evidence must remain cutoff-safe",
+                        ],
+                        time_verified=first_public is not None and first_public <= cutoff_at,
+                    )
+                )
+        return NewsNoveltyReview(
+            run_id=str(payload.get("run_id") or "RUN-mock-news-novelty"),
+            prompt_version=str(
+                payload.get("prompt_version") or "news_novelty_review.v1"
+            ),
+            prompt_sha256=sha256_text(prompt),
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            review_mode=str(payload.get("review_mode") or "NEWS_ONLY_STRICT"),
+            cluster_count=len(findings),
+            reviewed_cluster_count=len(findings),
+            findings=findings,
+            excluded_after_cutoff_source_ids=[
+                str(source_id)
+                for source_id in payload.get("excluded_after_cutoff_source_ids", [])
+                if isinstance(source_id, str)
+            ],
+            notes=["Mock structured news novelty review."],
+        )
+
+    def _news_novelty_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---NEWS_NOVELTY_REVIEW_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def _final_synthesis_prediction(self, prompt: str) -> BlindPrediction:
         payload = self._final_synthesis_payload(prompt)
         draft = payload.get("candidate_research")
@@ -431,6 +527,11 @@ class DeterministicMockLLMProvider:
 
     def _payload_datetime(self, payload: dict[str, Any], key: str) -> datetime | None:
         value = payload.get(key)
+        if not isinstance(value, str):
+            return None
+        return self._parse_optional_datetime(value)
+
+    def _parse_optional_datetime(self, value: object) -> datetime | None:
         if not isinstance(value, str):
             return None
         try:

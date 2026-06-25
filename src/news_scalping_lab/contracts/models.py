@@ -34,6 +34,13 @@ class PathType(StrEnum):
     HYBRID = "HYBRID"
 
 
+class NewsNoveltyLabel(StrEnum):
+    NEW = "new"
+    FOLLOW_UP = "follow_up"
+    RECYCLED = "recycled"
+    UNCLEAR = "unclear"
+
+
 class RelationClass(StrEnum):
     DIRECT = "DIRECT"
     FUNDAMENTAL = "FUNDAMENTAL"
@@ -150,6 +157,42 @@ class RedTeamArtifact(StrictModel):
     created_at: datetime
     candidate_count: int
     candidate_findings: list[RedTeamFinding] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class NewsNoveltyFinding(StrictModel):
+    cluster_id: str
+    cluster_index: int
+    row_numbers: list[int] = Field(default_factory=list)
+    event_ids: list[str] = Field(default_factory=list)
+    novelty: NewsNoveltyLabel = NewsNoveltyLabel.UNCLEAR
+    first_public_evidence_at: datetime | None = None
+    evidence_source_ids: list[str] = Field(default_factory=list)
+    after_hours_new_disclosure: str = "unclear"
+    recycled_news: str = "unclear"
+    contract_stage: str = "unclear"
+    attributable_amount: str | None = None
+    customer: str | None = None
+    period: str | None = None
+    approval_stage: str | None = None
+    dilution_or_financing_risks: list[str] = Field(default_factory=list)
+    evidence_summary: str = ""
+    uncertainties: list[str] = Field(default_factory=list)
+    time_verified: bool = False
+
+
+class NewsNoveltyReview(StrictModel):
+    schema_version: str = "nslab.news_novelty_review.v1"
+    run_id: str
+    prompt_version: str
+    prompt_sha256: str
+    created_at: datetime
+    cutoff_at: datetime
+    review_mode: str
+    cluster_count: int
+    reviewed_cluster_count: int
+    findings: list[NewsNoveltyFinding] = Field(default_factory=list)
+    excluded_after_cutoff_source_ids: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -414,6 +457,10 @@ class ContextManifest(StrictModel):
     event_cluster_sha256: str | None = None
     event_cluster_count: int = 0
     event_cluster_summary: dict[str, Any] = Field(default_factory=dict)
+    news_novelty_review_artifact: str | None = None
+    news_novelty_review_sha256: str | None = None
+    news_novelty_review_count: int = 0
+    news_novelty_review_summary: dict[str, Any] = Field(default_factory=dict)
     source_ledger_artifact: str | None = None
     source_ledger_sha256: str | None = None
     source_ledger_entry_count: int = 0

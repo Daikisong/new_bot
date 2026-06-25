@@ -1,0 +1,233 @@
+{
+  "$defs": {
+    "NewsNoveltyFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "after_hours_new_disclosure": {
+          "default": "unclear",
+          "title": "After Hours New Disclosure",
+          "type": "string"
+        },
+        "approval_stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Stage"
+        },
+        "attributable_amount": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attributable Amount"
+        },
+        "cluster_id": {
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "cluster_index": {
+          "title": "Cluster Index",
+          "type": "integer"
+        },
+        "contract_stage": {
+          "default": "unclear",
+          "title": "Contract Stage",
+          "type": "string"
+        },
+        "customer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Customer"
+        },
+        "dilution_or_financing_risks": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dilution Or Financing Risks",
+          "type": "array"
+        },
+        "event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Ids",
+          "type": "array"
+        },
+        "evidence_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Source Ids",
+          "type": "array"
+        },
+        "evidence_summary": {
+          "default": "",
+          "title": "Evidence Summary",
+          "type": "string"
+        },
+        "first_public_evidence_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Public Evidence At"
+        },
+        "novelty": {
+          "$ref": "#/$defs/NewsNoveltyLabel",
+          "default": "unclear"
+        },
+        "period": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Period"
+        },
+        "recycled_news": {
+          "default": "unclear",
+          "title": "Recycled News",
+          "type": "string"
+        },
+        "row_numbers": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Row Numbers",
+          "type": "array"
+        },
+        "time_verified": {
+          "default": false,
+          "title": "Time Verified",
+          "type": "boolean"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertainties",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cluster_id",
+        "cluster_index"
+      ],
+      "title": "NewsNoveltyFinding",
+      "type": "object"
+    },
+    "NewsNoveltyLabel": {
+      "enum": [
+        "new",
+        "follow_up",
+        "recycled",
+        "unclear"
+      ],
+      "title": "NewsNoveltyLabel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cluster_count": {
+      "title": "Cluster Count",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "excluded_after_cutoff_source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Excluded After Cutoff Source Ids",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/NewsNoveltyFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "prompt_sha256": {
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "review_mode": {
+      "title": "Review Mode",
+      "type": "string"
+    },
+    "reviewed_cluster_count": {
+      "title": "Reviewed Cluster Count",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.news_novelty_review.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "prompt_version",
+    "prompt_sha256",
+    "created_at",
+    "cutoff_at",
+    "review_mode",
+    "cluster_count",
+    "reviewed_cluster_count"
+  ],
+  "title": "NewsNoveltyReview",
+  "type": "object"
+}

@@ -22,6 +22,9 @@ from news_scalping_lab.contracts.models import (
     DailyAnalysis,
     DominantSectorHypothesis,
     NewsItem,
+    NewsNoveltyFinding,
+    NewsNoveltyLabel,
+    NewsNoveltyReview,
     PathType,
     Provenance,
     RedTeamArtifact,
@@ -76,6 +79,7 @@ class FutureContextLeakError(RuntimeError):
 
 
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
+NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
 FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
 
 
@@ -183,6 +187,14 @@ class DailyAnalyzer:
 
         blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
         news_texts = [item.combined_text for item in blind_news_items]
+        _news_novelty_review, novelty_prompt_hash, novelty_prompt_tokens = (
+            await self._run_news_novelty_review(
+                news_texts=news_texts,
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
+        )
+        manifest.token_counts["news_novelty_review_prompt"] = novelty_prompt_tokens
         first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
         sweep = MemorySweeper(
             self.root,
@@ -232,6 +244,8 @@ class DailyAnalyzer:
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "event_cluster_artifact": manifest.event_cluster_artifact,
                 "event_cluster_summary": manifest.event_cluster_summary,
+                "news_novelty_review_artifact": manifest.news_novelty_review_artifact,
+                "news_novelty_review_summary": manifest.news_novelty_review_summary,
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
@@ -297,6 +311,7 @@ class DailyAnalyzer:
         manifest.token_counts["final_synthesis_prompt"] = final_synthesis_prompt_tokens
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
+        manifest.prompt_hashes["news_novelty_review"] = novelty_prompt_hash
         manifest.prompt_hashes["blind_analysis"] = blind_prompt_hash
         manifest.prompt_hashes["red_team_candidate_review"] = red_team.artifact.prompt_sha256
         manifest.prompt_hashes["final_synthesis"] = final_synthesis_prompt_hash
@@ -501,6 +516,278 @@ class DailyAnalyzer:
             "cluster_method": "exact_normalized_title_body_v1",
             "novelty_review_required": True,
         }
+
+    async def _run_news_novelty_review(
+        self,
+        *,
+        news_texts: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> tuple[NewsNoveltyReview, str, int]:
+        prompt = self._build_news_novelty_review_prompt(
+            news_texts=news_texts,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+        )
+        prompt_sha256 = sha256_text(prompt)
+        try:
+            review = await self.llm.generate_structured(
+                prompt=prompt,
+                response_model=NewsNoveltyReview,
+                purpose="news_novelty_review",
+            )
+        except NotImplementedError:
+            review = self._fallback_news_novelty_review(
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+                prompt_sha256=prompt_sha256,
+            )
+        normalized = self._normalize_news_novelty_review(
+            review,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "news_novelty_reviews"
+            / manifest.run_id
+            / "news_novelty_review.json"
+        )
+        artifact_path = self.root / artifact_relative
+        write_json(artifact_path, normalized.model_dump(mode="json"))
+        artifact_text = artifact_path.read_text(encoding="utf-8")
+        novelty_counts = {
+            label.value: sum(1 for finding in normalized.findings if finding.novelty == label)
+            for label in NewsNoveltyLabel
+        }
+        manifest.news_novelty_review_artifact = artifact_relative.as_posix()
+        manifest.news_novelty_review_sha256 = sha256_text(artifact_text)
+        manifest.news_novelty_review_count = normalized.reviewed_cluster_count
+        manifest.news_novelty_review_summary = {
+            "cluster_count": normalized.cluster_count,
+            "reviewed_cluster_count": normalized.reviewed_cluster_count,
+            "review_mode": normalized.review_mode,
+            "novelty_counts": novelty_counts,
+            "time_verified_count": sum(1 for finding in normalized.findings if finding.time_verified),
+            "excluded_after_cutoff_source_count": len(
+                normalized.excluded_after_cutoff_source_ids
+            ),
+        }
+        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+
+    def _build_news_novelty_review_prompt(
+        self,
+        *,
+        news_texts: list[str],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> str:
+        payload = {
+            "schema": "nslab.news_novelty_review.v1",
+            "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION,
+            "run_id": manifest.run_id,
+            "cutoff_at": cutoff_at.isoformat(),
+            "review_mode": manifest.blind_context_mode,
+            "current_news": news_texts,
+            "event_clusters": self._read_event_cluster_context(manifest),
+            "cutoff_safe_web_sources": self._read_web_source_context(manifest),
+            "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
+            "required_checks": [
+                "first_public_evidence_at",
+                "after_hours_new_disclosure",
+                "recycled_news",
+                "contract_stage",
+                "attributable_amount",
+                "customer",
+                "period",
+                "approval_stage",
+                "dilution_or_financing_risks",
+            ],
+        }
+        return (
+            "Review pre-open news event clusters for novelty and directness as "
+            "NewsNoveltyReview. Use only current_news, event_clusters, and "
+            "cutoff_safe_web_sources. Do not use cutoff-after evidence. Preserve every "
+            "cluster_id in the output and cite only provided evidence_source_ids. Mark "
+            "uncertain fields as unclear instead of guessing.\n"
+            "---NEWS_NOVELTY_REVIEW_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _normalize_news_novelty_review(
+        self,
+        review: NewsNoveltyReview,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+    ) -> NewsNoveltyReview:
+        cluster_rows = self._read_event_cluster_context(manifest)
+        cluster_by_id = {
+            str(row["cluster_id"]): row
+            for row in cluster_rows
+            if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+        }
+        allowed_source_ids = self._allowed_news_novelty_source_ids(cluster_rows, manifest)
+        normalized_findings: list[NewsNoveltyFinding] = []
+        seen_cluster_ids: set[str] = set()
+        for finding in review.findings:
+            cluster_row = cluster_by_id.get(finding.cluster_id)
+            if cluster_row is None:
+                raise ValueError(
+                    "news novelty review referenced unknown cluster_id: "
+                    f"{finding.cluster_id}"
+                )
+            normalized_findings.append(
+                self._normalize_news_novelty_finding(
+                    finding,
+                    cluster_row=cluster_row,
+                    cutoff_at=cutoff_at,
+                    allowed_source_ids=allowed_source_ids,
+                )
+            )
+            seen_cluster_ids.add(finding.cluster_id)
+        for cluster_id, cluster_row in cluster_by_id.items():
+            if cluster_id in seen_cluster_ids:
+                continue
+            normalized_findings.append(
+                self._fallback_news_novelty_finding(
+                    cluster_row=cluster_row,
+                    cutoff_at=cutoff_at,
+                )
+            )
+        normalized_findings.sort(key=lambda item: item.cluster_index)
+        return review.model_copy(
+            update={
+                "run_id": manifest.run_id,
+                "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION,
+                "prompt_sha256": prompt_sha256,
+                "cutoff_at": cutoff_at,
+                "review_mode": manifest.blind_context_mode,
+                "cluster_count": len(cluster_by_id),
+                "reviewed_cluster_count": len(normalized_findings),
+                "findings": normalized_findings,
+                "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
+            }
+        )
+
+    def _normalize_news_novelty_finding(
+        self,
+        finding: NewsNoveltyFinding,
+        *,
+        cluster_row: dict[str, Any],
+        cutoff_at: datetime,
+        allowed_source_ids: set[str],
+    ) -> NewsNoveltyFinding:
+        first_public_at = finding.first_public_evidence_at
+        if first_public_at is None:
+            first_public_at = _optional_datetime(cluster_row.get("first_published_at"))
+        if first_public_at is not None and first_public_at.tzinfo is None:
+            first_public_at = first_public_at.replace(tzinfo=cutoff_at.tzinfo)
+        if first_public_at is not None and first_public_at > cutoff_at:
+            raise ValueError(
+                "news novelty review used cutoff-after first_public_evidence_at: "
+                f"{first_public_at.isoformat()}"
+            )
+        evidence_source_ids = _unique_preserving_order(
+            finding.evidence_source_ids
+            or [str(source_id) for source_id in cluster_row.get("source_ids", [])]
+        )
+        unknown_source_ids = sorted(
+            source_id for source_id in evidence_source_ids if source_id not in allowed_source_ids
+        )
+        if unknown_source_ids:
+            raise ValueError(
+                "news novelty review referenced unknown evidence_source_ids: "
+                + ", ".join(unknown_source_ids)
+            )
+        return finding.model_copy(
+            update={
+                "cluster_index": int(cluster_row["cluster_index"]),
+                "row_numbers": [int(value) for value in cluster_row.get("row_numbers", [])],
+                "event_ids": [str(value) for value in cluster_row.get("event_ids", [])],
+                "evidence_source_ids": evidence_source_ids,
+                "first_public_evidence_at": first_public_at,
+                "time_verified": first_public_at is not None and first_public_at <= cutoff_at,
+            }
+        )
+
+    def _fallback_news_novelty_review(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+    ) -> NewsNoveltyReview:
+        cluster_rows = self._read_event_cluster_context(manifest)
+        findings = [
+            self._fallback_news_novelty_finding(
+                cluster_row=cluster_row,
+                cutoff_at=cutoff_at,
+            )
+            for cluster_row in cluster_rows
+        ]
+        return NewsNoveltyReview(
+            run_id=manifest.run_id,
+            prompt_version=NEWS_NOVELTY_REVIEW_PROMPT_VERSION,
+            prompt_sha256=prompt_sha256,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            review_mode=manifest.blind_context_mode,
+            cluster_count=len(cluster_rows),
+            reviewed_cluster_count=len(findings),
+            findings=findings,
+            excluded_after_cutoff_source_ids=manifest.excluded_web_source_ids,
+            notes=["Fallback novelty review: semantic LLM review was unavailable."],
+        )
+
+    def _fallback_news_novelty_finding(
+        self,
+        *,
+        cluster_row: dict[str, Any],
+        cutoff_at: datetime,
+    ) -> NewsNoveltyFinding:
+        first_public_at = _optional_datetime(cluster_row.get("first_published_at"))
+        if first_public_at is not None and first_public_at.tzinfo is None:
+            first_public_at = first_public_at.replace(tzinfo=cutoff_at.tzinfo)
+        source_ids = [str(value) for value in cluster_row.get("source_ids", [])]
+        return NewsNoveltyFinding(
+            cluster_id=str(cluster_row["cluster_id"]),
+            cluster_index=int(cluster_row["cluster_index"]),
+            row_numbers=[int(value) for value in cluster_row.get("row_numbers", [])],
+            event_ids=[str(value) for value in cluster_row.get("event_ids", [])],
+            novelty=NewsNoveltyLabel.UNCLEAR,
+            first_public_evidence_at=first_public_at,
+            evidence_source_ids=source_ids,
+            after_hours_new_disclosure="unclear",
+            recycled_news="unclear",
+            contract_stage="unclear",
+            evidence_summary=(
+                "Current news cluster is cutoff-safe, but semantic novelty, contract stage, "
+                "attributable amount, customer, period, approval stage, and dilution risks "
+                "remain unclear without stronger reviewed evidence."
+            ),
+            uncertainties=[
+                "semantic novelty requires cutoff-safe LLM/web review",
+                "contract economics and counterfactors are not deterministically inferable",
+            ],
+            time_verified=first_public_at is not None and first_public_at <= cutoff_at,
+        )
+
+    def _allowed_news_novelty_source_ids(
+        self,
+        cluster_rows: list[dict[str, Any]],
+        manifest: ContextManifest,
+    ) -> set[str]:
+        source_ids: set[str] = set()
+        for row in cluster_rows:
+            for source_id in row.get("source_ids", []):
+                if isinstance(source_id, str):
+                    source_ids.add(source_id)
+        source_ids.update(manifest.web_sources)
+        return source_ids
 
     async def _collect_cutoff_safe_web_sources(
         self,
@@ -1118,6 +1405,7 @@ class DailyAnalyzer:
             "required_inputs": [
                 "current_news",
                 "open_world_first_analysis",
+                "news_novelty_review",
                 "web_research",
                 "global_brain",
                 "all_shard_brains",
@@ -1139,6 +1427,7 @@ class DailyAnalyzer:
             "current_news": news_texts,
             "open_world_first_analysis": first_pass_mechanisms,
             "event_clusters": self._read_event_cluster_context(manifest),
+            "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "web_research": {
                 "queries": manifest.web_queries,
                 "included_sources": manifest.web_sources,
@@ -1187,6 +1476,15 @@ class DailyAnalyzer:
                 continue
             rows.append(json.loads(line))
         return rows
+
+    def _read_news_novelty_review_context(self, manifest: ContextManifest) -> dict[str, Any]:
+        if not manifest.news_novelty_review_artifact:
+            return {}
+        path = self.root / manifest.news_novelty_review_artifact
+        if not path.exists():
+            return {"path": manifest.news_novelty_review_artifact, "missing": True}
+        payload = read_json(path)
+        return payload if isinstance(payload, dict) else {}
 
     def _collect_company_memory_context(
         self,
@@ -1922,6 +2220,9 @@ class DailyAnalyzer:
             model_config=self.llm_model_config,
             default_metadata={"prompt_version": DAILY_BLIND_PROMPT_VERSION},
             purpose_metadata={
+                "news_novelty_review": {
+                    "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION
+                },
                 "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
                 "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},
                 "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
@@ -2142,6 +2443,12 @@ def _event_cluster_fingerprint(item: NewsItem) -> str:
         ]
     )
     return sha256_text(normalized)
+
+
+def _optional_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return parse_datetime(value)
 
 
 def _append_unique_provenance(

@@ -20,6 +20,9 @@ from news_scalping_lab.contracts.models import (
     ClaimStatus,
     ConfidenceLabel,
     MemoryClaim,
+    NewsNoveltyFinding,
+    NewsNoveltyLabel,
+    NewsNoveltyReview,
     OutcomeLabels,
     PathType,
     RedTeamArtifact,
@@ -83,6 +86,33 @@ class RecordingBlindLLM:
         self.calls.append(
             {"prompt": prompt, "response_model": response_model, "purpose": purpose}
         )
+        if response_model is NewsNoveltyReview:
+            review = NewsNoveltyReview(
+                run_id="RUN-provider-novelty",
+                prompt_version="test",
+                prompt_sha256="test",
+                created_at=datetime(1999, 1, 1, 8, 35, 0, tzinfo=KST),
+                cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
+                review_mode="NEWS_ONLY_STRICT",
+                cluster_count=1,
+                reviewed_cluster_count=1,
+                findings=[
+                    NewsNoveltyFinding(
+                        cluster_id=_first_prompt_cluster_id(prompt),
+                        cluster_index=1,
+                        row_numbers=[1],
+                        event_ids=["EVT-provider"],
+                        novelty=NewsNoveltyLabel.UNCLEAR,
+                        first_public_evidence_at=datetime(
+                            1999, 1, 1, 8, 0, 0, tzinfo=KST
+                        ),
+                        evidence_source_ids=_first_prompt_cluster_source_ids(prompt),
+                        evidence_summary="Provider novelty review keeps uncertainty.",
+                        uncertainties=["provider novelty uncertainty"],
+                    )
+                ],
+            )
+            return review  # type: ignore[return-value]
         if response_model is RedTeamArtifact:
             artifact = RedTeamArtifact(
                 run_id="RUN-provider-red-team",
@@ -165,6 +195,37 @@ class RecordingBlindLLM:
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         return [[0.0] for _ in texts]
+
+
+def _first_prompt_cluster_id(prompt: str) -> str:
+    payload = _news_novelty_prompt_payload(prompt)
+    clusters = payload.get("event_clusters", [])
+    if isinstance(clusters, list) and clusters and isinstance(clusters[0], dict):
+        cluster_id = clusters[0].get("cluster_id")
+        if isinstance(cluster_id, str):
+            return cluster_id
+    return "EVCL-provider"
+
+
+def _first_prompt_cluster_source_ids(prompt: str) -> list[str]:
+    payload = _news_novelty_prompt_payload(prompt)
+    clusters = payload.get("event_clusters", [])
+    if isinstance(clusters, list) and clusters and isinstance(clusters[0], dict):
+        source_ids = clusters[0].get("source_ids", [])
+        return [source_id for source_id in source_ids if isinstance(source_id, str)]
+    return []
+
+
+def _news_novelty_prompt_payload(prompt: str) -> dict[str, object]:
+    marker = "---NEWS_NOVELTY_REVIEW_PAYLOAD---"
+    if marker not in prompt:
+        return {}
+    payload = json.loads(prompt.split(marker, maxsplit=1)[-1])
+    return payload if isinstance(payload, dict) else {}
+
+
+def _llm_call(llm: RecordingBlindLLM, purpose: str) -> dict[str, object]:
+    return next(call for call in llm.calls if call["purpose"] == purpose)
 
 
 class BrokenMemorySweeper:
@@ -428,6 +489,38 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert "body" not in event_clusters[0]
     assert event_clusters[0]["representative_title_sha256"]
     assert event_clusters[0]["representative_body_sha256"]
+    assert saved_manifest["news_novelty_review_artifact"]
+    assert saved_manifest["news_novelty_review_count"] == 1
+    assert saved_manifest["news_novelty_review_summary"] == {
+        "cluster_count": 1,
+        "reviewed_cluster_count": 1,
+        "review_mode": "NEWS_ONLY_STRICT",
+        "novelty_counts": {
+            "new": 0,
+            "follow_up": 0,
+            "recycled": 0,
+            "unclear": 1,
+        },
+        "time_verified_count": 1,
+        "excluded_after_cutoff_source_count": 0,
+    }
+    novelty_review_path = tmp_path / saved_manifest["news_novelty_review_artifact"]
+    novelty_review_text = novelty_review_path.read_text(encoding="utf-8")
+    novelty_review = json.loads(novelty_review_text)
+    assert sha256_text(novelty_review_text) == saved_manifest["news_novelty_review_sha256"]
+    assert novelty_review["schema_version"] == "nslab.news_novelty_review.v1"
+    assert novelty_review["run_id"] == analysis.run_id
+    assert novelty_review["prompt_sha256"]
+    assert novelty_review["cluster_count"] == 1
+    assert novelty_review["reviewed_cluster_count"] == 1
+    assert novelty_review["findings"][0]["cluster_id"] == event_clusters[0]["cluster_id"]
+    assert novelty_review["findings"][0]["row_numbers"] == [2]
+    assert novelty_review["findings"][0]["event_ids"] == event_clusters[0]["event_ids"]
+    assert novelty_review["findings"][0]["novelty"] == "unclear"
+    assert novelty_review["findings"][0]["first_public_evidence_at"] == (
+        "2030-01-10T08:00:00+09:00"
+    )
+    assert novelty_review["findings"][0]["time_verified"] is True
     assert saved_manifest["source_ledger_artifact"]
     assert saved_manifest["source_ledger_entry_count"] == 1
     assert saved_manifest["source_ledger_summary"] == {
@@ -467,6 +560,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         == saved_manifest["blind_seal_receipt_sha256"]
     )
     assert saved_manifest["token_counts"]["blind_analysis_prompt"] > 0
+    assert saved_manifest["token_counts"]["news_novelty_review_prompt"] > 0
     assert saved_manifest["token_counts"]["final_synthesis_prompt"] > 0
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
     prompt_hash_by_purpose = {
@@ -478,8 +572,16 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         trace["purpose"]: trace["model_config"]
         for trace in traces
         if trace["purpose"]
-        in {"daily_blind_analysis", "red_team_candidate_review", "final_synthesis"}
+        in {
+            "news_novelty_review",
+            "daily_blind_analysis",
+            "red_team_candidate_review",
+            "final_synthesis",
+        }
     }
+    assert saved_manifest["prompt_hashes"]["news_novelty_review"] == prompt_hash_by_purpose[
+        "news_novelty_review"
+    ]
     assert saved_manifest["prompt_hashes"]["blind_analysis"] == prompt_hash_by_purpose[
         "daily_blind_analysis"
     ]
@@ -718,12 +820,17 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         web_search=True,
     )
 
-    assert len(llm.calls) == 3
-    assert llm.calls[0]["purpose"] == "daily_blind_analysis"
-    assert llm.calls[1]["purpose"] == "red_team_candidate_review"
-    assert llm.calls[2]["purpose"] == "final_synthesis"
-    assert "ProviderCo" in str(llm.calls[0]["prompt"])
-    assert "red_team_output" in str(llm.calls[2]["prompt"])
+    assert [call["purpose"] for call in llm.calls] == [
+        "news_novelty_review",
+        "daily_blind_analysis",
+        "red_team_candidate_review",
+        "final_synthesis",
+    ]
+    blind_call = _llm_call(llm, "daily_blind_analysis")
+    final_call = _llm_call(llm, "final_synthesis")
+    assert "ProviderCo" in str(blind_call["prompt"])
+    assert "news_novelty_review" in str(final_call["prompt"])
+    assert "red_team_output" in str(final_call["prompt"])
     assert analysis.blind_prediction.trade_date == date(2030, 1, 10)
     assert analysis.blind_prediction.cutoff_at == datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     assert analysis.blind_prediction.candidates[0].rank == 1
@@ -733,7 +840,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert analysis.blind_prediction.candidates[0].provenance
     assert analysis.blind_prediction.blind_analysis.summary == "Provider final synthesis."
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
-    final_prompt = str(llm.calls[2]["prompt"])
+    final_prompt = str(final_call["prompt"])
     assert "company_memory" in final_prompt
     assert "SafeMemoryCo" in final_prompt
     assert "FutureMemoryCo" not in final_prompt
@@ -769,12 +876,15 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert analysis.blind_prediction.blind_artifact_sha256
     assert analysis.context_manifest.red_team_artifacts
+    assert analysis.context_manifest.prompt_hashes["news_novelty_review"]
     assert analysis.context_manifest.prompt_hashes["final_synthesis"]
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
+    assert any(trace["purpose"] == "news_novelty_review" for trace in traces)
     assert any(trace["purpose"] == "daily_blind_analysis" for trace in traces)
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
+    assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v1"
     assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
@@ -843,7 +953,7 @@ async def test_final_synthesis_receives_counterexample_context(tmp_path) -> None
         web_search=False,
     )
 
-    final_prompt = str(llm.calls[2]["prompt"])
+    final_prompt = str(_llm_call(llm, "final_synthesis")["prompt"])
     assert analysis.context_manifest.counterexample_episode_ids == ["EP-counterexample"]
     assert '"negative_cases":["EP-counterexample"]' in final_prompt
     assert "Same-looking catalyst failed" in final_prompt
@@ -939,7 +1049,7 @@ async def test_retrieved_raw_episodes_are_filtered_by_available_from(tmp_path) -
         web_search=False,
     )
 
-    final_prompt = str(llm.calls[2]["prompt"])
+    final_prompt = str(_llm_call(llm, "final_synthesis")["prompt"])
     assert analysis.context_manifest.retrieved_episode_ids == ["EP-retrieved"]
     assert analysis.context_manifest.excluded_retrieved_episode_ids == ["EP-future-retrieved"]
     assert "ProviderCo retrieved raw summary available before the run" in final_prompt
@@ -1025,7 +1135,7 @@ async def test_analyze_uses_as_of_brain_when_current_brain_contains_future_episo
     assert "EP-future-brain" not in context_text
     assert "CL-available-asof-lesson" in context_text
     assert "Available imported lesson must enter as-of brain context." in context_text
-    final_prompt = str(llm.calls[2]["prompt"])
+    final_prompt = str(_llm_call(llm, "final_synthesis")["prompt"])
     assert "ProviderCo available brain summary" in final_prompt
     assert "Available imported lesson must enter as-of brain context." in final_prompt
     assert "ProviderCo future brain summary must stop analysis" not in final_prompt

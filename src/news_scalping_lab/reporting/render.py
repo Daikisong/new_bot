@@ -191,6 +191,20 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Clusters: {manifest.event_cluster_count}",
             f"- Exact duplicates: {manifest.event_cluster_summary.get('exact_duplicate_count', 0)}",
             "",
+            "News novelty review:",
+            "",
+            f"- Artifact: {manifest.news_novelty_review_artifact or 'none'}",
+            f"- SHA256: {manifest.news_novelty_review_sha256 or 'none'}",
+            f"- Reviewed clusters: {manifest.news_novelty_review_count}",
+            (
+                "- Novelty counts: "
+                f"{manifest.news_novelty_review_summary.get('novelty_counts', {})}"
+            ),
+            (
+                "- Time-verified findings: "
+                f"{manifest.news_novelty_review_summary.get('time_verified_count', 0)}"
+            ),
+            "",
             "Excluded after-cutoff web source ids:",
             "",
             "\n".join(f"- {source_id}" for source_id in manifest.excluded_web_source_ids)

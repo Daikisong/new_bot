@@ -143,6 +143,15 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         event_cluster_sha256="event-cluster-sha",
         event_cluster_count=1,
         event_cluster_summary={"exact_duplicate_count": 0},
+        news_novelty_review_artifact=(
+            "runs/checkpoints/news_novelty_reviews/RUN-report/news_novelty_review.json"
+        ),
+        news_novelty_review_sha256="novelty-review-sha",
+        news_novelty_review_count=1,
+        news_novelty_review_summary={
+            "novelty_counts": {"unclear": 1},
+            "time_verified_count": 1,
+        },
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl",
         source_ledger_sha256="ledger-sha",
         source_ledger_entry_count=3,
@@ -222,6 +231,16 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- SHA256: event-cluster-sha" in report
     assert "- Clusters: 1" in report
     assert "- Exact duplicates: 0" in report
+    assert "News novelty review:" in report
+    assert (
+        "- Artifact: runs/checkpoints/news_novelty_reviews/RUN-report/"
+        "news_novelty_review.json"
+        in report
+    )
+    assert "- SHA256: novelty-review-sha" in report
+    assert "- Reviewed clusters: 1" in report
+    assert "- Novelty counts: {'unclear': 1}" in report
+    assert "- Time-verified findings: 1" in report
     assert "Source ledger:" in report
     assert "- Artifact: runs/checkpoints/source_ledger/RUN-report/source_ledger.jsonl" in report
     assert "- SHA256: ledger-sha" in report

@@ -16,6 +16,7 @@ from news_scalping_lab.contracts.models import (
     EventTickerEdge,
     MechanismMemory,
     MemoryClaim,
+    NewsNoveltyReview,
     Postmortem,
     RedTeamArtifact,
     ResearchEpisode,
@@ -35,6 +36,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "candidate.schema.json": Candidate,
     "context_manifest.schema.json": ContextManifest,
     "red_team_artifact.schema.json": RedTeamArtifact,
+    "news_novelty_review.schema.json": NewsNoveltyReview,
 }
 
 
