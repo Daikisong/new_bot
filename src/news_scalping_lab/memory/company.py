@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from news_scalping_lab.contracts.models import Candidate, CompanyMemory, PathType, Provenance
+from news_scalping_lab.contracts.models import Candidate, CompanyMemory, Provenance
 from news_scalping_lab.utils import file_sha256, read_json, stable_id, write_json
 
 GENERIC_COMPANY_NAMES = {
@@ -88,11 +88,10 @@ class CompanyMemoryStore:
 
 
 def _is_company_memory_candidate(candidate: Candidate) -> bool:
-    if candidate.path_type != PathType.SINGLE_EVENT:
+    company_name = candidate.company_name.strip()
+    if not company_name:
         return False
-    if candidate.company_name in GENERIC_COMPANY_NAMES:
-        return False
-    return bool(candidate.company_name.strip())
+    return company_name not in GENERIC_COMPANY_NAMES
 
 
 def _merge_company_memory(existing: CompanyMemory, incoming: CompanyMemory) -> CompanyMemory:
