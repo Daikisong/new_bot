@@ -90,6 +90,9 @@ nslab analyze \
 ```
 
 `exhaustive` mode is the default quality mode. It sweeps every accepted research episode and fails if coverage is incomplete. Retrieval misses are recorded but never used to block open-world candidate generation.
+`brain` mode also loads global brain files and shard brain summaries, and records
+memory sweep artifacts for every time-available accepted episode so those episodes
+still influence synthesis indirectly.
 
 Without `--web-search`, the BLIND phase runs in `NEWS_ONLY_STRICT` mode and does
 not call web providers or price repositories. With `--web-search`, the BLIND phase

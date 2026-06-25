@@ -1237,6 +1237,69 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
 
 
 @pytest.mark.asyncio
+async def test_brain_mode_loads_shard_brains_and_sweeps_available_episodes(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.shard_episode_count = 1
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    for index in range(2):
+        episode = _retrieval_episode(
+            f"EP-brain-mode-{index}",
+            summary=f"Brain mode lesson {index} should reach shard context.",
+            available_day=date(2030, 1, 10),
+        )
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    csv_path = tmp_path / "brain_mode_news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","BrainModeCo, catalyst",'
+        '"Brain mode must carry shard summaries and swept memory."\n',
+        encoding="utf-8",
+    )
+    llm = RecordingBlindLLM(
+        expected_final_prompt_substring="Brain mode lesson 0 should reach shard context."
+    )
+
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="brain",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    expected_ids = {"EP-brain-mode-0", "EP-brain-mode-1"}
+    assert manifest.mode == "brain"
+    assert manifest.accepted_episode_count == 2
+    assert manifest.swept_episode_count == 2
+    assert set(manifest.swept_episode_ids) == expected_ids
+    assert manifest.errors == []
+    assert manifest.memory_sweep_shard_count == 2
+    assert len(manifest.memory_sweep_artifacts) == 2
+    assert set(manifest.memory_sweep_artifact_hashes) == set(
+        manifest.memory_sweep_artifacts
+    )
+    shard_brain_text = "\n".join(
+        (tmp_path / path).read_text(encoding="utf-8")
+        for path in manifest.shard_brain_files
+    )
+    assert expected_ids <= {
+        episode_id for episode_id in expected_ids if episode_id in shard_brain_text
+    }
+    swept_from_artifacts: set[str] = set()
+    for artifact in manifest.memory_sweep_artifacts:
+        payload = read_json(tmp_path / artifact)
+        assert payload["mode"] == "brain"
+        swept_from_artifacts.update(payload["episode_ids"])
+    assert swept_from_artifacts == expected_ids
+
+
+@pytest.mark.asyncio
 async def test_exhaustive_analyze_sweeps_one_hundred_accepted_episodes(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     settings.limits.shard_episode_count = 10
