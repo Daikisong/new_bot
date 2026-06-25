@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
+from news_scalping_lab.contracts.models import CompanyMemory
 from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
@@ -73,11 +76,13 @@ def audit_provenance(root: Path) -> dict[str, object]:
                     f"{path.name}: candidate lacks provenance anchors: {candidate.get('company_name')}"
                 )
     checked_research_episode_files = _check_research_episode_provenance(root, findings)
+    checked_company_memory_files = _check_company_memory_provenance(root, findings)
     return {
         "passed": not findings,
         "findings": findings,
         "checked_predictions": checked_predictions,
         "checked_research_episode_files": checked_research_episode_files,
+        "checked_company_memory_files": checked_company_memory_files,
     }
 
 
@@ -90,6 +95,59 @@ def _check_research_episode_provenance(root: Path, findings: list[str]) -> int:
         checked += 1
         _check_semantic_import_audit(root, path, episode, findings)
     return checked
+
+
+def _check_company_memory_provenance(root: Path, findings: list[str]) -> int:
+    checked = 0
+    for path in sorted((root / "memory" / "company_memory").glob("*.json")):
+        memory = _read_json_object(path, findings)
+        if memory is None:
+            continue
+        checked += 1
+        label = _display_path(root, path)
+        try:
+            CompanyMemory.model_validate(memory)
+        except ValidationError as exc:
+            findings.append(f"{label}: company memory schema invalid: {exc}")
+            continue
+        provenance_entries = memory.get("provenance")
+        if not isinstance(provenance_entries, list) or not provenance_entries:
+            findings.append(f"{label}: company memory missing provenance")
+            continue
+        for index, entry in enumerate(provenance_entries, start=1):
+            if not isinstance(entry, dict):
+                findings.append(f"{label}: company memory provenance {index} is invalid")
+                continue
+            _check_company_memory_source(root, label, index, entry, findings)
+    return checked
+
+
+def _check_company_memory_source(
+    root: Path,
+    label: str,
+    index: int,
+    entry: dict[str, Any],
+    findings: list[str],
+) -> None:
+    for field in ("source_id", "source_type", "uri"):
+        if not isinstance(entry.get(field), str) or not entry.get(field):
+            findings.append(f"{label}: company memory provenance {index} missing {field}")
+    uri = entry.get("uri")
+    if not isinstance(uri, str) or not uri or _is_external_uri(uri):
+        return
+    source_path = _resolve_project_path(root, uri)
+    if source_path is None:
+        findings.append(f"{label}: company memory provenance {index} uri escapes project root")
+        return
+    if not source_path.exists():
+        findings.append(f"{label}: company memory provenance {index} source file not found: {uri}")
+        return
+    expected_hash = entry.get("content_sha256")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(f"{label}: company memory provenance {index} missing content_sha256")
+        return
+    if file_sha256(source_path) != expected_hash:
+        findings.append(f"{label}: company memory provenance {index} content_sha256 mismatch")
 
 
 def _check_blind_artifact_hash(
@@ -319,6 +377,10 @@ def _same_project_path(root: Path, left: str, right: str) -> bool:
     if left_path is None or right_path is None:
         return left == right
     return left_path == right_path
+
+
+def _is_external_uri(uri: str) -> bool:
+    return "://" in uri
 
 
 def _display_path(root: Path, path: Path) -> str:

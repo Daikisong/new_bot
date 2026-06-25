@@ -571,6 +571,54 @@ def test_provenance_audit_requires_blind_sector_and_candidate_provenance(tmp_pat
     ) in result["findings"]
 
 
+def test_provenance_audit_validates_company_memory_source_hash(tmp_path: Path) -> None:
+    source_dir = tmp_path / "runs" / "company_memory_sources"
+    source_dir.mkdir(parents=True)
+    source_path = source_dir / "prediction-source.json"
+    source_path.write_text('{"candidate":"NovelCo"}\n', encoding="utf-8")
+    memory_dir = tmp_path / "memory" / "company_memory"
+    memory_dir.mkdir(parents=True)
+    write_json(
+        memory_dir / "CM-valid.json",
+        {
+            "ticker": "UNKNOWN",
+            "company_name": "NovelCo",
+            "aliases": ["NovelCo"],
+            "business_descriptions": ["Generated from a blind candidate."],
+            "locations": [],
+            "customers": [],
+            "supply_chain_roles": ["current evidence", "company verification"],
+            "prior_market_narratives": ["Blind thesis."],
+            "prior_leader_occurrences": [],
+            "contradictory_relations": ["listing status unverified"],
+            "known_at": "2030-01-10T08:59:59+09:00",
+            "provenance": [
+                {
+                    "source_id": "SRC-company-memory",
+                    "source_type": "blind_analysis_company_memory_candidate",
+                    "uri": "runs/company_memory_sources/prediction-source.json",
+                    "content_sha256": file_sha256(source_path),
+                    "excerpt": "Blind thesis.",
+                    "observed_at": "2030-01-10T08:59:59+09:00",
+                }
+            ],
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"] is True
+    assert result["checked_company_memory_files"] == 1
+
+    source_path.write_text('{"candidate":"Tampered"}\n', encoding="utf-8")
+    failed = audit_provenance(tmp_path)
+
+    assert failed["passed"] is False
+    assert (
+        "memory/company_memory/CM-valid.json: company memory provenance 1 content_sha256 mismatch"
+    ) in failed["findings"]
+
+
 def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
