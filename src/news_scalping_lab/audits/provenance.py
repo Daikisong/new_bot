@@ -23,6 +23,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     default_news_window_start,
     file_sha256,
+    is_available_as_of,
     next_trading_day,
     parse_datetime,
     read_json,
@@ -231,6 +232,7 @@ def _check_research_episode_blind_decision_provenance(
     findings: list[str],
 ) -> None:
     label = _display_path(root, episode_path)
+    episode_available_from = _parse_optional_datetime(episode.get("available_from"))
     blind_analysis = episode.get("blind_analysis")
     if not isinstance(blind_analysis, dict):
         findings.append(f"{label}: research episode blind_analysis missing")
@@ -290,6 +292,7 @@ def _check_research_episode_blind_decision_provenance(
             label,
             episode.get(field_name),
             findings,
+            episode_available_from=episode_available_from,
             field_name=field_name,
             kind=kind,
         )
@@ -301,6 +304,7 @@ def _check_research_episode_nested_list_provenance(
     value: Any,
     findings: list[str],
     *,
+    episode_available_from: datetime | None,
     field_name: str,
     kind: str,
 ) -> None:
@@ -318,6 +322,48 @@ def _check_research_episode_nested_list_provenance(
             findings,
             kind=f"{kind} {index}",
         )
+        if field_name in {"lessons", "counterexamples"}:
+            _check_research_episode_claim_available_from(
+                label,
+                item,
+                findings,
+                episode_available_from=episode_available_from,
+                kind=kind,
+                index=index,
+            )
+
+
+def _check_research_episode_claim_available_from(
+    label: str,
+    claim: dict[str, Any],
+    findings: list[str],
+    *,
+    episode_available_from: datetime | None,
+    kind: str,
+    index: int,
+) -> None:
+    raw_available_from = claim.get("available_from")
+    if not isinstance(raw_available_from, str):
+        findings.append(f"{label}: {kind} {index} available_from missing")
+        return
+    claim_available_from = _parse_optional_datetime(raw_available_from)
+    if claim_available_from is None:
+        findings.append(f"{label}: {kind} {index} available_from invalid")
+        return
+    if episode_available_from is not None and not is_available_as_of(
+        episode_available_from,
+        claim_available_from,
+    ):
+        findings.append(f"{label}: {kind} {index} available_from precedes episode")
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _check_nested_provenance_entries(

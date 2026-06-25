@@ -1525,6 +1525,86 @@ def test_provenance_audit_rejects_early_research_episode_available_from(
     ) in result["findings"]
 
 
+def test_provenance_audit_rejects_early_research_episode_claim_available_from(
+    tmp_path: Path,
+) -> None:
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-claim-time.json",
+        {
+            "episode_id": "EP-claim-time",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "created_at": "2030-01-11T00:00:00+09:00",
+            "research_version": "claim-available-from-test-v1",
+            "input_news_files": [],
+            "input_news_hashes": [],
+            "price_source_snapshot": {"source": "test"},
+            "blind_analysis": {
+                "summary": "Accepted episode with early claim availability.",
+                "open_world_mechanisms": [],
+                "initial_uncertainties": [],
+                "provenance": [
+                    {
+                        "source_id": "SRC-blind-analysis",
+                        "source_type": "daily_blind_analysis_blind_analysis",
+                        "uri": "prompt://daily_blind_analysis/test",
+                    }
+                ],
+            },
+            "blind_predictions": [],
+            "observed_events": [],
+            "event_ticker_edges": [],
+            "lessons": [
+                {
+                    "claim_id": "CL-early-lesson",
+                    "available_from": "2030-01-10T09:00:00+09:00",
+                    "provenance": [
+                        {
+                            "source_id": "SRC-lesson",
+                            "source_type": "evaluation_postmortem",
+                            "uri": "prompt://lesson/test",
+                        }
+                    ],
+                }
+            ],
+            "counterexamples": [
+                {
+                    "claim_id": "CL-early-counterexample",
+                    "available_from": "2030-01-10T09:00:00+09:00",
+                    "provenance": [
+                        {
+                            "source_id": "SRC-counterexample",
+                            "source_type": "evaluation_postmortem",
+                            "uri": "prompt://counterexample/test",
+                        }
+                    ],
+                }
+            ],
+            "misses": [],
+            "provenance": [
+                {
+                    "source_id": "SRC-episode",
+                    "source_type": "accepted_research_episode",
+                    "uri": "prompt://accepted_episode/test",
+                }
+            ],
+            "available_from": "2030-01-11T00:00:00+09:00",
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "research/accepted/EP-claim-time.json: research episode lesson 1 "
+        "available_from precedes episode"
+    ) in result["findings"]
+    assert (
+        "research/accepted/EP-claim-time.json: research episode counterexample 1 "
+        "available_from precedes episode"
+    ) in result["findings"]
+
+
 def test_provenance_audit_requires_accepted_episode_blind_decision_provenance(
     tmp_path: Path,
 ) -> None:
