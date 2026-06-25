@@ -35,6 +35,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
             _check_manifest_context_file_hashes(root, path, manifest, findings)
+            _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
             _check_prompt_hash_traces(root, path, prompt_hashes, manifest, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
@@ -511,6 +512,106 @@ def _check_manifest_context_file_hashes(
         label="shard brain file",
         findings=findings,
     )
+
+
+def _check_manifest_output_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    _check_manifest_prediction_artifact(root, prediction_path, manifest, findings)
+    _check_manifest_report_artifact(root, prediction_path, manifest, findings)
+
+
+def _check_manifest_prediction_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("prediction_artifact")
+    expected_hash = manifest.get("prediction_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="prediction_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest missing prediction_sha256")
+    elif file_sha256(artifact_path) != expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest prediction_sha256 mismatch")
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("context_manifest_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest prediction_artifact run_id mismatch"
+        )
+
+
+def _check_manifest_report_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("report_artifact")
+    expected_hash = manifest.get("report_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="report_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    report_text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest missing report_sha256")
+    elif sha256_text(report_text) != expected_hash:
+        findings.append(f"{prediction_path.name}: context manifest report_sha256 mismatch")
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and run_id not in report_text:
+        findings.append(
+            f"{prediction_path.name}: context manifest report_artifact missing run id"
+        )
+
+
+def _resolve_required_manifest_artifact(
+    root: Path,
+    prediction_path: Path,
+    artifact_ref: object,
+    *,
+    label: str,
+    findings: list[str],
+) -> Path | None:
+    if not isinstance(artifact_ref, str) or not artifact_ref:
+        findings.append(f"{prediction_path.name}: context manifest missing {label}")
+        return None
+    artifact_path = _resolve_manifest_path(root, artifact_ref)
+    if artifact_path is None:
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} path escapes project root: "
+            f"{artifact_ref}"
+        )
+        return None
+    if not artifact_path.exists():
+        findings.append(
+            f"{prediction_path.name}: context manifest {label} not found: {artifact_ref}"
+        )
+        return None
+    return artifact_path
 
 
 def _check_manifest_file_hashes(

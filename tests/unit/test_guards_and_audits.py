@@ -316,16 +316,22 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
     (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
     write_json(
         tmp_path / "predictions" / "2030-01-10.json",
-        {
-            "blind_artifact_sha256": "abc123",
-            "context_manifest_id": "RUN-linked",
-            "blind_analysis": _blind_analysis_with_provenance(),
-            "dominant_sectors": [_sector_with_provenance()],
-            "candidates": [_candidate_with_provenance()],
-        },
+        prediction,
     )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text("Run ID: `RUN-linked`", encoding="utf-8")
     write_json(
         tmp_path / "runs" / "manifests" / "RUN-linked.json",
         {
@@ -333,6 +339,10 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
             "prompt_hashes": {"blind_analysis": "def456"},
             "price_snapshot": {"allowed_through": "2030-01-09"},
             "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
@@ -342,6 +352,54 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+
+def test_provenance_audit_validates_manifest_output_artifacts(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    bad_run_prediction = {**prediction, "context_manifest_id": "RUN-other"}
+    write_json(run_prediction_path, bad_run_prediction)
+    run_report_path.write_text("Run ID: `RUN-other`", encoding="utf-8")
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": "0" * 64,
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": "1" * 64,
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    findings = result["findings"]
+    assert "2030-01-10.json: context manifest prediction_sha256 mismatch" in findings
+    assert (
+        "2030-01-10.json: context manifest prediction_artifact run_id mismatch"
+        in findings
+    )
+    assert "2030-01-10.json: context manifest report_sha256 mismatch" in findings
+    assert "2030-01-10.json: context manifest report_artifact missing run id" in findings
 
 
 def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> None:
