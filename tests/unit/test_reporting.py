@@ -110,6 +110,46 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                     )
                 ],
             ),
+            Candidate(
+                rank=3,
+                ticker="UNKNOWN",
+                company_name="BeneficiaryReportCo",
+                path_type=PathType.THEME_BENEFICIARY,
+                event_ids=["EVT-report-theme"],
+                thesis="Theme beneficiary report candidate.",
+                why_now="Policy or industry catalyst may form a beneficiary theme.",
+                causal_chain=["current catalyst", "supply chain beneficiary"],
+                inferred_evidence=["beneficiary path requires web verification"],
+                confidence_label=ConfidenceLabel.SPECULATIVE,
+                evidence_quality=ConfidenceLabel.LOW,
+                provenance=[
+                    Provenance(
+                        source_id="SRC-report-beneficiary",
+                        source_type="test",
+                        uri="test://beneficiary-candidate",
+                    )
+                ],
+            ),
+            Candidate(
+                rank=4,
+                ticker="UNKNOWN",
+                company_name="ContinuationReportCo",
+                path_type=PathType.CONTINUATION,
+                event_ids=["EVT-report-continuation"],
+                thesis="Continuation report candidate.",
+                why_now="D-1 leader review may carry forward into the current pre-open setup.",
+                causal_chain=["D-1 leader", "current continuation review"],
+                market_memory_evidence=["D-1 only continuation evidence"],
+                confidence_label=ConfidenceLabel.LOW,
+                evidence_quality=ConfidenceLabel.LOW,
+                provenance=[
+                    Provenance(
+                        source_id="SRC-report-continuation",
+                        source_type="test",
+                        uri="test://continuation-candidate",
+                    )
+                ],
+            ),
         ],
     )
     manifest = ContextManifest(
@@ -267,6 +307,44 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Memory episodes: EP-hybrid-positive, EP-hybrid-negative" in report
     assert "- Source URLs: news://EVT-report-hybrid" in report
     assert "- Provenance sources: SRC-report-hybrid" in report
+    single_section = _section_between(
+        report,
+        "## 5. Single-News Upper-Limit Candidates",
+        "## 6. Theme Beneficiary Upper-Limit Candidates",
+    )
+    theme_section = _section_between(
+        report,
+        "## 6. Theme Beneficiary Upper-Limit Candidates",
+        "## 7. Prior-Leader Continuation Candidates",
+    )
+    continuation_section = _section_between(
+        report,
+        "## 7. Prior-Leader Continuation Candidates",
+        "## 8. All Pre-Open Watchlist Candidates",
+    )
+    all_watchlist_section = _section_between(
+        report,
+        "## 8. All Pre-Open Watchlist Candidates",
+        "## 9. Excluded But Watch",
+    )
+    assert "### 1. ReportCo (UNKNOWN)" in single_section
+    assert "### 3. BeneficiaryReportCo (UNKNOWN)" not in single_section
+    assert "### 4. ContinuationReportCo (UNKNOWN)" not in single_section
+    assert "BeneficiaryReportCo" in theme_section
+    assert "- Path type: `THEME_BENEFICIARY`" in theme_section
+    assert "### 1. ReportCo (UNKNOWN)" not in theme_section
+    assert "### 4. ContinuationReportCo (UNKNOWN)" not in theme_section
+    assert "ContinuationReportCo" in continuation_section
+    assert "- Path type: `CONTINUATION`" in continuation_section
+    assert "### 1. ReportCo (UNKNOWN)" not in continuation_section
+    assert "### 3. BeneficiaryReportCo (UNKNOWN)" not in continuation_section
+    for company in (
+        "ReportCo",
+        "HybridReportCo",
+        "BeneficiaryReportCo",
+        "ContinuationReportCo",
+    ):
+        assert company in all_watchlist_section
     assert "- Triggering events: EVT-report" in report
     assert "- Direct beneficiaries: DirectReportCo" in report
     assert "- Indirect beneficiaries: IndirectReportCo" in report
@@ -423,3 +501,9 @@ def test_preopen_report_section_inspector_rejects_empty_required_sections() -> N
         "ordered": True,
         "passed": False,
     }
+
+
+def _section_between(report: str, start_heading: str, end_heading: str) -> str:
+    start = report.index(start_heading) + len(start_heading)
+    end = report.index(end_heading)
+    return report[start:end]
