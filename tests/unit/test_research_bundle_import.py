@@ -59,6 +59,7 @@ def _bundle_text(
     tamper_research_hash: bool = False,
     tamper_brain_hash: bool = False,
     tamper_seal_hash: bool = False,
+    tamper_receipt_contract: bool = False,
     tamper_phase_hash: bool = False,
     phase_state_payload: dict[str, object] | None = None,
     row_disposition_coverage_ratio: float = 1.0,
@@ -131,7 +132,28 @@ def _bundle_text(
         json.dumps(row, ensure_ascii=False)
         for row in source_payload_rows
     )
+    row_sha = "0" * 64 if tamper_row_hash else sha256_text(row_jsonl)
+    source_sha = sha256_text(source_jsonl)
     episode_payload = json.loads(episode.model_dump_json())
+    episode_payload["blind_artifact_sha256"] = blind_hash
+    episode_payload["blind_seal_receipt"] = {
+        **episode_payload["blind_seal_receipt"],
+        "run_id": "RUN-bundle-test",
+        "trade_date": episode.trade_date.isoformat(),
+        "cutoff_at": episode.cutoff_at.isoformat(),
+        "blind_context_mode": blind_context_mode,
+        "blind_artifact_sha256": blind_hash,
+        "row_disposition_sha256": row_sha,
+        "source_ledger_sha256": source_sha,
+        "validation": {
+            "blind_web_search_call_count": blind_web_search_call_count,
+            "blind_price_repository_access_count": blind_price_repository_access_count,
+            "blind_current_price_access_count": blind_current_price_access_count,
+            "canonical_blind_hash_verified": True,
+        },
+    }
+    if tamper_receipt_contract:
+        episode_payload["blind_seal_receipt"]["blind_artifact_sha256"] = "0" * 64
     receipt_sha = sha256_text(_write_json_text(episode_payload["blind_seal_receipt"]))
     phase_state = phase_state_payload or {
         "schema_version": "nslab.phase_state.v1",
@@ -157,6 +179,7 @@ def _bundle_text(
         "research_episode_hash_verified": True,
         "brain_delta_hash_verified": True,
         "blind_seal_receipt_hash_verified": True,
+        "blind_seal_receipt_contract_verified": True,
         "phase_state_hash_verified": True,
         "phase_state_receipt_link_verified": True,
         "id_reference_integrity_verified": True,
@@ -167,15 +190,16 @@ def _bundle_text(
         "schema_version": "nslab.bundle_manifest.v1",
         "run_id": "RUN-bundle-test",
         "trade_date": episode.trade_date.isoformat(),
+        "cutoff_at": episode.cutoff_at.isoformat(),
         "blind_context_mode": blind_context_mode,
         "blind_web_search_call_count": blind_web_search_call_count,
         "blind_price_repository_access_count": blind_price_repository_access_count,
         "blind_current_price_access_count": blind_current_price_access_count,
         "no_d_outcome_exposed": no_d_outcome_exposed,
         "blind_artifact_sha256": blind_hash,
-        "row_disposition_sha256": "0" * 64 if tamper_row_hash else sha256_text(row_jsonl),
+        "row_disposition_sha256": row_sha,
         "row_disposition_coverage_ratio": row_disposition_coverage_ratio,
-        "source_ledger_sha256": sha256_text(source_jsonl),
+        "source_ledger_sha256": source_sha,
         "source_ledger_entry_count": (
             len(source_payload_rows)
             if source_ledger_entry_count is None
@@ -215,7 +239,7 @@ Blind report body.
 
 <!-- NSLAB:BEGIN research_episode.json -->
 ```json
-{episode.model_dump_json(indent=2)}
+{json.dumps(episode_payload, ensure_ascii=False, indent=2, sort_keys=True)}
 ```
 <!-- NSLAB:END research_episode.json -->
 
@@ -268,6 +292,7 @@ def test_bundle_import_preserves_raw_and_saves_episode(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["blind_seal_receipt_contract_verified"]
     assert parsed.validation["phase_state_hash_verified"]
     assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
@@ -434,6 +459,21 @@ def test_bundle_import_rejects_mismatched_blind_seal_receipt_hash(tmp_path) -> N
 
     assert not parsed.validation["blind_seal_receipt_hash_verified"]
     with pytest.raises(BundleImportError, match="blind_seal_receipt hash"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_blind_seal_receipt_contract_mismatch(tmp_path) -> None:
+    source = tmp_path / "tampered_seal_contract_bundle.md"
+    source.write_text(
+        _bundle_text(_episode(), tamper_receipt_contract=True),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert not parsed.validation["blind_seal_receipt_contract_verified"]
+    with pytest.raises(BundleImportError, match="blind_seal_receipt content"):
         ResearchImporter(tmp_path).import_path(source, mode="bundle")
 
 

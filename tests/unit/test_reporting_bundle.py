@@ -228,7 +228,12 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "row_disposition_coverage_ratio": 1.0,
         "source_ledger_sha256": sha256_text(source_ledger),
         "no_d_outcome_exposed": True,
-        "validation": {"canonical_blind_hash_verified": True},
+        "validation": {
+            "blind_web_search_call_count": 0,
+            "blind_price_repository_access_count": 0,
+            "blind_current_price_access_count": 0,
+            "canonical_blind_hash_verified": True,
+        },
     }
     receipt_path = (
         tmp_path
@@ -338,6 +343,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert parsed.validation["research_episode_hash_verified"]
     assert parsed.validation["brain_delta_hash_verified"]
     assert parsed.validation["blind_seal_receipt_hash_verified"]
+    assert parsed.validation["blind_seal_receipt_contract_verified"]
     assert parsed.validation["phase_state_hash_verified"]
     assert parsed.validation["phase_state_receipt_link_verified"]
     assert parsed.validation["id_reference_integrity_verified"]
@@ -351,6 +357,7 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
     assert manifest["validation"]["brain_delta_hash_verified"] is True
     assert manifest["validation"]["row_disposition_coverage_verified"] is True
     assert manifest["validation"]["source_ledger_entry_count_verified"] is True
+    assert manifest["validation"]["blind_seal_receipt_contract_verified"] is True
     assert manifest["validation"]["candidate_web_check_hash_verified"] is True
     assert manifest["validation"]["candidate_web_check_count_verified"] is True
     assert manifest["validation"]["candidate_verification_hash_verified"] is True

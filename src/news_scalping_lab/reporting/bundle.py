@@ -379,6 +379,7 @@ def _build_bundle_manifest(
         "research_episode_hash_verified": True,
         "brain_delta_hash_verified": True,
         "blind_seal_receipt_hash_verified": True,
+        "blind_seal_receipt_contract_verified": True,
         "phase_state_hash_verified": True,
         "phase_state_receipt_link_verified": True,
         "id_reference_integrity_verified": True,

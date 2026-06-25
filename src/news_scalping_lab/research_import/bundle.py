@@ -156,6 +156,10 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "blind_seal_receipt hash does not match bundle_manifest.json"
         )
+    if not parsed.validation["blind_seal_receipt_contract_verified"]:
+        raise BundleImportError(
+            "blind_seal_receipt content does not match bundle_manifest.json"
+        )
     if not parsed.validation["phase_state_hash_verified"]:
         raise BundleImportError("phase_state.json hash does not match bundle_manifest.json")
     if not parsed.validation["phase_state_receipt_link_verified"]:
@@ -248,6 +252,9 @@ def parse_bundle(path: Path) -> BundleParseResult:
             block_name="research_episode.json",
             embedded_field="blind_seal_receipt",
             manifest_field="blind_seal_receipt_sha256",
+        ),
+        "blind_seal_receipt_contract_verified": _verify_blind_seal_receipt_contract(
+            json_blocks
         ),
         "phase_state_hash_verified": _verify_payload_hash(
             json_blocks,
@@ -793,6 +800,63 @@ def _verify_phase_state_receipt_link(json_blocks: dict[str, Any]) -> bool:
         isinstance(manifest_trade_date, str)
         and phase_state.get("trade_date") != manifest_trade_date
     )
+
+
+def _verify_blind_seal_receipt_contract(json_blocks: dict[str, Any]) -> bool:
+    manifest = json_blocks.get("bundle_manifest.json", {})
+    episode = json_blocks.get("research_episode.json", {})
+    blind = json_blocks.get("blind_prediction.json", {})
+    if (
+        not isinstance(manifest, dict)
+        or not isinstance(episode, dict)
+        or not isinstance(blind, dict)
+    ):
+        return False
+    receipt = episode.get("blind_seal_receipt")
+    if not isinstance(receipt, dict):
+        return False
+    if receipt.get("schema_version") != "nslab.blind_seal_receipt.v1":
+        return False
+    if receipt.get("phase") != "BLIND_SEALED":
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and receipt.get("run_id") != manifest_run_id:
+        return False
+    for field_name in ("trade_date", "cutoff_at", "blind_context_mode"):
+        manifest_value = manifest.get(field_name)
+        if isinstance(manifest_value, str) and receipt.get(field_name) != manifest_value:
+            return False
+    expected_blind_hash = manifest.get("blind_artifact_sha256")
+    if not isinstance(expected_blind_hash, str) or not expected_blind_hash:
+        return False
+    if receipt.get("blind_artifact_sha256") != expected_blind_hash:
+        return False
+    if blind.get("blind_artifact_sha256") != expected_blind_hash:
+        return False
+    if episode.get("blind_artifact_sha256") != expected_blind_hash:
+        return False
+    for field_name in ("row_disposition_sha256", "source_ledger_sha256"):
+        manifest_hash = manifest.get(field_name)
+        if isinstance(manifest_hash, str) and receipt.get(field_name) != manifest_hash:
+            return False
+    if receipt.get("no_d_outcome_exposed") is not True:
+        return False
+    if manifest.get("no_d_outcome_exposed") is not True:
+        return False
+    validation = receipt.get("validation")
+    if not isinstance(validation, dict):
+        return False
+    if validation.get("canonical_blind_hash_verified") is not True:
+        return False
+    for field_name in (
+        "blind_web_search_call_count",
+        "blind_price_repository_access_count",
+        "blind_current_price_access_count",
+    ):
+        expected = manifest.get(field_name)
+        if isinstance(expected, int) and validation.get(field_name) != expected:
+            return False
+    return True
 
 
 def _verify_manifest_validation_self_consistency(
