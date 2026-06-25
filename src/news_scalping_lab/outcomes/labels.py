@@ -5,6 +5,12 @@ from __future__ import annotations
 from news_scalping_lab.contracts.models import OutcomeLabels
 
 UPPER_LIMIT_RETURN_THRESHOLD_PCT = 29.0
+DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE = [
+    "first_upper_limit_touch_time",
+    "first_one_minute_return",
+    "first_three_minute_return",
+    "volatility_interruptions",
+]
 
 
 def unavailable_outcome(flag: str = "PRICE_UNAVAILABLE") -> OutcomeLabels:
@@ -53,11 +59,7 @@ def build_outcome_labels(
         amount=amount,
         turnover_ratio=turnover_ratio,
         market_cap_previous_close=market_cap_previous_close,
-        intraday_fields_unavailable=[
-            "first_upper_limit_touch_time",
-            "first_one_minute_return",
-            "volatility_interruptions",
-        ],
+        intraday_fields_unavailable=list(DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE),
     )
 
 

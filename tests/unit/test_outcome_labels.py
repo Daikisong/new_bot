@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from news_scalping_lab.outcomes.labels import build_outcome_labels, unavailable_outcome
+from news_scalping_lab.outcomes.labels import (
+    DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE,
+    build_outcome_labels,
+    unavailable_outcome,
+)
 
 
 def test_build_outcome_labels_marks_upper_limit_touch_close_release_and_turnover() -> None:
@@ -27,7 +31,7 @@ def test_build_outcome_labels_marks_upper_limit_touch_close_release_and_turnover
     assert outcome.one_price_upper_limit is False
     assert outcome.turnover_ratio == pytest.approx(20.0)
     assert outcome.market_cap_previous_close == 1_000_000.0
-    assert "first_upper_limit_touch_time" in outcome.intraday_fields_unavailable
+    assert outcome.intraday_fields_unavailable == DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE
 
 
 def test_build_outcome_labels_detects_one_price_upper_limit() -> None:

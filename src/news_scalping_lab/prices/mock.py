@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from news_scalping_lab.contracts.models import OutcomeLabels
+from news_scalping_lab.outcomes.labels import DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.utils import sha256_text
 
@@ -52,9 +53,5 @@ class MockPriceSource:
             amount=float(bucket * 10000),
             turnover_ratio=float(bucket % 20),
             market_cap_previous_close=float(bucket * 1000000),
-            intraday_fields_unavailable=[
-                "first_upper_limit_touch_time",
-                "first_one_minute_return",
-                "volatility_interruptions",
-            ],
+            intraday_fields_unavailable=list(DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE),
         )
