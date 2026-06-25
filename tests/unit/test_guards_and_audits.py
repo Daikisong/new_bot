@@ -105,12 +105,14 @@ def _trace_payload(*, prompt_sha256: str = "blind-hash") -> dict[str, object]:
     }
     output = {"prediction_id": "PRED-linked"}
     return {
+        "schema_version": "nslab.llm_trace.v1",
         "trace_id": "TRACE-linked",
         "operation": "generate_structured",
         "purpose": "daily_blind_analysis",
         "status": "ok",
         "provider": "DeterministicMockLLMProvider",
         "model_config": {"provider": "mock"},
+        "metadata": {},
         "input": trace_input,
         "input_sha256": sha256_text(canonical_json(trace_input)),
         "output": output,
@@ -1357,6 +1359,63 @@ def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) ->
     assert "TRACE-daily.json: trace input_sha256 mismatch" in result["findings"]
     assert "TRACE-daily.json: trace missing prompt token estimate" in result["findings"]
     assert "TRACE-daily.json: trace missing completion token estimate" in result["findings"]
+
+
+def test_provenance_audit_flags_llm_checkpoint_mismatch(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    (tmp_path / "runs" / "checkpoints" / "llm").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    trace = _trace_payload(prompt_sha256="blind-hash")
+    write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", trace)
+    checkpoint_output = {"prediction_id": "PRED-tampered"}
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "llm" / "LLMCKPT-linked.json",
+        {
+            "checkpoint_id": "LLMCKPT-linked",
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "operation": trace["operation"],
+            "purpose": trace["purpose"],
+            "status": trace["status"],
+            "provider": trace["provider"],
+            "model_config": trace["model_config"],
+            "metadata": trace["metadata"],
+            "input": trace["input"],
+            "input_sha256": trace["input_sha256"],
+            "output": checkpoint_output,
+            "output_sha256": sha256_text(canonical_json(checkpoint_output)),
+            "retries": trace["retries"],
+            "updated_at": "2030-01-10T08:59:01+09:00",
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "TRACE-daily.json: trace checkpoint output mismatch" in result["findings"]
+    assert "TRACE-daily.json: trace checkpoint output_sha256 mismatch" in result["findings"]
 
 
 def test_provenance_audit_accepts_red_team_artifact_links(tmp_path: Path) -> None:

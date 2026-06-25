@@ -1214,6 +1214,15 @@ def _check_prompt_hash_traces(
             findings.append(
                 f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
             )
+        else:
+            for trace_record in trace_metadata["trace_records"]:
+                if trace_record.get("prompt_sha256") == manifest_hash:
+                    _check_trace_checkpoint(
+                        root,
+                        trace_record["path"],
+                        trace_record["payload"],
+                        findings,
+                    )
         _check_trace_model_config_matches_manifest(
             prediction_path,
             manifest,
@@ -1301,9 +1310,12 @@ def _trace_metadata_by_purpose(root: Path, findings: list[str]) -> dict[str, dic
             continue
         trace_metadata = traces.setdefault(
             purpose,
-            {"prompt_hashes": set(), "model_configs": []},
+            {"prompt_hashes": set(), "model_configs": [], "trace_records": []},
         )
         trace_metadata["prompt_hashes"].add(prompt_sha256)
+        trace_metadata["trace_records"].append(
+            {"path": path, "payload": payload, "prompt_sha256": prompt_sha256}
+        )
         model_config = payload.get("model_config")
         if isinstance(model_config, dict):
             trace_metadata["model_configs"].append(model_config)
@@ -1375,6 +1387,93 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
             findings.append(f"{path.name}: trace missing completion token estimate")
     if status == "error" and not isinstance(payload.get("error"), dict):
         findings.append(f"{path.name}: error trace missing error details")
+
+
+def _check_trace_checkpoint(
+    root: Path,
+    trace_path: Path,
+    trace_payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    checkpoint_id = trace_payload.get("checkpoint_id")
+    trace_status = trace_payload.get("status")
+    if not isinstance(checkpoint_id, str) or not checkpoint_id:
+        if trace_status in {"ok", "checkpoint_hit", "error"}:
+            findings.append(f"{trace_path.name}: trace missing checkpoint_id")
+        return
+    if checkpoint_id != Path(checkpoint_id).name:
+        findings.append(f"{trace_path.name}: trace checkpoint_id is invalid")
+        return
+    checkpoint_path = root / "runs" / "checkpoints" / "llm" / f"{checkpoint_id}.json"
+    if not checkpoint_path.exists():
+        findings.append(f"{trace_path.name}: trace checkpoint missing: {checkpoint_id}")
+        return
+    checkpoint = _read_json_object(checkpoint_path, findings)
+    if checkpoint is None:
+        return
+    if checkpoint.get("schema_version") != "nslab.llm_checkpoint.v1":
+        findings.append(f"{trace_path.name}: trace checkpoint schema_version is invalid")
+    for field in ("checkpoint_id", "operation", "purpose", "provider"):
+        if checkpoint.get(field) != trace_payload.get(field):
+            findings.append(f"{trace_path.name}: trace checkpoint {field} mismatch")
+    expected_checkpoint_status = "ok" if trace_status == "checkpoint_hit" else trace_status
+    if checkpoint.get("status") != expected_checkpoint_status:
+        findings.append(f"{trace_path.name}: trace checkpoint status mismatch")
+    for field in ("model_config", "input", "input_sha256"):
+        if checkpoint.get(field) != trace_payload.get(field):
+            findings.append(f"{trace_path.name}: trace checkpoint {field} mismatch")
+    if not _checkpoint_metadata_matches_trace(checkpoint, trace_payload):
+        findings.append(f"{trace_path.name}: trace checkpoint metadata mismatch")
+    if (
+        "retries" in checkpoint
+        and trace_status != "checkpoint_hit"
+        and checkpoint.get("retries") != trace_payload.get("retries")
+    ):
+        findings.append(f"{trace_path.name}: trace checkpoint retries mismatch")
+    checkpoint_input = checkpoint.get("input")
+    if isinstance(checkpoint_input, dict):
+        expected_input_hash = sha256_text(canonical_json(checkpoint_input))
+        if checkpoint.get("input_sha256") != expected_input_hash:
+            findings.append(f"{trace_path.name}: trace checkpoint input_sha256 invalid")
+    checkpoint_output = checkpoint.get("output")
+    expected_output_hash = (
+        sha256_text(canonical_json(checkpoint_output))
+        if checkpoint_output is not None
+        else None
+    )
+    if checkpoint.get("output_sha256") != expected_output_hash:
+        findings.append(f"{trace_path.name}: trace checkpoint output_sha256 invalid")
+    operation = trace_payload.get("operation")
+    if operation == "embed":
+        trace_output = trace_payload.get("output")
+        vectors_sha256 = (
+            trace_output.get("vectors_sha256") if isinstance(trace_output, dict) else None
+        )
+        if vectors_sha256 != checkpoint.get("output_sha256"):
+            findings.append(f"{trace_path.name}: trace checkpoint embedding output mismatch")
+    else:
+        for field in ("output", "output_sha256"):
+            if checkpoint.get(field) != trace_payload.get(field):
+                findings.append(f"{trace_path.name}: trace checkpoint {field} mismatch")
+    trace_error = trace_payload.get("error")
+    checkpoint_error = checkpoint.get("error")
+    if trace_status == "error" and checkpoint_error != trace_error:
+        findings.append(f"{trace_path.name}: trace checkpoint error mismatch")
+    if not isinstance(checkpoint.get("updated_at"), str) or not checkpoint.get("updated_at"):
+        findings.append(f"{trace_path.name}: trace checkpoint missing updated_at")
+
+
+def _checkpoint_metadata_matches_trace(
+    checkpoint: dict[str, Any],
+    trace_payload: dict[str, Any],
+) -> bool:
+    checkpoint_metadata = checkpoint.get("metadata")
+    trace_metadata = trace_payload.get("metadata")
+    if not isinstance(checkpoint_metadata, dict):
+        return trace_metadata in (None, {})
+    if isinstance(trace_metadata, dict):
+        return checkpoint_metadata == trace_metadata
+    return all(trace_payload.get(key) == value for key, value in checkpoint_metadata.items())
 
 
 def _string_field(
