@@ -31,6 +31,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: context manifest missing price_snapshot")
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
+            _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
             _check_prompt_hash_traces(root, path, prompt_hashes, manifest, findings)
             _check_red_team_artifacts(root, path, prediction, manifest, prompt_hashes, findings)
@@ -387,6 +388,90 @@ def _check_manifest_model_config(
         not isinstance(model_config, dict) or not model_config
     ):
         findings.append(f"{prediction_path.name}: context manifest model_config is invalid")
+
+
+def _check_manifest_context_file_hashes(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    _check_manifest_file_hashes(
+        root,
+        prediction_path,
+        manifest,
+        files_field="brain_files",
+        hashes_field="brain_file_hashes",
+        label="brain file",
+        findings=findings,
+    )
+    _check_manifest_file_hashes(
+        root,
+        prediction_path,
+        manifest,
+        files_field="shard_brain_files",
+        hashes_field="shard_brain_file_hashes",
+        label="shard brain file",
+        findings=findings,
+    )
+
+
+def _check_manifest_file_hashes(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    *,
+    files_field: str,
+    hashes_field: str,
+    label: str,
+    findings: list[str],
+) -> None:
+    raw_files = manifest.get(files_field)
+    if raw_files is None:
+        return
+    if not isinstance(raw_files, list) or not all(isinstance(item, str) for item in raw_files):
+        findings.append(f"{prediction_path.name}: context manifest {files_field} is invalid")
+        return
+    hashes = manifest.get(hashes_field)
+    if not isinstance(hashes, dict):
+        findings.append(f"{prediction_path.name}: context manifest {hashes_field} is invalid")
+        return
+    file_refs = [item for item in raw_files if item]
+    file_ref_set = set(file_refs)
+    hash_key_set = {key for key in hashes if isinstance(key, str)}
+    if len(file_refs) != len(file_ref_set):
+        findings.append(f"{prediction_path.name}: context manifest duplicate {label}")
+    missing_hashes = sorted(file_ref_set - hash_key_set)
+    extra_hashes = sorted(hash_key_set - file_ref_set)
+    if missing_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing {hashes_field}: "
+            f"{', '.join(missing_hashes)}"
+        )
+    if extra_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest unlisted {hashes_field}: "
+            f"{', '.join(extra_hashes)}"
+        )
+    for file_ref in file_refs:
+        artifact_path = _resolve_manifest_path(root, file_ref)
+        if artifact_path is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label} path escapes project root: "
+                f"{file_ref}"
+            )
+            continue
+        if not artifact_path.exists():
+            findings.append(
+                f"{prediction_path.name}: context manifest {label} not found: {file_ref}"
+            )
+            continue
+        expected_hash = hashes.get(file_ref)
+        if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
+            findings.append(
+                f"{prediction_path.name}: context manifest {label} sha256 mismatch: "
+                f"{file_ref}"
+            )
 
 
 def _check_prompt_hash_traces(

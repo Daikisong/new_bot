@@ -276,6 +276,86 @@ def test_provenance_audit_accepts_manifest_and_report_links(tmp_path: Path) -> N
     assert result["passed"], result["findings"]
 
 
+def test_provenance_audit_verifies_context_brain_file_hashes(tmp_path: Path) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    brain_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "brain_context"
+        / "RUN-linked"
+        / "brain"
+        / "00_world_model.md"
+    )
+    shard_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "brain_context"
+        / "RUN-linked"
+        / "shards"
+        / "shard_0001.md"
+    )
+    brain_path.parent.mkdir(parents=True)
+    shard_path.parent.mkdir(parents=True)
+    brain_path.write_text("world model context", encoding="utf-8")
+    shard_path.write_text("shard context", encoding="utf-8")
+    brain_ref = brain_path.relative_to(tmp_path).as_posix()
+    shard_ref = shard_path.relative_to(tmp_path).as_posix()
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "dominant_sectors": [_sector_with_provenance()],
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_files": [brain_ref],
+            "brain_file_hashes": {brain_ref: file_sha256(brain_path)},
+            "shard_brain_files": [shard_ref],
+            "shard_brain_file_hashes": {shard_ref: file_sha256(shard_path)},
+        },
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert result["passed"], result["findings"]
+
+    manifest = read_json(tmp_path / "runs" / "manifests" / "RUN-linked.json")
+    manifest["brain_file_hashes"][brain_ref] = "0" * 64
+    manifest["shard_brain_file_hashes"]["runs/checkpoints/brain_context/RUN-linked/shards/extra.md"] = (
+        "1" * 64
+    )
+    write_json(tmp_path / "runs" / "manifests" / "RUN-linked.json", manifest)
+
+    failed = audit_provenance(tmp_path)
+
+    assert not failed["passed"]
+    assert (
+        "2030-01-10.json: context manifest brain file sha256 mismatch: "
+        f"{brain_ref}"
+    ) in failed["findings"]
+    assert any(
+        finding.startswith(
+            "2030-01-10.json: context manifest unlisted shard_brain_file_hashes:"
+        )
+        for finding in failed["findings"]
+    )
+
+
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
