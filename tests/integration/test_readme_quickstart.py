@@ -57,6 +57,8 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     inspect_payload = json.loads(inspected.output)
     assert inspect_payload["trade_date"] == "2026-06-24"
     assert inspect_payload["row_count"] == 1
+    assert inspect_payload["default_news_window_start_at"] == "2026-06-23T15:30:00+09:00"
+    assert inspect_payload["missing_collected_at"] == 1
     brain_manifest = json.loads(rebuilt.output)
     assert brain_manifest["coverage_complete"] is True
     assert read_json(tmp_path / "memory" / "vector_index" / "manifest.json")[
@@ -110,6 +112,16 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert news_input["observed_row_count"] == 1
     assert news_input["row_count_verified"] is True
     assert news_input["row_count_partition_verified"] is True
+    assert news_input["observed_included_row_count"] == 1
+    assert news_input["observed_excluded_row_count"] == 0
+    assert news_input["included_row_count_verified"] is True
+    assert news_input["excluded_row_count_verified"] is True
+    assert news_input["observed_missing_collected_at"] == 1
+    assert news_input["missing_collected_at_verified"] is True
+    assert news_input["default_news_window_start_at"] == "2026-06-23T15:30:00+09:00"
+    assert news_input["news_window_start_verified"] is True
+    assert news_input["news_window_end_verified"] is True
+    assert news_input["news_window_counts_verified"] is True
     assert inspection["context_files"]["brain"]["hashes_verified"] is True
     assert inspection["context_files"]["brain"]["file_count"] >= 12
     assert inspection["context_files"]["shard_brain"]["hashes_verified"] is True

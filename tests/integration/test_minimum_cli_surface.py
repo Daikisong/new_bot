@@ -25,7 +25,11 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
 
     assert RUNNER.invoke(app, ["init"]).exit_code == 0
     _assert_ok("doctor", RUNNER.invoke(app, ["doctor"]))
-    _assert_ok("news inspect", RUNNER.invoke(app, ["news", "inspect", str(news_csv)]))
+    inspected_news = RUNNER.invoke(app, ["news", "inspect", str(news_csv)])
+    _assert_ok("news inspect", inspected_news)
+    inspected_news_payload = json.loads(inspected_news.output)
+    assert inspected_news_payload["default_news_window_start_at"] == "2030-01-11T15:30:00+09:00"
+    assert inspected_news_payload["missing_collected_at"] == 1
     imported_news = RUNNER.invoke(app, ["news", "import", str(news_csv)])
     _assert_ok("news import", imported_news)
     assert json.loads(imported_news.output)["imported"] is True
@@ -119,6 +123,16 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert news_input["observed_row_count"] == 1
     assert news_input["row_count_verified"] is True
     assert news_input["row_count_partition_verified"] is True
+    assert news_input["observed_included_row_count"] == 1
+    assert news_input["observed_excluded_row_count"] == 0
+    assert news_input["included_row_count_verified"] is True
+    assert news_input["excluded_row_count_verified"] is True
+    assert news_input["observed_missing_collected_at"] == 1
+    assert news_input["missing_collected_at_verified"] is True
+    assert news_input["default_news_window_start_at"] == "2030-01-11T15:30:00+09:00"
+    assert news_input["news_window_start_verified"] is True
+    assert news_input["news_window_end_verified"] is True
+    assert news_input["news_window_counts_verified"] is True
     brain_context = inspection["context_files"]["brain"]
     assert brain_context["hashes_verified"] is True
     assert brain_context["file_count"] >= 12

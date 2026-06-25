@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from news_scalping_lab.contracts.models import CompanyMemory, MechanismMemory
-from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
+from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.utils import (
+    canonical_json,
+    default_news_window_start,
+    file_sha256,
+    parse_datetime,
+    read_json,
+    sha256_text,
+)
 
 SEMANTIC_IMPORT_SOURCE_TYPE = "semantic_llm_structured_import"
 STRICT_IMPORT_SOURCE_TYPE = "strict_research_json"
@@ -543,12 +552,13 @@ def _check_manifest_news_input(
     elif file_sha256(news_path) != news_sha256:
         findings.append(f"{prediction_path.name}: context manifest news_sha256 mismatch")
 
-    _check_manifest_news_row_counts(prediction_path, manifest, findings)
+    _check_manifest_news_row_counts(prediction_path, manifest, news_path, findings)
 
 
 def _check_manifest_news_row_counts(
     prediction_path: Path,
     manifest: dict[str, Any],
+    news_path: Path,
     findings: list[str],
 ) -> None:
     row_fields = (
@@ -570,6 +580,73 @@ def _check_manifest_news_row_counts(
         != values["news_row_count"]
     ):
         findings.append(f"{prediction_path.name}: context manifest news row counts mismatch")
+    if "news_window_start_at" not in manifest and "news_window_end_at" not in manifest:
+        return
+    trade_date = _manifest_date(manifest.get("trade_date"))
+    cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    window_start_at = _manifest_datetime(manifest.get("news_window_start_at"))
+    window_end_at = _manifest_datetime(manifest.get("news_window_end_at"))
+    if trade_date is None:
+        findings.append(f"{prediction_path.name}: context manifest trade_date is invalid")
+        return
+    if cutoff_at is None:
+        findings.append(f"{prediction_path.name}: context manifest cutoff_at is invalid")
+        return
+    if window_start_at is None:
+        findings.append(f"{prediction_path.name}: context manifest news_window_start_at is invalid")
+        return
+    if window_end_at is None:
+        findings.append(f"{prediction_path.name}: context manifest news_window_end_at is invalid")
+        return
+    if window_start_at != default_news_window_start(trade_date):
+        findings.append(f"{prediction_path.name}: context manifest news_window_start_at mismatch")
+    if window_end_at != cutoff_at:
+        findings.append(f"{prediction_path.name}: context manifest news_window_end_at mismatch")
+    try:
+        batch = load_news_csv(news_path, trade_date=trade_date)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        findings.append(
+            f"{prediction_path.name}: context manifest news_file invalid CSV: {type(exc).__name__}"
+        )
+        return
+    observed_included = sum(
+        1 for item in batch.items if window_start_at <= item.published_at <= window_end_at
+    )
+    observed_excluded = batch.row_count - observed_included
+    if batch.row_count != values["news_row_count"]:
+        findings.append(f"{prediction_path.name}: context manifest news_row_count mismatch")
+    if observed_included != values["included_news_row_count"]:
+        findings.append(f"{prediction_path.name}: context manifest included_news_row_count mismatch")
+    if observed_excluded != values["excluded_news_row_count"]:
+        findings.append(f"{prediction_path.name}: context manifest excluded_news_row_count mismatch")
+    row_summary = manifest.get("row_disposition_summary")
+    expected_missing = (
+        row_summary.get("missing_collected_at") if isinstance(row_summary, dict) else None
+    )
+    if isinstance(expected_missing, int):
+        observed_missing = sum(1 for item in batch.items if item.collected_at is None)
+        if observed_missing != expected_missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest missing_collected_at mismatch"
+            )
+
+
+def _manifest_date(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _manifest_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _check_manifest_context_file_hashes(

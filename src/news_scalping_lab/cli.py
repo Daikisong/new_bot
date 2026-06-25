@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -41,6 +41,7 @@ from news_scalping_lab.ui.launcher import (
 )
 from news_scalping_lab.utils import (
     canonical_json,
+    default_news_window_start,
     file_sha256,
     parse_datetime,
     read_json,
@@ -123,6 +124,12 @@ def news_inspect(csv_path: Path) -> None:
             "sha256": batch.sha256,
             "trade_date": batch.trade_date.isoformat(),
             "row_count": batch.row_count,
+            "default_news_window_start_at": default_news_window_start(
+                batch.trade_date
+            ).isoformat(),
+            "missing_collected_at": sum(
+                1 for item in batch.items if item.collected_at is None
+            ),
             "first_published_at": batch.items[0].published_at.isoformat() if batch.items else None,
             "last_published_at": batch.items[-1].published_at.isoformat() if batch.items else None,
         }
@@ -1079,6 +1086,11 @@ def _inspect_context_file_group(
 def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     status = _base_artifact_status(root, manifest.get("news_file"))
     expected_hash = manifest.get("news_sha256")
+    manifest_trade_date = _manifest_date(manifest.get("trade_date"))
+    manifest_cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
+    news_window_start_at = _manifest_datetime(manifest.get("news_window_start_at"))
+    news_window_end_at = _manifest_datetime(manifest.get("news_window_end_at"))
+    row_summary = manifest.get("row_disposition_summary")
     status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
     status["expected_row_count"] = _optional_int(manifest.get("news_row_count"))
     status["expected_included_row_count"] = _optional_int(
@@ -1087,12 +1099,43 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     status["expected_excluded_row_count"] = _optional_int(
         manifest.get("excluded_news_row_count")
     )
+    status["expected_news_window_start_at"] = (
+        news_window_start_at.isoformat() if news_window_start_at else None
+    )
+    status["expected_news_window_end_at"] = (
+        news_window_end_at.isoformat() if news_window_end_at else None
+    )
+    status["expected_missing_collected_at"] = (
+        row_summary.get("missing_collected_at") if isinstance(row_summary, dict) else None
+    )
     status["observed_row_count"] = None
+    status["observed_included_row_count"] = None
+    status["observed_excluded_row_count"] = None
+    status["observed_missing_collected_at"] = None
+    status["default_news_window_start_at"] = (
+        default_news_window_start(manifest_trade_date).isoformat()
+        if manifest_trade_date is not None
+        else None
+    )
     status["row_count_verified"] = None
     status["row_count_partition_verified"] = None
+    status["included_row_count_verified"] = None
+    status["excluded_row_count_verified"] = None
+    status["missing_collected_at_verified"] = None
+    status["news_window_start_verified"] = None
+    status["news_window_end_verified"] = None
+    status["news_window_counts_verified"] = None
     if not status["configured"]:
         status["errors"].append("news_file_missing")
         return status
+    if news_window_start_at is None:
+        status["errors"].append("news_window_start_at_missing_or_invalid")
+    if news_window_end_at is None:
+        status["errors"].append("news_window_end_at_missing_or_invalid")
+    if manifest_trade_date is None:
+        status["errors"].append("trade_date_missing_or_invalid")
+    if manifest_cutoff_at is None:
+        status["errors"].append("cutoff_at_missing_or_invalid")
     artifact_path = status.pop("_artifact_path", None)
     if not isinstance(artifact_path, Path) or not status["exists"]:
         return status
@@ -1100,12 +1143,15 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     status["observed_sha256"] = observed_hash
     status["hash_verified"] = observed_hash == expected_hash
     try:
-        batch = load_news_csv(artifact_path)
+        batch = load_news_csv(artifact_path, trade_date=manifest_trade_date)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         status["errors"].append(f"news_file_invalid_csv:{type(exc).__name__}")
         return status
     observed_row_count = batch.row_count
     status["observed_row_count"] = observed_row_count
+    status["observed_missing_collected_at"] = sum(
+        1 for item in batch.items if item.collected_at is None
+    )
     status["row_count_verified"] = observed_row_count == status["expected_row_count"]
     expected_included = status["expected_included_row_count"]
     expected_excluded = status["expected_excluded_row_count"]
@@ -1113,7 +1159,51 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         status["row_count_partition_verified"] = (
             expected_included + expected_excluded == status["expected_row_count"]
         )
+    if (
+        news_window_start_at is not None
+        and news_window_end_at is not None
+        and manifest_trade_date is not None
+        and manifest_cutoff_at is not None
+    ):
+        observed_included = sum(
+            1 for item in batch.items if news_window_start_at <= item.published_at <= news_window_end_at
+        )
+        observed_excluded = observed_row_count - observed_included
+        status["observed_included_row_count"] = observed_included
+        status["observed_excluded_row_count"] = observed_excluded
+        status["included_row_count_verified"] = observed_included == expected_included
+        status["excluded_row_count_verified"] = observed_excluded == expected_excluded
+        status["news_window_start_verified"] = (
+            news_window_start_at == default_news_window_start(manifest_trade_date)
+        )
+        status["news_window_end_verified"] = news_window_end_at == manifest_cutoff_at
+        status["news_window_counts_verified"] = (
+            status["included_row_count_verified"] and status["excluded_row_count_verified"]
+        )
+    expected_missing_collected_at = status["expected_missing_collected_at"]
+    if isinstance(expected_missing_collected_at, int):
+        status["missing_collected_at_verified"] = (
+            status["observed_missing_collected_at"] == expected_missing_collected_at
+        )
     return status
+
+
+def _manifest_date(value: object) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _manifest_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -1233,6 +1323,12 @@ def _news_input_status_passed(status: dict[str, Any]) -> bool:
         and status.get("hash_verified")
         and status.get("row_count_verified")
         and status.get("row_count_partition_verified")
+        and status.get("included_row_count_verified")
+        and status.get("excluded_row_count_verified")
+        and status.get("missing_collected_at_verified")
+        and status.get("news_window_start_verified")
+        and status.get("news_window_end_verified")
+        and status.get("news_window_counts_verified")
         and not status.get("errors")
     )
 

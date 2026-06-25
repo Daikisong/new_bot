@@ -384,17 +384,44 @@ def test_provenance_audit_validates_manifest_news_input_hash(tmp_path: Path) -> 
             "prompt_hashes": {"blind_analysis": "def456"},
             "price_snapshot": {"allowed_through": "2030-01-09"},
             "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
             "news_file": news_path.relative_to(tmp_path).as_posix(),
             "news_sha256": file_sha256(news_path),
+            "news_window_start_at": "2030-01-09T15:30:00+09:00",
+            "news_window_end_at": "2030-01-10T08:59:59+09:00",
             "news_row_count": 2,
             "included_news_row_count": 1,
             "excluded_news_row_count": 1,
+            "row_disposition_summary": {"missing_collected_at": 2},
         },
     )
 
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    manifest = read_json(manifest_path)
+    manifest["included_news_row_count"] = 2
+    manifest["excluded_news_row_count"] = 0
+    write_json(manifest_path, manifest)
+
+    failed_counts = audit_provenance(tmp_path)
+
+    assert not failed_counts["passed"]
+    assert (
+        "2030-01-10.json: context manifest included_news_row_count mismatch"
+        in failed_counts["findings"]
+    )
+    assert (
+        "2030-01-10.json: context manifest excluded_news_row_count mismatch"
+        in failed_counts["findings"]
+    )
+
+    manifest["included_news_row_count"] = 1
+    manifest["excluded_news_row_count"] = 1
+    write_json(manifest_path, manifest)
 
     news_path.write_text(
         "page,row,date,time,title,body\n"
