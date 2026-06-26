@@ -12,8 +12,9 @@ import news_scalping_lab.cli as cli_module
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST
+from news_scalping_lab.utils import KST, canonical_json, sha256_text
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
@@ -45,6 +46,42 @@ class _TrainingExportResult:
         self.path = path
         self.manifest_path = path.with_name("manifest.json")
         self.row_count = 0
+
+
+def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": record_id,
+        "record_type": "memory_claim",
+        "episode_id": "EP-cli",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "cli_contract",
+        "summary": "CLI record contract fixture.",
+        "training_eligible": False,
+        "provenance_source_ids": ["SRC-cli"],
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type="memory_claim",
+        episode_id="EP-cli",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="cli_contract",
+        evidence_phase="AUDIT",
+        training_eligible=False,
+        eligibility_reason="cli contract fixture",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-cli"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
 
 
 def test_analyze_cli_uses_configured_default_mode_when_mode_is_omitted(
@@ -469,6 +506,44 @@ def test_context_inspect_cli_reports_invalid_manifest_object(
     assert "context manifest must be a JSON object" in result.output
 
 
+def test_context_inspect_cli_outputs_manifest_inspection_and_strict_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-inspect.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "run_id": "RUN-inspect",
+                "mode": "exhaustive",
+                "trade_date": "2030-01-10",
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["context", "inspect", "RUN-inspect"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["run_id"] == "RUN-inspect"
+    assert payload["inspection"]["context_manifest"]["exists"] is True
+    assert payload["inspection"]["context_manifest"]["path"] == (
+        "runs/manifests/RUN-inspect.json"
+    )
+    assert payload["inspection"]["reproducibility_checks_passed"] is False
+
+    strict_result = CliRunner().invoke(
+        app,
+        ["context", "inspect", "RUN-inspect", "--strict"],
+    )
+
+    assert strict_result.exit_code == 1
+
+
 def test_context_export_session_pack_cli_reports_invalid_cutoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -762,6 +837,43 @@ def test_memory_audit_cli_writes_diagnostic_report(
     assert markdown_path.exists()
 
 
+def test_memory_inspect_record_cli_outputs_record_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "inspect-record", "BRAIN-CLI"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["record_id"] == "BRAIN-CLI"
+    assert payload["record_type"] == "memory_claim"
+    assert payload["episode_id"] == "EP-cli"
+    assert payload["payload"]["summary"] == "CLI record contract fixture."
+    assert payload["normalized_payload_sha256"] == record.normalized_payload_sha256
+
+
+def test_memory_inspect_record_cli_reports_missing_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "inspect-record", "BRAIN-missing"])
+
+    assert result.exit_code == 1
+    assert "record not found: BRAIN-missing" in result.output
+
+
 def test_warehouse_inspect_cli_reports_audit_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -776,6 +888,54 @@ def test_warehouse_inspect_cli_reports_audit_errors(
 
     assert result.exit_code == 1
     assert "warehouse inspect failed: invalid parquet" in result.output
+
+
+def test_warehouse_verify_cli_passes_synced_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    WarehouseStore(tmp_path).rebuild_all()
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["warehouse", "verify"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["passed"] is True
+    assert sorted(payload["required_files"]) == sorted(EXPECTED_WAREHOUSE_FILES)
+    assert payload["warehouse_findings"] == []
+    assert payload["warehouse_duplicate_identities"] == {}
+    assert payload["warehouse_weight_mismatches"] == {}
+
+
+def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def mismatched_coverage(root: Path) -> dict[str, object]:
+        return {
+            "findings": ["warehouse: brain_records.parquet count 1 != expected 2"],
+            "warehouse_required_files_present": True,
+            "warehouse_projection_synced": False,
+            "warehouse_counts": {"brain_records.parquet": 1},
+            "warehouse_duplicate_identities": {},
+            "warehouse_weight_mismatches": {},
+            "warehouse_required_files": ["brain_records.parquet"],
+        }
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "audit_coverage", mismatched_coverage)
+
+    result = CliRunner().invoke(app, ["warehouse", "verify"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert payload["warehouse_findings"] == [
+        "warehouse: brain_records.parquet count 1 != expected 2"
+    ]
 
 
 def test_full_check_cli_runs_configured_steps(
