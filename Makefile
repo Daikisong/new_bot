@@ -31,6 +31,6 @@ demo:
 	python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv
 	python -m news_scalping_lab.cli brain rebuild --mode full
 	python -m news_scalping_lab.cli warehouse rebuild
-	python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
+	python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive --web-search
 	python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
 	python -m news_scalping_lab.cli brain update --episode 2026-06-24
