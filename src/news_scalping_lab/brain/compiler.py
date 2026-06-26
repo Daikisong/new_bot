@@ -288,7 +288,7 @@ class BrainCompiler:
                 source_hashes=source_hashes,
             )
         ):
-            return self.rebuild(mode="full")
+            return self.rebuild(mode=mode)
 
         covered_ids = [accepted_episode.episode_id for accepted_episode in episodes]
         if (

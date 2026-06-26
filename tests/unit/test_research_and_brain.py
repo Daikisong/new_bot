@@ -1672,6 +1672,28 @@ def test_brain_update_requires_accepted_episode(tmp_path) -> None:
     assert episode.episode_id in manifest.covered_episode_ids
 
 
+def test_brain_update_catalog_fallback_preserves_catalog_mode(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    episode = _batch_episode(
+        "EP-catalog-update",
+        "Catalog update fallback must not masquerade as full rebuild.",
+    )
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+
+    manifest = BrainCompiler(tmp_path).update(
+        episode_id=episode.episode_id,
+        mode="catalog",
+    )
+
+    assert manifest.build_mode == "catalog"
+    assert manifest.catalog_only is True
+    assert manifest.updated_episode_id is None
+    assert manifest.covered_episode_ids == [episode.episode_id]
+
+
 def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
