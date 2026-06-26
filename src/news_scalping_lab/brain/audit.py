@@ -512,6 +512,7 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
     unknown_contradicting_records: list[str] = []
     unknown_supporting_episodes: list[str] = []
     unknown_contradicting_episodes: list[str] = []
+    compiled_claim_temporal_leaks: list[str] = []
     validated_without_contradictions: list[str] = []
     validated_single_episode: list[str] = []
     findings: list[str] = []
@@ -525,12 +526,16 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             "compiled_claims_with_unknown_contradicting_records": unknown_contradicting_records,
             "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
             "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
+            "compiled_claim_temporal_leaks": compiled_claim_temporal_leaks,
             "validated_compiled_claims_without_contradictions": (
                 validated_without_contradictions
             ),
             "validated_compiled_claims_with_single_episode": validated_single_episode,
         }
-    record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
+    records_by_id = {
+        record.record_id: record for record in BrainRecordStore(root).list_records()
+    }
+    record_ids = set(records_by_id)
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
@@ -564,6 +569,24 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             unknown_contradicting_episodes.append(
                 f"{claim.claim_id}: {', '.join(unknown_contradiction_episodes)}"
             )
+        for record_id in claim.supporting_record_ids:
+            record = records_by_id.get(record_id)
+            if record is not None and not is_available_as_of(
+                record.available_from,
+                claim.available_from,
+            ):
+                compiled_claim_temporal_leaks.append(
+                    f"{claim.claim_id}: available_from precedes supporting record {record_id}"
+                )
+        for record_id in claim.contradicting_record_ids:
+            record = records_by_id.get(record_id)
+            if record is not None and not is_available_as_of(
+                record.available_from,
+                claim.available_from,
+            ):
+                compiled_claim_temporal_leaks.append(
+                    f"{claim.claim_id}: available_from precedes contradicting record {record_id}"
+                )
         if claim.status == "validated":
             if not claim.contradicting_record_ids and not claim.contradicting_episode_ids:
                 validated_without_contradictions.append(claim.claim_id)
@@ -581,6 +604,8 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
         findings.append("compiled claims reference unknown supporting episode IDs")
     if unknown_contradicting_episodes:
         findings.append("compiled claims reference unknown contradicting episode IDs")
+    if compiled_claim_temporal_leaks:
+        findings.append("compiled claims expose future record evidence")
     if validated_without_contradictions:
         findings.append("validated compiled claims are missing contradiction evidence")
     if validated_single_episode:
@@ -594,6 +619,7 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
         "compiled_claims_with_unknown_contradicting_records": unknown_contradicting_records,
         "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
         "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
+        "compiled_claim_temporal_leaks": compiled_claim_temporal_leaks,
         "validated_compiled_claims_without_contradictions": (
             validated_without_contradictions
         ),

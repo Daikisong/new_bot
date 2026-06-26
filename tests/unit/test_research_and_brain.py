@@ -1057,10 +1057,15 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
     ResearchStore(tmp_path).accept(episode.episode_id)
     record = _compiled_claim_test_record("BRAIN-SUPPORT", episode.episode_id)
+    future_record = _compiled_claim_test_record(
+        "BRAIN-FUTURE",
+        episode.episode_id,
+        available_from=datetime(2030, 1, 12, 0, 0, 0, tzinfo=KST),
+    )
     records_dir = tmp_path / "memory" / "records"
     records_dir.mkdir(parents=True, exist_ok=True)
     (records_dir / f"{episode.episode_id}.jsonl").write_text(
-        record.model_dump_json() + "\n",
+        record.model_dump_json() + "\n" + future_record.model_dump_json() + "\n",
         encoding="utf-8",
     )
     BrainCompiler(tmp_path).rebuild(mode="full")
@@ -1096,7 +1101,18 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
             supporting_record_ids=["BRAIN-SUPPORT"],
             supporting_episode_ids=[episode.episode_id],
             status="validated",
-            available_from=episode.available_from,
+            available_from=record.available_from,
+        ),
+        CompiledBrainClaim(
+            claim_id="CC-future-record",
+            category="world_model",
+            statement="Compiled claim must not expose future record evidence.",
+            mechanism="compiled claim audit",
+            scope="audit fixture",
+            supporting_record_ids=["BRAIN-FUTURE"],
+            contradicting_record_ids=["BRAIN-FUTURE"],
+            supporting_episode_ids=[episode.episode_id],
+            available_from=record.available_from,
         ),
     ]
     (tmp_path / "brain" / "current" / "compiled_claims.jsonl").write_text(
@@ -1107,7 +1123,7 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         tmp_path / "brain" / "current" / "llm_compile_manifest.json",
         {
             "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "source_record_count": 2,
+            "source_record_count": 3,
             "compiled_claim_count": 2,
             "record_shards": [
                 {
@@ -1155,6 +1171,10 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert audit["compiled_claims_with_unknown_contradicting_episodes"] == [
         "CC-unknown-records: EP-unknown-contra"
     ]
+    assert audit["compiled_claim_temporal_leaks"] == [
+        "CC-future-record: available_from precedes supporting record BRAIN-FUTURE",
+        "CC-future-record: available_from precedes contradicting record BRAIN-FUTURE",
+    ]
     assert audit["validated_compiled_claims_without_contradictions"] == [
         "CC-validated-single"
     ]
@@ -1180,6 +1200,9 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     ]
     assert "llm compile manifest references unknown compiled claim IDs" in audit[
         "llm_compile_findings"
+    ]
+    assert "compiled claims expose future record evidence" in audit[
+        "compiled_claim_findings"
     ]
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_audit = compile_report["latest_brain_audit"]
