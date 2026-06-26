@@ -29,6 +29,13 @@ class _BrainResult:
         return {"shard_episode_count": self.shard_episode_count, "dump_mode": mode}
 
 
+class _EvaluationResult:
+    def __init__(self, *, report_path: Path) -> None:
+        self.report_path = report_path
+        self.episode_id = "EP-test"
+        self.episode_path = report_path.with_name("episode.json")
+
+
 def test_analyze_cli_uses_configured_default_mode_when_mode_is_omitted(
     tmp_path: Path,
     monkeypatch,
@@ -109,6 +116,104 @@ def test_analyze_cli_explicit_mode_overrides_configured_default(
     assert result.exit_code == 0, result.output
     assert captured_modes == ["brain"]
     assert json.loads(result.output)["mode"] == "brain"
+
+
+def test_analyze_cli_reports_analysis_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingAnalyzer:
+        def __init__(self, settings: Settings) -> None:
+            self.settings = settings
+
+        async def analyze(self, **kwargs: Any) -> _AnalysisResult:
+            raise FileNotFoundError("news file not found: missing.csv")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "DailyAnalyzer", FailingAnalyzer)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "analyze",
+            "--news",
+            str(tmp_path / "missing.csv"),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "2030-01-10T08:59:59+09:00",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "news file not found: missing.csv" in result.output
+
+
+def test_analyze_cli_reports_invalid_cutoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "analyze",
+            "--news",
+            str(tmp_path / "news.csv"),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "not-a-timestamp",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "expected ISO timestamp" in result.output
+
+
+def test_evaluate_cli_reports_missing_prediction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingEvaluator:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def evaluate(self, *, trade_date: object) -> _EvaluationResult:
+            raise FileNotFoundError("blind prediction not found: predictions/2030-01-10.json")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "Evaluator", FailingEvaluator)
+
+    result = CliRunner().invoke(app, ["evaluate", "--trade-date", "2030-01-10"])
+
+    assert result.exit_code == 1
+    assert "blind prediction not found: predictions/2030-01-10.json" in result.output
+
+
+def test_evaluate_cli_reports_invalid_postmortem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report_path = tmp_path / "reports" / "2030-01-10_postmortem.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("[]\n", encoding="utf-8")
+
+    class InvalidPostmortemEvaluator:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def evaluate(self, *, trade_date: object) -> _EvaluationResult:
+            return _EvaluationResult(report_path=report_path)
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "Evaluator", InvalidPostmortemEvaluator)
+
+    result = CliRunner().invoke(app, ["evaluate", "--trade-date", "2030-01-10"])
+
+    assert result.exit_code == 1
+    assert "postmortem report must be a JSON object" in result.output
 
 
 def test_brain_rebuild_cli_passes_configured_shard_episode_count(

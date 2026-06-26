@@ -8,7 +8,7 @@ from collections import Counter
 from collections.abc import Iterable
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import typer
 
@@ -125,6 +125,20 @@ def _parse_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise typer.BadParameter("expected YYYY-MM-DD") from exc
+
+
+def _parse_cutoff(value: str) -> datetime:
+    try:
+        return parse_datetime(value)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            "expected ISO timestamp, for example 2026-07-15T08:59:59+09:00"
+        ) from exc
+
+
+def _exit_with_error(exc: Exception) -> NoReturn:
+    typer.echo(str(exc), err=True)
+    raise typer.Exit(code=1) from exc
 
 
 @app.command()
@@ -368,25 +382,33 @@ def analyze(
     settings = load_settings()
     analysis_mode = mode if mode is not None else settings.default_mode
     parsed_trade_date = _parse_date(trade_date)
-    analysis = asyncio.run(
-        DailyAnalyzer(settings).analyze(
-            news_csv=news,
-            trade_date=parsed_trade_date,
-            cutoff_at=parse_datetime(cutoff),
-            mode=analysis_mode,
-            web_search=web_search,
+    parsed_cutoff = _parse_cutoff(cutoff)
+    try:
+        analysis = asyncio.run(
+            DailyAnalyzer(settings).analyze(
+                news_csv=news,
+                trade_date=parsed_trade_date,
+                cutoff_at=parsed_cutoff,
+                mode=analysis_mode,
+                web_search=web_search,
+            )
         )
-    )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(analysis.model_dump(mode="json"))
 
 
 @app.command()
 def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
     settings = load_settings()
-    result = Evaluator(settings.project_root).evaluate(trade_date=_parse_date(trade_date))
-    postmortem = read_json(result.report_path)
-    if not isinstance(postmortem, dict):
-        raise typer.BadParameter("postmortem report must be a JSON object")
+    parsed_trade_date = _parse_date(trade_date)
+    try:
+        result = Evaluator(settings.project_root).evaluate(trade_date=parsed_trade_date)
+        postmortem = read_json(result.report_path)
+        if not isinstance(postmortem, dict):
+            raise ValueError("postmortem report must be a JSON object")
+    except (FileNotFoundError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             "postmortem": result.report_path.as_posix(),
