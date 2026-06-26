@@ -22,6 +22,14 @@ from news_scalping_lab.records.reference_integrity import (
 )
 from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text, write_json
 
+ALLOWED_EVENT_TICKER_EDGE_PATH_TYPES = {
+    "CONTINUATION",
+    "DIRECT",
+    "FUNDAMENTAL",
+    "INFERRED_NEW",
+    "MARKET_MEMORY",
+}
+
 
 @dataclass(frozen=True)
 class StoredBundleResult:
@@ -555,6 +563,7 @@ def _audit_deep_record_store(
         "records_with_unknown_payload_references": [],
         "missing_payload_references": [],
         "records_with_naive_available_from": [],
+        "invalid_event_ticker_edge_path_type_record_ids": [],
         "findings": [],
     }
     for episode_id, episode_records in sorted(records_by_episode.items()):
@@ -650,6 +659,7 @@ def _audit_deep_record_store(
             allow_block_only_trace=allow_block_only_trace,
             result=result,
         )
+        _audit_event_ticker_edge_path_types(records=episode_records, result=result)
     _append_deep_findings(result)
     return result
 
@@ -1011,6 +1021,22 @@ def _audit_record_source_lines(
             result["records_with_raw_payload_hash_mismatch"].append(record.record_id)
 
 
+def _audit_event_ticker_edge_path_types(
+    *,
+    records: list[BrainRecordEnvelope],
+    result: dict[str, Any],
+) -> None:
+    for record in records:
+        if record.record_type != "event_ticker_edge":
+            continue
+        path_type = record.payload.get("path_type")
+        normalized = path_type.strip().upper() if isinstance(path_type, str) else ""
+        if normalized not in ALLOWED_EVENT_TICKER_EDGE_PATH_TYPES:
+            result["invalid_event_ticker_edge_path_type_record_ids"].append(
+                record.record_id
+            )
+
+
 def _append_deep_findings(result: dict[str, Any]) -> None:
     finding_labels = {
         "missing_record_manifest_episode_ids": "record manifest is missing",
@@ -1059,6 +1085,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
             "record fact/inference/event references are not closed by source ledgers"
         ),
         "records_with_naive_available_from": "record available_from values are timezone-naive",
+        "invalid_event_ticker_edge_path_type_record_ids": (
+            "event_ticker_edge path_type values are invalid"
+        ),
     }
     findings = result["findings"]
     for key, label in finding_labels.items():

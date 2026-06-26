@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time
 
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
@@ -8,7 +9,7 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
-from news_scalping_lab.records.store import BrainRecordStore
+from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.retrieval.embedding import DeterministicHashEmbeddingProvider
 from news_scalping_lab.retrieval.store import LocalRetrievalStore, inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
@@ -186,7 +187,10 @@ def _retrieval_record(
     }
     if payload_updates:
         payload.update(payload_updates)
-    payload_hash = sha256_text(canonical_json(payload))
+    raw_payload_hash = sha256_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    )
+    normalized_payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
         record_type=record_type,
@@ -200,13 +204,129 @@ def _retrieval_record(
         status="tentative",
         confidence_label="low",
         provenance_source_ids=["SRC-RETRIEVAL"],
-        raw_payload_sha256=payload_hash,
-        normalized_payload_sha256=payload_hash,
+        raw_payload_sha256=raw_payload_hash,
+        normalized_payload_sha256=normalized_payload_hash,
         typed_payload_status="KNOWN_TYPED_PAYLOAD",
         source_block="brain_delta.jsonl",
         source_line=1,
         payload=payload,
     )
+
+
+def _store_single_edge_record(tmp_path, *, path_type: str) -> None:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": "BRAIN-EDGE",
+        "record_type": "event_ticker_edge",
+        "episode_id": "NSLAB-20300110-EDGE",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "edge_memory",
+        "evidence_phase": "BLIND_SAFE",
+        "edge_id": "EDGE-1",
+        "event_id": "EVT-1",
+        "ticker": "000001",
+        "company_name": "Edge Test Co",
+        "relation_class": "DIRECT",
+        "path_type": path_type,
+        "training_eligible": True,
+        "eligibility_reason": "unit test edge record",
+    }
+    raw_payload_hash = sha256_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    )
+    normalized_payload_hash = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-EDGE",
+        record_type="event_ticker_edge",
+        episode_id="NSLAB-20300110-EDGE",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="edge_memory",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=True,
+        eligibility_reason="unit test edge record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-EDGE"],
+        raw_payload_sha256=raw_payload_hash,
+        normalized_payload_sha256=normalized_payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+    raw_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    source_ledger_payload = json.dumps(
+        {"source_id": "SRC-EDGE", "event_ids": ["EVT-1"]},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    raw_sha = sha256_text(raw_payload)
+    source_ledger_sha = sha256_text(source_ledger_payload)
+    source_path = tmp_path / "edge_bundle.md"
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id="NSLAB-20300110-EDGE",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={
+                "brain_delta.jsonl": raw_sha,
+                "source_ledger.jsonl": source_ledger_sha,
+            },
+            raw_block_counts={"brain_delta.jsonl": 1, "source_ledger.jsonl": 1},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id="NSLAB-20300110-EDGE",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl", "source_ledger.jsonl"],
+            record_ids=["BRAIN-EDGE"],
+            record_count_by_type={"event_ticker_edge": 1},
+            training_eligible_record_count=1,
+            source_ids=["SRC-EDGE"],
+        ),
+        records=[record],
+        raw_blocks={
+            "brain_delta.jsonl": raw_payload,
+            "source_ledger.jsonl": source_ledger_payload,
+        },
+        validation_report={"passed": True},
+    )
+
+
+def test_record_store_audit_rejects_invalid_event_ticker_edge_path_type(tmp_path) -> None:
+    _store_single_edge_record(tmp_path, path_type="OUTCOME_ONLY")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["invalid_event_ticker_edge_path_type_record_ids"] == ["BRAIN-EDGE"]
+    assert "event_ticker_edge path_type values are invalid" in audit["findings"]
+
+
+def test_record_store_audit_accepts_documented_event_ticker_edge_path_types(tmp_path) -> None:
+    _store_single_edge_record(tmp_path, path_type="market_memory")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is True
+    assert audit["invalid_event_ticker_edge_path_type_record_ids"] == []
 
 
 def test_local_memory_store_adds_and_lists_accepted_episode(tmp_path) -> None:

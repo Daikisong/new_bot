@@ -65,6 +65,7 @@
     "index_record_id_mismatch_episode_ids": [],
     "index_training_eligible_mismatch_episode_ids": [],
     "index_type_count_mismatch_episode_ids": [],
+    "invalid_event_ticker_edge_path_type_record_ids": [],
     "invalid_outcome_label_quality_record_ids": [],
     "manifest_count_mismatch_episode_ids": [],
     "manifest_hash_mismatch_episode_ids": [],

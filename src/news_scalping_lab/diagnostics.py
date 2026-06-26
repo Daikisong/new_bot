@@ -871,6 +871,7 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "brain_delta_type_count_mismatch_episode_ids": [],
             "records_with_raw_payload_hash_mismatch": [],
             "raw_block_hash_mismatch_episode_ids": [],
+            "invalid_event_ticker_edge_path_type_record_ids": [],
         }
     findings = _string_list(audit.get("findings"))
     if audit.get("deep") is not True:
@@ -925,6 +926,10 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         ),
         "raw_block_hash_mismatch_episode_ids": audit.get(
             "raw_block_hash_mismatch_episode_ids",
+            [],
+        ),
+        "invalid_event_ticker_edge_path_type_record_ids": audit.get(
+            "invalid_event_ticker_edge_path_type_record_ids",
             [],
         ),
     }
