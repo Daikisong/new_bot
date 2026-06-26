@@ -22,11 +22,13 @@ from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
     BrainManifest,
+    Candidate,
     CompanyMemory,
     EventTickerEdge,
     MechanismMemory,
     MemoryClaim,
     NewsItem,
+    PathType,
     Postmortem,
     Provenance,
     RelationClass,
@@ -338,6 +340,29 @@ def test_strict_import_rejects_invalid_episode_without_saving(tmp_path) -> None:
     assert ResearchStore(tmp_path).list_episodes() == []
     raw_files = list((tmp_path / "data" / "raw" / "research").glob("*invalid_episode.json"))
     assert len(raw_files) == 1
+
+
+def test_candidate_contract_rejects_numeric_confidence_outputs() -> None:
+    valid_payload = {
+        "rank": 1,
+        "ticker": "UNKNOWN",
+        "company_name": "ContractCo",
+        "path_type": PathType.SINGLE_EVENT,
+        "event_ids": ["EVT-contract"],
+        "thesis": "Contract model should keep qualitative confidence only.",
+        "why_now": "The current pre-cutoff event requires a blind-safe review.",
+        "confidence_label": "low",
+        "evidence_quality": "medium",
+    }
+
+    assert Candidate.model_validate(valid_payload).confidence_label == "low"
+
+    with pytest.raises(ValidationError):
+        Candidate.model_validate({**valid_payload, "confidence_label": "73%"})
+    with pytest.raises(ValidationError):
+        Candidate.model_validate({**valid_payload, "evidence_quality": "0.73"})
+    with pytest.raises(ValidationError):
+        Candidate.model_validate({**valid_payload, "confidence_probability": 0.73})
 
 
 def test_research_accept_reject_stages_are_mutually_exclusive(tmp_path) -> None:
