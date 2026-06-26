@@ -147,6 +147,7 @@ class BaseBundleAdapter:
         invalid_issuer_day_event_weight_ids = (
             _invalid_issuer_day_event_level_weight_record_ids(records)
         )
+        sample_weight_validation = _record_sample_weight_validation(records)
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -239,6 +240,8 @@ class BaseBundleAdapter:
             "invalid_issuer_day_event_level_weight_record_ids": (
                 invalid_issuer_day_event_weight_ids
             ),
+            "sample_weight_validation": sample_weight_validation,
+            "sample_weight_validation_status": sample_weight_validation["status"],
             "import_loss_audit_passed": import_loss_audit_passed,
             **import_loss_summary,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
@@ -263,6 +266,7 @@ class BaseBundleAdapter:
             and validation["company_memory_delta_known_at_valid"] is True
             and validation["company_memory_delta_known_at_not_backdated"] is True
             and validation["issuer_day_event_level_weights_valid"] is True
+            and validation["sample_weight_validation_status"] == "passed"
             and validation["import_loss_audit_passed"] is True
         )
         return validation
@@ -1436,6 +1440,68 @@ def _invalid_issuer_day_event_level_weight_record_ids(
         ):
             invalid.append(_record_identity(record, line_number))
     return invalid
+
+
+def _record_sample_weight_validation(records: list[dict[str, Any]]) -> dict[str, Any]:
+    issuer_keys: set[tuple[str, str]] = set()
+    duplicate_issuer_day_keys: list[str] = []
+    issuer_weights: dict[str, float] = {}
+    direct_weights: dict[str, float] = {}
+    for record in records:
+        if record.get("training_eligible") is not True:
+            continue
+        if record.get("record_type") == "supervised_issuer_day_case":
+            key = (
+                str(record.get("trade_date") or ""),
+                str(record.get("ticker") or ""),
+            )
+            if key in issuer_keys:
+                duplicate_issuer_day_keys.append("|".join(key))
+            issuer_keys.add(key)
+            joined_key = "|".join(key)
+            issuer_weights[joined_key] = issuer_weights.get(
+                joined_key,
+                0.0,
+            ) + _numeric_weight(record.get("sample_weight", 0.0))
+        if record.get("record_type") == "supervised_direct_event_case":
+            issuer_day_case_id = record.get("issuer_day_case_id")
+            if not isinstance(issuer_day_case_id, str) or not issuer_day_case_id:
+                issuer_day_case_id = (
+                    f"{record.get('trade_date') or ''}:{record.get('ticker') or ''}"
+                )
+            direct_weights[issuer_day_case_id] = direct_weights.get(
+                issuer_day_case_id,
+                0.0,
+            ) + _numeric_weight(record.get("sample_weight", 0.0))
+    issuer_weight_mismatches = _weight_sum_mismatches(issuer_weights)
+    direct_weight_mismatches = _weight_sum_mismatches(direct_weights)
+    return {
+        "status": "passed"
+        if (
+            not duplicate_issuer_day_keys
+            and not issuer_weight_mismatches
+            and not direct_weight_mismatches
+        )
+        else "failed",
+        "duplicate_issuer_day_count": len(duplicate_issuer_day_keys),
+        "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
+        "issuer_day_weight_sum_mismatches": issuer_weight_mismatches,
+        "direct_event_weight_sum_mismatches": direct_weight_mismatches,
+    }
+
+
+def _weight_sum_mismatches(weights: dict[str, float]) -> dict[str, float]:
+    return {
+        key: round(total, 12)
+        for key, total in sorted(weights.items())
+        if abs(total - 1.0) > 0.000001
+    }
+
+
+def _numeric_weight(value: object) -> float:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return 0.0
 
 
 def _explicit_datetime(value: object) -> datetime | None:

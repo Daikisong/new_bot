@@ -39,6 +39,39 @@ def _payload_block(payload: str, fence: str) -> str:
     return f"```{fence}\n{payload}\n```"
 
 
+def _rewrite_synthetic_record_payloads(
+    root: Path,
+    mutator: object,
+) -> None:
+    record_path = root / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl"
+    rows = [
+        json.loads(line)
+        for line in record_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for row in rows:
+        payload = row.get("payload")
+        if isinstance(payload, dict) and callable(mutator):
+            mutator(payload)
+    record_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+
+def _replace_warehouse_sample_weight(path: Path, sample_weight: float) -> None:
+    tampered_path = path.with_name(f"{path.stem}_tampered.parquet")
+    source_path = path.as_posix().replace("'", "''")
+    target_path = tampered_path.as_posix().replace("'", "''")
+    duckdb.sql(
+        "copy ("
+        f"select * replace ({sample_weight} as sample_weight) "
+        f"from read_parquet('{source_path}')"
+        f") to '{target_path}' (format parquet)"
+    )
+    tampered_path.replace(path)
+
+
 def test_known_payload_models_expose_v11_contract_fields() -> None:
     issuer = SupervisedIssuerDayCase.model_validate(
         {
@@ -1420,6 +1453,52 @@ def test_issuer_day_event_level_weights_accept_balanced_weights(
     ] == []
 
 
+def test_issuer_day_sample_weight_must_sum_to_one_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bad_issuer_day_sample_weight_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_sample_weight=0.5,
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"]["sample_weight_validation_status"] == "failed"
+    assert inspection["validation"]["sample_weight_validation"][
+        "issuer_day_weight_sum_mismatches"
+    ] == {"2030-01-10|000001": 0.5}
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_direct_event_sample_weight_must_sum_to_one_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bad_direct_event_sample_weight_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            direct_event_sample_weights=[0.25, 0.25],
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"]["sample_weight_validation_status"] == "failed"
+    assert inspection["validation"]["sample_weight_validation"][
+        "direct_event_weight_sum_mismatches"
+    ] == {"20300110:000001": 0.5}
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
 def test_coverage_audit_rejects_record_projection_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -1529,13 +1608,20 @@ def test_coverage_audit_rejects_warehouse_weight_sum_mismatches(
     bundle.write_text(
         _synthetic_v11_bundle(
             include_unknown=False,
-            issuer_sample_weight=0.5,
-            direct_event_sample_weights=[0.25, 0.25],
+            direct_event_sample_weights=[0.5, 0.5],
         ),
         encoding="utf-8",
     )
     import_versioned_bundle(bundle, root=tmp_path)
     WarehouseStore(tmp_path).rebuild_all()
+    _replace_warehouse_sample_weight(
+        tmp_path / "warehouse" / "issuer_day_cases.parquet",
+        0.5,
+    )
+    _replace_warehouse_sample_weight(
+        tmp_path / "warehouse" / "direct_event_cases.parquet",
+        0.25,
+    )
 
     audit = audit_coverage(tmp_path)
 
@@ -1563,11 +1649,16 @@ def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     bundle.write_text(
         _synthetic_v11_bundle(
             include_unknown=False,
-            issuer_sample_weight=0.5,
         ),
         encoding="utf-8",
     )
     import_versioned_bundle(bundle, root=tmp_path)
+    _rewrite_synthetic_record_payloads(
+        tmp_path,
+        lambda payload: payload.update({"sample_weight": 0.5})
+        if payload.get("record_id") == "BRAIN-SYNTH-ISSUER"
+        else None,
+    )
 
     sft = export_training(tmp_path, kind="sft")
     export_training(tmp_path, kind="preference")
@@ -1604,11 +1695,17 @@ def test_training_audit_rejects_direct_event_weight_sum_mismatch(
     bundle.write_text(
         _synthetic_v11_bundle(
             include_unknown=False,
-            direct_event_sample_weights=[0.25, 0.25],
+            direct_event_sample_weights=[0.5, 0.5],
         ),
         encoding="utf-8",
     )
     import_versioned_bundle(bundle, root=tmp_path)
+    _rewrite_synthetic_record_payloads(
+        tmp_path,
+        lambda payload: payload.update({"sample_weight": 0.25})
+        if payload.get("record_type") == "supervised_direct_event_case"
+        else None,
+    )
 
     sft = export_training(tmp_path, kind="sft")
     export_training(tmp_path, kind="preference")
