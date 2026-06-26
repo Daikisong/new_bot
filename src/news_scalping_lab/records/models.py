@@ -202,6 +202,15 @@ class CompanyMemoryDeltaRecord(FlexiblePayloadModel):
     record_type: Literal["company_memory_delta"]
     ticker: str | None = None
     company_name: str | None = None
+    known_at: datetime | None = None
+    aliases: list[str] | None = None
+    business_descriptions: list[str] | None = None
+    locations: list[str] | None = None
+    customers: list[str] | None = None
+    supply_chain_roles: list[str] | None = None
+    prior_market_narratives: list[str] | None = None
+    prior_leader_occurrences: list[str] | None = None
+    contradictory_relations: list[str] | None = None
 
 
 class ResearchQuestionRecord(FlexiblePayloadModel):

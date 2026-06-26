@@ -23,6 +23,7 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import (
     BrainRecordStore,
@@ -66,6 +67,15 @@ class WarehouseStore:
         store = ResearchStore(self.root)
         episodes = store.list_accepted()
         records = BrainRecordStore(self.root).list_records()
+        company_delta_records = [
+            record for record in records if record.record_type == "company_memory_delta"
+        ]
+        company_delta_result = CompanyMemoryStore(self.root).apply_record_delta_records(
+            company_delta_records
+        )
+        if company_delta_result.skipped_invalid_record_ids:
+            invalid_ids = ", ".join(company_delta_result.skipped_invalid_record_ids)
+            raise ValueError(f"invalid company_memory_delta records skipped: {invalid_ids}")
         counts = {
             "events": self.write_events(episodes),
             "event_sources": self.write_event_sources(episodes),
@@ -76,6 +86,8 @@ class WarehouseStore:
             "company_memory": self.write_company_memory_from_files(),
             "predictions": self.write_predictions_from_files(),
             "daily_outcomes": self.write_daily_outcomes_from_files(),
+            "company_memory_delta_records": company_delta_result.processed_record_count,
+            "company_memory_delta_written": company_delta_result.written_count,
         }
         counts.update(
             {

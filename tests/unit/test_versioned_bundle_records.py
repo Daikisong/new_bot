@@ -40,6 +40,7 @@ def _synthetic_v11_bundle(
     direct_event_sample_weights: list[float] | None = None,
     include_event_edge: bool = False,
     include_error_correction: bool = False,
+    include_company_memory_delta: bool = False,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -161,6 +162,28 @@ def _synthetic_v11_bundle(
                 "correction_rationale": "Direct issuer evidence should seed candidate generation.",
                 "training_eligible": True,
                 "eligibility_reason": "synthetic explicit correction label",
+                "provenance_source_ids": ["SRC-SYNTH-1"],
+            }
+        )
+    if include_company_memory_delta:
+        records.append(
+            {
+                "record_id": "BRAIN-SYNTH-COMPANY",
+                "record_type": "company_memory_delta",
+                "episode_id": episode_id,
+                "trade_date": trade_day.isoformat(),
+                "available_from": available_from,
+                "training_target": "company_memory",
+                "known_at": available_from,
+                "ticker": "000001",
+                "company_name": "Synthetic Issuer",
+                "aliases": ["Synthetic Issuer"],
+                "business_descriptions": ["Builds synthetic test components."],
+                "supply_chain_roles": ["direct catalyst supplier"],
+                "prior_market_narratives": ["Synthetic issuer previously led direct catalysts."],
+                "contradictory_relations": ["Theme relation remains unverified."],
+                "training_eligible": False,
+                "eligibility_reason": "company memory delta is audit memory",
                 "provenance_source_ids": ["SRC-SYNTH-1"],
             }
         )
@@ -686,6 +709,56 @@ def test_event_ticker_edge_records_project_to_warehouse_and_coverage(
     assert audit["warehouse_expected_source_counts"]["event_ticker_edges.parquet"] == {
         "expected": 1,
         "source_label": "accepted event ticker edges plus brain record edge records",
+    }
+    assert audit["warehouse_count_mismatches"] == {}
+    assert audit["warehouse_identity_mismatches"] == {}
+
+
+def test_warehouse_rebuild_applies_company_memory_delta_records(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_company_memory_delta=True,
+        ),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    counts = WarehouseStore(tmp_path).rebuild_all()
+
+    assert counts["brain_records"] == 3
+    assert counts["company_memory_delta_records"] == 1
+    assert counts["company_memory_delta_written"] == 1
+    assert counts["company_memory"] == 1
+    assert len(list((tmp_path / "memory" / "company_memory").glob("*.json"))) == 1
+    company_row = duckdb.sql(
+        "select ticker, company_name, known_at, business_descriptions_json, "
+        "supply_chain_roles_json, prior_market_narratives_json, "
+        "contradictory_relations_json, provenance_json "
+        f"from read_parquet('{(tmp_path / 'warehouse' / 'company_memory.parquet').as_posix()}')"
+    ).fetchone()
+    assert company_row[0:7] == (
+        "000001",
+        "Synthetic Issuer",
+        "2030-01-11T00:00:00+09:00",
+        '["Builds synthetic test components."]',
+        '["direct catalyst supplier"]',
+        '["Synthetic issuer previously led direct catalysts."]',
+        '["Theme relation remains unverified."]',
+    )
+    assert "company_memory_delta_record" in str(company_row[7])
+    assert "memory/records/NSLAB-20300110-SYNTH.jsonl" in str(company_row[7])
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["warehouse_expected_source_counts"]["company_memory.parquet"] == {
+        "expected": 1,
+        "source_label": "source company memory files",
     }
     assert audit["warehouse_count_mismatches"] == {}
     assert audit["warehouse_identity_mismatches"] == {}
