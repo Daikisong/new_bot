@@ -616,7 +616,9 @@ class ContextManifest(StrictModel):
     counterexample_episode_ids: list[str] = Field(default_factory=list)
     accepted_record_count: int = 0
     available_record_count: int = 0
+    available_record_ids: list[str] = Field(default_factory=list)
     training_eligible_available_record_count: int = 0
+    training_eligible_available_record_ids: list[str] = Field(default_factory=list)
     swept_record_count: int = 0
     swept_record_ids: list[str] = Field(default_factory=list)
     retrieved_record_ids: list[str] = Field(default_factory=list)

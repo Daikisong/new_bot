@@ -3951,6 +3951,7 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
             "memory_sweep_cache_hits": 0,
             "swept_record_ids": ["REC-sweep-1"],
             "swept_record_count": 1,
+            "available_record_ids": ["REC-sweep-future"],
             "retrieved_record_ids": ["REC-sweep-future"],
             "excluded_retrieved_record_ids": ["REC-sweep-future"],
             "semantic_retrieval_record_ids": ["REC-sweep-future"],
@@ -3967,6 +3968,10 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     failed_future_manifest_ids = audit_provenance(tmp_path)
 
     assert not failed_future_manifest_ids["passed"]
+    assert (
+        "2030-01-10.json: context manifest available_record_ids exposes future "
+        "record: REC-sweep-future"
+    ) in failed_future_manifest_ids["findings"]
     assert (
         "2030-01-10.json: context manifest retrieved_record_ids exposes future "
         "record: REC-sweep-future"

@@ -2965,6 +2965,8 @@ def _check_manifest_record_id_availability(
         return
     records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
     for field in (
+        "available_record_ids",
+        "training_eligible_available_record_ids",
         "swept_record_ids",
         "retrieved_record_ids",
         "counterexample_record_ids",

@@ -110,6 +110,9 @@ class ContextAssembler:
             if not is_available_as_of(record.available_from, cutoff_at)
         ]
         available_record_ids = [record.record_id for record in available_records]
+        training_eligible_available_record_ids = [
+            record.record_id for record in available_records if record.training_eligible
+        ]
         available_record_hashes = {
             record.record_id: record.normalized_payload_sha256
             for record in available_records
@@ -198,9 +201,11 @@ class ContextAssembler:
             counterexample_episode_ids=counterexample_ids,
             accepted_record_count=len(all_records),
             available_record_count=len(available_records),
-            training_eligible_available_record_count=sum(
-                1 for record in available_records if record.training_eligible
+            available_record_ids=available_record_ids,
+            training_eligible_available_record_count=len(
+                training_eligible_available_record_ids
             ),
+            training_eligible_available_record_ids=training_eligible_available_record_ids,
             swept_record_count=len(swept_record_ids),
             swept_record_ids=swept_record_ids,
             retrieved_record_ids=retrieved_record_ids,

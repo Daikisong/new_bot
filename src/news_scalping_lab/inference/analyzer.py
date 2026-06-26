@@ -319,8 +319,12 @@ class DailyAnalyzer:
         manifest.swept_episode_ids = sweep.swept_episode_ids
         manifest.accepted_record_count = sweep.accepted_record_count
         manifest.available_record_count = sweep.available_record_count
+        manifest.available_record_ids = sweep.available_record_ids
         manifest.training_eligible_available_record_count = (
             sweep.training_eligible_available_record_count
+        )
+        manifest.training_eligible_available_record_ids = (
+            sweep.training_eligible_available_record_ids
         )
         manifest.swept_record_count = len(sweep.swept_record_ids)
         manifest.swept_record_ids = sweep.swept_record_ids
@@ -394,8 +398,15 @@ class DailyAnalyzer:
                 "counterexample_record_ids": manifest.counterexample_record_ids,
                 "accepted_record_count": manifest.accepted_record_count,
                 "available_record_count": manifest.available_record_count,
+                "available_record_ids": manifest.available_record_ids,
                 "swept_record_count": manifest.swept_record_count,
                 "swept_record_ids": manifest.swept_record_ids,
+                "training_eligible_available_record_count": (
+                    manifest.training_eligible_available_record_count
+                ),
+                "training_eligible_available_record_ids": (
+                    manifest.training_eligible_available_record_ids
+                ),
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "record_sweep_artifacts": manifest.record_sweep_artifacts,
                 "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
@@ -2875,6 +2886,10 @@ class DailyAnalyzer:
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
             "retrieved_record_ids": manifest.retrieved_record_ids,
             "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
+            "available_record_ids": manifest.available_record_ids,
+            "training_eligible_available_record_ids": (
+                manifest.training_eligible_available_record_ids
+            ),
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
             "excluded_semantic_retrieval_record_ids": (
                 manifest.excluded_semantic_retrieval_record_ids

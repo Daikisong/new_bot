@@ -41,7 +41,9 @@ class SweepResult:
     swept_episode_ids: list[str]
     accepted_record_count: int
     available_record_count: int
+    available_record_ids: list[str]
     training_eligible_available_record_count: int
+    training_eligible_available_record_ids: list[str]
     swept_record_ids: list[str]
     artifact_paths: list[str]
     record_artifact_paths: list[str]
@@ -86,14 +88,22 @@ class MemorySweeper:
             for record in all_records
             if is_available_as_of(record.available_from, cutoff_at)
         ]
+        available_record_ids = [record.record_id for record in available_records]
+        training_eligible_available_record_ids = [
+            record.record_id for record in available_records if record.training_eligible
+        ]
         if mode == "fast":
             return SweepResult(
                 accepted_episode_count=len(accepted),
                 swept_episode_ids=[],
                 accepted_record_count=len(all_records),
                 available_record_count=len(available_records),
-                training_eligible_available_record_count=sum(
-                    1 for record in available_records if record.training_eligible
+                available_record_ids=available_record_ids,
+                training_eligible_available_record_count=len(
+                    training_eligible_available_record_ids
+                ),
+                training_eligible_available_record_ids=(
+                    training_eligible_available_record_ids
                 ),
                 swept_record_ids=[],
                 artifact_paths=[],
@@ -289,9 +299,11 @@ class MemorySweeper:
             swept_episode_ids=swept_ids,
             accepted_record_count=len(all_records),
             available_record_count=len(available_records),
-            training_eligible_available_record_count=sum(
-                1 for record in available_records if record.training_eligible
+            available_record_ids=available_record_ids,
+            training_eligible_available_record_count=len(
+                training_eligible_available_record_ids
             ),
+            training_eligible_available_record_ids=training_eligible_available_record_ids,
             swept_record_ids=swept_record_ids,
             artifact_paths=artifacts,
             record_artifact_paths=record_artifacts,

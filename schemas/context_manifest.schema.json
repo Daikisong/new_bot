@@ -86,6 +86,13 @@
       "title": "Available Record Count",
       "type": "integer"
     },
+    "available_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Record Ids",
+      "type": "array"
+    },
     "blind_artifact_sha256": {
       "anyOf": [
         {
@@ -1070,6 +1077,13 @@
       "default": 0,
       "title": "Training Eligible Available Record Count",
       "type": "integer"
+    },
+    "training_eligible_available_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Training Eligible Available Record Ids",
+      "type": "array"
     },
     "truncations": {
       "items": {
