@@ -4,13 +4,13 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v20_brain_delta_density_market_state_fatigue_locked
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다. v20은 brain_delta 최소 밀도, market_state/정치테마/투자주의 연속성 후보의 fatigue 감산, body table/list extractor를 hard gate로 추가한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v21_brain_delta_density_market_state_override_locked
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다. v21은 brain_delta 최소 밀도와 body table/list extractor hard gate를 유지하되, market_state/정치테마/투자주의 연속성 후보는 수량 hard cap으로 금지하지 않고 market_state lane·fatigue audit·override audit으로 검증한다.
 ```
 
 
 ────────────────────────────────────────
-V20 REGRESSION LOCK — brain_delta 밀도·market_state 과승격 방지
+V21 REGRESSION LOCK — brain_delta 밀도·market_state override audit·body extractor
 ────────────────────────────────────────
 
 이 섹션은 20241216류 회귀를 막기 위한 최상위 추가 게이트다. 아래 본문, `AUTONOMOUS FULL-RUN LOCK`, `PHASE COCKPIT LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
@@ -24,7 +24,7 @@ POLITICAL_THEME_CONTINUATION_MARKET_STATE·투자경고·매매거래정지·단
 직접 issuer event보다 상위 final rank를 과도하게 차지한다.
 ```
 
-v20의 원칙:
+v21의 원칙:
 
 ```text
 phase가 깨끗한 것만으로 ACCEPT_FULL이 아니다.
@@ -32,7 +32,7 @@ semantic type이 맞는 것만으로 ACCEPT_FULL이 아니다.
 ACCEPT_FULL은 record 밀도와 final ranking 품질까지 통과해야 한다.
 ```
 
-## V20.1 Brain Delta density hard gate
+## V21.1 Brain Delta density hard gate
 
 `brain_delta.jsonl`은 요약 교훈이 아니라 import 대상 record 모집단이다.
 정상 거래일이고 `research_daily` outcome snapshot이 존재하면 `expected_brain_delta_min`은 반드시 canonical_graph count에서 계산한다.
@@ -106,13 +106,18 @@ direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
 ```
 
-## V20.2 market_state continuation discount hard gate
+## V21.2 market_state continuation lane + fatigue override gate
 
 `MARKET_STATE_CONTINUATION`, `POLITICAL_THEME_CONTINUATION_MARKET_STATE`, 투자주의, 투자경고, 투자위험, 매매거래정지, 거래재개, 단기과열, 조회공시 요구, 시황변동 답변 없음은 **운영 사건이 아니라 시장상태 신호**다.
 
-시장상태 신호는 다음 용도로는 중요하다.
+시장상태 신호는 국장에서 실제로 강하게 작동할 수 있다. 따라서 market_state 후보를 일괄 금지하거나, 기계적 수량 제한만으로 final에서 제거하지 않는다.
+
+다만 market_state 신호는 수주·계약·제품·허가·상용화·자본정책 같은 direct issuer catalyst와 같은 종류의 신호가 아니다. 따라서 final에 올릴 경우 반드시 별도 lane과 별도 audit로 처리한다.
+
+market_state 신호의 허용 용도:
 
 ```text
+MARKET_MEMORY_CONTINUATION lane
 continuation_pool
 risk/fatigue audit
 market_state_or_continuation brain_delta
@@ -120,10 +125,44 @@ ranking_error_case
 negative_control_case
 ```
 
-하지만 단독으로는 final_watchlist 상위권의 강한 장전 촉매가 아니다.
-시장상태 신호를 수주·계약·제품·허가·상용화·자본정책 메커니즘으로 재해석하지 않는다.
+금지:
 
-market_state-only 후보는 다음 중 하나 이상이면 `fatigue_risk_dominant=true`로 둔다.
+```text
+market_state 신호를 CONTRACT_ORDER로 재해석
+market_state 신호를 PRODUCT_COMMERCIALIZATION으로 재해석
+market_state 신호를 BIO_STAGE_ADVANCE로 재해석
+market_state 신호를 CAPITAL_POLICY로 재해석
+P snapshot-only 이유를 direct issuer fact로 둔갑
+투자경고/정지/조회공시 문구를 매출·마진·허가확률 변화로 설명
+```
+
+### V21.2-A market_state lane 분리
+
+market_state-only 후보는 `final_watchlist`에 들어갈 수 있다. 단, 다음 필드를 반드시 가진다.
+
+```json
+{
+  "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+  "material_fact_class": "MARKET_STATE_CONTINUATION | POLITICAL_THEME_CONTINUATION_MARKET_STATE | INVESTMENT_WARNING | TRADING_HALT_NOTICE | SHORT_TERM_OVERHEAT | PRICE_QUERY_NOTICE",
+  "catalyst_type": "MARKET_MEMORY_CONTINUATION",
+  "market_state_signal_type": "...",
+  "fatigue_risk_score": 0,
+  "continuation_strength_score": 0,
+  "market_state_final_eligible": true,
+  "market_state_override_required": false,
+  "market_state_override_id": null
+}
+```
+
+시장상태 후보는 `quality_A_direct_event` 또는 `quality_B_direct_event`와 비교될 때 반드시 leader-pair를 남긴다.
+
+```text
+market_state_vs_direct_leader_pair_required == true
+```
+
+### V21.2-B fatigue risk 계산
+
+market_state-only 후보는 다음 중 하나 이상이면 `fatigue_risk_dominant=true` 후보로 표시한다.
 
 ```text
 upper_limit_touch_count_5d >= 2
@@ -142,46 +181,87 @@ return_20d_pct >= 150
 현저한 시황변동 조회공시 요구인데 중요 공시대상 없음
 ```
 
-`fatigue_risk_dominant=true`인 market_state-only 후보는 기본적으로 final_watchlist 금지다.
-단, 같은 issuer에 대해 cutoff 이전 CSV 안에 별도의 fresh non-market-state issuer fact가 존재하면 그 별도 fact 기준으로만 final 심사를 다시 할 수 있다.
+`fatigue_risk_dominant=true`는 자동 탈락이 아니다. 하지만 final 상위권에 올리려면 continuation 쪽 근거가 fatigue를 이긴다는 override audit가 필요하다.
 
-fresh non-market-state issuer fact 예:
-
-```text
-CONTRACT_SIGNED
-ORDER_RECEIVED
-SUPPLY_AGREEMENT
-PROJECT_AWARDED
-PRODUCT_COMMERCIALIZATION_BY_ISSUER
-REGULATORY_APPROVAL
-CLINICAL_STAGE_ADVANCE
-LICENSE_OR_TECH_TRANSFER_WITH_RIGHTS
-BUYBACK
-SHARE_CANCELLATION
-DIVIDEND
-STAKE_SALE_OR_CONTROL_CHANGE
-```
-
-market_state-only 후보가 final에 들어가려면 아래 조건을 모두 만족해야 한다.
+continuation strength 근거 예:
 
 ```text
-market_state_final_eligible == true
-fatigue_risk_dominant == false
-market_state_primary_quote_is_current_preopen_notice == true
-fresh_context_or_clean_market_memory_exists == true
-current_score_eligible_reason != P_SNAPSHOT_ONLY
+cutoff CSV 안에 당일 정치·정책·테마를 새로 강화하는 뉴스가 있음
+해당 ticker가 단순 P snapshot이 아니라 cutoff row에서 issuer-scoped로 언급됨
+거래소 공시가 단순 경고가 아니라 거래 재개·지정 해제·불확실성 해소에 가까움
+전일 과열이 있으나 종가 잠김·거래대금·회전율·호가 기억이 exhaustion보다 continuation으로 해석됨
+같은 theme 안에서 direct event 후보보다 위에 둘 이유가 blind leader-pair로 명시됨
+시장 전체가 해당 lane을 실제 주도 lane으로 선택할 가능성을 cutoff 이전 뉴스가 설명함
 ```
 
-추가 ranking hard gate:
+### V21.2-C hard cap 금지, override gate 사용
+
+다음 수량은 **fatal hard cap이 아니다.**
 
 ```text
-market_state_only_final_count <= 3
-market_state_only_top5_count <= 1
-market_state_only_top10_count <= 2
-market_state_only_candidate_cannot_outrank_quality_A_direct_event == true
+market_state_only_top5_count
+market_state_only_top10_count
+market_state_only_final_count
 ```
 
-직접 issuer event 품질 tier 정의:
+시장이 진짜 market_state/정치테마/투자주의 continuation 장이면 final에 여러 개 들어갈 수 있다. 다만 아래 기준을 넘으면 초과 후보마다 `market_state_override_audit.jsonl` record가 필수다.
+
+```text
+if market_state_only_top5_count > 1:
+    each excess top5 market_state item requires override audit
+
+if market_state_only_top10_count > 2:
+    each excess top10 market_state item requires override audit
+
+if market_state_only_final_count > 3:
+    each excess final market_state item requires override audit
+```
+
+`market_state_override_audit.jsonl` 최소 필드:
+
+```json
+{
+  "override_id": "MSO-...",
+  "candidate_id": "CAND-...",
+  "ticker": "000000",
+  "name": "회사명",
+  "rank": 1,
+  "market_state_signal_type": "...",
+  "fatigue_risk_dominant": true,
+  "fatigue_risk_evidence": [],
+  "continuation_strength_evidence": [],
+  "fresh_context_source_fact_ids": [],
+  "issuer_scoped_current_notice_fact_ids": [],
+  "leader_pair_ids_vs_quality_A_direct_event": [],
+  "why_continuation_not_fatigue": "...",
+  "why_can_outrank_direct_event": "...",
+  "semantic_verdict": "PASS | FAIL",
+  "training_eligibility": "market_state_training_only | ranking_error_only | negative_control_only"
+}
+```
+
+override audit가 없거나 `semantic_verdict != PASS`이면 그 후보는 `final_watchlist`에서 제거하고 `continuation_pool` 또는 `WATCH_SECONDARY`로 강등한다. 이것은 recoverable semantic error이며, 가능한 경우 canonical_graph를 수리한 뒤 ACCEPT_FULL을 계속 목표로 한다.
+
+```text
+market_state_override_missing_count > 0
+→ 해당 후보 강등·재랭킹·재렌더·재검증
+→ repair 가능
+→ 즉시 QUARANTINE 금지
+```
+
+단, repair loop 후에도 final에 남은 excess market_state 후보의 override audit가 없으면 다음으로 처리한다.
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_MARKET_STATE_OVERRIDE_MISSING
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+### V21.2-D 직접 issuer event 품질 tier 정의
+
+직접 issuer event는 market_state 후보와 비교할 때 다음 tier를 사용한다.
 
 ```text
 quality_A_direct_event:
@@ -200,28 +280,61 @@ quality_B_direct_event:
   - supporting_inference_ids 존재
 ```
 
-validator hard check:
+market_state-only 후보가 quality_A_direct_event보다 높은 rank에 있으면 자동 fatal이 아니다. 단, 반드시 아래가 있어야 한다.
 
 ```text
-market_state_discount_verified == true
-fatigue_risk_dominant_final_count == 0
+market_state_vs_quality_A_override_audit_present == true
+leader_pair_ids_vs_quality_A_direct_event_count >= 1
+why_can_outrank_direct_event is nonempty and candidate-specific
+```
+
+없으면 해당 market_state 후보를 quality_A direct event 아래로 강등한다.
+
+### V21.2-E validator hard check
+
+validator는 다음을 실제 artifact와 canonical_graph에서 다시 계산한다.
+
+```text
+market_state_lane_separation_verified == true
+market_state_not_recast_as_direct_catalyst_verified == true
+market_state_fatigue_audit_executed == true
+market_state_override_required_count
+market_state_override_present_count
+market_state_override_missing_count == 0
+market_state_override_semantic_fail_count == 0
+market_state_excess_counts_are_not_fatal_without_override_check == true
+market_state_only_outranks_quality_A_direct_event_without_override_count == 0
+market_state_demoted_when_override_missing_count
+```
+
+다음은 더 이상 ACCEPT_FULL의 직접 hard cap이 아니다.
+
+```text
 market_state_only_top5_count <= 1
 market_state_only_top10_count <= 2
 market_state_only_final_count <= 3
-market_state_only_outranks_quality_A_direct_event_count == 0
+```
+
+이 수량은 report와 validation_report에 기록하되, 초과 자체는 warning이다. fatal 조건은 오직 다음이다.
+
+```text
+market_state_override_missing_count > 0
+market_state_override_semantic_fail_count > 0
+market_state_recast_as_direct_catalyst_count > 0
+market_state_only_outranks_quality_A_direct_event_without_override_count > 0
 ```
 
 위반 시:
 
 ```text
 critical_error_count += 1
-bundle_status = QUARANTINE_MARKET_STATE_OVERPROMOTED
+bundle_status = QUARANTINE_MARKET_STATE_OVERRIDE_INVALID
 brain_eligible = false
 direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
 ```
 
-## V20.3 body table/list extractor hard gate
+## V21.3 body table/list extractor hard gate
 
 제목 중심 extractor만으로는 장전 후보 생성이 누락된다. 뉴스 CSV의 body 안에 종목 표·리스트가 있으면 전수 추출해야 한다.
 특히 다음 제목·본문 패턴은 body list extractor를 반드시 실행한다.
@@ -257,7 +370,7 @@ body_table_extractor_unexplained_skip_count == 0
 
 `body_table_extractor_unexplained_skip_count > 0`이면 `ACCEPT_FULL` 금지다.
 
-## V20.4 validator 필수 추가 check_id
+## V21.4 validator 필수 추가 check_id
 
 `validation_report.json`과 `direct_ingest_contract.json`에는 다음 check_id가 실제 계산값으로 들어가야 한다.
 
@@ -265,12 +378,15 @@ body_table_extractor_unexplained_skip_count == 0
 brain_delta_density_verified
 brain_delta_expected_min_verified
 brain_delta_type_count_parity_verified
-market_state_discount_verified
-fatigue_risk_dominant_final_count_zero_verified
-market_state_only_top5_lte_one_verified
-market_state_only_top10_lte_two_verified
-market_state_only_final_lte_three_verified
-market_state_only_not_outrank_quality_A_direct_event_verified
+market_state_lane_separation_verified
+market_state_not_recast_as_direct_catalyst_verified
+market_state_fatigue_audit_executed
+market_state_override_required_count_verified
+market_state_override_present_count_verified
+market_state_override_missing_count_zero_verified
+market_state_override_semantic_fail_count_zero_verified
+market_state_excess_counts_are_not_fatal_without_override_check_verified
+market_state_only_not_outrank_quality_A_direct_event_without_override_verified
 body_table_extractor_executed
 body_table_candidate_generation_audit_verified
 ```
@@ -280,7 +396,7 @@ body_table_candidate_generation_audit_verified
 
 ```text
 critical_error_count += 1
-bundle_status = QUARANTINE_VALIDATOR_MISSING_V20_CHECKS
+bundle_status = QUARANTINE_VALIDATOR_MISSING_V21_CHECKS
 brain_eligible = false
 direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
@@ -1605,6 +1721,8 @@ logical blocks:
 - bundle_manifest.json
 - direct_ingest_contract.json
 - final_semantic_audit.jsonl
+- market_state_override_audit.jsonl
+- body_table_candidate_generation_audit.jsonl
 - phase_state.json
 - access_log.jsonl
 - phase_audit_report.json
@@ -2304,6 +2422,8 @@ fact_ledger_blind.jsonl
 inference_ledger_blind.jsonl
 candidate_screening.jsonl
 final_semantic_audit.jsonl
+market_state_override_audit.jsonl
+body_table_candidate_generation_audit.jsonl
 blind_packet_manifest.json
 entity_resolution.jsonl
 outcome_ledger.jsonl
@@ -3185,6 +3305,8 @@ fact_ledger_blind.jsonl
 inference_ledger_blind.jsonl
 candidate_screening.jsonl
 final_semantic_audit.jsonl
+market_state_override_audit.jsonl
+body_table_candidate_generation_audit.jsonl
 blind_packet_manifest.json
 ```
 
@@ -4281,6 +4403,8 @@ fact_ledger_blind.jsonl
 inference_ledger_blind.jsonl
 candidate_screening.jsonl
 final_semantic_audit.jsonl
+market_state_override_audit.jsonl
+body_table_candidate_generation_audit.jsonl
 blind_packet_manifest.json
 entity_resolution.jsonl
 outcome_ledger.jsonl
@@ -4328,6 +4452,12 @@ bundle_manifest.json
 
 <!-- NSLAB:BEGIN final_semantic_audit.jsonl -->
 <!-- NSLAB:END final_semantic_audit.jsonl -->
+
+<!-- NSLAB:BEGIN market_state_override_audit.jsonl -->
+<!-- NSLAB:END market_state_override_audit.jsonl -->
+
+<!-- NSLAB:BEGIN body_table_candidate_generation_audit.jsonl -->
+<!-- NSLAB:END body_table_candidate_generation_audit.jsonl -->
 
 <!-- NSLAB:BEGIN blind_packet_manifest.json -->
 <!-- NSLAB:END blind_packet_manifest.json -->
