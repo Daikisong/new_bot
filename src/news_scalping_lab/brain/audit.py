@@ -163,8 +163,10 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
     manifest = _read_llm_compile_manifest(root)
     findings: list[str] = []
     unknown_record_ids: list[str] = []
+    unknown_compiled_claim_ids: list[str] = []
     category_count_mismatches: list[str] = []
     shard_count_mismatches: list[str] = []
+    compiled_claim_count_mismatches: list[str] = []
     shard_record_ids: set[str] = set()
     record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
     if not manifest:
@@ -172,12 +174,22 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
             "llm_compile_manifest_present": False,
             "llm_compile_findings": findings,
             "llm_compile_unknown_record_ids": unknown_record_ids,
+            "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
             "llm_compile_category_count_mismatches": category_count_mismatches,
             "llm_compile_shard_count_mismatches": shard_count_mismatches,
+            "llm_compile_compiled_claim_count_mismatches": (
+                compiled_claim_count_mismatches
+            ),
         }
+    compiled_claim_file_present, compiled_claim_ids = _compiled_claim_ids(root)
     source_count = _int_value(manifest.get("source_record_count"))
     if source_count is None or source_count != len(record_ids):
         findings.append("llm compile manifest source_record_count does not match record store")
+    compiled_claim_count = _int_value(manifest.get("compiled_claim_count"))
+    if not compiled_claim_file_present:
+        findings.append("llm compile manifest exists without compiled claims file")
+    if compiled_claim_count is None or compiled_claim_count != len(compiled_claim_ids):
+        compiled_claim_count_mismatches.append("manifest")
     for index, shard in enumerate(_dict_list(manifest.get("record_shards")), start=1):
         ids = _string_list(shard.get("record_ids"))
         shard_record_ids.update(ids)
@@ -194,18 +206,50 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
         if category.get("source_record_count") != len(ids):
             category_count_mismatches.append(category_name)
         unknown_record_ids.extend(record_id for record_id in ids if record_id not in record_ids)
+        claim_ids = _string_list(category.get("compiled_claim_ids"))
+        if category.get("compiled_claim_count") != len(claim_ids):
+            compiled_claim_count_mismatches.append(category_name)
+        unknown_compiled_claim_ids.extend(
+            claim_id for claim_id in claim_ids if claim_id not in compiled_claim_ids
+        )
     if category_count_mismatches:
         findings.append("llm compile manifest category source counts do not match record IDs")
+    if compiled_claim_count_mismatches:
+        findings.append("llm compile manifest compiled claim counts do not match claim IDs")
     unknown_record_ids = sorted(set(unknown_record_ids))
     if unknown_record_ids:
         findings.append("llm compile manifest references unknown record IDs")
+    unknown_compiled_claim_ids = sorted(set(unknown_compiled_claim_ids))
+    if unknown_compiled_claim_ids:
+        findings.append("llm compile manifest references unknown compiled claim IDs")
     return {
         "llm_compile_manifest_present": True,
         "llm_compile_findings": findings,
         "llm_compile_unknown_record_ids": unknown_record_ids,
+        "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
         "llm_compile_category_count_mismatches": sorted(category_count_mismatches),
         "llm_compile_shard_count_mismatches": sorted(shard_count_mismatches),
+        "llm_compile_compiled_claim_count_mismatches": sorted(
+            compiled_claim_count_mismatches
+        ),
     }
+
+
+def _compiled_claim_ids(root: Path) -> tuple[bool, set[str]]:
+    path = root / "brain" / "current" / "compiled_claims.jsonl"
+    if not path.exists():
+        return False, set()
+    claim_ids: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+            claim = CompiledBrainClaim.model_validate(raw)
+        except (json.JSONDecodeError, ValidationError):
+            continue
+        claim_ids.add(claim.claim_id)
+    return True, claim_ids
 
 
 def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]:

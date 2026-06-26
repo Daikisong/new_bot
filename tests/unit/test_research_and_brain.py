@@ -1082,6 +1082,7 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         {
             "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
             "source_record_count": 2,
+            "compiled_claim_count": 2,
             "record_shards": [
                 {
                     "record_count": 2,
@@ -1093,11 +1094,18 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
                     "category": "world_model",
                     "source_record_count": 2,
                     "source_record_ids": ["BRAIN-SUPPORT"],
+                    "compiled_claim_count": 1,
+                    "compiled_claim_ids": [
+                        "CC-no-record-support",
+                        "CC-missing-manifest-claim",
+                    ],
                 },
                 {
                     "category": "single_event",
                     "source_record_count": 1,
                     "source_record_ids": ["BRAIN-CATEGORY-MISSING"],
+                    "compiled_claim_count": 0,
+                    "compiled_claim_ids": [],
                 },
             ],
         },
@@ -1132,7 +1140,17 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         "BRAIN-SHARD-MISSING",
     ]
     assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
+    assert audit["llm_compile_unknown_compiled_claim_ids"] == [
+        "CC-missing-manifest-claim"
+    ]
+    assert audit["llm_compile_compiled_claim_count_mismatches"] == [
+        "manifest",
+        "world_model",
+    ]
     assert "llm compile manifest source_record_count does not match record store" in audit[
+        "llm_compile_findings"
+    ]
+    assert "llm compile manifest references unknown compiled claim IDs" in audit[
         "llm_compile_findings"
     ]
 

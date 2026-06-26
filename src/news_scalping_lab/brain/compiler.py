@@ -25,7 +25,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
-from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -195,6 +195,7 @@ class BrainCompiler:
             length=10,
         )
         claims = self._claims_from_records(records)
+        compiled_claims = _compiled_claims_from_records(records)
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -216,6 +217,7 @@ class BrainCompiler:
                 brain_version=version,
                 provider_name=settings.llm_provider,
                 model=settings.llm.model,
+                compiled_claims=compiled_claims,
             )
         )
         self._write_current(
@@ -223,6 +225,7 @@ class BrainCompiler:
             claims,
             category_outputs=llm_compile.category_outputs,
             llm_compile_metadata=llm_compile.manifest,
+            compiled_claims=compiled_claims,
         )
         self._write_mechanism_memory(manifest, [])
         self._write_shard_brains(manifest, accepted_episodes)
@@ -504,6 +507,7 @@ class BrainCompiler:
         *,
         category_outputs: dict[str, str] | None = None,
         llm_compile_metadata: dict[str, Any] | None = None,
+        compiled_claims: list[CompiledBrainClaim] | None = None,
     ) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
@@ -523,6 +527,14 @@ class BrainCompiler:
         (self.claims_dir / "claims.jsonl").write_text(
             claims_path.read_text(encoding="utf-8"), encoding="utf-8"
         )
+        compiled_claims_path = self.current_dir / "compiled_claims.jsonl"
+        if compiled_claims is not None:
+            compiled_claims_path.write_text(
+                "".join(claim.model_dump_json() + "\n" for claim in compiled_claims),
+                encoding="utf-8",
+            )
+        elif compiled_claims_path.exists():
+            compiled_claims_path.unlink()
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
         record_coverage = self._record_coverage_manifest(manifest)
         write_json(self.current_dir / "record_coverage_manifest.json", record_coverage)
@@ -541,6 +553,8 @@ class BrainCompiler:
                 "accepted_episode_count": manifest.accepted_episode_count,
                 "covered_episode_count": manifest.covered_episode_count,
                 "claim_count": len(claims),
+                "compiled_claim_count": len(compiled_claims or []),
+                "compiled_claims_file_present": compiled_claims is not None,
                 "category_file_count": len(BRAIN_FILES),
                 "category_files": BRAIN_FILES,
                 "llm_compile": llm_compile_metadata,
@@ -1145,6 +1159,79 @@ def _record_claim_statement(record: BrainRecordEnvelope) -> str:
     return f"{record.record_type} supports studying {target} with preserved provenance."
 
 
+def _compiled_claims_from_records(
+    records: list[BrainRecordEnvelope],
+) -> list[CompiledBrainClaim]:
+    claims: list[CompiledBrainClaim] = []
+    for record in sorted(records, key=lambda item: item.record_id):
+        target = str(record.training_target or record.record_type)
+        is_negative_evidence = record.record_type in {
+            "candidate_generation_error_case",
+            "candidate_ranking_error_case",
+            "row_disposition_error_case",
+            "entity_resolution_error_case",
+            "counterexample",
+        }
+        claims.append(
+            CompiledBrainClaim(
+                claim_id=stable_id("CC", record.record_id, record.normalized_payload_sha256),
+                category=_compiled_claim_category(record),
+                statement=_record_claim_statement(record),
+                mechanism=target,
+                scope=f"record-derived {record.record_type}",
+                conditions=[
+                    "record must be available as of the analysis cutoff",
+                    "apply only with current category brain and retrieved counterexamples",
+                ],
+                boundary_conditions=[
+                    "do not promote one record to a validated rule without broader evidence",
+                    "respect the source record evidence phase and label quality",
+                ],
+                failure_modes=[
+                    "overgeneralization",
+                    "hindsight contamination",
+                ],
+                supporting_record_ids=[record.record_id],
+                contradicting_record_ids=[],
+                supporting_episode_ids=[record.episode_id],
+                contradicting_episode_ids=[],
+                positive_case_count=0 if is_negative_evidence else 1,
+                negative_case_count=1 if is_negative_evidence else 0,
+                near_miss_count=1 if is_negative_evidence else 0,
+                confidence_label=record.confidence_label,
+                status="supported" if record.training_eligible else "tentative",
+                available_from=record.available_from,
+                provenance={
+                    "source_type": "brain_record",
+                    "record_id": record.record_id,
+                    "episode_id": record.episode_id,
+                    "record_type": record.record_type,
+                    "normalized_payload_sha256": record.normalized_payload_sha256,
+                },
+            )
+        )
+    return claims
+
+
+def _compiled_claim_category(record: BrainRecordEnvelope) -> str:
+    mapping = {
+        "supervised_direct_event_case": "single_event",
+        "supervised_issuer_day_case": "single_event",
+        "supervised_theme_formation_case": "theme_formation",
+        "beneficiary_discovery_case": "beneficiary_discovery",
+        "blind_leader_preference_pair": "leader_selection",
+        "candidate_generation_error_case": "failure_modes",
+        "candidate_ranking_error_case": "failure_modes",
+        "row_disposition_error_case": "failure_modes",
+        "entity_resolution_error_case": "failure_modes",
+        "counterexample": "counterexamples",
+        "memory_claim": "market_memory",
+        "mechanism_memory": "market_memory",
+        "company_memory_delta": "market_memory",
+    }
+    return mapping.get(record.record_type, "world_model")
+
+
 async def _compile_llm_category_outputs(
     *,
     root: Path,
@@ -1153,6 +1240,7 @@ async def _compile_llm_category_outputs(
     brain_version: str,
     provider_name: str,
     model: str,
+    compiled_claims: list[CompiledBrainClaim],
 ) -> LLMFullCompileResult:
     cache_dir = root / "brain" / "llm_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1196,6 +1284,10 @@ async def _compile_llm_category_outputs(
     for file_name in BRAIN_FILES:
         category = _brain_category(file_name)
         category_records = _records_for_category(records, category)
+        category_compiled_claim_ids = _compiled_claim_ids_for_category(
+            compiled_claims,
+            category,
+        )
         prompt = _brain_category_prompt(
             category=category,
             records=category_records,
@@ -1261,6 +1353,8 @@ async def _compile_llm_category_outputs(
                 "file_name": file_name,
                 "source_record_count": len(category_records),
                 "source_record_ids": [record.record_id for record in category_records],
+                "compiled_claim_count": len(category_compiled_claim_ids),
+                "compiled_claim_ids": category_compiled_claim_ids,
                 "synthesis_cache_key": synthesis_cache_key,
                 "review_cache_key": review_cache_key,
             }
@@ -1272,6 +1366,7 @@ async def _compile_llm_category_outputs(
         "provider": provider_name,
         "model": model,
         "source_record_count": len(sorted_records),
+        "compiled_claim_count": len(compiled_claims),
         "record_shard_size": LLM_FULL_RECORD_SHARD_SIZE,
         "record_shard_count": len(shard_summaries),
         "record_shards": [
@@ -1287,6 +1382,15 @@ async def _compile_llm_category_outputs(
         "categories": categories,
     }
     return LLMFullCompileResult(category_outputs=outputs, manifest=manifest)
+
+
+def _compiled_claim_ids_for_category(
+    claims: list[CompiledBrainClaim],
+    category: str,
+) -> list[str]:
+    if category == "world_model":
+        return [claim.claim_id for claim in claims]
+    return [claim.claim_id for claim in claims if claim.category == category]
 
 
 def _records_for_category(

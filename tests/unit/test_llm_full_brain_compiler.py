@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import TypeVar
@@ -77,9 +78,35 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     )
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
+    compiled_claims = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    compiled_claims_by_record = {
+        claim["supporting_record_ids"][0]: claim for claim in compiled_claims
+    }
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
+    assert compile_manifest["compiled_claim_count"] == 2
+    assert len(compiled_claims) == 2
+    assert compiled_claims_by_record["BRAIN-DIRECT"]["category"] == "single_event"
+    assert compiled_claims_by_record["BRAIN-DIRECT"]["status"] == "supported"
+    assert compiled_claims_by_record["BRAIN-DIRECT"]["positive_case_count"] == 1
+    assert compiled_claims_by_record["BRAIN-COUNTER"]["category"] == "counterexamples"
+    assert compiled_claims_by_record["BRAIN-COUNTER"]["status"] == "tentative"
+    assert compiled_claims_by_record["BRAIN-COUNTER"]["negative_case_count"] == 1
+    single_event_category = next(
+        category
+        for category in compile_manifest["categories"]
+        if category["category"] == "single_event"
+    )
+    assert single_event_category["compiled_claim_ids"] == [
+        compiled_claims_by_record["BRAIN-DIRECT"]["claim_id"]
+    ]
     assert vector_manifest["embedding_method"] == "llm_embedding:openai:embed-brain-test"
     assert vector_manifest["dimensions"] == 2
     assert llm.embed_calls
