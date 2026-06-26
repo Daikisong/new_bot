@@ -294,6 +294,30 @@ def test_goal_source_package_structure_is_tracked() -> None:
     assert missing == []
 
 
+def test_makefile_exposes_quality_and_project_audit_targets() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    makefile = (repo_root / "Makefile").read_text(encoding="utf-8")
+
+    required_fragments = [
+        ".PHONY: install-dev doctor test lint typecheck check audit full-check demo",
+        "lint:",
+        "\tpython -m ruff check .",
+        "typecheck:",
+        "\tpython -m mypy src/news_scalping_lab",
+        "test:",
+        "\tpython -m pytest",
+        "audit:",
+        "\tpython -m news_scalping_lab.cli audit hardcoding",
+        "\tpython -m news_scalping_lab.cli audit provenance",
+        "\tpython -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24",
+        "\tpython -m news_scalping_lab.cli audit coverage",
+        "\tpython -m news_scalping_lab.cli brain audit",
+        "full-check: check audit",
+    ]
+
+    assert all(fragment in makefile for fragment in required_fragments)
+
+
 def test_write_default_config_files_bootstraps_missing_configs_without_overwrite(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
