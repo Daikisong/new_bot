@@ -27,7 +27,11 @@ from news_scalping_lab.records.reference_integrity import (
     known_reference_ids_from_blocks,
     payload_reference_audit,
 )
-from news_scalping_lab.records.store import BrainRecordStore, StoredBundleResult
+from news_scalping_lab.records.store import (
+    BrainRecordStore,
+    BrainRecordStoreConflictError,
+    StoredBundleResult,
+)
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
 
 
@@ -533,16 +537,31 @@ def import_versioned_bundle(
         if raw_only_adapter is not None:
             validation = raw_only_adapter.validate(parsed)
             records = raw_only_adapter.normalize_brain_records(parsed)
-            raw_only_stored = BrainRecordStore(root).store_bundle(
-                source_path=path,
-                envelope=raw_only_adapter.envelope(parsed),
-                index=raw_only_adapter.normalize_episode_index(parsed),
-                records=records,
-                raw_blocks=parsed.payload_blocks,
-                validation_report=validation,
-                accepted=False,
-            )
             import_loss_summary = _import_loss_summary(parsed, records)
+            try:
+                raw_only_stored = BrainRecordStore(root).store_bundle(
+                    source_path=path,
+                    envelope=raw_only_adapter.envelope(parsed),
+                    index=raw_only_adapter.normalize_episode_index(parsed),
+                    records=records,
+                    raw_blocks=parsed.payload_blocks,
+                    validation_report=validation,
+                    accepted=False,
+                )
+            except BrainRecordStoreConflictError as exc:
+                _write_store_conflict_report(
+                    root=root,
+                    parsed=parsed,
+                    adapter_name=raw_only_adapter.name,
+                    source_hash=source_hash,
+                    validation=validation,
+                    records=records,
+                    import_loss_summary=import_loss_summary,
+                    conflict=exc,
+                    accepted=False,
+                    acceptance_status="staged",
+                )
+                raise VersionedBundleImportError(str(exc)) from exc
             diagnostics_payload = {
                 "status": "forward_compatible_raw_only",
                 "adapter": raw_only_adapter.name,
@@ -637,16 +656,31 @@ def import_versioned_bundle(
             f"quarantined at {quarantine.as_posix()}: "
             + json.dumps(validation, ensure_ascii=False, sort_keys=True)
         )
-    stored: StoredBundleResult = BrainRecordStore(root).store_bundle(
-        source_path=path,
-        envelope=adapter.envelope(parsed),
-        index=adapter.normalize_episode_index(parsed),
-        records=records,
-        raw_blocks=parsed.payload_blocks,
-        validation_report=validation,
-        accepted=accepted,
-    )
     import_loss_summary = _import_loss_summary(parsed, records)
+    try:
+        stored: StoredBundleResult = BrainRecordStore(root).store_bundle(
+            source_path=path,
+            envelope=adapter.envelope(parsed),
+            index=adapter.normalize_episode_index(parsed),
+            records=records,
+            raw_blocks=parsed.payload_blocks,
+            validation_report=validation,
+            accepted=accepted,
+        )
+    except BrainRecordStoreConflictError as exc:
+        _write_store_conflict_report(
+            root=root,
+            parsed=parsed,
+            adapter_name=adapter.name,
+            source_hash=source_hash,
+            validation=validation,
+            records=records,
+            import_loss_summary=import_loss_summary,
+            conflict=exc,
+            accepted=accepted,
+            acceptance_status="accepted" if accepted else "staged",
+        )
+        raise VersionedBundleImportError(str(exc)) from exc
     diagnostics_payload = {
         "status": "imported",
         "adapter": adapter.name,
@@ -683,6 +717,53 @@ def import_versioned_bundle(
         record_path=stored.record_path,
         manifest_path=stored.manifest_path,
         validation=validation,
+    )
+
+
+def _write_store_conflict_report(
+    *,
+    root: Path,
+    parsed: GenericParsedBundle,
+    adapter_name: str,
+    source_hash: str,
+    validation: dict[str, Any],
+    records: list[BrainRecordEnvelope],
+    import_loss_summary: dict[str, Any],
+    conflict: BrainRecordStoreConflictError,
+    accepted: bool,
+    acceptance_status: str,
+) -> None:
+    write_diagnostic_report(
+        root,
+        "bundle_import_report",
+        {
+            "status": conflict.reason,
+            "adapter": adapter_name,
+            "bundle_version": bundle_schema_version(parsed),
+            "episode_id": conflict.episode_id,
+            "raw_bundle_sha256": source_hash,
+            "accepted": accepted,
+            "acceptance_status": acceptance_status,
+            "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
+            "normalized_record_count": len(records),
+            "training_eligible_record_count": sum(
+                1 for record in records if record.training_eligible
+            ),
+            **import_loss_summary,
+            "import_loss_audit_passed": validation.get(
+                "import_loss_audit_passed",
+                _import_loss_audit_passed(import_loss_summary),
+            ),
+            "dropped_record_count": 0,
+            "quarantined_record_count": 1,
+            "quarantine": conflict.quarantine.as_posix(),
+            "conflict_reason": conflict.reason,
+            "conflict_message": str(conflict),
+            "record_counts_by_type": dict(
+                sorted(Counter(record.record_type for record in records).items())
+            ),
+            "validation": validation,
+        },
     )
 
 

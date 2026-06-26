@@ -1506,6 +1506,41 @@ def test_invalid_bundle_can_only_be_staged_not_accepted(tmp_path: Path) -> None:
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
+def test_episode_hash_conflict_quarantines_and_reports_import_loss_status(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    conflicting = tmp_path / "synthetic_v11_bundle_conflict.md"
+    conflicting.write_text(
+        _synthetic_v11_bundle(include_unknown=False) + "\n<!-- wrapper hash drift -->\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(conflicting, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "EPISODE_HASH_CONFLICT"
+    assert report["episode_id"] == "NSLAB-20300110-SYNTH"
+    assert report["raw_record_count"] == 2
+    assert report["normalized_record_count"] == 2
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_record_count"] == 1
+    assert report["import_loss_audit_passed"] is True
+    assert report["validation"]["passed"] is True
+    assert report["conflict_reason"] == "EPISODE_HASH_CONFLICT"
+    quarantine = Path(report["quarantine"])
+    assert (quarantine / "original_bundle.md").exists()
+    quarantine_payload = _read_json(quarantine / "quarantine.json")
+    assert quarantine_payload["reason"] == "EPISODE_HASH_CONFLICT"
+    assert quarantine_payload["metadata"]["existing_bundle_sha256"]
+
+
 def test_self_referential_manifest_hash_is_reported_without_blocking_import(
     tmp_path: Path,
 ) -> None:

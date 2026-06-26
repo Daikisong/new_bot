@@ -33,6 +33,23 @@ class StoredBundleResult:
     training_eligible_record_count: int
 
 
+class BrainRecordStoreConflictError(ValueError):
+    def __init__(
+        self,
+        *,
+        reason: str,
+        episode_id: str,
+        source_hash: str,
+        quarantine: Path,
+        message: str,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.episode_id = episode_id
+        self.source_hash = source_hash
+        self.quarantine = quarantine
+
+
 class BrainRecordStore:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -67,15 +84,28 @@ class BrainRecordStore:
         episode_dir = self.research_episodes_dir / envelope.episode_id
         original_bundle = episode_dir / "original_bundle.md"
         if original_bundle.exists() and file_sha256(original_bundle) != source_hash:
+            reason = "EPISODE_HASH_CONFLICT"
             quarantine = self.quarantine_conflict(
                 source_path=source_path,
-                reason="EPISODE_HASH_CONFLICT",
+                reason=reason,
                 episode_id=envelope.episode_id,
                 source_hash=source_hash,
+                metadata={
+                    "existing_bundle_sha256": file_sha256(original_bundle),
+                    "existing_bundle_path": original_bundle.relative_to(
+                        self.root
+                    ).as_posix(),
+                },
             )
-            raise ValueError(
-                "episode already exists with different bundle hash; "
-                f"quarantined at {quarantine.as_posix()}"
+            raise BrainRecordStoreConflictError(
+                reason=reason,
+                episode_id=envelope.episode_id,
+                source_hash=source_hash,
+                quarantine=quarantine,
+                message=(
+                    "episode already exists with different bundle hash; "
+                    f"quarantined at {quarantine.as_posix()}"
+                ),
             )
 
         existing_ids = _record_id_index(self.list_records(accepted_only=False))
@@ -88,15 +118,32 @@ class BrainRecordStore:
                 or existing.get("normalized_payload_sha256")
                 != record.normalized_payload_sha256
             ):
+                reason = "RECORD_ID_CONFLICT"
                 quarantine = self.quarantine_conflict(
                     source_path=source_path,
-                    reason="RECORD_ID_CONFLICT",
+                    reason=reason,
                     episode_id=envelope.episode_id,
                     source_hash=source_hash,
+                    metadata={
+                        "record_id": record.record_id,
+                        "existing_episode_id": existing.get("episode_id"),
+                        "existing_normalized_payload_sha256": existing.get(
+                            "normalized_payload_sha256"
+                        ),
+                        "incoming_normalized_payload_sha256": (
+                            record.normalized_payload_sha256
+                        ),
+                    },
                 )
-                raise ValueError(
-                    "record_id already exists with different payload; "
-                    f"quarantined at {quarantine.as_posix()}"
+                raise BrainRecordStoreConflictError(
+                    reason=reason,
+                    episode_id=envelope.episode_id,
+                    source_hash=source_hash,
+                    quarantine=quarantine,
+                    message=(
+                        "record_id already exists with different payload; "
+                        f"quarantined at {quarantine.as_posix()}"
+                    ),
                 )
 
         episode_dir.mkdir(parents=True, exist_ok=True)
