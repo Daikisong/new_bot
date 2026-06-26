@@ -699,6 +699,8 @@ def _real_bundle_import_status(
     if normalized_index is None:
         findings.append("normalized episode index for selected real bundle is missing")
     else:
+        if _duplicate_strings(_string_list(normalized_index.get("record_ids"))):
+            findings.append("normalized episode index has duplicate record IDs")
         if (
             isinstance(expected_record_count, int)
             and len(_string_list(normalized_index.get("record_ids")))
@@ -721,6 +723,8 @@ def _real_bundle_import_status(
     if record_manifest is None:
         findings.append("record manifest for selected real bundle is missing")
     else:
+        if _duplicate_strings(_string_list(record_manifest.get("record_ids"))):
+            findings.append("record manifest has duplicate record IDs")
         if record_manifest.get("accepted") is not True:
             findings.append("record manifest for selected real bundle is not accepted")
         if (
@@ -753,6 +757,8 @@ def _real_bundle_import_status(
     elif record_file_stats["invalid_line_count"] != 0:
         findings.append("record JSONL for selected real bundle has invalid rows")
     else:
+        if record_file_stats["duplicate_record_ids"]:
+            findings.append("record JSONL has duplicate record IDs")
         if (
             isinstance(expected_record_count, int)
             and record_file_stats["record_count"] != expected_record_count
@@ -810,6 +816,7 @@ def _real_bundle_import_status(
         ],
         "observed_record_counts_by_type": record_file_stats["record_counts_by_type"],
         "observed_record_ids": record_file_stats["record_ids"],
+        "duplicate_record_ids": record_file_stats["duplicate_record_ids"],
         "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
         "passed": not findings,
         "status": "ready" if not findings else "attention",
@@ -1443,6 +1450,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
             "training_eligible_record_count": 0,
             "record_counts_by_type": {},
             "record_ids": [],
+            "duplicate_record_ids": [],
             "invalid_line_count": 0,
         }
     record_count = 0
@@ -1482,6 +1490,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
         "training_eligible_record_count": training_eligible_count,
         "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
         "record_ids": record_ids,
+        "duplicate_record_ids": _duplicate_strings(record_ids),
         "invalid_line_count": invalid_line_count,
     }
 
@@ -1497,6 +1506,16 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _duplicate_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return sorted(duplicates)
 
 
 def _schema_versions() -> dict[str, str]:

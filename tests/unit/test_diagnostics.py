@@ -1724,6 +1724,104 @@ def test_production_readiness_rejects_real_import_index_id_mismatch(
     )
 
 
+def test_production_readiness_rejects_real_import_duplicate_record_ids(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    rows = [
+        json.loads(line)
+        for line in record_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    rows[-1]["record_id"] = rows[0]["record_id"]
+    duplicate_record_ids = [
+        row["record_id"] for row in rows if isinstance(row.get("record_id"), str)
+    ]
+    record_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": duplicate_record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+        },
+    )
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": duplicate_record_ids,
+            "records_file": record_path.relative_to(tmp_path).as_posix(),
+            "records_sha256": file_sha256(record_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_import"]["passed"] is False
+    assert production["real_bundle_import"]["duplicate_record_ids"] == [
+        rows[0]["record_id"]
+    ]
+    assert (
+        "real_bundle_import: normalized episode index has duplicate record IDs"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: record manifest has duplicate record IDs"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: record JSONL has duplicate record IDs"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     report: dict[str, object] = {}
