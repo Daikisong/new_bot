@@ -280,6 +280,39 @@ def test_invalid_bundle_can_only_be_staged_not_accepted(tmp_path: Path) -> None:
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
+def test_self_referential_manifest_hash_is_reported_without_blocking_import(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "manifest_self_hash_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle_with_manifest_self_hash(),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert validation["passed"] is True
+    assert validation["hash_mismatches"] == {}
+    assert validation["self_referential_hashes"]["bundle_manifest.json"] == {
+        "expected": "1" * 64,
+        "actual": validation["block_hashes"]["bundle_manifest.json"],
+        "source": "bundle_manifest.embedded_blocks",
+        "reason": "hash is declared inside the same block it describes",
+    }
+
+    imported = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert imported.record_count == 2
+    assert imported.training_eligible_record_count == 2
+    assert imported.validation["passed"] is True
+    assert imported.validation["self_referential_hashes"]["bundle_manifest.json"][
+        "expected"
+    ] == "1" * 64
+
+
 def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -317,4 +350,14 @@ def _synthetic_v11_bundle_with_bad_brain_delta_hash() -> str:
         lambda match: match.group(1) + ("0" * 64) + match.group(2),
         _synthetic_v11_bundle(include_unknown=False),
         count=1,
+    )
+
+
+def _synthetic_v11_bundle_with_manifest_self_hash() -> str:
+    return _synthetic_v11_bundle(include_unknown=False).replace(
+        '"embedded_blocks": {',
+        '"embedded_blocks": {"bundle_manifest.json": {"sha256": "'
+        + ("1" * 64)
+        + '"}, ',
+        1,
     )

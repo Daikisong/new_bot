@@ -54,6 +54,12 @@ class BundleImportResult:
     validation: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class BlockHashValidation:
+    mismatches: dict[str, dict[str, str]]
+    self_referential: dict[str, dict[str, str]]
+
+
 class BundleVersionAdapter(Protocol):
     name: str
 
@@ -78,7 +84,8 @@ class BaseBundleAdapter:
         manifest = _manifest(parsed)
         validation_report = _validation_report(parsed)
         block_hashes = _block_hashes(parsed)
-        hash_mismatches = _hash_mismatches(parsed, manifest, validation_report)
+        hash_validation = _hash_validation(parsed, manifest, validation_report)
+        hash_mismatches = hash_validation.mismatches
         records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
         source_ids = _source_ids(parsed)
         missing_source_refs = _missing_source_references(records, source_ids)
@@ -117,6 +124,7 @@ class BaseBundleAdapter:
             ),
             "block_hashes": block_hashes,
             "hash_mismatches": hash_mismatches,
+            "self_referential_hashes": hash_validation.self_referential,
             "source_reference_count": sum(
                 len(_string_list(record.get("provenance_source_ids")))
                 for record in records
@@ -853,12 +861,14 @@ def _block_counts(parsed: GenericParsedBundle) -> dict[str, int]:
     return counts
 
 
-def _hash_mismatches(
+def _hash_validation(
     parsed: GenericParsedBundle,
     manifest: dict[str, Any],
     validation_report: dict[str, Any],
-) -> dict[str, dict[str, str]]:
+) -> BlockHashValidation:
     expected_hashes: dict[str, str] = {}
+    actual_hashes = _block_hashes(parsed)
+    self_referential: dict[str, dict[str, str]] = {}
     embedded = manifest.get("embedded_blocks")
     if isinstance(embedded, dict):
         for block_name, block_meta in embedded.items():
@@ -866,6 +876,14 @@ def _hash_mismatches(
                 continue
             sha = block_meta.get("sha256")
             if isinstance(sha, str) and sha:
+                if block_name == "bundle_manifest.json":
+                    self_referential[block_name] = {
+                        "expected": sha,
+                        "actual": actual_hashes.get(block_name, ""),
+                        "source": "bundle_manifest.embedded_blocks",
+                        "reason": "hash is declared inside the same block it describes",
+                    }
+                    continue
                 expected_hashes[block_name] = sha
     checked_hashes = validation_report.get("checked_artifact_hashes")
     if isinstance(checked_hashes, dict):
@@ -885,8 +903,7 @@ def _hash_mismatches(
         value = manifest.get(field_name)
         if isinstance(value, str) and value:
             expected_hashes.setdefault(block_name, value)
-    actual_hashes = _block_hashes(parsed)
-    return {
+    mismatches = {
         block_name: {
             "expected": expected,
             "actual": actual_hashes.get(block_name, ""),
@@ -894,3 +911,7 @@ def _hash_mismatches(
         for block_name, expected in sorted(expected_hashes.items())
         if block_name in actual_hashes and actual_hashes[block_name] != expected
     }
+    return BlockHashValidation(
+        mismatches=mismatches,
+        self_referential=dict(sorted(self_referential.items())),
+    )
