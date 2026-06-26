@@ -144,6 +144,9 @@ class BaseBundleAdapter:
         backdated_company_memory_known_at_ids = (
             _backdated_company_memory_delta_known_at_record_ids(records)
         )
+        invalid_issuer_day_event_weight_ids = (
+            _invalid_issuer_day_event_level_weight_record_ids(records)
+        )
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -230,6 +233,12 @@ class BaseBundleAdapter:
             "backdated_company_memory_delta_known_at_record_ids": (
                 backdated_company_memory_known_at_ids
             ),
+            "issuer_day_event_level_weights_valid": (
+                not invalid_issuer_day_event_weight_ids
+            ),
+            "invalid_issuer_day_event_level_weight_record_ids": (
+                invalid_issuer_day_event_weight_ids
+            ),
             "import_loss_audit_passed": import_loss_audit_passed,
             **import_loss_summary,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
@@ -253,6 +262,7 @@ class BaseBundleAdapter:
             and validation["event_ticker_edge_source_ledger_cutoff_valid"] is True
             and validation["company_memory_delta_known_at_valid"] is True
             and validation["company_memory_delta_known_at_not_backdated"] is True
+            and validation["issuer_day_event_level_weights_valid"] is True
             and validation["import_loss_audit_passed"] is True
         )
         return validation
@@ -1398,6 +1408,34 @@ def _backdated_company_memory_delta_known_at_record_ids(
         if as_kst(known_at) < as_kst(available_from):
             backdated.append(_record_identity(record, line_number))
     return backdated
+
+
+def _invalid_issuer_day_event_level_weight_record_ids(
+    records: list[dict[str, Any]],
+) -> list[str]:
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        if (
+            record.get("record_type") != "supervised_issuer_day_case"
+            or record.get("training_eligible") is not True
+            or "event_level_weights" not in record
+        ):
+            continue
+        weights = record.get("event_level_weights")
+        if not isinstance(weights, dict) or not weights:
+            invalid.append(_record_identity(record, line_number))
+            continue
+        numeric_weights = [
+            float(value)
+            for value in weights.values()
+            if isinstance(value, int | float) and not isinstance(value, bool)
+        ]
+        if (
+            len(numeric_weights) != len(weights)
+            or abs(sum(numeric_weights) - 1.0) > 0.000001
+        ):
+            invalid.append(_record_identity(record, line_number))
+    return invalid
 
 
 def _explicit_datetime(value: object) -> datetime | None:

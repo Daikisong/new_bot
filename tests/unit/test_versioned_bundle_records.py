@@ -171,6 +171,7 @@ def _synthetic_v11_bundle(
     issuer_available_from: str | None = None,
     issuer_label_quality: str | None = None,
     issuer_sample_weight: float = 1.0,
+    issuer_event_level_weights: dict[str, object] | None = None,
     direct_event_sample_weights: list[float] | None = None,
     include_event_edge: bool = False,
     event_edge_relation_class: str = "DIRECT",
@@ -207,6 +208,11 @@ def _synthetic_v11_bundle(
             "training_eligible": True,
             "eligibility_reason": "synthetic verified label",
             "provenance_source_ids": ["SRC-SYNTH-1"],
+            **(
+                {"event_level_weights": issuer_event_level_weights}
+                if issuer_event_level_weights is not None
+                else {}
+            ),
             **(
                 {
                     "D_outcome": {"label_quality": issuer_label_quality},
@@ -1368,6 +1374,50 @@ def test_company_memory_delta_rejects_backdated_known_at_for_acceptance(
     ] == ["BRAIN-SYNTH-COMPANY"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_issuer_day_event_level_weights_must_sum_to_one_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bad_issuer_day_event_weights_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_event_level_weights={"EVT-SYNTH-1": 0.25, "EVT-SYNTH-2": 0.5},
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"]["issuer_day_event_level_weights_valid"] is False
+    assert inspection["validation"][
+        "invalid_issuer_day_event_level_weight_record_ids"
+    ] == ["BRAIN-SYNTH-ISSUER"]
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_issuer_day_event_level_weights_accept_balanced_weights(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "valid_issuer_day_event_weights_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_event_level_weights={"EVT-SYNTH-1": 0.25, "EVT-SYNTH-2": 0.75},
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is True
+    assert inspection["validation"]["issuer_day_event_level_weights_valid"] is True
+    assert inspection["validation"][
+        "invalid_issuer_day_event_level_weight_record_ids"
+    ] == []
 
 
 def test_coverage_audit_rejects_record_projection_identity_mismatch(
