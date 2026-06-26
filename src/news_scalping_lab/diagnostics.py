@@ -906,6 +906,8 @@ def _is_production_bundle_candidate(
         resolved = Path(absolute_path).resolve()
     except OSError:
         return False
+    if ".example" in resolved.name:
+        return False
     fixture_root = settings.path(Path("tests/fixtures/research_bundles")).resolve()
     try:
         resolved.relative_to(fixture_root)

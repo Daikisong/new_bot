@@ -112,9 +112,11 @@ distribution, provenance closure, and hash mismatches. `smoke-bundle` searches t
 explicit `--path`, `NSLAB_REAL_BUNDLE_PATH`, `data/inbox/research/`, then
 `tests/fixtures/research_bundles/`, writes `diagnostics/bundle_smoke_report.*`,
 and treats fixture-only success as synthetic smoke rather than production real
-smoke. Production readiness also checks that the selected real smoke bundle was
-imported into `research/episodes/` and `memory/record_manifests/` with matching
-raw bundle hash and record counts. `import-bundle` preserves the
+smoke. Explicit `.example.md` bundles are also kept out of production smoke so
+documentation samples cannot satisfy real-bundle readiness. Production readiness
+also checks that the selected real smoke bundle was imported into
+`research/episodes/` and `memory/record_manifests/` with matching raw bundle hash
+and record counts. `import-bundle` preserves the
 original Markdown bundle, raw blocks, normalized episode index, record manifest, and
 canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
 legacy `ResearchEpisode` model. Unsupported future bundle versions that still

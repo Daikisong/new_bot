@@ -1195,6 +1195,31 @@ def test_real_bundle_smoke_keeps_explicit_fixture_path_synthetic_only(
     assert report["inspections"][0]["production_source"] is False
 
 
+def test_real_bundle_smoke_keeps_explicit_example_path_synthetic_only(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    example = docs_dir / "20260622_nslab_episode_bundle.example.md"
+    example.write_text("example bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+
+    report = real_bundle_smoke_report(settings, explicit_path=example)
+
+    assert report["status"] == "synthetic_only"
+    assert report["passed"] is False
+    assert report["selected"] is None
+    assert report["real_valid_smoke_count"] == 0
+    assert report["synthetic_valid_smoke_count"] == 1
+    assert report["inspections"][0]["source"] == "cli"
+    assert report["inspections"][0]["production_source"] is False
+
+
 def test_real_bundle_smoke_prioritizes_failed_production_candidate(
     tmp_path,
     monkeypatch,
