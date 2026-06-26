@@ -144,6 +144,52 @@ def test_plans_document_tracks_goal_scope_without_domain_memory() -> None:
     assert re.search(r"\b\d{6}\b", plans) is None
 
 
+def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    env_text = (repo_root / ".env.example").read_text(encoding="utf-8")
+    gitignore = (repo_root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    env_values = dict(
+        line.split("=", maxsplit=1)
+        for line in env_text.splitlines()
+        if line.strip() and not line.startswith("#")
+    )
+
+    required_keys = {
+        "NSLAB_LLM_PROVIDER",
+        "NSLAB_LLM_REASONING_EFFORT",
+        "NSLAB_LLM_MAX_OUTPUT_TOKENS",
+        "NSLAB_LLM_MAX_RETRIES",
+        "OPENAI_API_KEY",
+        "NSLAB_OPENAI_MODEL",
+        "NSLAB_OPENAI_EMBEDDING_MODEL",
+        "NSLAB_PRICE_PROVIDER",
+        "NSLAB_STOCK_WEB_PATH",
+        "NSLAB_STOCK_WEB_CACHE",
+        "NSLAB_STOCK_WEB_CACHE_PATH",
+        "NSLAB_STOCK_WEB_REMOTE_URL",
+        "NSLAB_WEB_PROVIDER",
+        "BRAVE_SEARCH_API_KEY",
+        "NSLAB_BRAVE_SEARCH_COUNT",
+        "NSLAB_BRAVE_SEARCH_COUNTRY",
+        "NSLAB_BRAVE_SEARCH_LANG",
+        "NSLAB_BRAVE_SEARCH_UI_LANG",
+        "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS",
+        "NSLAB_MAX_CONCURRENCY",
+    }
+
+    assert set(env_values) == required_keys
+    assert env_values["NSLAB_LLM_PROVIDER"] == "mock"
+    assert env_values["NSLAB_PRICE_PROVIDER"] == "mock"
+    assert env_values["NSLAB_WEB_PROVIDER"] == "mock"
+    assert env_values["NSLAB_STOCK_WEB_CACHE"] == "0"
+    assert env_values["OPENAI_API_KEY"] == ""
+    assert env_values["BRAVE_SEARCH_API_KEY"] == ""
+    assert "OPENAI_API_KEY=..." not in env_text
+    assert "BRAVE_SEARCH_API_KEY=..." not in env_text
+    assert all("secret" not in value.lower() for value in env_values.values())
+    assert ".env" in gitignore
+
+
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
