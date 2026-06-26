@@ -1751,6 +1751,7 @@ def test_production_readiness_accepts_real_smoke_import_link(
             "source_ids": [_real_smoke_source_id(episode_id)],
         },
     )
+    _write_real_smoke_validation_report(tmp_path, episode_id, inspection)
     write_json(
         tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
         {
@@ -1792,6 +1793,101 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert not any(
         finding.startswith("real_bundle_import:")
         for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_failed_real_import_validation_report(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
+        },
+    )
+    _write_real_smoke_validation_report(
+        tmp_path,
+        episode_id,
+        inspection,
+        overrides={
+            "passed": False,
+            "import_loss_audit_passed": False,
+            "record_id_set_matches_raw": False,
+        },
+    )
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
+            "records_file": record_path.relative_to(tmp_path).as_posix(),
+            "records_sha256": file_sha256(record_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_import"]["passed"] is False
+    assert production["real_bundle_import"]["validation_report_exists"] is True
+    assert (
+        production["real_bundle_import"]["validation_report_import_loss_audit_passed"]
+        is False
+    )
+    assert (
+        "real_bundle_import: validation report import loss audit did not pass"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: validation report raw record ID parity failed"
+        in production["findings"]
     )
 
 
@@ -2328,6 +2424,38 @@ def _write_real_smoke_records(
     )
     write_json(envelope_path, envelope)
     return record_path
+
+
+def _write_real_smoke_validation_report(
+    root: Path,
+    episode_id: str,
+    inspection: dict[str, object],
+    *,
+    overrides: dict[str, object] | None = None,
+) -> None:
+    report = {
+        "schema_version": "nslab.versioned_bundle_validation.v1",
+        "passed": True,
+        "record_count": inspection["normalized_record_count"],
+        "training_eligible_record_count": inspection[
+            "training_eligible_record_count"
+        ],
+        "record_count_matches_manifest": True,
+        "training_eligible_count_matches_manifest": True,
+        "typed_payload_valid": True,
+        "import_loss_audit_passed": True,
+        "record_id_set_matches_raw": True,
+        "record_type_counts_match_raw": True,
+        "training_eligible_count_matches_raw": True,
+        "raw_payload_hashes_match": True,
+        "raw_record_counts_by_type": inspection["record_counts_by_type"],
+    }
+    if overrides:
+        report.update(overrides)
+    write_json(
+        root / "research" / "episodes" / episode_id / "validation_report.json",
+        report,
+    )
 
 
 def _real_smoke_source_id(episode_id: str) -> str:

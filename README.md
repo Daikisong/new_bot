@@ -117,7 +117,10 @@ smoke. Explicit `.example.md` bundles are also kept out of production smoke so
 documentation samples cannot satisfy real-bundle readiness. Production readiness
 also checks that the selected real smoke bundle was imported into
 `research/episodes/` and `memory/record_manifests/` with matching raw bundle hash
-and record counts. `import-bundle` preserves the
+and record counts. It also rechecks the imported episode's
+`validation_report.json` for import-loss, raw ID/type, training-eligible, typed
+payload, and raw payload hash parity before considering the real bundle import
+production-ready. `import-bundle` preserves the
 original Markdown bundle, raw blocks, normalized episode index, record manifest, and
 canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
 legacy `ResearchEpisode` model. Unsupported future bundle versions that still

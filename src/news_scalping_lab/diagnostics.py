@@ -797,11 +797,13 @@ def _real_bundle_import_status(
     envelope_path = episode_dir / "bundle_envelope.json"
     normalized_index_path = episode_dir / "normalized_episode_index.json"
     original_bundle_path = episode_dir / "original_bundle.md"
+    validation_report_path = episode_dir / "validation_report.json"
     record_manifest_path = (
         settings.project_root / "memory" / "record_manifests" / f"{episode_id}.json"
     )
     envelope = _read_optional_json(envelope_path)
     normalized_index = _read_optional_json(normalized_index_path)
+    validation_report = _read_optional_json(validation_report_path)
     record_manifest = _read_optional_json(record_manifest_path)
     record_path = settings.project_root / "memory" / "records" / f"{episode_id}.jsonl"
     if isinstance(record_manifest, dict):
@@ -858,6 +860,49 @@ def _real_bundle_import_status(
             != expected_record_counts_by_type
         ):
             findings.append("normalized episode index type counts do not match real smoke")
+    if validation_report is None:
+        findings.append("validation report for selected real bundle is missing")
+    else:
+        if validation_report.get("passed") is not True:
+            findings.append("validation report did not pass")
+        if validation_report.get("import_loss_audit_passed") is not True:
+            findings.append("validation report import loss audit did not pass")
+        if validation_report.get("typed_payload_valid") is not True:
+            findings.append("validation report typed payload validation did not pass")
+        if validation_report.get("record_count_matches_manifest") is not True:
+            findings.append("validation report record count manifest parity failed")
+        if validation_report.get("training_eligible_count_matches_manifest") is not True:
+            findings.append(
+                "validation report training eligible manifest parity failed"
+            )
+        if validation_report.get("record_id_set_matches_raw") is not True:
+            findings.append("validation report raw record ID parity failed")
+        if validation_report.get("record_type_counts_match_raw") is not True:
+            findings.append("validation report raw record type parity failed")
+        if validation_report.get("training_eligible_count_matches_raw") is not True:
+            findings.append(
+                "validation report raw training eligible parity failed"
+            )
+        if validation_report.get("raw_payload_hashes_match") is not True:
+            findings.append("validation report raw payload hash parity failed")
+        if (
+            isinstance(expected_record_count, int)
+            and validation_report.get("record_count") != expected_record_count
+        ):
+            findings.append("validation report count does not match real smoke")
+        if (
+            isinstance(expected_training_count, int)
+            and validation_report.get("training_eligible_record_count")
+            != expected_training_count
+        ):
+            findings.append(
+                "validation report training eligible count does not match real smoke"
+            )
+        if isinstance(expected_record_counts_by_type, dict) and (
+            validation_report.get("raw_record_counts_by_type")
+            != expected_record_counts_by_type
+        ):
+            findings.append("validation report raw type counts do not match real smoke")
     if record_manifest is None:
         findings.append("record manifest for selected real bundle is missing")
     else:
@@ -950,6 +995,19 @@ def _real_bundle_import_status(
             settings.project_root,
         ),
         "original_bundle_exists": original_bundle_path.exists(),
+        "validation_report_path": relative_to_root(
+            validation_report_path,
+            settings.project_root,
+        ),
+        "validation_report_exists": validation_report is not None,
+        "validation_report_passed": (
+            validation_report.get("passed") if isinstance(validation_report, dict) else None
+        ),
+        "validation_report_import_loss_audit_passed": (
+            validation_report.get("import_loss_audit_passed")
+            if isinstance(validation_report, dict)
+            else None
+        ),
         "record_manifest_path": relative_to_root(
             record_manifest_path,
             settings.project_root,
