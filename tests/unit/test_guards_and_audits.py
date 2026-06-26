@@ -190,6 +190,7 @@ def _write_trace_checkpoint(root: Path, trace_payload: dict[str, object]) -> Non
             "input_sha256": trace_payload.get("input_sha256"),
             "output": trace_payload.get("output"),
             "output_sha256": trace_payload.get("output_sha256"),
+            "token_usage": trace_payload.get("token_usage"),
             "retries": trace_payload.get("retries"),
             "retry_errors": trace_payload.get("retry_errors"),
             "updated_at": "2030-01-10T08:59:01+09:00",
@@ -5754,6 +5755,7 @@ def test_provenance_audit_flags_llm_checkpoint_mismatch(tmp_path: Path) -> None:
             "input_sha256": trace["input_sha256"],
             "output": checkpoint_output,
             "output_sha256": sha256_text(canonical_json(checkpoint_output)),
+            "token_usage": trace["token_usage"],
             "retries": trace["retries"],
             "retry_errors": trace["retry_errors"],
             "updated_at": "2030-01-10T08:59:01+09:00",
@@ -5813,6 +5815,7 @@ def test_provenance_audit_flags_llm_checkpoint_retry_error_mismatch(
         "input_sha256": trace["input_sha256"],
         "output": trace["output"],
         "output_sha256": trace["output_sha256"],
+        "token_usage": trace["token_usage"],
         "retries": trace["retries"],
         "retry_errors": [{"type": "RuntimeError", "message": "different failure"}],
         "updated_at": "2030-01-10T08:59:01+09:00",
@@ -5829,6 +5832,66 @@ def test_provenance_audit_flags_llm_checkpoint_retry_error_mismatch(
 
     assert not result["passed"]
     assert "TRACE-daily.json: trace checkpoint retry_errors mismatch" in result["findings"]
+
+
+def test_provenance_audit_flags_llm_checkpoint_token_usage_mismatch(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    (tmp_path / "runs" / "checkpoints" / "llm").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    trace = _trace_payload(prompt_sha256="blind-hash")
+    write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", trace)
+    checkpoint = {
+        "checkpoint_id": "LLMCKPT-linked",
+        "schema_version": "nslab.llm_checkpoint.v1",
+        "operation": trace["operation"],
+        "purpose": trace["purpose"],
+        "status": trace["status"],
+        "provider": trace["provider"],
+        "model_config": trace["model_config"],
+        "metadata": trace["metadata"],
+        "input": trace["input"],
+        "input_sha256": trace["input_sha256"],
+        "output": trace["output"],
+        "output_sha256": trace["output_sha256"],
+        "token_usage": {"prompt_tokens_estimate": 1, "completion_tokens_estimate": 1},
+        "retries": trace["retries"],
+        "retry_errors": trace["retry_errors"],
+        "updated_at": "2030-01-10T08:59:01+09:00",
+    }
+    write_json(
+        tmp_path / "runs" / "checkpoints" / "llm" / "LLMCKPT-linked.json",
+        checkpoint,
+    )
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert "TRACE-daily.json: trace checkpoint token_usage mismatch" in result["findings"]
 
 
 def test_provenance_audit_checks_session_pack_manifest_integrity(

@@ -5243,6 +5243,12 @@ def _check_trace_checkpoint(
         and checkpoint.get("retry_errors") != trace_payload.get("retry_errors", [])
     ):
         findings.append(f"{trace_path.name}: trace checkpoint retry_errors mismatch")
+    if "token_usage" in checkpoint:
+        checkpoint_token_usage = checkpoint.get("token_usage")
+        if not isinstance(checkpoint_token_usage, dict):
+            findings.append(f"{trace_path.name}: trace checkpoint token_usage is not an object")
+        elif checkpoint_token_usage != trace_payload.get("token_usage"):
+            findings.append(f"{trace_path.name}: trace checkpoint token_usage mismatch")
     checkpoint_input = checkpoint.get("input")
     if isinstance(checkpoint_input, dict):
         expected_input_hash = sha256_text(canonical_json(checkpoint_input))
