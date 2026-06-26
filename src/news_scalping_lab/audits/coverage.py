@@ -47,6 +47,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
         root,
         _warehouse_duplicate_identity_expectations(),
     )
+    warehouse_weight_mismatches = _warehouse_weight_mismatches(root)
     missing_warehouse_files = [
         filename
         for filename in EXPECTED_WAREHOUSE_FILES
@@ -62,6 +63,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
     warehouse_projection_synced = not warehouse_count_mismatches and not (
         warehouse_identity_mismatches
         or warehouse_duplicate_identities
+        or warehouse_weight_mismatches
     )
     warehouse_required_files_present = (
         not missing_warehouse_files and not unreadable_warehouse_files
@@ -96,6 +98,12 @@ def audit_coverage(root: Path) -> dict[str, object]:
     for filename, duplicates in warehouse_duplicate_identities.items():
         duplicate_values = ", ".join(duplicates)
         findings.append(f"warehouse: {filename} duplicate ids: {duplicate_values}")
+    for filename, mismatches in warehouse_weight_mismatches.items():
+        mismatch_values = ", ".join(
+            f"{identity}={weight_sum}"
+            for identity, weight_sum in sorted(mismatches.items())
+        )
+        findings.append(f"warehouse: {filename} weight sum mismatch: {mismatch_values}")
     return {
         **brain,
         "passed": (
@@ -115,6 +123,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
         "warehouse_count_mismatches": warehouse_count_mismatches,
         "warehouse_identity_mismatches": warehouse_identity_mismatches,
         "warehouse_duplicate_identities": warehouse_duplicate_identities,
+        "warehouse_weight_mismatches": warehouse_weight_mismatches,
         "warehouse_research_episode_count": warehouse_research_episode_count,
         "warehouse_synced": warehouse_synced,
         "warehouse_projection_synced": warehouse_projection_synced,
@@ -394,6 +403,94 @@ def _warehouse_duplicate_identity_values(path: Path, columns: tuple[str, ...]) -
     except duckdb.Error:
         return []
     return [row[0] for row in rows if isinstance(row[0], str) and row[0]]
+
+
+def _warehouse_weight_mismatches(root: Path) -> dict[str, dict[str, float | str]]:
+    expectations: dict[str, tuple[tuple[str, ...], str]] = {
+        "issuer_day_cases.parquet": (
+            (
+                "trade_date",
+                "ticker",
+                "training_eligible",
+                "sample_weight",
+            ),
+            (
+                "coalesce(cast(trade_date as varchar), '') || '|' || "
+                "coalesce(cast(ticker as varchar), '')"
+            ),
+        ),
+        "direct_event_cases.parquet": (
+            (
+                "issuer_day_case_id",
+                "trade_date",
+                "ticker",
+                "training_eligible",
+                "sample_weight",
+            ),
+            (
+                "coalesce("
+                "nullif(cast(issuer_day_case_id as varchar), ''), "
+                "coalesce(cast(trade_date as varchar), '') || ':' || "
+                "coalesce(cast(ticker as varchar), '')"
+                ")"
+            ),
+        ),
+    }
+    mismatches: dict[str, dict[str, float | str]] = {}
+    for filename, (required_columns, identity_expression) in expectations.items():
+        values = _warehouse_weight_sum_mismatches(
+            root / "warehouse" / filename,
+            required_columns=required_columns,
+            identity_expression=identity_expression,
+        )
+        if values:
+            mismatches[filename] = values
+    return mismatches
+
+
+def _warehouse_weight_sum_mismatches(
+    path: Path,
+    *,
+    required_columns: tuple[str, ...],
+    identity_expression: str,
+) -> dict[str, float | str]:
+    if not path.exists():
+        return {}
+    escaped_path = path.as_posix().replace("'", "''")
+    columns = _warehouse_columns(escaped_path)
+    if columns == ["_empty"]:
+        return {}
+    missing_columns = [column for column in required_columns if column not in columns]
+    if missing_columns:
+        return {"__missing_columns__": ", ".join(missing_columns)}
+    try:
+        rows = duckdb.sql(
+            "select identity, round(weight_sum, 12) as weight_sum from ("
+            f"select {identity_expression} as identity, "
+            "sum(coalesce(try_cast(sample_weight as double), 0.0)) as weight_sum "
+            f"from read_parquet('{escaped_path}') "
+            "where coalesce(try_cast(training_eligible as boolean), false) "
+            "group by identity"
+            ") where abs(weight_sum - 1.0) > 0.000001 "
+            "order by identity"
+        ).fetchall()
+    except duckdb.Error as exc:
+        return {"__query_error__": str(exc)}
+    mismatches: dict[str, float | str] = {}
+    for identity, weight_sum in rows:
+        if isinstance(identity, str) and identity:
+            mismatches[identity] = float(weight_sum)
+    return mismatches
+
+
+def _warehouse_columns(escaped_path: str) -> list[str]:
+    try:
+        rows = duckdb.sql(
+            f"describe select * from read_parquet('{escaped_path}')"
+        ).fetchall()
+    except duckdb.Error:
+        return []
+    return [row[0] for row in rows if isinstance(row[0], str)]
 
 
 def _source_prediction_ids(root: Path) -> list[str]:

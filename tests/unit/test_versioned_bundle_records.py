@@ -484,6 +484,40 @@ def test_coverage_audit_rejects_duplicate_issuer_day_projection_keys(
     assert audit["warehouse_projection_synced"] is False
 
 
+def test_coverage_audit_rejects_warehouse_weight_sum_mismatches(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "warehouse_weight_gap_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_sample_weight=0.5,
+            direct_event_sample_weights=[0.25, 0.25],
+        ),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+    WarehouseStore(tmp_path).rebuild_all()
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["warehouse_weight_mismatches"] == {
+        "direct_event_cases.parquet": {"20300110:000001": 0.5},
+        "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5},
+    }
+    assert (
+        "warehouse: issuer_day_cases.parquet weight sum mismatch: "
+        "2030-01-10|000001=0.5"
+    ) in audit["findings"]
+    assert (
+        "warehouse: direct_event_cases.parquet weight sum mismatch: "
+        "20300110:000001=0.5"
+    ) in audit["findings"]
+    assert audit["warehouse_projection_synced"] is False
+
+
 def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     tmp_path: Path,
 ) -> None:
