@@ -266,6 +266,16 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
     ]["audit"]["findings"]
     assert production["passed"] is False
     assert "brain: latest brain audit failed" in production["findings"]
+    assert production["required_environment"] == {
+        "NSLAB_LLM_PROVIDER": "openai",
+        "OPENAI_API_KEY": "<required>",
+    }
+    assert production["remediation_commands"] == [
+        "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
+        "python -m news_scalping_lab.cli warehouse rebuild",
+        "python -m news_scalping_lab.cli brain audit --deep",
+        "python -m news_scalping_lab.cli doctor --production",
+    ]
 
 
 def test_doctor_report_readiness_flags_unsynced_warehouse(tmp_path) -> None:
@@ -566,6 +576,27 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
         "embedding: deterministic mock vector index cannot be production semantic index"
         in production["findings"]
     )
+    assert production["required_environment"]["OPENAI_API_KEY"] == "<required>"
+    assert production["remediation_commands"][0].endswith("brain rebuild --mode llm-full")
+
+
+def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    report: dict[str, object] = {}
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert production["required_environment"] == {
+        "NSLAB_LLM_PROVIDER": "openai",
+        "OPENAI_API_KEY": "<required>",
+    }
+    assert production["remediation_commands"] == [
+        "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
+        "python -m news_scalping_lab.cli warehouse rebuild",
+        "python -m news_scalping_lab.cli brain audit --deep",
+        "python -m news_scalping_lab.cli doctor --production",
+    ]
 
 
 def test_doctor_strict_exits_nonzero_when_readiness_has_findings(

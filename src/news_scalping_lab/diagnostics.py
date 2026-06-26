@@ -49,6 +49,7 @@ def production_readiness_report(
     settings: Settings,
 ) -> dict[str, Any]:
     findings: list[str] = []
+    remediation = _production_remediation(settings)
     if settings.llm_provider.strip().lower() == "mock":
         findings.append("llm: mock provider cannot compile production brain")
     if settings.llm.provider.strip().lower() == "mock":
@@ -87,6 +88,8 @@ def production_readiness_report(
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+        "required_environment": remediation["required_environment"],
+        "remediation_commands": remediation["commands"],
     }
 
 
@@ -270,6 +273,25 @@ def _doctor_readiness(
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+    }
+
+
+def _production_remediation(settings: Settings) -> dict[str, object]:
+    python_command = "python -m news_scalping_lab.cli"
+    llm_provider = settings.llm_provider.strip().lower()
+    if llm_provider not in OPENAI_PROVIDER_ALIASES:
+        llm_provider = "openai"
+    return {
+        "required_environment": {
+            "NSLAB_LLM_PROVIDER": llm_provider,
+            "OPENAI_API_KEY": "<required>",
+        },
+        "commands": [
+            f"{python_command} brain rebuild --mode llm-full",
+            f"{python_command} warehouse rebuild",
+            f"{python_command} brain audit --deep",
+            f"{python_command} doctor --production",
+        ],
     }
 
 
