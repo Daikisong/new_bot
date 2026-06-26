@@ -220,7 +220,49 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
         "status": "complete",
     }
     assert report["brain"]["audit"]["brain_build_mode"] == "full"
+    assert report["brain"]["audit"]["brain_category_file_count"] == 9
+    assert isinstance(
+        report["brain"]["audit"]["brain_category_source_record_types"],
+        dict,
+    )
+    assert report["brain"]["audit"]["brain_category_source_population_mismatches"] == []
+    assert report["brain"]["audit"]["brain_empty_category_complete_files"] == []
     assert isinstance(report["brain"]["audit"]["finding_count"], int)
+
+
+def test_production_readiness_rejects_missing_latest_brain_diversity_summary(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-brain-diversity-summary",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor production readiness must inspect brain diversity status.",
+            open_world_mechanisms=["brain diversity audit -> production readiness"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    report = build_doctor_report(settings)
+    report["brain"]["audit"].pop("brain_category_source_record_types")
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert (
+        "brain: latest brain audit diversity summary is missing"
+        in production["findings"]
+    )
 
 
 def test_production_readiness_rejects_failed_latest_brain_audit(

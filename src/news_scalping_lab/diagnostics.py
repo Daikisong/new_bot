@@ -99,6 +99,8 @@ def production_readiness_report(
         brain_audit = _nested_dict(brain, "audit")
         if brain_audit and brain_audit.get("passed") is not True:
             findings.append("brain: latest brain audit failed")
+        if brain_audit and not _brain_audit_diversity_summary_present(brain_audit):
+            findings.append("brain: latest brain audit diversity summary is missing")
         coverage = brain.get("coverage")
         if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
             findings.append("brain: accepted episodes are not fully covered")
@@ -1187,9 +1189,41 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
         "deterministic_rebuild_verified": coverage_audit.get(
             "deterministic_rebuild_verified"
         ),
+        "brain_category_file_count": coverage_audit.get("brain_category_file_count"),
+        "brain_category_missing_files": coverage_audit.get(
+            "brain_category_missing_files"
+        ),
+        "brain_category_source_record_types": coverage_audit.get(
+            "brain_category_source_record_types"
+        ),
+        "brain_category_source_population_mismatches": coverage_audit.get(
+            "brain_category_source_population_mismatches"
+        ),
+        "brain_empty_category_complete_files": coverage_audit.get(
+            "brain_empty_category_complete_files"
+        ),
+        "brain_category_files_identical": coverage_audit.get(
+            "brain_category_files_identical"
+        ),
+        "brain_category_bodies_identical": coverage_audit.get(
+            "brain_category_bodies_identical"
+        ),
         "finding_count": len(findings),
         "findings": findings,
     }
+
+
+def _brain_audit_diversity_summary_present(brain_audit: dict[str, Any]) -> bool:
+    return (
+        isinstance(brain_audit.get("brain_category_source_record_types"), dict)
+        and isinstance(
+            brain_audit.get("brain_category_source_population_mismatches"),
+            list,
+        )
+        and isinstance(brain_audit.get("brain_empty_category_complete_files"), list)
+        and isinstance(brain_audit.get("brain_category_files_identical"), list)
+        and isinstance(brain_audit.get("brain_category_bodies_identical"), list)
+    )
 
 
 def _brain_manifest_catalog_only(manifest: dict[str, Any] | None) -> bool | None:
