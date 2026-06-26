@@ -425,6 +425,8 @@ def _audit_deep_record_store(
         "raw_block_hash_mismatch_episode_ids": [],
         "brain_delta_count_mismatch_episode_ids": [],
         "brain_delta_record_id_mismatch_episode_ids": [],
+        "brain_delta_training_eligible_mismatch_episode_ids": [],
+        "brain_delta_type_count_mismatch_episode_ids": [],
         "records_missing_source_block": [],
         "records_missing_source_line": [],
         "records_with_invalid_source_line": [],
@@ -490,6 +492,13 @@ def _audit_deep_record_store(
                 result=result,
             )
             _audit_brain_delta_record_ids(
+                root=root,
+                episode_id=episode_id,
+                records=episode_records,
+                envelope=envelope,
+                result=result,
+            )
+            _audit_brain_delta_population(
                 root=root,
                 episode_id=episode_id,
                 records=episode_records,
@@ -660,6 +669,55 @@ def _audit_brain_delta_record_ids(
         result["brain_delta_record_id_mismatch_episode_ids"].append(episode_id)
 
 
+def _audit_brain_delta_population(
+    *,
+    root: Path,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    envelope: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
+    brain_delta_path = raw_block_paths.get("brain_delta.jsonl")
+    if brain_delta_path is None:
+        return
+    path = root / brain_delta_path
+    if not path.exists():
+        return
+    raw_payloads: list[dict[str, Any]] = []
+    for line in _nonempty_lines(path.read_text(encoding="utf-8")):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(payload, dict):
+            return
+        raw_payloads.append(payload)
+    source_records = [
+        record for record in records if record.source_block == "brain_delta.jsonl"
+    ]
+    raw_training_eligible_count = sum(
+        1 for payload in raw_payloads if payload.get("training_eligible") is True
+    )
+    normalized_training_eligible_count = sum(
+        1 for record in source_records if record.training_eligible
+    )
+    if raw_training_eligible_count != normalized_training_eligible_count:
+        result["brain_delta_training_eligible_mismatch_episode_ids"].append(episode_id)
+    raw_type_counts = dict(
+        sorted(
+            Counter(
+                str(payload.get("record_type") or "unknown") for payload in raw_payloads
+            ).items()
+        )
+    )
+    normalized_type_counts = dict(
+        sorted(Counter(record.record_type for record in source_records).items())
+    )
+    if raw_type_counts != normalized_type_counts:
+        result["brain_delta_type_count_mismatch_episode_ids"].append(episode_id)
+
+
 def _audit_record_source_lines(
     *,
     root: Path,
@@ -742,6 +800,12 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         ),
         "brain_delta_record_id_mismatch_episode_ids": (
             "brain_delta raw record IDs do not match normalized records"
+        ),
+        "brain_delta_training_eligible_mismatch_episode_ids": (
+            "brain_delta training eligible count does not match normalized records"
+        ),
+        "brain_delta_type_count_mismatch_episode_ids": (
+            "brain_delta record type counts do not match normalized records"
         ),
         "records_missing_source_block": "records reference missing source blocks",
         "records_missing_source_line": "records are missing source_line traceability",

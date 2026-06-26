@@ -61,6 +61,8 @@
 - raw_block_hash_mismatch_episode_ids: `[]`
 - brain_delta_count_mismatch_episode_ids: `[]`
 - brain_delta_record_id_mismatch_episode_ids: `[]`
+- brain_delta_training_eligible_mismatch_episode_ids: `[]`
+- brain_delta_type_count_mismatch_episode_ids: `[]`
 - records_missing_source_block: `[]`
 - records_missing_source_line: `[]`
 - records_with_invalid_source_line: `[]`
