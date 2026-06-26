@@ -73,6 +73,35 @@
   "covered_episode_count": 2,
   "latest_brain_audit": {
     "brain_build_mode": "full",
+    "brain_category_bodies_identical": [],
+    "brain_category_file_count": 9,
+    "brain_category_files_identical": [],
+    "brain_category_missing_files": [],
+    "brain_category_source_population_mismatches": [],
+    "brain_category_source_record_types": {
+      "beneficiary_discovery": {},
+      "continuation": {
+        "memory_claim": 2
+      },
+      "counterexamples": {},
+      "failure_modes": {},
+      "leader_selection": {
+        "blind_leader_preference_pair": 1
+      },
+      "market_memory": {
+        "memory_claim": 2
+      },
+      "single_event": {
+        "supervised_issuer_day_case": 1
+      },
+      "theme_formation": {},
+      "world_model": {
+        "blind_leader_preference_pair": 1,
+        "memory_claim": 2,
+        "supervised_issuer_day_case": 1
+      }
+    },
+    "brain_empty_category_complete_files": [],
     "brain_version": "brain-8cd4d47576",
     "catalog_only": true,
     "compiled_claim_file_present": false,

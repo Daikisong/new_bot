@@ -120,6 +120,19 @@ def _write_latest_brain_audit_summary(
         "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
         "llm_compile_manifest_present": result.get("llm_compile_manifest_present"),
         "compiled_claim_file_present": result.get("compiled_claim_file_present"),
+        "brain_category_file_count": result.get("brain_category_file_count"),
+        "brain_category_missing_files": result.get("brain_category_missing_files"),
+        "brain_category_source_record_types": result.get(
+            "brain_category_source_record_types"
+        ),
+        "brain_category_source_population_mismatches": result.get(
+            "brain_category_source_population_mismatches"
+        ),
+        "brain_empty_category_complete_files": result.get(
+            "brain_empty_category_complete_files"
+        ),
+        "brain_category_files_identical": result.get("brain_category_files_identical"),
+        "brain_category_bodies_identical": result.get("brain_category_bodies_identical"),
         "finding_count": len(_brain_audit_findings(result)),
         "findings": _brain_audit_findings(result),
     }

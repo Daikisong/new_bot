@@ -1244,6 +1244,12 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
         "brain category with no source records declares complete: "
         "02_theme_formation_patterns.md"
     ) in audit["brain_diversity_findings"]
+    compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest_audit = compile_report["latest_brain_audit"]
+    assert latest_audit["brain_empty_category_complete_files"] == [
+        "02_theme_formation_patterns.md"
+    ]
+    assert latest_audit["brain_category_source_population_mismatches"] == []
 
 
 def _compiled_claim_test_record(
@@ -1370,6 +1376,15 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
             "supervised_issuer_day_case": 1,
         },
     }
+    post_audit_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest_audit = post_audit_report["latest_brain_audit"]
+    assert latest_audit["brain_category_file_count"] == 9
+    assert (
+        latest_audit["brain_category_source_record_types"]
+        == audit["brain_category_source_record_types"]
+    )
+    assert latest_audit["brain_category_source_population_mismatches"] == []
+    assert latest_audit["brain_empty_category_complete_files"] == []
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:

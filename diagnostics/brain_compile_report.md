@@ -62,6 +62,13 @@
 - deterministic_rebuild_verified: `True`
 - llm_compile_manifest_present: `False`
 - compiled_claim_file_present: `False`
+- brain_category_file_count: `9`
+- brain_category_missing_files: `[]`
+- brain_category_source_record_types: `{'beneficiary_discovery': {}, 'continuation': {'memory_claim': 2}, 'counterexamples': {}, 'failure_modes': {}, 'leader_selection': {'blind_leader_preference_pair': 1}, 'market_memory': {'memory_claim': 2}, 'single_event': {'supervised_issuer_day_case': 1}, 'theme_formation': {}, 'world_model': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}}`
+- brain_category_source_population_mismatches: `[]`
+- brain_empty_category_complete_files: `[]`
+- brain_category_files_identical: `[]`
+- brain_category_bodies_identical: `[]`
 - finding_count: `0`
 - findings: `[]`
 
