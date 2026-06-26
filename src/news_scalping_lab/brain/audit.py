@@ -11,6 +11,8 @@ from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
+    _brain_category,
+    _records_for_category,
     current_brain_file_hashes,
     current_brain_version,
     expected_brain_version,
@@ -182,11 +184,25 @@ def _audit_brain_diversity(root: Path) -> dict[str, Any]:
         )
     llm_manifest = _read_llm_compile_manifest(root)
     category_type_distribution = _category_record_type_distribution(root, llm_manifest)
+    source_population_mismatches = _category_source_population_mismatches(
+        root,
+        llm_manifest,
+    )
+    for category in source_population_mismatches:
+        findings.append(f"brain category source population mismatch: {category}")
+    empty_category_complete_files = _empty_category_complete_files(
+        current_dir,
+        llm_manifest,
+    )
+    for file_name in empty_category_complete_files:
+        findings.append(f"brain category with no source records declares complete: {file_name}")
     return {
         "brain_diversity_findings": findings,
         "brain_category_file_count": len(file_hashes),
         "brain_category_missing_files": missing_files,
         "brain_category_source_record_types": category_type_distribution,
+        "brain_category_source_population_mismatches": source_population_mismatches,
+        "brain_empty_category_complete_files": empty_category_complete_files,
         "brain_category_files_identical": identical_files,
         "brain_category_bodies_identical": identical_bodies,
     }
@@ -225,6 +241,73 @@ def _category_record_type_distribution(
             counts[record_type] = counts.get(record_type, 0) + 1
         distribution[category_name] = dict(sorted(counts.items()))
     return distribution
+
+
+def _category_source_population_mismatches(
+    root: Path,
+    llm_manifest: dict[str, Any],
+) -> list[str]:
+    categories = _dict_list(llm_manifest.get("categories"))
+    if not categories:
+        return []
+    records = BrainRecordStore(root).list_records()
+    expected_by_category = {
+        _brain_category(file_name): [
+            record.record_id
+            for record in _records_for_category(records, _brain_category(file_name))
+        ]
+        for file_name in BRAIN_FILES
+    }
+    observed_by_category: dict[str, list[str]] = {}
+    for category in categories:
+        category_name = _string_value(category.get("category"))
+        if category_name is None:
+            continue
+        observed_by_category[category_name] = _string_list(
+            category.get("source_record_ids")
+        )
+    mismatches: list[str] = []
+    for category_name, expected_ids in sorted(expected_by_category.items()):
+        observed_ids = observed_by_category.get(category_name)
+        if observed_ids is None or sorted(observed_ids) != sorted(expected_ids):
+            mismatches.append(category_name)
+    return mismatches
+
+
+def _empty_category_complete_files(
+    current_dir: Path,
+    llm_manifest: dict[str, Any],
+) -> list[str]:
+    categories = _dict_list(llm_manifest.get("categories"))
+    if not categories:
+        return []
+    empty_files = {
+        _string_value(category.get("file_name"))
+        for category in categories
+        if category.get("source_record_count") == 0
+        or not _string_list(category.get("source_record_ids"))
+    }
+    flagged: list[str] = []
+    for file_name in sorted(item for item in empty_files if item is not None):
+        path = current_dir / file_name
+        if not path.exists():
+            continue
+        if _declares_category_complete(path.read_text(encoding="utf-8")):
+            flagged.append(file_name)
+    return flagged
+
+
+def _declares_category_complete(text: str) -> bool:
+    normalized = text.lower()
+    complete_markers = (
+        "complete",
+        "completed",
+        "fully covered",
+        "coverage complete",
+        "완료",
+        "완성",
+    )
+    return any(marker in normalized for marker in complete_markers)
 
 
 def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:

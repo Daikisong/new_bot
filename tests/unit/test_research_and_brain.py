@@ -1156,6 +1156,8 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         "BRAIN-SHARD-MISSING",
     ]
     assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
+    assert "single_event" in audit["brain_category_source_population_mismatches"]
+    assert "theme_formation" in audit["brain_category_source_population_mismatches"]
     assert audit["llm_compile_unknown_compiled_claim_ids"] == [
         "CC-missing-manifest-claim"
     ]
@@ -1180,6 +1182,68 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         == "llm_compile_findings: llm compile manifest references unknown compiled claim IDs"
         for finding in latest_audit["findings"]
     )
+
+
+def test_brain_diversity_audit_rejects_empty_category_complete_claim(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    complete_file = tmp_path / "brain" / "current" / "02_theme_formation_patterns.md"
+    complete_file.write_text(
+        "# Theme Formation Patterns\n\n"
+        "Source record count: 0\n\n"
+        "Coverage complete. This category is fully covered.\n",
+        encoding="utf-8",
+    )
+    category_files = (
+        ("world_model", "00_world_model.md"),
+        ("single_event", "01_single_event_patterns.md"),
+        ("theme_formation", "02_theme_formation_patterns.md"),
+        ("beneficiary_discovery", "03_beneficiary_discovery.md"),
+        ("leader_selection", "04_leader_selection.md"),
+        ("continuation", "05_continuation_patterns.md"),
+        ("failure_modes", "06_failure_modes.md"),
+        ("counterexamples", "07_counterexamples.md"),
+        ("market_memory", "08_market_memory.md"),
+    )
+    categories = [
+        {
+            "category": category,
+            "file_name": file_name,
+            "source_record_count": 0,
+            "source_record_ids": [],
+            "compiled_claim_count": 0,
+            "compiled_claim_ids": [],
+        }
+        for category, file_name in category_files
+    ]
+    write_json(
+        tmp_path / "brain" / "current" / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "source_record_count": 0,
+            "compiled_claim_count": 0,
+            "record_shards": [],
+            "categories": categories,
+        },
+    )
+    (tmp_path / "brain" / "current" / "compiled_claims.jsonl").write_text(
+        "",
+        encoding="utf-8",
+    )
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["brain_empty_category_complete_files"] == [
+        "02_theme_formation_patterns.md"
+    ]
+    assert (
+        "brain category with no source records declares complete: "
+        "02_theme_formation_patterns.md"
+    ) in audit["brain_diversity_findings"]
 
 
 def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordEnvelope:
