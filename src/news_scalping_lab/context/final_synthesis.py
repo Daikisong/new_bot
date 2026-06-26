@@ -31,6 +31,7 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
 def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Return reproducibility counts for the exact final synthesis payload."""
     news_novelty = _dict_value(payload.get("news_novelty_review"))
+    first_pass = _dict_value(payload.get("open_world_first_analysis"))
     semantic = _dict_value(payload.get("additional_semantic_retrieval"))
     expansion = _dict_value(payload.get("open_world_candidate_expansion"))
     web_research = _dict_value(payload.get("web_research"))
@@ -41,8 +42,8 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "required_input_count": _list_len(payload.get("required_inputs")),
         "current_news_count": _list_len(payload.get("current_news")),
-        "first_pass_mechanism_count": _list_len(
-            payload.get("open_world_first_analysis")
+        "first_pass_mechanism_count": _first_pass_mechanism_count(
+            payload.get("open_world_first_analysis"), first_pass
         ),
         "event_cluster_count": _list_len(payload.get("event_clusters")),
         "news_novelty_finding_count": _list_len(news_novelty.get("findings")),
@@ -81,3 +82,9 @@ def _list_len(value: Any) -> int:
 
 def _dict_value(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _first_pass_mechanism_count(value: Any, first_pass: dict[str, Any]) -> int:
+    if first_pass:
+        return _list_len(first_pass.get("mechanisms"))
+    return _list_len(value)

@@ -219,6 +219,27 @@ class NewsNoveltyReview(StrictModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OpenWorldFirstAnalysis(StrictModel):
+    schema_version: str = "nslab.open_world_first_analysis.v1"
+    run_id: str
+    prompt_version: str
+    prompt_sha256: str
+    created_at: datetime
+    cutoff_at: datetime
+    event_ids: list[str] = Field(default_factory=list)
+    event_clusters: list[str] = Field(default_factory=list)
+    direct_company_events: list[str] = Field(default_factory=list)
+    policy_industry_events: list[str] = Field(default_factory=list)
+    mechanisms: list[str] = Field(default_factory=list)
+    beneficiary_transmission_paths: list[str] = Field(default_factory=list)
+    narrative_conversion_points: list[str] = Field(default_factory=list)
+    direct_candidates: list[str] = Field(default_factory=list)
+    potential_sectors: list[str] = Field(default_factory=list)
+    beneficiary_investigation_questions: list[str] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class SemanticRetrievalQuery(StrictModel):
     category: str
     query: str
@@ -575,6 +596,9 @@ class ContextManifest(StrictModel):
     event_cluster_sha256: str | None = None
     event_cluster_count: int = 0
     event_cluster_summary: dict[str, Any] = Field(default_factory=dict)
+    open_world_first_analysis_artifact: str | None = None
+    open_world_first_analysis_sha256: str | None = None
+    open_world_first_analysis_summary: dict[str, Any] = Field(default_factory=dict)
     news_novelty_review_artifact: str | None = None
     news_novelty_review_sha256: str | None = None
     news_novelty_review_count: int = 0

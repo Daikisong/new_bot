@@ -27,6 +27,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldFirstAnalysis,
     PathType,
     Postmortem,
     RedTeamArtifact,
@@ -77,6 +78,9 @@ class DeterministicMockLLMProvider:
         if response_model is NewsNoveltyReview:
             novelty_review = self._news_novelty_review(prompt)
             return novelty_review  # type: ignore[return-value]
+        if response_model is OpenWorldFirstAnalysis:
+            analysis = self._open_world_first_analysis(prompt)
+            return analysis  # type: ignore[return-value]
         if response_model is SemanticRetrievalPlan:
             plan = self._semantic_retrieval_plan(prompt)
             return plan  # type: ignore[return-value]
@@ -452,6 +456,70 @@ class DeterministicMockLLMProvider:
             return {}
         return payload if isinstance(payload, dict) else {}
 
+    def _open_world_first_analysis(self, prompt: str) -> OpenWorldFirstAnalysis:
+        payload = self._open_world_first_analysis_payload(prompt)
+        cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
+        current_news = self._payload_string_list(payload, "current_news")
+        event_ids = self._payload_string_list(payload, "event_ids")
+        mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
+        mentions = self.extract_company_mentions(current_news or [prompt], limit=6)
+        clusters = [
+            f"current-news cluster {index}: {text.splitlines()[0][:120]}"
+            for index, text in enumerate(current_news, start=1)
+            if text.strip()
+        ] or ["current-news batch requires open-world event clustering"]
+        return OpenWorldFirstAnalysis(
+            run_id=str(payload.get("run_id") or "RUN-mock-open-world-first-analysis"),
+            prompt_version=str(
+                payload.get("prompt_version") or "open_world_first_analysis.v1"
+            ),
+            prompt_sha256=sha256_text(prompt),
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            event_ids=event_ids,
+            event_clusters=clusters,
+            direct_company_events=[
+                f"{mention}: direct current-news mention needs listing and economics verification"
+                for mention in mentions
+            ]
+            or ["no direct company mention extracted before company discovery"],
+            policy_industry_events=[
+                "current catalyst may form a policy or industry narrative after novelty checks"
+            ],
+            mechanisms=mechanisms,
+            beneficiary_transmission_paths=[
+                f"{mechanism} -> direct and indirect beneficiary discovery"
+                for mechanism in mechanisms
+            ],
+            narrative_conversion_points=[
+                "market narrative requires breadth, novelty, and cutoff-safe source support"
+            ],
+            direct_candidates=mentions or ["UNVERIFIED_DIRECT_CANDIDATE"],
+            potential_sectors=[
+                "open-world sector hypothesis generated from current evidence"
+            ],
+            beneficiary_investigation_questions=[
+                "Which listed entities have direct or indirect exposure to this catalyst?",
+                "Which candidates fail novelty, directness, dilution, or D-1 absorption checks?",
+            ],
+            uncertainties=[
+                "ticker precision is unknown in Pass 0",
+                "economic ownership and timing require cutoff-safe verification",
+            ],
+            notes=["Mock Pass 0 used current news only."],
+        )
+
+    def _open_world_first_analysis_payload(self, prompt: str) -> dict[str, Any]:
+        marker = "---OPEN_WORLD_FIRST_ANALYSIS_PAYLOAD---"
+        if marker not in prompt:
+            return {}
+        payload_text = prompt.split(marker, maxsplit=1)[-1].strip()
+        try:
+            payload = json.loads(payload_text)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def _news_novelty_review(self, prompt: str) -> NewsNoveltyReview:
         payload = self._news_novelty_payload(prompt)
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
@@ -589,7 +657,7 @@ class DeterministicMockLLMProvider:
     def _semantic_retrieval_plan(self, prompt: str) -> SemanticRetrievalPlan:
         payload = self._semantic_retrieval_payload(prompt)
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
-        mechanisms = self._payload_string_list(payload, "open_world_first_analysis")
+        mechanisms = self._payload_open_world_mechanisms(payload)
         mechanism_text = " ".join(mechanisms[:2]) or "current catalyst"
         required_categories = self._payload_string_list(payload, "required_categories")
         queries = [
@@ -627,7 +695,7 @@ class DeterministicMockLLMProvider:
     def _candidate_expansion_review(self, prompt: str) -> CandidateExpansionReview:
         payload = self._candidate_expansion_payload(prompt)
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
-        mechanisms = self._payload_string_list(payload, "open_world_first_analysis")
+        mechanisms = self._payload_open_world_mechanisms(payload)
         mechanism = mechanisms[0] if mechanisms else "current catalyst"
         required_paths = [
             CandidateExpansionPath(path)
@@ -719,6 +787,16 @@ class DeterministicMockLLMProvider:
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, str)]
+
+    def _payload_open_world_mechanisms(self, payload: dict[str, Any]) -> list[str]:
+        value = payload.get("open_world_first_analysis")
+        if isinstance(value, dict):
+            mechanisms = value.get("mechanisms")
+            if isinstance(mechanisms, list):
+                return [item for item in mechanisms if isinstance(item, str)]
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, str)]
+        return []
 
     def _payload_date(self, payload: dict[str, Any], key: str) -> date | None:
         value = payload.get(key)

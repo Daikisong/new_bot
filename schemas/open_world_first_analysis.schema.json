@@ -1,0 +1,125 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "beneficiary_investigation_questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Beneficiary Investigation Questions",
+      "type": "array"
+    },
+    "beneficiary_transmission_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Beneficiary Transmission Paths",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "direct_candidates": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Direct Candidates",
+      "type": "array"
+    },
+    "direct_company_events": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Direct Company Events",
+      "type": "array"
+    },
+    "event_clusters": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Clusters",
+      "type": "array"
+    },
+    "event_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Ids",
+      "type": "array"
+    },
+    "mechanisms": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mechanisms",
+      "type": "array"
+    },
+    "narrative_conversion_points": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Narrative Conversion Points",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "policy_industry_events": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Policy Industry Events",
+      "type": "array"
+    },
+    "potential_sectors": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Potential Sectors",
+      "type": "array"
+    },
+    "prompt_sha256": {
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "nslab.open_world_first_analysis.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "uncertainties": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncertainties",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "prompt_version",
+    "prompt_sha256",
+    "created_at",
+    "cutoff_at"
+  ],
+  "title": "OpenWorldFirstAnalysis",
+  "type": "object"
+}

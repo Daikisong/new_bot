@@ -573,6 +573,12 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         ("row_disposition", "row_disposition_artifact", "row_disposition_sha256", True),
         ("event_cluster", "event_cluster_artifact", "event_cluster_sha256", True),
         (
+            "open_world_first_analysis",
+            "open_world_first_analysis_artifact",
+            "open_world_first_analysis_sha256",
+            False,
+        ),
+        (
             "news_novelty_review",
             "news_novelty_review_artifact",
             "news_novelty_review_sha256",
@@ -648,6 +654,9 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     }
     statuses["row_disposition"] = _inspect_row_disposition_artifact(root, manifest)
     statuses["event_cluster"] = _inspect_event_cluster_artifact(root, manifest)
+    statuses["open_world_first_analysis"] = (
+        _inspect_open_world_first_analysis_artifact(root, manifest)
+    )
     statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(
         root, manifest
     )
@@ -949,6 +958,106 @@ def _inspect_event_cluster_artifact(
         status["errors"].append("event_cluster_row_membership_counts_mismatch")
 
     status["passed"] = _event_cluster_status_passed(status)
+    return status
+
+
+def _inspect_open_world_first_analysis_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="open_world_first_analysis_artifact",
+        hash_field="open_world_first_analysis_sha256",
+        required=False,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "prompt_hash_verified": None,
+            "required_fields_present": None,
+            "summary_verified": None,
+        }
+    )
+    payload = _read_artifact_object(
+        root,
+        manifest.get("open_world_first_analysis_artifact"),
+        status,
+    )
+    if payload is None:
+        if not status.get("configured"):
+            status["passed"] = True
+        else:
+            status["passed"] = _open_world_first_analysis_status_passed(status)
+        return status
+
+    status["schema_version_verified"] = (
+        payload.get("schema_version") == "nslab.open_world_first_analysis.v1"
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("open_world_first_analysis_schema_version_mismatch")
+
+    run_id = manifest.get("run_id")
+    status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
+    if not status["run_id_verified"]:
+        status["errors"].append("open_world_first_analysis_run_id_mismatch")
+
+    prompt_hash = _manifest_prompt_hash(manifest, "open_world_first_analysis")
+    status["prompt_hash_verified"] = (
+        prompt_hash is None or payload.get("prompt_sha256") == prompt_hash
+    )
+    if not status["prompt_hash_verified"]:
+        status["errors"].append("open_world_first_analysis_prompt_hash_mismatch")
+
+    required_fields = [
+        "event_clusters",
+        "direct_company_events",
+        "policy_industry_events",
+        "mechanisms",
+        "beneficiary_transmission_paths",
+        "narrative_conversion_points",
+        "direct_candidates",
+        "potential_sectors",
+        "beneficiary_investigation_questions",
+        "uncertainties",
+    ]
+    status["required_fields_present"] = all(
+        _string_list(payload.get(field)) for field in required_fields
+    )
+    if not status["required_fields_present"]:
+        status["errors"].append("open_world_first_analysis_required_fields_missing")
+
+    expected_summary = {
+        "event_cluster_count": len(_string_list(payload.get("event_clusters"))),
+        "direct_company_event_count": len(
+            _string_list(payload.get("direct_company_events"))
+        ),
+        "policy_industry_event_count": len(
+            _string_list(payload.get("policy_industry_events"))
+        ),
+        "mechanism_count": len(_string_list(payload.get("mechanisms"))),
+        "transmission_path_count": len(
+            _string_list(payload.get("beneficiary_transmission_paths"))
+        ),
+        "narrative_conversion_point_count": len(
+            _string_list(payload.get("narrative_conversion_points"))
+        ),
+        "direct_candidate_count": len(_string_list(payload.get("direct_candidates"))),
+        "potential_sector_count": len(_string_list(payload.get("potential_sectors"))),
+        "investigation_question_count": len(
+            _string_list(payload.get("beneficiary_investigation_questions"))
+        ),
+        "uncertainty_count": len(_string_list(payload.get("uncertainties"))),
+    }
+    status["summary_verified"] = (
+        manifest.get("open_world_first_analysis_summary") == expected_summary
+    )
+    if not status["summary_verified"]:
+        status["errors"].append("open_world_first_analysis_summary_mismatch")
+
+    status["passed"] = _open_world_first_analysis_status_passed(status)
     return status
 
 
@@ -3424,6 +3533,7 @@ def _memory_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
 
 
 _CONTEXT_PROMPT_TRACE_PURPOSES = {
+    "open_world_first_analysis": "open_world_first_analysis",
     "news_novelty_review": "news_novelty_review",
     "semantic_retrieval_plan": "semantic_retrieval_plan",
     "candidate_expansion": "candidate_expansion",
@@ -3433,6 +3543,7 @@ _CONTEXT_PROMPT_TRACE_PURPOSES = {
 }
 
 _CONTEXT_PROMPT_TRACE_TOKEN_KEYS = {
+    "open_world_first_analysis": "open_world_first_analysis_prompt",
     "news_novelty_review": "news_novelty_review_prompt",
     "semantic_retrieval_plan": "semantic_retrieval_plan_prompt",
     "candidate_expansion": "candidate_expansion_prompt",
@@ -4361,6 +4472,17 @@ def _event_cluster_status_passed(status: dict[str, Any]) -> bool:
         and status.get("summary_cluster_method_verified")
         and status.get("summary_novelty_review_required_verified")
         and status.get("row_membership_counts_verified")
+    )
+
+
+def _open_world_first_analysis_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        _text_hashed_artifact_status_passed(status)
+        and status.get("schema_version_verified")
+        and status.get("run_id_verified")
+        and status.get("prompt_hash_verified")
+        and status.get("required_fields_present")
+        and status.get("summary_verified")
     )
 
 

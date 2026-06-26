@@ -38,6 +38,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldFirstAnalysis,
     PathType,
     Provenance,
     RedTeamArtifact,
@@ -100,6 +101,7 @@ class FutureContextLeakError(RuntimeError):
 
 
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
+OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION = "open_world_first_analysis.v1"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
 SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v1"
 CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
@@ -206,14 +208,21 @@ class DailyAnalyzer:
         )
         blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
         news_texts = [item.combined_text for item in blind_news_items]
-        first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
+        event_ids = [item.event_id for item in batch.items]
+        open_world_first_analysis, open_world_prompt_hash, open_world_prompt_tokens = (
+            await self._run_open_world_first_analysis(
+                news_texts=news_texts,
+                event_ids=event_ids,
+                cutoff_at=cutoff_at,
+            )
+        )
+        first_pass_mechanisms = open_world_first_analysis.mechanisms
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
         retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
             cutoff_at=cutoff_at,
         )
-        event_ids = [item.event_id for item in batch.items]
         manifest = ContextAssembler(
             self.root,
             shard_episode_count=self.settings.limits.shard_episode_count,
@@ -234,6 +243,15 @@ class DailyAnalyzer:
         manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
         manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
+        self._write_open_world_first_analysis_artifact(
+            analysis=open_world_first_analysis,
+            manifest=manifest,
+            prompt_sha256=open_world_prompt_hash,
+            cutoff_at=cutoff_at,
+        )
+        manifest.token_counts["open_world_first_analysis_prompt"] = (
+            open_world_prompt_tokens
+        )
         self._write_row_disposition_artifact(
             full_items=full_batch.items,
             included_items=batch.items,
@@ -338,6 +356,12 @@ class DailyAnalyzer:
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
                 "event_cluster_artifact": manifest.event_cluster_artifact,
                 "event_cluster_summary": manifest.event_cluster_summary,
+                "open_world_first_analysis_artifact": (
+                    manifest.open_world_first_analysis_artifact
+                ),
+                "open_world_first_analysis_summary": (
+                    manifest.open_world_first_analysis_summary
+                ),
                 "news_novelty_review_artifact": manifest.news_novelty_review_artifact,
                 "news_novelty_review_summary": manifest.news_novelty_review_summary,
                 "semantic_retrieval_plan_artifact": (
@@ -433,6 +457,7 @@ class DailyAnalyzer:
         manifest.token_counts["final_synthesis_prompt"] = final_synthesis_prompt_tokens
         prediction = self._seal(prediction)
         manifest.web_sources = sorted(set(manifest.web_sources))
+        manifest.prompt_hashes["open_world_first_analysis"] = open_world_prompt_hash
         manifest.prompt_hashes["news_novelty_review"] = novelty_prompt_hash
         manifest.prompt_hashes["semantic_retrieval_plan"] = semantic_prompt_hash
         manifest.prompt_hashes["candidate_expansion"] = expansion_prompt_hash
@@ -485,6 +510,270 @@ class DailyAnalyzer:
             report_path=report_path.relative_to(self.root).as_posix(),
             prediction_path=prediction_path.relative_to(self.root).as_posix(),
         )
+
+    async def _run_open_world_first_analysis(
+        self,
+        *,
+        news_texts: list[str],
+        event_ids: list[str],
+        cutoff_at: datetime,
+    ) -> tuple[OpenWorldFirstAnalysis, str, int]:
+        prompt = self._build_open_world_first_analysis_prompt(
+            news_texts=news_texts,
+            event_ids=event_ids,
+            cutoff_at=cutoff_at,
+        )
+        prompt_sha256 = sha256_text(prompt)
+        try:
+            analysis = await self.llm.generate_structured(
+                prompt=prompt,
+                response_model=OpenWorldFirstAnalysis,
+                purpose="open_world_first_analysis",
+            )
+        except NotImplementedError:
+            analysis = self._fallback_open_world_first_analysis(
+                news_texts=news_texts,
+                event_ids=event_ids,
+                cutoff_at=cutoff_at,
+                prompt_sha256=prompt_sha256,
+            )
+        normalized = self._normalize_open_world_first_analysis(
+            analysis,
+            news_texts=news_texts,
+            event_ids=event_ids,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+        )
+        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+
+    def _build_open_world_first_analysis_prompt(
+        self,
+        *,
+        news_texts: list[str],
+        event_ids: list[str],
+        cutoff_at: datetime,
+    ) -> str:
+        payload = {
+            "schema": "nslab.open_world_first_analysis.v1",
+            "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+            "cutoff_at": cutoff_at.isoformat(),
+            "event_ids": event_ids,
+            "current_news": news_texts,
+            "forbidden_inputs": [
+                "past research search results",
+                "semantic retrieval hits",
+                "D-day prices or outcomes",
+                "cutoff-after evidence",
+            ],
+            "required_fields": [
+                "event_clusters",
+                "direct_company_events",
+                "policy_industry_events",
+                "mechanisms",
+                "beneficiary_transmission_paths",
+                "narrative_conversion_points",
+                "direct_candidates",
+                "potential_sectors",
+                "beneficiary_investigation_questions",
+                "uncertainties",
+            ],
+        }
+        return (
+            "Run Pass 0 open-world first read as OpenWorldFirstAnalysis. Use only "
+            "the current_news payload, before any past research or semantic retrieval. "
+            "Do not fit candidates to memory. Generate free-form mechanisms, possible "
+            "direct candidates, sector hypotheses, beneficiary investigation questions, "
+            "and uncertainties without hardcoded ticker/theme mappings.\n"
+            "---OPEN_WORLD_FIRST_ANALYSIS_PAYLOAD---\n"
+            f"{canonical_json(payload)}"
+        )
+
+    def _normalize_open_world_first_analysis(
+        self,
+        analysis: OpenWorldFirstAnalysis,
+        *,
+        news_texts: list[str],
+        event_ids: list[str],
+        cutoff_at: datetime,
+        prompt_sha256: str,
+    ) -> OpenWorldFirstAnalysis:
+        fallback = self._fallback_open_world_first_analysis(
+            news_texts=news_texts,
+            event_ids=event_ids,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+        )
+
+        def list_or_fallback(
+            values: list[str],
+            fallback_values: list[str],
+        ) -> list[str]:
+            cleaned = _unique_preserving_order(
+                [" ".join(value.split()) for value in values if value.strip()]
+            )
+            return cleaned or fallback_values
+
+        return analysis.model_copy(
+            update={
+                "run_id": analysis.run_id or fallback.run_id,
+                "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+                "prompt_sha256": prompt_sha256,
+                "cutoff_at": cutoff_at,
+                "event_ids": _unique_preserving_order(event_ids),
+                "event_clusters": list_or_fallback(
+                    analysis.event_clusters,
+                    fallback.event_clusters,
+                ),
+                "direct_company_events": list_or_fallback(
+                    analysis.direct_company_events,
+                    fallback.direct_company_events,
+                ),
+                "policy_industry_events": list_or_fallback(
+                    analysis.policy_industry_events,
+                    fallback.policy_industry_events,
+                ),
+                "mechanisms": list_or_fallback(
+                    analysis.mechanisms,
+                    fallback.mechanisms,
+                ),
+                "beneficiary_transmission_paths": list_or_fallback(
+                    analysis.beneficiary_transmission_paths,
+                    fallback.beneficiary_transmission_paths,
+                ),
+                "narrative_conversion_points": list_or_fallback(
+                    analysis.narrative_conversion_points,
+                    fallback.narrative_conversion_points,
+                ),
+                "direct_candidates": list_or_fallback(
+                    analysis.direct_candidates,
+                    fallback.direct_candidates,
+                ),
+                "potential_sectors": list_or_fallback(
+                    analysis.potential_sectors,
+                    fallback.potential_sectors,
+                ),
+                "beneficiary_investigation_questions": list_or_fallback(
+                    analysis.beneficiary_investigation_questions,
+                    fallback.beneficiary_investigation_questions,
+                ),
+                "uncertainties": list_or_fallback(
+                    analysis.uncertainties,
+                    fallback.uncertainties,
+                ),
+            }
+        )
+
+    def _fallback_open_world_first_analysis(
+        self,
+        *,
+        news_texts: list[str],
+        event_ids: list[str],
+        cutoff_at: datetime,
+        prompt_sha256: str,
+    ) -> OpenWorldFirstAnalysis:
+        mechanisms = self._infer_first_pass_mechanisms(news_texts)
+        mentions = self.fallback_llm.extract_company_mentions(news_texts, limit=6)
+        event_clusters = [
+            f"current-news cluster {index}: {text.splitlines()[0][:120]}"
+            for index, text in enumerate(news_texts, start=1)
+            if text.strip()
+        ] or ["current-news batch requires open-world event clustering"]
+        direct_company_events = [
+            f"{mention}: directly mentioned current-news event requires listing and economic verification"
+            for mention in mentions
+        ] or ["no direct company mention extracted before web/company verification"]
+        transmission_paths = [
+            f"{mechanism} -> direct, indirect, and market-memory beneficiary investigation"
+            for mechanism in mechanisms
+        ]
+        return OpenWorldFirstAnalysis(
+            run_id="RUN-open-world-first-analysis-pending",
+            prompt_version=OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+            prompt_sha256=prompt_sha256,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            event_ids=_unique_preserving_order(event_ids),
+            event_clusters=event_clusters,
+            direct_company_events=direct_company_events,
+            policy_industry_events=[
+                "current catalyst may form a policy or industry narrative; verify breadth and novelty"
+            ],
+            mechanisms=mechanisms,
+            beneficiary_transmission_paths=transmission_paths,
+            narrative_conversion_points=[
+                "current evidence becomes market narrative only if cutoff-safe sources support novelty and breadth"
+            ],
+            direct_candidates=mentions or ["UNVERIFIED_DIRECT_CANDIDATE"],
+            potential_sectors=[
+                "open-world sector hypothesis to be named by LLM and verified by sources"
+            ],
+            beneficiary_investigation_questions=[
+                "Which listed entities have direct, supply-chain, infrastructure, regional, or market-memory exposure?",
+                "Which candidates fail directness, novelty, dilution, or D-1 absorption checks?",
+            ],
+            uncertainties=[
+                "listing status and ticker precision are unverified at Pass 0",
+                "economic ownership and customer attribution require cutoff-safe evidence",
+                "D-1 market absorption must be checked without D-day prices",
+            ],
+            notes=[
+                "Fallback Pass 0 used current news only and did not inspect past research."
+            ],
+        )
+
+    def _write_open_world_first_analysis_artifact(
+        self,
+        *,
+        analysis: OpenWorldFirstAnalysis,
+        manifest: ContextManifest,
+        prompt_sha256: str,
+        cutoff_at: datetime,
+    ) -> None:
+        normalized = analysis.model_copy(
+            update={
+                "run_id": manifest.run_id,
+                "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+                "prompt_sha256": prompt_sha256,
+                "cutoff_at": cutoff_at,
+            }
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "open_world_first_analysis"
+            / manifest.run_id
+            / "open_world_first_analysis.json"
+        )
+        artifact_path = self.root / artifact_relative
+        write_json(artifact_path, normalized.model_dump(mode="json"))
+        artifact_text = artifact_path.read_text(encoding="utf-8")
+        manifest.open_world_first_analysis_artifact = artifact_relative.as_posix()
+        manifest.open_world_first_analysis_sha256 = sha256_text(artifact_text)
+        manifest.open_world_first_analysis_summary = {
+            "event_cluster_count": len(normalized.event_clusters),
+            "direct_company_event_count": len(normalized.direct_company_events),
+            "policy_industry_event_count": len(normalized.policy_industry_events),
+            "mechanism_count": len(normalized.mechanisms),
+            "transmission_path_count": len(normalized.beneficiary_transmission_paths),
+            "narrative_conversion_point_count": len(
+                normalized.narrative_conversion_points
+            ),
+            "direct_candidate_count": len(normalized.direct_candidates),
+            "potential_sector_count": len(normalized.potential_sectors),
+            "investigation_question_count": len(
+                normalized.beneficiary_investigation_questions
+            ),
+            "uncertainty_count": len(normalized.uncertainties),
+        }
+
+    def _read_open_world_first_analysis_context(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        if not manifest.open_world_first_analysis_artifact:
+            return {}
+        payload = read_json(self.root / manifest.open_world_first_analysis_artifact)
+        return payload if isinstance(payload, dict) else {}
 
     def _write_row_disposition_artifact(
         self,
@@ -980,7 +1269,10 @@ class DailyAnalyzer:
             "cutoff_at": cutoff_at.isoformat(),
             "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
             "current_news": news_texts,
-            "open_world_first_analysis": first_pass_mechanisms,
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(
+                manifest
+            )
+            or first_pass_mechanisms,
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
         }
@@ -1259,7 +1551,10 @@ class DailyAnalyzer:
             "cutoff_at": cutoff_at.isoformat(),
             "required_paths": [path.value for path in CANDIDATE_EXPANSION_REQUIRED_PATHS],
             "current_news": news_texts,
-            "open_world_first_analysis": first_pass_mechanisms,
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(
+                manifest
+            )
+            or first_pass_mechanisms,
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
             "d_minus_one_only_for_continuation": True,
@@ -2327,7 +2622,10 @@ class DailyAnalyzer:
             "trade_date": prediction.trade_date.isoformat(),
             "cutoff_at": prediction.cutoff_at.isoformat(),
             "current_news": news_texts,
-            "open_world_first_analysis": first_pass_mechanisms,
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(
+                manifest
+            )
+            or first_pass_mechanisms,
             "event_clusters": self._read_event_cluster_context(manifest),
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(
@@ -3270,6 +3568,9 @@ class DailyAnalyzer:
             model_config=self.llm_model_config,
             default_metadata={"prompt_version": DAILY_BLIND_PROMPT_VERSION},
             purpose_metadata={
+                "open_world_first_analysis": {
+                    "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+                },
                 "news_novelty_review": {
                     "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION
                 },

@@ -30,6 +30,7 @@ EXPECTED_SCHEMA_FILES = {
     "mechanism_memory.schema.json",
     "memory_claim.schema.json",
     "news_novelty_review.schema.json",
+    "open_world_first_analysis.schema.json",
     "postmortem.schema.json",
     "red_team_artifact.schema.json",
     "research_episode.schema.json",

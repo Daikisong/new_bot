@@ -208,6 +208,12 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         is True
     )
     assert supporting["event_cluster"]["row_membership_counts_verified"] is True
+    assert supporting["open_world_first_analysis"]["hash_verified"] is True
+    assert supporting["open_world_first_analysis"]["schema_version_verified"] is True
+    assert supporting["open_world_first_analysis"]["run_id_verified"] is True
+    assert supporting["open_world_first_analysis"]["prompt_hash_verified"] is True
+    assert supporting["open_world_first_analysis"]["required_fields_present"] is True
+    assert supporting["open_world_first_analysis"]["summary_verified"] is True
     assert supporting["news_novelty_review"]["hash_verified"] is True
     assert supporting["news_novelty_review"]["schema_version_verified"] is True
     assert supporting["news_novelty_review"]["run_id_verified"] is True
@@ -506,8 +512,9 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert memory_sweep["artifact_count"] >= 1
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
-    assert llm_traces["matched_prompt_count"] == 6
+    assert llm_traces["matched_prompt_count"] == 7
     for purpose in (
+        "open_world_first_analysis",
         "news_novelty_review",
         "semantic_retrieval_plan",
         "candidate_expansion",

@@ -611,6 +611,35 @@
       "title": "Omitted Market Context Files",
       "type": "array"
     },
+    "open_world_first_analysis_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open World First Analysis Artifact"
+    },
+    "open_world_first_analysis_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open World First Analysis Sha256"
+    },
+    "open_world_first_analysis_summary": {
+      "additionalProperties": true,
+      "title": "Open World First Analysis Summary",
+      "type": "object"
+    },
     "phase_state_artifact": {
       "anyOf": [
         {

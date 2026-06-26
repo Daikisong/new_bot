@@ -2788,6 +2788,7 @@ def _check_manifest_output_artifacts(
             event_cluster_rows,
             findings,
         )
+    _check_open_world_first_analysis_artifact(root, prediction_path, manifest, findings)
     _check_news_novelty_review_artifact(root, prediction_path, manifest, findings)
     _check_semantic_retrieval_plan_artifact(root, prediction_path, manifest, findings)
     semantic_retrieval_rows = _check_manifest_jsonl_artifact(
@@ -3110,6 +3111,128 @@ def _check_event_cluster_artifact_summary(
                     f"{prediction_path.name}: context manifest event_cluster:{index} "
                     f"{field} count mismatch"
                 )
+
+
+def _check_open_world_first_analysis_artifact(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    artifact_ref = manifest.get("open_world_first_analysis_artifact")
+    expected_hash = manifest.get("open_world_first_analysis_sha256")
+    if artifact_ref is None and expected_hash is None:
+        return
+    artifact_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        artifact_ref,
+        label="open_world_first_analysis_artifact",
+        findings=findings,
+    )
+    if artifact_path is None:
+        return
+    text = artifact_path.read_text(encoding="utf-8", errors="replace")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing "
+            "open_world_first_analysis_sha256"
+        )
+    elif sha256_text(text) != expected_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "open_world_first_analysis_sha256 mismatch"
+        )
+    payload = _read_json_object(artifact_path, findings)
+    if payload is None:
+        return
+    if payload.get("schema_version") != "nslab.open_world_first_analysis.v1":
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "schema_version mismatch"
+        )
+    run_id = manifest.get("run_id")
+    if isinstance(run_id, str) and payload.get("run_id") != run_id:
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "run_id mismatch"
+        )
+    prompt_hash = _manifest_prompt_hash(manifest, "open_world_first_analysis")
+    if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "prompt_hash mismatch"
+        )
+    _check_open_world_first_analysis_summary(
+        prediction_path,
+        manifest,
+        payload,
+        findings,
+    )
+
+
+def _check_open_world_first_analysis_summary(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    required_fields = (
+        "event_clusters",
+        "direct_company_events",
+        "policy_industry_events",
+        "mechanisms",
+        "beneficiary_transmission_paths",
+        "narrative_conversion_points",
+        "direct_candidates",
+        "potential_sectors",
+        "beneficiary_investigation_questions",
+        "uncertainties",
+    )
+    for field in required_fields:
+        if not _string_list(payload.get(field)):
+            findings.append(
+                f"{prediction_path.name}: context manifest open_world_first_analysis "
+                f"{field} empty"
+            )
+    summary = manifest.get("open_world_first_analysis_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "open_world_first_analysis_summary invalid"
+        )
+        return
+    expected_counts = {
+        "event_cluster_count": len(_string_list(payload.get("event_clusters"))),
+        "direct_company_event_count": len(
+            _string_list(payload.get("direct_company_events"))
+        ),
+        "policy_industry_event_count": len(
+            _string_list(payload.get("policy_industry_events"))
+        ),
+        "mechanism_count": len(_string_list(payload.get("mechanisms"))),
+        "transmission_path_count": len(
+            _string_list(payload.get("beneficiary_transmission_paths"))
+        ),
+        "narrative_conversion_point_count": len(
+            _string_list(payload.get("narrative_conversion_points"))
+        ),
+        "direct_candidate_count": len(_string_list(payload.get("direct_candidates"))),
+        "potential_sector_count": len(_string_list(payload.get("potential_sectors"))),
+        "investigation_question_count": len(
+            _string_list(payload.get("beneficiary_investigation_questions"))
+        ),
+        "uncertainty_count": len(_string_list(payload.get("uncertainties"))),
+    }
+    for field, expected in expected_counts.items():
+        _check_summary_int(
+            prediction_path,
+            summary,
+            field,
+            expected,
+            label="open_world_first_analysis",
+            findings=findings,
+        )
 
 
 def _check_news_novelty_review_artifact(
@@ -4634,6 +4757,20 @@ def _check_final_synthesis_embedded_artifacts(
             f"{prediction_path.name}: final_synthesis_context event_clusters mismatch"
         )
 
+    open_world_first_analysis = _read_optional_manifest_object(
+        root,
+        manifest.get("open_world_first_analysis_artifact"),
+    )
+    if (
+        open_world_first_analysis is not None
+        and context_payload.get("open_world_first_analysis")
+        != open_world_first_analysis
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "open_world_first_analysis mismatch"
+        )
+
     semantic_retrieval_rows = _read_optional_manifest_jsonl_rows(
         root,
         manifest.get("semantic_retrieval_artifact"),
@@ -4999,6 +5136,7 @@ def _check_prompt_hash_traces(
     findings: list[str],
 ) -> None:
     purpose_by_hash_key = {
+        "open_world_first_analysis": "open_world_first_analysis",
         "news_novelty_review": "news_novelty_review",
         "semantic_retrieval_plan": "semantic_retrieval_plan",
         "candidate_expansion": "candidate_expansion",
@@ -5007,6 +5145,7 @@ def _check_prompt_hash_traces(
         "final_synthesis": "final_synthesis",
     }
     token_key_by_hash_key = {
+        "open_world_first_analysis": "open_world_first_analysis_prompt",
         "news_novelty_review": "news_novelty_review_prompt",
         "semantic_retrieval_plan": "semantic_retrieval_plan_prompt",
         "candidate_expansion": "candidate_expansion_prompt",

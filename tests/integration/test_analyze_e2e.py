@@ -29,6 +29,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldFirstAnalysis,
     OutcomeLabels,
     PathType,
     PriceSnapshot,
@@ -126,6 +127,26 @@ class RecordingBlindLLM:
         self.calls.append(
             {"prompt": prompt, "response_model": response_model, "purpose": purpose}
         )
+        if response_model is OpenWorldFirstAnalysis:
+            analysis = OpenWorldFirstAnalysis(
+                run_id="RUN-provider-open-world",
+                prompt_version="test",
+                prompt_sha256="test",
+                created_at=datetime(1999, 1, 1, 8, 25, 0, tzinfo=KST),
+                cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
+                event_ids=["EVT-provider"],
+                event_clusters=["provider current-news cluster"],
+                direct_company_events=["ProviderCandidate direct current-news event"],
+                policy_industry_events=["provider policy or industry route"],
+                mechanisms=["provider current news -> open-world candidate"],
+                beneficiary_transmission_paths=["provider mechanism -> beneficiary discovery"],
+                narrative_conversion_points=["provider narrative conversion point"],
+                direct_candidates=["ProviderCandidate"],
+                potential_sectors=["provider generated sector"],
+                beneficiary_investigation_questions=["provider investigation question"],
+                uncertainties=["provider first-pass uncertainty"],
+            )
+            return analysis  # type: ignore[return-value]
         if response_model is NewsNoveltyReview:
             review = NewsNoveltyReview(
                 run_id="RUN-provider-novelty",
@@ -779,6 +800,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         for trace in traces
         if trace["purpose"]
         in {
+            "open_world_first_analysis",
             "news_novelty_review",
             "semantic_retrieval_plan",
             "candidate_expansion",
@@ -787,6 +809,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
             "final_synthesis",
         }
     }
+    assert saved_manifest["prompt_hashes"]["open_world_first_analysis"] == prompt_hash_by_purpose[
+        "open_world_first_analysis"
+    ]
     assert saved_manifest["prompt_hashes"]["news_novelty_review"] == prompt_hash_by_purpose[
         "news_novelty_review"
     ]
@@ -1174,6 +1199,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     )
 
     assert [call["purpose"] for call in llm.calls] == [
+        "open_world_first_analysis",
         "news_novelty_review",
         "semantic_retrieval_plan",
         "candidate_expansion",
@@ -1235,9 +1261,11 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
     assert analysis.blind_prediction.blind_artifact_sha256
     assert analysis.context_manifest.red_team_artifacts
+    assert analysis.context_manifest.prompt_hashes["open_world_first_analysis"]
     assert analysis.context_manifest.prompt_hashes["news_novelty_review"]
     assert analysis.context_manifest.prompt_hashes["final_synthesis"]
     traces = [read_json(path) for path in (tmp_path / "runs" / "traces").glob("TRACE-*.json")]
+    assert any(trace["purpose"] == "open_world_first_analysis" for trace in traces)
     assert any(trace["purpose"] == "news_novelty_review" for trace in traces)
     assert any(trace["purpose"] == "semantic_retrieval_plan" for trace in traces)
     assert any(trace["purpose"] == "candidate_expansion" for trace in traces)
@@ -1245,6 +1273,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
+    assert prompt_versions["open_world_first_analysis"] == "open_world_first_analysis.v1"
     assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
     assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v1"
     assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"

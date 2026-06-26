@@ -282,6 +282,23 @@ async def test_daily_analyzer_runs_current_news_first_pass_before_past_retrieval
     assert first_pass_state["completed"] is True
     assert retrieval.queries
     assert analysis.context_manifest.retrieved_episode_ids == []
+    manifest = analysis.context_manifest
+    assert manifest.open_world_first_analysis_artifact is not None
+    assert manifest.open_world_first_analysis_sha256 is not None
+    assert manifest.open_world_first_analysis_summary["mechanism_count"] >= 1
+    assert "open_world_first_analysis" in manifest.prompt_hashes
+    first_pass_payload = read_json(
+        tmp_path / manifest.open_world_first_analysis_artifact
+    )
+    assert first_pass_payload["schema_version"] == "nslab.open_world_first_analysis.v1"
+    assert first_pass_payload["run_id"] == manifest.run_id
+    assert first_pass_payload["mechanisms"]
+    assert first_pass_payload["beneficiary_investigation_questions"]
+    assert first_pass_payload["uncertainties"]
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert synthesis_payload["open_world_first_analysis"] == first_pass_payload
 
 
 def test_session_pack_rejects_unknown_analysis_mode_before_writing_pack(tmp_path) -> None:

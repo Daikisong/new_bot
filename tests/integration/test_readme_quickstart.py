@@ -134,6 +134,9 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     supporting = inspection["supporting_artifacts"]
     assert supporting["row_disposition"]["hash_verified"] is True
     assert supporting["event_cluster"]["hash_verified"] is True
+    assert supporting["open_world_first_analysis"]["hash_verified"] is True
+    assert supporting["open_world_first_analysis"]["schema_version_verified"] is True
+    assert supporting["open_world_first_analysis"]["summary_verified"] is True
     assert supporting["news_novelty_review"]["hash_verified"] is True
     assert supporting["semantic_retrieval_plan"]["hash_verified"] is True
     assert supporting["semantic_retrieval"]["hash_verified"] is True
@@ -156,8 +159,9 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert memory_sweep["swept_episode_ids_verified"] is True
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
-    assert llm_traces["matched_prompt_count"] == 6
+    assert llm_traces["matched_prompt_count"] == 7
     for purpose in (
+        "open_world_first_analysis",
         "news_novelty_review",
         "semantic_retrieval_plan",
         "candidate_expansion",

@@ -109,6 +109,24 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Row disposition artifact: {manifest.row_disposition_artifact or 'none'}",
             f"- Row disposition SHA256: {manifest.row_disposition_sha256 or 'none'}",
             "",
+            "Open-world first read:",
+            "",
+            f"- Artifact: {manifest.open_world_first_analysis_artifact or 'none'}",
+            f"- SHA256: {manifest.open_world_first_analysis_sha256 or 'none'}",
+            (
+                "- Mechanisms: "
+                f"{manifest.open_world_first_analysis_summary.get('mechanism_count', 0)}"
+            ),
+            (
+                "- Investigation questions: "
+                + str(
+                    manifest.open_world_first_analysis_summary.get(
+                        "investigation_question_count",
+                        0,
+                    )
+                )
+            ),
+            "",
             PREOPEN_REPORT_SECTION_HEADINGS[3],
             "",
             "\n".join(sector_lines) or "No sector hypotheses.",
