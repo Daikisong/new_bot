@@ -316,6 +316,25 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert evals_manifest["category_counts"] == {"evaluation_examples": 3}
     assert evals_manifest["missing_training_categories"] == []
     assert audit_training_exports(tmp_path)["passed"] is True
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["schema_version"] == "nslab.training_export_diagnostics.v1"
+    assert training_report["passed"] is True
+    assert training_report["available_manifest_kinds"] == ["evals", "preference", "sft"]
+    assert training_report["missing_manifest_kinds"] == []
+    assert training_report["source_episode_count"] == 1
+    assert training_report["row_count"] == 9
+    assert training_report["blind_safe_row_count"] == 4
+    assert training_report["hindsight_row_count"] == 5
+    assert training_report["exports"]["sft"]["row_count"] == 5
+    assert training_report["exports"]["preference"]["row_count"] == 1
+    assert training_report["exports"]["evals"]["row_count"] == 3
+    assert training_report["exports"]["sft"]["category_counts"] == {
+        "blind_reasoning_examples": 1,
+        "theme_formation_examples": 1,
+        "beneficiary_discovery_examples": 1,
+        "leader_selection_comparisons": 1,
+        "failure_correction_examples": 1,
+    }
 
 
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:
@@ -347,6 +366,9 @@ def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> Non
         finding.startswith("sft: phase_outputs.BLIND contains POSTMORTEM row")
         for finding in audit["findings"]
     )
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["passed"] is False
+    assert training_report["findings"] == audit["findings"]
 
 
 def test_training_audit_rejects_non_sealed_preference_record_rows(tmp_path) -> None:

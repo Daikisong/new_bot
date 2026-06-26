@@ -81,6 +81,7 @@ class TrainingExportResult:
 def audit_training_exports(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     manifests: dict[str, Any] = {}
+    summaries: dict[str, dict[str, Any]] = {}
     for kind in sorted(VALID_KINDS):
         manifest_path = root / "training_exports" / kind / "manifest.json"
         if not manifest_path.exists():
@@ -92,6 +93,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             findings.append(f"{kind}: manifest is invalid JSON: {exc}")
             continue
         manifests[kind] = manifest
+        summaries[kind] = _training_manifest_summary(manifest)
         output_file = manifest.get("output_file")
         output_rows: list[dict[str, Any]] = []
         output_path = _artifact_path(root, output_file)
@@ -117,12 +119,43 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         if manifest.get("source_mode") == "brain_records" and kind == "preference":
             _audit_record_preference_rows(kind, output_rows, findings)
         _audit_phase_outputs(kind, root, manifest, findings)
-    return {
+    report = {
         "schema_version": "nslab.training_audit.v1",
         "passed": not findings,
         "findings": findings,
         "manifests": manifests,
     }
+    write_diagnostic_report(
+        root,
+        "training_export_report",
+        {
+            "schema_version": "nslab.training_export_diagnostics.v1",
+            "passed": report["passed"],
+            "findings": findings,
+            "export_kinds": sorted(VALID_KINDS),
+            "available_manifest_kinds": sorted(manifests),
+            "missing_manifest_kinds": sorted(VALID_KINDS - set(manifests)),
+            "source_episode_count": _max_int(summaries, "source_episode_count"),
+            "source_record_count": _max_int(summaries, "source_record_count"),
+            "eligible_record_count": _sum_int(summaries, "eligible_record_count"),
+            "exported_record_count": _sum_int(summaries, "exported_record_count"),
+            "row_count": _sum_int(summaries, "row_count"),
+            "skipped_record_count": _sum_int(summaries, "skipped_record_count"),
+            "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
+            "hindsight_row_count": _sum_int(summaries, "hindsight_row_count"),
+            "counts_by_record_type": _max_counter(summaries, "counts_by_record_type"),
+            "counts_by_training_target": _max_counter(
+                summaries,
+                "counts_by_training_target",
+            ),
+            "weight_validation_statuses": {
+                kind: summary.get("weight_validation_status")
+                for kind, summary in sorted(summaries.items())
+            },
+            "exports": summaries,
+        },
+    )
+    return report
 
 
 def export_training(root: Path, *, kind: str) -> TrainingExportResult:
@@ -273,6 +306,60 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         },
     )
     return TrainingExportResult(path=path, manifest_path=manifest_path, row_count=len(rows))
+
+
+def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": manifest.get("kind"),
+        "source_mode": manifest.get("source_mode"),
+        "source_episode_count": manifest.get("source_episode_count"),
+        "source_record_count": manifest.get("source_record_count"),
+        "eligible_record_count": manifest.get("eligible_record_count"),
+        "exported_record_count": manifest.get("exported_record_count"),
+        "row_count": manifest.get("row_count"),
+        "skipped_record_count": manifest.get("skipped_record_count"),
+        "blind_safe_row_count": manifest.get("blind_safe_row_count"),
+        "hindsight_row_count": manifest.get("hindsight_row_count"),
+        "counts_by_record_type": manifest.get("counts_by_record_type", {}),
+        "counts_by_training_target": manifest.get("counts_by_training_target", {}),
+        "category_counts": manifest.get("category_counts", {}),
+        "missing_training_categories": manifest.get("missing_training_categories", []),
+        "source_phase_counts": manifest.get("source_phase_counts", {}),
+        "weight_validation_status": manifest.get("weight_validation_status"),
+        "output_file": manifest.get("output_file"),
+    }
+
+
+def _sum_int(summaries: dict[str, dict[str, Any]], key: str) -> int:
+    return sum(
+        value
+        for summary in summaries.values()
+        if isinstance(value := summary.get(key), int) and not isinstance(value, bool)
+    )
+
+
+def _max_int(summaries: dict[str, dict[str, Any]], key: str) -> int:
+    values = [
+        value
+        for summary in summaries.values()
+        if isinstance(value := summary.get(key), int) and not isinstance(value, bool)
+    ]
+    return max(values) if values else 0
+
+
+def _max_counter(
+    summaries: dict[str, dict[str, Any]],
+    key: str,
+) -> dict[str, int]:
+    counter: Counter[str] = Counter()
+    for summary in summaries.values():
+        value = summary.get(key)
+        if not isinstance(value, dict):
+            continue
+        for item_key, item_value in value.items():
+            if isinstance(item_key, str) and isinstance(item_value, int):
+                counter[item_key] = max(counter[item_key], item_value)
+    return dict(sorted(counter.items()))
 
 
 def _project_relative_path(root: Path, path: Path) -> str:
