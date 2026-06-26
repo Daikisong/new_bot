@@ -121,6 +121,20 @@ def test_nslab_console_entrypoint_resolves_to_cli_main() -> None:
     assert callable(getattr(module, attribute_name))
 
 
+def test_dev_extra_includes_async_test_runner_dependency() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
+    test_files = sorted((repo_root / "tests").rglob("*.py"))
+    async_marker_count = sum(
+        path.read_text(encoding="utf-8").count("@pytest.mark.asyncio")
+        for path in test_files
+    )
+
+    assert async_marker_count > 0
+    assert any(dependency.startswith("pytest-asyncio") for dependency in dev_dependencies)
+
+
 def test_plans_document_tracks_goal_scope_without_domain_memory() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     plans = (repo_root / "PLANS.md").read_text(encoding="utf-8")
