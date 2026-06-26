@@ -1,31 +1,33 @@
 .PHONY: install-dev doctor test lint typecheck check audit full-check demo
 
+PYTHON ?= $(shell if command -v python.exe >/dev/null 2>&1; then printf 'python.exe'; else printf 'python'; fi)
+
 install-dev:
-	python -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]"
 
 doctor:
-	python -m news_scalping_lab.cli doctor
+	$(PYTHON) -m news_scalping_lab.cli doctor
 
 test:
-	python -m pytest
+	$(PYTHON) -m pytest
 
 lint:
-	python -m ruff check .
+	$(PYTHON) -m ruff check .
 
 typecheck:
-	python -m mypy src/news_scalping_lab
+	$(PYTHON) -m mypy src/news_scalping_lab
 
 check: lint typecheck test
 
 audit:
-	python -m news_scalping_lab.cli audit hardcoding
-	python -m news_scalping_lab.cli audit provenance
-	python -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24
-	python -m news_scalping_lab.cli audit coverage
-	python -m news_scalping_lab.cli brain audit
+	$(PYTHON) -m news_scalping_lab.cli audit hardcoding
+	$(PYTHON) -m news_scalping_lab.cli audit provenance
+	$(PYTHON) -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24
+	$(PYTHON) -m news_scalping_lab.cli audit coverage
+	$(PYTHON) -m news_scalping_lab.cli brain audit
 
 full-check:
-	python -m news_scalping_lab.cli full-check
+	$(PYTHON) -m news_scalping_lab.cli full-check
 
 demo:
-	python -m news_scalping_lab.cli demo
+	$(PYTHON) -m news_scalping_lab.cli demo

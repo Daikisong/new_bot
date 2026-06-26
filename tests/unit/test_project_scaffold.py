@@ -315,22 +315,23 @@ def test_makefile_exposes_quality_and_project_audit_targets() -> None:
 
     required_fragments = [
         ".PHONY: install-dev doctor test lint typecheck check audit full-check demo",
+        "PYTHON ?= $(shell if command -v python.exe",
         "lint:",
-        "\tpython -m ruff check .",
+        "\t$(PYTHON) -m ruff check .",
         "typecheck:",
-        "\tpython -m mypy src/news_scalping_lab",
+        "\t$(PYTHON) -m mypy src/news_scalping_lab",
         "test:",
-        "\tpython -m pytest",
+        "\t$(PYTHON) -m pytest",
         "audit:",
-        "\tpython -m news_scalping_lab.cli audit hardcoding",
-        "\tpython -m news_scalping_lab.cli audit provenance",
-        "\tpython -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24",
-        "\tpython -m news_scalping_lab.cli audit coverage",
-        "\tpython -m news_scalping_lab.cli brain audit",
+        "\t$(PYTHON) -m news_scalping_lab.cli audit hardcoding",
+        "\t$(PYTHON) -m news_scalping_lab.cli audit provenance",
+        "\t$(PYTHON) -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24",
+        "\t$(PYTHON) -m news_scalping_lab.cli audit coverage",
+        "\t$(PYTHON) -m news_scalping_lab.cli brain audit",
         "full-check:",
-        "\tpython -m news_scalping_lab.cli full-check",
+        "\t$(PYTHON) -m news_scalping_lab.cli full-check",
         "demo:",
-        "\tpython -m news_scalping_lab.cli demo",
+        "\t$(PYTHON) -m news_scalping_lab.cli demo",
     ]
 
     assert all(fragment in makefile for fragment in required_fragments)
