@@ -1,0 +1,19 @@
+{
+  "accepted_episode_count": 2,
+  "accepted_record_count": 0,
+  "audit_only_record_count": 0,
+  "available_record_count": 0,
+  "brain_version": "brain-9040eaf777",
+  "build_mode": "full",
+  "compiled_record_count": 0,
+  "coverage_complete": true,
+  "ineligible_record_count": 0,
+  "record_counts_by_evidence_phase": {},
+  "record_counts_by_training_target": {},
+  "record_counts_by_type": {},
+  "schema_version": "nslab.record_coverage_manifest.v1",
+  "swept_record_count": 0,
+  "swept_record_ids": [],
+  "training_eligible_available_record_count": 0,
+  "unswept_record_ids": []
+}

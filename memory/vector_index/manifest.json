@@ -4,6 +4,10 @@
     "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
     "EP-f56c790fe2fc": "c6fd6060d83590e0fe52fa5a2492283322cb9f9e4b2a88105262268cd55adbde"
   },
+  "brain_record_count": 0,
+  "brain_record_hashes": {},
+  "brain_records_file": "brain_records.jsonl",
+  "brain_records_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "dimensions": 32,
   "embedding_method": "deterministic_hashing_v1",
   "record_count": 2,

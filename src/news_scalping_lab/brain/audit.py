@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import (
+    BRAIN_FILES,
     current_brain_file_hashes,
     current_brain_version,
     expected_brain_version,
@@ -16,7 +17,7 @@ from news_scalping_lab.brain.compiler import (
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json
+from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json, sha256_text
 
 
 def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
@@ -41,6 +42,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     )
     record_audit = _audit_record_coverage(root)
     record_store_audit = audit_record_store(root, deep=deep)
+    diversity_audit = _audit_brain_diversity(root)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *claim_audit["claims_without_support"],
@@ -54,6 +56,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *determinism_audit["determinism_findings"],
         *record_audit["record_coverage_findings"],
         *record_store_audit["findings"],
+        *diversity_audit["brain_diversity_findings"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     return {
@@ -65,6 +68,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         **mechanism_audit,
         **determinism_audit,
         **record_audit,
+        **diversity_audit,
         "record_store_audit": record_store_audit,
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
@@ -74,6 +78,103 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "last_full_rebuild": (brain_manifest or coverage_manifest).get("last_full_rebuild_at")
         or (brain_manifest or coverage_manifest).get("created_at"),
     }
+
+
+def _audit_brain_diversity(root: Path) -> dict[str, Any]:
+    current_dir = root / "brain" / "current"
+    findings: list[str] = []
+    file_hashes: dict[str, str] = {}
+    body_hashes: dict[str, str] = {}
+    missing_files: list[str] = []
+    for file_name in BRAIN_FILES:
+        path = current_dir / file_name
+        if not path.exists():
+            missing_files.append(file_name)
+            continue
+        text = path.read_text(encoding="utf-8")
+        file_hashes[file_name] = file_sha256(path)
+        body_hashes[file_name] = _normalized_brain_body_hash(text)
+    for file_name in missing_files:
+        findings.append(f"brain category file missing: {file_name}")
+    identical_files = _duplicate_hash_groups(file_hashes)
+    for group in identical_files:
+        findings.append("brain category files are byte-identical: " + ", ".join(group))
+    identical_bodies = _duplicate_hash_groups(body_hashes)
+    for group in identical_bodies:
+        findings.append(
+            "brain category files differ only by title or metadata: " + ", ".join(group)
+        )
+    llm_manifest = _read_llm_compile_manifest(root)
+    category_type_distribution = _category_record_type_distribution(root, llm_manifest)
+    return {
+        "brain_diversity_findings": findings,
+        "brain_category_file_count": len(file_hashes),
+        "brain_category_missing_files": missing_files,
+        "brain_category_source_record_types": category_type_distribution,
+        "brain_category_files_identical": identical_files,
+        "brain_category_bodies_identical": identical_bodies,
+    }
+
+
+def _read_llm_compile_manifest(root: Path) -> dict[str, Any]:
+    path = root / "brain" / "current" / "llm_compile_manifest.json"
+    if not path.exists():
+        return {}
+    payload = read_json(path)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _category_record_type_distribution(
+    root: Path,
+    llm_manifest: dict[str, Any],
+) -> dict[str, dict[str, int]]:
+    categories = llm_manifest.get("categories")
+    if not isinstance(categories, list):
+        return {}
+    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+    distribution: dict[str, dict[str, int]] = {}
+    for category in categories:
+        if not isinstance(category, dict):
+            continue
+        category_name = category.get("category")
+        record_ids = category.get("source_record_ids")
+        if not isinstance(category_name, str) or not isinstance(record_ids, list):
+            continue
+        counts: dict[str, int] = {}
+        for record_id in record_ids:
+            if not isinstance(record_id, str):
+                continue
+            record = records_by_id.get(record_id)
+            record_type = record.record_type if record is not None else "UNKNOWN_RECORD"
+            counts[record_type] = counts.get(record_type, 0) + 1
+        distribution[category_name] = dict(sorted(counts.items()))
+    return distribution
+
+
+def _duplicate_hash_groups(hashes: dict[str, str]) -> list[list[str]]:
+    groups: dict[str, list[str]] = {}
+    for file_name, digest in hashes.items():
+        groups.setdefault(digest, []).append(file_name)
+    return [sorted(names) for names in groups.values() if len(names) > 1]
+
+
+def _normalized_brain_body_hash(text: str) -> str:
+    ignored_prefixes = (
+        "# ",
+        "Brain version:",
+        "Build mode:",
+        "Provider:",
+        "Model:",
+        "Category:",
+        "Source record count:",
+        "Accepted episodes covered:",
+    )
+    body = "\n".join(
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.startswith(ignored_prefixes)
+    )
+    return sha256_text(body)
 
 
 def _audit_deterministic_brain_state(

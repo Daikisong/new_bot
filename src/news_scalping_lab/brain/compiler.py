@@ -53,6 +53,7 @@ BRAIN_FILES = [
 ]
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
+CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v3"
 LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v2"
 LLM_FULL_RECORD_SHARD_SIZE = 50
 
@@ -699,15 +700,16 @@ class BrainCompiler:
             f"Category: `{category}`",
             "",
             "This file stores abstract mechanisms and cautions. It is not a keyword map, ticker list, or score table.",
+            f"Evidence focus: {_category_focus(category)}",
             "",
         ]
         if not category_claims:
             lines.extend(
                 [
-                    "No category-specific claims are available yet.",
+                    f"No category-specific claims are available yet for `{category}`.",
                     (
                         "Daily analysis must still run open-world reasoning from current news "
-                        "and web/company verification."
+                        f"and web/company verification before applying `{category}` patterns."
                     ),
                 ]
             )
@@ -790,6 +792,7 @@ def _deterministic_brain_version(
 ) -> str:
     payload = {
         "brain_files": BRAIN_FILES,
+        "compiler_version": CATALOG_COMPILER_VERSION,
         "covered_episode_ids": covered_episode_ids,
         "shard_episode_count": max(1, shard_episode_count),
         "source_hashes": source_hashes,
@@ -1057,6 +1060,21 @@ def _brain_category(file_name: str) -> str:
     return "world_model"
 
 
+def _category_focus(category: str) -> str:
+    focuses = {
+        "world_model": "global mechanisms, temporal boundaries, and cross-category cautions",
+        "single_event": "direct event response patterns and issuer-day evidence",
+        "theme_formation": "multi-name narrative formation and breadth conditions",
+        "beneficiary_discovery": "indirect beneficiary discovery paths and verification gaps",
+        "leader_selection": "leader preference evidence, ranking misses, and near ties",
+        "continuation": "continuation setups that remain blind-safe without D-day prices",
+        "failure_modes": "candidate generation, ranking, disposition, and entity-resolution errors",
+        "counterexamples": "negative controls, near misses, and disconfirming boundaries",
+        "market_memory": "reusable memory claims, mechanisms, and company-memory deltas",
+    }
+    return focuses.get(category, "category-specific evidence and boundaries")
+
+
 def _claims_for_category(
     claims: list[MemoryClaim],
     category: str,
@@ -1082,7 +1100,7 @@ def _claims_for_category(
             for needle in needles
         )
     ]
-    return selected or claims[: min(5, len(claims))]
+    return selected
 
 
 def _record_claim_statement(record: BrainRecordEnvelope) -> str:
