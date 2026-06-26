@@ -1,0 +1,123 @@
+{
+  "created_at": "2026-06-26T12:28:22.222727+09:00",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "findings": [
+    {
+      "candidate_names": [
+        "SINGLE_EVENT_DISCOVERY_REQUIRED"
+      ],
+      "d_minus_one_market_data_only": false,
+      "evidence_source_ids": [],
+      "hypothesis": "Mock single event route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+      "investigation_questions": [
+        "Which listed entities match the single event route?",
+        "What cutoff-safe evidence would disconfirm directness or novelty?"
+      ],
+      "memory_episode_ids": [],
+      "path": "SINGLE_EVENT",
+      "related_cluster_ids": [
+        "EVCL-7ccea9c45a7a",
+        "EVCL-d3de6b6483c0",
+        "EVCL-3ccba715b9f6"
+      ],
+      "requires_web_company_discovery": true,
+      "sector_hypotheses": [
+        "single event sector hypothesis"
+      ],
+      "uncertainties": [
+        "requires candidate-specific web verification"
+      ]
+    },
+    {
+      "candidate_names": [
+        "THEME_FORMATION_DISCOVERY_REQUIRED"
+      ],
+      "d_minus_one_market_data_only": false,
+      "evidence_source_ids": [],
+      "hypothesis": "Mock theme formation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+      "investigation_questions": [
+        "Which listed entities match the theme formation route?",
+        "What cutoff-safe evidence would disconfirm directness or novelty?"
+      ],
+      "memory_episode_ids": [],
+      "path": "THEME_FORMATION",
+      "related_cluster_ids": [
+        "EVCL-7ccea9c45a7a",
+        "EVCL-d3de6b6483c0",
+        "EVCL-3ccba715b9f6"
+      ],
+      "requires_web_company_discovery": true,
+      "sector_hypotheses": [
+        "theme formation sector hypothesis"
+      ],
+      "uncertainties": [
+        "requires candidate-specific web verification"
+      ]
+    },
+    {
+      "candidate_names": [
+        "BENEFICIARY_DISCOVERY_DISCOVERY_REQUIRED"
+      ],
+      "d_minus_one_market_data_only": false,
+      "evidence_source_ids": [],
+      "hypothesis": "Mock beneficiary discovery route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+      "investigation_questions": [
+        "Which listed entities match the beneficiary discovery route?",
+        "What cutoff-safe evidence would disconfirm directness or novelty?"
+      ],
+      "memory_episode_ids": [],
+      "path": "BENEFICIARY_DISCOVERY",
+      "related_cluster_ids": [
+        "EVCL-7ccea9c45a7a",
+        "EVCL-d3de6b6483c0",
+        "EVCL-3ccba715b9f6"
+      ],
+      "requires_web_company_discovery": true,
+      "sector_hypotheses": [
+        "beneficiary discovery sector hypothesis"
+      ],
+      "uncertainties": [
+        "requires candidate-specific web verification"
+      ]
+    },
+    {
+      "candidate_names": [
+        "CONTINUATION_DISCOVERY_REQUIRED"
+      ],
+      "d_minus_one_market_data_only": true,
+      "evidence_source_ids": [],
+      "hypothesis": "Mock continuation route derived from broad catalyst -> direct beneficiary check -> indirect capacity path.",
+      "investigation_questions": [
+        "Which listed entities match the continuation route?",
+        "What cutoff-safe evidence would disconfirm directness or novelty?"
+      ],
+      "memory_episode_ids": [],
+      "path": "CONTINUATION",
+      "related_cluster_ids": [
+        "EVCL-7ccea9c45a7a",
+        "EVCL-d3de6b6483c0",
+        "EVCL-3ccba715b9f6"
+      ],
+      "requires_web_company_discovery": false,
+      "sector_hypotheses": [
+        "continuation sector hypothesis"
+      ],
+      "uncertainties": [
+        "requires candidate-specific web verification"
+      ]
+    }
+  ],
+  "notes": [
+    "Mock structured candidate expansion review."
+  ],
+  "prompt_sha256": "4fff46cb5668ba2dc64705f167be9aa063a39d6d89678f3d4c3366d9ea4d185b",
+  "prompt_version": "candidate_expansion.v1",
+  "required_paths": [
+    "SINGLE_EVENT",
+    "THEME_FORMATION",
+    "BENEFICIARY_DISCOVERY",
+    "CONTINUATION"
+  ],
+  "run_id": "RUN-116b51828c12",
+  "schema_version": "nslab.candidate_expansion.v1"
+}

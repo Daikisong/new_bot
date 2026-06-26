@@ -1,0 +1,850 @@
+{
+  "candidate_count": 7,
+  "candidate_findings": [
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 1,
+      "company_name": "넥스턴앤롤코리아",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "SINGLE_EVENT",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 2,
+      "company_name": "꼭승리한다홍명보호",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "SINGLE_EVENT",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 3,
+      "company_name": "제노코",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "SINGLE_EVENT",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 4,
+      "company_name": "삼성",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "SINGLE_EVENT",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 5,
+      "company_name": "오창테크노폴리스",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "not listed",
+        "cutoff-after source only",
+        "D-1 price action already fully reflected the event",
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "listing status may be unverified",
+        "event may be stale or economically indirect",
+        "ticker or listing status is unverified"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "SINGLE_EVENT",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "news://EVT-f0c638120ffc"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 6,
+      "company_name": "BENEFICIARY_DISCOVERY_REQUIRED",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "theme breadth may fail",
+        "indirect relation may be too weak",
+        "ticker or listing status is unverified",
+        "direct evidence is weak or absent",
+        "candidate depends on indirect path reasoning"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "THEME_BENEFICIARY",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    },
+    {
+      "attack_checks": [
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "good_company_news_not_limit_up_language",
+          "objection": "Mock red-team required check: good_company_news_not_limit_up_language",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "novelty_not_recycled",
+          "objection": "Mock red-team required check: novelty_not_recycled",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "economic_amount_attributable_to_listed_company",
+          "objection": "Mock red-team required check: economic_amount_attributable_to_listed_company",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "weak_stage_mou_planned_prototype",
+          "objection": "Mock red-team required check: weak_stage_mou_planned_prototype",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "already_pre_absorbed",
+          "objection": "Mock red-team required check: already_pre_absorbed",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "market_cap_float_liquidity_drag",
+          "objection": "Mock red-team required check: market_cap_float_liquidity_drag",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "dilution_or_financing_risk",
+          "objection": "Mock red-team required check: dilution_or_financing_risk",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "forced_indirect_relation",
+          "objection": "Mock red-team required check: forced_indirect_relation",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "market_memory_relation_currently_broken",
+          "objection": "Mock red-team required check: market_memory_relation_currently_broken",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        },
+        {
+          "evidence_source_ids": [
+            "price://blind-safe-d-minus-one"
+          ],
+          "name": "purer_same_theme_leader_exists",
+          "objection": "Mock red-team required check: purer_same_theme_leader_exists",
+          "passed_to_synthesis": true,
+          "status": "needs_synthesis_review"
+        }
+      ],
+      "attack_summary": "Mock red-team review retained the candidate and passed objections forward.",
+      "candidate_rank": 7,
+      "company_name": "D_MINUS_ONE_LEADER_REVIEW",
+      "contrary_evidence": [],
+      "disconfirming_conditions": [
+        "only cutoff-after evidence is available",
+        "D-1 and earlier market action already reflected the catalyst"
+      ],
+      "objections": [
+        "already exhausted",
+        "no current catalyst overlap",
+        "ticker or listing status is unverified",
+        "direct evidence is weak or absent",
+        "candidate depends on indirect path reasoning"
+      ],
+      "passed_to_synthesis": true,
+      "path_type": "CONTINUATION",
+      "ticker": "UNKNOWN",
+      "verification_questions": [
+        "Is the candidate a listed security with a current tradable ticker?",
+        "Is the catalyst economically attributable to this listed entity?",
+        "Was the catalyst already absorbed by D-1 and earlier market data?"
+      ]
+    }
+  ],
+  "created_at": "2026-06-26T12:28:22.262748+09:00",
+  "notes": [
+    "Mock structured red-team pass."
+  ],
+  "prompt_sha256": "2df373940711145a728cac086e2b7581fa25bfd5149496640a1ce557d098296d",
+  "prompt_version": "red_team.candidate_attack.v2",
+  "required_attack_checks": [
+    "good_company_news_not_limit_up_language",
+    "novelty_not_recycled",
+    "economic_amount_attributable_to_listed_company",
+    "weak_stage_mou_planned_prototype",
+    "already_pre_absorbed",
+    "market_cap_float_liquidity_drag",
+    "dilution_or_financing_risk",
+    "forced_indirect_relation",
+    "market_memory_relation_currently_broken",
+    "purer_same_theme_leader_exists"
+  ],
+  "run_id": "RUN-116b51828c12",
+  "schema_version": "nslab.red_team_artifact.v1",
+  "source_prediction_id": "PRED-d1617f5efb36"
+}

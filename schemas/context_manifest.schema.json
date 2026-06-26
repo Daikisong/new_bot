@@ -279,6 +279,11 @@
       "title": "Counterexample Episode Ids",
       "type": "array"
     },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
     "cutoff_at": {
       "format": "date-time",
       "title": "Cutoff At",
@@ -919,6 +924,13 @@
       "default": 0,
       "title": "Total Accepted Episode Count",
       "type": "integer"
+    },
+    "total_accepted_episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Total Accepted Episode Ids",
+      "type": "array"
     },
     "trade_date": {
       "format": "date",

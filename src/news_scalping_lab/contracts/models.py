@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from news_scalping_lab.utils import now_kst
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(
@@ -563,6 +565,7 @@ class ContextManifest(StrictModel):
     trade_date: date
     cutoff_at: datetime
     as_of: datetime
+    created_at: datetime = Field(default_factory=now_kst)
     news_file: str | None = None
     news_sha256: str | None = None
     news_window_start_at: datetime | None = None
@@ -592,6 +595,7 @@ class ContextManifest(StrictModel):
     shard_brain_file_hashes: dict[str, str] = Field(default_factory=dict)
     accepted_episode_count: int
     total_accepted_episode_count: int = 0
+    total_accepted_episode_ids: list[str] = Field(default_factory=list)
     available_episode_count: int = 0
     unavailable_episode_count: int = 0
     unavailable_episode_ids: list[str] = Field(default_factory=list)

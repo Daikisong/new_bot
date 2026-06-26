@@ -218,6 +218,14 @@ def _demo_steps(
             "brain update",
             [python, "-m", "news_scalping_lab.cli", "brain", "update", "--episode", trade_date],
         ),
+        ("warehouse rebuild after update", [python, "-m", "news_scalping_lab.cli", "warehouse", "rebuild"]),
+        ("training export-sft", [python, "-m", "news_scalping_lab.cli", "training", "export-sft"]),
+        (
+            "training export-preference",
+            [python, "-m", "news_scalping_lab.cli", "training", "export-preference"],
+        ),
+        ("training export-evals", [python, "-m", "news_scalping_lab.cli", "training", "export-evals"]),
+        ("brain audit after update", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
     )
 
 

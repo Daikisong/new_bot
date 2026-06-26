@@ -29,6 +29,7 @@ from news_scalping_lab.utils import (
     default_news_window_start,
     file_sha256,
     is_available_as_of,
+    now_kst,
     stable_id,
     write_json,
 )
@@ -78,6 +79,7 @@ class ContextAssembler:
             if not is_available_as_of(episode.available_from, cutoff_at)
         ]
         accepted_ids = [episode.episode_id for episode in accepted]
+        all_accepted_ids = [episode.episode_id for episode in all_accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
         retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
@@ -119,6 +121,7 @@ class ContextAssembler:
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             as_of=cutoff_at,
+            created_at=now_kst(),
             news_window_start_at=default_news_window_start(trade_date),
             news_window_end_at=cutoff_at,
             brain_version=brain_context.brain_version,
@@ -128,6 +131,7 @@ class ContextAssembler:
             shard_brain_file_hashes=brain_context.shard_brain_file_hashes,
             accepted_episode_count=len(accepted_ids),
             total_accepted_episode_count=len(all_accepted),
+            total_accepted_episode_ids=all_accepted_ids,
             available_episode_count=len(accepted_ids),
             unavailable_episode_count=len(unavailable_ids),
             unavailable_episode_ids=unavailable_ids,

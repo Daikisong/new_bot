@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,8 @@ def inspect_manifest_episode_scope(root: Path, manifest: dict[str, Any]) -> dict
         "expected_available_episode_count": None,
         "expected_unavailable_episode_count": None,
         "expected_unavailable_episode_ids": [],
+        "expected_total_accepted_episode_ids": [],
+        "uses_total_accepted_episode_ids": False,
         "errors": [],
     }
     if not status["configured"]:
@@ -43,7 +46,38 @@ def inspect_manifest_episode_scope(root: Path, manifest: dict[str, Any]) -> dict
         return status
     status["cutoff_at_valid"] = True
 
-    accepted = ResearchStore(root).list_accepted()
+    current_accepted = ResearchStore(root).list_accepted()
+    accepted_by_id = {episode.episode_id: episode for episode in current_accepted}
+    current_total_accepted = len(current_accepted)
+    scope_created_at = _manifest_created_at(manifest)
+    scoped_episode_ids = _scoped_episode_ids(manifest)
+    if "total_accepted_episode_ids" in manifest and scoped_episode_ids is None:
+        status["errors"].append("total_accepted_episode_ids_invalid")
+        scoped_episode_ids = []
+    if scoped_episode_ids is None:
+        accepted = current_accepted
+        if scope_created_at is not None:
+            accepted = [
+                episode
+                for episode in accepted
+                if is_available_as_of(episode.created_at, scope_created_at)
+            ]
+    else:
+        status["uses_total_accepted_episode_ids"] = True
+        if len(set(scoped_episode_ids)) != len(scoped_episode_ids):
+            status["errors"].append("total_accepted_episode_ids_duplicate")
+        missing_ids = [
+            episode_id
+            for episode_id in scoped_episode_ids
+            if episode_id not in accepted_by_id
+        ]
+        if missing_ids:
+            status["errors"].append("total_accepted_episode_ids_missing")
+        accepted = [
+            accepted_by_id[episode_id]
+            for episode_id in scoped_episode_ids
+            if episode_id in accepted_by_id
+        ]
     available_ids = [
         episode.episode_id
         for episode in accepted
@@ -63,6 +97,11 @@ def inspect_manifest_episode_scope(root: Path, manifest: dict[str, Any]) -> dict
             "expected_available_episode_count": expected_available,
             "expected_unavailable_episode_count": expected_unavailable,
             "expected_unavailable_episode_ids": unavailable_ids,
+            "expected_total_accepted_episode_ids": [
+                episode.episode_id for episode in accepted
+            ],
+            "current_total_accepted_episode_count": current_total_accepted,
+            "scope_created_at": scope_created_at.isoformat() if scope_created_at else None,
         }
     )
 
@@ -146,6 +185,22 @@ def _verify_count(
 
 def _non_bool_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _manifest_created_at(manifest: dict[str, Any]) -> datetime | None:
+    raw = manifest.get("created_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return parse_datetime(raw)
+    except ValueError:
+        return None
+
+
+def _scoped_episode_ids(manifest: dict[str, Any]) -> list[str] | None:
+    if "total_accepted_episode_ids" not in manifest:
+        return None
+    return _string_list_or_none(manifest.get("total_accepted_episode_ids"))
 
 
 def _string_list_or_none(value: object) -> list[str] | None:

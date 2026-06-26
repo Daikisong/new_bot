@@ -1,0 +1,51 @@
+{
+  "created_at": "2026-06-26T12:28:22.169664+09:00",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "notes": [
+    "Mock structured semantic retrieval plan."
+  ],
+  "prompt_sha256": "384243ba3002e9cd768d14966695881ca4ed04946df914c6229b164c7426f131",
+  "prompt_version": "semantic_retrieval_plan.v1",
+  "queries": [
+    {
+      "category": "positive_analogs",
+      "query": "positive analogs structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    },
+    {
+      "category": "negative_analogs",
+      "query": "negative analogs structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    },
+    {
+      "category": "near_misses",
+      "query": "near misses structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    },
+    {
+      "category": "counterexamples",
+      "query": "counterexamples structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    },
+    {
+      "category": "leader_selection_cases",
+      "query": "leader selection cases structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    },
+    {
+      "category": "theme_formation_failures",
+      "query": "theme formation failures structural analogs broad catalyst -> direct beneficiary check -> indirect capacity path current evidence -> market narrative expansion -> leader selection uncertainty",
+      "rationale": "Mock LLM covers required semantic retrieval category."
+    }
+  ],
+  "required_categories": [
+    "positive_analogs",
+    "negative_analogs",
+    "near_misses",
+    "counterexamples",
+    "leader_selection_cases",
+    "theme_formation_failures"
+  ],
+  "run_id": "RUN-116b51828c12",
+  "schema_version": "nslab.semantic_retrieval_plan.v1"
+}

@@ -8,6 +8,7 @@ import pytest
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.assembler import ContextAssembler
+from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
@@ -112,11 +113,13 @@ def test_context_run_id_changes_when_available_research_changes(tmp_path) -> Non
     assert before.run_id != after.run_id
     assert before.accepted_episode_count == 0
     assert before.total_accepted_episode_count == 0
+    assert before.total_accepted_episode_ids == []
     assert before.available_episode_count == 0
     assert before.unavailable_episode_count == 0
     assert before.unavailable_episode_ids == []
     assert after.accepted_episode_count == 1
     assert after.total_accepted_episode_count == 1
+    assert after.total_accepted_episode_ids == ["EP-available"]
     assert after.available_episode_count == 1
     assert after.unavailable_episode_count == 0
     assert after.unavailable_episode_ids == []
@@ -145,10 +148,65 @@ def test_context_run_id_changes_when_available_research_changes(tmp_path) -> Non
     assert with_unavailable.run_id == after.run_id
     assert with_unavailable.accepted_episode_count == 1
     assert with_unavailable.total_accepted_episode_count == 2
+    assert with_unavailable.total_accepted_episode_ids == [
+        "EP-available",
+        "EP-future",
+    ]
     assert with_unavailable.available_episode_count == 1
     assert with_unavailable.unavailable_episode_count == 1
     assert with_unavailable.unavailable_episode_ids == ["EP-future"]
     assert with_unavailable.swept_episode_ids == ["EP-available"]
+
+
+def test_context_episode_scope_uses_manifest_episode_id_snapshot(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    store = ResearchStore(tmp_path)
+    available = ResearchEpisode(
+        episode_id="EP-available",
+        trade_date=date(2030, 1, 9),
+        cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Available lesson."),
+        available_from=datetime(2030, 1, 10, 8, 30, 0, tzinfo=KST),
+    )
+    later_postmortem = ResearchEpisode(
+        episode_id="EP-later-postmortem",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="test",
+        price_source_snapshot={"source": "test"},
+        blind_analysis=BlindAnalysis(summary="Later postmortem."),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    for episode in (available, later_postmortem):
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+
+    scope = inspect_manifest_episode_scope(
+        tmp_path,
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "cutoff_at": cutoff_at.isoformat(),
+            "accepted_episode_count": 1,
+            "total_accepted_episode_count": 1,
+            "total_accepted_episode_ids": ["EP-available"],
+            "available_episode_count": 1,
+            "unavailable_episode_count": 0,
+            "unavailable_episode_ids": [],
+        },
+    )
+
+    assert scope["passed"] is True
+    assert scope["uses_total_accepted_episode_ids"] is True
+    assert scope["current_total_accepted_episode_count"] == 2
+    assert scope["expected_total_accepted_episode_count"] == 1
+    assert scope["expected_total_accepted_episode_ids"] == ["EP-available"]
 
 
 def test_context_assembler_filters_future_and_unknown_retrieved_episode_ids(

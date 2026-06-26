@@ -602,6 +602,26 @@ def test_demo_cli_runs_configured_steps(
     assert '"passed": true' in result.output
 
 
+def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
+    steps = cli_module._demo_steps(
+        news=Path("docs/csv/news_20260624.csv"),
+        trade_date="2026-06-24",
+        cutoff="2026-06-24T08:59:59+09:00",
+        mode="exhaustive",
+        web_search=True,
+    )
+    step_names = [name for name, command in steps]
+
+    assert step_names[-5:] == [
+        "warehouse rebuild after update",
+        "training export-sft",
+        "training export-preference",
+        "training export-evals",
+        "brain audit after update",
+    ]
+    assert step_names.index("brain update") < step_names.index("training export-sft")
+
+
 def test_demo_cli_stops_on_first_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

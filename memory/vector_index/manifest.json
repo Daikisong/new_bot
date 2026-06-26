@@ -1,12 +1,13 @@
 {
-  "accepted_episode_count": 1,
+  "accepted_episode_count": 2,
   "accepted_hashes": {
+    "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
     "EP-f56c790fe2fc": "c6fd6060d83590e0fe52fa5a2492283322cb9f9e4b2a88105262268cd55adbde"
   },
   "dimensions": 32,
   "embedding_method": "deterministic_hashing_v1",
-  "record_count": 1,
+  "record_count": 2,
   "records_file": "episodes.jsonl",
-  "records_sha256": "f587cb9d3d5b03d3805f602ae15ab9861077ab1f2e54623fce4cbac7fcb10b99",
+  "records_sha256": "cfa601b6f4b968ea24faed2e2213f6a41a2471a15a8d7c7b3bd6604c720eeb2f",
   "schema_version": "nslab.local_vector_index.v1"
 }

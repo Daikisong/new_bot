@@ -1,0 +1,13 @@
+{
+  "accepted_episode_count": 0,
+  "as_of_cutoff_at": "2026-06-24T08:59:59+09:00",
+  "brain_version": "brain-asof-d1bb3cda5c",
+  "build_mode": "asof_context",
+  "coverage_complete": true,
+  "covered_episode_count": 0,
+  "covered_episode_ids": [],
+  "created_at": "2026-06-24T08:59:59+09:00",
+  "last_full_rebuild_at": null,
+  "missing_episode_ids": [],
+  "updated_episode_id": null
+}
