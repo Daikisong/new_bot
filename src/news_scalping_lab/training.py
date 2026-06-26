@@ -105,6 +105,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         manifests[kind] = manifest
         summaries[kind] = _training_manifest_summary(manifest)
         _audit_source_hash_contract(kind, manifest, findings)
+        _audit_weight_validation_contract(kind, manifest, findings)
         source_record_ids.update(_source_record_ids_from_manifest(manifest))
         training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
         output_file = manifest.get("output_file")
@@ -192,6 +193,30 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 summaries,
                 "counts_by_training_target",
             ),
+            "duplicate_issuer_day_count": _max_int(
+                summaries,
+                "duplicate_issuer_day_count",
+            ),
+            "duplicate_issuer_day_keys": _merged_string_lists(
+                summaries,
+                "duplicate_issuer_day_keys",
+            ),
+            "issuer_day_weight_sum_mismatch_count": _max_int(
+                summaries,
+                "issuer_day_weight_sum_mismatch_count",
+            ),
+            "issuer_day_weight_sum_mismatches": _merge_numeric_maps(
+                summaries,
+                "issuer_day_weight_sum_mismatches",
+            ),
+            "direct_event_weight_sum_mismatch_count": _max_int(
+                summaries,
+                "direct_event_weight_sum_mismatch_count",
+            ),
+            "direct_event_weight_sum_mismatches": _merge_numeric_maps(
+                summaries,
+                "direct_event_weight_sum_mismatches",
+            ),
             "weight_validation_statuses": {
                 kind: summary.get("weight_validation_status")
                 for kind, summary in sorted(summaries.items())
@@ -236,6 +261,23 @@ def _audit_source_hash_contract(
             f"{kind}: source_record_hashes count {len(hashes)} does not match "
             f"source_record_count {expected_count}"
         )
+
+
+def _audit_weight_validation_contract(
+    kind: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if manifest.get("source_mode") != "brain_records":
+        return
+    validation = manifest.get("weight_validation")
+    if not isinstance(validation, dict):
+        findings.append(f"{kind}: weight_validation is missing")
+        return
+    expected_fields = _weight_validation_manifest_fields(validation)
+    for field, expected_value in expected_fields.items():
+        if manifest.get(field) != expected_value:
+            findings.append(f"{kind}: {field} does not match weight_validation")
 
 
 def _source_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
@@ -295,6 +337,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     skipped = [] if records else _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
     skipped_records = _skipped_records(kind, records) if records else []
     weight_validation = _record_weight_validation(records) if records else {}
+    weight_validation_fields = _weight_validation_manifest_fields(weight_validation)
     path = target_dir / f"{kind}.jsonl"
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
@@ -364,7 +407,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "source_phase_counts": _source_phase_counts(rows),
             "counts_by_record_type": _record_type_counts(records),
             "counts_by_training_target": _record_training_target_counts(records),
-            "weight_validation_status": weight_validation.get("status"),
+            **weight_validation_fields,
             "weight_validation": weight_validation,
             "notes": [
                 (
@@ -409,6 +452,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "skipped_record_count": len(skipped_records),
             "counts_by_record_type": _record_type_counts(records),
             "counts_by_training_target": _record_training_target_counts(records),
+            **weight_validation_fields,
             "weight_validation": weight_validation,
             "output_file": _project_relative_path(root, path),
         },
@@ -417,6 +461,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
 
 
 def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
+    weight_fields = _weight_validation_summary_fields(manifest)
     return {
         "kind": manifest.get("kind"),
         "source_mode": manifest.get("source_mode"),
@@ -436,7 +481,7 @@ def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "source_hashes": _string_map(manifest.get("source_hashes")),
         "source_record_hashes": _string_map(manifest.get("source_record_hashes")),
         "source_record_hash_count": len(_string_map(manifest.get("source_record_hashes"))),
-        "weight_validation_status": manifest.get("weight_validation_status"),
+        **weight_fields,
         "output_file": manifest.get("output_file"),
     }
 
@@ -512,6 +557,81 @@ def _merge_string_maps(
         if isinstance(value, dict):
             merged.update(_string_map(value))
     return dict(sorted(merged.items()))
+
+
+def _merge_numeric_maps(
+    summaries: dict[str, dict[str, Any]],
+    key: str,
+) -> dict[str, float]:
+    merged: dict[str, float] = {}
+    for summary in summaries.values():
+        value = summary.get(key)
+        if isinstance(value, dict):
+            merged.update(_numeric_map(value))
+    return dict(sorted(merged.items()))
+
+
+def _merged_string_lists(
+    summaries: dict[str, dict[str, Any]],
+    key: str,
+) -> list[str]:
+    values: set[str] = set()
+    for summary in summaries.values():
+        raw = summary.get(key)
+        if isinstance(raw, list):
+            values.update(item for item in raw if isinstance(item, str))
+    return sorted(values)
+
+
+def _numeric_map(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        item_key: float(item_value)
+        for item_key, item_value in sorted(value.items())
+        if isinstance(item_key, str)
+        and isinstance(item_value, int | float)
+        and not isinstance(item_value, bool)
+    }
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _weight_validation_manifest_fields(
+    weight_validation: dict[str, Any],
+) -> dict[str, Any]:
+    duplicate_keys = _string_list(weight_validation.get("duplicate_issuer_day_keys"))
+    issuer_mismatches = _numeric_map(
+        weight_validation.get("issuer_day_weight_sum_mismatches")
+    )
+    direct_mismatches = _numeric_map(
+        weight_validation.get("direct_event_weight_sum_mismatches")
+    )
+    duplicate_count = weight_validation.get("duplicate_issuer_day_count")
+    if not isinstance(duplicate_count, int) or isinstance(duplicate_count, bool):
+        duplicate_count = len(duplicate_keys)
+    return {
+        "weight_validation_status": weight_validation.get("status"),
+        "duplicate_issuer_day_count": duplicate_count,
+        "duplicate_issuer_day_keys": duplicate_keys,
+        "issuer_day_weight_sum_mismatch_count": len(issuer_mismatches),
+        "issuer_day_weight_sum_mismatches": issuer_mismatches,
+        "direct_event_weight_sum_mismatch_count": len(direct_mismatches),
+        "direct_event_weight_sum_mismatches": direct_mismatches,
+    }
+
+
+def _weight_validation_summary_fields(manifest: dict[str, Any]) -> dict[str, Any]:
+    validation = manifest.get("weight_validation")
+    fallback = _weight_validation_manifest_fields(validation if isinstance(validation, dict) else {})
+    return {
+        field: manifest.get(field, fallback_value)
+        for field, fallback_value in fallback.items()
+    }
 
 
 def _project_relative_path(root: Path, path: Path) -> str:

@@ -1397,11 +1397,22 @@ def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     audit = audit_training_exports(tmp_path)
 
     assert manifest["weight_validation_status"] == "failed"
+    assert manifest["duplicate_issuer_day_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatch_count"] == 1
+    assert manifest["issuer_day_weight_sum_mismatches"] == {
+        "2030-01-10|000001": 0.5
+    }
+    assert manifest["direct_event_weight_sum_mismatch_count"] == 0
     assert manifest["weight_validation"]["issuer_day_weight_sum_mismatches"] == {
         "2030-01-10|000001": 0.5
     }
     assert audit["passed"] is False
     assert "sft: record weight validation failed" in audit["findings"]
+    training_report = _read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["issuer_day_weight_sum_mismatch_count"] == 1
+    assert training_report["issuer_day_weight_sum_mismatches"] == {
+        "2030-01-10|000001": 0.5
+    }
 
 
 def test_training_audit_rejects_direct_event_weight_sum_mismatch(
@@ -1427,11 +1438,22 @@ def test_training_audit_rejects_direct_event_weight_sum_mismatch(
     audit = audit_training_exports(tmp_path)
 
     assert manifest["weight_validation_status"] == "failed"
+    assert manifest["duplicate_issuer_day_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
+    assert manifest["direct_event_weight_sum_mismatch_count"] == 1
+    assert manifest["direct_event_weight_sum_mismatches"] == {
+        "20300110:000001": 0.5
+    }
     assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {
         "20300110:000001": 0.5
     }
     assert audit["passed"] is False
     assert "sft: record weight validation failed" in audit["findings"]
+    training_report = _read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["direct_event_weight_sum_mismatch_count"] == 1
+    assert training_report["direct_event_weight_sum_mismatches"] == {
+        "20300110:000001": 0.5
+    }
 
 
 def test_versioned_bundle_can_stage_records_until_accepted(tmp_path: Path) -> None:

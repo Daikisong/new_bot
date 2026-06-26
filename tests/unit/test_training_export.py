@@ -427,10 +427,22 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
         [record.model_dump(mode="json") for record in records],
     )
 
-    export_training(tmp_path, kind="sft")
-    export_training(tmp_path, kind="preference")
-    export_training(tmp_path, kind="evals")
+    sft = export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    evals = export_training(tmp_path, kind="evals")
     assert audit_training_exports(tmp_path)["passed"] is True
+
+    sft_manifest = read_json(sft.manifest_path)
+    preference_manifest = read_json(preference.manifest_path)
+    evals_manifest = read_json(evals.manifest_path)
+    for manifest in (sft_manifest, preference_manifest, evals_manifest):
+        assert manifest["weight_validation_status"] == "passed"
+        assert manifest["duplicate_issuer_day_count"] == 0
+        assert manifest["duplicate_issuer_day_keys"] == []
+        assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
+        assert manifest["issuer_day_weight_sum_mismatches"] == {}
+        assert manifest["direct_event_weight_sum_mismatch_count"] == 0
+        assert manifest["direct_event_weight_sum_mismatches"] == {}
 
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["source_record_count"] == 3
@@ -456,6 +468,79 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
         "BRAIN-PAIR",
     ]
     assert training_report["unique_skipped_record_ids"] == ["BRAIN-MEMORY"]
+    assert training_report["weight_validation_statuses"] == {
+        "evals": "passed",
+        "preference": "passed",
+        "sft": "passed",
+    }
+    assert training_report["duplicate_issuer_day_count"] == 0
+    assert training_report["duplicate_issuer_day_keys"] == []
+    assert training_report["issuer_day_weight_sum_mismatch_count"] == 0
+    assert training_report["issuer_day_weight_sum_mismatches"] == {}
+    assert training_report["direct_event_weight_sum_mismatch_count"] == 0
+    assert training_report["direct_event_weight_sum_mismatches"] == {}
+
+
+def test_training_manifest_surfaces_duplicate_issuer_day_weight_validation(
+    tmp_path,
+) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER-A",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-A",
+                "ticker": "111111",
+                "sample_weight": 0.5,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-ISSUER-B",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-B",
+                "ticker": "111111",
+                "sample_weight": 0.5,
+                "response_class": "failed_follow_through",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    manifest = read_json(sft.manifest_path)
+    audit = audit_training_exports(tmp_path)
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+
+    assert manifest["weight_validation_status"] == "failed"
+    assert manifest["duplicate_issuer_day_count"] == 1
+    assert manifest["duplicate_issuer_day_keys"] == ["2030-01-10|111111"]
+    assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatches"] == {}
+    assert manifest["direct_event_weight_sum_mismatch_count"] == 0
+    assert manifest["direct_event_weight_sum_mismatches"] == {}
+    assert manifest["weight_validation"]["duplicate_issuer_day_count"] == 1
+    assert audit["passed"] is False
+    assert "sft: record weight validation failed" in audit["findings"]
+    assert training_report["duplicate_issuer_day_count"] == 1
+    assert training_report["duplicate_issuer_day_keys"] == ["2030-01-10|111111"]
+    assert training_report["issuer_day_weight_sum_mismatch_count"] == 0
+    assert training_report["direct_event_weight_sum_mismatch_count"] == 0
 
 
 def test_training_audit_requires_brain_record_source_hashes(tmp_path) -> None:
