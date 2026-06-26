@@ -132,6 +132,9 @@ def production_readiness_report(
         findings.append("records: record coverage manifest is missing")
     elif record_coverage.get("coverage_complete") is not True:
         findings.append("records: record coverage is incomplete")
+    warehouse = _production_warehouse_status(report.get("warehouse"))
+    if warehouse["passed"] is not True:
+        findings.extend(f"warehouse: {finding}" for finding in warehouse["findings"])
     vector_index = report.get("vector_index")
     semantic_index = _production_semantic_index_status(
         vector_index,
@@ -151,6 +154,7 @@ def production_readiness_report(
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
         "llm_full_brain": llm_full_brain,
+        "warehouse": warehouse,
         "semantic_index": semantic_index,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
@@ -547,6 +551,51 @@ def _production_semantic_index_status(
         "expected_source_record_count": expected_source_record_count,
         "source_brain_record_count": source_brain_record_count,
         "indexed_brain_record_count": indexed_brain_record_count,
+    }
+
+
+def _production_warehouse_status(warehouse: object) -> dict[str, Any]:
+    if not isinstance(warehouse, dict):
+        return {
+            "schema_version": "nslab.production_warehouse.v1",
+            "applicable": False,
+            "passed": True,
+            "status": "not_applicable",
+            "finding_count": 0,
+            "findings": [],
+        }
+    findings: list[str] = []
+    if warehouse.get("status") != "ok":
+        findings.append("warehouse status is not ok")
+    if warehouse.get("required_files_present") is not True:
+        findings.append("required warehouse projections are missing or unreadable")
+    if warehouse.get("synced") is not True:
+        findings.append("research episode projection is not synced")
+    if warehouse.get("projection_synced") is not True:
+        findings.append("record-level projections are not synced")
+    for field_name, finding in (
+        ("count_mismatches", "projection counts mismatch source data"),
+        ("identity_mismatches", "projection identities mismatch source data"),
+        ("duplicate_identities", "projection duplicate identities detected"),
+        ("weight_mismatches", "projection sample weight sums are invalid"),
+    ):
+        value = warehouse.get(field_name)
+        if isinstance(value, dict) and value:
+            findings.append(finding)
+    return {
+        "schema_version": "nslab.production_warehouse.v1",
+        "applicable": True,
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "required_files_present": warehouse.get("required_files_present"),
+        "synced": warehouse.get("synced"),
+        "projection_synced": warehouse.get("projection_synced"),
+        "count_mismatches": warehouse.get("count_mismatches", {}),
+        "identity_mismatches": warehouse.get("identity_mismatches", {}),
+        "duplicate_identities": warehouse.get("duplicate_identities", {}),
+        "weight_mismatches": warehouse.get("weight_mismatches", {}),
     }
 
 

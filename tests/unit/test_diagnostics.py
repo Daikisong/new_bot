@@ -380,6 +380,55 @@ def test_doctor_report_exposes_warehouse_duplicate_and_weight_details(
     )
 
 
+def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "warehouse": {
+            "status": "attention",
+            "required_files_present": True,
+            "synced": True,
+            "projection_synced": False,
+            "count_mismatches": {},
+            "identity_mismatches": {},
+            "duplicate_identities": {
+                "issuer_day_cases.parquet": ["2030-01-10|000001"]
+            },
+            "weight_mismatches": {
+                "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+            },
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["warehouse"]["passed"] is False
+    assert production["warehouse"]["duplicate_identities"] == {
+        "issuer_day_cases.parquet": ["2030-01-10|000001"]
+    }
+    assert production["warehouse"]["weight_mismatches"] == {
+        "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+    }
+    assert "warehouse: warehouse status is not ok" in production["findings"]
+    assert "warehouse: record-level projections are not synced" in production["findings"]
+    assert (
+        "warehouse: projection duplicate identities detected"
+        in production["findings"]
+    )
+    assert (
+        "warehouse: projection sample weight sums are invalid"
+        in production["findings"]
+    )
+
+
 def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
