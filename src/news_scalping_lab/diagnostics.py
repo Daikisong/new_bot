@@ -713,6 +713,7 @@ def _llm_full_brain_status(
         "model": compile_manifest.get("model")
         if isinstance(compile_manifest, dict)
         else None,
+        "configured_model": settings.llm.model,
         "brain_version": compile_manifest.get("brain_version")
         if isinstance(compile_manifest, dict)
         else None,
@@ -753,6 +754,8 @@ def _llm_full_brain_status(
             findings.append("llm-full compile provider does not match configured provider")
         if not isinstance(model, str) or not model or "mock" in model.lower():
             findings.append("llm-full compile model is missing or mock")
+        elif settings.llm.model and model.strip() != settings.llm.model.strip():
+            findings.append("llm-full compile model does not match configured model")
         manifest_brain_version = status["brain_version"]
         if (
             isinstance(current_brain_version, str)
