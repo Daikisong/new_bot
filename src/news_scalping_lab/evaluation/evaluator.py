@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
@@ -549,6 +550,60 @@ def _build_metrics(
         upper_limit_recall_at_20=_upper_limit_recall_at(
             ranked_outcomes, outcome_universe, 20
         ),
+        upper_limit_closed_recall_at_5=_label_recall_at(
+            ranked_outcomes,
+            outcome_universe,
+            5,
+            predicate=lambda outcome: outcome.upper_limit_closed is True,
+        ),
+        upper_limit_closed_recall_at_10=_label_recall_at(
+            ranked_outcomes,
+            outcome_universe,
+            10,
+            predicate=lambda outcome: outcome.upper_limit_closed is True,
+        ),
+        upper_limit_closed_recall_at_20=_label_recall_at(
+            ranked_outcomes,
+            outcome_universe,
+            20,
+            predicate=lambda outcome: outcome.upper_limit_closed is True,
+        ),
+        high_return_5pct_recall_at_5=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 5, threshold=5.0
+        ),
+        high_return_5pct_recall_at_10=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 10, threshold=5.0
+        ),
+        high_return_5pct_recall_at_20=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 20, threshold=5.0
+        ),
+        high_return_10pct_recall_at_5=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 5, threshold=10.0
+        ),
+        high_return_10pct_recall_at_10=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 10, threshold=10.0
+        ),
+        high_return_10pct_recall_at_20=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 20, threshold=10.0
+        ),
+        high_return_15pct_recall_at_5=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 5, threshold=15.0
+        ),
+        high_return_15pct_recall_at_10=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 10, threshold=15.0
+        ),
+        high_return_15pct_recall_at_20=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 20, threshold=15.0
+        ),
+        high_return_20pct_recall_at_5=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 5, threshold=20.0
+        ),
+        high_return_20pct_recall_at_10=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 10, threshold=20.0
+        ),
+        high_return_20pct_recall_at_20=_high_return_recall_at(
+            ranked_outcomes, outcome_universe, 20, threshold=20.0
+        ),
         recall_unavailable_reason=recall_unavailable_reason,
         precision_at_5=_rate(upper_limit_hits_at_5, min(5, candidate_count)),
         precision_at_10=_rate(upper_limit_hits_at_10, min(10, candidate_count)),
@@ -735,17 +790,52 @@ def _upper_limit_recall_at(
     outcome_universe: dict[str, OutcomeLabels] | None,
     limit: int,
 ) -> float | None:
+    return _label_recall_at(
+        ranked_outcomes,
+        outcome_universe,
+        limit,
+        predicate=lambda outcome: outcome.upper_limit_touched is True,
+    )
+
+
+def _label_recall_at(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    limit: int,
+    *,
+    predicate: Callable[[OutcomeLabels], bool],
+) -> float | None:
     if outcome_universe is None:
         return None
-    universe_tickers = _upper_limit_universe_tickers(outcome_universe)
+    universe_tickers = {
+        ticker for ticker, outcome in outcome_universe.items() if predicate(outcome)
+    }
     if not universe_tickers:
         return None
     predicted_tickers = {
         candidate.ticker
         for candidate, outcome in ranked_outcomes[:limit]
-        if outcome.upper_limit_touched and candidate.ticker in universe_tickers
+        if predicate(outcome) and candidate.ticker in universe_tickers
     }
     return len(predicted_tickers) / len(universe_tickers)
+
+
+def _high_return_recall_at(
+    ranked_outcomes: list[tuple[Candidate, OutcomeLabels]],
+    outcome_universe: dict[str, OutcomeLabels] | None,
+    limit: int,
+    *,
+    threshold: float,
+) -> float | None:
+    return _label_recall_at(
+        ranked_outcomes,
+        outcome_universe,
+        limit,
+        predicate=lambda outcome: (
+            outcome.intraday_high_return_pct is not None
+            and outcome.intraday_high_return_pct >= threshold
+        ),
+    )
 
 
 def _upper_limit_universe_tickers(outcome_universe: dict[str, OutcomeLabels]) -> set[str]:

@@ -92,9 +92,26 @@ class MetricsPriceSource:
 class UniverseMetricsPriceSource(MetricsPriceSource):
     def get_outcome_universe(self, *, trade_date: date) -> dict[str, OutcomeLabels]:
         return {
-            "T1": OutcomeLabels(upper_limit_touched=True, upper_limit_closed=True),
-            "T4": OutcomeLabels(upper_limit_touched=True, upper_limit_closed=False),
-            "T5": OutcomeLabels(upper_limit_touched=False, upper_limit_closed=False),
+            "T1": OutcomeLabels(
+                intraday_high_return_pct=29.0,
+                upper_limit_touched=True,
+                upper_limit_closed=True,
+            ),
+            "T2": OutcomeLabels(
+                intraday_high_return_pct=12.0,
+                upper_limit_touched=False,
+                upper_limit_closed=False,
+            ),
+            "T4": OutcomeLabels(
+                intraday_high_return_pct=18.0,
+                upper_limit_touched=True,
+                upper_limit_closed=False,
+            ),
+            "T5": OutcomeLabels(
+                intraday_high_return_pct=4.0,
+                upper_limit_touched=False,
+                upper_limit_closed=False,
+            ),
         }
 
 
@@ -321,6 +338,11 @@ def test_evaluate_writes_performance_metrics_without_faking_recall(tmp_path) -> 
     assert metrics["high_return_10pct_hit_rate"] == pytest.approx(2 / 3)
     assert metrics["high_return_15pct_hit_rate"] == pytest.approx(1 / 3)
     assert metrics["high_return_20pct_hit_rate"] == pytest.approx(1 / 3)
+    assert metrics["high_return_5pct_recall_at_5"] is None
+    assert metrics["high_return_10pct_recall_at_5"] is None
+    assert metrics["high_return_15pct_recall_at_5"] is None
+    assert metrics["high_return_20pct_recall_at_5"] is None
+    assert metrics["upper_limit_closed_recall_at_5"] is None
     assert metrics["upper_limit_touched_count"] == 1
     assert metrics["upper_limit_closed_count"] == 1
     assert metrics["upper_limit_recall_at_5"] is None
@@ -393,6 +415,21 @@ def test_evaluate_calculates_upper_limit_recall_when_universe_is_available(tmp_p
     assert metrics["upper_limit_recall_at_5"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_10"] == pytest.approx(0.5)
     assert metrics["upper_limit_recall_at_20"] == pytest.approx(0.5)
+    assert metrics["upper_limit_closed_recall_at_5"] == pytest.approx(1.0)
+    assert metrics["upper_limit_closed_recall_at_10"] == pytest.approx(1.0)
+    assert metrics["upper_limit_closed_recall_at_20"] == pytest.approx(1.0)
+    assert metrics["high_return_5pct_recall_at_5"] == pytest.approx(2 / 3)
+    assert metrics["high_return_5pct_recall_at_10"] == pytest.approx(2 / 3)
+    assert metrics["high_return_5pct_recall_at_20"] == pytest.approx(2 / 3)
+    assert metrics["high_return_10pct_recall_at_5"] == pytest.approx(2 / 3)
+    assert metrics["high_return_10pct_recall_at_10"] == pytest.approx(2 / 3)
+    assert metrics["high_return_10pct_recall_at_20"] == pytest.approx(2 / 3)
+    assert metrics["high_return_15pct_recall_at_5"] == pytest.approx(0.5)
+    assert metrics["high_return_15pct_recall_at_10"] == pytest.approx(0.5)
+    assert metrics["high_return_15pct_recall_at_20"] == pytest.approx(0.5)
+    assert metrics["high_return_20pct_recall_at_5"] == pytest.approx(1.0)
+    assert metrics["high_return_20pct_recall_at_10"] == pytest.approx(1.0)
+    assert metrics["high_return_20pct_recall_at_20"] == pytest.approx(1.0)
     assert metrics["single_event_recall"] == pytest.approx(0.5)
     assert metrics["theme_recall"] == pytest.approx(0.0)
     assert metrics["beneficiary_recall"] == pytest.approx(0.0)
