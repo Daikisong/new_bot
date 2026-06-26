@@ -9,7 +9,7 @@ import duckdb
 import pytest
 
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.records.store import BrainRecordStore
+from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.research_import.versioned_bundle import (
     VersionedBundleImportError,
     import_versioned_bundle,
@@ -189,6 +189,85 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert unknown.training_eligible is False
     assert (tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "original_bundle.md").exists()
     assert (tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl").exists()
+
+
+def test_record_store_deep_audit_validates_import_parity(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is True
+    assert audit["manifest_count_mismatch_episode_ids"] == []
+    assert audit["index_record_id_mismatch_episode_ids"] == []
+    assert audit["brain_delta_count_mismatch_episode_ids"] == []
+    assert audit["records_with_raw_payload_hash_mismatch"] == []
+    assert audit["eligible_records_with_unknown_provenance_sources"] == []
+
+
+def test_record_store_deep_audit_rejects_tampered_import_parity(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    manifest_path = tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json"
+    manifest = _read_json(manifest_path)
+    manifest["record_count"] = 999
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    index_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "normalized_episode_index.json"
+    )
+    index = _read_json(index_path)
+    index["source_ids"] = []
+    index_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+
+    record_path = tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl"
+    record_rows = _jsonl(record_path)
+    record_rows[1]["source_line"] = None
+    record_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in record_rows) + "\n",
+        encoding="utf-8",
+    )
+
+    raw_block_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "raw_blocks"
+        / "brain_delta.jsonl"
+    )
+    raw_rows = _jsonl(raw_block_path)
+    raw_rows[0]["company_name"] = "Tampered Issuer"
+    raw_block_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in raw_rows),
+        encoding="utf-8",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["manifest_count_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
+    assert audit["manifest_hash_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
+    assert audit["raw_block_hash_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
+    assert audit["records_with_raw_payload_hash_mismatch"] == ["BRAIN-SYNTH-ISSUER"]
+    assert audit["records_missing_source_line"] == ["BRAIN-SYNTH-PAIR"]
+    assert sorted(audit["eligible_records_with_unknown_provenance_sources"]) == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+    ]
 
 
 def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections import Counter
 from dataclasses import dataclass
@@ -296,6 +297,7 @@ class BrainRecordStore:
 def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
     store = BrainRecordStore(root)
     records = store.list_records()
+    records_by_episode = _records_by_episode(records)
     ids = [record.record_id for record in records]
     duplicate_ids = sorted(
         record_id for record_id, count in Counter(ids).items() if count > 1
@@ -316,6 +318,7 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         for record in records
         if record.training_eligible and not record.provenance_source_ids
     )
+    deep_result = _audit_deep_record_store(root, store, records_by_episode) if deep else {}
     findings = []
     if duplicate_ids:
         findings.append("record_id values are not globally unique")
@@ -325,6 +328,8 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         findings.append("record payload hashes do not match normalized payloads")
     if deep and missing_provenance:
         findings.append("eligible records are missing provenance_source_ids")
+    if deep:
+        findings.extend(deep_result["findings"])
     return {
         "schema_version": "nslab.record_store_audit.v1",
         "passed": not findings,
@@ -338,9 +343,316 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         "unknown_training_enabled_record_ids": unknown_training_enabled,
         "payload_hash_mismatch_record_ids": missing_payload_hashes,
         "eligible_records_without_provenance": missing_provenance,
+        **deep_result,
         "findings": findings,
         "stats": _record_stats(records),
     }
+
+
+def _audit_deep_record_store(
+    root: Path,
+    store: BrainRecordStore,
+    records_by_episode: dict[str, list[BrainRecordEnvelope]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "missing_record_manifest_episode_ids": [],
+        "manifest_count_mismatch_episode_ids": [],
+        "manifest_record_id_mismatch_episode_ids": [],
+        "manifest_training_eligible_mismatch_episode_ids": [],
+        "manifest_type_count_mismatch_episode_ids": [],
+        "manifest_hash_mismatch_episode_ids": [],
+        "missing_normalized_index_episode_ids": [],
+        "index_record_id_mismatch_episode_ids": [],
+        "index_training_eligible_mismatch_episode_ids": [],
+        "index_type_count_mismatch_episode_ids": [],
+        "missing_bundle_envelope_episode_ids": [],
+        "raw_block_hash_mismatch_episode_ids": [],
+        "brain_delta_count_mismatch_episode_ids": [],
+        "records_missing_source_block": [],
+        "records_missing_source_line": [],
+        "records_with_invalid_source_line": [],
+        "records_with_raw_payload_hash_mismatch": [],
+        "eligible_records_with_unknown_provenance_sources": [],
+        "records_with_naive_available_from": [],
+        "findings": [],
+    }
+    for episode_id, episode_records in sorted(records_by_episode.items()):
+        manifest_path = store.record_manifests_dir / f"{episode_id}.json"
+        manifest = _read_json_dict(manifest_path)
+        if manifest is None:
+            result["missing_record_manifest_episode_ids"].append(episode_id)
+        else:
+            _audit_record_manifest(
+                root=root,
+                episode_id=episode_id,
+                records=episode_records,
+                manifest=manifest,
+                result=result,
+            )
+
+        index_path = store.research_episodes_dir / episode_id / "normalized_episode_index.json"
+        index = _read_json_dict(index_path)
+        if index is None:
+            result["missing_normalized_index_episode_ids"].append(episode_id)
+            source_ids: set[str] = set()
+        else:
+            _audit_normalized_index(
+                episode_id=episode_id,
+                records=episode_records,
+                index=index,
+                result=result,
+            )
+            source_ids = _string_set(index.get("source_ids"))
+        _audit_provenance_source_closure(
+            records=episode_records,
+            source_ids=source_ids,
+            result=result,
+        )
+
+        envelope_path = store.research_episodes_dir / episode_id / "bundle_envelope.json"
+        envelope = _read_json_dict(envelope_path)
+        if envelope is None:
+            result["missing_bundle_envelope_episode_ids"].append(episode_id)
+            raw_block_paths: dict[str, str] = {}
+            allow_block_only_trace = False
+        else:
+            raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
+            allow_block_only_trace = _is_catalog_only_envelope(envelope)
+            _audit_raw_block_hashes(
+                root,
+                episode_id,
+                envelope,
+                result,
+                skip_catalog_only=allow_block_only_trace,
+            )
+            _audit_brain_delta_count(
+                root=root,
+                episode_id=episode_id,
+                records=episode_records,
+                envelope=envelope,
+                result=result,
+            )
+        _audit_record_source_lines(
+            root=root,
+            records=episode_records,
+            raw_block_paths=raw_block_paths,
+            allow_block_only_trace=allow_block_only_trace,
+            result=result,
+        )
+    _append_deep_findings(result)
+    return result
+
+
+def _audit_record_manifest(
+    *,
+    root: Path,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    manifest: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    record_ids = sorted(record.record_id for record in records)
+    if manifest.get("record_count") != len(records):
+        result["manifest_count_mismatch_episode_ids"].append(episode_id)
+    if sorted(_string_list(manifest.get("record_ids"))) != record_ids:
+        result["manifest_record_id_mismatch_episode_ids"].append(episode_id)
+    if manifest.get("training_eligible_record_count") != sum(
+        1 for record in records if record.training_eligible
+    ):
+        result["manifest_training_eligible_mismatch_episode_ids"].append(episode_id)
+    if _int_dict(manifest.get("record_counts_by_type")) != _type_counts(records):
+        result["manifest_type_count_mismatch_episode_ids"].append(episode_id)
+    records_file = manifest.get("records_file")
+    record_path = root / records_file if isinstance(records_file, str) else None
+    expected_hash = manifest.get("records_sha256")
+    if (
+        not isinstance(expected_hash, str)
+        or record_path is None
+        or not record_path.exists()
+        or sha256_text(record_path.read_text(encoding="utf-8")) != expected_hash
+    ):
+        result["manifest_hash_mismatch_episode_ids"].append(episode_id)
+
+
+def _audit_normalized_index(
+    *,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    index: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    if sorted(_string_list(index.get("record_ids"))) != sorted(
+        record.record_id for record in records
+    ):
+        result["index_record_id_mismatch_episode_ids"].append(episode_id)
+    if index.get("training_eligible_record_count") != sum(
+        1 for record in records if record.training_eligible
+    ):
+        result["index_training_eligible_mismatch_episode_ids"].append(episode_id)
+    if _int_dict(index.get("record_count_by_type")) != _type_counts(records):
+        result["index_type_count_mismatch_episode_ids"].append(episode_id)
+
+
+def _audit_provenance_source_closure(
+    *,
+    records: list[BrainRecordEnvelope],
+    source_ids: set[str],
+    result: dict[str, Any],
+) -> None:
+    for record in records:
+        if not record.training_eligible:
+            continue
+        missing = sorted(set(record.provenance_source_ids) - source_ids)
+        if missing:
+            result["eligible_records_with_unknown_provenance_sources"].append(
+                record.record_id
+            )
+
+
+def _audit_raw_block_hashes(
+    root: Path,
+    episode_id: str,
+    envelope: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    skip_catalog_only: bool,
+) -> None:
+    if skip_catalog_only:
+        return
+    raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
+    raw_block_hashes = _string_dict(envelope.get("raw_block_hashes"))
+    for block_name, expected_hash in raw_block_hashes.items():
+        relative_path = raw_block_paths.get(block_name)
+        if relative_path is None:
+            result["raw_block_hash_mismatch_episode_ids"].append(episode_id)
+            return
+        path = root / relative_path
+        if not path.exists() or sha256_text(path.read_text(encoding="utf-8")) != expected_hash:
+            result["raw_block_hash_mismatch_episode_ids"].append(episode_id)
+            return
+
+
+def _audit_brain_delta_count(
+    *,
+    root: Path,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    envelope: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
+    brain_delta_path = raw_block_paths.get("brain_delta.jsonl")
+    if brain_delta_path is None:
+        return
+    path = root / brain_delta_path
+    if not path.exists():
+        result["brain_delta_count_mismatch_episode_ids"].append(episode_id)
+        return
+    raw_count = len(_nonempty_lines(path.read_text(encoding="utf-8")))
+    source_count = sum(
+        1 for record in records if record.source_block == "brain_delta.jsonl"
+    )
+    expected_counts = _int_dict(envelope.get("raw_block_counts"))
+    if (
+        raw_count != source_count
+        or expected_counts.get("brain_delta.jsonl") != raw_count
+    ):
+        result["brain_delta_count_mismatch_episode_ids"].append(episode_id)
+
+
+def _audit_record_source_lines(
+    *,
+    root: Path,
+    records: list[BrainRecordEnvelope],
+    raw_block_paths: dict[str, str],
+    allow_block_only_trace: bool,
+    result: dict[str, Any],
+) -> None:
+    raw_block_cache: dict[str, list[str]] = {}
+    raw_text_cache: dict[str, str] = {}
+    for record in records:
+        if record.available_from.tzinfo is None:
+            result["records_with_naive_available_from"].append(record.record_id)
+        relative_path = raw_block_paths.get(record.source_block)
+        if relative_path is None:
+            result["records_missing_source_block"].append(record.record_id)
+            continue
+        path = root / relative_path
+        if not path.exists():
+            result["records_missing_source_block"].append(record.record_id)
+            continue
+        if record.source_line is None:
+            if allow_block_only_trace:
+                continue
+            raw_text = raw_text_cache.setdefault(
+                record.source_block,
+                path.read_text(encoding="utf-8"),
+            )
+            if sha256_text(raw_text) != record.raw_payload_sha256:
+                result["records_missing_source_line"].append(record.record_id)
+            continue
+        if record.source_line <= 0:
+            result["records_with_invalid_source_line"].append(record.record_id)
+            continue
+        lines = raw_block_cache.setdefault(
+            record.source_block,
+            _nonempty_lines(path.read_text(encoding="utf-8")),
+        )
+        line_index = record.source_line - 1
+        if line_index >= len(lines):
+            result["records_with_invalid_source_line"].append(record.record_id)
+            continue
+        try:
+            raw_payload = json.loads(lines[line_index])
+        except json.JSONDecodeError:
+            result["records_with_invalid_source_line"].append(record.record_id)
+            continue
+        if not isinstance(raw_payload, dict):
+            result["records_with_invalid_source_line"].append(record.record_id)
+            continue
+        raw_hash = sha256_text(json.dumps(raw_payload, ensure_ascii=False, sort_keys=True))
+        if raw_hash != record.raw_payload_sha256:
+            result["records_with_raw_payload_hash_mismatch"].append(record.record_id)
+
+
+def _append_deep_findings(result: dict[str, Any]) -> None:
+    finding_labels = {
+        "missing_record_manifest_episode_ids": "record manifest is missing",
+        "manifest_count_mismatch_episode_ids": "record manifest count does not match records",
+        "manifest_record_id_mismatch_episode_ids": "record manifest IDs do not match records",
+        "manifest_training_eligible_mismatch_episode_ids": (
+            "record manifest training eligible count does not match records"
+        ),
+        "manifest_type_count_mismatch_episode_ids": (
+            "record manifest type counts do not match records"
+        ),
+        "manifest_hash_mismatch_episode_ids": "record manifest records_sha256 mismatch",
+        "missing_normalized_index_episode_ids": "normalized episode index is missing",
+        "index_record_id_mismatch_episode_ids": "normalized episode index IDs do not match records",
+        "index_training_eligible_mismatch_episode_ids": (
+            "normalized episode index training eligible count does not match records"
+        ),
+        "index_type_count_mismatch_episode_ids": (
+            "normalized episode index type counts do not match records"
+        ),
+        "missing_bundle_envelope_episode_ids": "bundle envelope is missing",
+        "raw_block_hash_mismatch_episode_ids": "raw block hashes do not match bundle envelope",
+        "brain_delta_count_mismatch_episode_ids": (
+            "brain_delta raw count does not match normalized records"
+        ),
+        "records_missing_source_block": "records reference missing source blocks",
+        "records_missing_source_line": "records are missing source_line traceability",
+        "records_with_invalid_source_line": "records have invalid source_line references",
+        "records_with_raw_payload_hash_mismatch": "record raw payload hashes do not match source lines",
+        "eligible_records_with_unknown_provenance_sources": (
+            "eligible record provenance_source_ids are not closed by source ledger"
+        ),
+        "records_with_naive_available_from": "record available_from values are timezone-naive",
+    }
+    findings = result["findings"]
+    for key, label in finding_labels.items():
+        if result[key]:
+            findings.append(label)
 
 
 def _record_stats(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
@@ -360,6 +672,69 @@ def _record_stats(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
             sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
         ),
     }
+
+
+def _records_by_episode(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, list[BrainRecordEnvelope]]:
+    grouped: dict[str, list[BrainRecordEnvelope]] = {}
+    for record in records:
+        grouped.setdefault(record.episode_id, []).append(record)
+    return {
+        episode_id: sorted(items, key=lambda record: record.record_id)
+        for episode_id, items in grouped.items()
+    }
+
+
+def _read_json_dict(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    payload = read_json(path)
+    return payload if isinstance(payload, dict) else None
+
+
+def _type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
+    return dict(sorted(Counter(record.record_type for record in records).items()))
+
+
+def _int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): item
+        for key, item in value.items()
+        if isinstance(item, int) and not isinstance(item, bool)
+    }
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _string_set(value: object) -> set[str]:
+    return set(_string_list(value))
+
+
+def _string_dict(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, str)
+    }
+
+
+def _is_catalog_only_envelope(envelope: dict[str, Any]) -> bool:
+    import_status = envelope.get("import_status")
+    bundle_status = envelope.get("bundle_status")
+    return import_status == "catalog_only" or bundle_status == "LEGACY_ACCEPTED"
+
+
+def _nonempty_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.strip()]
 
 
 def _record_id_index(records: list[BrainRecordEnvelope]) -> dict[str, dict[str, str]]:
