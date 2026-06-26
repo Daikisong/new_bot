@@ -247,6 +247,102 @@ def test_evaluate_cli_reports_invalid_postmortem(
     assert "postmortem report must be a JSON object" in result.output
 
 
+def test_context_inspect_cli_reports_missing_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["context", "inspect", "RUN-missing"])
+
+    assert result.exit_code == 1
+    assert "context manifest not found" in result.output
+
+
+def test_context_inspect_cli_reports_invalid_manifest_object(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-bad.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["context", "inspect", "RUN-bad"])
+
+    assert result.exit_code == 1
+    assert "context manifest must be a JSON object" in result.output
+
+
+def test_context_export_session_pack_cli_reports_invalid_cutoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "context",
+            "export-session-pack",
+            "--news",
+            str(tmp_path / "news.csv"),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "not-a-timestamp",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "expected ISO timestamp" in result.output
+
+
+def test_context_export_session_pack_cli_reports_export_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_export(*args: object, **kwargs: object) -> Path:
+        raise ValueError("session pack failed: missing brain")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "export_session_pack", failing_export)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "context",
+            "export-session-pack",
+            "--news",
+            str(tmp_path / "news.csv"),
+            "--trade-date",
+            "2030-01-10",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "session pack failed: missing brain" in result.output
+
+
+def test_context_export_analysis_bundle_cli_reports_export_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_export(settings: Settings, *, run_id: str) -> Path:
+        raise FileNotFoundError(f"analysis bundle source not found: {run_id}")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "export_analysis_bundle", failing_export)
+
+    result = CliRunner().invoke(
+        app,
+        ["context", "export-analysis-bundle", "--run-id", "RUN-missing"],
+    )
+
+    assert result.exit_code == 1
+    assert "analysis bundle source not found: RUN-missing" in result.output
+
+
 def test_brain_rebuild_cli_passes_configured_shard_episode_count(
     tmp_path: Path,
     monkeypatch,

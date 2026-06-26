@@ -446,10 +446,15 @@ def context_inspect(
 ) -> None:
     settings = load_settings()
     path = settings.path("runs/manifests") / f"{run_id}.json"
-    manifest = read_json(path)
-    if not isinstance(manifest, dict):
-        raise typer.BadParameter("context manifest must be a JSON object")
-    inspection = _inspect_context_manifest(settings.project_root, path, manifest)
+    try:
+        if not path.exists():
+            raise FileNotFoundError(f"context manifest not found: {path}")
+        manifest = read_json(path)
+        if not isinstance(manifest, dict):
+            raise ValueError("context manifest must be a JSON object")
+        inspection = _inspect_context_manifest(settings.project_root, path, manifest)
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo({**manifest, "inspection": inspection})
     if strict and not inspection["reproducibility_checks_passed"]:
         raise typer.Exit(code=1)
@@ -5442,7 +5447,7 @@ def context_export_session_pack(
             settings,
             news_csv=news,
             trade_date=parsed_trade_date,
-            cutoff_at=parse_datetime(cutoff) if cutoff else None,
+            cutoff_at=_parse_cutoff(cutoff) if cutoff else None,
             mode=mode,
         )
     except (SessionPackBudgetExceededError, SessionPackFutureContextError) as exc:
@@ -5454,6 +5459,8 @@ def context_export_session_pack(
             }
         )
         raise typer.Exit(code=1) from exc
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo({"session_pack": output.as_posix()})
 
 
@@ -5463,8 +5470,7 @@ def context_export_analysis_bundle(run_id: Annotated[str, typer.Option("--run-id
     try:
         output = export_analysis_bundle(settings, run_id=run_id)
     except (FileNotFoundError, KeyError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
+        _exit_with_error(exc)
     _echo({"bundle": output.as_posix(), "run_id": run_id})
 
 
