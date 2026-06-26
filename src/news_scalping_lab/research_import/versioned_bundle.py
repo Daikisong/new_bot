@@ -32,7 +32,15 @@ from news_scalping_lab.records.store import (
     BrainRecordStoreConflictError,
     StoredBundleResult,
 )
-from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
+from news_scalping_lab.utils import (
+    KST,
+    as_kst,
+    canonical_json,
+    file_sha256,
+    parse_datetime,
+    sha256_text,
+    stable_id,
+)
 
 FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS = {
     "AFTER_CUTOFF_SOURCE",
@@ -130,6 +138,12 @@ class BaseBundleAdapter:
                 parsed.jsonl_blocks.get("source_ledger.jsonl", []),
             )
         )
+        invalid_company_memory_known_at_ids = (
+            _invalid_company_memory_delta_known_at_record_ids(records)
+        )
+        backdated_company_memory_known_at_ids = (
+            _backdated_company_memory_delta_known_at_record_ids(records)
+        )
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -204,6 +218,18 @@ class BaseBundleAdapter:
             "invalid_event_ticker_edge_source_ledger_cutoff_record_ids": (
                 invalid_edge_source_ledger_record_ids
             ),
+            "company_memory_delta_known_at_valid": (
+                not invalid_company_memory_known_at_ids
+            ),
+            "invalid_company_memory_delta_known_at_record_ids": (
+                invalid_company_memory_known_at_ids
+            ),
+            "company_memory_delta_known_at_not_backdated": (
+                not backdated_company_memory_known_at_ids
+            ),
+            "backdated_company_memory_delta_known_at_record_ids": (
+                backdated_company_memory_known_at_ids
+            ),
             "import_loss_audit_passed": import_loss_audit_passed,
             **import_loss_summary,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
@@ -225,6 +251,8 @@ class BaseBundleAdapter:
             and validation["typed_payload_valid"] is True
             and validation["event_ticker_edge_cutoff_provenance_valid"] is True
             and validation["event_ticker_edge_source_ledger_cutoff_valid"] is True
+            and validation["company_memory_delta_known_at_valid"] is True
+            and validation["company_memory_delta_known_at_not_backdated"] is True
             and validation["import_loss_audit_passed"] is True
         )
         return validation
@@ -1333,6 +1361,54 @@ def _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
             continue
         invalid.append(_record_identity(record, line_number))
     return invalid
+
+
+def _invalid_company_memory_delta_known_at_record_ids(
+    records: list[dict[str, Any]],
+) -> list[str]:
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        if record.get("record_type") != "company_memory_delta":
+            continue
+        raw_known_at = record.get("known_at")
+        if raw_known_at in (None, ""):
+            continue
+        known_at = _explicit_datetime(raw_known_at)
+        if known_at is None or known_at.tzinfo is None:
+            invalid.append(_record_identity(record, line_number))
+    return invalid
+
+
+def _backdated_company_memory_delta_known_at_record_ids(
+    records: list[dict[str, Any]],
+) -> list[str]:
+    backdated: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        if record.get("record_type") != "company_memory_delta":
+            continue
+        known_at = _explicit_datetime(record.get("known_at"))
+        available_from = _explicit_datetime(record.get("available_from"))
+        if (
+            known_at is None
+            or known_at.tzinfo is None
+            or available_from is None
+            or available_from.tzinfo is None
+        ):
+            continue
+        if as_kst(known_at) < as_kst(available_from):
+            backdated.append(_record_identity(record, line_number))
+    return backdated
+
+
+def _explicit_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _source_ledger_rows_by_id(

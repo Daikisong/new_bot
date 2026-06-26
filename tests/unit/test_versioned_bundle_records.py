@@ -183,6 +183,7 @@ def _synthetic_v11_bundle(
     event_edge_available_before_cutoff: bool = True,
     source_ledger_time_verified: bool = True,
     source_ledger_available_before_cutoff: bool = True,
+    company_memory_delta_known_at: str | None = None,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -324,7 +325,11 @@ def _synthetic_v11_bundle(
                 "trade_date": trade_day.isoformat(),
                 "available_from": available_from,
                 "training_target": "company_memory",
-                "known_at": available_from,
+                "known_at": (
+                    available_from
+                    if company_memory_delta_known_at is None
+                    else company_memory_delta_known_at
+                ),
                 "ticker": "000001",
                 "company_name": "Synthetic Issuer",
                 "aliases": ["Synthetic Issuer"],
@@ -1312,6 +1317,57 @@ def test_warehouse_rebuild_applies_company_memory_delta_records(
     }
     assert audit["warehouse_count_mismatches"] == {}
     assert audit["warehouse_identity_mismatches"] == {}
+
+
+def test_company_memory_delta_requires_timezone_known_at_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "naive_company_memory_delta_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_company_memory_delta=True,
+            company_memory_delta_known_at="2030-01-11T00:00:00",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"]["company_memory_delta_known_at_valid"] is False
+    assert inspection["validation"][
+        "invalid_company_memory_delta_known_at_record_ids"
+    ] == ["BRAIN-SYNTH-COMPANY"]
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_company_memory_delta_rejects_backdated_known_at_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "backdated_company_memory_delta_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_company_memory_delta=True,
+            company_memory_delta_known_at="2030-01-10T23:59:59+09:00",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"]["company_memory_delta_known_at_valid"] is True
+    assert inspection["validation"][
+        "company_memory_delta_known_at_not_backdated"
+    ] is False
+    assert inspection["validation"][
+        "backdated_company_memory_delta_known_at_record_ids"
+    ] == ["BRAIN-SYNTH-COMPANY"]
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
 
 
 def test_coverage_audit_rejects_record_projection_identity_mismatch(
