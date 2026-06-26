@@ -90,7 +90,7 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
         "Blind inference cannot use D-day prices or cutoff-after evidence.",
         "Exhaustive mode must include every accepted episode in the context manifest.",
         "nslab research import path/to/research.md",
-        "nslab brain rebuild --mode full",
+        "nslab brain rebuild --mode llm-full",
         "nslab analyze --news path/to/news.csv --trade-date YYYY-MM-DD",
         "nslab evaluate --trade-date YYYY-MM-DD",
         "nslab audit hardcoding",
@@ -100,7 +100,7 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
         "python -m mypy src/news_scalping_lab",
         "python -m pytest",
         "make full-check",
-        "If `brain audit` fails, run `nslab brain rebuild --mode full`.",
+        "If `brain audit` fails, run `nslab brain rebuild --mode llm-full`.",
         "If lookahead audit fails, inspect the manifest `price_snapshot.allowed_through`",
     ]
 

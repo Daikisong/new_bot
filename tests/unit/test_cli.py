@@ -666,7 +666,10 @@ def test_brain_rebuild_cli_passes_configured_shard_episode_count(
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
     monkeypatch.setattr(cli_module, "BrainCompiler", CapturingBrainCompiler)
 
-    result = CliRunner().invoke(app, ["brain", "rebuild", "--mode", "full"])
+    result = CliRunner().invoke(
+        app,
+        ["brain", "rebuild", "--mode", "catalog", "--allow-catalog"],
+    )
 
     assert result.exit_code == 0, result.output
     assert captured_counts == [3]
@@ -702,6 +705,17 @@ def test_brain_rebuild_cli_defaults_to_llm_full(
 
     assert result.exit_code == 0, result.output
     assert captured_modes == ["llm-full"]
+
+
+def test_brain_rebuild_cli_rejects_deprecated_full_mode(tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, ["brain", "rebuild", "--mode", "full"])
+
+    assert result.exit_code == 1
+    assert (
+        "deprecated full mode is catalog-only; use --mode catalog --allow-catalog"
+        in result.output
+    )
+    assert not (tmp_path / "brain").exists()
 
 
 def test_brain_rebuild_cli_reports_invalid_mode(
@@ -779,6 +793,19 @@ def test_brain_update_cli_defaults_to_llm_full(
 
     assert result.exit_code == 0, result.output
     assert captured_modes == ["EP-test:llm-full"]
+
+
+def test_brain_update_cli_rejects_deprecated_full_mode() -> None:
+    result = CliRunner().invoke(
+        app,
+        ["brain", "update", "--episode", "EP-test", "--mode", "full"],
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "deprecated full mode is catalog-only; use --mode catalog --allow-catalog"
+        in result.output
+    )
 
 
 def test_brain_diff_cli_reports_missing_snapshot(

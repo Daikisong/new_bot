@@ -123,6 +123,27 @@ WEB_SOURCE_REQUIRED_FIELDS = {
     "opened_text_sha256",
     "opened_text_excerpt",
 }
+
+
+def _validated_brain_cli_mode(
+    mode: str,
+    *,
+    allow_catalog: bool,
+    action: str,
+) -> str:
+    normalized = mode.strip().lower()
+    if normalized == "full":
+        typer.echo(
+            "deprecated full mode is catalog-only; use --mode catalog --allow-catalog",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    if normalized == "catalog" and not allow_catalog:
+        typer.echo(f"catalog {action} requires --allow-catalog", err=True)
+        raise typer.Exit(code=1)
+    return normalized
+
+
 EXCLUDED_WEB_SOURCE_REQUIRED_FIELDS = {
     "schema_version",
     "source_id",
@@ -801,9 +822,11 @@ def brain_rebuild(
     mode: Annotated[str, typer.Option("--mode")] = "llm-full",
     allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
 ) -> None:
-    if mode == "catalog" and not allow_catalog:
-        typer.echo("catalog rebuild requires --allow-catalog", err=True)
-        raise typer.Exit(code=1)
+    mode = _validated_brain_cli_mode(
+        mode,
+        allow_catalog=allow_catalog,
+        action="rebuild",
+    )
     settings = load_settings()
     try:
         manifest = BrainCompiler(
@@ -821,9 +844,11 @@ def brain_update(
     mode: Annotated[str, typer.Option("--mode")] = "llm-full",
     allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
 ) -> None:
-    if mode == "catalog" and not allow_catalog:
-        typer.echo("catalog update requires --allow-catalog", err=True)
-        raise typer.Exit(code=1)
+    mode = _validated_brain_cli_mode(
+        mode,
+        allow_catalog=allow_catalog,
+        action="update",
+    )
     settings = load_settings()
     try:
         manifest = BrainCompiler(

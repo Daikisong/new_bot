@@ -38,7 +38,7 @@ Import and accept research:
 nslab research import path/to/research.md
 nslab research validate <episode_id>
 nslab research accept <episode_id>
-nslab brain rebuild --mode full
+nslab brain rebuild --mode llm-full
 nslab brain audit
 ```
 
@@ -82,7 +82,7 @@ make full-check
 
 ## Recovery
 
-- If `brain audit` fails, run `nslab brain rebuild --mode full`.
+- If `brain audit` fails, run `nslab brain rebuild --mode llm-full`.
 - If exhaustive analysis reports coverage errors, check `research/accepted/` and `brain/current/coverage_manifest.json`.
 - If hardcoding audit fails, move domain knowledge out of source code and into research or memory data.
 - If lookahead audit fails, inspect the manifest `price_snapshot.allowed_through` and cutoff-after web exclusions.

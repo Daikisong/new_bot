@@ -26,6 +26,12 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
+SHARD_BRAIN_MISSING_MESSAGE = (
+    "No shard brain summaries are available. Run `nslab brain rebuild --mode llm-full` "
+    "for production, or `nslab brain rebuild --mode catalog --allow-catalog` for "
+    "offline catalog smoke.\n"
+)
+
 
 @dataclass(frozen=True)
 class TemporalMemoryContext:
@@ -103,7 +109,7 @@ def export_session_pack(
         settings.project_root,
         shard_brain_files,
         suffixes={".md"},
-        empty_message="No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n",
+        empty_message=SHARD_BRAIN_MISSING_MESSAGE,
     )
     brain_text = (
         f"{brain_text.rstrip()}\n\n# Shard Brain Summaries\n\n{shard_brain_text}".strip()
@@ -785,7 +791,7 @@ def _read_brain_files(path: Path, *, root: Path) -> tuple[str, list[str]]:
 
 def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[str, str]]:
     if not path.exists():
-        return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
+        return SHARD_BRAIN_MISSING_MESSAGE, [], {}
     chunks: list[str] = []
     files: list[str] = []
     hashes: dict[str, str] = {}
@@ -797,7 +803,7 @@ def _read_shard_brains(path: Path, *, root: Path) -> tuple[str, list[str], dict[
         hashes[relative_path] = file_sha256(file_path)
         chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
     if not chunks:
-        return "No shard brain summaries are available. Run `nslab brain rebuild --mode full`.\n", [], {}
+        return SHARD_BRAIN_MISSING_MESSAGE, [], {}
     return "\n".join(chunks).strip() + "\n", files, hashes
 
 

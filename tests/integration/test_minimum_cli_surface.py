@@ -82,7 +82,15 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
 
     first_update = RUNNER.invoke(
         app,
-        ["brain", "update", "--episode", "EP-cli-one", "--mode", "full"],
+        [
+            "brain",
+            "update",
+            "--episode",
+            "EP-cli-one",
+            "--mode",
+            "catalog",
+            "--allow-catalog",
+        ],
     )
     _assert_ok("brain update", first_update)
     first_version = json.loads(first_update.output)["brain_version"]
@@ -101,7 +109,10 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     batch_payload = json.loads(imported_batch.output)
     assert batch_payload["accepted_episode_ids"] == ["EP-cli-two"]
 
-    rebuilt = RUNNER.invoke(app, ["brain", "rebuild", "--mode", "full"])
+    rebuilt = RUNNER.invoke(
+        app,
+        ["brain", "rebuild", "--mode", "catalog", "--allow-catalog"],
+    )
     _assert_ok("brain rebuild", rebuilt)
     rebuilt_payload = json.loads(rebuilt.output)
     second_version = rebuilt_payload["brain_version"]
@@ -2241,7 +2252,15 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
 
     postmortem_update = RUNNER.invoke(
         app,
-        ["brain", "update", "--episode", "2030-01-12", "--mode", "full"],
+        [
+            "brain",
+            "update",
+            "--episode",
+            "2030-01-12",
+            "--mode",
+            "catalog",
+            "--allow-catalog",
+        ],
     )
     _assert_ok("brain update postmortem", postmortem_update)
     assert evaluation_episode_id in json.loads(postmortem_update.output)["covered_episode_ids"]

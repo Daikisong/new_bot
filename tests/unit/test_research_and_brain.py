@@ -337,7 +337,10 @@ def test_cli_import_batch_accepts_by_default_and_rebuilds_brain(
     ]
     assert imported_output["skipped_paths"] == []
 
-    rebuilt = RUNNER.invoke(app, ["brain", "rebuild", "--mode", "full"])
+    rebuilt = RUNNER.invoke(
+        app,
+        ["brain", "rebuild", "--mode", "catalog", "--allow-catalog"],
+    )
 
     assert rebuilt.exit_code == 0, rebuilt.output
     manifest = json.loads(rebuilt.output)
