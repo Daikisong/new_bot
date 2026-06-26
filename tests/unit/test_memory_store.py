@@ -88,6 +88,27 @@ def _store_retrieval_records(tmp_path) -> None:
             response_class="entity_misresolved",
             available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
         ),
+        _retrieval_record(
+            "BRAIN-REC-LEADER-PAIR",
+            record_type="blind_leader_preference_pair",
+            ticker="",
+            theme_id="",
+            response_class="",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+            payload_updates={
+                "company_name": None,
+                "path_type": None,
+                "blind_preferred_ticker": "000007",
+                "blind_rejected_ticker": "000008",
+                "outcome_winner_ticker": "000007",
+                "candidate_path_type": "continuation",
+                "D_outcome": {
+                    "ticker": "000007",
+                    "company_name_on_D": "Nested Winner Co",
+                    "response_class": "positive_high10",
+                },
+            },
+        ),
     ]
     raw_payload = "\n".join(record.model_dump_json() for record in records)
     raw_sha = sha256_text(raw_payload)
@@ -128,8 +149,9 @@ def _store_retrieval_records(tmp_path) -> None:
                 "candidate_ranking_error_case": 1,
                 "row_disposition_error_case": 1,
                 "entity_resolution_error_case": 1,
+                "blind_leader_preference_pair": 1,
             },
-            training_eligible_record_count=5,
+            training_eligible_record_count=6,
             source_ids=["SRC-RETRIEVAL"],
         ),
         records=records,
@@ -146,6 +168,7 @@ def _retrieval_record(
     theme_id: str,
     response_class: str,
     available_from: datetime,
+    payload_updates: dict[str, object] | None = None,
 ) -> BrainRecordEnvelope:
     payload = {
         "record_id": record_id,
@@ -161,6 +184,8 @@ def _retrieval_record(
         "path_type": "single_event",
         "response_class": response_class,
     }
+    if payload_updates:
+        payload.update(payload_updates)
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
@@ -305,6 +330,28 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
         "BRAIN-REC-ROW-ERROR",
         "BRAIN-REC-ENTITY-ERROR",
     }
+
+
+def test_record_retrieval_filters_alias_and_nested_payload_fields(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    memory.rebuild_index()
+
+    assert memory.search_records(
+        "unseen wording",
+        record_type="blind_leader_preference_pair",
+        ticker="000008",
+        path_type="continuation",
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-LEADER-PAIR"]
+    assert memory.search_records(
+        "unseen wording",
+        record_type="blind_leader_preference_pair",
+        ticker="000007",
+        company_name="Nested Winner Co",
+        response_class="positive_high10",
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-LEADER-PAIR"]
 
 
 def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:

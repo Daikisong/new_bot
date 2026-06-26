@@ -29,6 +29,81 @@ VECTOR_INDEX_RECORDS = "episodes.jsonl"
 VECTOR_INDEX_BRAIN_RECORDS = "brain_records.jsonl"
 VECTOR_INDEX_MANIFEST = "manifest.json"
 
+_FILTER_VALUE_KEYS = {
+    "ticker": "tickers",
+    "company_name": "company_names",
+    "theme_id": "theme_ids",
+    "path_type": "path_types",
+    "response_class": "response_classes",
+}
+
+_PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
+    "ticker": (
+        "ticker",
+        "candidate_ticker",
+        "blind_preferred_ticker",
+        "blind_rejected_ticker",
+        "outcome_winner_ticker",
+        "missed_ticker",
+        "corrected_ticker",
+        "issuer_ticker",
+    ),
+    "company_name": (
+        "company_name",
+        "candidate_company_name",
+        "missed_company_name",
+        "corrected_company_name",
+        "company_name_on_D",
+        "issuer_company_name",
+    ),
+    "theme_id": (
+        "theme_id",
+        "theme_ids",
+        "candidate_theme_id",
+        "missed_theme_id",
+        "corrected_theme_id",
+    ),
+    "path_type": (
+        "path_type",
+        "candidate_path_type",
+        "missed_path_type",
+        "corrected_path_type",
+    ),
+    "response_class": (
+        "response_class",
+        "candidate_response_class",
+        "blind_response_class",
+        "outcome_response_class",
+    ),
+}
+
+_PAYLOAD_NESTED_FILTER_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
+    "ticker": (
+        ("D_outcome", "ticker"),
+        ("D_outcome", "code"),
+        ("outcome", "ticker"),
+        ("outcome", "code"),
+        ("issuer_day_outcome", "ticker"),
+        ("issuer_day_outcome", "code"),
+    ),
+    "company_name": (
+        ("D_outcome", "company_name"),
+        ("D_outcome", "company_name_on_D"),
+        ("D_outcome", "name"),
+        ("outcome", "company_name"),
+        ("outcome", "company_name_on_D"),
+        ("outcome", "name"),
+        ("issuer_day_outcome", "company_name"),
+        ("issuer_day_outcome", "company_name_on_D"),
+        ("issuer_day_outcome", "name"),
+    ),
+    "response_class": (
+        ("D_outcome", "response_class"),
+        ("outcome", "response_class"),
+        ("issuer_day_outcome", "response_class"),
+    ),
+}
+
 
 class LocalRetrievalStore:
     def __init__(
@@ -123,14 +198,11 @@ class LocalRetrievalStore:
                 available_from is None
                 or _datetime_leq(str(record.get("available_from", "")), available_from)
             )
-            and (ticker is None or record.get("ticker") == ticker)
-            and (company_name is None or record.get("company_name") == company_name)
-            and (theme_id is None or record.get("theme_id") == theme_id)
-            and (path_type is None or record.get("path_type") == path_type)
-            and (
-                response_class is None
-                or record.get("response_class") == response_class
-            )
+            and _matches_index_filter(record, "ticker", ticker)
+            and _matches_index_filter(record, "company_name", company_name)
+            and _matches_index_filter(record, "theme_id", theme_id)
+            and _matches_index_filter(record, "path_type", path_type)
+            and _matches_index_filter(record, "response_class", response_class)
             and (
                 training_eligible is None
                 or record.get("training_eligible") is training_eligible
@@ -201,6 +273,7 @@ class LocalRetrievalStore:
         indexed_brain_records: list[dict[str, object]] = []
         for record, text, vector in zip(brain_records, record_texts, record_vectors, strict=True):
             payload = record.payload
+            filter_values = _brain_record_filter_values(payload)
             indexed_brain_records.append(
                 {
                     "record_id": record.record_id,
@@ -212,11 +285,16 @@ class LocalRetrievalStore:
                     "trade_date": record.trade_date.isoformat(),
                     "available_from": record.available_from.isoformat(),
                     "training_eligible": record.training_eligible,
-                    "ticker": payload.get("ticker"),
-                    "company_name": payload.get("company_name"),
-                    "theme_id": payload.get("theme_id"),
-                    "path_type": payload.get("path_type"),
-                    "response_class": payload.get("response_class"),
+                    "ticker": _first_filter_value(filter_values["ticker"]),
+                    "company_name": _first_filter_value(filter_values["company_name"]),
+                    "theme_id": _first_filter_value(filter_values["theme_id"]),
+                    "path_type": _first_filter_value(filter_values["path_type"]),
+                    "response_class": _first_filter_value(filter_values["response_class"]),
+                    "tickers": filter_values["ticker"],
+                    "company_names": filter_values["company_name"],
+                    "theme_ids": filter_values["theme_id"],
+                    "path_types": filter_values["path_type"],
+                    "response_classes": filter_values["response_class"],
                     "text_sha256": sha256_text(text),
                     "terms": sorted(text_terms(text)),
                     "embedding": vector,
@@ -524,6 +602,62 @@ def _matches_optional_string_filter(
     if isinstance(expected, str):
         return value == expected
     return isinstance(value, str) and value in expected
+
+
+def _brain_record_filter_values(payload: dict[str, Any]) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for field_name, aliases in _PAYLOAD_FILTER_ALIASES.items():
+        collected: list[str] = []
+        for alias in aliases:
+            collected.extend(_string_values(payload.get(alias)))
+        for parent_key, child_key in _PAYLOAD_NESTED_FILTER_ALIASES.get(field_name, ()):
+            parent = payload.get(parent_key)
+            if isinstance(parent, dict):
+                collected.extend(_string_values(parent.get(child_key)))
+        values[field_name] = _unique_strings(collected)
+    return values
+
+
+def _matches_index_filter(
+    record: dict[str, Any],
+    field_name: str,
+    expected: str | None,
+) -> bool:
+    if expected is None:
+        return True
+    value_key = _FILTER_VALUE_KEYS[field_name]
+    values = _string_values(record.get(field_name)) + _string_values(record.get(value_key))
+    return expected in set(values)
+
+
+def _first_filter_value(values: list[str]) -> str | None:
+    return values[0] if values else None
+
+
+def _string_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return [str(value)]
+    if isinstance(value, list | tuple | set):
+        values: list[str] = []
+        for item in value:
+            values.extend(_string_values(item))
+        return values
+    return []
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            unique.append(value)
+            seen.add(value)
+    return unique
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
