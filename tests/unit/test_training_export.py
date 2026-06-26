@@ -695,6 +695,55 @@ def test_training_audit_rejects_stale_brain_record_source_hashes(tmp_path) -> No
     assert training_report["record_store_source_record_count"] == 2
 
 
+def test_training_audit_rejects_skipped_brain_record_output_rows(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-MEMORY",
+            "memory_claim",
+            training_target="legacy_catalog_only",
+            training_eligible=False,
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    rows = _jsonl(sft.path)
+    rows[0]["record_id"] = "BRAIN-MEMORY"
+    _write_jsonl(sft.path, rows)
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in audit["findings"]
+    assert (
+        "sft: source brain records are neither exported nor skipped: BRAIN-ISSUER"
+        in audit["findings"]
+    )
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in training_report[
+        "findings"
+    ]
+
+
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:
     store = ResearchStore(tmp_path)
     episode = _accepted_episode()

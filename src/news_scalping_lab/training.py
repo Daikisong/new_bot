@@ -135,6 +135,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 findings=findings,
             )
             _audit_training_rows(kind, output_rows, findings)
+            _audit_record_export_scope(kind, manifest, output_rows, findings)
             row_record_ids = _record_ids_from_rows(output_rows)
             exported_record_ids.update(row_record_ids)
             training_eligible_record_ids.update(row_record_ids)
@@ -354,6 +355,19 @@ def _eligible_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
             if isinstance(record_id, str):
                 eligible_ids.add(record_id)
     return eligible_ids
+
+
+def _skipped_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    skipped_ids: set[str] = set()
+    skipped_records = manifest.get("skipped_records")
+    if isinstance(skipped_records, list):
+        for item in skipped_records:
+            if not isinstance(item, dict):
+                continue
+            record_id = item.get("record_id")
+            if isinstance(record_id, str) and record_id:
+                skipped_ids.add(record_id)
+    return skipped_ids
 
 
 def _record_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
@@ -797,6 +811,58 @@ def _audit_training_rows(
             findings.append(f"{kind}: POSTMORTEM row is marked blind-safe {example_id}")
         elif source_phase not in {"BLIND", "POSTMORTEM"}:
             findings.append(f"{kind}: row has invalid source_phase {example_id}")
+
+
+def _audit_record_export_scope(
+    kind: str,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    if manifest.get("source_mode") != "brain_records":
+        return
+    source_ids = _source_record_ids_from_manifest(manifest)
+    skipped_ids = _skipped_record_ids_from_manifest(manifest)
+    row_ids: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        record_id = row.get("record_id")
+        if not isinstance(record_id, str) or not record_id:
+            findings.append(f"{kind}: brain record export row {index} record_id is missing")
+            continue
+        row_ids.append(record_id)
+    row_id_set = set(row_ids)
+    duplicate_row_ids = sorted(
+        record_id for record_id, count in Counter(row_ids).items() if count > 1
+    )
+    unknown_row_ids = sorted(row_id_set - source_ids)
+    exported_skipped_ids = sorted(row_id_set & skipped_ids)
+    uncovered_ids = sorted(source_ids - row_id_set - skipped_ids)
+    skipped_unknown_ids = sorted(skipped_ids - source_ids)
+    if duplicate_row_ids:
+        findings.append(
+            f"{kind}: duplicate exported brain record IDs: "
+            f"{', '.join(duplicate_row_ids)}"
+        )
+    if unknown_row_ids:
+        findings.append(
+            f"{kind}: exported brain record IDs outside source manifest: "
+            f"{', '.join(unknown_row_ids)}"
+        )
+    if exported_skipped_ids:
+        findings.append(
+            f"{kind}: exported skipped brain record IDs: "
+            f"{', '.join(exported_skipped_ids)}"
+        )
+    if uncovered_ids:
+        findings.append(
+            f"{kind}: source brain records are neither exported nor skipped: "
+            f"{', '.join(uncovered_ids)}"
+        )
+    if skipped_unknown_ids:
+        findings.append(
+            f"{kind}: skipped brain record IDs outside source manifest: "
+            f"{', '.join(skipped_unknown_ids)}"
+        )
 
 
 def _audit_record_preference_rows(
