@@ -397,12 +397,22 @@ def import_versioned_bundle(
             validation={"passed": False, "quarantine": quarantine.as_posix()},
         )
     validation = adapter.validate(parsed)
-    if validate and validation.get("passed") is not True:
+    records = adapter.normalize_brain_records(parsed)
+    if validation.get("passed") is not True and (validate or accepted):
+        quarantine = _quarantine_validation_failure(
+            root=root,
+            path=path,
+            parsed=parsed,
+            adapter_name=adapter.name,
+            source_hash=source_hash,
+            validation=validation,
+            records=records,
+        )
         raise VersionedBundleImportError(
-            "bundle validation failed: "
+            "bundle validation failed; "
+            f"quarantined at {quarantine.as_posix()}: "
             + json.dumps(validation, ensure_ascii=False, sort_keys=True)
         )
-    records = adapter.normalize_brain_records(parsed)
     stored: StoredBundleResult = BrainRecordStore(root).store_bundle(
         source_path=path,
         envelope=adapter.envelope(parsed),
@@ -443,6 +453,50 @@ def import_versioned_bundle(
         manifest_path=stored.manifest_path,
         validation=validation,
     )
+
+
+def _quarantine_validation_failure(
+    *,
+    root: Path,
+    path: Path,
+    parsed: GenericParsedBundle,
+    adapter_name: str,
+    source_hash: str,
+    validation: dict[str, Any],
+    records: list[BrainRecordEnvelope],
+) -> Path:
+    episode_id = _episode_id(parsed)
+    quarantine = BrainRecordStore(root).quarantine_conflict(
+        source_path=path,
+        reason="BUNDLE_VALIDATION_FAILED",
+        episode_id=episode_id,
+        source_hash=source_hash,
+        metadata={
+            "adapter": adapter_name,
+            "bundle_schema_version": bundle_schema_version(parsed),
+            "validation": validation,
+        },
+    )
+    write_diagnostic_report(
+        root,
+        "bundle_import_report",
+        {
+            "status": "BUNDLE_VALIDATION_FAILED",
+            "adapter": adapter_name,
+            "bundle_version": bundle_schema_version(parsed),
+            "episode_id": episode_id,
+            "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
+            "normalized_record_count": len(records),
+            "training_eligible_record_count": sum(
+                1 for record in records if record.training_eligible
+            ),
+            "dropped_record_count": 0,
+            "quarantined_record_count": 1,
+            "quarantine": quarantine.as_posix(),
+            "validation": validation,
+        },
+    )
+    return quarantine
 
 
 def select_adapter(parsed: GenericParsedBundle) -> BundleVersionAdapter | None:

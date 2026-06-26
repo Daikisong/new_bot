@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, time
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.research_import.versioned_bundle import (
+    VersionedBundleImportError,
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
@@ -240,6 +243,43 @@ def test_versioned_bundle_can_stage_records_until_accepted(tmp_path: Path) -> No
     assert WarehouseStore(tmp_path).rebuild_all()["brain_records"] == 2
 
 
+def test_invalid_bundle_can_only_be_staged_not_accepted(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "bad_hash_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle_with_bad_brain_delta_hash(),
+        encoding="utf-8",
+    )
+
+    staged = import_versioned_bundle(
+        bundle,
+        root=tmp_path,
+        accepted=False,
+        validate=False,
+    )
+    assert staged.accepted is False
+    assert staged.validation["passed"] is False
+    assert len(BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")) == 2
+    assert BrainRecordStore(tmp_path).list_records() == []
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(
+            bundle,
+            root=tmp_path,
+            accepted=True,
+            validate=False,
+        )
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["raw_record_count"] == 2
+    assert report["normalized_record_count"] == 2
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_record_count"] == 1
+    assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
 def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -269,3 +309,12 @@ def _read_json(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
+
+
+def _synthetic_v11_bundle_with_bad_brain_delta_hash() -> str:
+    return re.sub(
+        r'("brain_delta\.jsonl": \{"sha256": ")[0-9a-f]{64}(")',
+        lambda match: match.group(1) + ("0" * 64) + match.group(2),
+        _synthetic_v11_bundle(include_unknown=False),
+        count=1,
+    )
