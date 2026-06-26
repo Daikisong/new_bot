@@ -85,6 +85,8 @@
 - records_with_raw_payload_hash_mismatch: `[]`
 - eligible_records_with_unknown_provenance_sources: `[]`
 - source_ledger_source_id_mismatch_episode_ids: `[]`
+- records_with_unknown_payload_references: `[]`
+- missing_payload_references: `[]`
 - records_with_naive_available_from: `[]`
 - findings: `[]`
 - stats: `{'record_count': 4, 'episode_count': 3, 'training_eligible_record_count': 2, 'record_counts_by_type': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 4}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 2}, 'record_counts_by_training_target': {'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 2}`

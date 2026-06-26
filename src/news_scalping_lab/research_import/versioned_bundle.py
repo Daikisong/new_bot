@@ -21,6 +21,10 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.reference_integrity import (
+    known_reference_ids_from_blocks,
+    payload_reference_audit,
+)
 from news_scalping_lab.records.store import BrainRecordStore, StoredBundleResult
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
 
@@ -92,6 +96,14 @@ class BaseBundleAdapter:
         records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
         source_ids = _source_ids(parsed)
         missing_source_refs = _missing_source_references(records, source_ids)
+        payload_reference_result = payload_reference_audit(
+            [
+                (_record_identity(record, line_number), record)
+                for line_number, record in enumerate(records, start=1)
+            ],
+            known_reference_ids_from_blocks(parsed.json_blocks, parsed.jsonl_blocks),
+        )
+        missing_payload_refs = payload_reference_result["missing_references"]
         invalid_available_from_fields = _invalid_bundle_available_from_fields(parsed)
         invalid_available_from_record_ids = _invalid_record_available_from_ids(records)
         invalid_label_quality_record_ids = _invalid_outcome_label_quality_record_ids(
@@ -141,6 +153,11 @@ class BaseBundleAdapter:
             ),
             "missing_source_references": missing_source_refs,
             "provenance_closure_status": "closed" if not missing_source_refs else "missing_refs",
+            "payload_reference_count": payload_reference_result["reference_count"],
+            "missing_payload_references": missing_payload_refs,
+            "payload_reference_closure_status": (
+                "closed" if not missing_payload_refs else "missing_refs"
+            ),
             "available_from_valid": (
                 not invalid_available_from_fields
                 and not invalid_available_from_record_ids
@@ -162,6 +179,7 @@ class BaseBundleAdapter:
             and not hash_mismatches
             and not hash_validation.expectation_conflicts
             and not missing_source_refs
+            and not missing_payload_refs
             and validation["available_from_valid"] is True
             and validation["outcome_label_quality_valid"] is True
         )
@@ -411,6 +429,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     hash_mismatches = validation.get("hash_mismatches")
     hash_conflicts = validation.get("hash_expectation_conflicts")
     missing_source_refs = validation.get("missing_source_references")
+    missing_payload_refs = validation.get("missing_payload_references")
     invalid_available_from_record_ids = validation.get("invalid_available_from_record_ids")
     invalid_label_quality_record_ids = validation.get(
         "invalid_outcome_label_quality_record_ids"
@@ -450,6 +469,9 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         ),
         "missing_source_reference_count": (
             len(missing_source_refs) if isinstance(missing_source_refs, list) else 0
+        ),
+        "missing_payload_reference_count": (
+            len(missing_payload_refs) if isinstance(missing_payload_refs, list) else 0
         ),
         "available_from_valid": validation.get("available_from_valid"),
         "invalid_available_from_record_count": (
@@ -1053,6 +1075,10 @@ def _missing_source_references(
             if source_id not in source_ids:
                 missing.add(source_id)
     return sorted(missing)
+
+
+def _record_identity(record: dict[str, Any], line_number: int) -> str:
+    return _optional_string(record.get("record_id")) or f"line:{line_number}"
 
 
 def _invalid_bundle_available_from_fields(parsed: GenericParsedBundle) -> list[str]:

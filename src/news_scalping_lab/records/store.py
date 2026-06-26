@@ -16,6 +16,10 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.reference_integrity import (
+    known_reference_ids_from_blocks,
+    payload_reference_audit,
+)
 from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text, write_json
 
 
@@ -493,6 +497,8 @@ def _audit_deep_record_store(
         "records_with_raw_payload_hash_mismatch": [],
         "eligible_records_with_unknown_provenance_sources": [],
         "source_ledger_source_id_mismatch_episode_ids": [],
+        "records_with_unknown_payload_references": [],
+        "missing_payload_references": [],
         "records_with_naive_available_from": [],
         "findings": [],
     }
@@ -571,6 +577,14 @@ def _audit_deep_record_store(
                 episode_id=episode_id,
                 raw_block_paths=raw_block_paths,
                 source_ids=source_ids,
+                skip_catalog_only=allow_block_only_trace,
+                result=result,
+            )
+            _audit_record_payload_reference_closure(
+                root=root,
+                episode_id=episode_id,
+                records=episode_records,
+                raw_block_paths=raw_block_paths,
                 skip_catalog_only=allow_block_only_trace,
                 result=result,
             )
@@ -686,6 +700,69 @@ def _audit_source_ledger_source_ids(
             ledger_ids.add(source_id)
     if ledger_ids != source_ids:
         result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
+
+
+def _audit_record_payload_reference_closure(
+    *,
+    root: Path,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    raw_block_paths: dict[str, str],
+    skip_catalog_only: bool,
+    result: dict[str, Any],
+) -> None:
+    if skip_catalog_only:
+        return
+    json_blocks, jsonl_blocks = _read_raw_block_payloads(root, raw_block_paths)
+    reference_result = payload_reference_audit(
+        [(record.record_id, record.payload) for record in records],
+        known_reference_ids_from_blocks(json_blocks, jsonl_blocks),
+    )
+    missing_references = reference_result["missing_references"]
+    if not missing_references:
+        return
+    for missing in missing_references:
+        result["missing_payload_references"].append(
+            {
+                "episode_id": episode_id,
+                **missing,
+            }
+        )
+        result["records_with_unknown_payload_references"].extend(
+            record_id
+            for record_id in missing["record_ids"]
+            if record_id not in result["records_with_unknown_payload_references"]
+        )
+
+
+def _read_raw_block_payloads(
+    root: Path,
+    raw_block_paths: dict[str, str],
+) -> tuple[dict[str, Any], dict[str, list[dict[str, Any]]]]:
+    json_blocks: dict[str, Any] = {}
+    jsonl_blocks: dict[str, list[dict[str, Any]]] = {}
+    for block_name, relative_path in raw_block_paths.items():
+        path = root / relative_path
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if block_name.endswith(".json"):
+            try:
+                json_blocks[block_name] = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+        elif block_name.endswith(".jsonl"):
+            rows: list[dict[str, Any]] = []
+            for line in _nonempty_lines(text):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    rows = []
+                    break
+                if isinstance(payload, dict):
+                    rows.append(payload)
+            jsonl_blocks[block_name] = rows
+    return json_blocks, jsonl_blocks
 
 
 def _audit_raw_block_hashes(
@@ -922,6 +999,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         ),
         "source_ledger_source_id_mismatch_episode_ids": (
             "source_ledger source IDs do not match normalized episode index"
+        ),
+        "records_with_unknown_payload_references": (
+            "record fact/inference/event references are not closed by source ledgers"
         ),
         "records_with_naive_available_from": "record available_from values are timezone-naive",
     }

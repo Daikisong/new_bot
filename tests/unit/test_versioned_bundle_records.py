@@ -41,6 +41,7 @@ def _synthetic_v11_bundle(
     include_event_edge: bool = False,
     include_error_correction: bool = False,
     include_company_memory_delta: bool = False,
+    source_event_ids: list[str] | None = None,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -200,12 +201,32 @@ def _synthetic_v11_bundle(
             }
         )
     brain_delta = "\n".join(json.dumps(row, ensure_ascii=False) for row in records)
-    source_ledger = json.dumps(
+    inferred_source_event_ids = sorted(
         {
-            "source_id": "SRC-SYNTH-1",
-            "source_type": "synthetic_fixture",
-            "title": "Synthetic source",
-        },
+            event_id
+            for record in records
+            for event_id in (
+                [record["event_id"]]
+                if isinstance(record.get("event_id"), str)
+                else record.get("event_ids", [])
+                if isinstance(record.get("event_ids"), list)
+                else []
+            )
+            if isinstance(event_id, str)
+        }
+    )
+    source_ledger_payload = {
+        "source_id": "SRC-SYNTH-1",
+        "source_type": "synthetic_fixture",
+        "title": "Synthetic source",
+    }
+    effective_source_event_ids = (
+        inferred_source_event_ids if source_event_ids is None else source_event_ids
+    )
+    if effective_source_event_ids:
+        source_ledger_payload["event_ids"] = effective_source_event_ids
+    source_ledger = json.dumps(
+        source_ledger_payload,
         ensure_ascii=False,
     )
     research_episode = json.dumps(
@@ -574,6 +595,99 @@ def test_record_store_deep_audit_rejects_source_ledger_source_id_gap(
     ]
     assert (
         "source_ledger source IDs do not match normalized episode index"
+        in audit["findings"]
+    )
+
+
+def test_missing_record_event_reference_blocks_acceptance(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "missing_event_reference_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_event_edge=True,
+            source_event_ids=[],
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert inspection["validation_passed"] is False
+    assert inspection["missing_payload_reference_count"] == 1
+    assert validation["payload_reference_closure_status"] == "missing_refs"
+    assert validation["missing_payload_references"] == [
+        {
+            "reference_type": "event",
+            "reference_id": "EVT-SYNTH-1",
+            "record_ids": ["BRAIN-SYNTH-EDGE"],
+        }
+    ]
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["validation"]["missing_payload_references"] == [
+        {
+            "reference_type": "event",
+            "reference_id": "EVT-SYNTH-1",
+            "record_ids": ["BRAIN-SYNTH-EDGE"],
+        }
+    ]
+
+
+def test_record_store_deep_audit_rejects_payload_reference_gap(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(include_unknown=False, include_event_edge=True),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    envelope_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "bundle_envelope.json"
+    )
+    envelope = _read_json(envelope_path)
+    source_ledger_path = tmp_path / envelope["raw_block_paths"]["source_ledger.jsonl"]
+    tampered_ledger = json.dumps(
+        {
+            "source_id": "SRC-SYNTH-1",
+            "source_type": "synthetic_fixture",
+            "title": "Synthetic source",
+        },
+        ensure_ascii=False,
+    )
+    source_ledger_path.write_text(tampered_ledger, encoding="utf-8")
+    envelope["raw_block_hashes"]["source_ledger.jsonl"] = sha256_text(tampered_ledger)
+    envelope_path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["raw_block_hash_mismatch_episode_ids"] == []
+    assert audit["source_ledger_source_id_mismatch_episode_ids"] == []
+    assert audit["records_with_unknown_payload_references"] == ["BRAIN-SYNTH-EDGE"]
+    assert audit["missing_payload_references"] == [
+        {
+            "episode_id": "NSLAB-20300110-SYNTH",
+            "reference_type": "event",
+            "reference_id": "EVT-SYNTH-1",
+            "record_ids": ["BRAIN-SYNTH-EDGE"],
+        }
+    ]
+    assert (
+        "record fact/inference/event references are not closed by source ledgers"
         in audit["findings"]
     )
 
