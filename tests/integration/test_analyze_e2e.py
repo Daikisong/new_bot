@@ -988,6 +988,10 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     assert saved_manifest["candidate_verification_summary"][
         "subjects_without_cutoff_safe_sources"
     ] == 0
+    assert saved_manifest["candidate_verification_summary"]["d_minus_one_snapshot_count"] == 0
+    assert saved_manifest["candidate_verification_summary"][
+        "d_minus_one_snapshot_unavailable_count"
+    ] == expected_candidate_web_subjects
     expected_source_collected_dimensions = (
         len(analysis.blind_prediction.candidates) * 9
         + analysis.context_manifest.candidate_expansion_count * 8
@@ -1003,6 +1007,17 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
         len(finding["verification_dimensions"]) == len(verification["required_dimensions"])
         for finding in verification["findings"]
     )
+    assert all(
+        finding["blind_safe_market_snapshot"]["status"] == "unavailable"
+        for finding in verification["findings"]
+    )
+    assert {
+        finding["blind_safe_market_snapshot"]["reason"]
+        for finding in verification["findings"]
+    } >= {
+        "ticker_not_verified",
+        "ticker_not_resolved_for_candidate_discovery",
+    }
     expansion_verification_findings = [
         finding
         for finding in verification["findings"]

@@ -306,6 +306,7 @@ class CandidateVerificationFinding(StrictModel):
     verification_dimensions: list[CandidateVerificationDimension] = Field(
         default_factory=list
     )
+    blind_safe_market_snapshot: dict[str, Any] = Field(default_factory=dict)
     d_minus_one_market_data_only: bool = False
     uncertainties: list[str] = Field(default_factory=list)
 

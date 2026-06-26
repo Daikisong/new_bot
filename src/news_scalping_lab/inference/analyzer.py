@@ -394,11 +394,16 @@ class DailyAnalyzer:
         )
         manifest.token_counts["blind_analysis_prompt"] = blind_prompt_tokens
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
+        d_minus_one_market_data = self._collect_d_minus_one_market_data(
+            candidates=prediction.candidates,
+            manifest=manifest,
+        )
         if web_search:
             await self._collect_candidate_web_checks(
                 prediction=prediction,
                 manifest=manifest,
                 cutoff_at=cutoff_at,
+                d_minus_one_market_data=d_minus_one_market_data,
             )
         red_team = await run_red_team_pass(
             root=self.root,
@@ -420,10 +425,6 @@ class DailyAnalyzer:
             ),
         }
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
-        d_minus_one_market_data = self._collect_d_minus_one_market_data(
-            candidates=prediction.candidates,
-            manifest=manifest,
-        )
         company_memory_context = self._collect_company_memory_context(
             cutoff_at=cutoff_at,
             manifest=manifest,
@@ -1868,6 +1869,7 @@ class DailyAnalyzer:
         prediction: BlindPrediction,
         manifest: ContextManifest,
         cutoff_at: datetime,
+        d_minus_one_market_data: dict[str, Any],
     ) -> None:
         guard = TemporalWebGuard(self.web_provider)
         rows: list[dict[str, Any]] = []
@@ -1943,6 +1945,7 @@ class DailyAnalyzer:
             rows=rows,
             excluded_rows=excluded_rows,
             cutoff_at=cutoff_at,
+            d_minus_one_market_data=d_minus_one_market_data,
         )
         excluded_artifact_relative = (
             Path("runs")
@@ -1968,6 +1971,7 @@ class DailyAnalyzer:
         rows: Sequence[dict[str, Any]],
         excluded_rows: Sequence[dict[str, Any]],
         cutoff_at: datetime,
+        d_minus_one_market_data: dict[str, Any],
     ) -> None:
         findings: list[CandidateVerificationFinding] = []
         for subject in subjects:
@@ -2012,6 +2016,10 @@ class DailyAnalyzer:
                     verification_dimensions=self._candidate_verification_dimensions(
                         subject=subject,
                         accepted_source_ids=accepted_source_ids,
+                    ),
+                    blind_safe_market_snapshot=self._candidate_verification_market_snapshot(
+                        subject=subject,
+                        d_minus_one_market_data=d_minus_one_market_data,
                     ),
                     d_minus_one_market_data_only=(
                         subject.path_type == CandidateExpansionPath.CONTINUATION
@@ -2066,6 +2074,71 @@ class DailyAnalyzer:
             "d_minus_one_only_subject_count": sum(
                 1 for finding in findings if finding.d_minus_one_market_data_only
             ),
+            "d_minus_one_snapshot_count": sum(
+                1
+                for finding in findings
+                if finding.blind_safe_market_snapshot.get("status") == "snapshot"
+            ),
+            "d_minus_one_snapshot_unavailable_count": sum(
+                1
+                for finding in findings
+                if finding.blind_safe_market_snapshot.get("status") != "snapshot"
+            ),
+        }
+
+    def _candidate_verification_market_snapshot(
+        self,
+        *,
+        subject: CandidateWebCheckSubject,
+        d_minus_one_market_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        ticker = subject.ticker.strip().upper()
+        allowed_through = d_minus_one_market_data.get("allowed_through")
+        base = {
+            "ticker": subject.ticker,
+            "allowed_through": allowed_through,
+            "source_name": d_minus_one_market_data.get("source_name"),
+        }
+        if not ticker:
+            return {
+                **base,
+                "status": "unavailable",
+                "reason": "ticker_not_resolved_for_candidate_discovery",
+            }
+        if ticker in {"UNKNOWN", "UNVERIFIED"}:
+            return {
+                **base,
+                "status": "unavailable",
+                "reason": "ticker_not_verified",
+            }
+        snapshots = d_minus_one_market_data.get("snapshots")
+        if isinstance(snapshots, list):
+            for snapshot in snapshots:
+                if not isinstance(snapshot, dict):
+                    continue
+                snapshot_ticker = str(snapshot.get("ticker") or "").strip().upper()
+                if snapshot_ticker == ticker:
+                    return {
+                        **base,
+                        "status": "snapshot",
+                        "snapshot": snapshot,
+                    }
+        skipped = d_minus_one_market_data.get("skipped_tickers")
+        if isinstance(skipped, list):
+            for skipped_row in skipped:
+                if not isinstance(skipped_row, dict):
+                    continue
+                skipped_ticker = str(skipped_row.get("ticker") or "").strip().upper()
+                if skipped_ticker == ticker:
+                    return {
+                        **base,
+                        "status": "unavailable",
+                        "reason": str(skipped_row.get("reason") or "unknown"),
+                    }
+        return {
+            **base,
+            "status": "unavailable",
+            "reason": "d_minus_one_snapshot_not_collected_for_subject",
         }
 
     def _candidate_verification_dimensions(

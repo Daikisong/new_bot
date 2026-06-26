@@ -2227,6 +2227,9 @@ def _inspect_candidate_verification_artifact(
             "subjects_without_cutoff_safe_sources_verified": None,
             "candidate_expansion_subject_count_verified": None,
             "d_minus_one_only_subject_count_verified": None,
+            "d_minus_one_market_snapshots_valid": None,
+            "d_minus_one_snapshot_count_verified": None,
+            "d_minus_one_snapshot_unavailable_count_verified": None,
         }
     )
     if not status.get("configured"):
@@ -2387,6 +2390,68 @@ def _inspect_candidate_verification_artifact(
     if not status["d_minus_one_only_subject_count_verified"]:
         status["errors"].append(
             "candidate_verification_d_minus_one_only_subject_count_mismatch"
+        )
+
+    market_snapshots = [
+        finding.get("blind_safe_market_snapshot") for finding in findings
+    ]
+    has_market_snapshot_summary = isinstance(summary, dict) and (
+        "d_minus_one_snapshot_count" in summary
+        or "d_minus_one_snapshot_unavailable_count" in summary
+    )
+    if not has_market_snapshot_summary:
+        status["d_minus_one_market_snapshots_valid"] = True
+        status["d_minus_one_snapshot_count_verified"] = True
+        status["d_minus_one_snapshot_unavailable_count_verified"] = True
+        status["passed"] = _candidate_verification_status_passed(status)
+        return status
+    status["d_minus_one_market_snapshots_valid"] = all(
+        isinstance(snapshot, dict)
+        and isinstance(snapshot.get("status"), str)
+        and snapshot.get("status") in {"snapshot", "unavailable"}
+        for snapshot in market_snapshots
+    )
+    if not status["d_minus_one_market_snapshots_valid"]:
+        status["errors"].append(
+            "candidate_verification_d_minus_one_market_snapshot_invalid"
+        )
+    observed_snapshot_count = sum(
+        1
+        for snapshot in market_snapshots
+        if isinstance(snapshot, dict) and snapshot.get("status") == "snapshot"
+    )
+    observed_unavailable_count = sum(
+        1
+        for snapshot in market_snapshots
+        if isinstance(snapshot, dict) and snapshot.get("status") != "snapshot"
+    )
+    expected_snapshot_count = (
+        summary.get("d_minus_one_snapshot_count") if isinstance(summary, dict) else None
+    )
+    expected_unavailable_count = (
+        summary.get("d_minus_one_snapshot_unavailable_count")
+        if isinstance(summary, dict)
+        else None
+    )
+    status["d_minus_one_snapshot_count_verified"] = (
+        expected_snapshot_count is None
+        or (
+            isinstance(expected_snapshot_count, int)
+            and observed_snapshot_count == expected_snapshot_count
+        )
+    )
+    if not status["d_minus_one_snapshot_count_verified"]:
+        status["errors"].append("candidate_verification_d_minus_one_snapshot_count_mismatch")
+    status["d_minus_one_snapshot_unavailable_count_verified"] = (
+        expected_unavailable_count is None
+        or (
+            isinstance(expected_unavailable_count, int)
+            and observed_unavailable_count == expected_unavailable_count
+        )
+    )
+    if not status["d_minus_one_snapshot_unavailable_count_verified"]:
+        status["errors"].append(
+            "candidate_verification_d_minus_one_snapshot_unavailable_count_mismatch"
         )
 
     status["passed"] = _candidate_verification_status_passed(status)
@@ -4663,6 +4728,9 @@ def _candidate_verification_status_passed(status: dict[str, Any]) -> bool:
         and status.get("subjects_without_cutoff_safe_sources_verified")
         and status.get("candidate_expansion_subject_count_verified")
         and status.get("d_minus_one_only_subject_count_verified")
+        and status.get("d_minus_one_market_snapshots_valid")
+        and status.get("d_minus_one_snapshot_count_verified")
+        and status.get("d_minus_one_snapshot_unavailable_count_verified")
     )
 
 

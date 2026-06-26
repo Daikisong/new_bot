@@ -4295,6 +4295,12 @@ def _check_candidate_verification_artifact(
         candidate_findings,
         findings,
     )
+    _check_candidate_verification_market_snapshots(
+        prediction_path,
+        summary,
+        candidate_findings,
+        findings,
+    )
     _check_candidate_verification_summary_counts(
         prediction_path,
         summary,
@@ -4373,6 +4379,46 @@ def _check_candidate_verification_sources(
             )
 
 
+def _check_candidate_verification_market_snapshots(
+    prediction_path: Path,
+    summary: dict[str, Any],
+    candidate_findings: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    if (
+        "d_minus_one_snapshot_count" not in summary
+        and "d_minus_one_snapshot_unavailable_count" not in summary
+    ):
+        return
+    for index, finding in enumerate(candidate_findings, start=1):
+        snapshot = finding.get("blind_safe_market_snapshot")
+        if not isinstance(snapshot, dict):
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} blind_safe_market_snapshot invalid"
+            )
+            continue
+        if snapshot.get("status") not in {"snapshot", "unavailable"}:
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} blind_safe_market_snapshot status invalid"
+            )
+        if snapshot.get("status") == "snapshot" and not isinstance(
+            snapshot.get("snapshot"), dict
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} blind_safe_market_snapshot payload invalid"
+            )
+        if snapshot.get("status") == "unavailable" and not isinstance(
+            snapshot.get("reason"), str
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                f"candidate_verification:{index} blind_safe_market_snapshot reason missing"
+            )
+
+
 def _check_candidate_verification_summary_counts(
     prediction_path: Path,
     summary: dict[str, Any],
@@ -4413,6 +4459,36 @@ def _check_candidate_verification_summary_counts(
         findings.append(
             f"{prediction_path.name}: context manifest candidate_verification "
             "d_minus_one_only_subject_count mismatch"
+        )
+
+    snapshot_count = sum(
+        1
+        for finding in candidate_findings
+        if isinstance(finding.get("blind_safe_market_snapshot"), dict)
+        and finding["blind_safe_market_snapshot"].get("status") == "snapshot"
+    )
+    unavailable_count = sum(
+        1
+        for finding in candidate_findings
+        if isinstance(finding.get("blind_safe_market_snapshot"), dict)
+        and finding["blind_safe_market_snapshot"].get("status") != "snapshot"
+    )
+    expected_snapshot_count = _non_bool_int(summary.get("d_minus_one_snapshot_count"))
+    if expected_snapshot_count is not None and expected_snapshot_count != snapshot_count:
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "d_minus_one_snapshot_count mismatch"
+        )
+    expected_unavailable_count = _non_bool_int(
+        summary.get("d_minus_one_snapshot_unavailable_count")
+    )
+    if (
+        expected_unavailable_count is not None
+        and expected_unavailable_count != unavailable_count
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest candidate_verification "
+            "d_minus_one_snapshot_unavailable_count mismatch"
         )
 
 

@@ -42,6 +42,11 @@
           "title": "Accepted Source Ids",
           "type": "array"
         },
+        "blind_safe_market_snapshot": {
+          "additionalProperties": true,
+          "title": "Blind Safe Market Snapshot",
+          "type": "object"
+        },
         "candidate_company_name": {
           "title": "Candidate Company Name",
           "type": "string"
