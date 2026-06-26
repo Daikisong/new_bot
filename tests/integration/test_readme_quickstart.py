@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -9,6 +10,24 @@ from news_scalping_lab.research_import.bundle import parse_bundle
 from news_scalping_lab.utils import file_sha256, read_json
 
 RUNNER = CliRunner()
+
+
+def test_readme_quick_start_block_matches_exercised_commands() -> None:
+    commands = _readme_code_block("## Quick Start")
+
+    assert commands == [
+        'python -m pip install -e ".[dev]"',
+        "python -m news_scalping_lab.cli init",
+        "python -m news_scalping_lab.cli doctor",
+        "python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv",
+        "python -m news_scalping_lab.cli brain rebuild --mode full",
+        "python -m news_scalping_lab.cli warehouse rebuild",
+        (
+            "python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv "
+            "--trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 "
+            "--mode exhaustive"
+        ),
+    ]
 
 
 def test_readme_quick_start_commands_produce_demo_outputs(
@@ -224,3 +243,16 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")[
         "coverage_complete"
     ] is True
+
+
+def _readme_code_block(section_heading: str) -> list[str]:
+    repo_root = Path(__file__).resolve().parents[2]
+    lines = (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
+    start = lines.index(section_heading)
+    fence_start = next(
+        index for index in range(start + 1, len(lines)) if lines[index].startswith("```")
+    )
+    fence_end = next(
+        index for index in range(fence_start + 1, len(lines)) if lines[index].startswith("```")
+    )
+    return [line for line in lines[fence_start + 1 : fence_end] if line]

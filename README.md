@@ -337,6 +337,7 @@ only D-1-or-earlier snapshots can be passed into final synthesis.
 python -m ruff check .
 python -m mypy src/news_scalping_lab
 python -m pytest
+make full-check
 ```
 
 ## Warehouse

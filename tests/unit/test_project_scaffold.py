@@ -318,6 +318,21 @@ def test_makefile_exposes_quality_and_project_audit_targets() -> None:
     assert all(fragment in makefile for fragment in required_fragments)
 
 
+def test_readme_documents_full_project_quality_gate() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+
+    required_fragments = [
+        "## Quality Gates",
+        "python -m ruff check .",
+        "python -m mypy src/news_scalping_lab",
+        "python -m pytest",
+        "make full-check",
+    ]
+
+    assert all(fragment in readme for fragment in required_fragments)
+
+
 def test_write_default_config_files_bootstraps_missing_configs_without_overwrite(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
