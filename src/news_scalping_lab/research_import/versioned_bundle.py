@@ -34,6 +34,11 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
 
+FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS = {
+    "AFTER_CUTOFF_SOURCE",
+    "OUTCOME_ONLY_ASSOCIATION",
+}
+
 
 class VersionedBundleImportError(ValueError):
     """Raised when a versioned bundle cannot be normalized safely."""
@@ -116,6 +121,15 @@ class BaseBundleAdapter:
             records
         )
         invalid_typed_payload_record_ids = _invalid_typed_payload_record_ids(records)
+        invalid_edge_cutoff_record_ids = _invalid_event_ticker_edge_cutoff_record_ids(
+            records
+        )
+        invalid_edge_source_ledger_record_ids = (
+            _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
+                records,
+                parsed.jsonl_blocks.get("source_ledger.jsonl", []),
+            )
+        )
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -178,6 +192,18 @@ class BaseBundleAdapter:
             "invalid_outcome_label_quality_record_ids": invalid_label_quality_record_ids,
             "typed_payload_valid": not invalid_typed_payload_record_ids,
             "invalid_typed_payload_record_ids": invalid_typed_payload_record_ids,
+            "event_ticker_edge_cutoff_provenance_valid": (
+                not invalid_edge_cutoff_record_ids
+            ),
+            "invalid_event_ticker_edge_cutoff_provenance_record_ids": (
+                invalid_edge_cutoff_record_ids
+            ),
+            "event_ticker_edge_source_ledger_cutoff_valid": (
+                not invalid_edge_source_ledger_record_ids
+            ),
+            "invalid_event_ticker_edge_source_ledger_cutoff_record_ids": (
+                invalid_edge_source_ledger_record_ids
+            ),
             "import_loss_audit_passed": import_loss_audit_passed,
             **import_loss_summary,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
@@ -197,6 +223,8 @@ class BaseBundleAdapter:
             and validation["available_from_valid"] is True
             and validation["outcome_label_quality_valid"] is True
             and validation["typed_payload_valid"] is True
+            and validation["event_ticker_edge_cutoff_provenance_valid"] is True
+            and validation["event_ticker_edge_source_ledger_cutoff_valid"] is True
             and validation["import_loss_audit_passed"] is True
         )
         return validation
@@ -1270,6 +1298,82 @@ def _missing_source_references(
             if source_id not in source_ids:
                 missing.add(source_id)
     return sorted(missing)
+
+
+def _invalid_event_ticker_edge_cutoff_record_ids(
+    records: list[dict[str, Any]],
+) -> list[str]:
+    return [
+        _record_identity(record, line_number)
+        for line_number, record in enumerate(records, start=1)
+        if record.get("record_type") == "event_ticker_edge"
+        and record.get("training_eligible") is True
+        and not _event_ticker_edge_cutoff_provenance_valid(record)
+    ]
+
+
+def _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
+    records: list[dict[str, Any]],
+    source_ledger_rows: list[dict[str, Any]],
+) -> list[str]:
+    rows_by_source_id = _source_ledger_rows_by_id(source_ledger_rows)
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        if (
+            record.get("record_type") != "event_ticker_edge"
+            or record.get("training_eligible") is not True
+        ):
+            continue
+        source_rows = [
+            rows_by_source_id[source_id]
+            for source_id in _string_list(record.get("provenance_source_ids"))
+            if source_id in rows_by_source_id
+        ]
+        if any(_source_ledger_row_cutoff_valid(row) for row in source_rows):
+            continue
+        invalid.append(_record_identity(record, line_number))
+    return invalid
+
+
+def _source_ledger_rows_by_id(
+    source_ledger_rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in source_ledger_rows:
+        source_id = row.get("source_id")
+        if isinstance(source_id, str) and source_id:
+            rows[source_id] = row
+    return rows
+
+
+def _event_ticker_edge_cutoff_provenance_valid(record: dict[str, Any]) -> bool:
+    edge_origin = _normalized_edge_token(record.get("edge_origin"))
+    source_kind = _normalized_edge_token(record.get("source_kind"))
+    if (
+        edge_origin in FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS
+        or source_kind in FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS
+        or "OUTCOME_ONLY" in edge_origin
+        or "OUTCOME_ONLY" in source_kind
+    ):
+        return False
+    return (
+        _payload_bool_true(record, "source_time_verified", "time_verified")
+        and record.get("available_before_cutoff") is True
+    )
+
+
+def _source_ledger_row_cutoff_valid(row: dict[str, Any]) -> bool:
+    return row.get("time_verified") is True and row.get("available_before_cutoff") is True
+
+
+def _payload_bool_true(payload: dict[str, Any], *field_names: str) -> bool:
+    return any(payload.get(field_name) is True for field_name in field_names)
+
+
+def _normalized_edge_token(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().replace("-", "_").replace(" ", "_").upper()
 
 
 def _record_identity(record: dict[str, Any], line_number: int) -> str:

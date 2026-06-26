@@ -577,6 +577,7 @@ def _audit_deep_record_store(
         "records_with_naive_available_from": [],
         "invalid_event_ticker_edge_path_type_record_ids": [],
         "event_ticker_edge_cutoff_provenance_violation_record_ids": [],
+        "event_ticker_edge_source_ledger_cutoff_violation_record_ids": [],
         "invalid_company_memory_delta_known_at_record_ids": [],
         "backdated_company_memory_delta_known_at_record_ids": [],
         "issuer_day_event_level_weight_mismatch_record_ids": [],
@@ -663,6 +664,13 @@ def _audit_deep_record_store(
             _audit_record_payload_reference_closure(
                 root=root,
                 episode_id=episode_id,
+                records=episode_records,
+                raw_block_paths=raw_block_paths,
+                skip_catalog_only=allow_block_only_trace,
+                result=result,
+            )
+            _audit_event_ticker_edge_source_ledger_cutoff_provenance(
+                root=root,
                 records=episode_records,
                 raw_block_paths=raw_block_paths,
                 skip_catalog_only=allow_block_only_trace,
@@ -1074,6 +1082,60 @@ def _audit_event_ticker_edge_cutoff_provenance(
         )
 
 
+def _audit_event_ticker_edge_source_ledger_cutoff_provenance(
+    *,
+    root: Path,
+    records: list[BrainRecordEnvelope],
+    raw_block_paths: dict[str, str],
+    skip_catalog_only: bool,
+    result: dict[str, Any],
+) -> None:
+    if skip_catalog_only:
+        return
+    source_rows_by_id = _source_ledger_rows_by_id(root, raw_block_paths)
+    for record in records:
+        if record.record_type != "event_ticker_edge" or not record.training_eligible:
+            continue
+        source_rows = [
+            source_rows_by_id[source_id]
+            for source_id in record.provenance_source_ids
+            if source_id in source_rows_by_id
+        ]
+        if any(_source_ledger_row_cutoff_valid(row) for row in source_rows):
+            continue
+        result["event_ticker_edge_source_ledger_cutoff_violation_record_ids"].append(
+            record.record_id
+        )
+
+
+def _source_ledger_rows_by_id(
+    root: Path,
+    raw_block_paths: dict[str, str],
+) -> dict[str, dict[str, Any]]:
+    relative_path = raw_block_paths.get("source_ledger.jsonl")
+    if relative_path is None:
+        return {}
+    path = root / relative_path
+    if not path.exists():
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for line in _nonempty_lines(path.read_text(encoding="utf-8")):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        source_id = payload.get("source_id")
+        if isinstance(source_id, str) and source_id:
+            rows[source_id] = payload
+    return rows
+
+
+def _source_ledger_row_cutoff_valid(row: dict[str, Any]) -> bool:
+    return row.get("time_verified") is True and row.get("available_before_cutoff") is True
+
+
 def _event_ticker_edge_cutoff_provenance_valid(payload: dict[str, Any]) -> bool:
     edge_origin = _normalized_edge_token(payload.get("edge_origin"))
     source_kind = _normalized_edge_token(payload.get("source_kind"))
@@ -1219,6 +1281,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         ),
         "event_ticker_edge_cutoff_provenance_violation_record_ids": (
             "training-eligible event_ticker_edge records require cutoff provenance"
+        ),
+        "event_ticker_edge_source_ledger_cutoff_violation_record_ids": (
+            "training-eligible event_ticker_edge provenance sources must be cutoff-safe"
         ),
         "invalid_company_memory_delta_known_at_record_ids": (
             "company_memory_delta known_at values are invalid"

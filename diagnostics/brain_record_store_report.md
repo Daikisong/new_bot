@@ -103,6 +103,7 @@
 - records_with_naive_available_from: `[]`
 - invalid_event_ticker_edge_path_type_record_ids: `[]`
 - event_ticker_edge_cutoff_provenance_violation_record_ids: `[]`
+- event_ticker_edge_source_ledger_cutoff_violation_record_ids: `[]`
 - invalid_company_memory_delta_known_at_record_ids: `[]`
 - backdated_company_memory_delta_known_at_record_ids: `[]`
 - issuer_day_event_level_weight_mismatch_record_ids: `[]`

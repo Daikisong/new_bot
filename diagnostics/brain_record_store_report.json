@@ -63,6 +63,7 @@
     "eligible_records_without_provenance": [],
     "episode_count": 3,
     "event_ticker_edge_cutoff_provenance_violation_record_ids": [],
+    "event_ticker_edge_source_ledger_cutoff_violation_record_ids": [],
     "findings": [],
     "index_record_id_mismatch_episode_ids": [],
     "index_training_eligible_mismatch_episode_ids": [],

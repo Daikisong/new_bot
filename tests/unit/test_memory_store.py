@@ -220,6 +220,8 @@ def _store_single_edge_record(
     edge_origin: str = "CSV_INPUT",
     source_time_verified: bool = True,
     available_before_cutoff: bool = True,
+    ledger_time_verified: bool = True,
+    ledger_available_before_cutoff: bool = True,
 ) -> None:
     available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
     payload = {
@@ -268,7 +270,12 @@ def _store_single_edge_record(
     )
     raw_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     source_ledger_payload = json.dumps(
-        {"source_id": "SRC-EDGE", "event_ids": ["EVT-1"]},
+        {
+            "source_id": "SRC-EDGE",
+            "event_ids": ["EVT-1"],
+            "time_verified": ledger_time_verified,
+            "available_before_cutoff": ledger_available_before_cutoff,
+        },
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -583,6 +590,31 @@ def test_record_store_audit_rejects_unverified_training_eligible_edge(
     assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
         "BRAIN-EDGE"
     ]
+
+
+def test_record_store_audit_rejects_edge_without_cutoff_safe_source_ledger(
+    tmp_path,
+) -> None:
+    _store_single_edge_record(
+        tmp_path,
+        path_type="DIRECT",
+        source_time_verified=True,
+        available_before_cutoff=True,
+        ledger_time_verified=True,
+        ledger_available_before_cutoff=False,
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == []
+    assert audit["event_ticker_edge_source_ledger_cutoff_violation_record_ids"] == [
+        "BRAIN-EDGE"
+    ]
+    assert (
+        "training-eligible event_ticker_edge provenance sources must be cutoff-safe"
+        in audit["findings"]
+    )
 
 
 def test_record_store_audit_rejects_backdated_company_memory_delta_known_at(

@@ -177,6 +177,12 @@ def _synthetic_v11_bundle(
     include_error_correction: bool = False,
     include_company_memory_delta: bool = False,
     source_event_ids: list[str] | None = None,
+    event_edge_training_eligible: bool = False,
+    event_edge_origin: str = "CSV_INPUT",
+    event_edge_source_time_verified: bool = True,
+    event_edge_available_before_cutoff: bool = True,
+    source_ledger_time_verified: bool = True,
+    source_ledger_available_before_cutoff: bool = True,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -267,8 +273,16 @@ def _synthetic_v11_bundle(
                 "relation_class": event_edge_relation_class,
                 "relation_explanation": "Synthetic direct event edge.",
                 "directly_mentioned": True,
-                "training_eligible": False,
-                "eligibility_reason": "edge relation memory is audit-only",
+                "path_type": "DIRECT",
+                "edge_origin": event_edge_origin,
+                "source_time_verified": event_edge_source_time_verified,
+                "available_before_cutoff": event_edge_available_before_cutoff,
+                "training_eligible": event_edge_training_eligible,
+                "eligibility_reason": (
+                    "synthetic edge with cutoff-safe provenance"
+                    if event_edge_training_eligible
+                    else "edge relation memory is audit-only"
+                ),
                 "provenance_source_ids": ["SRC-SYNTH-1"],
             }
         )
@@ -354,6 +368,8 @@ def _synthetic_v11_bundle(
         "source_id": "SRC-SYNTH-1",
         "source_type": "synthetic_fixture",
         "title": "Synthetic source",
+        "time_verified": source_ledger_time_verified,
+        "available_before_cutoff": source_ledger_available_before_cutoff,
     }
     effective_source_event_ids = (
         inferred_source_event_ids if source_event_ids is None else source_event_ids
@@ -1186,6 +1202,64 @@ def test_invalid_event_ticker_edge_relation_class_blocks_bundle_acceptance(
     ]
     assert inspection["raw_record_count"] == inspection["normalized_record_count"]
     assert inspection["dropped_record_count"] == 0
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_training_eligible_event_edge_requires_cutoff_provenance_for_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "outcome_only_event_edge_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_event_edge=True,
+            event_edge_training_eligible=True,
+            event_edge_origin="OUTCOME_ONLY_ASSOCIATION",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"][
+        "event_ticker_edge_cutoff_provenance_valid"
+    ] is False
+    assert inspection["validation"][
+        "invalid_event_ticker_edge_cutoff_provenance_record_ids"
+    ] == ["BRAIN-SYNTH-EDGE"]
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+
+def test_training_eligible_event_edge_requires_cutoff_safe_source_ledger(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "edge_source_after_cutoff_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_event_edge=True,
+            event_edge_training_eligible=True,
+            source_ledger_time_verified=True,
+            source_ledger_available_before_cutoff=False,
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"][
+        "event_ticker_edge_cutoff_provenance_valid"
+    ] is True
+    assert inspection["validation"][
+        "event_ticker_edge_source_ledger_cutoff_valid"
+    ] is False
+    assert inspection["validation"][
+        "invalid_event_ticker_edge_source_ledger_cutoff_record_ids"
+    ] == ["BRAIN-SYNTH-EDGE"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
