@@ -16,6 +16,9 @@ are not production brains. Episode coverage is not record coverage. Training
 exports must originate from explicit eligible records when `memory/records/`
 exists. Unknown bundle versions or record types must be preserved or quarantined,
 never silently dropped.
+Company memory derived from `company_memory_delta` records must respect both
+`known_at` and `available_from`; never backfill future relationships into a
+historical analysis context.
 
 Test commands:
 

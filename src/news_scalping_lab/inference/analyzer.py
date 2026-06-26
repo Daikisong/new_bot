@@ -452,6 +452,14 @@ class DailyAnalyzer:
             ),
         }
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
+        company_delta_result = CompanyMemoryStore(self.root).apply_record_deltas(
+            as_of=cutoff_at
+        )
+        if company_delta_result.skipped_invalid_record_ids:
+            manifest.errors.append(
+                "invalid company_memory_delta records skipped: "
+                + ", ".join(company_delta_result.skipped_invalid_record_ids)
+            )
         company_memory_context = self._collect_company_memory_context(
             cutoff_at=cutoff_at,
             manifest=manifest,

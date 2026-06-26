@@ -40,6 +40,7 @@ from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.records.models import (
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
@@ -5964,6 +5965,32 @@ def memory_inspect_record(record_id: str) -> None:
 def memory_stats() -> None:
     settings = load_settings()
     _echo(BrainRecordStore(settings.project_root).stats())
+
+
+@memory_app.command("apply-company-deltas")
+def memory_apply_company_deltas(
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="Only apply deltas available at this ISO datetime."),
+    ] = None,
+) -> None:
+    settings = load_settings()
+    cutoff = parse_datetime(as_of) if as_of else None
+    result = CompanyMemoryStore(settings.project_root).apply_record_deltas(as_of=cutoff)
+    _echo(
+        {
+            "processed_record_count": result.processed_record_count,
+            "written_count": result.written_count,
+            "written_paths": [
+                path.relative_to(settings.project_root).as_posix()
+                for path in result.written_paths
+            ],
+            "skipped_future_record_ids": result.skipped_future_record_ids,
+            "skipped_invalid_record_ids": result.skipped_invalid_record_ids,
+        }
+    )
+    if result.skipped_invalid_record_ids:
+        raise typer.Exit(code=1)
 
 
 @memory_app.command("audit")

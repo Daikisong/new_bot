@@ -100,6 +100,7 @@ Versioned research bundles:
 ```bash
 nslab research inspect-bundle docs/20260622_nslab_episode_bundle.example.md
 nslab research import-bundle path/to/bundle.md --validate --accept
+nslab memory apply-company-deltas --as-of 2026-06-24T08:59:59+09:00
 nslab memory stats
 nslab memory audit --deep
 ```
@@ -129,6 +130,10 @@ memory/record_index/
 Known `brain_delta` record types are typed and preserved. Unknown record types are
 kept as `UNKNOWN_TYPED_PAYLOAD`, forced to `training_eligible=false`, and reported
 by `nslab memory audit --deep` rather than silently dropped.
+`company_memory_delta` records are applied as timestamped company memory entries;
+both record `available_from` and payload `known_at` must be cutoff-available before
+they can enter daily analysis context, so later business relations are not
+backfilled into earlier runs.
 
 `brain update --episode` performs a safe incremental merge when the current brain
 already covers the prior accepted set exactly. `brain update --mode llm-full`
