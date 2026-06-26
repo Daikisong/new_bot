@@ -297,6 +297,12 @@ class BrainRecordStore:
 def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
     store = BrainRecordStore(root)
     records = store.list_records()
+    all_records = store.list_records(accepted_only=False)
+    staged_records = [
+        record
+        for record in all_records
+        if not store.episode_records_accepted(record.episode_id)
+    ]
     records_by_episode = _records_by_episode(records)
     ids = [record.record_id for record in records]
     duplicate_ids = sorted(
@@ -335,6 +341,8 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         "passed": not findings,
         "deep": deep,
         "record_count": len(records),
+        "all_record_count": len(all_records),
+        "staged_record_count": len(staged_records),
         "episode_count": len({record.episode_id for record in records}),
         "training_eligible_record_count": sum(
             1 for record in records if record.training_eligible
@@ -346,6 +354,8 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         **deep_result,
         "findings": findings,
         "stats": _record_stats(records),
+        "all_stats": _record_stats(all_records),
+        "staged_stats": _record_stats(staged_records),
     }
 
 
@@ -365,11 +375,43 @@ def record_store_report_payload(
     return {
         "schema_version": "nslab.brain_record_store_report.v1",
         "record_count": audit_result.get("record_count", 0),
+        "all_record_count": audit_result.get(
+            "all_record_count",
+            audit_result.get("record_count", 0),
+        ),
+        "staged_record_count": audit_result.get("staged_record_count", 0),
         "training_eligible_record_count": audit_result.get(
             "training_eligible_record_count",
             0,
         ),
         "record_counts_by_type": stats.get("record_counts_by_type", {}),
+        "record_counts_by_typed_payload_status": stats.get(
+            "record_counts_by_typed_payload_status",
+            {},
+        ),
+        "unknown_typed_payload_count": stats.get("unknown_typed_payload_count", 0),
+        "raw_only_record_count": stats.get("raw_only_record_count", 0),
+        "ineligible_record_count": stats.get("ineligible_record_count", 0),
+        "all_unknown_typed_payload_count": _nested_int(
+            audit_result,
+            "all_stats",
+            "unknown_typed_payload_count",
+        ),
+        "all_raw_only_record_count": _nested_int(
+            audit_result,
+            "all_stats",
+            "raw_only_record_count",
+        ),
+        "staged_unknown_typed_payload_count": _nested_int(
+            audit_result,
+            "staged_stats",
+            "unknown_typed_payload_count",
+        ),
+        "staged_raw_only_record_count": _nested_int(
+            audit_result,
+            "staged_stats",
+            "raw_only_record_count",
+        ),
         "warehouse_counts": effective_warehouse_counts,
         "dropped_record_count": 0,
         "quarantined_record_count": quarantined_bundle_count(root),
@@ -403,6 +445,15 @@ def _existing_report_warehouse_counts(root: Path) -> dict[str, int]:
         for key, value in counts.items()
         if isinstance(value, int) and not isinstance(value, bool)
     }
+
+
+def _nested_int(source: dict[str, Any], *keys: str) -> int:
+    current: object = source
+    for key in keys:
+        if not isinstance(current, dict):
+            return 0
+        current = current.get(key)
+    return current if isinstance(current, int) and not isinstance(current, bool) else 0
 
 
 def _audit_deep_record_store(
@@ -832,13 +883,32 @@ def _record_stats(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
         "record_counts_by_type": dict(
             sorted(Counter(record.record_type for record in records).items())
         ),
+        "record_counts_by_typed_payload_status": dict(
+            sorted(Counter(record.typed_payload_status for record in records).items())
+        ),
         "record_counts_by_evidence_phase": dict(
             sorted(Counter(record.evidence_phase for record in records).items())
         ),
         "record_counts_by_training_target": dict(
             sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
         ),
+        "unknown_typed_payload_count": sum(
+            1
+            for record in records
+            if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
+        ),
+        "raw_only_record_count": sum(1 for record in records if _is_raw_only_record(record)),
+        "ineligible_record_count": sum(
+            1 for record in records if not record.training_eligible
+        ),
     }
+
+
+def _is_raw_only_record(record: BrainRecordEnvelope) -> bool:
+    if record.status == "raw_only":
+        return True
+    reason = record.eligibility_reason or ""
+    return "forward-compatible raw-only record" in reason
 
 
 def _records_by_episode(

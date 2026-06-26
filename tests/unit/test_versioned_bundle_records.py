@@ -10,7 +10,11 @@ import pytest
 
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.config import Settings, ensure_project_dirs
-from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
+from news_scalping_lab.records.store import (
+    BrainRecordStore,
+    audit_record_store,
+    record_store_report_payload,
+)
 from news_scalping_lab.research_import.versioned_bundle import (
     VersionedBundleImportError,
     import_versioned_bundle,
@@ -234,6 +238,26 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
         unknown.payload["eligibility_reason"]
         == "unknown record_type preserved as raw payload"
     )
+    audit = audit_record_store(tmp_path)
+    report = record_store_report_payload(tmp_path, audit)
+    assert audit["stats"]["record_counts_by_typed_payload_status"] == {
+        "KNOWN_TYPED_PAYLOAD": 2,
+        "UNKNOWN_TYPED_PAYLOAD": 1,
+    }
+    assert audit["stats"]["unknown_typed_payload_count"] == 1
+    assert audit["stats"]["raw_only_record_count"] == 0
+    assert audit["stats"]["ineligible_record_count"] == 1
+    assert report["record_counts_by_typed_payload_status"] == {
+        "KNOWN_TYPED_PAYLOAD": 2,
+        "UNKNOWN_TYPED_PAYLOAD": 1,
+    }
+    assert report["unknown_typed_payload_count"] == 1
+    assert report["raw_only_record_count"] == 0
+    assert report["ineligible_record_count"] == 1
+    assert report["all_unknown_typed_payload_count"] == 1
+    assert report["all_raw_only_record_count"] == 0
+    assert report["staged_unknown_typed_payload_count"] == 0
+    assert report["staged_raw_only_record_count"] == 0
     assert (tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "original_bundle.md").exists()
     assert (tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl").exists()
 
@@ -817,6 +841,20 @@ def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
     assert report["raw_only_record_count"] == 3
     assert report["dropped_record_count"] == 0
     assert report["quarantined_record_count"] == 0
+    audit = audit_record_store(tmp_path)
+    store_report = record_store_report_payload(tmp_path, audit)
+    assert audit["record_count"] == 0
+    assert audit["all_record_count"] == 3
+    assert audit["staged_record_count"] == 3
+    assert audit["stats"]["unknown_typed_payload_count"] == 0
+    assert audit["all_stats"]["unknown_typed_payload_count"] == 3
+    assert audit["staged_stats"]["raw_only_record_count"] == 3
+    assert store_report["unknown_typed_payload_count"] == 0
+    assert store_report["raw_only_record_count"] == 0
+    assert store_report["all_unknown_typed_payload_count"] == 3
+    assert store_report["all_raw_only_record_count"] == 3
+    assert store_report["staged_unknown_typed_payload_count"] == 3
+    assert store_report["staged_raw_only_record_count"] == 3
 
 
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:

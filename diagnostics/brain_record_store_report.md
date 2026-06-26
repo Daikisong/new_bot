@@ -2,6 +2,8 @@
 
 - schema_version: `nslab.brain_record_store_report.v1`
 - record_count: `4`
+- all_record_count: `4`
+- staged_record_count: `0`
 - training_eligible_record_count: `2`
 ## record_counts_by_type
 
@@ -9,6 +11,17 @@
 - memory_claim: `2`
 - supervised_issuer_day_case: `1`
 
+## record_counts_by_typed_payload_status
+
+- KNOWN_TYPED_PAYLOAD: `4`
+
+- unknown_typed_payload_count: `0`
+- raw_only_record_count: `0`
+- ineligible_record_count: `2`
+- all_unknown_typed_payload_count: `0`
+- all_raw_only_record_count: `0`
+- staged_unknown_typed_payload_count: `0`
+- staged_raw_only_record_count: `0`
 ## warehouse_counts
 
 - beneficiary_cases: `0`
@@ -41,6 +54,8 @@
 - passed: `True`
 - deep: `True`
 - record_count: `4`
+- all_record_count: `4`
+- staged_record_count: `0`
 - episode_count: `3`
 - training_eligible_record_count: `2`
 - duplicate_record_ids: `[]`
@@ -70,4 +85,6 @@
 - eligible_records_with_unknown_provenance_sources: `[]`
 - records_with_naive_available_from: `[]`
 - findings: `[]`
-- stats: `{'record_count': 4, 'episode_count': 3, 'training_eligible_record_count': 2, 'record_counts_by_type': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 2}, 'record_counts_by_training_target': {'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}}`
+- stats: `{'record_count': 4, 'episode_count': 3, 'training_eligible_record_count': 2, 'record_counts_by_type': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 4}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 2}, 'record_counts_by_training_target': {'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 2}`
+- all_stats: `{'record_count': 4, 'episode_count': 3, 'training_eligible_record_count': 2, 'record_counts_by_type': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 4}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 2}, 'record_counts_by_training_target': {'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 2}`
+- staged_stats: `{'record_count': 0, 'episode_count': 0, 'training_eligible_record_count': 0, 'record_counts_by_type': {}, 'record_counts_by_typed_payload_status': {}, 'record_counts_by_evidence_phase': {}, 'record_counts_by_training_target': {}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 0}`
