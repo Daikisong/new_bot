@@ -12,13 +12,6 @@ from typing import Any
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.config import Settings
-from news_scalping_lab.contracts.models import (
-    BlindPrediction,
-    BrainManifest,
-    ContextManifest,
-    DailyAnalysis,
-    ResearchEpisode,
-)
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.retrieval.store import inspect_vector_index
@@ -490,13 +483,12 @@ def _string_list(value: object) -> list[str]:
 
 
 def _schema_versions() -> dict[str, str]:
-    return {
-        "research_episode": str(ResearchEpisode.model_fields["schema_version"].default),
-        "blind_prediction": str(BlindPrediction.model_fields["schema_version"].default),
-        "brain_manifest": str(BrainManifest.model_fields["schema_version"].default),
-        "context_manifest": str(ContextManifest.model_fields["schema_version"].default),
-        "daily_analysis": str(DailyAnalysis.model_fields["schema_version"].default),
-    }
+    versions: dict[str, str] = {}
+    for filename, model in sorted(SCHEMA_MODELS.items()):
+        version = _model_schema_version(model)
+        if version is not None:
+            versions[filename.removesuffix(".schema.json")] = version
+    return versions
 
 
 def _schema_file_status(schema_dir: Path) -> dict[str, Any]:

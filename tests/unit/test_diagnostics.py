@@ -9,7 +9,7 @@ from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
-from news_scalping_lab.contracts.schemas import export_json_schemas
+from news_scalping_lab.contracts.schemas import SCHEMA_MODELS, export_json_schemas
 from news_scalping_lab.diagnostics import build_doctor_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
@@ -149,8 +149,23 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["vector_index"]["embedding_method"] == "deterministic_hashing_v1"
     assert report["schemas"]["file_count"] >= 12
     assert report["schemas"]["versions"]["research_episode"] == "nslab.research_episode.v1"
+    assert (
+        report["schemas"]["versions"]["semantic_research_draft"]
+        == "nslab.semantic_research_draft.v1"
+    )
+    assert set(report["schemas"]["versions"]).issuperset(
+        {
+            "blind_prediction",
+            "brain_manifest",
+            "context_manifest",
+            "daily_analysis",
+            "news_novelty_review",
+            "semantic_retrieval_plan",
+            "semantic_research_draft",
+        }
+    )
     assert report["schemas"]["files"]["status"] == "ok"
-    assert report["schemas"]["files"]["expected_file_count"] >= 12
+    assert report["schemas"]["files"]["expected_file_count"] == len(SCHEMA_MODELS)
     assert report["schemas"]["files"]["missing_files"] == []
     assert report["schemas"]["files"]["stale_files"] == []
     research_schema = report["schemas"]["files"]["files"]["research_episode.schema.json"]
