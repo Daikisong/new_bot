@@ -414,6 +414,46 @@ def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(
     assert envelope["episode_schema_version"] == "nslab.research_episode.v10"
 
 
+def test_legacy_v1_bundle_adapter_preserves_records_without_schema_loss(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_legacy_v1_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            schema_version="nslab.research_bundle.v1",
+            manifest_schema_version="nslab.bundle_manifest.v1",
+            episode_schema_version="nslab.research_episode.v1",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+    records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
+    envelope = _read_json(
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "bundle_envelope.json"
+    )
+
+    assert inspection["adapter"] == "legacy-v1"
+    assert inspection["supported"] is True
+    assert inspection["raw_record_count"] == 3
+    assert inspection["normalized_record_count"] == 3
+    assert inspection["dropped_record_count"] == 0
+    assert result.status == "imported"
+    assert result.adapter_name == "legacy-v1"
+    assert result.record_count == 3
+    assert len(records) == 3
+    assert envelope["bundle_schema_version"] == "nslab.research_bundle.v1"
+    assert envelope["manifest_schema_version"] == "nslab.bundle_manifest.v1"
+    assert envelope["episode_schema_version"] == "nslab.research_episode.v1"
+
+
 def test_record_store_deep_audit_validates_import_parity(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
