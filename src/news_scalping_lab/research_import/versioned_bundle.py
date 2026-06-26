@@ -296,11 +296,58 @@ class V11Adapter(BaseBundleAdapter):
         return validation
 
 
+class ForwardCompatibleRawOnlyAdapter(BaseBundleAdapter):
+    name = "forward-compatible-raw-only"
+
+    def supports(self, parsed: GenericParsedBundle) -> bool:
+        return (
+            _optional_string(_field(parsed, "episode_id")) is not None
+            and _optional_date(_field(parsed, "trade_date")) is not None
+            and bool(parsed.jsonl_blocks.get("brain_delta.jsonl"))
+        )
+
+    def validate(self, parsed: GenericParsedBundle) -> dict[str, Any]:
+        validation = super().validate(parsed)
+        validation.update(
+            {
+                "passed": False,
+                "forward_compatible_raw_only": True,
+                "unsupported_bundle_version": True,
+                "reason": "unsupported bundle version preserved as staged raw-only records",
+            }
+        )
+        return validation
+
+    def normalize_brain_records(self, parsed: GenericParsedBundle) -> list[BrainRecordEnvelope]:
+        episode_id = _episode_id(parsed)
+        trade_day = _trade_date(parsed)
+        default_available_from = _default_available_from(parsed)
+        return [
+            _raw_only_record_envelope(
+                payload=payload,
+                episode_id=episode_id,
+                trade_date=trade_day,
+                default_available_from=default_available_from,
+                source_line=line_number,
+            )
+            for line_number, payload in enumerate(
+                parsed.jsonl_blocks.get("brain_delta.jsonl", []),
+                start=1,
+            )
+        ]
+
+    def envelope(self, parsed: GenericParsedBundle) -> ResearchBundleEnvelope:
+        return super().envelope(parsed).model_copy(
+            update={"import_status": "forward_compatible_raw_only"}
+        )
+
+
 ADAPTERS: tuple[BundleVersionAdapter, ...] = (
     V11Adapter(),
     V10Adapter(),
     LegacyV1Adapter(),
 )
+FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER = ForwardCompatibleRawOnlyAdapter()
 
 
 def parse_generic_bundle(path: Path) -> GenericParsedBundle:
@@ -331,19 +378,26 @@ def parse_generic_bundle(path: Path) -> GenericParsedBundle:
 def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     parsed = parse_generic_bundle(path)
     adapter = select_adapter(parsed)
+    raw_only_adapter = (
+        FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER
+        if adapter is None and FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER.supports(parsed)
+        else None
+    )
+    effective_adapter = adapter or raw_only_adapter
     records = (
-        adapter.normalize_brain_records(parsed)
-        if adapter is not None
+        effective_adapter.normalize_brain_records(parsed)
+        if effective_adapter is not None
         else []
     )
-    validation = adapter.validate(parsed) if adapter is not None else {}
+    validation = effective_adapter.validate(parsed) if effective_adapter is not None else {}
     return {
         "path": path.as_posix(),
         "bundle_schema_version": bundle_schema_version(parsed),
         "manifest_schema_version": _optional_string(_manifest(parsed).get("schema_version")),
         "episode_schema_version": _optional_string(_episode(parsed).get("schema_version")),
-        "adapter": adapter.name if adapter is not None else None,
+        "adapter": effective_adapter.name if effective_adapter is not None else None,
         "supported": adapter is not None,
+        "forward_compatible_raw_only": raw_only_adapter is not None,
         "episode_id": _field(parsed, "episode_id"),
         "trade_date": _field(parsed, "trade_date"),
         "block_count": len(parsed.blocks),
@@ -370,6 +424,55 @@ def import_versioned_bundle(
     adapter = select_adapter(parsed)
     source_hash = file_sha256(path)
     if adapter is None:
+        raw_only_adapter = (
+            FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER
+            if FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER.supports(parsed)
+            else None
+        )
+        if raw_only_adapter is not None:
+            validation = raw_only_adapter.validate(parsed)
+            records = raw_only_adapter.normalize_brain_records(parsed)
+            raw_only_stored = BrainRecordStore(root).store_bundle(
+                source_path=path,
+                envelope=raw_only_adapter.envelope(parsed),
+                index=raw_only_adapter.normalize_episode_index(parsed),
+                records=records,
+                raw_blocks=parsed.payload_blocks,
+                validation_report=validation,
+                accepted=False,
+            )
+            diagnostics_payload = {
+                "status": "forward_compatible_raw_only",
+                "adapter": raw_only_adapter.name,
+                "bundle_version": bundle_schema_version(parsed),
+                "episode_id": _episode_id(parsed),
+                "accepted": False,
+                "acceptance_status": "staged",
+                "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
+                "normalized_record_count": raw_only_stored.record_count,
+                "training_eligible_record_count": raw_only_stored.training_eligible_record_count,
+                "raw_only_record_count": raw_only_stored.record_count,
+                "dropped_record_count": 0,
+                "quarantined_record_count": 0,
+                "record_counts_by_type": dict(
+                    sorted(Counter(record.record_type for record in records).items())
+                ),
+                "validation": validation,
+            }
+            write_diagnostic_report(root, "bundle_import_report", diagnostics_payload)
+            return BundleImportResult(
+                status="forward_compatible_raw_only",
+                adapter_name=raw_only_adapter.name,
+                episode_id=_episode_id(parsed),
+                bundle_schema_version=bundle_schema_version(parsed),
+                accepted=False,
+                record_count=raw_only_stored.record_count,
+                training_eligible_record_count=raw_only_stored.training_eligible_record_count,
+                envelope_path=raw_only_stored.envelope_path,
+                record_path=raw_only_stored.record_path,
+                manifest_path=raw_only_stored.manifest_path,
+                validation=validation,
+            )
         episode_id = _optional_string(_field(parsed, "episode_id")) or stable_id(
             "UNSUPPORTED",
             source_hash,
@@ -579,6 +682,47 @@ def _record_envelope(
         raw_payload_sha256=raw_payload_sha,
         normalized_payload_sha256=normalized_payload_sha,
         typed_payload_status=typed_payload_status,
+        source_line=source_line,
+        payload=normalized_payload,
+    )
+
+
+def _raw_only_record_envelope(
+    *,
+    payload: dict[str, Any],
+    episode_id: str,
+    trade_date: date,
+    default_available_from: datetime,
+    source_line: int,
+) -> BrainRecordEnvelope:
+    record_type = str(payload.get("record_type") or "unknown")
+    normalized_payload = dict(payload)
+    normalized_payload["training_eligible"] = False
+    eligibility_reason = _optional_string(payload.get("eligibility_reason"))
+    eligibility_reason = (
+        (eligibility_reason + "; " if eligibility_reason else "")
+        + "unsupported bundle version preserved as forward-compatible raw-only record"
+    )
+    normalized_payload["eligibility_reason"] = eligibility_reason
+    raw_payload_sha = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    normalized_payload_sha = sha256_text(canonical_json(normalized_payload))
+    return BrainRecordEnvelope(
+        record_id=_record_id(payload, episode_id, record_type, normalized_payload_sha),
+        record_type=record_type,
+        episode_id=_optional_string(payload.get("episode_id")) or episode_id,
+        trade_date=_optional_date(payload.get("trade_date")) or trade_date,
+        available_from=_optional_datetime(payload.get("available_from"))
+        or default_available_from,
+        training_target=_optional_string(payload.get("training_target")),
+        evidence_phase=_evidence_phase(record_type, payload),
+        training_eligible=False,
+        eligibility_reason=eligibility_reason,
+        status=_optional_string(payload.get("status")) or "raw_only",
+        confidence_label=_optional_string(payload.get("confidence_label")) or "low",
+        provenance_source_ids=_string_list(payload.get("provenance_source_ids")),
+        raw_payload_sha256=raw_payload_sha,
+        normalized_payload_sha256=normalized_payload_sha,
+        typed_payload_status="UNKNOWN_TYPED_PAYLOAD",
         source_line=source_line,
         payload=normalized_payload,
     )

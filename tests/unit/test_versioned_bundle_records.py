@@ -352,7 +352,9 @@ def test_conflicting_hash_expectation_sources_block_acceptance(tmp_path: Path) -
         import_versioned_bundle(bundle, root=tmp_path, accepted=True)
 
 
-def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Path) -> None:
+def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
+    tmp_path: Path,
+) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
     bundle = tmp_path / "future_bundle.md"
@@ -363,7 +365,47 @@ def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Pat
 
     result = import_versioned_bundle(bundle, root=tmp_path)
 
+    assert result.status == "forward_compatible_raw_only"
+    assert result.adapter_name == "forward-compatible-raw-only"
+    assert result.accepted is False
+    assert result.envelope_path is not None
+    assert result.envelope_path.exists()
+    assert result.record_path is not None
+    assert result.record_path.exists()
+    assert result.record_count == 3
+    assert result.training_eligible_record_count == 0
+    assert result.validation["forward_compatible_raw_only"] is True
+    records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
+    assert len(records) == 3
+    assert all(record.training_eligible is False for record in records)
+    assert all(record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD" for record in records)
+    assert BrainRecordStore(tmp_path).list_records() == []
+    manifest = _read_json(tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json")
+    assert manifest["accepted"] is False
+    assert manifest["acceptance_status"] == "staged"
+    envelope = _read_json(result.envelope_path)
+    assert envelope["import_status"] == "forward_compatible_raw_only"
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "forward_compatible_raw_only"
+    assert report["raw_only_record_count"] == 3
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_record_count"] == 0
+
+
+def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "opaque_future_bundle.md"
+    bundle.write_text(_opaque_unsupported_bundle(), encoding="utf-8")
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["supported"] is False
+    assert inspection["forward_compatible_raw_only"] is False
     assert result.status == "UNSUPPORTED_BUNDLE_VERSION"
+    assert result.record_count == 0
+    assert result.training_eligible_record_count == 0
     assert result.envelope_path is not None
     assert result.envelope_path.exists()
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
@@ -400,3 +442,17 @@ def _synthetic_v11_bundle_with_manifest_self_hash() -> str:
         + '"}, ',
         1,
     )
+
+
+def _opaque_unsupported_bundle() -> str:
+    return """---
+schema_version: nslab.research_bundle.v99
+episode_id: FUTURE-OPAQUE
+trade_date: 2030-01-10
+---
+<!-- NSLAB:BEGIN future_payload.json -->
+```json
+{"schema_version":"nslab.future_payload.v1","opaque":true}
+```
+<!-- NSLAB:END future_payload.json -->
+"""

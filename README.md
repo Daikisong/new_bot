@@ -110,8 +110,11 @@ versions, raw/normalized brain record counts, training-eligible counts, type
 distribution, provenance closure, and hash mismatches. `import-bundle` preserves the
 original Markdown bundle, raw blocks, normalized episode index, record manifest, and
 canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
-legacy `ResearchEpisode` model. Unsupported future bundle versions are quarantined
-under `data/quarantine/research_bundles/` without dropping the source bundle.
+legacy `ResearchEpisode` model. Unsupported future bundle versions that still
+expose a common episode envelope and `brain_delta.jsonl` are staged as
+`forward_compatible_raw_only`: raw records are preserved with training disabled
+until a versioned adapter exists. Opaque unsupported bundles are quarantined under
+`data/quarantine/research_bundles/` without dropping the source bundle.
 
 Canonical record artifacts:
 
