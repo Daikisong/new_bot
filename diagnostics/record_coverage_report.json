@@ -3,8 +3,8 @@
   "accepted_record_count": 4,
   "audit_only_record_count": 2,
   "available_record_count": 4,
-  "available_record_count_as_of": 4,
-  "brain_version": "brain-a7e8edc8ef",
+  "available_record_count_as_of": 2,
+  "brain_version": "brain-6d0d407597",
   "build_mode": "catalog",
   "catalog_only": true,
   "compiled_record_count": 4,
@@ -40,6 +40,6 @@
     "BRAIN-SYNTH-PAIR"
   ],
   "training_eligible_available_record_count": 2,
-  "training_eligible_record_count_as_of": 2,
+  "training_eligible_record_count_as_of": 0,
   "unswept_record_ids": []
 }

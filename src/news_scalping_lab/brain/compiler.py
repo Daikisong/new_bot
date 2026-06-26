@@ -35,6 +35,7 @@ from news_scalping_lab.utils import (
     KST,
     canonical_json,
     file_sha256,
+    is_available_as_of,
     read_json,
     sha256_text,
     stable_id,
@@ -75,8 +76,8 @@ CATEGORY_RECORD_TYPE_ROUTES = {
 }
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
-CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v3"
-LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v2"
+CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v4"
+LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v3"
 LLM_FULL_RECORD_SHARD_SIZE = 50
 LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
 LLM_PROMPT_MAX_LIST_ITEMS = 12
@@ -282,6 +283,7 @@ class BrainCompiler:
             canonical_json(
                 {
                     "schema": "nslab.brain.llm_full.v1",
+                    "compiler_version": LLM_FULL_COMPILER_VERSION,
                     "covered_episode_ids": covered_ids,
                     "source_hashes": source_hashes,
                     "model": settings.llm.model,
@@ -878,18 +880,27 @@ class BrainCompiler:
         )
         record_ids = [record.record_id for record in records]
         training_eligible_count = sum(1 for record in records if record.training_eligible)
+        coverage_as_of = manifest.created_at
+        available_records_as_of = [
+            record
+            for record in records
+            if is_available_as_of(record.available_from, coverage_as_of)
+        ]
+        training_eligible_as_of_count = sum(
+            1 for record in available_records_as_of if record.training_eligible
+        )
         return {
             "schema_version": "nslab.record_coverage_manifest.v1",
             "brain_version": manifest.brain_version,
             "build_mode": manifest.build_mode,
             "catalog_only": manifest.catalog_only,
-            "record_coverage_as_of": manifest.created_at.isoformat(),
+            "record_coverage_as_of": coverage_as_of.isoformat(),
             "accepted_episode_count": manifest.accepted_episode_count,
             "accepted_record_count": len(records),
             "available_record_count": len(records),
-            "available_record_count_as_of": len(records),
+            "available_record_count_as_of": len(available_records_as_of),
             "training_eligible_available_record_count": training_eligible_count,
-            "training_eligible_record_count_as_of": training_eligible_count,
+            "training_eligible_record_count_as_of": training_eligible_as_of_count,
             "compiled_record_count": len(records),
             "swept_record_count": len(records),
             "swept_record_ids": record_ids,

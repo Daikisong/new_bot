@@ -12,7 +12,7 @@
     "EP-f56c790fe2fc:legacy_catalog_record": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a"
   },
   "brain_records_file": "brain_records.jsonl",
-  "brain_records_sha256": "a7e1ba252117869ca433abd9872c3878b99434da875b483e3e87fe61d5814c1c",
+  "brain_records_sha256": "0ae367902f9489d37781ff379a2ae056b887a0f0007508bfbcbb84efbb420936",
   "dimensions": 32,
   "embedding_method": "deterministic_hashing_v1",
   "record_count": 2,

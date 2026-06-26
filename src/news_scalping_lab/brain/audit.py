@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,13 @@ from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json, sha256_text
+from news_scalping_lab.utils import (
+    file_sha256,
+    is_available_as_of,
+    parse_datetime,
+    read_json,
+    sha256_text,
+)
 
 
 def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
@@ -735,6 +742,21 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
                 "record coverage manifest must be a JSON object"
             ],
         }
+    findings: list[str] = []
+    coverage_as_of = _record_coverage_as_of(manifest, findings)
+    available_records_as_of = (
+        [
+            record
+            for record in records
+            if is_available_as_of(record.available_from, coverage_as_of)
+        ]
+        if coverage_as_of is not None
+        else records
+    )
+    available_count_as_of = len(available_records_as_of)
+    training_eligible_count_as_of = sum(
+        1 for record in available_records_as_of if record.training_eligible
+    )
     swept_id_list = _string_list(manifest.get("swept_record_ids"))
     swept_ids = set(swept_id_list)
     unswept = sorted(record_ids - swept_ids)
@@ -742,7 +764,6 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     duplicate_swept = sorted(
         record_id for record_id, count in Counter(swept_id_list).items() if count > 1
     )
-    findings: list[str] = []
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
     if unswept:
@@ -761,7 +782,7 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         )
     if (
         manifest.get("available_record_count_as_of") is not None
-        and manifest.get("available_record_count_as_of") != len(records)
+        and manifest.get("available_record_count_as_of") != available_count_as_of
     ):
         findings.append(
             "record coverage manifest as-of available count does not match record store"
@@ -773,7 +794,7 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     if (
         manifest.get("training_eligible_record_count_as_of") is not None
         and manifest.get("training_eligible_record_count_as_of")
-        != training_eligible_count
+        != training_eligible_count_as_of
     ):
         findings.append(
             "record coverage manifest as-of training eligible count does not match record store"
@@ -812,14 +833,29 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     return {
         "accepted_record_count": len(records),
         "available_record_count": len(records),
-        "available_record_count_as_of": len(records),
+        "available_record_count_as_of": available_count_as_of,
         "training_eligible_available_record_count": training_eligible_count,
-        "training_eligible_record_count_as_of": training_eligible_count,
+        "training_eligible_record_count_as_of": training_eligible_count_as_of,
         "swept_record_count": len(swept_ids & record_ids),
         "unswept_record_ids": unswept,
         "record_coverage_complete": not findings,
         "record_coverage_findings": findings,
     }
+
+
+def _record_coverage_as_of(
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> datetime | None:
+    raw = manifest.get("record_coverage_as_of")
+    if not isinstance(raw, str) or not raw:
+        findings.append("record coverage manifest record_coverage_as_of missing or invalid")
+        return None
+    try:
+        return parse_datetime(raw)
+    except ValueError:
+        findings.append("record coverage manifest record_coverage_as_of missing or invalid")
+        return None
 
 
 def _audit_mechanisms(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list[str]]:

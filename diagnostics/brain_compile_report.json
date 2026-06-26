@@ -1,6 +1,6 @@
 {
   "accepted_episode_count": 2,
-  "brain_version": "brain-a7e8edc8ef",
+  "brain_version": "brain-6d0d407597",
   "catalog_only": true,
   "category_claim_counts": {
     "beneficiary_discovery": 2,
@@ -101,9 +101,9 @@
   "compiled_claim_count": 0,
   "compiled_claims_file_present": false,
   "compiler_mode": "catalog",
-  "compiler_model": "nslab.brain.catalog.compiler.v3",
+  "compiler_model": "nslab.brain.catalog.compiler.v4",
   "compiler_provider": "deterministic_catalog",
-  "compiler_version": "nslab.brain.catalog.compiler.v3",
+  "compiler_version": "nslab.brain.catalog.compiler.v4",
   "covered_episode_count": 2,
   "latest_brain_audit": {
     "brain_build_mode": "catalog",
@@ -136,7 +136,7 @@
       }
     },
     "brain_empty_category_complete_files": [],
-    "brain_version": "brain-a7e8edc8ef",
+    "brain_version": "brain-6d0d407597",
     "catalog_only": true,
     "compiled_claim_file_present": false,
     "coverage_complete": true,
@@ -156,7 +156,7 @@
     "accepted_record_count": 4,
     "audit_only_record_count": 2,
     "available_record_count": 4,
-    "available_record_count_as_of": 4,
+    "available_record_count_as_of": 2,
     "compiled_record_count": 4,
     "coverage_complete": true,
     "ineligible_record_count": 2,
@@ -176,7 +176,7 @@
     },
     "swept_record_count": 4,
     "training_eligible_available_record_count": 2,
-    "training_eligible_record_count_as_of": 2,
+    "training_eligible_record_count_as_of": 0,
     "unswept_record_ids": []
   },
   "schema_version": "nslab.brain_compile_diagnostics.v1"

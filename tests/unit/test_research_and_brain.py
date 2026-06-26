@@ -1269,14 +1269,15 @@ def _compiled_claim_test_record(
     record_type: str = "memory_claim",
     training_target: str = "compiled_claim_audit_fixture",
     training_eligible: bool = False,
+    available_from: datetime | None = None,
 ) -> BrainRecordEnvelope:
-    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    record_available_from = available_from or datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
     payload = {
         "record_id": record_id,
         "record_type": record_type,
         "episode_id": episode_id,
         "trade_date": "2030-01-10",
-        "available_from": available_from.isoformat(),
+        "available_from": record_available_from.isoformat(),
         "training_target": training_target,
         "training_eligible": training_eligible,
     }
@@ -1286,7 +1287,7 @@ def _compiled_claim_test_record(
         record_type=record_type,
         episode_id=episode_id,
         trade_date=date(2030, 1, 10),
-        available_from=available_from,
+        available_from=record_available_from,
         training_target=training_target,
         evidence_phase="AUDIT",
         training_eligible=training_eligible,
@@ -1405,6 +1406,49 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     )
     assert latest_audit["brain_category_source_population_mismatches"] == []
     assert latest_audit["brain_empty_category_complete_files"] == []
+
+
+def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("As-of record coverage note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    records = [
+        _compiled_claim_test_record(
+            "BRAIN-ASOF-AVAILABLE",
+            episode.episode_id,
+            training_eligible=True,
+        ),
+        _compiled_claim_test_record(
+            "BRAIN-ASOF-FUTURE",
+            episode.episode_id,
+            training_eligible=True,
+            available_from=datetime(2030, 1, 12, 0, 0, 0, tzinfo=KST),
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage = read_json(tmp_path / "brain" / "current" / "record_coverage_manifest.json")
+    audit = audit_brain(tmp_path)
+
+    assert coverage["record_coverage_as_of"] == manifest.created_at.isoformat()
+    assert coverage["accepted_record_count"] == 2
+    assert coverage["available_record_count"] == 2
+    assert coverage["available_record_count_as_of"] == 1
+    assert coverage["training_eligible_available_record_count"] == 2
+    assert coverage["training_eligible_record_count_as_of"] == 1
+    assert audit["available_record_count_as_of"] == 1
+    assert audit["training_eligible_record_count_as_of"] == 1
+    assert audit["record_coverage_complete"] is True
+    assert audit["record_coverage_findings"] == []
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:
