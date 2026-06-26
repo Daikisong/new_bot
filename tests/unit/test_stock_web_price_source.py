@@ -47,14 +47,17 @@ def _write_minimal_stock_web_atlas(root: Path) -> None:
 
 def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> None:
     atlas = tmp_path / "atlas"
-    (atlas / "ohlcv_tradable_by_symbol_year" / "005" / "005930").mkdir(parents=True)
-    (atlas / "ohlcv_tradable_by_symbol_year" / "123" / "123456").mkdir(parents=True)
-    (atlas / "ohlcv_tradable_by_symbol_year" / "999" / "999999").mkdir(parents=True)
+    upper_limit_ticker = "901001"
+    ordinary_ticker = "902002"
+    one_price_ticker = "903003"
+    (atlas / "ohlcv_tradable_by_symbol_year" / "901" / upper_limit_ticker).mkdir(parents=True)
+    (atlas / "ohlcv_tradable_by_symbol_year" / "902" / ordinary_ticker).mkdir(parents=True)
+    (atlas / "ohlcv_tradable_by_symbol_year" / "903" / one_price_ticker).mkdir(parents=True)
     (atlas / "ohlcv_raw_by_symbol_year").mkdir(parents=True)
     (atlas / "ohlcv_min_by_symbol_year").mkdir(parents=True)
-    (atlas / "symbol_profiles" / "005").mkdir(parents=True)
-    (atlas / "symbol_profiles" / "123").mkdir(parents=True)
-    (atlas / "symbol_profiles" / "999").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "901").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "902").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "903").mkdir(parents=True)
     (atlas / "manifest.json").write_text(
         """
 {
@@ -101,19 +104,21 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
 """.strip(),
         encoding="utf-8",
     )
-    (atlas / "symbol_profiles" / "005" / "005930.json").write_text(
-        '{"code":"005930","available_years":[2030]}',
+    (atlas / "symbol_profiles" / "901" / f"{upper_limit_ticker}.json").write_text(
+        f'{{"code":"{upper_limit_ticker}","available_years":[2030]}}',
         encoding="utf-8",
     )
-    (atlas / "symbol_profiles" / "123" / "123456.json").write_text(
-        '{"code":"123456","available_years":[2030]}',
+    (atlas / "symbol_profiles" / "902" / f"{ordinary_ticker}.json").write_text(
+        f'{{"code":"{ordinary_ticker}","available_years":[2030]}}',
         encoding="utf-8",
     )
-    (atlas / "symbol_profiles" / "999" / "999999.json").write_text(
-        '{"code":"999999","available_years":[2030]}',
+    (atlas / "symbol_profiles" / "903" / f"{one_price_ticker}.json").write_text(
+        f'{{"code":"{one_price_ticker}","available_years":[2030]}}',
         encoding="utf-8",
     )
-    (atlas / "ohlcv_tradable_by_symbol_year" / "005" / "005930" / "2030.csv").write_text(
+    (
+        atlas / "ohlcv_tradable_by_symbol_year" / "901" / upper_limit_ticker / "2030.csv"
+    ).write_text(
         "\n".join(
             [
                 "d,o,h,l,c,v,a,mc,s,m",
@@ -124,7 +129,9 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
         + "\n",
         encoding="utf-8",
     )
-    (atlas / "ohlcv_tradable_by_symbol_year" / "123" / "123456" / "2030.csv").write_text(
+    (
+        atlas / "ohlcv_tradable_by_symbol_year" / "902" / ordinary_ticker / "2030.csv"
+    ).write_text(
         "\n".join(
             [
                 "d,o,h,l,c,v,a,mc,s,m",
@@ -135,7 +142,9 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
         + "\n",
         encoding="utf-8",
     )
-    (atlas / "ohlcv_tradable_by_symbol_year" / "999" / "999999" / "2030.csv").write_text(
+    (
+        atlas / "ohlcv_tradable_by_symbol_year" / "903" / one_price_ticker / "2030.csv"
+    ).write_text(
         "\n".join(
             [
                 "d,o,h,l,c,v,a,mc,s,m",
@@ -150,9 +159,9 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     source = StockWebPriceSource(tmp_path)
     schema = source.inspect_atlas_schema()
     status = source.inspect_atlas_status()
-    history = source.get_history("005930", through=date(2030, 1, 10))
-    outcome = source.get_outcome("005930", trade_date=date(2030, 1, 10))
-    one_price_outcome = source.get_outcome("999999", trade_date=date(2030, 1, 10))
+    history = source.get_history(upper_limit_ticker, through=date(2030, 1, 10))
+    outcome = source.get_outcome(upper_limit_ticker, trade_date=date(2030, 1, 10))
+    one_price_outcome = source.get_outcome(one_price_ticker, trade_date=date(2030, 1, 10))
     universe = source.get_outcome_universe(trade_date=date(2030, 1, 10))
 
     assert schema["calibration_shard_root"] == "atlas/ohlcv_tradable_by_symbol_year"
@@ -171,10 +180,12 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     assert outcome.turnover_ratio == pytest.approx(20.0)
     assert one_price_outcome.one_price_upper_limit is True
     assert one_price_outcome.turnover_ratio == pytest.approx(30.0)
-    assert sorted(universe) == ["005930", "123456", "999999"]
-    assert universe["005930"].upper_limit_touched is True
-    assert universe["123456"].upper_limit_touched is False
-    assert universe["999999"].one_price_upper_limit is True
+    assert sorted(universe) == sorted(
+        [ordinary_ticker, one_price_ticker, upper_limit_ticker]
+    )
+    assert universe[upper_limit_ticker].upper_limit_touched is True
+    assert universe[ordinary_ticker].upper_limit_touched is False
+    assert universe[one_price_ticker].one_price_upper_limit is True
 
 
 def test_stock_web_flags_unlabelable_reference_price_days(tmp_path) -> None:
