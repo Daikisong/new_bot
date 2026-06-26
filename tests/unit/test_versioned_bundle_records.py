@@ -31,6 +31,7 @@ def _synthetic_v11_bundle(
     validation_checked_hashes: dict[str, str] | None = None,
     issuer_available_from: str | None = None,
     issuer_sample_weight: float = 1.0,
+    direct_event_sample_weights: list[float] | None = None,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -72,6 +73,28 @@ def _synthetic_v11_bundle(
             "provenance_source_ids": ["SRC-SYNTH-1"],
         },
     ]
+    if direct_event_sample_weights is not None:
+        for index, sample_weight in enumerate(direct_event_sample_weights, start=1):
+            records.append(
+                {
+                    "record_id": f"BRAIN-SYNTH-DIRECT-{index}",
+                    "record_type": "supervised_direct_event_case",
+                    "episode_id": episode_id,
+                    "trade_date": trade_day.isoformat(),
+                    "available_from": available_from,
+                    "training_target": "direct_event_response",
+                    "case_id": f"DIRECT-SYNTH-{index}",
+                    "issuer_day_case_id": "20300110:000001",
+                    "event_id": f"EVT-SYNTH-{index}",
+                    "ticker": "000001",
+                    "company_name": "Synthetic Issuer",
+                    "response_class": "positive_high10",
+                    "sample_weight": sample_weight,
+                    "training_eligible": True,
+                    "eligibility_reason": "synthetic direct event label",
+                    "provenance_source_ids": ["SRC-SYNTH-1"],
+                }
+            )
     if include_unknown:
         records.append(
             {
@@ -109,7 +132,9 @@ def _synthetic_v11_bundle(
         "critical_error_count": 0,
         "computed_counts": {
             "brain_delta_record_count": len(records),
-            "training_eligible_record_count": 2,
+            "training_eligible_record_count": sum(
+                1 for record in records if record.get("training_eligible") is True
+            ),
         },
     }
     if validation_checked_hashes is not None:
@@ -130,7 +155,9 @@ def _synthetic_v11_bundle(
             "validator_exit_code": 0,
             "critical_error_count": 0,
             "brain_delta_record_count": len(records),
-            "training_eligible_record_count": 2,
+            "training_eligible_record_count": sum(
+                1 for record in records if record.get("training_eligible") is True
+            ),
             "embedded_blocks": {
                 "brain_delta.jsonl": {"sha256": sha256_text(brain_delta)},
                 "source_ledger.jsonl": {"sha256": sha256_text(source_ledger)},
@@ -339,6 +366,36 @@ def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     assert manifest["weight_validation_status"] == "failed"
     assert manifest["weight_validation"]["issuer_day_weight_sum_mismatches"] == {
         "2030-01-10|000001": 0.5
+    }
+    assert audit["passed"] is False
+    assert "sft: record weight validation failed" in audit["findings"]
+
+
+def test_training_audit_rejects_direct_event_weight_sum_mismatch(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "direct_event_weight_gap_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            direct_event_sample_weights=[0.25, 0.25],
+        ),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    manifest = _read_json(sft.manifest_path)
+    audit = audit_training_exports(tmp_path)
+
+    assert manifest["weight_validation_status"] == "failed"
+    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {
+        "20300110:000001": 0.5
     }
     assert audit["passed"] is False
     assert "sft: record weight validation failed" in audit["findings"]
