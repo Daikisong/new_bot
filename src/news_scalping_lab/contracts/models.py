@@ -133,6 +133,8 @@ class Candidate(StrictModel):
     market_memory_evidence: list[str] = Field(default_factory=list)
     prior_positive_cases: list[str] = Field(default_factory=list)
     prior_negative_cases: list[str] = Field(default_factory=list)
+    prior_positive_record_ids: list[str] = Field(default_factory=list)
+    prior_negative_record_ids: list[str] = Field(default_factory=list)
     novel_reasoning: str = ""
     counterarguments: list[str] = Field(default_factory=list)
     disconfirming_conditions: list[str] = Field(default_factory=list)
@@ -140,6 +142,7 @@ class Candidate(StrictModel):
     evidence_quality: ConfidenceLabel = ConfidenceLabel.MEDIUM
     source_urls: list[str] = Field(default_factory=list)
     memory_episode_ids: list[str] = Field(default_factory=list)
+    memory_record_ids: list[str] = Field(default_factory=list)
     provenance: list[Provenance] = Field(default_factory=list)
 
     @field_validator("rank")
@@ -346,6 +349,8 @@ class DominantSectorHypothesis(StrictModel):
     failure_conditions: list[str] = Field(default_factory=list)
     supporting_cases: list[str] = Field(default_factory=list)
     contradicting_cases: list[str] = Field(default_factory=list)
+    supporting_record_ids: list[str] = Field(default_factory=list)
+    contradicting_record_ids: list[str] = Field(default_factory=list)
     provenance: list[Provenance] = Field(default_factory=list)
 
 

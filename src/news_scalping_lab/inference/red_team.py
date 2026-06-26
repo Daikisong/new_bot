@@ -196,7 +196,12 @@ def _fallback_finding(candidate: Candidate) -> RedTeamFinding:
             *_candidate_specific_objections(candidate),
         ]
     )
-    contrary_evidence = [f"negative memory case: {case}" for case in candidate.prior_negative_cases]
+    contrary_evidence = [
+        f"negative memory case: {case}" for case in candidate.prior_negative_cases
+    ] + [
+        f"negative memory record: {record_id}"
+        for record_id in candidate.prior_negative_record_ids
+    ]
     disconfirming_conditions = _unique(
         [
             *candidate.disconfirming_conditions,
@@ -281,7 +286,9 @@ def _fallback_attack_check(candidate: Candidate, check_name: str) -> RedTeamAtta
             [
                 *candidate.source_urls,
                 *candidate.memory_episode_ids,
+                *candidate.memory_record_ids,
                 *candidate.prior_negative_cases,
+                *candidate.prior_negative_record_ids,
             ]
         )[:10],
         passed_to_synthesis=True,

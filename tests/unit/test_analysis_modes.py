@@ -668,6 +668,79 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_counterexample_record_ids_reach_prediction_outputs(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-POSITIVE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-COUNTER",
+                record_type="counterexample",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "counterexample_record_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","CounterRecordCo, new catalyst",'
+        '"Counterexample records should reach final outputs."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    assert manifest.counterexample_record_ids == ["BRAIN-COUNTER"]
+    assert analysis.blind_prediction.candidates
+    assert all(
+        candidate.prior_negative_record_ids == ["BRAIN-COUNTER"]
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert all(
+        "BRAIN-COUNTER" in candidate.memory_record_ids
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert all(
+        "BRAIN-COUNTER" not in candidate.prior_positive_record_ids
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert analysis.blind_prediction.dominant_sectors
+    assert all(
+        sector.contradicting_record_ids == ["BRAIN-COUNTER"]
+        for sector in analysis.blind_prediction.dominant_sectors
+    )
+    saved_prediction = read_json(tmp_path / analysis.prediction_path)
+    assert saved_prediction["candidates"][0]["prior_negative_record_ids"] == [
+        "BRAIN-COUNTER"
+    ]
+    assert saved_prediction["dominant_sectors"][0]["contradicting_record_ids"] == [
+        "BRAIN-COUNTER"
+    ]
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert synthesis_payload["counterexample_record_ids"] == ["BRAIN-COUNTER"]
+    assert synthesis_payload["negative_record_ids"] == ["BRAIN-COUNTER"]
+    report = (tmp_path / analysis.report_path).read_text(encoding="utf-8")
+    assert "Prior negative record IDs: BRAIN-COUNTER" in report
+    assert "Contradicting record IDs: BRAIN-COUNTER" in report
+
+
+@pytest.mark.asyncio
 async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episodes(
     tmp_path,
 ) -> None:

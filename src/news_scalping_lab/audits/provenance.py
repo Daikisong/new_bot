@@ -74,6 +74,11 @@ PREDICTION_STRING_SEQUENCE_FIELDS = (
     "source_urls",
     "memory_episode_ids",
 )
+OPTIONAL_PREDICTION_STRING_SEQUENCE_FIELDS = (
+    "prior_positive_record_ids",
+    "prior_negative_record_ids",
+    "memory_record_ids",
+)
 POSTMORTEM_STRING_SEQUENCE_FIELDS = (
     "hits",
     "misses",
@@ -184,6 +189,8 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 sector.get("triggering_events")
                 or sector.get("supporting_cases")
                 or sector.get("contradicting_cases")
+                or sector.get("supporting_record_ids")
+                or sector.get("contradicting_record_ids")
             )
             if not has_anchor:
                 findings.append(
@@ -200,6 +207,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             has_anchor = (
                 candidate.get("event_ids")
                 or candidate.get("memory_episode_ids")
+                or candidate.get("memory_record_ids")
                 or candidate.get("source_urls")
             )
             if not has_anchor:
@@ -429,6 +437,7 @@ def _check_research_episode_blind_decision_provenance(
         has_anchor = (
             candidate.get("event_ids")
             or candidate.get("memory_episode_ids")
+            or candidate.get("memory_record_ids")
             or candidate.get("source_urls")
         )
         if not has_anchor:
@@ -782,6 +791,14 @@ def _check_research_episode_blind_prediction_shape(
         findings.append(f"{prefix} evidence_quality missing or invalid")
     for field_name in PREDICTION_STRING_SEQUENCE_FIELDS:
         _check_string_list_field(prefix, field_name, candidate.get(field_name), findings)
+    for field_name in OPTIONAL_PREDICTION_STRING_SEQUENCE_FIELDS:
+        if field_name in candidate:
+            _check_string_list_field(
+                prefix,
+                field_name,
+                candidate.get(field_name),
+                findings,
+            )
 
 
 def _check_research_episode_blind_prediction_ranks(

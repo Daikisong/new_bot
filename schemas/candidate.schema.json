@@ -153,6 +153,13 @@
       "title": "Memory Episode Ids",
       "type": "array"
     },
+    "memory_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Memory Record Ids",
+      "type": "array"
+    },
     "novel_reasoning": {
       "default": "",
       "title": "Novel Reasoning",
@@ -168,11 +175,25 @@
       "title": "Prior Negative Cases",
       "type": "array"
     },
+    "prior_negative_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Negative Record Ids",
+      "type": "array"
+    },
     "prior_positive_cases": {
       "items": {
         "type": "string"
       },
       "title": "Prior Positive Cases",
+      "type": "array"
+    },
+    "prior_positive_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prior Positive Record Ids",
       "type": "array"
     },
     "provenance": {

@@ -19,6 +19,8 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "retrieved_records",
     "positive_cases",
     "negative_cases",
+    "positive_record_ids",
+    "negative_record_ids",
     "counterexamples",
     "counterexample_records",
     "candidate_research",
@@ -32,8 +34,19 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
 RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS = {
     "record_level_shard_contributions",
     "retrieved_records",
+    "positive_record_ids",
+    "negative_record_ids",
     "counterexample_records",
 }
+RECORD_ID_FINAL_SYNTHESIS_INPUTS = {
+    "positive_record_ids",
+    "negative_record_ids",
+}
+PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
+    item
+    for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+    if item not in RECORD_ID_FINAL_SYNTHESIS_INPUTS
+)
 LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
     item
     for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
@@ -87,6 +100,14 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         )
     if "retrieved_records" in payload:
         summary["retrieved_record_count"] = _list_len(payload.get("retrieved_records"))
+    if "positive_record_ids" in payload:
+        summary["positive_record_id_count"] = _list_len(
+            payload.get("positive_record_ids")
+        )
+    if "negative_record_ids" in payload:
+        summary["negative_record_id_count"] = _list_len(
+            payload.get("negative_record_ids")
+        )
     if "counterexample_records" in payload:
         summary["counterexample_record_count"] = _list_len(
             payload.get("counterexample_records")
@@ -97,6 +118,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
 def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bool:
     return tuple(required_inputs) in {
         FINAL_SYNTHESIS_REQUIRED_INPUTS,
+        PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS,
         LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS,
     }
 

@@ -43,6 +43,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 failure_conditions=["theme fails without breadth"],
                 supporting_cases=["EP-sector-positive"],
                 contradicting_cases=["EP-sector-negative"],
+                supporting_record_ids=["BRAIN-sector-positive"],
+                contradicting_record_ids=["BRAIN-sector-negative"],
                 provenance=[
                     Provenance(
                         source_id="SRC-report-sector",
@@ -67,12 +69,15 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 market_memory_evidence=["D-1 absorption check"],
                 prior_positive_cases=["EP-positive"],
                 prior_negative_cases=["EP-negative"],
+                prior_positive_record_ids=["BRAIN-positive"],
+                prior_negative_record_ids=["BRAIN-negative"],
                 counterarguments=["could be already reflected"],
                 disconfirming_conditions=["not listed"],
                 confidence_label=ConfidenceLabel.LOW,
                 evidence_quality=ConfidenceLabel.MEDIUM,
                 source_urls=["news://EVT-report"],
                 memory_episode_ids=["EP-positive", "EP-negative"],
+                memory_record_ids=["BRAIN-positive", "BRAIN-negative"],
                 provenance=[
                     Provenance(
                         source_id="SRC-report-candidate",
@@ -95,6 +100,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 market_memory_evidence=["hybrid prior market narrative"],
                 prior_positive_cases=["EP-hybrid-positive"],
                 prior_negative_cases=["EP-hybrid-negative"],
+                prior_positive_record_ids=["BRAIN-hybrid-positive"],
+                prior_negative_record_ids=["BRAIN-hybrid-negative"],
                 novel_reasoning="Hybrid path should not lose detailed report evidence.",
                 counterarguments=["hybrid relation may be too diffuse"],
                 disconfirming_conditions=["no direct or indirect tie"],
@@ -102,6 +109,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=["news://EVT-report-hybrid"],
                 memory_episode_ids=["EP-hybrid-positive", "EP-hybrid-negative"],
+                memory_record_ids=["BRAIN-hybrid-positive", "BRAIN-hybrid-negative"],
                 provenance=[
                     Provenance(
                         source_id="SRC-report-hybrid",
@@ -166,6 +174,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         swept_episode_ids=["EP-positive", "EP-negative"],
         retrieved_episode_ids=["EP-positive"],
         counterexample_episode_ids=["EP-negative"],
+        retrieved_record_ids=["BRAIN-positive"],
+        counterexample_record_ids=["BRAIN-negative"],
         row_disposition_artifact="runs/checkpoints/row_disposition/RUN-report/row_disposition.jsonl",
         row_disposition_sha256="row-sha",
         row_disposition_coverage_ratio=0.5,
@@ -255,7 +265,7 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
         ),
         final_synthesis_context_sha256="final-synthesis-context-sha",
         final_synthesis_context_summary={
-            "required_input_count": 20,
+            "required_input_count": 22,
             "current_news_count": 1,
             "candidate_count": 2,
             "red_team_finding_count": 2,
@@ -292,7 +302,10 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     assert "- Market-memory evidence: D-1 absorption check" in report
     assert "- Prior positive cases: EP-positive" in report
     assert "- Prior negative cases: EP-negative" in report
+    assert "- Prior positive record IDs: BRAIN-positive" in report
+    assert "- Prior negative record IDs: BRAIN-negative" in report
     assert "- Disconfirming conditions: not listed" in report
+    assert "- Memory records: BRAIN-positive, BRAIN-negative" in report
     assert "- Source URLs: news://EVT-report" in report
     assert "- Provenance sources: SRC-report-candidate" in report
     assert "HybridReportCo" in report
@@ -461,13 +474,15 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     )
     assert "- SHA256: final-synthesis-context-sha" in report
     assert (
-        "- Summary: {'required_input_count': 20, 'current_news_count': 1, "
+        "- Summary: {'required_input_count': 22, 'current_news_count': 1, "
         "'candidate_count': 2, 'red_team_finding_count': 2}"
         in report
     )
     assert "Counterexample episode ids:" in report
+    assert "Counterexample record ids:" in report
     assert "Prior positive cases referenced by candidates:" in report
     assert "Prior negative cases referenced by candidates:" in report
+    assert "Prior negative record ids referenced by candidates:" in report
 
 
 def test_preopen_report_section_inspector_rejects_empty_required_sections() -> None:

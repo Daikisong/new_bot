@@ -205,6 +205,13 @@
           "title": "Memory Episode Ids",
           "type": "array"
         },
+        "memory_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Record Ids",
+          "type": "array"
+        },
         "novel_reasoning": {
           "default": "",
           "title": "Novel Reasoning",
@@ -220,11 +227,25 @@
           "title": "Prior Negative Cases",
           "type": "array"
         },
+        "prior_negative_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Negative Record Ids",
+          "type": "array"
+        },
         "prior_positive_cases": {
           "items": {
             "type": "string"
           },
           "title": "Prior Positive Cases",
+          "type": "array"
+        },
+        "prior_positive_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prior Positive Record Ids",
           "type": "array"
         },
         "provenance": {
@@ -1373,6 +1394,13 @@
           "title": "Contradicting Cases",
           "type": "array"
         },
+        "contradicting_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradicting Record Ids",
+          "type": "array"
+        },
         "direct_beneficiaries": {
           "items": {
             "type": "string"
@@ -1432,6 +1460,13 @@
             "type": "string"
           },
           "title": "Supporting Cases",
+          "type": "array"
+        },
+        "supporting_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Record Ids",
           "type": "array"
         },
         "triggering_events": {

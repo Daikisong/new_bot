@@ -55,10 +55,13 @@ class CandidateEvidenceView:
     market_memory_evidence: list[str]
     prior_positive_cases: list[str]
     prior_negative_cases: list[str]
+    prior_positive_record_ids: list[str]
+    prior_negative_record_ids: list[str]
     novel_reasoning: str
     counterarguments: list[str]
     disconfirming_conditions: list[str]
     memory_episode_ids: list[str]
+    memory_record_ids: list[str]
     source_urls: list[str]
 
 
@@ -153,10 +156,13 @@ def _candidate_evidence_view(candidate: Candidate) -> CandidateEvidenceView:
         market_memory_evidence=candidate.market_memory_evidence,
         prior_positive_cases=candidate.prior_positive_cases,
         prior_negative_cases=candidate.prior_negative_cases,
+        prior_positive_record_ids=candidate.prior_positive_record_ids,
+        prior_negative_record_ids=candidate.prior_negative_record_ids,
         novel_reasoning=candidate.novel_reasoning,
         counterarguments=candidate.counterarguments,
         disconfirming_conditions=candidate.disconfirming_conditions,
         memory_episode_ids=candidate.memory_episode_ids,
+        memory_record_ids=candidate.memory_record_ids,
         source_urls=candidate.source_urls,
     )
 
@@ -173,6 +179,11 @@ def _excluded_but_watch(candidates: list[Candidate]) -> list[ExcludedButWatchVie
             )
         if candidate.prior_negative_cases:
             reasons.append("prior_negative_cases: " + ", ".join(candidate.prior_negative_cases))
+        if candidate.prior_negative_record_ids:
+            reasons.append(
+                "prior_negative_record_ids: "
+                + ", ".join(candidate.prior_negative_record_ids)
+            )
         if reasons:
             watched.append(
                 ExcludedButWatchView(

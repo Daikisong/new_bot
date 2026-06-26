@@ -92,6 +92,7 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
                     "confidence": candidate.confidence_label,
                     "evidence_quality": candidate.evidence_quality,
                     "memory_cases": ", ".join(candidate.memory_episode_ids),
+                    "memory_records": ", ".join(candidate.memory_record_ids),
                 }
                 for candidate in view.all_watchlist_candidates
             ],
@@ -167,6 +168,8 @@ def _render_sector(sector: DominantSectorHypothesis, st: Any) -> None:
                 "possible_leaders": sector.possible_leaders,
                 "supporting_cases": sector.supporting_cases,
                 "contradicting_cases": sector.contradicting_cases,
+                "supporting_record_ids": sector.supporting_record_ids,
+                "contradicting_record_ids": sector.contradicting_record_ids,
                 "failure_conditions": sector.failure_conditions,
             }
         )
@@ -186,10 +189,13 @@ def _render_candidate(candidate: CandidateEvidenceView, st: Any) -> None:
                 "market_memory_evidence": candidate.market_memory_evidence,
                 "prior_positive_cases": candidate.prior_positive_cases,
                 "prior_negative_cases": candidate.prior_negative_cases,
+                "prior_positive_record_ids": candidate.prior_positive_record_ids,
+                "prior_negative_record_ids": candidate.prior_negative_record_ids,
                 "novel_reasoning": candidate.novel_reasoning,
                 "counterarguments": candidate.counterarguments,
                 "disconfirming_conditions": candidate.disconfirming_conditions,
                 "memory_episode_ids": candidate.memory_episode_ids,
+                "memory_record_ids": candidate.memory_record_ids,
                 "source_urls": candidate.source_urls,
             }
         )

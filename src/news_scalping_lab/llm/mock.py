@@ -141,6 +141,22 @@ class DeterministicMockLLMProvider:
         memory_case_ids = self._dedupe_strings(
             [*prior_positive_cases, *prior_negative_cases]
         )
+        prior_negative_record_ids = self._dedupe_strings(
+            self._payload_string_list(payload, "negative_record_ids")
+            or self._payload_string_list(payload, "counterexample_record_ids")
+        )[:5]
+        raw_positive_record_ids = self._payload_string_list(
+            payload,
+            "positive_record_ids",
+        ) or [
+            record_id
+            for record_id in self._payload_string_list(payload, "retrieved_record_ids")
+            if record_id not in set(prior_negative_record_ids)
+        ]
+        prior_positive_record_ids = self._dedupe_strings(raw_positive_record_ids)[:5]
+        memory_record_ids = self._dedupe_strings(
+            [*prior_positive_record_ids, *prior_negative_record_ids]
+        )
         mechanisms = self._payload_string_list(payload, "first_pass_mechanisms")
         if not mechanisms:
             mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
@@ -170,6 +186,8 @@ class DeterministicMockLLMProvider:
                     market_memory_evidence=[],
                     prior_positive_cases=prior_positive_cases,
                     prior_negative_cases=prior_negative_cases,
+                    prior_positive_record_ids=prior_positive_record_ids,
+                    prior_negative_record_ids=prior_negative_record_ids,
                     novel_reasoning="Candidate was generated from current evidence, not from a static list.",
                     counterarguments=[
                         "listing status may be unverified",
@@ -184,6 +202,7 @@ class DeterministicMockLLMProvider:
                     evidence_quality=ConfidenceLabel.LOW,
                     source_urls=[event_anchor],
                     memory_episode_ids=memory_case_ids,
+                    memory_record_ids=memory_record_ids,
                 )
             )
         if not candidates:
@@ -201,10 +220,13 @@ class DeterministicMockLLMProvider:
                     inferred_evidence=["retrieval miss does not block candidate discovery"],
                     prior_positive_cases=prior_positive_cases,
                     prior_negative_cases=prior_negative_cases,
+                    prior_positive_record_ids=prior_positive_record_ids,
+                    prior_negative_record_ids=prior_negative_record_ids,
                     confidence_label=ConfidenceLabel.SPECULATIVE,
                     evidence_quality=ConfidenceLabel.LOW,
                     source_urls=[event_anchor],
                     memory_episode_ids=memory_case_ids,
+                    memory_record_ids=memory_record_ids,
                 )
             )
         discovery_rank = len(candidates) + 1
@@ -221,12 +243,15 @@ class DeterministicMockLLMProvider:
                 inferred_evidence=mechanisms[:2],
                 prior_positive_cases=prior_positive_cases,
                 prior_negative_cases=prior_negative_cases,
+                prior_positive_record_ids=prior_positive_record_ids,
+                prior_negative_record_ids=prior_negative_record_ids,
                 novel_reasoning="A new beneficiary can be investigated even when memory has no exact precedent.",
                 counterarguments=["theme breadth may fail", "indirect relation may be too weak"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=[event_anchor],
                 memory_episode_ids=memory_case_ids,
+                memory_record_ids=memory_record_ids,
             )
         )
         candidates.append(
@@ -243,11 +268,14 @@ class DeterministicMockLLMProvider:
                 market_memory_evidence=["D-day prices are blocked during blind analysis"],
                 prior_positive_cases=prior_positive_cases,
                 prior_negative_cases=prior_negative_cases,
+                prior_positive_record_ids=prior_positive_record_ids,
+                prior_negative_record_ids=prior_negative_record_ids,
                 counterarguments=["already exhausted", "no current catalyst overlap"],
                 confidence_label=ConfidenceLabel.SPECULATIVE,
                 evidence_quality=ConfidenceLabel.LOW,
                 source_urls=["price://blind-safe-d-minus-one"],
                 memory_episode_ids=memory_case_ids,
+                memory_record_ids=memory_record_ids,
             )
         )
 
@@ -269,6 +297,8 @@ class DeterministicMockLLMProvider:
             ],
             supporting_cases=prior_positive_cases,
             contradicting_cases=prior_negative_cases,
+            supporting_record_ids=prior_positive_record_ids,
+            contradicting_record_ids=prior_negative_record_ids,
         )
         return BlindPrediction(
             prediction_id=stable_id("PRED", prompt, created_at.isoformat()),
@@ -379,6 +409,11 @@ class DeterministicMockLLMProvider:
                 prior_negative_cases = [
                     item for item in raw_candidate.get("prior_negative_cases", []) if isinstance(item, str)
                 ]
+                prior_negative_record_ids = [
+                    item
+                    for item in raw_candidate.get("prior_negative_record_ids", [])
+                    if isinstance(item, str)
+                ]
                 direct_evidence = [
                     item for item in raw_candidate.get("direct_evidence", []) if isinstance(item, str)
                 ]
@@ -408,6 +443,7 @@ class DeterministicMockLLMProvider:
                                     for item in [
                                         *raw_candidate.get("source_urls", []),
                                         *prior_negative_cases,
+                                        *prior_negative_record_ids,
                                     ]
                                     if isinstance(item, str)
                                 ][:10],
@@ -418,6 +454,10 @@ class DeterministicMockLLMProvider:
                         objections=self._dedupe_strings(objections),
                         contrary_evidence=[
                             f"negative memory case: {case}" for case in prior_negative_cases
+                        ]
+                        + [
+                            f"negative memory record: {record_id}"
+                            for record_id in prior_negative_record_ids
                         ],
                         disconfirming_conditions=self._dedupe_strings(
                             [

@@ -30,10 +30,13 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             f"- Market-memory evidence: {list_text(candidate.market_memory_evidence)}",
             f"- Prior positive cases: {list_text(candidate.prior_positive_cases)}",
             f"- Prior negative cases: {list_text(candidate.prior_negative_cases)}",
+            f"- Prior positive record IDs: {list_text(candidate.prior_positive_record_ids)}",
+            f"- Prior negative record IDs: {list_text(candidate.prior_negative_record_ids)}",
             f"- Novel reasoning: {candidate.novel_reasoning or 'none recorded'}",
             f"- Counterarguments: {'; '.join(candidate.counterarguments) or 'none recorded'}",
             f"- Disconfirming conditions: {list_text(candidate.disconfirming_conditions)}",
             f"- Memory episodes: {list_text(candidate.memory_episode_ids)}",
+            f"- Memory records: {list_text(candidate.memory_record_ids)}",
             f"- Source URLs: {list_text(candidate.source_urls)}",
             f"- Provenance sources: {list_text([item.source_id for item in candidate.provenance])}",
             "",
@@ -67,6 +70,8 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 f"- Failure conditions: {'; '.join(sector.failure_conditions) or 'none recorded'}",
                 f"- Supporting cases: {list_text(sector.supporting_cases)}",
                 f"- Contradicting cases: {list_text(sector.contradicting_cases)}",
+                f"- Supporting record IDs: {list_text(sector.supporting_record_ids)}",
+                f"- Contradicting record IDs: {list_text(sector.contradicting_record_ids)}",
                 f"- Provenance sources: {list_text([item.source_id for item in sector.provenance])}",
                 "",
             ]
@@ -166,6 +171,11 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "\n".join(f"- {episode_id}" for episode_id in manifest.counterexample_episode_ids)
             or "- none",
             "",
+            "Counterexample record ids:",
+            "",
+            "\n".join(f"- {record_id}" for record_id in manifest.counterexample_record_ids)
+            or "- none",
+            "",
             "Red-team objections passed to synthesis:",
             "",
             "\n".join(f"- {path}" for path in manifest.red_team_artifacts) or "- none",
@@ -187,6 +197,14 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
             "Prior negative cases referenced by candidates:",
             "",
             "\n".join(f"- {case}" for case in _candidate_case_refs(candidates, "prior_negative_cases"))
+            or "- none",
+            "",
+            "Prior negative record ids referenced by candidates:",
+            "",
+            "\n".join(
+                f"- {record_id}"
+                for record_id in _candidate_case_refs(candidates, "prior_negative_record_ids")
+            )
             or "- none",
             "",
             PREOPEN_REPORT_SECTION_HEADINGS[11],

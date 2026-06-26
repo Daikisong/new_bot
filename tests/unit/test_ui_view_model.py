@@ -124,6 +124,7 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
                 causal_chain=["catalyst", "beneficiary"],
                 inferred_evidence=["supply chain needs verification"],
                 prior_negative_cases=["EP-negative"],
+                prior_negative_record_ids=["BRAIN-negative"],
                 novel_reasoning="New entity path can still be investigated.",
                 counterarguments=["relation may be narrative only"],
                 disconfirming_conditions=["no listed beneficiary found"],
@@ -140,7 +141,9 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
                 direct_evidence=["direct pre-cutoff source"],
                 market_memory_evidence=["D-1 absorption check"],
                 prior_positive_cases=["EP-positive"],
+                prior_positive_record_ids=["BRAIN-positive"],
                 memory_episode_ids=["EP-positive", "EP-negative"],
+                memory_record_ids=["BRAIN-positive", "BRAIN-negative"],
                 source_urls=["https://example.test/source"],
                 confidence_label=ConfidenceLabel.LOW,
             ),
@@ -242,6 +245,7 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         "counterarguments: relation may be narrative only",
         "disconfirming_conditions: no listed beneficiary found",
         "prior_negative_cases: EP-negative",
+        "prior_negative_record_ids: BRAIN-negative",
     ]
     assert [candidate.company_name for candidate in view.candidates_by_path["SINGLE_EVENT"]] == [
         "DirectCo"
@@ -251,7 +255,9 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
     assert direct_candidate.direct_evidence == ["direct pre-cutoff source"]
     assert direct_candidate.market_memory_evidence == ["D-1 absorption check"]
     assert direct_candidate.prior_positive_cases == ["EP-positive"]
+    assert direct_candidate.prior_positive_record_ids == ["BRAIN-positive"]
     assert direct_candidate.memory_episode_ids == ["EP-positive", "EP-negative"]
+    assert direct_candidate.memory_record_ids == ["BRAIN-positive", "BRAIN-negative"]
     assert direct_candidate.source_urls == ["https://example.test/source"]
     assert [
         candidate.company_name for candidate in view.candidates_by_path["THEME_BENEFICIARY"]
@@ -374,10 +380,13 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
             market_memory_evidence=[],
             prior_positive_cases=["EP-positive"],
             prior_negative_cases=[],
+            prior_positive_record_ids=["BRAIN-positive"],
+            prior_negative_record_ids=[],
             novel_reasoning="Direct company event can matter without a static allowlist.",
             counterarguments=[],
             disconfirming_conditions=[],
             memory_episode_ids=["EP-positive"],
+            memory_record_ids=["BRAIN-positive"],
             source_urls=["https://example.test/direct"],
         ),
         CandidateEvidenceView(
@@ -395,10 +404,13 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
             market_memory_evidence=[],
             prior_positive_cases=[],
             prior_negative_cases=["EP-negative"],
+            prior_positive_record_ids=[],
+            prior_negative_record_ids=["BRAIN-negative"],
             novel_reasoning="New beneficiary can be researched even when memory misses.",
             counterarguments=["relationship may be weak"],
             disconfirming_conditions=["not listed"],
             memory_episode_ids=["EP-negative"],
+            memory_record_ids=["BRAIN-negative"],
             source_urls=["https://example.test/beneficiary"],
         ),
         CandidateEvidenceView(
@@ -416,10 +428,13 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
             market_memory_evidence=["D-1 price action only"],
             prior_positive_cases=["EP-continuation"],
             prior_negative_cases=[],
+            prior_positive_record_ids=["BRAIN-continuation"],
+            prior_negative_record_ids=[],
             novel_reasoning="Continuation is evaluated separately from direct news.",
             counterarguments=[],
             disconfirming_conditions=[],
             memory_episode_ids=["EP-continuation"],
+            memory_record_ids=["BRAIN-continuation"],
             source_urls=["https://example.test/leader"],
         ),
     ]
@@ -535,10 +550,13 @@ def test_render_candidate_includes_full_evidence_and_objection_payload() -> None
         market_memory_evidence=["market memory"],
         prior_positive_cases=["EP-positive"],
         prior_negative_cases=["EP-negative"],
+        prior_positive_record_ids=["BRAIN-positive"],
+        prior_negative_record_ids=["BRAIN-negative"],
         novel_reasoning="new company path",
         counterarguments=["weak relation"],
         disconfirming_conditions=["not listed"],
         memory_episode_ids=["EP-positive", "EP-negative"],
+        memory_record_ids=["BRAIN-positive", "BRAIN-negative"],
         source_urls=["https://example.test/source"],
     )
 
@@ -553,10 +571,13 @@ def test_render_candidate_includes_full_evidence_and_objection_payload() -> None
         "market_memory_evidence": ["market memory"],
         "prior_positive_cases": ["EP-positive"],
         "prior_negative_cases": ["EP-negative"],
+        "prior_positive_record_ids": ["BRAIN-positive"],
+        "prior_negative_record_ids": ["BRAIN-negative"],
         "novel_reasoning": "new company path",
         "counterarguments": ["weak relation"],
         "disconfirming_conditions": ["not listed"],
         "memory_episode_ids": ["EP-positive", "EP-negative"],
+        "memory_record_ids": ["BRAIN-positive", "BRAIN-negative"],
         "source_urls": ["https://example.test/source"],
     }
 

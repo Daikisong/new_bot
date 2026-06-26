@@ -69,6 +69,8 @@ def _final_synthesis_payload() -> dict[str, object]:
         "retrieved_records": [],
         "positive_cases": [],
         "negative_cases": [],
+        "positive_record_ids": [],
+        "negative_record_ids": [],
         "counterexamples": [],
         "counterexample_records": [],
         "candidate_research": {"candidates": []},

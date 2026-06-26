@@ -265,6 +265,8 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "retrieved_records": [],
         "positive_cases": [],
         "negative_cases": [],
+        "positive_record_ids": [],
+        "negative_record_ids": [],
         "counterexamples": [],
         "counterexample_records": [],
         "candidate_research": {"candidates": []},

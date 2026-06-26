@@ -462,6 +462,8 @@ def _candidate_prompt_payload(candidate: Candidate) -> dict[str, Any]:
         "market_memory_evidence": candidate.market_memory_evidence,
         "prior_positive_cases": candidate.prior_positive_cases,
         "prior_negative_cases": candidate.prior_negative_cases,
+        "prior_positive_record_ids": candidate.prior_positive_record_ids,
+        "prior_negative_record_ids": candidate.prior_negative_record_ids,
         "novel_reasoning": candidate.novel_reasoning,
         "counterarguments": candidate.counterarguments,
         "disconfirming_conditions": candidate.disconfirming_conditions,
@@ -469,6 +471,7 @@ def _candidate_prompt_payload(candidate: Candidate) -> dict[str, Any]:
         "evidence_quality": str(candidate.evidence_quality),
         "source_urls": candidate.source_urls,
         "memory_episode_ids": candidate.memory_episode_ids,
+        "memory_record_ids": candidate.memory_record_ids,
     }
 
 
