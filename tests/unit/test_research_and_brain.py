@@ -1330,7 +1330,12 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
 
     BrainCompiler(tmp_path).rebuild(mode="full")
 
-    report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    report_path = tmp_path / "diagnostics" / "brain_compile_report.json"
+    report = read_json(report_path)
+    stale_report = dict(report)
+    stale_report["category_source_record_counts"] = {}
+    stale_report.pop("category_source_record_type_counts", None)
+    write_json(report_path, stale_report)
     audit = audit_brain(tmp_path)
     assert report["compiler_mode"] == "full"
     assert report["category_source_record_type_counts"]["world_model"] == {
@@ -1378,6 +1383,11 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     }
     post_audit_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_audit = post_audit_report["latest_brain_audit"]
+    assert post_audit_report["category_source_record_type_counts"] == audit[
+        "brain_category_source_record_types"
+    ]
+    assert post_audit_report["category_source_record_counts"]["world_model"] == 3
+    assert post_audit_report["category_source_record_counts"]["theme_formation"] == 0
     assert latest_audit["brain_category_file_count"] == 9
     assert (
         latest_audit["brain_category_source_record_types"]

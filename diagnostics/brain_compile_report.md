@@ -2,6 +2,7 @@
 
 - accepted_episode_count: `2`
 - brain_version: `brain-8cd4d47576`
+- catalog_only: `True`
 ## category_claim_counts
 
 - beneficiary_discovery: `2`
@@ -41,6 +42,27 @@
 
 ## category_source_record_counts
 
+- beneficiary_discovery: `0`
+- continuation: `2`
+- counterexamples: `0`
+- failure_modes: `0`
+- leader_selection: `1`
+- market_memory: `2`
+- single_event: `1`
+- theme_formation: `0`
+- world_model: `4`
+
+## category_source_record_type_counts
+
+- beneficiary_discovery: `{}`
+- continuation: `{'memory_claim': 2}`
+- counterexamples: `{}`
+- failure_modes: `{}`
+- leader_selection: `{'blind_leader_preference_pair': 1}`
+- market_memory: `{'memory_claim': 2}`
+- single_event: `{'supervised_issuer_day_case': 1}`
+- theme_formation: `{}`
+- world_model: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
 
 - claim_count: `7`
 - compiled_claim_count: `0`
@@ -74,6 +96,8 @@
 
 - llm_compile: `None`
 - llm_compile_present: `False`
+- llm_compile_run: `None`
+- llm_compile_run_present: `False`
 ## record_coverage
 
 - accepted_record_count: `4`

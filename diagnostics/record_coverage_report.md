@@ -3,6 +3,7 @@
 - schema_version: `nslab.record_coverage_manifest.v1`
 - brain_version: `brain-8cd4d47576`
 - build_mode: `full`
+- catalog_only: `True`
 - accepted_episode_count: `2`
 - accepted_record_count: `4`
 - available_record_count: `4`

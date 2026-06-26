@@ -109,6 +109,14 @@ def _write_latest_brain_audit_summary(
         if isinstance(payload, dict):
             report = payload
     report.setdefault("schema_version", "nslab.brain_compile_diagnostics.v1")
+    category_source_record_types = result.get("brain_category_source_record_types")
+    if isinstance(category_source_record_types, dict):
+        report["category_source_record_type_counts"] = category_source_record_types
+        report["category_source_record_counts"] = (
+            _category_source_record_counts_from_type_distribution(
+                category_source_record_types
+            )
+        )
     report["latest_brain_audit"] = {
         "deep": deep,
         "passed": result.get("passed"),
@@ -137,6 +145,21 @@ def _write_latest_brain_audit_summary(
         "findings": _brain_audit_findings(result),
     }
     write_diagnostic_report(root, "brain_compile_report", report)
+
+
+def _category_source_record_counts_from_type_distribution(
+    category_source_record_types: dict[object, object],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for category, type_counts in category_source_record_types.items():
+        if not isinstance(category, str) or not isinstance(type_counts, dict):
+            continue
+        counts[category] = sum(
+            count
+            for count in type_counts.values()
+            if isinstance(count, int) and not isinstance(count, bool)
+        )
+    return dict(sorted(counts.items()))
 
 
 def _brain_audit_findings(result: dict[str, object]) -> list[str]:
