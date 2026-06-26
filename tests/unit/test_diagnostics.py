@@ -1434,6 +1434,7 @@ def test_real_bundle_smoke_passes_only_for_production_source_bundle(
         is True
     )
     assert report["selected"]["inspection"]["raw_payload_hashes_match"] is True
+    assert report["selected"]["inspection"]["import_loss_audit_passed"] is True
 
 
 def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
@@ -1616,6 +1617,11 @@ def test_real_bundle_smoke_rejects_import_loss_parity_gap(
         inspection = _valid_v11_bundle_inspection(path)
         inspection["record_id_set_matches_raw"] = False
         inspection["missing_normalized_record_ids"] = ["BRAIN-missing"]
+        inspection["import_loss_audit_passed"] = False
+        inspection["validation"] = {
+            **dict(inspection["validation"]),
+            "import_loss_audit_passed": False,
+        }
         return inspection
 
     monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
@@ -1627,6 +1633,7 @@ def test_real_bundle_smoke_rejects_import_loss_parity_gap(
     assert report["first_production_status"] == "failed"
     assert report["production_failed_inspection_count"] == 1
     assert report["inspections"][0]["inspection"]["record_id_set_matches_raw"] is False
+    assert report["inspections"][0]["inspection"]["import_loss_audit_passed"] is False
     assert report["inspections"][0]["inspection"]["missing_normalized_record_ids"] == [
         "BRAIN-missing"
     ]
@@ -2377,6 +2384,7 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "training_eligible_count_matches_raw": True,
         "raw_payload_hashes_match": True,
         "raw_payload_hash_mismatch_record_ids": [],
+        "import_loss_audit_passed": True,
         "typed_payload_valid": True,
         "invalid_typed_payload_record_count": 0,
         "validation_passed": True,
@@ -2398,6 +2406,7 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
             "critical_error_count_zero": True,
             "typed_payload_valid": True,
             "invalid_typed_payload_record_ids": [],
+            "import_loss_audit_passed": True,
         },
     }
 

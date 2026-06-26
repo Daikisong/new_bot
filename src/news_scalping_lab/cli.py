@@ -545,6 +545,9 @@ def research_inspect_bundle(path: Path) -> None:
             "raw_payload_hash_mismatch_record_ids": inspection.get(
                 "raw_payload_hash_mismatch_record_ids"
             ),
+            "import_loss_audit_passed": inspection.get(
+                "import_loss_audit_passed"
+            ),
             "dropped_record_count": inspection.get("dropped_record_count"),
             "quarantined_record_count": inspection.get("quarantined_record_count"),
             "record_counts_by_type": inspection.get("record_counts_by_type"),

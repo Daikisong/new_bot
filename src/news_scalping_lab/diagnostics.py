@@ -1252,6 +1252,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("record_type_counts_match_raw") is True
         and inspection.get("training_eligible_count_matches_raw") is True
         and inspection.get("raw_payload_hashes_match") is True
+        and inspection.get("import_loss_audit_passed") is True
         and inspection.get("typed_payload_valid") is True
     )
     return {
@@ -1293,6 +1294,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "raw_payload_hash_mismatch_record_ids": inspection.get(
             "raw_payload_hash_mismatch_record_ids"
         ),
+        "import_loss_audit_passed": inspection.get("import_loss_audit_passed"),
         "typed_payload_valid": inspection.get("typed_payload_valid"),
         "invalid_typed_payload_record_count": inspection.get(
             "invalid_typed_payload_record_count"

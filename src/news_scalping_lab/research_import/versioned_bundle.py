@@ -479,6 +479,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             sorted(Counter(record.record_type for record in records).items())
         ),
         "validation_passed": validation.get("passed") is True,
+        "import_loss_audit_passed": validation.get("import_loss_audit_passed"),
         "record_count_matches_manifest": validation.get("record_count_matches_manifest"),
         "training_eligible_count_matches_manifest": validation.get(
             "training_eligible_count_matches_manifest"
