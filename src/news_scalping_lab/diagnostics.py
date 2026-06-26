@@ -100,6 +100,8 @@ def production_readiness_report(
         brain_audit = _nested_dict(brain, "audit")
         if brain_audit and brain_audit.get("passed") is not True:
             findings.append("brain: latest brain audit failed")
+        if brain_audit and brain_audit.get("deep") is not True:
+            findings.append("brain: latest brain audit was not run with --deep")
         if brain_audit and not _brain_audit_diversity_summary_present(brain_audit):
             findings.append("brain: latest brain audit diversity summary is missing")
         coverage = brain.get("coverage")
@@ -336,7 +338,7 @@ def build_doctor_report(
         stock_web_schema = stock_web_source.inspect_atlas_schema()
         stock_web_schema_status = stock_web_source.inspect_atlas_status()
     schema_dir = settings.path("schemas")
-    coverage_audit = audit_coverage(settings.project_root)
+    coverage_audit = audit_coverage(settings.project_root, deep=production)
     warehouse_status = _warehouse_status(
         coverage_audit,
         accepted_episode_count=accepted_episode_count,
@@ -1327,6 +1329,7 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
     findings = _string_list(coverage_audit.get("brain_audit_findings"))
     return {
         "passed": coverage_audit.get("brain_audit_passed") is True,
+        "deep": coverage_audit.get("brain_audit_deep"),
         "brain_build_mode": coverage_audit.get("brain_build_mode"),
         "catalog_only": coverage_audit.get("catalog_only"),
         "record_coverage_complete": coverage_audit.get("record_coverage_complete"),

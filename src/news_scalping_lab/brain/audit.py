@@ -71,6 +71,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     result = {
+        "deep": deep,
         "accepted_episode_count": len(accepted),
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,

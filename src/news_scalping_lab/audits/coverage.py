@@ -17,8 +17,8 @@ from news_scalping_lab.utils import read_json
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
-def audit_coverage(root: Path) -> dict[str, object]:
-    brain = audit_brain(root)
+def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
+    brain = audit_brain(root, deep=deep)
     brain_audit_passed = bool(brain.get("passed"))
     brain_audit_findings = _brain_audit_findings(brain)
     accepted_episode_count = _int_value(brain.get("accepted_episode_count"))
@@ -119,6 +119,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
         ),
         "findings": findings,
         "brain_audit_passed": brain_audit_passed,
+        "brain_audit_deep": brain.get("deep"),
         "brain_audit_findings": brain_audit_findings,
         "vector_index": vector_index,
         "vector_index_current": vector_index_current,
@@ -155,6 +156,8 @@ def _brain_audit_findings(brain: dict[str, object]) -> list[str]:
         "determinism_findings",
         "record_coverage_findings",
         "brain_diversity_findings",
+        "llm_compile_findings",
+        "compiled_claim_findings",
     ):
         findings.extend(_string_items(brain.get(field)))
     record_store_audit = brain.get("record_store_audit")

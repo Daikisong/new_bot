@@ -381,7 +381,8 @@ def test_doctor_report_exposes_warehouse_duplicate_and_weight_details(
     ensure_project_dirs(settings)
     export_json_schemas(tmp_path / "schemas")
 
-    def fake_audit_coverage(root: Path) -> dict[str, object]:
+    def fake_audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
+        assert deep is False
         return {
             "brain_audit_passed": True,
             "brain_audit_findings": [],
@@ -590,11 +591,19 @@ def test_doctor_production_report_requires_real_api_connections_for_mock_default
     assert normal_report["api_connections"]["openai"]["status"] == "not_required"
     assert normal_report["api_connections"]["brave_search"]["required"] is False
     assert normal_report["api_connections"]["brave_search"]["status"] == "not_required"
+    assert normal_report["brain"]["audit"]["deep"] is False
     assert production_report["api_connections"]["openai"]["required"] is True
     assert production_report["api_connections"]["openai"]["configured"] is False
     assert production_report["api_connections"]["openai"]["status"] == "missing_api_key"
     assert production_report["api_connections"]["brave_search"]["required"] is True
     assert production_report["api_connections"]["brave_search"]["configured"] is False
+    assert production_report["brain"]["audit"]["deep"] is True
+    compile_report = json.loads(
+        (tmp_path / "diagnostics" / "brain_compile_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert compile_report["latest_brain_audit"]["deep"] is True
     assert (
         production_report["api_connections"]["brave_search"]["status"]
         == "missing_api_key"
@@ -604,6 +613,41 @@ def test_doctor_production_report_requires_real_api_connections_for_mock_default
         "brave_search: required API key is missing",
         "openai: required API key is missing",
     ]
+
+
+def test_production_readiness_requires_deep_latest_brain_audit(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "brain": {
+            "audit": {
+                "passed": True,
+                "deep": False,
+                "brain_category_source_record_types": {},
+                "brain_category_source_population_mismatches": [],
+                "brain_empty_category_complete_files": [],
+                "brain_category_files_identical": [],
+                "brain_category_bodies_identical": [],
+            }
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert (
+        "brain: latest brain audit was not run with --deep"
+        in production["findings"]
+    )
 
 
 def test_doctor_report_readiness_flags_missing_openai_sdk_when_provider_enabled(
