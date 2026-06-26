@@ -400,6 +400,10 @@ class DailyAnalyzer:
                 "excluded_semantic_retrieval_episode_ids": (
                     manifest.excluded_semantic_retrieval_episode_ids
                 ),
+                "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
+                "excluded_semantic_retrieval_record_ids": (
+                    manifest.excluded_semantic_retrieval_record_ids
+                ),
                 "semantic_retrieval_summary": manifest.semantic_retrieval_summary,
                 "candidate_expansion_artifact": manifest.candidate_expansion_artifact,
                 "candidate_expansion_summary": manifest.candidate_expansion_summary,
@@ -1500,6 +1504,8 @@ class DailyAnalyzer:
         manifest.semantic_retrieval_sha256 = sha256_text(payload)
         manifest.semantic_retrieval_episode_ids = included_episode_ids
         manifest.excluded_semantic_retrieval_episode_ids = excluded_episode_ids
+        manifest.semantic_retrieval_record_ids = included_record_ids
+        manifest.excluded_semantic_retrieval_record_ids = excluded_record_ids
         manifest.semantic_retrieval_summary = {
             "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
             "category_query_counts": category_counts,
@@ -2831,6 +2837,10 @@ class DailyAnalyzer:
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
             "retrieved_record_ids": manifest.retrieved_record_ids,
             "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
+            "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
+            "excluded_semantic_retrieval_record_ids": (
+                manifest.excluded_semantic_retrieval_record_ids
+            ),
             "retrieved_raw_episodes": self._read_retrieved_episode_context(manifest),
             "retrieved_records": self._read_retrieved_record_context(manifest),
             "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),

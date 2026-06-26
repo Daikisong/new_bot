@@ -643,6 +643,8 @@ class ContextManifest(StrictModel):
     semantic_retrieval_sha256: str | None = None
     semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
     excluded_semantic_retrieval_episode_ids: list[str] = Field(default_factory=list)
+    semantic_retrieval_record_ids: list[str] = Field(default_factory=list)
+    excluded_semantic_retrieval_record_ids: list[str] = Field(default_factory=list)
     semantic_retrieval_summary: dict[str, Any] = Field(default_factory=dict)
     candidate_expansion_artifact: str | None = None
     candidate_expansion_sha256: str | None = None

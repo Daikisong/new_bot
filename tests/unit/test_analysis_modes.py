@@ -564,6 +564,8 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.swept_record_ids == ["BRAIN-AVAILABLE"]
     assert manifest.retrieved_record_ids == ["BRAIN-AVAILABLE"]
     assert manifest.excluded_retrieved_record_ids == ["BRAIN-FUTURE"]
+    assert manifest.semantic_retrieval_record_ids == ["BRAIN-AVAILABLE"]
+    assert manifest.excluded_semantic_retrieval_record_ids == ["BRAIN-FUTURE"]
     assert manifest.record_sweep_artifacts
     assert manifest.record_sweep_shard_count == 1
     assert manifest.errors == []
@@ -574,6 +576,10 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     )["payload"]
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
+    assert synthesis_payload["semantic_retrieval_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == [
+        "BRAIN-FUTURE"
+    ]
     assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
         "record_ids"
     ] == ["BRAIN-AVAILABLE"]
