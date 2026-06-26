@@ -494,6 +494,9 @@ def research_inspect_bundle(path: Path) -> None:
             "missing_source_reference_count": inspection.get(
                 "missing_source_reference_count"
             ),
+            "missing_payload_reference_count": inspection.get(
+                "missing_payload_reference_count"
+            ),
             "available_from_valid": inspection.get("available_from_valid"),
             "invalid_available_from_record_count": inspection.get(
                 "invalid_available_from_record_count"

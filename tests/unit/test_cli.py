@@ -246,6 +246,7 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
         "hash_mismatch_count": 16,
         "hash_expectation_conflict_count": 0,
         "missing_source_reference_count": 0,
+        "missing_payload_reference_count": 2,
         "available_from_valid": True,
         "invalid_available_from_record_count": 0,
         "outcome_label_quality_valid": False,
@@ -273,6 +274,7 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert report["normalized_record_count"] == 327
     assert report["dropped_record_count"] == 0
     assert report["hash_mismatch_count"] == 16
+    assert report["missing_payload_reference_count"] == 2
     assert report["available_from_valid"] is True
     assert report["outcome_label_quality_valid"] is False
     assert report["invalid_outcome_label_quality_record_count"] == 1
