@@ -81,6 +81,9 @@ def _synthetic_v11_bundle(
             "blind_preferred_candidate_id": "CAND-A",
             "blind_rejected_candidate_id": "CAND-B",
             "outcome_preferred_candidate_id": "CAND-A",
+            "blind_preferred_ticker": "000001",
+            "blind_rejected_ticker": "000002",
+            "outcome_winner_ticker": "000001",
             "blind_preference_correct": True,
             "training_eligible": True,
             "eligibility_reason": "synthetic sealed pair",
@@ -529,6 +532,14 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     preference_rows = _jsonl(preference.path)
     assert {row["record_id"] for row in sft_rows} == {"BRAIN-SYNTH-ISSUER"}
     assert {row["record_id"] for row in preference_rows} == {"BRAIN-SYNTH-PAIR"}
+    assert preference_rows[0]["input"]["blind_preferred_ticker"] == "000001"
+    assert preference_rows[0]["input"]["blind_rejected_ticker"] == "000002"
+    assert preference_rows[0]["output"]["outcome_winner_ticker"] == "000001"
+    leader_pair_row = duckdb.sql(
+        "select blind_preferred_ticker, blind_rejected_ticker, outcome_winner_ticker "
+        f"from read_parquet('{(tmp_path / 'warehouse' / 'leader_pairs.parquet').as_posix()}')"
+    ).fetchone()
+    assert leader_pair_row == ("000001", "000002", "000001")
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
 
 

@@ -146,6 +146,10 @@ class BlindLeaderPreferencePair(FlexiblePayloadModel):
     blind_preferred_candidate_id: str | None = None
     blind_rejected_candidate_id: str | None = None
     outcome_preferred_candidate_id: str | None = None
+    blind_preferred_ticker: str | None = None
+    blind_rejected_ticker: str | None = None
+    outcome_winner_ticker: str | None = None
+    blind_preference_correct: bool | None = None
 
 
 class CandidateGenerationErrorCase(FlexiblePayloadModel):

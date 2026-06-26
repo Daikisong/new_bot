@@ -2,6 +2,9 @@
   "candidate_count": 1,
   "environment_key": "NSLAB_REAL_BUNDLE_PATH",
   "failed_inspection_count": 0,
+  "first_production_path": null,
+  "first_production_source": null,
+  "first_production_status": null,
   "inspected_count": 1,
   "inspections": [
     {
@@ -20,11 +23,13 @@
         "hash_expectation_conflict_count": 0,
         "hash_mismatch_count": 0,
         "invalid_available_from_record_count": 0,
+        "invalid_outcome_label_quality_record_count": 0,
         "manifest_schema_version": "nslab.bundle_manifest.v11",
         "missing_source_reference_count": 0,
         "normalized_record_count": 2,
+        "outcome_label_quality_valid": true,
         "quarantined_record_count": 0,
-        "raw_bundle_sha256": "49c89d2ad788f2d6e75fd3c43021951e2d0196db23c63348d59005ac8fb273fa",
+        "raw_bundle_sha256": "6447a84d227e995fe20de109a1b3dffd4fa48252f50ee700943e20ac2222a20e",
         "raw_record_count": 2,
         "record_count_matches_manifest": true,
         "record_counts_by_type": {
