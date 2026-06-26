@@ -36,6 +36,13 @@ class _EvaluationResult:
         self.episode_path = report_path.with_name("episode.json")
 
 
+class _TrainingExportResult:
+    def __init__(self, *, path: Path) -> None:
+        self.path = path
+        self.manifest_path = path.with_name("manifest.json")
+        self.row_count = 0
+
+
 def test_analyze_cli_uses_configured_default_mode_when_mode_is_omitted(
     tmp_path: Path,
     monkeypatch,
@@ -296,6 +303,58 @@ def test_brain_diff_cli_reports_missing_snapshot(
 
     assert result.exit_code == 1
     assert "brain snapshot not found: missing-a" in result.output
+
+
+def test_training_export_cli_reports_export_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_export(root: Path, *, kind: str) -> _TrainingExportResult:
+        raise ValueError(f"training export failed: {kind}")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "export_training", failing_export)
+
+    result = CliRunner().invoke(app, ["training", "export-sft"])
+
+    assert result.exit_code == 1
+    assert "training export failed: sft" in result.output
+
+
+def test_warehouse_rebuild_cli_reports_rebuild_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingWarehouseStore:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def rebuild_all(self) -> dict[str, int]:
+            raise ValueError("warehouse rebuild failed: invalid source json")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "WarehouseStore", FailingWarehouseStore)
+
+    result = CliRunner().invoke(app, ["warehouse", "rebuild"])
+
+    assert result.exit_code == 1
+    assert "warehouse rebuild failed: invalid source json" in result.output
+
+
+def test_warehouse_inspect_cli_reports_audit_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_audit(root: Path) -> dict[str, object]:
+        raise ValueError("warehouse inspect failed: invalid parquet")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "audit_coverage", failing_audit)
+
+    result = CliRunner().invoke(app, ["warehouse", "inspect"])
+
+    assert result.exit_code == 1
+    assert "warehouse inspect failed: invalid parquet" in result.output
 
 
 def test_warehouse_inspect_cli_includes_counts_and_status(

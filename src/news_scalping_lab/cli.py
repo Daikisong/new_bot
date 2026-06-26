@@ -5510,34 +5510,25 @@ def audit_coverage_cmd() -> None:
 
 @training_app.command("export-sft")
 def training_export_sft() -> None:
-    settings = load_settings()
-    result = export_training(settings.project_root, kind="sft")
-    _echo(
-        {
-            "path": result.path.as_posix(),
-            "manifest": result.manifest_path.as_posix(),
-            "row_count": result.row_count,
-        }
-    )
+    _export_training_kind("sft")
 
 
 @training_app.command("export-preference")
 def training_export_preference() -> None:
-    settings = load_settings()
-    result = export_training(settings.project_root, kind="preference")
-    _echo(
-        {
-            "path": result.path.as_posix(),
-            "manifest": result.manifest_path.as_posix(),
-            "row_count": result.row_count,
-        }
-    )
+    _export_training_kind("preference")
 
 
 @training_app.command("export-evals")
 def training_export_evals() -> None:
+    _export_training_kind("evals")
+
+
+def _export_training_kind(kind: str) -> None:
     settings = load_settings()
-    result = export_training(settings.project_root, kind="evals")
+    try:
+        result = export_training(settings.project_root, kind=kind)
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             "path": result.path.as_posix(),
@@ -5550,25 +5541,32 @@ def training_export_evals() -> None:
 @warehouse_app.command("rebuild")
 def warehouse_rebuild() -> None:
     settings = load_settings()
-    _echo(WarehouseStore(settings.project_root).rebuild_all())
+    try:
+        counts = WarehouseStore(settings.project_root).rebuild_all()
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(counts)
 
 
 @warehouse_app.command("inspect")
 def warehouse_inspect() -> None:
     settings = load_settings()
-    coverage = audit_coverage(settings.project_root)
-    warehouse_counts = coverage.get("warehouse_counts")
-    counts = (
-        warehouse_counts
-        if isinstance(warehouse_counts, dict)
-        else WarehouseStore(settings.project_root).counts()
-    )
-    findings = coverage.get("findings")
-    warehouse_findings = [
-        finding
-        for finding in findings
-        if isinstance(finding, str) and finding.startswith("warehouse: ")
-    ] if isinstance(findings, list) else []
+    try:
+        coverage = audit_coverage(settings.project_root)
+        warehouse_counts = coverage.get("warehouse_counts")
+        counts = (
+            warehouse_counts
+            if isinstance(warehouse_counts, dict)
+            else WarehouseStore(settings.project_root).counts()
+        )
+        findings = coverage.get("findings")
+        warehouse_findings = [
+            finding
+            for finding in findings
+            if isinstance(finding, str) and finding.startswith("warehouse: ")
+        ] if isinstance(findings, list) else []
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             **counts,
