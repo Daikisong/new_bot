@@ -23,6 +23,7 @@ from news_scalping_lab.contracts.models import (
     BlindPrediction,
     BrainManifest,
     Candidate,
+    ClaimStatus,
     CompanyMemory,
     EventTickerEdge,
     MechanismMemory,
@@ -984,6 +985,16 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
             available_from=episode.available_from,
             provenance=[provenance],
         ),
+        MemoryClaim(
+            claim_id="CL-validated-single-support",
+            statement="Single-support claim must not be marked validated.",
+            mechanism="single support validation",
+            scope="audit fixture",
+            support_episode_ids=[episode.episode_id],
+            status=ClaimStatus.VALIDATED,
+            available_from=episode.available_from,
+            provenance=[provenance],
+        ),
     ]
     (tmp_path / "brain" / "current" / "claims.jsonl").write_text(
         "".join(claim.model_dump_json() + "\n" for claim in claims),
@@ -1004,7 +1015,9 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
         "CL-no-provenance",
         "CL-temporal-leak",
         "CL-single-support-warning",
+        "CL-validated-single-support",
     ]
+    assert audit["validated_single_support_claims"] == ["CL-validated-single-support"]
 
 
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(

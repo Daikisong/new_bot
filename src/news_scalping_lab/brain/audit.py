@@ -49,6 +49,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *claim_audit["claims_with_unknown_support"],
         *claim_audit["claim_temporal_leaks"],
         *claim_audit["claims_without_provenance"],
+        *claim_audit["validated_single_support_claims"],
         *mechanism_audit["invalid_mechanism_lines"],
         *mechanism_audit["mechanisms_without_cases"],
         *mechanism_audit["mechanisms_with_unknown_success_cases"],
@@ -339,6 +340,7 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
     claims_without_provenance: list[str] = []
     claim_temporal_leaks: list[str] = []
     single_support_claims_without_contradictions: list[str] = []
+    validated_single_support_claims: list[str] = []
     if not claims_path.exists():
         return {
             "invalid_claim_lines": invalid_claim_lines,
@@ -346,6 +348,7 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
             "claims_with_unknown_support": claims_with_unknown_support,
             "claims_without_provenance": claims_without_provenance,
             "claim_temporal_leaks": claim_temporal_leaks,
+            "validated_single_support_claims": validated_single_support_claims,
             "single_support_claims_without_contradictions": (
                 single_support_claims_without_contradictions
             ),
@@ -387,12 +390,15 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
             and not claim.near_miss_episode_ids
         ):
             single_support_claims_without_contradictions.append(claim.claim_id)
+            if claim.status == "validated":
+                validated_single_support_claims.append(claim.claim_id)
     return {
         "invalid_claim_lines": invalid_claim_lines,
         "claims_without_support": claims_without_support,
         "claims_with_unknown_support": claims_with_unknown_support,
         "claims_without_provenance": claims_without_provenance,
         "claim_temporal_leaks": claim_temporal_leaks,
+        "validated_single_support_claims": validated_single_support_claims,
         "single_support_claims_without_contradictions": (
             single_support_claims_without_contradictions
         ),
