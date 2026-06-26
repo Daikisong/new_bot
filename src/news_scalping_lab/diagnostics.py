@@ -120,6 +120,7 @@ def production_readiness_report(
         record_coverage,
         "accepted_record_count",
     )
+    record_coverage_status = _production_record_coverage_status(record_coverage)
     llm_full_brain = _llm_full_brain_status(
         settings,
         build_mode=build_mode,
@@ -134,10 +135,10 @@ def production_readiness_report(
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
     elif llm_full_brain["passed"] is not True:
         findings.extend(f"brain: {finding}" for finding in llm_full_brain["findings"])
-    if not isinstance(record_coverage, dict):
-        findings.append("records: record coverage manifest is missing")
-    elif record_coverage.get("coverage_complete") is not True:
-        findings.append("records: record coverage is incomplete")
+    if record_coverage_status["passed"] is not True:
+        findings.extend(
+            f"records: {finding}" for finding in record_coverage_status["findings"]
+        )
     record_store = _production_record_store_status(settings)
     if record_store["passed"] is not True:
         findings.extend(f"records: {finding}" for finding in record_store["findings"])
@@ -163,6 +164,7 @@ def production_readiness_report(
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
         "llm_full_brain": llm_full_brain,
+        "record_coverage": record_coverage_status,
         "record_store": record_store,
         "warehouse": warehouse,
         "semantic_index": semantic_index,
@@ -539,6 +541,186 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",
         ],
+    }
+
+
+def _production_record_coverage_status(record_coverage: object) -> dict[str, Any]:
+    if not isinstance(record_coverage, dict):
+        return {
+            "schema_version": "nslab.production_record_coverage.v1",
+            "passed": False,
+            "status": "missing",
+            "finding_count": 1,
+            "findings": ["record coverage manifest is missing"],
+            "accepted_record_count": None,
+            "available_record_count": None,
+            "compiled_record_count": None,
+            "swept_record_count": None,
+            "unswept_record_ids": None,
+        }
+
+    findings: list[str] = []
+    if record_coverage.get("schema_version") != "nslab.record_coverage_manifest.v1":
+        findings.append("record coverage manifest schema_version is invalid")
+
+    count_keys = (
+        "accepted_record_count",
+        "available_record_count",
+        "available_record_count_as_of",
+        "training_eligible_available_record_count",
+        "training_eligible_record_count_as_of",
+        "compiled_record_count",
+        "swept_record_count",
+        "ineligible_record_count",
+        "audit_only_record_count",
+    )
+    counts = {
+        key: _int_from_mapping(record_coverage, key)
+        for key in count_keys
+    }
+    for key, value in counts.items():
+        if value is None:
+            findings.append(f"record coverage manifest {key} is missing")
+
+    swept_record_ids = _string_list(record_coverage.get("swept_record_ids"))
+    unswept_record_ids = _string_list(record_coverage.get("unswept_record_ids"))
+    if not isinstance(record_coverage.get("swept_record_ids"), list):
+        findings.append("record coverage manifest swept_record_ids is missing")
+    if not isinstance(record_coverage.get("unswept_record_ids"), list):
+        findings.append("record coverage manifest unswept_record_ids is missing")
+    if _duplicate_strings(swept_record_ids):
+        findings.append("record coverage manifest has duplicate swept records")
+    if unswept_record_ids:
+        findings.append("record coverage manifest has unswept records")
+
+    count_maps = {
+        "record_counts_by_type": _int_dict(
+            record_coverage.get("record_counts_by_type")
+        ),
+        "record_counts_by_evidence_phase": _int_dict(
+            record_coverage.get("record_counts_by_evidence_phase")
+        ),
+        "record_counts_by_training_target": _int_dict(
+            record_coverage.get("record_counts_by_training_target")
+        ),
+    }
+    for key, values in count_maps.items():
+        raw_value = record_coverage.get(key)
+        if not isinstance(raw_value, dict):
+            findings.append(f"record coverage manifest {key} is missing")
+        elif len(values) != len(raw_value):
+            findings.append(
+                f"record coverage manifest {key} contains non-integer values"
+            )
+
+    accepted_count = counts["accepted_record_count"]
+    available_count = counts["available_record_count"]
+    available_count_as_of = counts["available_record_count_as_of"]
+    training_eligible_count = counts["training_eligible_available_record_count"]
+    training_eligible_count_as_of = counts["training_eligible_record_count_as_of"]
+    compiled_count = counts["compiled_record_count"]
+    swept_count = counts["swept_record_count"]
+    ineligible_count = counts["ineligible_record_count"]
+    audit_only_count = counts["audit_only_record_count"]
+
+    if accepted_count is not None:
+        for key, values in count_maps.items():
+            if isinstance(record_coverage.get(key), dict) and sum(values.values()) != accepted_count:
+                findings.append(
+                    f"record coverage manifest {key} does not sum to accepted records"
+                )
+    if (
+        accepted_count is not None
+        and available_count is not None
+        and available_count > accepted_count
+    ):
+        findings.append("record coverage manifest available count exceeds accepted count")
+    if (
+        available_count is not None
+        and available_count_as_of is not None
+        and available_count_as_of > available_count
+    ):
+        findings.append("record coverage manifest as-of available count exceeds available count")
+    if (
+        accepted_count is not None
+        and compiled_count is not None
+        and compiled_count != accepted_count
+    ):
+        findings.append(
+            "record coverage manifest compiled count does not match accepted count"
+        )
+    if swept_count is not None and swept_count != len(swept_record_ids):
+        findings.append("record coverage manifest swept count does not match swept IDs")
+    if (
+        available_count is not None
+        and swept_count is not None
+        and swept_count != available_count
+    ):
+        findings.append(
+            "record coverage manifest swept count does not match available count"
+        )
+    if (
+        training_eligible_count is not None
+        and available_count is not None
+        and training_eligible_count > available_count
+    ):
+        findings.append(
+            "record coverage manifest training eligible count exceeds available count"
+        )
+    if (
+        training_eligible_count_as_of is not None
+        and available_count_as_of is not None
+        and training_eligible_count_as_of > available_count_as_of
+    ):
+        findings.append(
+            "record coverage manifest as-of training eligible count exceeds as-of available count"
+        )
+    if (
+        ineligible_count is not None
+        and accepted_count is not None
+        and ineligible_count > accepted_count
+    ):
+        findings.append("record coverage manifest ineligible count exceeds accepted count")
+    if (
+        audit_only_count is not None
+        and accepted_count is not None
+        and audit_only_count > accepted_count
+    ):
+        findings.append("record coverage manifest audit-only count exceeds accepted count")
+
+    has_findings_before_complete_check = bool(findings)
+    if record_coverage.get("coverage_complete") is not True:
+        findings.append("record coverage manifest is not marked complete")
+    elif has_findings_before_complete_check:
+        findings.append(
+            "record coverage manifest is marked complete despite production findings"
+        )
+
+    return {
+        "schema_version": "nslab.production_record_coverage.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "accepted_record_count": accepted_count,
+        "available_record_count": available_count,
+        "available_record_count_as_of": available_count_as_of,
+        "training_eligible_available_record_count": training_eligible_count,
+        "training_eligible_record_count_as_of": training_eligible_count_as_of,
+        "compiled_record_count": compiled_count,
+        "swept_record_count": swept_count,
+        "swept_record_id_count": len(swept_record_ids),
+        "unswept_record_ids": unswept_record_ids,
+        "record_counts_by_type": count_maps["record_counts_by_type"],
+        "record_counts_by_evidence_phase": count_maps[
+            "record_counts_by_evidence_phase"
+        ],
+        "record_counts_by_training_target": count_maps[
+            "record_counts_by_training_target"
+        ],
+        "ineligible_record_count": ineligible_count,
+        "audit_only_record_count": audit_only_count,
+        "coverage_complete": record_coverage.get("coverage_complete"),
     }
 
 
@@ -1865,6 +2047,16 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool)
+    }
 
 
 def _duplicate_strings(values: list[str]) -> list[str]:

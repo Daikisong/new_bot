@@ -863,6 +863,103 @@ def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -
     )
 
 
+def test_production_readiness_accepts_complete_record_coverage_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(current / "record_coverage_manifest.json", _complete_record_coverage())
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_coverage"]["passed"] is True
+    assert production["record_coverage"]["status"] == "ready"
+    assert production["record_coverage"]["accepted_record_count"] == 2
+    assert production["record_coverage"]["swept_record_count"] == 2
+    assert production["record_coverage"]["unswept_record_ids"] == []
+    assert not any(finding.startswith("records:") for finding in production["findings"])
+
+
+def test_production_readiness_rejects_incomplete_record_coverage_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    coverage = _complete_record_coverage()
+    coverage.update(
+        {
+            "training_eligible_available_record_count": 3,
+            "compiled_record_count": 1,
+            "swept_record_count": 1,
+            "swept_record_ids": ["BRAIN-1", "BRAIN-1"],
+            "unswept_record_ids": ["BRAIN-2"],
+            "record_counts_by_type": {"supervised_issuer_day_case": 1},
+            "record_counts_by_evidence_phase": {},
+            "record_counts_by_training_target": {},
+            "ineligible_record_count": 3,
+            "audit_only_record_count": 3,
+        }
+    )
+    write_json(current / "record_coverage_manifest.json", coverage)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["swept_record_count"] == 1
+    assert production["record_coverage"]["swept_record_id_count"] == 2
+    assert production["record_coverage"]["unswept_record_ids"] == ["BRAIN-2"]
+    assert (
+        "records: record coverage manifest has unswept records"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest compiled count does not match accepted count"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest swept count does not match swept IDs"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest swept count does not match available count"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest is marked complete despite production findings"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_semantic_index_model_mismatch(
     tmp_path,
 ) -> None:
@@ -2623,6 +2720,36 @@ def _write_real_smoke_validation_report(
         root / "research" / "episodes" / episode_id / "validation_report.json",
         report,
     )
+
+
+def _complete_record_coverage() -> dict[str, object]:
+    return {
+        "schema_version": "nslab.record_coverage_manifest.v1",
+        "accepted_record_count": 2,
+        "available_record_count": 2,
+        "available_record_count_as_of": 2,
+        "training_eligible_available_record_count": 1,
+        "training_eligible_record_count_as_of": 1,
+        "compiled_record_count": 2,
+        "swept_record_count": 2,
+        "swept_record_ids": ["BRAIN-1", "BRAIN-2"],
+        "unswept_record_ids": [],
+        "record_counts_by_type": {
+            "counterexample": 1,
+            "supervised_issuer_day_case": 1,
+        },
+        "record_counts_by_evidence_phase": {
+            "AUDIT": 1,
+            "POSTMORTEM": 1,
+        },
+        "record_counts_by_training_target": {
+            "audit_only": 1,
+            "issuer_day_price_response": 1,
+        },
+        "ineligible_record_count": 1,
+        "audit_only_record_count": 1,
+        "coverage_complete": True,
+    }
 
 
 def _real_smoke_source_id(episode_id: str) -> str:
