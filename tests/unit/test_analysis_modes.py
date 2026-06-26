@@ -14,6 +14,7 @@ from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
+from news_scalping_lab.context.sweep import MemorySweeper
 from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
@@ -74,6 +75,7 @@ def _brain_record(
     *,
     episode_id: str = "NSLAB-20300110-RECORDS",
     record_type: str = "supervised_direct_event_case",
+    response_class: str = "positive_high10",
     available_from: datetime,
 ) -> BrainRecordEnvelope:
     trade_day = date(2030, 1, 9)
@@ -88,7 +90,7 @@ def _brain_record(
         "ticker": "000001",
         "company_name": "Record Sweep Co",
         "path_type": "single_event",
-        "response_class": "positive_high10",
+        "response_class": response_class,
         "training_eligible": record_type != "counterexample",
         "provenance_source_ids": ["SRC-RECORD-SWEEP"],
     }
@@ -409,6 +411,71 @@ def test_context_assembler_uses_configurable_as_of_shard_episode_count(
 
     assert len(manifest.shard_brain_files) == 3
     assert all("runs/checkpoints/brain_context/" in path for path in manifest.shard_brain_files)
+
+
+def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-NEAR",
+                response_class="near_miss_high5",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-COUNTER",
+                record_type="counterexample",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-PAIR",
+                record_type="blind_leader_preference_pair",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-THEME",
+                record_type="supervised_theme_formation_case",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-CANDIDATE-ERROR",
+                record_type="candidate_generation_error_case",
+                response_class="negative",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+
+    sweep = MemorySweeper(tmp_path, shard_episode_count=10).sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_id="RUN-record-bundles",
+        current_news_texts=["new catalyst"],
+        first_pass_mechanisms=["open-world first pass"],
+        brain_version="brain-test",
+    )
+
+    assert sweep.errors == []
+    assert sweep.record_artifact_paths
+    payload = read_json(tmp_path / sweep.record_artifact_paths[0])
+    assert [record["record_id"] for record in payload["near_misses"]] == [
+        "BRAIN-NEAR"
+    ]
+    assert [record["record_id"] for record in payload["counterexamples"]] == [
+        "BRAIN-COUNTER"
+    ]
+    assert [record["record_id"] for record in payload["leader_selection_pairs"]] == [
+        "BRAIN-PAIR"
+    ]
+    assert [record["record_id"] for record in payload["theme_formation_failures"]] == [
+        "BRAIN-THEME"
+    ]
+    assert [
+        record["record_id"] for record in payload["candidate_generation_errors"]
+    ] == ["BRAIN-CANDIDATE-ERROR"]
 
 
 @pytest.mark.asyncio

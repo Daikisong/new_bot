@@ -598,10 +598,25 @@ class MemorySweeper:
                 if "error_case" in record.record_type
                 or record.record_type in {"counterexample"}
             ],
+            "near_misses": [
+                _record_summary(record)
+                for record in records
+                if _is_near_miss_record(record)
+            ],
+            "counterexamples": [
+                _record_summary(record)
+                for record in records
+                if record.record_type == "counterexample"
+            ],
             "leader_selection_pairs": [
                 _record_summary(record)
                 for record in records
                 if record.record_type == "blind_leader_preference_pair"
+            ],
+            "theme_formation_failures": [
+                _record_summary(record)
+                for record in records
+                if record.record_type == "supervised_theme_formation_case"
             ],
             "candidate_generation_errors": [
                 _record_summary(record)
@@ -681,3 +696,14 @@ def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
         "path_type": payload.get("path_type"),
         "confidence_label": record.confidence_label,
     }
+
+
+def _is_near_miss_record(record: BrainRecordEnvelope) -> bool:
+    response_class = record.payload.get("response_class")
+    if isinstance(response_class, str) and "near_miss" in response_class:
+        return True
+    outcome = record.payload.get("outcome")
+    if isinstance(outcome, dict):
+        outcome_response = outcome.get("response_class")
+        return isinstance(outcome_response, str) and "near_miss" in outcome_response
+    return False
