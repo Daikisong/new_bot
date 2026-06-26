@@ -2844,6 +2844,13 @@ def _check_manifest_record_sweep_artifacts(
                 f"{prediction_path.name}: record sweep artifact record_count mismatch: "
                 f"{artifact_ref}"
             )
+        _check_record_sweep_category_fields(
+            prediction_path,
+            artifact_ref,
+            payload,
+            record_ids,
+            findings,
+        )
         source_hashes = _record_sweep_source_hashes(
             payload.get("record_shard_source_hashes"),
             record_ids,
@@ -2896,6 +2903,46 @@ def _check_manifest_record_sweep_artifacts(
             )
     else:
         findings.append(f"{prediction_path.name}: context manifest swept_record_ids is invalid")
+
+
+def _check_record_sweep_category_fields(
+    prediction_path: Path,
+    artifact_ref: str,
+    payload: dict[str, Any],
+    record_ids: list[str],
+    findings: list[str],
+) -> None:
+    allowed_record_ids = set(record_ids)
+    for field in (
+        "positive_analogs",
+        "negative_analogs",
+        "negative_controls",
+        "near_misses",
+        "counterexamples",
+        "leader_selection_pairs",
+        "theme_formation_failures",
+        "candidate_generation_errors",
+    ):
+        value = payload.get(field)
+        if not isinstance(value, list):
+            findings.append(
+                f"{prediction_path.name}: record sweep artifact {field} invalid: "
+                f"{artifact_ref}"
+            )
+            continue
+        for item in value:
+            if not isinstance(item, dict) or not isinstance(item.get("record_id"), str):
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact {field} invalid: "
+                    f"{artifact_ref}"
+                )
+                continue
+            record_id = item["record_id"]
+            if record_id not in allowed_record_ids:
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact {field} references "
+                    f"non-shard record: {artifact_ref}#{record_id}"
+                )
 
 
 def _parse_context_cutoff_at(value: object) -> datetime | None:

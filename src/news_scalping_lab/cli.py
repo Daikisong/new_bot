@@ -4185,6 +4185,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         "schema_mismatches": [],
         "metadata_mismatches": [],
         "record_count_mismatches": [],
+        "category_field_mismatches": [],
         "source_hash_mismatches": [],
         "shard_hash_mismatches": [],
         "path_within_project": None,
@@ -4280,6 +4281,14 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         observed_record_ids.extend(record_ids)
         if payload.get("record_count") != len(record_ids):
             status["record_count_mismatches"].append(artifact_ref)
+        category_mismatches = _record_sweep_category_field_mismatches(
+            payload,
+            record_ids,
+        )
+        if category_mismatches:
+            status["category_field_mismatches"].append(
+                {"path": artifact_ref, "fields": category_mismatches}
+            )
         source_hashes = _record_sweep_source_hashes(
             payload.get("record_shard_source_hashes"),
             record_ids,
@@ -4323,6 +4332,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         and not status["schema_mismatches"]
         and not status["metadata_mismatches"]
         and not status["record_count_mismatches"]
+        and not status["category_field_mismatches"]
         and not status["source_hash_mismatches"]
         and not status["shard_hash_mismatches"]
     )
@@ -4364,6 +4374,8 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         status["errors"].append("record_sweep_artifact_metadata_mismatches")
     if status["record_count_mismatches"]:
         status["errors"].append("record_sweep_artifact_record_count_mismatches")
+    if status["category_field_mismatches"]:
+        status["errors"].append("record_sweep_artifact_category_field_mismatches")
     if status["source_hash_mismatches"]:
         status["errors"].append("record_sweep_artifact_source_hash_mismatches")
     if status["shard_hash_mismatches"]:
@@ -4415,6 +4427,36 @@ def _record_sweep_source_hashes(
     if sorted(hashes) != sorted(record_ids):
         return None
     return hashes
+
+
+def _record_sweep_category_field_mismatches(
+    payload: dict[str, Any],
+    record_ids: list[str],
+) -> list[str]:
+    allowed_record_ids = set(record_ids)
+    mismatches: list[str] = []
+    for field in (
+        "positive_analogs",
+        "negative_analogs",
+        "negative_controls",
+        "near_misses",
+        "counterexamples",
+        "leader_selection_pairs",
+        "theme_formation_failures",
+        "candidate_generation_errors",
+    ):
+        value = payload.get(field)
+        if not isinstance(value, list):
+            mismatches.append(field)
+            continue
+        for item in value:
+            if not isinstance(item, dict) or not isinstance(item.get("record_id"), str):
+                mismatches.append(field)
+                break
+            if item["record_id"] not in allowed_record_ids:
+                mismatches.append(field)
+                break
+    return mismatches
 
 
 def _record_sweep_shard_hash(source_hashes: dict[str, str]) -> str:

@@ -3707,6 +3707,7 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     record_source_hashes = {
         "REC-sweep-1": record.normalized_payload_sha256,
     }
+    record_summary = {"record_id": "REC-sweep-1"}
     record_sweep_payload = {
         "schema_version": "nslab.record_memory_sweep_contribution.v1",
         "cache_key": "RECSWEEP-linked",
@@ -3718,6 +3719,14 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "record_shard_source_hashes": record_source_hashes,
         "record_count": 1,
         "record_ids": ["REC-sweep-1"],
+        "positive_analogs": [record_summary],
+        "negative_analogs": [],
+        "negative_controls": [],
+        "near_misses": [],
+        "counterexamples": [],
+        "leader_selection_pairs": [],
+        "theme_formation_failures": [],
+        "candidate_generation_errors": [],
         "from_cache": False,
     }
     write_json(record_sweep_path, record_sweep_payload)
@@ -3842,6 +3851,10 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     assert (
         "2030-01-10.json: record sweep artifact record_count mismatch: "
         f"{record_sweep_ref}"
+    ) in record_findings
+    assert (
+        "2030-01-10.json: record sweep artifact positive_analogs references "
+        f"non-shard record: {record_sweep_ref}#REC-sweep-1"
     ) in record_findings
     assert (
         "2030-01-10.json: record sweep artifact source hashes invalid: "
