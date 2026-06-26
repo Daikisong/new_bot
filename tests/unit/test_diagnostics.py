@@ -1333,6 +1333,7 @@ def test_real_bundle_smoke_passes_only_for_production_source_bundle(
     assert report["first_production_status"] == "passed"
     assert report["selected"]["source"] == "data_inbox"
     assert report["selected"]["inspection"]["raw_record_count"] == 327
+    assert report["selected"]["inspection"]["missing_payload_reference_count"] == 0
 
 
 def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
@@ -1438,6 +1439,33 @@ def test_real_bundle_smoke_prioritizes_failed_production_candidate(
     assert report["first_production_status"] == "failed"
     assert report["production_failed_inspection_count"] == 1
     assert report["synthetic_valid_smoke_count"] == 1
+
+
+def test_real_bundle_smoke_rejects_missing_payload_references(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        inspection = _valid_v11_bundle_inspection(path)
+        inspection["missing_payload_reference_count"] = 1
+        return inspection
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "failed"
+    assert report["passed"] is False
+    assert report["first_production_source"] == "data_inbox"
+    assert report["first_production_status"] == "failed"
+    assert report["production_failed_inspection_count"] == 1
+    assert report["inspections"][0]["inspection"]["missing_payload_reference_count"] == 1
 
 
 def test_real_bundle_smoke_does_not_skip_failed_earlier_production_candidate(
@@ -1988,6 +2016,7 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "hash_mismatch_count": 0,
         "hash_expectation_conflict_count": 0,
         "missing_source_reference_count": 0,
+        "missing_payload_reference_count": 0,
         "validation": {
             "passed": True,
             "bundle_status_accept_full": True,

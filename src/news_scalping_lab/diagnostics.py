@@ -1126,6 +1126,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("hash_mismatch_count") == 0
         and inspection.get("hash_expectation_conflict_count") == 0
         and inspection.get("missing_source_reference_count") == 0
+        and inspection.get("missing_payload_reference_count") == 0
     )
     return {
         "status": "passed" if smoke_passed else "failed",
@@ -1169,6 +1170,9 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         ),
         "missing_source_reference_count": inspection.get(
             "missing_source_reference_count"
+        ),
+        "missing_payload_reference_count": inspection.get(
+            "missing_payload_reference_count"
         ),
     }
 
