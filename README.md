@@ -355,6 +355,10 @@ nslab warehouse rebuild
 nslab warehouse inspect
 ```
 
+`warehouse inspect` preserves top-level row counts for each Parquet file and adds
+a `status` object with required-file presence, sync flags, missing/unreadable files,
+count mismatches, identity mismatches, and warehouse-specific findings.
+
 Generated tables include:
 
 ```text

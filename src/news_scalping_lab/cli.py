@@ -5481,7 +5481,35 @@ def warehouse_rebuild() -> None:
 @warehouse_app.command("inspect")
 def warehouse_inspect() -> None:
     settings = load_settings()
-    _echo(WarehouseStore(settings.project_root).counts())
+    coverage = audit_coverage(settings.project_root)
+    warehouse_counts = coverage.get("warehouse_counts")
+    counts = (
+        warehouse_counts
+        if isinstance(warehouse_counts, dict)
+        else WarehouseStore(settings.project_root).counts()
+    )
+    findings = coverage.get("findings")
+    warehouse_findings = [
+        finding
+        for finding in findings
+        if isinstance(finding, str) and finding.startswith("warehouse: ")
+    ] if isinstance(findings, list) else []
+    _echo(
+        {
+            **counts,
+            "status": {
+                "synced": coverage.get("warehouse_synced"),
+                "projection_synced": coverage.get("warehouse_projection_synced"),
+                "required_files_present": coverage.get("warehouse_required_files_present"),
+                "required_files": coverage.get("warehouse_required_files"),
+                "missing_files": coverage.get("warehouse_missing_files"),
+                "unreadable_files": coverage.get("warehouse_unreadable_files"),
+                "count_mismatches": coverage.get("warehouse_count_mismatches"),
+                "identity_mismatches": coverage.get("warehouse_identity_mismatches"),
+                "findings": warehouse_findings,
+            },
+        }
+    )
 
 
 def main() -> None:

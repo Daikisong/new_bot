@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 import news_scalping_lab.cli as cli_module
 from news_scalping_lab.cli import app
-from news_scalping_lab.config import Settings
+from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
 class _AnalysisResult:
@@ -141,3 +143,26 @@ def test_brain_rebuild_cli_passes_configured_shard_episode_count(
     assert result.exit_code == 0, result.output
     assert captured_counts == [3]
     assert json.loads(result.output)["shard_episode_count"] == 3
+
+
+def test_warehouse_inspect_cli_includes_counts_and_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    WarehouseStore(tmp_path).rebuild_all()
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["warehouse", "inspect"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["research_episodes.parquet"] == 0
+    assert payload["events.parquet"] == 0
+    assert sorted(payload["status"]["required_files"]) == sorted(EXPECTED_WAREHOUSE_FILES)
+    assert payload["status"]["required_files_present"] is True
+    assert payload["status"]["missing_files"] == []
+    assert payload["status"]["unreadable_files"] == []
+    assert payload["status"]["count_mismatches"] == {}
+    assert payload["status"]["identity_mismatches"] == {}
