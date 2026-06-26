@@ -287,6 +287,14 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert duckdb.sql(
         f"select count(*) from read_parquet('{(tmp_path / 'warehouse' / 'brain_records.parquet').as_posix()}')"
     ).fetchone() == (2,)
+    store_report = _read_json(tmp_path / "diagnostics" / "brain_record_store_report.json")
+    assert store_report["schema_version"] == "nslab.brain_record_store_report.v1"
+    assert store_report["record_count"] == 2
+    assert store_report["dropped_record_count"] == 0
+    assert store_report["quarantined_record_count"] == 0
+    assert store_report["audit_passed"] is True
+    assert store_report["record_store_audit"]["deep"] is True
+    assert store_report["record_store_audit"]["passed"] is True
     sft_rows = _jsonl(sft.path)
     preference_rows = _jsonl(preference.path)
     assert {row["record_id"] for row in sft_rows} == {"BRAIN-SYNTH-ISSUER"}

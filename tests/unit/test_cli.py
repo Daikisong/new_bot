@@ -591,6 +591,33 @@ def test_warehouse_rebuild_cli_reports_rebuild_errors(
     assert "warehouse rebuild failed: invalid source json" in result.output
 
 
+def test_memory_audit_cli_writes_diagnostic_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "audit", "--deep"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    report_path = tmp_path / "diagnostics" / "brain_record_store_report.json"
+    markdown_path = tmp_path / "diagnostics" / "brain_record_store_report.md"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert payload["diagnostic_report"] == {
+        "json": "diagnostics/brain_record_store_report.json",
+        "markdown": "diagnostics/brain_record_store_report.md",
+    }
+    assert report["schema_version"] == "nslab.brain_record_store_report.v1"
+    assert report["audit_passed"] is True
+    assert report["record_store_audit"]["passed"] is True
+    assert report["record_store_audit"]["deep"] is True
+    assert report["record_count"] == 0
+    assert markdown_path.exists()
+
+
 def test_warehouse_inspect_cli_reports_audit_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

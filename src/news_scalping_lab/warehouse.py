@@ -24,7 +24,11 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import BrainRecordEnvelope
-from news_scalping_lab.records.store import BrainRecordStore
+from news_scalping_lab.records.store import (
+    BrainRecordStore,
+    audit_record_store,
+    record_store_report_payload,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
 
@@ -88,17 +92,15 @@ class WarehouseStore:
                 "record_coverage": self.write_record_coverage(records),
             }
         )
+        record_store_audit = audit_record_store(self.root, deep=True)
         write_diagnostic_report(
             self.root,
             "brain_record_store_report",
-            {
-                "record_count": len(records),
-                "training_eligible_record_count": sum(
-                    1 for record in records if record.training_eligible
-                ),
-                "warehouse_counts": counts,
-                "dropped_record_count": 0,
-            },
+            record_store_report_payload(
+                self.root,
+                record_store_audit,
+                warehouse_counts=counts,
+            ),
         )
         return counts
 

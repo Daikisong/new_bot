@@ -349,6 +349,37 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
     }
 
 
+def record_store_report_payload(
+    root: Path,
+    audit_result: dict[str, Any],
+    *,
+    warehouse_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    stats_value = audit_result.get("stats")
+    stats = stats_value if isinstance(stats_value, dict) else {}
+    return {
+        "schema_version": "nslab.brain_record_store_report.v1",
+        "record_count": audit_result.get("record_count", 0),
+        "training_eligible_record_count": audit_result.get(
+            "training_eligible_record_count",
+            0,
+        ),
+        "record_counts_by_type": stats.get("record_counts_by_type", {}),
+        "warehouse_counts": warehouse_counts or {},
+        "dropped_record_count": 0,
+        "quarantined_record_count": quarantined_bundle_count(root),
+        "audit_passed": audit_result.get("passed") is True,
+        "record_store_audit": audit_result,
+    }
+
+
+def quarantined_bundle_count(root: Path) -> int:
+    quarantine_dir = root / "data" / "quarantine" / "research_bundles"
+    if not quarantine_dir.exists():
+        return 0
+    return sum(1 for path in quarantine_dir.iterdir() if path.is_dir())
+
+
 def _audit_deep_record_store(
     root: Path,
     store: BrainRecordStore,

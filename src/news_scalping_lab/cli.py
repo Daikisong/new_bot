@@ -46,7 +46,11 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
-from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
+from news_scalping_lab.records.store import (
+    BrainRecordStore,
+    audit_record_store,
+    record_store_report_payload,
+)
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
@@ -6008,6 +6012,12 @@ def memory_audit(
 ) -> None:
     settings = load_settings()
     result = audit_record_store(settings.project_root, deep=deep)
+    report_paths = write_diagnostic_report(
+        settings.project_root,
+        "brain_record_store_report",
+        record_store_report_payload(settings.project_root, result),
+    )
+    result = {**result, "diagnostic_report": report_paths}
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
