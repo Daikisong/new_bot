@@ -100,6 +100,22 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         )
     if "retrieved_records" in payload:
         summary["retrieved_record_count"] = _list_len(payload.get("retrieved_records"))
+    if "retrieved_record_ids" in payload:
+        summary["retrieved_record_id_count"] = _list_len(
+            payload.get("retrieved_record_ids")
+        )
+    if "excluded_retrieved_record_ids" in payload:
+        summary["excluded_retrieved_record_id_count"] = _list_len(
+            payload.get("excluded_retrieved_record_ids")
+        )
+    if "semantic_retrieval_record_ids" in payload:
+        summary["semantic_retrieval_record_id_count"] = _list_len(
+            payload.get("semantic_retrieval_record_ids")
+        )
+    if "excluded_semantic_retrieval_record_ids" in payload:
+        summary["excluded_semantic_retrieval_record_id_count"] = _list_len(
+            payload.get("excluded_semantic_retrieval_record_ids")
+        )
     if "positive_record_ids" in payload:
         summary["positive_record_id_count"] = _list_len(
             payload.get("positive_record_ids")
@@ -111,6 +127,10 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if "counterexample_records" in payload:
         summary["counterexample_record_count"] = _list_len(
             payload.get("counterexample_records")
+        )
+    if "counterexample_record_ids" in payload:
+        summary["counterexample_record_id_count"] = _list_len(
+            payload.get("counterexample_record_ids")
         )
     return summary
 

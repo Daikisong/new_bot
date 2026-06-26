@@ -2689,6 +2689,32 @@ def test_provenance_audit_validates_final_synthesis_context_artifact(
     )
 
 
+def test_final_synthesis_summary_counts_record_id_context() -> None:
+    summary = final_synthesis_input_summary(
+        {
+            "retrieved_record_ids": ["REC-positive", "REC-neutral"],
+            "excluded_retrieved_record_ids": ["REC-future"],
+            "semantic_retrieval_record_ids": ["REC-positive"],
+            "excluded_semantic_retrieval_record_ids": ["REC-future"],
+            "positive_record_ids": ["REC-positive"],
+            "negative_record_ids": ["REC-negative"],
+            "counterexample_record_ids": ["REC-counter"],
+            "retrieved_records": [{"record_id": "REC-positive"}],
+            "counterexample_records": [{"record_id": "REC-counter"}],
+        }
+    )
+
+    assert summary["retrieved_record_id_count"] == 2
+    assert summary["excluded_retrieved_record_id_count"] == 1
+    assert summary["semantic_retrieval_record_id_count"] == 1
+    assert summary["excluded_semantic_retrieval_record_id_count"] == 1
+    assert summary["positive_record_id_count"] == 1
+    assert summary["negative_record_id_count"] == 1
+    assert summary["counterexample_record_id_count"] == 1
+    assert summary["retrieved_record_count"] == 1
+    assert summary["counterexample_record_count"] == 1
+
+
 def test_provenance_audit_rejects_final_synthesis_future_record_ids(
     tmp_path: Path,
 ) -> None:
