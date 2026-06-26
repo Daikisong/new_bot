@@ -129,6 +129,14 @@ class BaseBundleAdapter:
         actual_training_count = sum(
             1 for record in records if record.get("training_eligible") is True
         )
+        normalized_records = self.normalize_brain_records(parsed)
+        import_loss_summary = _import_loss_summary(parsed, normalized_records)
+        import_loss_audit_passed = (
+            import_loss_summary["record_id_set_matches_raw"] is True
+            and import_loss_summary["record_type_counts_match_raw"] is True
+            and import_loss_summary["training_eligible_count_matches_raw"] is True
+            and import_loss_summary["raw_payload_hashes_match"] is True
+        )
         validation = {
             "schema_version": "nslab.versioned_bundle_validation.v1",
             "adapter": self.name,
@@ -171,6 +179,8 @@ class BaseBundleAdapter:
             "invalid_outcome_label_quality_record_ids": invalid_label_quality_record_ids,
             "typed_payload_valid": not invalid_typed_payload_record_ids,
             "invalid_typed_payload_record_ids": invalid_typed_payload_record_ids,
+            "import_loss_audit_passed": import_loss_audit_passed,
+            **import_loss_summary,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
             "critical_error_count": _int_field(
                 manifest,
@@ -188,6 +198,7 @@ class BaseBundleAdapter:
             and validation["available_from_valid"] is True
             and validation["outcome_label_quality_valid"] is True
             and validation["typed_payload_valid"] is True
+            and validation["import_loss_audit_passed"] is True
         )
         return validation
 

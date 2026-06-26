@@ -166,6 +166,7 @@ def _synthetic_v11_bundle(
     manifest_schema_version: str = "nslab.bundle_manifest.v11",
     episode_schema_version: str = "nslab.research_episode.v11",
     include_unknown: bool = True,
+    unknown_training_eligible: bool = False,
     validation_checked_hashes: dict[str, str] | None = None,
     issuer_available_from: str | None = None,
     issuer_label_quality: str | None = None,
@@ -330,7 +331,7 @@ def _synthetic_v11_bundle(
                 "episode_id": episode_id,
                 "trade_date": trade_day.isoformat(),
                 "available_from": available_from,
-                "training_eligible": False,
+                "training_eligible": unknown_training_eligible,
                 "provenance_source_ids": ["SRC-SYNTH-1"],
             }
         )
@@ -542,6 +543,45 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_versioned_bundle(original_bundle, root=tmp_path).record_count == 3
     raw_bundle = next((tmp_path / "data" / "raw" / "research").glob("*.md"))
     assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
+
+
+def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "unknown_training_eligible_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(unknown_training_eligible=True),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["raw_record_count"] == 3
+    assert inspection["normalized_record_count"] == 3
+    assert inspection["dropped_record_count"] == 0
+    assert inspection["raw_training_eligible_record_count"] == 3
+    assert inspection["training_eligible_record_count"] == 2
+    assert inspection["training_eligible_count_matches_manifest"] is True
+    assert inspection["training_eligible_count_matches_raw"] is False
+    assert inspection["validation"]["import_loss_audit_passed"] is False
+    assert (
+        inspection["validation"]["training_eligible_count_matches_raw"]
+        is False
+    )
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_record_count"] == 1
+    assert report["training_eligible_count_matches_raw"] is False
+    assert report["validation"]["import_loss_audit_passed"] is False
+    assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
 def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(
