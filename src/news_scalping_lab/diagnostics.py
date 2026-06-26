@@ -171,8 +171,10 @@ def real_bundle_smoke_report(
                     **candidate,
                     "status": "missing",
                     "inspectable": False,
-                    "production_source": candidate["source"]
-                    in REAL_BUNDLE_PRODUCTION_SOURCES,
+                    "production_source": _is_production_bundle_candidate(
+                        settings,
+                        candidate,
+                    ),
                 }
             )
             continue
@@ -184,8 +186,10 @@ def real_bundle_smoke_report(
                     **candidate,
                     "status": "inspection_failed",
                     "inspectable": False,
-                    "production_source": candidate["source"]
-                    in REAL_BUNDLE_PRODUCTION_SOURCES,
+                    "production_source": _is_production_bundle_candidate(
+                        settings,
+                        candidate,
+                    ),
                     "error": f"{type(exc).__name__}: {exc}",
                 }
             )
@@ -196,8 +200,10 @@ def real_bundle_smoke_report(
                 **candidate,
                 "status": summary["status"],
                 "inspectable": True,
-                "production_source": candidate["source"]
-                in REAL_BUNDLE_PRODUCTION_SOURCES,
+                "production_source": _is_production_bundle_candidate(
+                    settings,
+                    candidate,
+                ),
                 "inspection": summary,
             }
         )
@@ -212,7 +218,7 @@ def real_bundle_smoke_report(
         item for item in valid_inspections if item.get("production_source") is True
     ]
     synthetic_valid_inspections = [
-        item for item in valid_inspections if item.get("source") == "tests_fixture"
+        item for item in valid_inspections if item.get("production_source") is not True
     ]
     failed_inspection_count = sum(
         1
@@ -884,6 +890,28 @@ def _real_bundle_candidates(
     for source, relative in REAL_BUNDLE_SEARCH_DIRS:
         add_location(source, relative, configured=False)
     return search_locations, candidates
+
+
+def _is_production_bundle_candidate(
+    settings: Settings,
+    candidate: dict[str, Any],
+) -> bool:
+    source = candidate.get("source")
+    if source not in REAL_BUNDLE_PRODUCTION_SOURCES:
+        return False
+    absolute_path = candidate.get("absolute_path")
+    if not isinstance(absolute_path, str) or not absolute_path:
+        return False
+    try:
+        resolved = Path(absolute_path).resolve()
+    except OSError:
+        return False
+    fixture_root = settings.path(Path("tests/fixtures/research_bundles")).resolve()
+    try:
+        resolved.relative_to(fixture_root)
+    except ValueError:
+        return True
+    return False
 
 
 def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any]:

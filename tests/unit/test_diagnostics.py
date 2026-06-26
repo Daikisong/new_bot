@@ -1169,6 +1169,32 @@ def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
     assert report["synthetic_valid_smoke_count"] == 1
 
 
+def test_real_bundle_smoke_keeps_explicit_fixture_path_synthetic_only(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    fixture_dir = tmp_path / "tests" / "fixtures" / "research_bundles"
+    fixture_dir.mkdir(parents=True)
+    fixture = fixture_dir / "synthetic_bundle.md"
+    fixture.write_text("synthetic bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+
+    report = real_bundle_smoke_report(settings, explicit_path=fixture)
+
+    assert report["status"] == "synthetic_only"
+    assert report["passed"] is False
+    assert report["selected"] is None
+    assert report["real_smoke_pending"] is True
+    assert report["real_valid_smoke_count"] == 0
+    assert report["synthetic_valid_smoke_count"] == 1
+    assert report["inspections"][0]["source"] == "cli"
+    assert report["inspections"][0]["production_source"] is False
+
+
 def test_real_bundle_smoke_prioritizes_failed_production_candidate(
     tmp_path,
     monkeypatch,
