@@ -4,8 +4,286 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v19_autonomous_full_run_no_premature_quarantine
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v20_brain_delta_density_market_state_fatigue_locked
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다. v20은 brain_delta 최소 밀도, market_state/정치테마/투자주의 연속성 후보의 fatigue 감산, body table/list extractor를 hard gate로 추가한다.
+```
+
+
+────────────────────────────────────────
+V20 REGRESSION LOCK — brain_delta 밀도·market_state 과승격 방지
+────────────────────────────────────────
+
+이 섹션은 20241216류 회귀를 막기 위한 최상위 추가 게이트다. 아래 본문, `AUTONOMOUS FULL-RUN LOCK`, `PHASE COCKPIT LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
+
+해당 회귀의 형태는 다음과 같다.
+
+```text
+phase/snapshot/schema는 정상으로 보이지만,
+brain_delta가 record-level 모집단 대비 과소 생성되고,
+POLITICAL_THEME_CONTINUATION_MARKET_STATE·투자경고·매매거래정지·단기과열 같은 market_state 후보가
+직접 issuer event보다 상위 final rank를 과도하게 차지한다.
+```
+
+v20의 원칙:
+
+```text
+phase가 깨끗한 것만으로 ACCEPT_FULL이 아니다.
+semantic type이 맞는 것만으로 ACCEPT_FULL이 아니다.
+ACCEPT_FULL은 record 밀도와 final ranking 품질까지 통과해야 한다.
+```
+
+## V20.1 Brain Delta density hard gate
+
+`brain_delta.jsonl`은 요약 교훈이 아니라 import 대상 record 모집단이다.
+정상 거래일이고 `research_daily` outcome snapshot이 존재하면 `expected_brain_delta_min`은 반드시 canonical_graph count에서 계산한다.
+
+허용 formula:
+
+```text
+expected_brain_delta_min = max(
+    100,
+    issuer_day_case_count
+  + supervised_direct_event_case_count
+  + theme_formation_case_count
+  + blind_leader_pair_count
+)
+  + candidate_generation_error_case_count
+  + ranking_error_case_count
+  + newsless_or_unexplained_case_count
+  + negative_control_case_count
+```
+
+아직 error/correction population을 별도 count로 계산하지 않는 구현이라도 최소한 아래 보수식을 사용한다.
+
+```text
+expected_brain_delta_min_conservative = max(
+    100,
+    issuer_day_case_count
+  + direct_event_case_count
+  + theme_formation_case_count
+  + blind_leader_pair_count
+)
+```
+
+정상 거래일에서는 아래 hard floor도 반드시 적용한다.
+
+```text
+if research_daily_access_verified == true
+and outcome_ledger_count > 0
+and direct_event_case_count >= 50:
+    brain_delta_record_count >= expected_brain_delta_min_conservative
+```
+
+금지:
+
+```text
+expected_brain_delta_min = 7
+expected_brain_delta_min = 실제 생성된 brain_delta 개수
+brain_delta_record_count가 20~40개인데 issuer_day/direct_event 모집단이 100개 이상인 ACCEPT_FULL
+brain_delta_summary만 있고 supervised_issuer_day_case / supervised_direct_event_case record가 부족한 ACCEPT_FULL
+```
+
+validator hard check:
+
+```text
+brain_delta_density_verified == true
+brain_delta_record_count >= expected_brain_delta_min 또는 expected_brain_delta_min_conservative
+brain_delta_count_by_type.supervised_issuer_day_case == issuer_day_case_count
+brain_delta_count_by_type.supervised_direct_event_case == direct_event_case_count
+brain_delta_count_by_type.blind_leader_preference_pair == blind_leader_pair_count
+brain_delta_expected_source == CANONICAL_GRAPH_PRESEAL_OR_POSTSEAL_COUNTS
+brain_delta_expected_source != GENERATED_OUTPUT
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+brain_delta_underfilled_count += 1
+bundle_status = QUARANTINE_BRAIN_DELTA_UNDERFILLED
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V20.2 market_state continuation discount hard gate
+
+`MARKET_STATE_CONTINUATION`, `POLITICAL_THEME_CONTINUATION_MARKET_STATE`, 투자주의, 투자경고, 투자위험, 매매거래정지, 거래재개, 단기과열, 조회공시 요구, 시황변동 답변 없음은 **운영 사건이 아니라 시장상태 신호**다.
+
+시장상태 신호는 다음 용도로는 중요하다.
+
+```text
+continuation_pool
+risk/fatigue audit
+market_state_or_continuation brain_delta
+ranking_error_case
+negative_control_case
+```
+
+하지만 단독으로는 final_watchlist 상위권의 강한 장전 촉매가 아니다.
+시장상태 신호를 수주·계약·제품·허가·상용화·자본정책 메커니즘으로 재해석하지 않는다.
+
+market_state-only 후보는 다음 중 하나 이상이면 `fatigue_risk_dominant=true`로 둔다.
+
+```text
+upper_limit_touch_count_5d >= 2
+upper_limit_close_count_5d >= 2
+high_return_ge_20_count_5d >= 2
+high_return_ge_10_count_5d >= 4
+return_5d_pct >= 50
+return_10d_pct >= 100
+return_20d_pct >= 150
+투자위험종목 최초지정
+투자경고종목 지정
+투자경고종목 지정예고
+매매거래정지 예고
+매매거래정지 및 재개
+단기과열종목 지정 또는 지정예고
+현저한 시황변동 조회공시 요구인데 중요 공시대상 없음
+```
+
+`fatigue_risk_dominant=true`인 market_state-only 후보는 기본적으로 final_watchlist 금지다.
+단, 같은 issuer에 대해 cutoff 이전 CSV 안에 별도의 fresh non-market-state issuer fact가 존재하면 그 별도 fact 기준으로만 final 심사를 다시 할 수 있다.
+
+fresh non-market-state issuer fact 예:
+
+```text
+CONTRACT_SIGNED
+ORDER_RECEIVED
+SUPPLY_AGREEMENT
+PROJECT_AWARDED
+PRODUCT_COMMERCIALIZATION_BY_ISSUER
+REGULATORY_APPROVAL
+CLINICAL_STAGE_ADVANCE
+LICENSE_OR_TECH_TRANSFER_WITH_RIGHTS
+BUYBACK
+SHARE_CANCELLATION
+DIVIDEND
+STAKE_SALE_OR_CONTROL_CHANGE
+```
+
+market_state-only 후보가 final에 들어가려면 아래 조건을 모두 만족해야 한다.
+
+```text
+market_state_final_eligible == true
+fatigue_risk_dominant == false
+market_state_primary_quote_is_current_preopen_notice == true
+fresh_context_or_clean_market_memory_exists == true
+current_score_eligible_reason != P_SNAPSHOT_ONLY
+```
+
+추가 ranking hard gate:
+
+```text
+market_state_only_final_count <= 3
+market_state_only_top5_count <= 1
+market_state_only_top10_count <= 2
+market_state_only_candidate_cannot_outrank_quality_A_direct_event == true
+```
+
+직접 issuer event 품질 tier 정의:
+
+```text
+quality_A_direct_event:
+  - CONTRACT_SIGNED / ORDER_RECEIVED / SUPPLY_AGREEMENT / PROJECT_AWARDED
+  - REGULATORY_APPROVAL / CLINICAL_STAGE_ADVANCE / LICENSE_OR_TECH_TRANSFER_WITH_RIGHTS
+  - STAKE_SALE_OR_CONTROL_CHANGE / BUYBACK / SHARE_CANCELLATION
+  - source_fact_ids 존재
+  - supporting_inference_ids 존재
+  - final semantic audit PASS
+
+quality_B_direct_event:
+  - ANALYST_NUMERIC_EARNINGS_BRIDGE
+  - PRODUCT_COMMERCIALIZATION_BY_ISSUER
+  - GOVERNMENT_PROJECT_SELECTED
+  - source_fact_ids 존재
+  - supporting_inference_ids 존재
+```
+
+validator hard check:
+
+```text
+market_state_discount_verified == true
+fatigue_risk_dominant_final_count == 0
+market_state_only_top5_count <= 1
+market_state_only_top10_count <= 2
+market_state_only_final_count <= 3
+market_state_only_outranks_quality_A_direct_event_count == 0
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_MARKET_STATE_OVERPROMOTED
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V20.3 body table/list extractor hard gate
+
+제목 중심 extractor만으로는 장전 후보 생성이 누락된다. 뉴스 CSV의 body 안에 종목 표·리스트가 있으면 전수 추출해야 한다.
+특히 다음 제목·본문 패턴은 body list extractor를 반드시 실행한다.
+
+```text
+시간외 상승 종목
+장전 조회상위
+조회상위 Top 20
+코스닥/코스피 융자잔고 증감률 상위종목
+기관/외국인 순매수 상위종목
+오늘의 테마
+오후 이슈
+관련주 목록
+```
+
+주의:
+
+```text
+body table에 나온 ticker/name은 자동 final 후보가 아니다.
+issuer-scoped material fact가 없으면 final 금지다.
+하지만 후보 생성 누락 검증과 candidate_generation_error_case에는 반드시 기록한다.
+```
+
+validator hard check:
+
+```text
+body_table_rows_detected_count
+body_table_entities_extracted_count
+body_table_candidate_generation_audit_count
+body_table_final_false_promotion_count == 0
+body_table_extractor_unexplained_skip_count == 0
+```
+
+`body_table_extractor_unexplained_skip_count > 0`이면 `ACCEPT_FULL` 금지다.
+
+## V20.4 validator 필수 추가 check_id
+
+`validation_report.json`과 `direct_ingest_contract.json`에는 다음 check_id가 실제 계산값으로 들어가야 한다.
+
+```text
+brain_delta_density_verified
+brain_delta_expected_min_verified
+brain_delta_type_count_parity_verified
+market_state_discount_verified
+fatigue_risk_dominant_final_count_zero_verified
+market_state_only_top5_lte_one_verified
+market_state_only_top10_lte_two_verified
+market_state_only_final_lte_three_verified
+market_state_only_not_outrank_quality_A_direct_event_verified
+body_table_extractor_executed
+body_table_candidate_generation_audit_verified
+```
+
+위 check는 산문 선언이 아니라 validator가 artifact와 canonical_graph를 다시 읽어 계산해야 한다.
+하나라도 누락되면 다음으로 처리한다.
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_MISSING_V20_CHECKS
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
 ```
 
 
@@ -1976,19 +2254,22 @@ ACCEPT_FULL 금지
 minimum count contract:
 
 ```text
-expected_brain_delta_min =
+expected_brain_delta_min = max(
+    100,
     issuer_day_case_count
-  + direct_event_case_count
+  + supervised_direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
+)
 ```
 
 validator hard check:
 
 ```python
 assert brain_delta_record_count >= expected_brain_delta_min
+assert expected_brain_delta_min >= 100
 assert brain_delta_count_by_type["supervised_issuer_day_case"] == issuer_day_case_count
-assert brain_delta_count_by_type["supervised_direct_event_case"] == direct_event_case_count
+assert brain_delta_count_by_type["supervised_direct_event_case"] == supervised_direct_event_case_count
 assert brain_delta_count_by_type["blind_leader_preference_pair"] == blind_leader_pair_count
 ```
 
