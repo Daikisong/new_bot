@@ -106,7 +106,13 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     _assert_ok("brain audit", RUNNER.invoke(app, ["brain", "audit"]))
     diffed = RUNNER.invoke(app, ["brain", "diff", first_version, second_version])
     _assert_ok("brain diff", diffed)
-    assert json.loads(diffed.output)["changed"] is True
+    diff_payload = json.loads(diffed.output)
+    assert diff_payload["changed"] is True
+    diff_path = tmp_path / diff_payload["markdown_path"]
+    assert diff_path.exists()
+    diff_text = diff_path.read_text(encoding="utf-8")
+    assert first_version in diff_text
+    assert second_version in diff_text
 
     analyzed = RUNNER.invoke(
         app,
