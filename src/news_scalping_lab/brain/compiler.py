@@ -256,21 +256,12 @@ class BrainCompiler:
         return manifest
 
     def update(self, *, episode_id: str, mode: str = "full") -> BrainManifest:
-        if mode == "llm-full":
-            self._resolve_update_episode(episode_id)
-            return self.rebuild(mode="llm-full")
-        if mode not in {"full", "catalog"}:
+        if mode not in {"full", "catalog", "llm-full"}:
             raise ValueError("only full, catalog, and llm-full update modes are supported")
         episode = self._resolve_update_episode(episode_id)
-        accepted_ids = {episode.episode_id for episode in self.store.list_accepted()}
-        if episode.episode_id not in accepted_ids:
-            if episode.research_version == "evaluation-postmortem-v1":
-                self.store.accept(episode.episode_id)
-            else:
-                raise ValueError(
-                    "brain update requires an accepted episode; run "
-                    f"`nslab research accept {episode.episode_id}` first"
-                )
+        self._ensure_update_episode_accepted(episode)
+        if mode == "llm-full":
+            return self.rebuild(mode="llm-full")
         episodes = self.store.list_accepted()
         source_hashes = self.store.accepted_hashes()
         brain_record_hashes = _brain_record_hashes(self.root)
@@ -360,6 +351,18 @@ class BrainCompiler:
         LocalRetrievalStore(self.root).rebuild_index()
         WarehouseStore(self.root).rebuild_all()
         return manifest
+
+    def _ensure_update_episode_accepted(self, episode: ResearchEpisode) -> None:
+        accepted_ids = {item.episode_id for item in self.store.list_accepted()}
+        if episode.episode_id in accepted_ids:
+            return
+        if episode.research_version == "evaluation-postmortem-v1":
+            self.store.accept(episode.episode_id)
+            return
+        raise ValueError(
+            "brain update requires an accepted episode; run "
+            f"`nslab research accept {episode.episode_id}` first"
+        )
 
     def _resolve_update_episode(self, identifier: str) -> ResearchEpisode:
         try:

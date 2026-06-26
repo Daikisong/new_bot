@@ -1672,6 +1672,17 @@ def test_brain_update_requires_accepted_episode(tmp_path) -> None:
     assert episode.episode_id in manifest.covered_episode_ids
 
 
+def test_brain_update_llm_full_requires_accepted_episode_before_rebuild(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Unaccepted llm-full update note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+
+    with pytest.raises(ValueError, match="brain update requires an accepted episode"):
+        BrainCompiler(tmp_path).update(episode_id=episode.episode_id, mode="llm-full")
+
+
 def test_brain_update_catalog_fallback_preserves_catalog_mode(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
