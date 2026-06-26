@@ -133,6 +133,11 @@ def _render_analysis(view: AnalysisViewModel, st: Any) -> None:
     _download_optional(st, "Source ledger JSONL", view.artifacts.source_ledger_jsonl)
     _download_optional(
         st,
+        "Excluded web sources JSONL",
+        view.artifacts.excluded_web_sources_jsonl,
+    )
+    _download_optional(
+        st,
         "Candidate web checks JSONL",
         view.artifacts.candidate_web_checks_jsonl,
     )

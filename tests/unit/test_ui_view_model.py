@@ -163,6 +163,9 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
             "runs/checkpoints/memory_sweep/RUN-ui/missing.json",
         ],
         source_ledger_artifact="runs/checkpoints/source_ledger/RUN-ui/source_ledger.jsonl",
+        excluded_web_source_artifact=(
+            "runs/checkpoints/web_sources/RUN-ui/excluded_web_sources.jsonl"
+        ),
         candidate_web_check_artifact=(
             "runs/checkpoints/candidate_web_checks/RUN-ui/candidate_web_checks.jsonl"
         ),
@@ -266,6 +269,14 @@ def test_build_analysis_view_model_groups_candidates_and_artifacts(tmp_path) -> 
         view.artifacts.source_ledger_jsonl
         == tmp_path / "runs" / "checkpoints" / "source_ledger" / "RUN-ui" / "source_ledger.jsonl"
     )
+    assert view.artifacts.excluded_web_sources_jsonl == (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "web_sources"
+        / "RUN-ui"
+        / "excluded_web_sources.jsonl"
+    )
     assert view.artifacts.candidate_web_checks_jsonl == (
         tmp_path
         / "runs"
@@ -312,6 +323,12 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
         / "source_ledger"
         / "RUN-ui"
         / "source_ledger.jsonl",
+        "excluded_web_sources": tmp_path
+        / "runs"
+        / "checkpoints"
+        / "web_sources"
+        / "RUN-ui"
+        / "excluded_web_sources.jsonl",
         "web_checks": tmp_path
         / "runs"
         / "checkpoints"
@@ -454,6 +471,7 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
             report_markdown=artifact_paths["report"],
             context_manifest_json=artifact_paths["manifest"],
             source_ledger_jsonl=artifact_paths["source_ledger"],
+            excluded_web_sources_jsonl=artifact_paths["excluded_web_sources"],
             candidate_web_checks_jsonl=artifact_paths["web_checks"],
             candidate_verification_json=artifact_paths["verification"],
             final_synthesis_context_json=artifact_paths["final_context"],
@@ -490,6 +508,7 @@ def test_render_analysis_exposes_required_dashboard_sections_and_downloads(tmp_p
         "Prediction JSON",
         "Pre-open report Markdown",
         "Source ledger JSONL",
+        "Excluded web sources JSONL",
         "Candidate web checks JSONL",
         "Candidate verification JSON",
         "Final synthesis context JSON",

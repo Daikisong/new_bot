@@ -21,6 +21,7 @@ class ArtifactLinks:
     report_markdown: Path
     context_manifest_json: Path
     source_ledger_jsonl: Path | None = None
+    excluded_web_sources_jsonl: Path | None = None
     candidate_web_checks_jsonl: Path | None = None
     candidate_verification_json: Path | None = None
     final_synthesis_context_json: Path | None = None
@@ -107,6 +108,9 @@ def build_analysis_view_model(root: Path, analysis: DailyAnalysis) -> AnalysisVi
             report_markdown=root / analysis.report_path,
             context_manifest_json=root / "runs" / "manifests" / f"{analysis.run_id}.json",
             source_ledger_jsonl=_optional_artifact_path(root, manifest.source_ledger_artifact),
+            excluded_web_sources_jsonl=_optional_artifact_path(
+                root, manifest.excluded_web_source_artifact
+            ),
             candidate_web_checks_jsonl=_optional_artifact_path(
                 root, manifest.candidate_web_check_artifact
             ),
