@@ -129,12 +129,15 @@ def production_readiness_report(
     elif record_coverage.get("coverage_complete") is not True:
         findings.append("records: record coverage is incomplete")
     vector_index = report.get("vector_index")
-    if isinstance(vector_index, dict):
-        embedding_method = vector_index.get("embedding_method")
-        if embedding_method == VECTOR_EMBEDDING_METHOD:
-            findings.append(
-                "embedding: deterministic mock vector index cannot be production semantic index"
-            )
+    semantic_index = _production_semantic_index_status(
+        vector_index,
+        settings=settings,
+        expected_source_record_count=expected_source_record_count,
+    )
+    if semantic_index["passed"] is not True:
+        findings.extend(
+            f"embedding: {finding}" for finding in semantic_index["findings"]
+        )
     return {
         "schema_version": "nslab.production_readiness.v1",
         "passed": not findings,
@@ -144,6 +147,7 @@ def production_readiness_report(
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
         "llm_full_brain": llm_full_brain,
+        "semantic_index": semantic_index,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
@@ -470,6 +474,61 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",
         ],
+    }
+
+
+def _production_semantic_index_status(
+    vector_index: object,
+    *,
+    settings: Settings,
+    expected_source_record_count: int | None,
+) -> dict[str, Any]:
+    status = vector_index.get("status") if isinstance(vector_index, dict) else None
+    embedding_method = (
+        vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
+    )
+    source_brain_record_count = _int_from_mapping(
+        vector_index,
+        "source_brain_record_count",
+    )
+    indexed_brain_record_count = _int_from_mapping(vector_index, "brain_record_count")
+    findings: list[str] = []
+    if not isinstance(vector_index, dict):
+        findings.append("vector index status is missing")
+    else:
+        if status != "current":
+            findings.append("vector index is not current")
+        if vector_index.get("brain_records_exists") is not True:
+            findings.append("brain record vector index is missing")
+        if not isinstance(embedding_method, str) or not embedding_method:
+            findings.append("semantic index embedding method is missing")
+        elif embedding_method == VECTOR_EMBEDDING_METHOD:
+            findings.append("deterministic mock vector index cannot be production semantic index")
+        else:
+            expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
+            if not embedding_method.strip().lower().startswith(expected_prefix):
+                findings.append("semantic index provider does not match configured LLM provider")
+        if (
+            isinstance(expected_source_record_count, int)
+            and source_brain_record_count != expected_source_record_count
+        ):
+            findings.append("semantic index source record count does not match coverage")
+        if (
+            isinstance(expected_source_record_count, int)
+            and indexed_brain_record_count != expected_source_record_count
+        ):
+            findings.append("semantic index record count does not match coverage")
+    return {
+        "schema_version": "nslab.production_semantic_index.v1",
+        "status": "ready" if not findings else "attention",
+        "passed": not findings,
+        "finding_count": len(findings),
+        "findings": findings,
+        "vector_index_status": status,
+        "embedding_method": embedding_method,
+        "expected_source_record_count": expected_source_record_count,
+        "source_brain_record_count": source_brain_record_count,
+        "indexed_brain_record_count": indexed_brain_record_count,
     }
 
 

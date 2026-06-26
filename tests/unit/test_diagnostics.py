@@ -591,6 +591,75 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
     )
 
 
+def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["passed"] is True
+    assert production["semantic_index"]["expected_source_record_count"] == 2
+    assert not any(
+        finding.startswith("embedding:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_semantic_index_record_count_gap(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 1,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["passed"] is False
+    assert production["semantic_index"]["indexed_brain_record_count"] == 1
+    assert (
+        "embedding: semantic index record count does not match coverage"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="mock")
     settings.llm.provider = "openai"
