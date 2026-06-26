@@ -126,6 +126,45 @@ def test_memory_sweep_cache_key_uses_episode_source_hashes(tmp_path) -> None:
     assert mutated_payload["episode_shard_sha256"] != first_payload["episode_shard_sha256"]
 
 
+def test_memory_sweep_cache_key_uses_brain_version(tmp_path) -> None:
+    _seed_accepted_episodes(tmp_path, count=1)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    cutoff = datetime(2030, 1, 12, 8, 59, 59, tzinfo=KST)
+    sweeper = MemorySweeper(tmp_path, shard_episode_count=10)
+
+    first = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 12),
+        cutoff_at=cutoff,
+        run_id="RUN-brain-version-first",
+        current_news_texts=["same current news"],
+        first_pass_mechanisms=["same mechanism"],
+        model_config={"provider": "mock"},
+    )
+    first_payload = read_json(tmp_path / first.artifact_paths[0])
+    (tmp_path / "brain" / "HEAD").write_text(
+        "brain-cache-version-changed\n",
+        encoding="utf-8",
+    )
+
+    changed_brain = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 12),
+        cutoff_at=cutoff,
+        run_id="RUN-brain-version-changed",
+        current_news_texts=["same current news"],
+        first_pass_mechanisms=["same mechanism"],
+        model_config={"provider": "mock"},
+    )
+
+    assert first.cache_hits == 0
+    assert changed_brain.cache_hits == 0
+    changed_payload = read_json(tmp_path / changed_brain.artifact_paths[0])
+    assert changed_payload["from_cache"] is False
+    assert changed_payload["brain_version"] == "brain-cache-version-changed"
+    assert changed_payload["cache_key"] != first_payload["cache_key"]
+
+
 def test_memory_sweep_reuses_completed_shard_after_intermediate_failure(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
