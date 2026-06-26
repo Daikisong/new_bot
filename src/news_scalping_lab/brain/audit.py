@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
+    CATEGORY_RECORD_TYPE_ROUTES,
     _brain_category,
     _records_for_category,
     current_brain_file_hashes,
@@ -19,7 +20,7 @@ from news_scalping_lab.brain.compiler import (
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
-from news_scalping_lab.records.models import CompiledBrainClaim
+from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json, sha256_text
@@ -220,10 +221,11 @@ def _category_record_type_distribution(
     root: Path,
     llm_manifest: dict[str, Any],
 ) -> dict[str, dict[str, int]]:
+    records = BrainRecordStore(root).list_records()
     categories = llm_manifest.get("categories")
     if not isinstance(categories, list):
-        return {}
-    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+        return _fallback_category_record_type_distribution(records)
+    records_by_id = {record.record_id: record for record in records}
     distribution: dict[str, dict[str, int]] = {}
     for category in categories:
         if not isinstance(category, dict):
@@ -241,6 +243,27 @@ def _category_record_type_distribution(
             counts[record_type] = counts.get(record_type, 0) + 1
         distribution[category_name] = dict(sorted(counts.items()))
     return distribution
+
+
+def _fallback_category_record_type_distribution(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, dict[str, int]]:
+    distribution: dict[str, dict[str, int]] = {}
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        if category == "world_model":
+            category_records = records
+        else:
+            allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
+            category_records = [
+                record for record in records if record.record_type in allowed
+            ]
+        distribution[category] = _record_type_counts(category_records)
+    return dict(sorted(distribution.items()))
+
+
+def _record_type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
+    return dict(sorted(Counter(record.record_type for record in records).items()))
 
 
 def _category_source_population_mismatches(

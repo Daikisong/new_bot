@@ -1325,6 +1325,7 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     BrainCompiler(tmp_path).rebuild(mode="full")
 
     report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    audit = audit_brain(tmp_path)
     assert report["compiler_mode"] == "full"
     assert report["category_source_record_type_counts"]["world_model"] == {
         "blind_leader_preference_pair": 1,
@@ -1346,6 +1347,29 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     assert report["category_source_record_counts"]["leader_selection"] == 1
     assert report["category_source_record_counts"]["market_memory"] == 1
     assert report["category_source_record_counts"]["theme_formation"] == 0
+    assert audit["brain_category_source_record_types"] == {
+        "beneficiary_discovery": {},
+        "continuation": {
+            "memory_claim": 1,
+        },
+        "counterexamples": {},
+        "failure_modes": {},
+        "leader_selection": {
+            "blind_leader_preference_pair": 1,
+        },
+        "market_memory": {
+            "memory_claim": 1,
+        },
+        "single_event": {
+            "supervised_issuer_day_case": 1,
+        },
+        "theme_formation": {},
+        "world_model": {
+            "blind_leader_preference_pair": 1,
+            "memory_claim": 1,
+            "supervised_issuer_day_case": 1,
+        },
+    }
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:
