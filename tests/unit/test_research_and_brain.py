@@ -1216,6 +1216,67 @@ def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordE
     )
 
 
+def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Record coverage audit note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-COVERAGE", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    manifest = read_json(coverage_path)
+    manifest.update(
+        {
+            "accepted_record_count": 0,
+            "available_record_count": 0,
+            "training_eligible_available_record_count": 2,
+            "compiled_record_count": 0,
+            "swept_record_count": 1,
+            "swept_record_ids": ["BRAIN-UNKNOWN", "BRAIN-UNKNOWN"],
+            "unswept_record_ids": [],
+            "record_counts_by_type": {"supervised_issuer_day_case": 1},
+            "record_counts_by_evidence_phase": {},
+            "record_counts_by_training_target": {},
+            "ineligible_record_count": 0,
+            "audit_only_record_count": 0,
+            "coverage_complete": True,
+        }
+    )
+    write_json(coverage_path, manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_complete"] is False
+    assert audit["swept_record_count"] == 0
+    assert audit["unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["record_coverage_findings"] == [
+        "record coverage manifest has unswept records",
+        "record coverage manifest includes unknown swept records",
+        "record coverage manifest has duplicate swept records",
+        "record coverage manifest unswept ids do not match record store",
+        "record coverage manifest count does not match record store",
+        "record coverage manifest available count does not match record store",
+        "record coverage manifest training eligible count does not match record store",
+        "record coverage manifest compiled count does not match record store",
+        "record coverage manifest swept count does not match swept IDs",
+        "record coverage manifest type counts do not match record store",
+        "record coverage manifest phase counts do not match record store",
+        "record coverage manifest training target counts do not match record store",
+        "record coverage manifest ineligible count does not match record store",
+        "record coverage manifest audit-only count does not match record store",
+        "record coverage manifest is marked complete despite audit findings",
+    ]
+
+
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     tmp_path,
 ) -> None:

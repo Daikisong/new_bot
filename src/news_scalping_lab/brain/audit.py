@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -503,6 +504,19 @@ def _audit_deterministic_brain_state(
 
 def _audit_record_coverage(root: Path) -> dict[str, Any]:
     records = BrainRecordStore(root).list_records()
+    record_ids = {record.record_id for record in records}
+    training_eligible_count = sum(1 for record in records if record.training_eligible)
+    record_counts_by_type = dict(
+        sorted(Counter(record.record_type for record in records).items())
+    )
+    record_counts_by_phase = dict(
+        sorted(Counter(record.evidence_phase for record in records).items())
+    )
+    record_counts_by_target = dict(
+        sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
+    )
+    ineligible_count = sum(1 for record in records if not record.training_eligible)
+    audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
     if not records:
         return {
             "accepted_record_count": 0,
@@ -518,29 +532,88 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         return {
             "accepted_record_count": len(records),
             "available_record_count": len(records),
-            "training_eligible_available_record_count": sum(
-                1 for record in records if record.training_eligible
-            ),
+            "training_eligible_available_record_count": training_eligible_count,
             "swept_record_count": 0,
             "unswept_record_ids": [record.record_id for record in records],
             "record_coverage_complete": False,
             "record_coverage_findings": ["record coverage manifest is missing"],
         }
     manifest = read_json(manifest_path)
-    swept_ids = set(_string_list(manifest.get("swept_record_ids")))
-    record_ids = {record.record_id for record in records}
+    if not isinstance(manifest, dict):
+        return {
+            "accepted_record_count": len(records),
+            "available_record_count": len(records),
+            "training_eligible_available_record_count": training_eligible_count,
+            "swept_record_count": 0,
+            "unswept_record_ids": [record.record_id for record in records],
+            "record_coverage_complete": False,
+            "record_coverage_findings": [
+                "record coverage manifest must be a JSON object"
+            ],
+        }
+    swept_id_list = _string_list(manifest.get("swept_record_ids"))
+    swept_ids = set(swept_id_list)
     unswept = sorted(record_ids - swept_ids)
-    findings = []
+    unexpected = sorted(swept_ids - record_ids)
+    duplicate_swept = sorted(
+        record_id for record_id, count in Counter(swept_id_list).items() if count > 1
+    )
+    findings: list[str] = []
+    if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
+        findings.append("record coverage manifest schema_version is invalid")
     if unswept:
         findings.append("record coverage manifest has unswept records")
+    if unexpected:
+        findings.append("record coverage manifest includes unknown swept records")
+    if duplicate_swept:
+        findings.append("record coverage manifest has duplicate swept records")
+    if _string_list(manifest.get("unswept_record_ids")) != unswept:
+        findings.append("record coverage manifest unswept ids do not match record store")
     if manifest.get("accepted_record_count") != len(records):
         findings.append("record coverage manifest count does not match record store")
+    if manifest.get("available_record_count") != len(records):
+        findings.append(
+            "record coverage manifest available count does not match record store"
+        )
+    if manifest.get("training_eligible_available_record_count") != training_eligible_count:
+        findings.append(
+            "record coverage manifest training eligible count does not match record store"
+        )
+    if manifest.get("compiled_record_count") != len(records):
+        findings.append(
+            "record coverage manifest compiled count does not match record store"
+        )
+    if manifest.get("swept_record_count") != len(swept_id_list):
+        findings.append("record coverage manifest swept count does not match swept IDs")
+    if _int_dict(manifest.get("record_counts_by_type")) != record_counts_by_type:
+        findings.append("record coverage manifest type counts do not match record store")
+    if _int_dict(manifest.get("record_counts_by_evidence_phase")) != record_counts_by_phase:
+        findings.append("record coverage manifest phase counts do not match record store")
+    if (
+        _int_dict(manifest.get("record_counts_by_training_target"))
+        != record_counts_by_target
+    ):
+        findings.append(
+            "record coverage manifest training target counts do not match record store"
+        )
+    if manifest.get("ineligible_record_count") != ineligible_count:
+        findings.append(
+            "record coverage manifest ineligible count does not match record store"
+        )
+    if manifest.get("audit_only_record_count") != audit_only_count:
+        findings.append(
+            "record coverage manifest audit-only count does not match record store"
+        )
+    has_audit_findings = bool(findings)
+    manifest_complete = manifest.get("coverage_complete")
+    if manifest_complete is not True:
+        findings.append("record coverage manifest is not marked complete")
+    elif has_audit_findings:
+        findings.append("record coverage manifest is marked complete despite audit findings")
     return {
         "accepted_record_count": len(records),
         "available_record_count": len(records),
-        "training_eligible_available_record_count": sum(
-            1 for record in records if record.training_eligible
-        ),
+        "training_eligible_available_record_count": training_eligible_count,
         "swept_record_count": len(swept_ids & record_ids),
         "unswept_record_ids": unswept,
         "record_coverage_complete": not findings,
@@ -696,6 +769,16 @@ def _string_dict(value: object) -> dict[str, str]:
         key: item
         for key, item in value.items()
         if isinstance(key, str) and isinstance(item, str)
+    }
+
+
+def _int_dict(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: item
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool)
     }
 
 
