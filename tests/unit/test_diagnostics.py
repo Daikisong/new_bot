@@ -794,6 +794,82 @@ def test_production_readiness_rejects_all_cached_llm_full_compile(
     )
 
 
+def test_production_readiness_rejects_stale_llm_full_compile_evidence(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-current", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "brain_version": "brain-stale",
+            "provider": "openai",
+            "model": "gpt-production",
+            "source_record_count": 1,
+            "compiled_claim_count": 1,
+            "record_shard_count": 1,
+            "category_count": 9,
+            "llm_generation_count": 19,
+        },
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-stale",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-stale",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        json.dumps({"claim_id": "CC-production"}) + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["current_brain_version"] == "brain-current"
+    assert (
+        "brain: llm-full compile manifest does not match current brain"
+        in production["findings"]
+    )
+    assert (
+        "brain: llm-full compile run is stale for current brain"
+        in production["findings"]
+    )
+    assert (
+        "brain: llm-full compile report is stale for current brain"
+        in production["findings"]
+    )
+
+
 def test_real_bundle_smoke_reports_pending_when_no_candidate_exists(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

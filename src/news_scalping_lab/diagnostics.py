@@ -103,7 +103,14 @@ def production_readiness_report(
             findings.append("brain: accepted episodes are not fully covered")
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
-    llm_full_brain = _llm_full_brain_status(settings, build_mode=build_mode)
+    current_brain_version_value = (
+        brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
+    )
+    llm_full_brain = _llm_full_brain_status(
+        settings,
+        build_mode=build_mode,
+        current_brain_version=current_brain_version_value,
+    )
     if build_mode != "llm-full":
         observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
@@ -592,6 +599,7 @@ def _llm_full_brain_status(
     settings: Settings,
     *,
     build_mode: object,
+    current_brain_version: object,
 ) -> dict[str, Any]:
     current_dir = settings.project_root / "brain" / "current"
     compile_manifest_path = current_dir / "llm_compile_manifest.json"
@@ -610,6 +618,9 @@ def _llm_full_brain_status(
     status = {
         "schema_version": "nslab.production_llm_full_brain.v1",
         "build_mode": build_mode if isinstance(build_mode, str) else None,
+        "current_brain_version": current_brain_version
+        if isinstance(current_brain_version, str)
+        else None,
         "applicable": build_mode == "llm-full",
         "compile_manifest_path": relative_to_root(
             compile_manifest_path,
@@ -645,6 +656,9 @@ def _llm_full_brain_status(
         "run_brain_version": compile_run.get("brain_version")
         if isinstance(compile_run, dict)
         else None,
+        "compile_report_brain_version": compile_report.get("brain_version")
+        if isinstance(compile_report, dict)
+        else None,
         "run_llm_generation_count": _int_from_mapping(compile_run, "llm_generation_count"),
         "run_llm_live_call_count": _int_from_mapping(compile_run, "llm_live_call_count"),
         "run_llm_cache_hit_count": _int_from_mapping(compile_run, "llm_cache_hit_count"),
@@ -671,6 +685,13 @@ def _llm_full_brain_status(
             findings.append("llm-full compile provider does not match configured provider")
         if not isinstance(model, str) or not model or "mock" in model.lower():
             findings.append("llm-full compile model is missing or mock")
+        manifest_brain_version = status["brain_version"]
+        if (
+            isinstance(current_brain_version, str)
+            and current_brain_version
+            and manifest_brain_version != current_brain_version
+        ):
+            findings.append("llm-full compile manifest does not match current brain")
         source_record_count = status["source_record_count"]
         if not isinstance(source_record_count, int) or source_record_count <= 0:
             findings.append("llm-full compile source records are missing")
@@ -699,6 +720,19 @@ def _llm_full_brain_status(
                 and run_brain_version != brain_version
             ):
                 findings.append("llm-full compile run diagnostics do not match current brain")
+            if (
+                isinstance(current_brain_version, str)
+                and current_brain_version
+                and run_brain_version != current_brain_version
+            ):
+                findings.append("llm-full compile run is stale for current brain")
+            report_brain_version = status["compile_report_brain_version"]
+            if (
+                isinstance(current_brain_version, str)
+                and current_brain_version
+                and report_brain_version != current_brain_version
+            ):
+                findings.append("llm-full compile report is stale for current brain")
             generation_count = status["run_llm_generation_count"]
             live_call_count = status["run_llm_live_call_count"]
             cache_hit_count = status["run_llm_cache_hit_count"]
