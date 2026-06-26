@@ -89,6 +89,10 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     manifests: dict[str, Any] = {}
     summaries: dict[str, dict[str, Any]] = {}
+    record_store_hashes = {
+        record.record_id: record.normalized_payload_sha256
+        for record in BrainRecordStore(root).list_records()
+    }
     source_record_ids: set[str] = set()
     training_eligible_record_ids: set[str] = set()
     exported_record_ids: set[str] = set()
@@ -105,6 +109,12 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         manifests[kind] = manifest
         summaries[kind] = _training_manifest_summary(manifest)
         _audit_source_hash_contract(kind, manifest, findings)
+        _audit_record_store_source_contract(
+            kind,
+            manifest,
+            record_store_hashes,
+            findings,
+        )
         _audit_weight_validation_contract(kind, manifest, findings)
         source_record_ids.update(_source_record_ids_from_manifest(manifest))
         training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
@@ -153,6 +163,8 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "export_kinds": sorted(VALID_KINDS),
             "available_manifest_kinds": sorted(manifests),
             "missing_manifest_kinds": sorted(VALID_KINDS - set(manifests)),
+            "brain_record_source_required": bool(record_store_hashes),
+            "record_store_source_record_count": len(record_store_hashes),
             "source_episode_count": _max_int(summaries, "source_episode_count"),
             "source_record_count": _max_int(summaries, "source_record_count"),
             "eligible_record_count": _sum_int(summaries, "eligible_record_count"),
@@ -260,6 +272,50 @@ def _audit_source_hash_contract(
         findings.append(
             f"{kind}: source_record_hashes count {len(hashes)} does not match "
             f"source_record_count {expected_count}"
+        )
+
+
+def _audit_record_store_source_contract(
+    kind: str,
+    manifest: dict[str, Any],
+    record_store_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    if not record_store_hashes:
+        return
+    if manifest.get("source_mode") != "brain_records":
+        findings.append(
+            f"{kind}: brain record store exists but export source_mode is not brain_records"
+        )
+        return
+    manifest_hashes = _string_map(manifest.get("source_record_hashes"))
+    missing_ids = sorted(set(record_store_hashes) - set(manifest_hashes))
+    extra_ids = sorted(set(manifest_hashes) - set(record_store_hashes))
+    mismatched_ids = sorted(
+        record_id
+        for record_id, digest in manifest_hashes.items()
+        if record_store_hashes.get(record_id) is not None
+        and record_store_hashes[record_id] != digest
+    )
+    expected_count = len(record_store_hashes)
+    if manifest.get("source_record_count") != expected_count:
+        findings.append(
+            f"{kind}: source_record_count does not match current brain record store"
+        )
+    if missing_ids:
+        findings.append(
+            f"{kind}: source_record_hashes missing current brain records: "
+            f"{', '.join(missing_ids)}"
+        )
+    if extra_ids:
+        findings.append(
+            f"{kind}: source_record_hashes contain records outside current store: "
+            f"{', '.join(extra_ids)}"
+        )
+    if mismatched_ids:
+        findings.append(
+            f"{kind}: source_record_hashes mismatch current brain records: "
+            f"{', '.join(mismatched_ids)}"
         )
 
 

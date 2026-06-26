@@ -22,6 +22,8 @@
 
 - none
 
+- brain_record_source_required: `True`
+- record_store_source_record_count: `4`
 - source_episode_count: `3`
 - source_record_count: `4`
 - eligible_record_count: `3`

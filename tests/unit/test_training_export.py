@@ -584,6 +584,117 @@ def test_training_audit_requires_brain_record_source_hashes(tmp_path) -> None:
     assert "sft: source_record_hashes are missing" in training_report["findings"]
 
 
+def test_training_audit_requires_brain_record_source_mode_when_records_exist(
+    tmp_path,
+) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        )
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    manifest["source_mode"] = "legacy_research_episodes"
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert (
+        "sft: brain record store exists but export source_mode is not brain_records"
+        in audit["findings"]
+    )
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["brain_record_source_required"] is True
+    assert training_report["record_store_source_record_count"] == 1
+
+
+def test_training_audit_rejects_stale_brain_record_source_hashes(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-MEMORY",
+            "memory_claim",
+            training_target="legacy_catalog_only",
+            training_eligible=False,
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    manifest["source_record_count"] = 99
+    manifest["source_record_hashes"].pop("BRAIN-MEMORY")
+    manifest["source_record_hashes"]["BRAIN-ISSUER"] = "0" * 64
+    manifest["source_record_hashes"]["BRAIN-EXTRA"] = "1" * 64
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert (
+        "sft: source_record_count does not match current brain record store"
+        in audit["findings"]
+    )
+    assert (
+        "sft: source_record_hashes missing current brain records: BRAIN-MEMORY"
+        in audit["findings"]
+    )
+    assert (
+        "sft: source_record_hashes contain records outside current store: BRAIN-EXTRA"
+        in audit["findings"]
+    )
+    assert (
+        "sft: source_record_hashes mismatch current brain records: BRAIN-ISSUER"
+        in audit["findings"]
+    )
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["brain_record_source_required"] is True
+    assert training_report["record_store_source_record_count"] == 2
+
+
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:
     store = ResearchStore(tmp_path)
     episode = _accepted_episode()
