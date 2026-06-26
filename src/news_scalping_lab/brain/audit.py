@@ -93,6 +93,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         or (brain_manifest or coverage_manifest).get("created_at"),
     }
     _write_latest_brain_audit_summary(root, result, deep=deep)
+    _write_latest_record_coverage_audit_summary(root, result)
     return result
 
 
@@ -160,6 +161,39 @@ def _category_source_record_counts_from_type_distribution(
             if isinstance(count, int) and not isinstance(count, bool)
         )
     return dict(sorted(counts.items()))
+
+
+def _write_latest_record_coverage_audit_summary(
+    root: Path,
+    result: dict[str, object],
+) -> None:
+    report_path = root / "diagnostics" / "record_coverage_report.json"
+    report: dict[str, Any] = {}
+    if report_path.exists():
+        payload = read_json(report_path)
+        if isinstance(payload, dict):
+            report = payload
+    report.setdefault("schema_version", "nslab.record_coverage_manifest.v1")
+    for key in (
+        "accepted_record_count",
+        "available_record_count",
+        "available_record_count_as_of",
+        "training_eligible_available_record_count",
+        "training_eligible_record_count_as_of",
+        "swept_record_count",
+        "unswept_record_ids",
+    ):
+        if key in result:
+            report[key] = result.get(key)
+    findings = result.get("record_coverage_findings")
+    record_coverage_complete = result.get("record_coverage_complete")
+    report["latest_record_coverage_audit"] = {
+        "passed": record_coverage_complete is True,
+        "record_coverage_complete": record_coverage_complete,
+        "finding_count": len(findings) if isinstance(findings, list) else 0,
+        "findings": findings if isinstance(findings, list) else [],
+    }
+    write_diagnostic_report(root, "record_coverage_report", report)
 
 
 def _brain_audit_findings(result: dict[str, object]) -> list[str]:

@@ -1,31 +1,22 @@
 # Record Coverage Report
 
-- schema_version: `nslab.record_coverage_manifest.v1`
+- accepted_episode_count: `2`
+- accepted_record_count: `4`
+- audit_only_record_count: `2`
+- available_record_count: `4`
+- available_record_count_as_of: `4`
 - brain_version: `brain-8cd4d47576`
 - build_mode: `full`
 - catalog_only: `True`
-- accepted_episode_count: `2`
-- accepted_record_count: `4`
-- available_record_count: `4`
-- training_eligible_available_record_count: `2`
 - compiled_record_count: `4`
-- swept_record_count: `4`
-## swept_record_ids
+- coverage_complete: `True`
+- ineligible_record_count: `2`
+## latest_record_coverage_audit
 
-- `EP-2991eb145f59:legacy_catalog_record`
-- `EP-f56c790fe2fc:legacy_catalog_record`
-- `BRAIN-SYNTH-ISSUER`
-- `BRAIN-SYNTH-PAIR`
-
-## unswept_record_ids
-
-- none
-
-## record_counts_by_type
-
-- blind_leader_preference_pair: `1`
-- memory_claim: `2`
-- supervised_issuer_day_case: `1`
+- passed: `True`
+- record_coverage_complete: `True`
+- finding_count: `0`
+- findings: `[]`
 
 ## record_counts_by_evidence_phase
 
@@ -38,6 +29,23 @@
 - legacy_catalog_only: `2`
 - outcome_preferred_candidate: `1`
 
-- ineligible_record_count: `2`
-- audit_only_record_count: `2`
-- coverage_complete: `True`
+## record_counts_by_type
+
+- blind_leader_preference_pair: `1`
+- memory_claim: `2`
+- supervised_issuer_day_case: `1`
+
+- schema_version: `nslab.record_coverage_manifest.v1`
+- swept_record_count: `4`
+## swept_record_ids
+
+- `EP-2991eb145f59:legacy_catalog_record`
+- `EP-f56c790fe2fc:legacy_catalog_record`
+- `BRAIN-SYNTH-ISSUER`
+- `BRAIN-SYNTH-PAIR`
+
+- training_eligible_available_record_count: `2`
+- training_eligible_record_count_as_of: `2`
+## unswept_record_ids
+
+- none

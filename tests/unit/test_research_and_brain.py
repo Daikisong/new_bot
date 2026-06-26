@@ -1467,6 +1467,15 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
         "record coverage manifest audit-only count does not match record store",
         "record coverage manifest is marked complete despite audit findings",
     ]
+    record_coverage_report = read_json(
+        tmp_path / "diagnostics" / "record_coverage_report.json"
+    )
+    assert record_coverage_report["available_record_count_as_of"] == 1
+    assert record_coverage_report["training_eligible_record_count_as_of"] == 0
+    assert record_coverage_report["latest_record_coverage_audit"]["passed"] is False
+    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == audit[
+        "record_coverage_findings"
+    ]
 
 
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(

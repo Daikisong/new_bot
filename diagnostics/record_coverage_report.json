@@ -3,12 +3,19 @@
   "accepted_record_count": 4,
   "audit_only_record_count": 2,
   "available_record_count": 4,
+  "available_record_count_as_of": 4,
   "brain_version": "brain-8cd4d47576",
   "build_mode": "full",
   "catalog_only": true,
   "compiled_record_count": 4,
   "coverage_complete": true,
   "ineligible_record_count": 2,
+  "latest_record_coverage_audit": {
+    "finding_count": 0,
+    "findings": [],
+    "passed": true,
+    "record_coverage_complete": true
+  },
   "record_counts_by_evidence_phase": {
     "AUDIT": 2,
     "POSTMORTEM": 2
@@ -32,5 +39,6 @@
     "BRAIN-SYNTH-PAIR"
   ],
   "training_eligible_available_record_count": 2,
+  "training_eligible_record_count_as_of": 2,
   "unswept_record_ids": []
 }
