@@ -424,6 +424,7 @@ def _audit_deep_record_store(
         "missing_bundle_envelope_episode_ids": [],
         "raw_block_hash_mismatch_episode_ids": [],
         "brain_delta_count_mismatch_episode_ids": [],
+        "brain_delta_record_id_mismatch_episode_ids": [],
         "records_missing_source_block": [],
         "records_missing_source_line": [],
         "records_with_invalid_source_line": [],
@@ -482,6 +483,13 @@ def _audit_deep_record_store(
                 skip_catalog_only=allow_block_only_trace,
             )
             _audit_brain_delta_count(
+                root=root,
+                episode_id=episode_id,
+                records=episode_records,
+                envelope=envelope,
+                result=result,
+            )
+            _audit_brain_delta_record_ids(
                 root=root,
                 episode_id=episode_id,
                 records=episode_records,
@@ -616,6 +624,42 @@ def _audit_brain_delta_count(
         result["brain_delta_count_mismatch_episode_ids"].append(episode_id)
 
 
+def _audit_brain_delta_record_ids(
+    *,
+    root: Path,
+    episode_id: str,
+    records: list[BrainRecordEnvelope],
+    envelope: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
+    brain_delta_path = raw_block_paths.get("brain_delta.jsonl")
+    if brain_delta_path is None:
+        return
+    path = root / brain_delta_path
+    if not path.exists():
+        return
+    raw_ids: list[str] = []
+    for line in _nonempty_lines(path.read_text(encoding="utf-8")):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(payload, dict):
+            return
+        raw_id = _explicit_brain_record_id(payload)
+        if raw_id is None:
+            return
+        raw_ids.append(raw_id)
+    normalized_ids = sorted(
+        record.record_id
+        for record in records
+        if record.source_block == "brain_delta.jsonl"
+    )
+    if sorted(raw_ids) != normalized_ids:
+        result["brain_delta_record_id_mismatch_episode_ids"].append(episode_id)
+
+
 def _audit_record_source_lines(
     *,
     root: Path,
@@ -696,6 +740,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         "brain_delta_count_mismatch_episode_ids": (
             "brain_delta raw count does not match normalized records"
         ),
+        "brain_delta_record_id_mismatch_episode_ids": (
+            "brain_delta raw record IDs do not match normalized records"
+        ),
         "records_missing_source_block": "records reference missing source blocks",
         "records_missing_source_line": "records are missing source_line traceability",
         "records_with_invalid_source_line": "records have invalid source_line references",
@@ -751,6 +798,25 @@ def _read_json_dict(path: Path) -> dict[str, Any] | None:
 
 def _type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
     return dict(sorted(Counter(record.record_type for record in records).items()))
+
+
+def _explicit_brain_record_id(payload: dict[str, Any]) -> str | None:
+    for field_name in (
+        "record_id",
+        "issuer_day_case_id",
+        "case_id",
+        "blind_pair_id",
+        "claim_id",
+        "mechanism_id",
+        "counterexample_id",
+        "edge_id",
+        "question_id",
+        "error_id",
+    ):
+        value = payload.get(field_name)
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def _int_dict(value: object) -> dict[str, int]:
