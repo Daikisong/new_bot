@@ -77,6 +77,7 @@ nslab audit coverage
 python -m ruff check .
 python -m mypy src/news_scalping_lab
 python -m pytest
+make full-check
 ```
 
 ## Recovery

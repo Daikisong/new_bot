@@ -99,6 +99,7 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
         "python -m ruff check .",
         "python -m mypy src/news_scalping_lab",
         "python -m pytest",
+        "make full-check",
         "If `brain audit` fails, run `nslab brain rebuild --mode full`.",
         "If lookahead audit fails, inspect the manifest `price_snapshot.allowed_through`",
     ]
