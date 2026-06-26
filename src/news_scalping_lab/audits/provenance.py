@@ -5379,6 +5379,17 @@ def _check_session_pack_manifest(
         hashes_field="shard_brain_file_hashes",
         findings=findings,
     )
+    shard_brain_files = _session_pack_string_list_field(
+        label,
+        manifest,
+        "shard_brain_files",
+        findings,
+    )
+    shard_brain_count = _non_bool_int(manifest.get("shard_brain_count"))
+    if shard_brain_count is None:
+        findings.append(f"{label}: session pack shard_brain_count invalid")
+    elif shard_brain_files is not None and shard_brain_count != len(shard_brain_files):
+        findings.append(f"{label}: session pack shard_brain_count mismatch")
     observed_token_counts = _check_session_pack_files(
         label,
         manifest_path,

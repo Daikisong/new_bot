@@ -5944,6 +5944,7 @@ def test_provenance_audit_checks_session_pack_manifest_integrity(
         "brain_file_hashes": {brain_ref: file_sha256(brain_file)},
         "shard_brain_files": [],
         "shard_brain_file_hashes": {},
+        "shard_brain_count": 0,
         "accepted_episode_count": 1,
         "available_episode_count": 0,
         "available_episode_ids": [],
@@ -5997,6 +5998,7 @@ def test_provenance_audit_checks_session_pack_manifest_integrity(
             **manifest,
             "blocked": False,
             "pack_sha256": "bad",
+            "shard_brain_count": 1,
             "token_count_total": 1,
             "truncations": [],
             "errors": [],
@@ -6008,6 +6010,7 @@ def test_provenance_audit_checks_session_pack_manifest_integrity(
     assert not failed["passed"]
     label = "session_packs/2030-01-10/manifest.json"
     assert f"{label}: session pack pack_sha256 mismatch" in failed["findings"]
+    assert f"{label}: session pack shard_brain_count mismatch" in failed["findings"]
     assert f"{label}: session pack token_count_total mismatch" in failed["findings"]
     assert (
         f"{label}: session pack token budget exceeded without blocked"
