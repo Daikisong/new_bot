@@ -62,6 +62,7 @@
 - unknown_training_enabled_record_ids: `[]`
 - payload_hash_mismatch_record_ids: `[]`
 - eligible_records_without_provenance: `[]`
+- invalid_outcome_label_quality_record_ids: `[]`
 - missing_record_manifest_episode_ids: `[]`
 - manifest_count_mismatch_episode_ids: `[]`
 - manifest_record_id_mismatch_episode_ids: `[]`

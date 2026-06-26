@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.records.models import (
+    VALID_OUTCOME_LABEL_QUALITIES,
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
@@ -324,6 +325,11 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         for record in records
         if record.training_eligible and not record.provenance_source_ids
     )
+    invalid_label_quality = sorted(
+        record.record_id
+        for record in records
+        if _record_has_invalid_outcome_label_quality(record)
+    )
     deep_result = _audit_deep_record_store(root, store, records_by_episode) if deep else {}
     findings = []
     if duplicate_ids:
@@ -334,6 +340,8 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         findings.append("record payload hashes do not match normalized payloads")
     if deep and missing_provenance:
         findings.append("eligible records are missing provenance_source_ids")
+    if invalid_label_quality:
+        findings.append("record outcome label_quality values are invalid")
     if deep:
         findings.extend(deep_result["findings"])
     return {
@@ -351,6 +359,7 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         "unknown_training_enabled_record_ids": unknown_training_enabled,
         "payload_hash_mismatch_record_ids": missing_payload_hashes,
         "eligible_records_without_provenance": missing_provenance,
+        "invalid_outcome_label_quality_record_ids": invalid_label_quality,
         **deep_result,
         "findings": findings,
         "stats": _record_stats(records),
@@ -958,6 +967,19 @@ def _is_raw_only_record(record: BrainRecordEnvelope) -> bool:
         return True
     reason = record.eligibility_reason or ""
     return "forward-compatible raw-only record" in reason
+
+
+def _record_has_invalid_outcome_label_quality(record: BrainRecordEnvelope) -> bool:
+    values: list[object] = []
+    if "label_quality" in record.payload:
+        values.append(record.payload.get("label_quality"))
+    outcome = record.payload.get("D_outcome")
+    if isinstance(outcome, dict) and "label_quality" in outcome:
+        values.append(outcome.get("label_quality"))
+    return any(
+        not isinstance(value, str) or value not in VALID_OUTCOME_LABEL_QUALITIES
+        for value in values
+    )
 
 
 def _records_by_episode(

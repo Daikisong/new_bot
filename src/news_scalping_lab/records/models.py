@@ -13,6 +13,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+VALID_OUTCOME_LABEL_QUALITIES = frozenset(
+    {
+        "verified",
+        "quarantined",
+        "no_tradable_row",
+    }
+)
+
 
 class StrictRecordModel(BaseModel):
     model_config = ConfigDict(extra="forbid")

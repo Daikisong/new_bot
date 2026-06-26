@@ -16,20 +16,13 @@ from typing import Any, Protocol
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import (
     KNOWN_RECORD_PAYLOAD_MODELS,
+    VALID_OUTCOME_LABEL_QUALITIES,
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
 from news_scalping_lab.records.store import BrainRecordStore, StoredBundleResult
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
-
-VALID_OUTCOME_LABEL_QUALITIES = frozenset(
-    {
-        "verified",
-        "quarantined",
-        "no_tradable_row",
-    }
-)
 
 
 class VersionedBundleImportError(ValueError):

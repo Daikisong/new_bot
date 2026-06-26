@@ -21,7 +21,7 @@ from news_scalping_lab.research_import.versioned_bundle import (
     inspect_versioned_bundle,
 )
 from news_scalping_lab.training import audit_training_exports, export_training
-from news_scalping_lab.utils import KST, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 
@@ -927,6 +927,80 @@ def test_invalid_outcome_label_quality_blocks_acceptance(tmp_path: Path) -> None
         "BRAIN-SYNTH-ISSUER"
     ]
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
+def test_record_store_audit_rejects_invalid_outcome_label_quality(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "valid_label_quality_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_label_quality="verified",
+        ),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    episode_id = "NSLAB-20300110-SYNTH"
+    record_path = tmp_path / "memory" / "records" / f"{episode_id}.jsonl"
+    records = [
+        json.loads(line)
+        for line in record_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for record in records:
+        if record["record_id"] != "BRAIN-SYNTH-ISSUER":
+            continue
+        record["payload"]["label_quality"] = "model_inference_unverified"
+        record["payload"]["D_outcome"]["label_quality"] = "model_inference_unverified"
+        record["normalized_payload_sha256"] = sha256_text(
+            canonical_json(record["payload"])
+        )
+        record["raw_payload_sha256"] = sha256_text(
+            json.dumps(record["payload"], ensure_ascii=False, sort_keys=True)
+        )
+    record_payload = "".join(
+        json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+        for record in records
+    )
+    record_path.write_text(record_payload, encoding="utf-8")
+
+    manifest_path = tmp_path / "memory" / "record_manifests" / f"{episode_id}.json"
+    manifest = _read_json(manifest_path)
+    manifest["records_sha256"] = sha256_text(record_payload)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    envelope_path = tmp_path / "research" / "episodes" / episode_id / "bundle_envelope.json"
+    envelope = _read_json(envelope_path)
+    brain_delta_path = tmp_path / envelope["raw_block_paths"]["brain_delta.jsonl"]
+    raw_rows = [
+        json.loads(line)
+        for line in brain_delta_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for row in raw_rows:
+        if row.get("record_id") == "BRAIN-SYNTH-ISSUER":
+            row["label_quality"] = "model_inference_unverified"
+            row["D_outcome"]["label_quality"] = "model_inference_unverified"
+    raw_payload = "\n".join(json.dumps(row, ensure_ascii=False) for row in raw_rows)
+    brain_delta_path.write_text(raw_payload, encoding="utf-8")
+    envelope["raw_block_hashes"]["brain_delta.jsonl"] = sha256_text(raw_payload)
+    envelope_path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["payload_hash_mismatch_record_ids"] == []
+    assert audit["manifest_hash_mismatch_episode_ids"] == []
+    assert audit["raw_block_hash_mismatch_episode_ids"] == []
+    assert audit["records_with_raw_payload_hash_mismatch"] == []
+    assert audit["invalid_outcome_label_quality_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER"
+    ]
+    assert "record outcome label_quality values are invalid" in audit["findings"]
 
 
 def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
