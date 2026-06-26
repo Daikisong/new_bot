@@ -8,6 +8,40 @@ execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
 
 
 ────────────────────────────────────────
+BOOTSTRAP ACQUISITION RULE — MAIN PROMPT·CSV 확보 전용
+────────────────────────────────────────
+
+ChatGPT 세션에서는 Python/bash/container 네트워크가 GitHub DNS를 풀지 못할 수 있다.
+
+다음 오류는 파일 부재가 아니다.
+
+```text
+curl: Could not resolve host
+urllib.request.URLError Temporary failure in name resolution
+socket.gaierror
+NETWORK=caas_packages_only
+```
+
+이 오류만으로 MAIN EXECUTION PROMPT, `news_YYYYMMDD.csv`, `research_daily` access/snapshot 확보 실패를 선언하지 않는다.
+
+반드시 같은 YYYYMMDD 파일에 대해 다음 순서로 재시도한다.
+
+```text
+1. web/browser 계층으로 GitHub blob 또는 raw page를 연다.
+2. 파일 존재·파일명·Raw/View raw 경로를 확인한다.
+3. download tool 또는 파일 분석 도구로 로컬에 저장한다.
+4. 로컬 저장 후 sha256·byte_size·columns·row_count·min/max published_at·control char count를 검증한다.
+5. shell/curl/urllib/requests 실패 이력은 acquisition_warnings에만 남긴다.
+6. 모든 web/download fallback까지 실패한 경우에만 ACQUIRE_FAILED를 선언한다.
+```
+
+GitHub blob page는 파일 존재·크기·Raw/View raw 경로 확인용으로만 사용한다. blob HTML을 CSV 본문으로 파싱하거나 연구 입력으로 사용하지 않는다.
+
+이미 `/mnt/data`에 같은 이름 파일이 있어도 이번 실행에서 확보한 파일인지 `sha256`, `byte_size`, `row_count`로 재검증한다. 다른 날짜 파일, 샌드박스 잔존 파일, 최신 CSV로 대체하지 않는다.
+
+
+
+────────────────────────────────────────
 GOLD-RUN HARD GUARD — 20260622 품질 회귀 방지 규칙
 ────────────────────────────────────────
 
@@ -400,6 +434,15 @@ placeholder_token_count_zero
 incomplete_sentence_count_zero
 canonical_graph_consistency_verified
 validator_expected_source_not_generated_output
+cross_block_input_coverage_consistency_verified
+cross_block_population_count_consistency_verified
+renderer_validator_independence_verified
+final_candidate_generic_thesis_count_zero
+final_candidate_economic_mechanism_present
+preseal_outcome_download_count_zero
+preseal_outcome_parse_count_zero
+markdown_final_watchlist_table_count_consistency_verified
+markdown_final_watchlist_size_lte_20
 ```
 
 다음 중 하나라도 있으면 `ACCEPT_FULL` 금지:
@@ -527,8 +570,17 @@ accept_full_allowed = (
     and source_references_valid
     and fact_quote_entailment_valid
     and weak_final_reason_count == 0
+    and final_candidate_generic_thesis_count == 0
+    and final_candidate_economic_mechanism_present
     and theme_hindsight_separation_valid
     and brain_delta_record_count_verified
+    and cross_block_input_coverage_consistency_verified
+    and cross_block_population_count_consistency_verified
+    and renderer_validator_independence_verified
+    and preseal_outcome_download_count == 0
+    and preseal_outcome_parse_count == 0
+    and markdown_final_watchlist_table_count_consistency_verified
+    and markdown_final_watchlist_size <= 20
     and validator_expected_source_not_generated_output
     and validator_exit_code == 0
     and critical_error_count == 0
@@ -559,6 +611,336 @@ brain_eligible = false
 ```
 
 최종 채팅 응답은 사용자의 별도 형식을 따르되, 생성된 실제 Markdown 파일 하나만 가리킨다.
+
+## G13. Cross-block consistency hard guard
+
+최근 smoke-run에서 사람용 보고서와 `blind_prediction.json`·`research_episode.json` 사이의 `input_coverage_warning`, `uncovered_time_ranges`, object count가 서로 다르게 기록될 수 있음이 확인됐다. 최종 bundle의 진실 원천은 `canonical_graph.json` 하나이며, 모든 Markdown·JSON·JSONL은 같은 canonical graph에서 렌더링되어야 한다.
+
+다음 필드는 모든 artifact에서 동일해야 한다.
+
+```text
+trade_date
+previous_trade_date
+next_trade_date
+window_start
+cutoff_at
+input_file
+input_sha256
+input_row_count
+input_coverage_warning
+uncovered_time_ranges
+time_unverified_rows
+row_disposition_count
+candidate_screening_count
+final_watchlist_count
+outcome_ledger_count
+issuer_day_case_count
+direct_event_case_count
+brain_delta_record_count
+training_eligible_record_count
+```
+
+`input_coverage_warning` 판정식은 다음으로만 계산한다.
+
+```python
+expected_end = cutoff_at
+actual_max = max(parsed_published_at)
+tolerated_cutoff_gap_seconds = 180
+cutoff_gap_seconds = (expected_end - actual_max).total_seconds() if actual_max else None
+
+if actual_max is None:
+    input_coverage_warning = True
+    uncovered_time_ranges = [{"reason": "missing_max_published_at"}]
+elif actual_max > expected_end:
+    input_coverage_warning = True
+    uncovered_time_ranges = [{"reason": "csv_contains_after_cutoff"}]
+elif cutoff_gap_seconds > tolerated_cutoff_gap_seconds:
+    input_coverage_warning = True
+    uncovered_time_ranges = [{"reason": "csv_max_time_before_expected_cutoff"}]
+else:
+    # cutoff 직전 0~180초 정도의 feed gap은 허용 가능하다.
+    input_coverage_warning = bool(time_unverified_rows)
+    uncovered_time_ranges = []
+    tolerated_cutoff_gap_seconds_recorded = cutoff_gap_seconds
+```
+
+`uncovered_time_ranges`가 어느 artifact에서라도 비어 있지 않으면 모든 artifact에서 `input_coverage_warning == true`여야 한다.
+cutoff 직전 허용 gap으로 처리하려면 모든 artifact에서 `uncovered_time_ranges == []`이고 `tolerated_cutoff_gap_seconds_recorded`가 동일해야 한다.
+coverage warning 자체는 연구 중단 사유가 아니지만, artifact 간 불일치는 renderer/validator 결함이다.
+
+validator hard check:
+
+```text
+cross_block_input_coverage_consistency_verified
+cross_block_population_count_consistency_verified
+cross_block_final_watchlist_consistency_verified
+cross_block_brain_delta_count_consistency_verified
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_CROSS_BLOCK_INCONSISTENCY
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G14. Renderer와 validator 독립성 hard guard
+
+`render_nslab_bundle.py`와 `validate_nslab_bundle.py`는 서로 다른 검증 책임을 가진다. renderer는 canonical graph를 출력으로 바꾸는 도구이고, validator는 이미 만들어진 출력과 내부 artifact를 독립적으로 읽어 오류를 찾는 도구다.
+
+원칙:
+
+```text
+renderer_sha256 != validator_sha256
+```
+
+만약 한 파일 안에 두 entrypoint를 함께 넣어야 하는 환경이라면, 전체 파일 SHA 하나만 기록하지 말고 다음을 별도로 기록한다.
+
+```text
+combined_tool_sha256
+renderer_entrypoint_sha256
+validator_entrypoint_sha256
+```
+
+이 경우에도 다음은 반드시 성립해야 한다.
+
+```text
+renderer_entrypoint_sha256 != validator_entrypoint_sha256
+validator는 renderer의 self-declared manifest를 expected로 사용하지 않음
+validator는 final bundle과 내부 artifact를 다시 읽어 계산함
+```
+
+validator hard check:
+
+```text
+renderer_validator_independence_verified
+validator_does_not_import_renderer_state
+validator_expected_source_not_generated_output
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_NOT_INDEPENDENT
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G15. Final watchlist thesis specificity hard guard
+
+`final_watchlist`의 각 항목은 일반 후보 설명이 아니라 실제 장전 의사결정 label이다. 따라서 final item의 thesis와 `why_now`는 원문 fact·경제 메커니즘·실패조건이 모두 결속되어야 한다.
+
+다음 문구는 final item의 `preopen_thesis`, `why_now`, `blind_reason`, `red_team_counterargument`에서 단독 또는 핵심 근거로 사용할 수 없다.
+
+```text
+issuer-specific 사건을 직접 FACT 범위에서만 관찰한다
+cutoff 이전 원문 fact가 issuer-scoped catalyst로 확인되어 장전 후보군에 포함된다
+좋은 회사뉴스가 상한가형 사건과 동일하지 않을 수 있다
+The event may already be priced
+P snapshot safe feature만으로 후보화했다
+P시점 소형 시총
+P시점 중소형 시총
+P시점 거래 회전 존재
+최근 5거래일 10% 이상 고가 이력
+최근 급등 흔적을 연속성과 선반영 양쪽으로 본다
+```
+
+이 문구들은 candidate_screening의 중립 설명이나 red-team 보조 문장에는 쓸 수 있지만, final 선정의 핵심 이유가 될 수 없다.
+
+각 final item은 반드시 다음 구조를 가진다.
+
+```json
+{
+  "candidate_id": "CAND-...",
+  "rank": 1,
+  "ticker": "000000",
+  "name": "회사명",
+  "catalyst_type": "CONTRACT_ORDER | PRODUCT_COMMERCIALIZATION | BIO_STAGE_ADVANCE | CAPITAL_POLICY | STRATEGIC_INVESTMENT | NAMED_BENEFICIARY | OTHER_CONCRETE",
+  "primary_fact_ids": ["FACT-..."],
+  "primary_quote": "원문 최소 인용",
+  "economic_mechanism": "매출·비용·마진·자본정책·허가확률·수급 중 무엇이 왜 바뀌는지",
+  "why_now": "cutoff 이전 새 정보와 P snapshot 보조 feature가 어떻게 결합되는지",
+  "red_team_counterargument": "해당 후보에 고유한 실패조건",
+  "generic_text_signature": "sha256(normalized thesis/red-team)"
+}
+```
+
+validator hard check:
+
+```text
+final_candidate_primary_fact_present
+final_candidate_primary_quote_found
+final_candidate_economic_mechanism_present
+final_candidate_generic_thesis_count_zero
+final_candidate_generic_redteam_reuse_lte_3
+weak_final_reason_zero
+```
+
+동일한 `red_team_counterargument` 또는 `preopen_thesis`가 final_watchlist에서 3회 초과 반복되면 템플릿 복사로 간주한다.
+
+위반 시:
+
+```text
+generic_final_thesis_count += 1
+reused_final_redteam_signature_count += 1
+critical_error_count += 1
+bundle_status = QUARANTINE_GENERIC_FINAL_THESIS
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G16. BLIND pre-seal outcome file access guard
+
+BLIND 봉인 전에는 `outcome_snapshot_path`의 문자열, expected sha256, expected row_count만 볼 수 있다.
+
+다음 작업은 모두 BLIND 봉인 이후에만 허용한다.
+
+```text
+outcome snapshot 파일 다운로드
+outcome snapshot byte_size 계산
+outcome snapshot sha256 계산
+outcome snapshot header 읽기
+outcome snapshot row_count 계산
+outcome snapshot pandas/csv parse
+outcome snapshot의 high_return_pct, close_return_pct, upper_limit_touched, upper_limit_closed 등 가격 label 열람
+outcome snapshot 파일 미리보기·head·tail·grep·sample 출력
+```
+
+BLIND 봉인 전에 작업 디렉터리 또는 `/mnt/data` 안에 outcome snapshot으로 해석될 수 있는 파일이 존재하면 다음을 감사한다.
+
+```text
+file_path
+exists_before_run
+created_at_or_mtime
+sha256_calculated_before_seal
+header_read_before_seal
+row_count_calculated_before_seal
+parsed_before_seal
+printed_before_seal
+used_in_blind_graph
+```
+
+이전 실행 잔존 파일이고 이번 실행에서 읽지 않았다면 BLIND 작업 전에 삭제하거나 quarantine 디렉터리로 이동하고 `acquisition_warnings`에 기록한다. 이번 실행에서 BLIND seal 전에 outcome 파일을 다운로드·해시·행수계산·parse·출력·BLIND graph 사용 중 하나라도 수행했다면 다음으로 처리한다.
+
+```text
+context_already_contains_D_outcome = true
+bundle_status = QUARANTINE_PHASE_CONTAMINATED
+blind_valid = false
+forecast_evaluation_eligible = false
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+validator hard check:
+
+```text
+preseal_outcome_download_count_zero
+preseal_outcome_sha256_count_zero
+preseal_outcome_header_read_count_zero
+preseal_outcome_row_count_count_zero
+preseal_outcome_parse_count_zero
+preseal_outcome_print_count_zero
+preseal_outcome_used_in_blind_graph_count_zero
+```
+
+## G17. Markdown final-table parity guard
+
+기계 JSON만 올바르고 사람용 Markdown 표가 틀리면 gold bundle이 아니다. `research_report.md`, `blind_report.md`, `postmortem_report.md` 안의 final watchlist 표는 `blind_prediction.json.final_watchlist`와 동일한 ticker·rank·count를 가져야 한다.
+
+규칙:
+
+```text
+report_final_watchlist_count == blind_prediction.final_watchlist_count
+blind_report_final_watchlist_count == blind_prediction.final_watchlist_count
+postmortem_final_watchlist_count == blind_prediction.final_watchlist_count
+all_report_final_ranks == blind_prediction.final_ranks
+all_report_final_tickers == blind_prediction.final_tickers
+```
+
+Markdown 안에서 `final_watchlist` 또는 `최종 장전 관심종목`으로 표시된 표가 20개를 초과하면 JSON이 정상이어도 `ACCEPT_FULL` 금지다.
+
+validator hard check:
+
+```text
+markdown_final_watchlist_table_count_consistency_verified
+markdown_final_watchlist_rank_ticker_consistency_verified
+markdown_final_watchlist_size_lte_20
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_MARKDOWN_JSON_PARITY
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G18. CSV acquisition fallback hard guard
+
+GitHub Raw CSV 확보는 bash/curl/urllib/requests 성공을 필수로 요구하지 않는다.
+
+다음 오류는 파일 부재가 아니다.
+
+```text
+curl: Could not resolve host
+urllib.request.URLError Temporary failure in name resolution
+socket.gaierror
+NETWORK=caas_packages_only
+```
+
+이 오류만으로 `CSV_ACQUIRE_FAILED`, `MAIN_PROMPT_ACQUIRE_FAILED`, `INPUT_UNPARSED`를 선언하지 않는다.
+
+같은 YYYYMMDD 파일에 대해 반드시 다음 순서로 재시도한다.
+
+```text
+1. GitHub blob page를 web/browser 계층으로 열어 파일명·크기·Raw/View raw 존재 확인
+2. GitHub raw endpoint를 download tool 또는 파일 분석 도구로 저장
+3. raw.githubusercontent endpoint를 download tool 또는 파일 분석 도구로 저장
+4. GitHub Contents API raw media type 또는 codeload ZIP fallback 사용
+5. 로컬 저장 후 sha256·byte_size·columns·row_count·min/max published_at·control char count 검증
+```
+
+GitHub blob HTML은 존재 확인용이며, CSV 본문으로 파싱하거나 연구 입력으로 사용하지 않는다.
+
+성공 조건:
+
+```text
+local_csv_basename == selected_input_file
+byte_size > 0
+sha256 계산 완료
+columns == page,row,date,time,title,body
+CSV full parse 성공
+row_count > 0
+min/max published_at 계산 성공
+time_unverified_rows 계산 완료
+tab/LF/CR 제외 C0 control char count == 0
+```
+
+fallback 중 하나가 성공하면 `status = CSV_ACQUIRED`로 둔다.
+`curl/urllib/requests` 실패 이력은 `acquisition_warnings`에만 기록한다.
+모든 web/download fallback까지 실패한 경우에만 `CSV_ACQUIRE_FAILED`로 중단한다.
+다른 날짜 CSV, 샌드박스 잔존 파일, 최신 CSV로 대체하지 않는다.
+
+validator hard check:
+
+```text
+csv_acquisition_fallback_policy_verified
+shell_dns_failure_not_treated_as_file_missing
+selected_csv_basename_verified
+sandbox_residual_file_not_used
+```
+
+위반 시:
+
+```text
+bundle_status = QUARANTINE_ACQUISITION_POLICY_VIOLATION
+brain_eligible = false
+ACCEPT_FULL 금지
+```
 
 
 이 프로토콜의 핵심은 “연구량”보다 “학습 가능한 의미 정확도”다.
@@ -1161,6 +1543,8 @@ postmortem_report.md
 ```
 
 `blind_report.md`는 outcome snapshot을 열기 전에 작성·저장·해시·봉인한다.
+
+`blind_report.md`와 `blind_packet_manifest.json`의 seal timestamp 이전에는 outcome snapshot 파일의 존재 감사와 access JSON metadata 확인을 제외한 모든 outcome 파일 내용 접근을 금지한다.
 
 최종 `research_report.md`는 다음의 단순 결합이어야 한다.
 
