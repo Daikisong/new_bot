@@ -205,8 +205,9 @@ All-cache `llm-full` rebuilds are useful reproducibility evidence, but productio
 readiness requires at least one live LLM call in the latest compile run and all
 compile evidence must match the current brain manifest version. The compile
 source record count must also match current record coverage. The production
-semantic index must be current, LLM-embedded, include brain-record vectors, and
-match the same record coverage count.
+semantic index must be current, LLM-embedded with the configured provider and
+embedding model, include brain-record vectors, and match the same record coverage
+count.
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai

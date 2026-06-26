@@ -557,6 +557,11 @@ def _production_semantic_index_status(
         "source_brain_record_count",
     )
     indexed_brain_record_count = _int_from_mapping(vector_index, "brain_record_count")
+    embedding_model = (
+        _llm_embedding_model_from_method(embedding_method)
+        if isinstance(embedding_method, str)
+        else None
+    )
     findings: list[str] = []
     if not isinstance(vector_index, dict):
         findings.append("vector index status is missing")
@@ -573,6 +578,11 @@ def _production_semantic_index_status(
             expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
             if not embedding_method.strip().lower().startswith(expected_prefix):
                 findings.append("semantic index provider does not match configured LLM provider")
+            expected_model = settings.llm.embedding_model
+            if not isinstance(embedding_model, str) or not embedding_model:
+                findings.append("semantic index embedding model is missing")
+            elif expected_model and embedding_model.strip() != expected_model.strip():
+                findings.append("semantic index embedding model does not match configured model")
         if (
             isinstance(expected_source_record_count, int)
             and source_brain_record_count != expected_source_record_count
@@ -591,6 +601,8 @@ def _production_semantic_index_status(
         "findings": findings,
         "vector_index_status": status,
         "embedding_method": embedding_method,
+        "embedding_model": embedding_model,
+        "configured_embedding_model": settings.llm.embedding_model,
         "expected_source_record_count": expected_source_record_count,
         "source_brain_record_count": source_brain_record_count,
         "indexed_brain_record_count": indexed_brain_record_count,
@@ -640,6 +652,14 @@ def _production_warehouse_status(warehouse: object) -> dict[str, Any]:
         "duplicate_identities": warehouse.get("duplicate_identities", {}),
         "weight_mismatches": warehouse.get("weight_mismatches", {}),
     }
+
+
+def _llm_embedding_model_from_method(embedding_method: str) -> str | None:
+    parts = embedding_method.strip().split(":", 2)
+    if len(parts) != 3 or parts[0] != "llm_embedding":
+        return None
+    model = parts[2].strip()
+    return model or None
 
 
 def _production_record_store_status(settings: Settings) -> dict[str, Any]:
