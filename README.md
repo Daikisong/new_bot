@@ -61,6 +61,9 @@ nslab brain update --episode <episode_id>
 nslab brain audit
 ```
 
+`research import` reports the imported episode ID, trade date, mode, and source
+path, and exits non-zero for missing or non-file input paths.
+
 Batch flow:
 
 ```bash

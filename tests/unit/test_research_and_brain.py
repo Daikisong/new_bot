@@ -375,6 +375,48 @@ def test_cli_import_batch_reports_missing_or_non_directory_path(
     assert "research import-batch path is not a directory" in not_directory.output
 
 
+def test_cli_research_import_reports_source_path_and_rejects_invalid_paths(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "data" / "inbox" / "research" / "single.json"
+    source.write_text(
+        _batch_episode("EP-single-import", "Single import lesson.").model_dump_json(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    imported = RUNNER.invoke(app, ["research", "import", str(source), "--mode", "strict"])
+
+    assert imported.exit_code == 0, imported.output
+    payload = json.loads(imported.output)
+    assert payload == {
+        "episode_id": "EP-single-import",
+        "imported": True,
+        "mode": "strict",
+        "source_path": source.as_posix(),
+        "trade_date": "2030-01-10",
+    }
+
+    missing = RUNNER.invoke(
+        app,
+        ["research", "import", "data/inbox/research/missing.json", "--mode", "strict"],
+    )
+
+    assert missing.exit_code == 1
+    assert "research import file not found" in missing.output
+
+    not_file = RUNNER.invoke(
+        app,
+        ["research", "import", "data/inbox/research", "--mode", "strict"],
+    )
+
+    assert not_file.exit_code == 1
+    assert "research import path is not a file" in not_file.output
+
+
 def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

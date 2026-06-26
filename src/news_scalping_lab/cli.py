@@ -212,6 +212,12 @@ def news_import(csv_path: Path) -> None:
 
 @research_app.command("import")
 def research_import(path: Path, mode: str = "auto") -> None:
+    if not path.exists():
+        typer.echo(f"research import file not found: {path}", err=True)
+        raise typer.Exit(code=1)
+    if not path.is_file():
+        typer.echo(f"research import path is not a file: {path}", err=True)
+        raise typer.Exit(code=1)
     settings = load_settings()
     episode = ResearchImporter(
         settings.project_root,
@@ -220,9 +226,11 @@ def research_import(path: Path, mode: str = "auto") -> None:
     ).import_path(path, mode=mode)
     _echo(
         {
+            "imported": True,
             "episode_id": episode.episode_id,
             "trade_date": episode.trade_date.isoformat(),
             "mode": mode,
+            "source_path": path.as_posix(),
         }
     )
 
