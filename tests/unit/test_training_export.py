@@ -314,7 +314,11 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert sft_manifest["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 1}
     assert sft_manifest["output_file"] == "training_exports/sft/sft.jsonl"
     assert sft_manifest["output_sha256"]
-    assert set(sft_manifest["phase_outputs"]) == {"BLIND", "POSTMORTEM"}
+    assert set(sft_manifest["phase_outputs"]) == {
+        "AUDIT_ONLY",
+        "BLIND",
+        "POSTMORTEM",
+    }
     assert sft_manifest["phase_outputs"]["BLIND"]["output_file"] == (
         "training_exports/sft/blind_sft.jsonl"
     )
@@ -332,6 +336,16 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         sft_manifest["phase_outputs"]["POSTMORTEM"]["hindsight_safe_for_blind_sft"]
         is False
     )
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"] == (
+        "training_exports/sft/audit_only_sft.jsonl"
+    )
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["row_count"] == 0
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["source_phase"] == "AUDIT_ONLY"
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["audit_only"] is True
+    assert (
+        sft_manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"]
+        is False
+    )
     assert (
         _jsonl(tmp_path / sft_manifest["phase_outputs"]["BLIND"]["output_file"])
         == blind_rows
@@ -339,21 +353,32 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert _jsonl(
         tmp_path / sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"]
     ) == failure_rows
+    assert (
+        _jsonl(tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
+        == []
+    )
     assert sft_manifest["phase_outputs"]["BLIND"]["output_sha256"]
     assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_sha256"]
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_sha256"]
     assert (
         "The combined output_file is for audit and compatibility; use phase_outputs.BLIND "
         "for blind-only SFT."
     ) in sft_manifest["notes"]
     assert "Do not train postmortem labels as if they were blind answers." in sft_manifest["notes"]
+    assert (
+        "Skipped brain records are written to phase_outputs.AUDIT_ONLY for auditability "
+        "and must not be used as training rows."
+    ) in sft_manifest["notes"]
     preference_manifest = read_json(preference.manifest_path)
     evals_manifest = read_json(evals.manifest_path)
     assert preference_manifest["output_file"] == "training_exports/preference/preference.jsonl"
     assert evals_manifest["output_file"] == "training_exports/evals/evals.jsonl"
     assert preference_manifest["phase_outputs"]["BLIND"]["row_count"] == 0
     assert preference_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 1
+    assert preference_manifest["phase_outputs"]["AUDIT_ONLY"]["row_count"] == 0
     assert evals_manifest["phase_outputs"]["BLIND"]["row_count"] == 0
     assert evals_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 3
+    assert evals_manifest["phase_outputs"]["AUDIT_ONLY"]["row_count"] == 0
     assert preference_manifest["category_counts"] == {
         "positive_vs_negative_candidate_preferences": 1
     }
@@ -443,6 +468,41 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
         assert manifest["issuer_day_weight_sum_mismatches"] == {}
         assert manifest["direct_event_weight_sum_mismatch_count"] == 0
         assert manifest["direct_event_weight_sum_mismatches"] == {}
+        assert manifest["phase_outputs"]["AUDIT_ONLY"]["audit_only"] is True
+        assert (
+            manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"]
+            is False
+        )
+
+    sft_audit_only = _jsonl(
+        tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
+    )
+    preference_audit_only = _jsonl(
+        tmp_path / preference_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
+    )
+    evals_audit_only = _jsonl(
+        tmp_path / evals_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
+    )
+    assert {row["record_id"] for row in sft_audit_only} == {
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    }
+    assert {row["record_id"] for row in preference_audit_only} == {
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+    }
+    assert {row["record_id"] for row in evals_audit_only} == {
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    }
+    assert all(row["source_phase"] == "AUDIT_ONLY" for row in sft_audit_only)
+    assert all(row["audit_only"] is True for row in preference_audit_only)
+    assert all(row["kind"] == "evals" for row in evals_audit_only)
+    assert "record_type_not_selected_for_export_kind" in {
+        reason
+        for row in sft_audit_only
+        for reason in row["skip_reasons"]
+    }
 
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["source_record_count"] == 3
@@ -776,6 +836,52 @@ def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> Non
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["passed"] is False
     assert training_report["findings"] == audit["findings"]
+
+
+def test_training_audit_rejects_tampered_audit_only_phase_output(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-MEMORY",
+            "memory_claim",
+            training_target="legacy_catalog_only",
+            training_eligible=False,
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    audit_only_path = tmp_path / manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
+    audit_only_path.write_text("", encoding="utf-8")
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert (
+        "sft: phase_outputs.AUDIT_ONLY row_count mismatch expected 1, got 0"
+        in audit["findings"]
+    )
+    assert "sft: phase_outputs.AUDIT_ONLY sha256 mismatch" in audit["findings"]
+    assert "sft: phase_outputs.AUDIT_ONLY rows mismatch" in audit["findings"]
 
 
 def test_training_audit_rejects_non_sealed_preference_record_rows(tmp_path) -> None:

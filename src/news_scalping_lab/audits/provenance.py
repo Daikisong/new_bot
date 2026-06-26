@@ -7356,7 +7356,7 @@ def _check_training_export_phase_outputs(
     if not isinstance(raw, dict):
         findings.append(f"{label}: training export phase_outputs invalid")
         return
-    expected_phases = {"BLIND", "POSTMORTEM"}
+    expected_phases = {"AUDIT_ONLY", "BLIND", "POSTMORTEM"}
     if set(raw) != expected_phases:
         findings.append(f"{label}: training export phase_outputs phase set mismatch")
     for phase in sorted(expected_phases):
@@ -7372,6 +7372,10 @@ def _check_training_export_phase_outputs(
         if entry.get("hindsight_safe_for_blind_sft") is not expected_hindsight_safe:
             findings.append(
                 f"{label}: training export phase output {phase} hindsight flag mismatch"
+            )
+        if phase == "AUDIT_ONLY" and entry.get("audit_only") is not True:
+            findings.append(
+                f"{label}: training export phase output {phase} audit_only flag mismatch"
             )
         output_file = entry.get("output_file")
         if not isinstance(output_file, str) or not output_file:
@@ -7398,11 +7402,38 @@ def _check_training_export_phase_outputs(
                 f"{label}: training export phase output {phase} output_sha256 mismatch"
             )
         phase_rows = _read_training_export_rows(output_path, label, findings)
-        expected_rows = [row for row in rows if row.get("source_phase") == phase]
+        expected_rows = (
+            _training_audit_only_rows(manifest)
+            if phase == "AUDIT_ONLY"
+            else [row for row in rows if row.get("source_phase") == phase]
+        )
         if entry.get("row_count") != len(expected_rows):
             findings.append(f"{label}: training export phase output {phase} row_count mismatch")
         if phase_rows != expected_rows:
             findings.append(f"{label}: training export phase output {phase} rows mismatch")
+
+
+def _training_audit_only_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    kind = manifest.get("kind")
+    skipped_records = manifest.get("skipped_records")
+    if not isinstance(kind, str) or not isinstance(skipped_records, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for skipped in skipped_records:
+        if not isinstance(skipped, dict):
+            continue
+        row = dict(skipped)
+        row.update(
+            {
+                "schema_version": "nslab.training_audit_only_record.v1",
+                "kind": kind,
+                "source_phase": "AUDIT_ONLY",
+                "hindsight_safe_for_blind_sft": False,
+                "audit_only": True,
+            }
+        )
+        rows.append(row)
+    return rows
 
 
 def _training_task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

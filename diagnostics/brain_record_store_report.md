@@ -59,7 +59,7 @@
 - theme_formation_cases: `0`
 
 - dropped_record_count: `0`
-- quarantined_record_count: `1`
+- quarantined_record_count: `0`
 - audit_passed: `True`
 ## record_store_audit
 

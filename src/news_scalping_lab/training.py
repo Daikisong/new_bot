@@ -418,6 +418,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         target_dir,
         kind,
         rows,
+        skipped_records=skipped_records,
     )
     manifest_path = target_dir / "manifest.json"
     write_json(
@@ -492,6 +493,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
                 "Preference and eval rows may include postmortem/outcome labels.",
                 "Do not train postmortem labels as if they were blind answers.",
                 "Rows with source_phase=POSTMORTEM must not be mixed into blind SFT.",
+                (
+                    "Skipped brain records are written to phase_outputs.AUDIT_ONLY "
+                    "for auditability and must not be used as training rows."
+                ),
             ],
         },
     )
@@ -713,6 +718,8 @@ def _write_phase_outputs(
     target_dir: Path,
     kind: str,
     rows: list[dict[str, Any]],
+    *,
+    skipped_records: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     outputs: dict[str, dict[str, Any]] = {}
     file_names = {
@@ -736,7 +743,44 @@ def _write_phase_outputs(
             "source_phase": phase,
             "hindsight_safe_for_blind_sft": phase == "BLIND",
         }
+    audit_only_path = target_dir / f"audit_only_{kind}.jsonl"
+    audit_only_rows = _audit_only_rows(kind, skipped_records)
+    audit_only_path.write_text(
+        "".join(
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
+            for row in audit_only_rows
+        ),
+        encoding="utf-8",
+    )
+    outputs["AUDIT_ONLY"] = {
+        "output_file": _project_relative_path(root, audit_only_path),
+        "output_sha256": file_sha256(audit_only_path),
+        "row_count": len(audit_only_rows),
+        "source_phase": "AUDIT_ONLY",
+        "hindsight_safe_for_blind_sft": False,
+        "audit_only": True,
+    }
     return outputs
+
+
+def _audit_only_rows(
+    kind: str,
+    skipped_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for skipped in skipped_records:
+        row = dict(skipped)
+        row.update(
+            {
+                "schema_version": "nslab.training_audit_only_record.v1",
+                "kind": kind,
+                "source_phase": "AUDIT_ONLY",
+                "hindsight_safe_for_blind_sft": False,
+                "audit_only": True,
+            }
+        )
+        rows.append(row)
+    return rows
 
 
 def _artifact_path(root: Path, value: object) -> Path | None:
@@ -958,6 +1002,42 @@ def _audit_phase_outputs(
                 findings.append(
                     f"{kind}: phase_outputs.{phase} blind-safe flag mismatch {example_id}"
                 )
+    metadata = phase_outputs.get("AUDIT_ONLY")
+    if not isinstance(metadata, dict):
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY is missing")
+        return
+    path = _artifact_path(root, metadata.get("output_file"))
+    if path is None or not path.exists():
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY output_file is missing")
+        return
+    rows = _read_training_rows(kind, "phase_outputs.AUDIT_ONLY", path, findings)
+    _audit_training_artifact(
+        kind=kind,
+        label="phase_outputs.AUDIT_ONLY",
+        path=path,
+        rows=rows,
+        expected_count=metadata.get("row_count"),
+        expected_sha256=metadata.get("output_sha256"),
+        findings=findings,
+    )
+    if metadata.get("source_phase") != "AUDIT_ONLY":
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY source_phase mismatch")
+    if metadata.get("audit_only") is not True:
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY audit_only flag mismatch")
+    if metadata.get("hindsight_safe_for_blind_sft") is not False:
+        findings.append(
+            f"{kind}: phase_outputs.AUDIT_ONLY blind-safe flag mismatch"
+        )
+    expected_rows = _audit_only_rows(kind, _valid_skipped_records(manifest))
+    if rows != expected_rows:
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY rows mismatch")
+
+
+def _valid_skipped_records(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    skipped_records = manifest.get("skipped_records")
+    if not isinstance(skipped_records, list):
+        return []
+    return [item for item in skipped_records if isinstance(item, dict)]
 
 
 def _row_identifier(row: dict[str, Any]) -> str:
