@@ -74,6 +74,7 @@
   "latest_brain_audit": {
     "brain_build_mode": "full",
     "brain_version": "brain-8cd4d47576",
+    "catalog_only": true,
     "compiled_claim_file_present": false,
     "coverage_complete": true,
     "deep": true,

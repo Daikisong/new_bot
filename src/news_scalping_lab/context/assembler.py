@@ -391,6 +391,7 @@ class ContextAssembler:
             brain_version=version,
             created_at=cutoff_at,
             build_mode="asof_context",
+            catalog_only=False,
             last_full_rebuild_at=None,
             updated_episode_id=None,
             accepted_episode_count=len(accepted),

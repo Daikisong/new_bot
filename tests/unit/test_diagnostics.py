@@ -734,6 +734,52 @@ def test_production_readiness_rejects_llm_full_manifest_without_compile_evidence
     assert "brain: compiled claims JSONL is missing" in production["findings"]
 
 
+def test_production_readiness_rejects_catalog_only_brain_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {
+            "brain_version": "brain-catalog",
+            "build_mode": "catalog",
+            "catalog_only": True,
+        },
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 0,
+            "coverage_complete": True,
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert production["llm_full_brain"]["catalog_only"] is True
+    assert "brain: current manifest is catalog_only" in production["findings"]
+    assert (
+        "brain: current manifest build_mode is catalog, not llm-full"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_accepts_llm_full_compile_evidence(
     tmp_path,
 ) -> None:

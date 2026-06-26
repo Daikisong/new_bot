@@ -56,6 +56,7 @@
 - passed: `True`
 - brain_version: `brain-8cd4d47576`
 - brain_build_mode: `full`
+- catalog_only: `True`
 - coverage_complete: `True`
 - record_coverage_complete: `True`
 - deterministic_rebuild_verified: `True`

@@ -540,6 +540,7 @@ class BrainManifest(StrictModel):
     brain_version: str
     created_at: datetime
     build_mode: str = "full"
+    catalog_only: bool = False
     last_full_rebuild_at: datetime | None = None
     updated_episode_id: str | None = None
     accepted_episode_count: int

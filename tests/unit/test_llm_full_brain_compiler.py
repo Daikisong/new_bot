@@ -69,6 +69,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
 
     purposes = [purpose for purpose, _prompt in llm.calls]
     assert manifest.build_mode == "llm-full"
+    assert manifest.catalog_only is False
     assert "brain_compile:shard:0001" in purposes
     assert len([purpose for purpose in purposes if ":synthesis:" in purpose]) == len(
         BRAIN_FILES
@@ -78,6 +79,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     )
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
     vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
     compiled_claims = [
         json.loads(line)
@@ -90,6 +92,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         claim["supporting_record_ids"][0]: claim for claim in compiled_claims
     }
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
+    assert brain_manifest["catalog_only"] is False
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
     assert compile_manifest["compiled_claim_count"] == 2
@@ -99,6 +102,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert "synthesis_cache_hit" not in compile_manifest["categories"][0]
     assert compile_report["schema_version"] == "nslab.brain_compile_diagnostics.v1"
     assert compile_report["compiler_mode"] == "llm-full"
+    assert compile_report["catalog_only"] is False
     assert compile_report["compiler_provider"] == "openai"
     assert compile_report["compiler_model"] == "test-brain-model"
     assert compile_report["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION

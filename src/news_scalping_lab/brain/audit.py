@@ -83,6 +83,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "passed": coverage_complete and not hard_findings,
         "brain_version": current_brain_version(root),
         "brain_build_mode": _brain_build_mode(brain_manifest or coverage_manifest),
+        "catalog_only": _brain_catalog_only(brain_manifest or coverage_manifest),
         "updated_episode_id": (brain_manifest or coverage_manifest).get("updated_episode_id"),
         "last_full_rebuild": (brain_manifest or coverage_manifest).get("last_full_rebuild_at")
         or (brain_manifest or coverage_manifest).get("created_at"),
@@ -109,6 +110,7 @@ def _write_latest_brain_audit_summary(
         "passed": result.get("passed"),
         "brain_version": result.get("brain_version"),
         "brain_build_mode": result.get("brain_build_mode"),
+        "catalog_only": result.get("catalog_only"),
         "coverage_complete": result.get("coverage_complete"),
         "record_coverage_complete": result.get("record_coverage_complete"),
         "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
@@ -704,6 +706,18 @@ def _brain_build_mode(manifest: dict[str, Any]) -> str:
     if manifest.get("created_at") is not None:
         return "full"
     return "unknown"
+
+
+def _brain_catalog_only(manifest: dict[str, Any]) -> bool | None:
+    value = manifest.get("catalog_only")
+    if isinstance(value, bool):
+        return value
+    build_mode = _brain_build_mode(manifest)
+    if build_mode in {"full", "catalog", "incremental"}:
+        return True
+    if build_mode in {"llm-full", "asof_context"}:
+        return False
+    return None
 
 
 def _current_shard_episode_count(root: Path) -> int | None:

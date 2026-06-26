@@ -136,6 +136,7 @@ class BrainCompiler:
             brain_version=version,
             created_at=created_at,
             build_mode="full" if mode == "full" else "catalog",
+            catalog_only=True,
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(episodes),
@@ -201,6 +202,7 @@ class BrainCompiler:
             brain_version=version,
             created_at=created_at,
             build_mode="llm-full",
+            catalog_only=False,
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(accepted_episodes),
@@ -333,6 +335,7 @@ class BrainCompiler:
             brain_version=version,
             created_at=created_at,
             build_mode="incremental",
+            catalog_only=True,
             last_full_rebuild_at=(
                 current_manifest.last_full_rebuild_at or current_manifest.created_at
             ),
@@ -726,6 +729,7 @@ class BrainCompiler:
             f"Brain version: `{manifest.brain_version}`",
             f"Accepted episodes covered: {manifest.covered_episode_count}/{manifest.accepted_episode_count}",
             f"Build mode: `{manifest.build_mode}`",
+            f"Catalog only: `{manifest.catalog_only}`",
             f"Category: `{category}`",
             "",
             "This file stores abstract mechanisms and cautions. It is not a keyword map, ticker list, or score table.",
@@ -771,6 +775,7 @@ class BrainCompiler:
             "schema_version": "nslab.record_coverage_manifest.v1",
             "brain_version": manifest.brain_version,
             "build_mode": manifest.build_mode,
+            "catalog_only": manifest.catalog_only,
             "accepted_episode_count": manifest.accepted_episode_count,
             "accepted_record_count": len(records),
             "available_record_count": len(records),
@@ -799,6 +804,7 @@ class BrainCompiler:
             "brain_version": manifest.brain_version,
             "created_at": manifest.created_at.isoformat(),
             "build_mode": manifest.build_mode,
+            "catalog_only": manifest.catalog_only,
             "last_full_rebuild_at": (
                 manifest.last_full_rebuild_at.isoformat()
                 if manifest.last_full_rebuild_at is not None
@@ -1195,6 +1201,7 @@ def _brain_compile_diagnostic_report(
         "schema_version": "nslab.brain_compile_diagnostics.v1",
         "brain_version": manifest.brain_version,
         "compiler_mode": manifest.build_mode,
+        "catalog_only": manifest.catalog_only,
         "compiler_provider": compiler_provider,
         "compiler_model": compiler_model,
         "compiler_version": compiler_version,

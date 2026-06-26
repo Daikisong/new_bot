@@ -103,6 +103,7 @@ def production_readiness_report(
             findings.append("brain: accepted episodes are not fully covered")
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
+    catalog_only = _brain_manifest_catalog_only(brain_manifest)
     current_brain_version_value = (
         brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
     )
@@ -116,9 +117,12 @@ def production_readiness_report(
     llm_full_brain = _llm_full_brain_status(
         settings,
         build_mode=build_mode,
+        catalog_only=catalog_only,
         current_brain_version=current_brain_version_value,
         expected_source_record_count=expected_source_record_count,
     )
+    if catalog_only is True:
+        findings.append("brain: current manifest is catalog_only")
     if build_mode != "llm-full":
         observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
@@ -671,6 +675,7 @@ def _llm_full_brain_status(
     settings: Settings,
     *,
     build_mode: object,
+    catalog_only: object,
     current_brain_version: object,
     expected_source_record_count: int | None,
 ) -> dict[str, Any]:
@@ -691,6 +696,7 @@ def _llm_full_brain_status(
     status = {
         "schema_version": "nslab.production_llm_full_brain.v1",
         "build_mode": build_mode if isinstance(build_mode, str) else None,
+        "catalog_only": catalog_only if isinstance(catalog_only, bool) else None,
         "current_brain_version": current_brain_version
         if isinstance(current_brain_version, str)
         else None,
@@ -984,6 +990,7 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
     return {
         "passed": coverage_audit.get("brain_audit_passed") is True,
         "brain_build_mode": coverage_audit.get("brain_build_mode"),
+        "catalog_only": coverage_audit.get("catalog_only"),
         "record_coverage_complete": coverage_audit.get("record_coverage_complete"),
         "deterministic_rebuild_verified": coverage_audit.get(
             "deterministic_rebuild_verified"
@@ -991,6 +998,20 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
         "finding_count": len(findings),
         "findings": findings,
     }
+
+
+def _brain_manifest_catalog_only(manifest: dict[str, Any] | None) -> bool | None:
+    if not isinstance(manifest, dict):
+        return None
+    value = manifest.get("catalog_only")
+    if isinstance(value, bool):
+        return value
+    build_mode = manifest.get("build_mode")
+    if build_mode in {"full", "catalog", "incremental"}:
+        return True
+    if build_mode in {"llm-full", "asof_context"}:
+        return False
+    return None
 
 
 def _nested_dict(source: dict[str, Any], *keys: str) -> dict[str, Any]:

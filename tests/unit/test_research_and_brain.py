@@ -220,12 +220,28 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert manifest.accepted_episode_count == 1
     assert manifest.coverage_complete
     assert manifest.build_mode == "full"
+    assert manifest.catalog_only is True
     assert manifest.last_full_rebuild_at == manifest.created_at
     assert manifest.updated_episode_id is None
     assert audit["coverage_complete"]
     assert audit["brain_build_mode"] == "full"
+    assert audit["catalog_only"] is True
     assert audit["last_full_rebuild"] == manifest.created_at.isoformat()
     assert episode.episode_id in manifest.covered_episode_ids
+    brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
+    coverage_manifest = read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")
+    record_coverage_manifest = read_json(
+        tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    )
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    brain_text = (tmp_path / "brain" / "current" / "00_world_model.md").read_text(
+        encoding="utf-8"
+    )
+    assert brain_manifest["catalog_only"] is True
+    assert coverage_manifest["catalog_only"] is True
+    assert record_coverage_manifest["catalog_only"] is True
+    assert brain_report["latest_brain_audit"]["catalog_only"] is True
+    assert "Catalog only: `True`" in brain_text
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
     assert shard_manifest["brain_version"] == manifest.brain_version
     assert shard_manifest["shard_count"] == 1
@@ -1686,6 +1702,7 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
 
     assert updated.brain_version != first_manifest.brain_version
     assert updated.build_mode == "incremental"
+    assert updated.catalog_only is True
     assert updated.last_full_rebuild_at == first_manifest.created_at
     assert updated.updated_episode_id == episode_b.episode_id
     assert updated.accepted_episode_count == 2
@@ -1717,6 +1734,7 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     assert coverage["vector_index_current"] is True
     assert coverage["warehouse_synced"] is True
     assert brain_audit["brain_build_mode"] == "incremental"
+    assert brain_audit["catalog_only"] is True
     assert brain_audit["updated_episode_id"] == episode_b.episode_id
     assert brain_audit["last_full_rebuild"] == first_manifest.created_at.isoformat()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 2
