@@ -304,6 +304,13 @@ def test_cli_import_batch_accepts_by_default_and_rebuilds_brain(
     imported_output = json.loads(imported.output)
     assert imported_output["imported_episode_ids"] == ["EP-batch-one", "EP-batch-two"]
     assert imported_output["accepted_episode_ids"] == ["EP-batch-one", "EP-batch-two"]
+    assert imported_output["imported_count"] == 2
+    assert imported_output["accepted_count"] == 2
+    assert imported_output["source_files"] == [
+        (inbox / "one.json").as_posix(),
+        (inbox / "two.json").as_posix(),
+    ]
+    assert imported_output["skipped_paths"] == []
 
     rebuilt = RUNNER.invoke(app, ["brain", "rebuild", "--mode", "full"])
 
@@ -339,7 +346,33 @@ def test_cli_import_batch_can_leave_episodes_unaccepted(
     imported_output = json.loads(imported.output)
     assert imported_output["imported_episode_ids"] == ["EP-staged-only"]
     assert imported_output["accepted_episode_ids"] == []
+    assert imported_output["imported_count"] == 1
+    assert imported_output["accepted_count"] == 0
     assert ResearchStore(tmp_path).list_accepted() == []
+
+
+def test_cli_import_batch_reports_missing_or_non_directory_path(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    missing = RUNNER.invoke(
+        app,
+        ["research", "import-batch", "data/inbox/research", "--mode", "strict"],
+    )
+
+    assert missing.exit_code == 1
+    assert "research import-batch directory not found" in missing.output
+
+    file_path = tmp_path / "research.json"
+    file_path.write_text("{}", encoding="utf-8")
+    not_directory = RUNNER.invoke(
+        app,
+        ["research", "import-batch", str(file_path), "--mode", "strict"],
+    )
+
+    assert not_directory.exit_code == 1
+    assert "research import-batch path is not a directory" in not_directory.output
 
 
 def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> None:

@@ -71,7 +71,9 @@ nslab brain audit
 
 `import-batch` accepts imported episodes by default so the documented rebuild flow
 updates the brain immediately. Use `--no-accept` when you want to stage episodes
-for manual validation first.
+for manual validation first. The command reports imported/accepted IDs, counts,
+source files, and skipped non-file paths, and exits non-zero for missing or
+non-directory input paths.
 
 `brain update --episode` performs a safe incremental merge when the current brain
 already covers the prior accepted set exactly. If the current manifest is missing

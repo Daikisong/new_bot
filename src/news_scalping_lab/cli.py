@@ -234,6 +234,12 @@ def research_import_batch(
     accept: Annotated[bool, typer.Option("--accept/--no-accept")] = True,
 ) -> None:
     settings = load_settings()
+    if not directory.exists():
+        typer.echo(f"research import-batch directory not found: {directory}", err=True)
+        raise typer.Exit(code=1)
+    if not directory.is_dir():
+        typer.echo(f"research import-batch path is not a directory: {directory}", err=True)
+        raise typer.Exit(code=1)
     importer = ResearchImporter(
         settings.project_root,
         llm=create_llm_provider(settings),
@@ -242,14 +248,28 @@ def research_import_batch(
     store = ResearchStore(settings.project_root)
     imported: list[str] = []
     accepted: list[str] = []
+    source_files: list[str] = []
+    skipped_paths: list[str] = []
     for path in sorted(directory.iterdir()):
-        if path.is_file():
-            episode = importer.import_path(path, mode=mode)
-            imported.append(episode.episode_id)
-            if accept:
-                store.accept(episode.episode_id)
-                accepted.append(episode.episode_id)
-    _echo({"imported_episode_ids": imported, "accepted_episode_ids": accepted})
+        if not path.is_file():
+            skipped_paths.append(path.as_posix())
+            continue
+        episode = importer.import_path(path, mode=mode)
+        imported.append(episode.episode_id)
+        source_files.append(path.as_posix())
+        if accept:
+            store.accept(episode.episode_id)
+            accepted.append(episode.episode_id)
+    _echo(
+        {
+            "imported_episode_ids": imported,
+            "accepted_episode_ids": accepted,
+            "imported_count": len(imported),
+            "accepted_count": len(accepted),
+            "source_files": source_files,
+            "skipped_paths": skipped_paths,
+        }
+    )
 
 
 @research_app.command("validate")
