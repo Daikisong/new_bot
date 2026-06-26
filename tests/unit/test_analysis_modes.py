@@ -596,6 +596,23 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert positive_row["record_retrieval_filters"] == {"training_eligible": True}
     assert positive_row["included_record_ids"] == ["BRAIN-AVAILABLE"]
     assert positive_row["excluded_record_ids"] == ["BRAIN-FUTURE"]
+    candidate_error_row = next(
+        row for row in semantic_rows if row["category"] == "candidate_generation_errors"
+    )
+    assert candidate_error_row["record_retrieval_filters"] == {
+        "record_type": "candidate_generation_error_case"
+    }
+    assert candidate_error_row["included_record_ids"] == []
+    assert candidate_error_row["excluded_record_ids"] == []
+    assert (
+        manifest.semantic_retrieval_summary["category_query_counts"][
+            "candidate_generation_errors"
+        ]
+        == 1
+    )
+    assert "candidate_generation_errors" in manifest.semantic_retrieval_summary[
+        "required_categories"
+    ]
     assert manifest.semantic_retrieval_summary["included_record_count"] == 1
     assert manifest.semantic_retrieval_summary["excluded_record_count"] == 1
     assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True

@@ -37,6 +37,7 @@ def test_web_queries_include_required_semantic_research_perspectives(tmp_path) -
     assert "counterexamples superficially similar opposite outcome" in joined
     assert "unexpected leader selection in first-seen policy or industry event" in joined
     assert "theme formation failures" in joined
+    assert "candidate generation errors missed beneficiaries" in joined
 
 
 def test_web_queries_keep_open_world_fallback_without_news_items(tmp_path) -> None:
@@ -48,3 +49,7 @@ def test_web_queries_keep_open_world_fallback_without_news_items(tmp_path) -> No
 
     assert queries[0] == "open-world market catalyst company discovery"
     assert "counterexamples superficially similar opposite outcome" in queries
+    assert (
+        "candidate generation errors missed beneficiaries and row disposition failures"
+        in queries
+    )

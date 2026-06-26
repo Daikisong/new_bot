@@ -593,6 +593,11 @@ class MemorySweeper:
                 for record in records
                 if record.record_type == "blind_leader_preference_pair"
             ],
+            "candidate_generation_errors": [
+                _record_summary(record)
+                for record in records
+                if record.record_type == "candidate_generation_error_case"
+            ],
             "supporting_points": first_pass_mechanisms,
             "objections": [
                 "Do not treat record retrieval misses as candidate blockers.",

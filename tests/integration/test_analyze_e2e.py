@@ -188,6 +188,7 @@ class RecordingBlindLLM:
                     "counterexamples",
                     "leader_selection_cases",
                     "theme_formation_failures",
+                    "candidate_generation_errors",
                 ],
                 queries=[
                     SemanticRetrievalQuery(
@@ -202,6 +203,7 @@ class RecordingBlindLLM:
                         "counterexamples",
                         "leader_selection_cases",
                         "theme_formation_failures",
+                        "candidate_generation_errors",
                     ]
                 ],
             )
@@ -723,7 +725,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["token_counts"]["news_novelty_review_prompt"] > 0
     assert saved_manifest["semantic_retrieval_plan_artifact"]
     assert saved_manifest["semantic_retrieval_artifact"]
-    assert saved_manifest["semantic_retrieval_query_count"] == 6
+    assert saved_manifest["semantic_retrieval_query_count"] == 7
     assert saved_manifest["semantic_retrieval_summary"] == {
         "required_categories": [
             "positive_analogs",
@@ -732,6 +734,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
             "counterexamples",
             "leader_selection_cases",
             "theme_formation_failures",
+            "candidate_generation_errors",
         ],
         "category_query_counts": {
             "positive_analogs": 1,
@@ -740,8 +743,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
             "counterexamples": 1,
             "leader_selection_cases": 1,
             "theme_formation_failures": 1,
+            "candidate_generation_errors": 1,
         },
-        "query_count": 6,
+        "query_count": 7,
         "included_episode_count": 0,
         "excluded_episode_count": 0,
         "included_record_count": 0,
@@ -763,7 +767,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         json.loads(line) for line in semantic_results_text.splitlines() if line.strip()
     ]
     assert sha256_text(semantic_results_text) == saved_manifest["semantic_retrieval_sha256"]
-    assert len(semantic_rows) == 6
+    assert len(semantic_rows) == 7
     assert all(row["schema_version"] == "nslab.semantic_retrieval_result.v1" for row in semantic_rows)
     assert all(row["included_episode_ids"] == [] for row in semantic_rows)
     assert all(row["included_record_ids"] == [] for row in semantic_rows)

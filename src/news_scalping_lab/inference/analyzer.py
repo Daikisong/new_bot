@@ -114,6 +114,7 @@ SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
     "counterexamples",
     "leader_selection_cases",
     "theme_formation_failures",
+    "candidate_generation_errors",
 )
 CANDIDATE_EXPANSION_REQUIRED_PATHS = (
     CandidateExpansionPath.SINGLE_EVENT,
@@ -1321,8 +1322,9 @@ class DailyAnalyzer:
             "Create additional semantic retrieval queries as SemanticRetrievalPlan. "
             "Queries must be mechanism-oriented and must cover every required category: "
             "positive analogs, negative analogs, near misses, counterexamples, "
-            "leader-selection cases, and theme-formation failures. Do not use exact "
-            "keyword matching as a gate and do not request cutoff-after evidence.\n"
+            "leader-selection cases, theme-formation failures, and candidate-generation "
+            "errors. Do not use exact keyword matching as a gate and do not request "
+            "cutoff-after evidence.\n"
             "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -3458,6 +3460,7 @@ class DailyAnalyzer:
                 "unexpected leader selection in first-seen policy or industry event",
                 "positive analogs negative analogs near misses counterexamples",
                 "leader selection cases theme formation failures",
+                "candidate generation errors missed beneficiaries and row disposition failures",
             ]
         )
         return _unique_preserving_order(queries)
@@ -4073,6 +4076,10 @@ def _normalize_semantic_retrieval_category(value: str) -> str | None:
         "leader_selection_cases": "leader_selection_cases",
         "theme_formation_failure": "theme_formation_failures",
         "theme_formation_failures": "theme_formation_failures",
+        "candidate_generation_error": "candidate_generation_errors",
+        "candidate_generation_errors": "candidate_generation_errors",
+        "candidate_generation_failure": "candidate_generation_errors",
+        "candidate_generation_failures": "candidate_generation_errors",
     }
     return aliases.get(normalized)
 
@@ -4088,6 +4095,8 @@ def _semantic_record_filters(category: str) -> dict[str, Any]:
         return {"record_type": "blind_leader_preference_pair"}
     if category == "theme_formation_failures":
         return {"record_type": "supervised_theme_formation_case"}
+    if category == "candidate_generation_errors":
+        return {"record_type": "candidate_generation_error_case"}
     return {}
 
 
