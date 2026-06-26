@@ -185,8 +185,9 @@ def _warehouse_expected_source_counts(
             "source_label": "accepted event sources",
         },
         "event_ticker_edges.parquet": {
-            "expected": accepted_counts["event_ticker_edges"],
-            "source_label": "accepted event ticker edges",
+            "expected": accepted_counts["event_ticker_edges"]
+            + record_counts["event_ticker_edges"],
+            "source_label": "accepted event ticker edges plus brain record edge records",
         },
         "market_memory.parquet": {
             "expected": accepted_counts["market_memory"],
@@ -290,12 +291,8 @@ def _warehouse_identity_expectations(
         },
         "event_ticker_edges.parquet": {
             "columns": ("episode_id", "edge_id"),
-            "expected": sorted(
-                _identity(edge.episode_id, edge.edge_id)
-                for episode in accepted_episodes
-                for edge in episode.event_ticker_edges
-            ),
-            "source_label": "accepted event ticker edge ids",
+            "expected": _event_ticker_edge_projection_ids(accepted_episodes, records),
+            "source_label": "accepted event ticker edge and brain record edge ids",
         },
         "market_memory.parquet": {
             "columns": ("claim_id",),
@@ -663,6 +660,38 @@ def _record_coverage_ids(records: list[Any]) -> list[str]:
     )
 
 
+def _event_ticker_edge_projection_ids(
+    accepted_episodes: list[ResearchEpisode],
+    records: list[Any],
+) -> list[str]:
+    values = [
+        _identity(edge.episode_id, edge.edge_id)
+        for episode in accepted_episodes
+        for edge in episode.event_ticker_edges
+    ]
+    for record in records:
+        if getattr(record, "record_type", None) != "event_ticker_edge":
+            continue
+        episode_id = getattr(record, "episode_id", None)
+        if not isinstance(episode_id, str) or not episode_id:
+            continue
+        edge_id = _record_payload_string(record, "edge_id")
+        record_id = getattr(record, "record_id", None)
+        if edge_id is None and isinstance(record_id, str) and record_id:
+            edge_id = record_id
+        if edge_id is not None:
+            values.append(_identity(episode_id, edge_id))
+    return sorted(values)
+
+
+def _record_payload_string(record: Any, key: str) -> str | None:
+    payload = getattr(record, "payload", None)
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    return value if isinstance(value, str) and value else None
+
+
 def _identity(*parts: object) -> str:
     return "|".join(str(part) for part in parts)
 
@@ -720,6 +749,11 @@ def _record_projection_counts(records: list[Any]) -> dict[str, int]:
             1
             for record in records
             if getattr(record, "record_type", None) == "blind_leader_preference_pair"
+        ),
+        "event_ticker_edges": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "event_ticker_edge"
         ),
         "error_cases": sum(
             1

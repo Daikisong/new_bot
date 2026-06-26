@@ -65,18 +65,18 @@ class WarehouseStore:
     def rebuild_all(self) -> dict[str, int]:
         store = ResearchStore(self.root)
         episodes = store.list_accepted()
+        records = BrainRecordStore(self.root).list_records()
         counts = {
             "events": self.write_events(episodes),
             "event_sources": self.write_event_sources(episodes),
             "research_episodes": self.write_research_episodes(episodes),
-            "event_ticker_edges": self.write_event_ticker_edges(episodes),
+            "event_ticker_edges": self.write_event_ticker_edges(episodes, records),
             "market_memory": self.write_market_memory(episodes),
             "mechanism_memory": self.write_mechanism_memory_from_files(),
             "company_memory": self.write_company_memory_from_files(),
             "predictions": self.write_predictions_from_files(),
             "daily_outcomes": self.write_daily_outcomes_from_files(),
         }
-        records = BrainRecordStore(self.root).list_records()
         counts.update(
             {
                 "brain_records": self.write_brain_records(records),
@@ -173,12 +173,18 @@ class WarehouseStore:
         self._write_rows("research_episodes.parquet", rows)
         return len(rows)
 
-    def write_event_ticker_edges(self, episodes: list[ResearchEpisode]) -> int:
+    def write_event_ticker_edges(
+        self,
+        episodes: list[ResearchEpisode],
+        records: list[BrainRecordEnvelope] | None = None,
+    ) -> int:
         rows: list[dict[str, Any]] = []
         for episode in episodes:
             for edge in episode.event_ticker_edges:
                 rows.append(
                     {
+                        "source_kind": "accepted_episode_edge",
+                        "record_id": None,
                         "edge_id": edge.edge_id,
                         "episode_id": edge.episode_id,
                         "event_id": edge.event_id,
@@ -190,6 +196,25 @@ class WarehouseStore:
                         "provenance_json": _json(edge.provenance),
                     }
                 )
+        for record in records or []:
+            if record.record_type != "event_ticker_edge":
+                continue
+            edge_id = record.payload.get("edge_id")
+            rows.append(
+                {
+                    "source_kind": "brain_record_edge",
+                    "record_id": record.record_id,
+                    "edge_id": edge_id if isinstance(edge_id, str) and edge_id else record.record_id,
+                    "episode_id": record.episode_id,
+                    "event_id": record.payload.get("event_id"),
+                    "ticker": record.payload.get("ticker"),
+                    "company_name": record.payload.get("company_name"),
+                    "relation_class": record.payload.get("relation_class"),
+                    "confidence_label": record.confidence_label,
+                    "directly_mentioned": record.payload.get("directly_mentioned"),
+                    "provenance_json": _json(record.provenance_source_ids),
+                }
+            )
         self._write_rows("event_ticker_edges.parquet", rows)
         return len(rows)
 

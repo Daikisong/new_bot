@@ -192,6 +192,10 @@ class EventTickerEdgeRecord(FlexiblePayloadModel):
     edge_id: str | None = None
     event_id: str | None = None
     ticker: str | None = None
+    company_name: str | None = None
+    relation_class: str | None = None
+    relation_explanation: str | None = None
+    directly_mentioned: bool | None = None
 
 
 class CompanyMemoryDeltaRecord(FlexiblePayloadModel):

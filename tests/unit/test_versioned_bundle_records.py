@@ -38,6 +38,7 @@ def _synthetic_v11_bundle(
     issuer_label_quality: str | None = None,
     issuer_sample_weight: float = 1.0,
     direct_event_sample_weights: list[float] | None = None,
+    include_event_edge: bool = False,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -112,6 +113,27 @@ def _synthetic_v11_bundle(
                     "provenance_source_ids": ["SRC-SYNTH-1"],
                 }
             )
+    if include_event_edge:
+        records.append(
+            {
+                "record_id": "BRAIN-SYNTH-EDGE",
+                "record_type": "event_ticker_edge",
+                "episode_id": episode_id,
+                "trade_date": trade_day.isoformat(),
+                "available_from": available_from,
+                "training_target": "event_ticker_relation",
+                "edge_id": "EDGE-SYNTH-1",
+                "event_id": "EVT-SYNTH-1",
+                "ticker": "000001",
+                "company_name": "Synthetic Issuer",
+                "relation_class": "DIRECT",
+                "relation_explanation": "Synthetic direct event edge.",
+                "directly_mentioned": True,
+                "training_eligible": False,
+                "eligibility_reason": "edge relation memory is audit-only",
+                "provenance_source_ids": ["SRC-SYNTH-1"],
+            }
+        )
     if include_unknown:
         records.append(
             {
@@ -541,6 +563,50 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     ).fetchone()
     assert leader_pair_row == ("000001", "000002", "000001")
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
+
+
+def test_event_ticker_edge_records_project_to_warehouse_and_coverage(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(include_unknown=False, include_event_edge=True),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    counts = WarehouseStore(tmp_path).rebuild_all()
+
+    assert counts["brain_records"] == 3
+    assert counts["event_ticker_edges"] == 1
+    assert counts["record_provenance"] == 3
+    edge_row = duckdb.sql(
+        "select source_kind, record_id, edge_id, episode_id, event_id, ticker, "
+        "company_name, relation_class, directly_mentioned "
+        f"from read_parquet('{(tmp_path / 'warehouse' / 'event_ticker_edges.parquet').as_posix()}')"
+    ).fetchone()
+    assert edge_row == (
+        "brain_record_edge",
+        "BRAIN-SYNTH-EDGE",
+        "EDGE-SYNTH-1",
+        "NSLAB-20300110-SYNTH",
+        "EVT-SYNTH-1",
+        "000001",
+        "Synthetic Issuer",
+        "DIRECT",
+        True,
+    )
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["warehouse_expected_source_counts"]["event_ticker_edges.parquet"] == {
+        "expected": 1,
+        "source_label": "accepted event ticker edges plus brain record edge records",
+    }
+    assert audit["warehouse_count_mismatches"] == {}
+    assert audit["warehouse_identity_mismatches"] == {}
 
 
 def test_coverage_audit_rejects_record_projection_identity_mismatch(

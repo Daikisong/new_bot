@@ -1485,7 +1485,8 @@ def test_coverage_audit_requires_accepted_episode_projection_counts(tmp_path) ->
         in failed["findings"]
     )
     assert (
-        "warehouse: event_ticker_edges.parquet count 0 != accepted event ticker edges count 1"
+        "warehouse: event_ticker_edges.parquet count 0 != accepted event ticker edges "
+        "plus brain record edge records count 1"
         in failed["findings"]
     )
     assert (
