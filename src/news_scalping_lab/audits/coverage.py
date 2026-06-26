@@ -38,7 +38,11 @@ def audit_coverage(root: Path) -> dict[str, object]:
         warehouse_counts,
         warehouse_expected_source_counts,
     )
-    warehouse_identity_expectations = _warehouse_identity_expectations(root, accepted_episodes)
+    warehouse_identity_expectations = _warehouse_identity_expectations(
+        root,
+        accepted_episodes,
+        records=records,
+    )
     warehouse_identity_mismatches = _warehouse_identity_mismatches(
         root,
         warehouse_identity_expectations,
@@ -256,6 +260,8 @@ def _warehouse_expected_source_counts(
 def _warehouse_identity_expectations(
     root: Path,
     accepted_episodes: list[ResearchEpisode],
+    *,
+    records: list[Any],
 ) -> dict[str, dict[str, Any]]:
     return {
         "research_episodes.parquet": {
@@ -319,6 +325,64 @@ def _warehouse_identity_expectations(
             "columns": ("mechanism_id",),
             "expected": _source_mechanism_memory_ids(root),
             "source_label": "source mechanism memory ids",
+        },
+        "brain_records.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids(records),
+            "source_label": "normalized brain record ids",
+        },
+        "issuer_day_cases.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"supervised_issuer_day_case"}),
+            "source_label": "issuer-day brain record ids",
+        },
+        "direct_event_cases.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"supervised_direct_event_case"}),
+            "source_label": "direct event brain record ids",
+        },
+        "theme_formation_cases.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"supervised_theme_formation_case"}),
+            "source_label": "theme formation brain record ids",
+        },
+        "beneficiary_cases.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"beneficiary_discovery_case"}),
+            "source_label": "beneficiary discovery brain record ids",
+        },
+        "leader_pairs.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"blind_leader_preference_pair"}),
+            "source_label": "sealed leader preference pair record ids",
+        },
+        "error_cases.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_suffix(records, "_error_case"),
+            "source_label": "brain error case record ids",
+        },
+        "memory_claims.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(
+                records,
+                {"memory_claim", "mechanism_memory", "counterexample"},
+            ),
+            "source_label": "brain memory claim record ids",
+        },
+        "research_questions.parquet": {
+            "columns": ("record_id",),
+            "expected": _record_ids_for_types(records, {"research_question"}),
+            "source_label": "research question record ids",
+        },
+        "record_provenance.parquet": {
+            "columns": ("record_id", "source_id"),
+            "expected": _record_provenance_ids(records),
+            "source_label": "record provenance links",
+        },
+        "record_coverage.parquet": {
+            "columns": ("episode_id", "record_type"),
+            "expected": _record_coverage_ids(records),
+            "source_label": "episode/type record coverage groups",
         },
     }
 
@@ -541,6 +605,62 @@ def _source_mechanism_memory_ids(root: Path) -> list[str]:
         if isinstance(mechanism_id, str) and mechanism_id:
             mechanism_ids.append(mechanism_id)
     return sorted(mechanism_ids)
+
+
+def _record_ids(records: list[Any]) -> list[str]:
+    return sorted(
+        record_id
+        for record in records
+        if isinstance((record_id := getattr(record, "record_id", None)), str)
+        and record_id
+    )
+
+
+def _record_ids_for_types(records: list[Any], record_types: set[str]) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if getattr(record, "record_type", None) in record_types
+        and isinstance(getattr(record, "record_id", None), str)
+    )
+
+
+def _record_ids_for_suffix(records: list[Any], suffix: str) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if isinstance(getattr(record, "record_type", None), str)
+        and record.record_type.endswith(suffix)
+        and isinstance(getattr(record, "record_id", None), str)
+    )
+
+
+def _record_provenance_ids(records: list[Any]) -> list[str]:
+    values: list[str] = []
+    for record in records:
+        record_id = getattr(record, "record_id", None)
+        if not isinstance(record_id, str) or not record_id:
+            continue
+        source_ids = getattr(record, "provenance_source_ids", [])
+        if not isinstance(source_ids, list):
+            continue
+        values.extend(
+            _identity(record_id, source_id)
+            for source_id in source_ids
+            if isinstance(source_id, str) and source_id
+        )
+    return sorted(values)
+
+
+def _record_coverage_ids(records: list[Any]) -> list[str]:
+    return sorted(
+        {
+            _identity(record.episode_id, record.record_type)
+            for record in records
+            if isinstance(getattr(record, "episode_id", None), str)
+            and isinstance(getattr(record, "record_type", None), str)
+        }
+    )
 
 
 def _identity(*parts: object) -> str:

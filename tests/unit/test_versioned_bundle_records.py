@@ -523,6 +523,46 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
 
 
+def test_coverage_audit_rejects_record_projection_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+    WarehouseStore(tmp_path).rebuild_all()
+
+    brain_records_path = tmp_path / "warehouse" / "brain_records.parquet"
+    tampered_path = tmp_path / "warehouse" / "brain_records_tampered.parquet"
+    brain_records_sql_path = brain_records_path.as_posix().replace("'", "''")
+    tampered_sql_path = tampered_path.as_posix().replace("'", "''")
+    duckdb.sql(
+        "copy ("
+        "select * replace ("
+        "case when record_id = 'BRAIN-SYNTH-ISSUER' "
+        "then 'BRAIN-TAMPERED' else record_id end as record_id"
+        f") from read_parquet('{brain_records_sql_path}')"
+        f") to '{tampered_sql_path}' (format parquet)"
+    )
+    tampered_path.replace(brain_records_path)
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["warehouse_count_mismatches"] == {}
+    assert audit["warehouse_identity_mismatches"] == {
+        "brain_records.parquet": {
+            "extra": ["BRAIN-TAMPERED"],
+            "missing": ["BRAIN-SYNTH-ISSUER"],
+        }
+    }
+    assert (
+        "warehouse: brain_records.parquet ids mismatch; missing normalized "
+        "brain record ids: BRAIN-SYNTH-ISSUER; extra projected ids: BRAIN-TAMPERED"
+    ) in audit["findings"]
+    assert audit["warehouse_projection_synced"] is False
+
+
 def test_training_export_skip_manifest_keeps_ineligible_record_reason(
     tmp_path: Path,
 ) -> None:
