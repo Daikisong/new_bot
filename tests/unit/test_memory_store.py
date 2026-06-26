@@ -217,7 +217,11 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
     assert memory.search_records(
         "unseen wording",
         record_type="supervised_direct_event_case",
+        training_target="direct_event_response",
+        trade_date_from="2030-01-10",
+        trade_date_to="2030-01-10",
         ticker="000001",
+        company_name="000001 Test Co",
         theme_id="theme-direct",
         path_type="single_event",
         response_class="positive_high10",
@@ -238,6 +242,14 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
         training_eligible=False,
         available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
     ) == ["BRAIN-REC-COUNTER"]
+    assert memory.search_records(
+        "unseen wording",
+        record_type="supervised_direct_event_case",
+        trade_date_from="2030-01-11",
+        trade_date_to="2030-01-11",
+        training_eligible=True,
+        available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+    ) == []
 
 
 def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:
