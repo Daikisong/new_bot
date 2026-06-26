@@ -25,6 +25,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
@@ -167,6 +168,8 @@ class BrainCompiler:
         if not records:
             raise ValueError("llm-full brain rebuild requires normalized brain records")
         provider = create_llm_provider(settings)
+        if isinstance(provider, DeterministicMockLLMProvider):
+            raise ValueError("llm-full brain rebuild cannot use the mock LLM provider")
         previous_version = current_brain_version(self.root)
         accepted_episodes = self.store.list_accepted()
         covered_ids = sorted(

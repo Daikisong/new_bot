@@ -5,10 +5,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import TypeVar
 
+import pytest
 from pydantic import BaseModel
 
 import news_scalping_lab.brain.compiler as compiler_module
 from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
 
@@ -183,6 +185,36 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         and category["review_cache_hit"] is True
         for category in second_compile_report["llm_compile_run"]["categories"]
     )
+
+
+def test_llm_full_brain_compile_rejects_mock_provider_object(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_openai_config(tmp_path)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        compiler_module,
+        "create_llm_provider",
+        lambda settings: DeterministicMockLLMProvider(model="deterministic-mock"),
+    )
+    _write_records(
+        tmp_path,
+        [
+            _record(
+                "BRAIN-DIRECT",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="cannot use the mock LLM provider"):
+        BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert not (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
+    assert not (tmp_path / "brain" / "current" / "llm_compile_manifest.json").exists()
 
 
 def _write_openai_config(root: Path) -> None:
