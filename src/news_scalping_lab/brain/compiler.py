@@ -1201,6 +1201,151 @@ def _category_focus(category: str) -> str:
     return focuses.get(category, "category-specific evidence and boundaries")
 
 
+def _category_guidance(category: str) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "focus": _category_focus(category),
+        "must_cite_record_ids": True,
+        "must_state_boundary_conditions": True,
+        "do_not_create_lookup_tables": True,
+    }
+    guidance: dict[str, dict[str, Any]] = {
+        "world_model": {
+            "primary_record_types": "all record types",
+            "synthesis_targets": [
+                "cross-category mechanisms",
+                "temporal availability rules",
+                "common failure and contradiction patterns",
+            ],
+            "review_targets": [
+                "claims that ignore record evidence phases",
+                "rules validated by a single episode",
+            ],
+        },
+        "single_event": {
+            "primary_record_types": [
+                "supervised_direct_event_case",
+                "supervised_issuer_day_case",
+            ],
+            "synthesis_targets": [
+                "direct event response mechanisms",
+                "issuer-day sample-weight and attribution boundaries",
+                "safe D-1 features that remain blind-safe",
+            ],
+            "review_targets": [
+                "outcome leakage through D-day labels",
+                "overstated direct attribution",
+            ],
+        },
+        "theme_formation": {
+            "primary_record_types": ["supervised_theme_formation_case"],
+            "synthesis_targets": [
+                "theme breadth and formation thresholds",
+                "positive theme evidence versus failed formations",
+                "peer-universe and path-type boundaries",
+            ],
+            "review_targets": [
+                "theme labels used as whitelists",
+                "thin breadth or single-name overreach",
+            ],
+        },
+        "beneficiary_discovery": {
+            "primary_record_types": ["beneficiary_discovery_case"],
+            "synthesis_targets": [
+                "indirect relation discovery patterns",
+                "verification gaps and source requirements",
+                "new-company handling without source-code mappings",
+            ],
+            "review_targets": [
+                "unsupported beneficiary leaps",
+                "company memory used before available_from",
+            ],
+        },
+        "leader_selection": {
+            "primary_record_types": ["blind_leader_preference_pair"],
+            "synthesis_targets": [
+                "sealed blind preference evidence",
+                "leader versus rejected-candidate boundaries",
+                "correction cases when blind preference loses",
+            ],
+            "review_targets": [
+                "postmortem-only winner information leaking into blind rules",
+                "cross-product preferences not backed by sealed pairs",
+            ],
+        },
+        "continuation": {
+            "primary_record_types": [
+                "mechanism_memory",
+                "memory_claim",
+                "company_memory_delta",
+                "event_ticker_edge",
+            ],
+            "synthesis_targets": [
+                "continuation conditions available before cutoff",
+                "market-memory and company-memory temporal boundaries",
+                "decay or exhaustion signals",
+            ],
+            "review_targets": [
+                "D-day price dependence",
+                "future company-memory deltas",
+            ],
+        },
+        "failure_modes": {
+            "primary_record_types": [
+                "candidate_generation_error_case",
+                "candidate_ranking_error_case",
+                "row_disposition_error_case",
+                "entity_resolution_error_case",
+            ],
+            "synthesis_targets": [
+                "generation misses",
+                "ranking mistakes",
+                "row disposition and entity-resolution corrections",
+            ],
+            "review_targets": [
+                "failure labels treated as positive predictors",
+                "corrections without original decision context",
+            ],
+        },
+        "counterexamples": {
+            "primary_record_types": ["counterexample"],
+            "synthesis_targets": [
+                "negative controls",
+                "near misses",
+                "contradicting record boundaries",
+            ],
+            "review_targets": [
+                "positive claims without contradiction checks",
+                "negative evidence hidden in generic caveats",
+            ],
+        },
+        "market_memory": {
+            "primary_record_types": [
+                "memory_claim",
+                "mechanism_memory",
+                "company_memory_delta",
+            ],
+            "synthesis_targets": [
+                "as-of market memory",
+                "company-memory deltas and contradictory relations",
+                "mechanism memory usable without source-code maps",
+            ],
+            "review_targets": [
+                "future-known relationships",
+                "outcome-only association promoted as memory",
+            ],
+        },
+    }
+    selected: dict[str, Any] = guidance.get(
+        category,
+        {
+            "primary_record_types": [],
+            "synthesis_targets": ["category-specific evidence"],
+            "review_targets": ["unsupported generalization"],
+        },
+    )
+    return {**base, **selected}
+
+
 def _claims_for_category(
     claims: list[MemoryClaim],
     category: str,
@@ -1663,6 +1808,12 @@ def _records_for_category(
         "theme_formation": {"supervised_theme_formation_case"},
         "beneficiary_discovery": {"beneficiary_discovery_case"},
         "leader_selection": {"blind_leader_preference_pair"},
+        "continuation": {
+            "mechanism_memory",
+            "memory_claim",
+            "company_memory_delta",
+            "event_ticker_edge",
+        },
         "failure_modes": {
             "candidate_generation_error_case",
             "candidate_ranking_error_case",
@@ -1783,6 +1934,7 @@ def _brain_category_prompt(
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
             "category": category,
+            "category_guidance": _category_guidance(category),
             "provider": provider_name,
             "model": model,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),
@@ -1814,6 +1966,7 @@ def _brain_category_review_prompt(
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
             "category": category,
+            "category_guidance": _category_guidance(category),
             "provider": provider_name,
             "model": model,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),

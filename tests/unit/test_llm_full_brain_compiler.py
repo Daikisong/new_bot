@@ -127,9 +127,28 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
             if purpose == "brain_compile:synthesis:single_event"
         )
     )
+    assert single_event_prompt["category_guidance"]["focus"] == (
+        "direct event response patterns and issuer-day evidence"
+    )
+    assert single_event_prompt["category_guidance"]["primary_record_types"] == [
+        "supervised_direct_event_case",
+        "supervised_issuer_day_case",
+    ]
+    assert single_event_prompt["category_guidance"]["must_cite_record_ids"] is True
     single_event_record = single_event_prompt["records"][0]
     assert single_event_record["payload_summary"]["event_ids"] == ["EVT-1", "EVT-2"]
     assert single_event_record["payload_summary"]["sample_weight"] == 0.75
+    counterexample_review_prompt = json.loads(
+        next(
+            prompt
+            for purpose, prompt in llm.calls
+            if purpose == "brain_compile:review:counterexamples"
+        )
+    )
+    assert counterexample_review_prompt["category_guidance"]["review_targets"] == [
+        "positive claims without contradiction checks",
+        "negative evidence hidden in generic caveats",
+    ]
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
@@ -236,6 +255,36 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         and category["review_cache_hit"] is True
         for category in second_compile_report["llm_compile_run"]["categories"]
     )
+
+
+def test_llm_full_category_routing_uses_continuation_records() -> None:
+    records = [
+        _record(
+            "BRAIN-DIRECT",
+            record_type="supervised_direct_event_case",
+            training_target="direct_event_response",
+            response_class="positive_high10",
+        ),
+        _record(
+            "BRAIN-EDGE",
+            record_type="event_ticker_edge",
+            training_target="event_ticker_relation",
+            response_class="continuation_edge",
+        ),
+        _record(
+            "BRAIN-MEMORY",
+            record_type="company_memory_delta",
+            training_target="company_memory",
+            response_class="asof_memory",
+        ),
+    ]
+
+    continuation_ids = [
+        record.record_id
+        for record in compiler_module._records_for_category(records, "continuation")
+    ]
+
+    assert continuation_ids == ["BRAIN-EDGE", "BRAIN-MEMORY"]
 
 
 def test_llm_full_brain_compile_rejects_mock_provider_object(
