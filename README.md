@@ -192,7 +192,8 @@ compile manifest, compiled claims JSONL, provider/model, category counts, and th
 latest compile run cache/live-call accounting from `diagnostics/brain_compile_report.json`.
 All-cache `llm-full` rebuilds are useful reproducibility evidence, but production
 readiness requires at least one live LLM call in the latest compile run and all
-compile evidence must match the current brain manifest version.
+compile evidence must match the current brain manifest version. The compile
+source record count must also match current record coverage.
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai

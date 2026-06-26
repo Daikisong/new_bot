@@ -106,20 +106,27 @@ def production_readiness_report(
     current_brain_version_value = (
         brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
     )
+    record_coverage = _read_optional_json(
+        settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
+    )
+    expected_source_record_count = _int_from_mapping(
+        record_coverage,
+        "accepted_record_count",
+    )
     llm_full_brain = _llm_full_brain_status(
         settings,
         build_mode=build_mode,
         current_brain_version=current_brain_version_value,
+        expected_source_record_count=expected_source_record_count,
     )
     if build_mode != "llm-full":
         observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
     elif llm_full_brain["passed"] is not True:
         findings.extend(f"brain: {finding}" for finding in llm_full_brain["findings"])
-    record_coverage = _read_optional_json(
-        settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
-    )
-    if isinstance(record_coverage, dict) and record_coverage.get("coverage_complete") is not True:
+    if not isinstance(record_coverage, dict):
+        findings.append("records: record coverage manifest is missing")
+    elif record_coverage.get("coverage_complete") is not True:
         findings.append("records: record coverage is incomplete")
     vector_index = report.get("vector_index")
     if isinstance(vector_index, dict):
@@ -600,6 +607,7 @@ def _llm_full_brain_status(
     *,
     build_mode: object,
     current_brain_version: object,
+    expected_source_record_count: int | None,
 ) -> dict[str, Any]:
     current_dir = settings.project_root / "brain" / "current"
     compile_manifest_path = current_dir / "llm_compile_manifest.json"
@@ -621,6 +629,7 @@ def _llm_full_brain_status(
         "current_brain_version": current_brain_version
         if isinstance(current_brain_version, str)
         else None,
+        "expected_source_record_count": expected_source_record_count,
         "applicable": build_mode == "llm-full",
         "compile_manifest_path": relative_to_root(
             compile_manifest_path,
@@ -695,6 +704,11 @@ def _llm_full_brain_status(
         source_record_count = status["source_record_count"]
         if not isinstance(source_record_count, int) or source_record_count <= 0:
             findings.append("llm-full compile source records are missing")
+        elif (
+            isinstance(expected_source_record_count, int)
+            and source_record_count != expected_source_record_count
+        ):
+            findings.append("llm-full compile source record count does not match coverage")
         manifest_claim_count = status["compiled_claim_count"]
         if not isinstance(manifest_claim_count, int) or manifest_claim_count <= 0:
             findings.append("llm-full compile manifest has no compiled claims")

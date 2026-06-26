@@ -637,6 +637,14 @@ def test_production_readiness_rejects_llm_full_manifest_without_compile_evidence
         current / "brain_manifest.json",
         {"brain_version": "brain-production", "build_mode": "llm-full"},
     )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -668,6 +676,14 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     write_json(
         current / "brain_manifest.json",
         {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
     )
     write_json(
         current / "llm_compile_manifest.json",
@@ -718,6 +734,7 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     production = production_readiness_report(report, settings)
 
     assert production["llm_full_brain"]["passed"] is True
+    assert production["llm_full_brain"]["expected_source_record_count"] == 1
     assert production["llm_full_brain"]["run_llm_live_call_count"] == 19
     assert not any(
         finding.startswith("brain: llm-full") or finding.startswith("brain: compiled claims")
@@ -790,6 +807,83 @@ def test_production_readiness_rejects_all_cached_llm_full_compile(
     assert production["llm_full_brain"]["run_all_outputs_from_cache"] is True
     assert (
         "brain: llm-full production compile has no live LLM calls"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_full_source_count_gap(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "brain_version": "brain-production",
+            "provider": "openai",
+            "model": "gpt-production",
+            "source_record_count": 1,
+            "compiled_claim_count": 1,
+            "record_shard_count": 1,
+            "category_count": 9,
+            "llm_generation_count": 19,
+        },
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        json.dumps({"claim_id": "CC-production"}) + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["expected_source_record_count"] == 2
+    assert production["llm_full_brain"]["source_record_count"] == 1
+    assert (
+        "brain: llm-full compile source record count does not match coverage"
         in production["findings"]
     )
 
