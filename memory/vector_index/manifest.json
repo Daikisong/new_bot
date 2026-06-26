@@ -4,10 +4,15 @@
     "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
     "EP-f56c790fe2fc": "c6fd6060d83590e0fe52fa5a2492283322cb9f9e4b2a88105262268cd55adbde"
   },
-  "brain_record_count": 0,
-  "brain_record_hashes": {},
+  "brain_record_count": 4,
+  "brain_record_hashes": {
+    "BRAIN-SYNTH-ISSUER": "12f4f71c6617b68465deea686d868358d18f564890e508f3eef33cb3246959c9",
+    "BRAIN-SYNTH-PAIR": "775c75d1d911172cf4ab1260c5d3ed1d1067ee1bff68ac9442eda54a7d71bc59",
+    "EP-2991eb145f59:legacy_catalog_record": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
+    "EP-f56c790fe2fc:legacy_catalog_record": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a"
+  },
   "brain_records_file": "brain_records.jsonl",
-  "brain_records_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "brain_records_sha256": "a7e1ba252117869ca433abd9872c3878b99434da875b483e3e87fe61d5814c1c",
   "dimensions": 32,
   "embedding_method": "deterministic_hashing_v1",
   "record_count": 2,

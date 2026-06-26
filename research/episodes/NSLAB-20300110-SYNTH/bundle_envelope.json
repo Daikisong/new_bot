@@ -1,0 +1,39 @@
+{
+  "adapter_name": "v11",
+  "available_from": "2030-01-11T00:00:00+09:00",
+  "blind_valid": true,
+  "bundle_schema_version": "nslab.research_bundle.v11",
+  "bundle_status": "ACCEPT_FULL",
+  "cutoff_at": "2030-01-10T08:59:59+09:00",
+  "episode_id": "NSLAB-20300110-SYNTH",
+  "episode_schema_version": "nslab.research_episode.v11",
+  "import_status": "normalized",
+  "manifest_schema_version": "nslab.bundle_manifest.v11",
+  "normalized_episode_index_path": "research/episodes/NSLAB-20300110-SYNTH/normalized_episode_index.json",
+  "provenance_closure_status": "closed",
+  "raw_block_counts": {
+    "brain_delta.jsonl": 2,
+    "bundle_manifest.json": 11,
+    "research_episode.json": 5,
+    "source_ledger.jsonl": 1,
+    "validation_report.json": 3
+  },
+  "raw_block_hashes": {
+    "brain_delta.jsonl": "afcddb7772b0690da47b11ba180bf07d3f46fc3a7e457c2835bf75b5fa9fb331",
+    "bundle_manifest.json": "bda9ac4af39f3989f8e86161cc5a2697961eb213a106683174513fa829682389",
+    "research_episode.json": "e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06",
+    "source_ledger.jsonl": "b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af",
+    "validation_report.json": "659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505"
+  },
+  "raw_block_paths": {
+    "brain_delta.jsonl": "research/episodes/NSLAB-20300110-SYNTH/raw_blocks/brain_delta.jsonl",
+    "bundle_manifest.json": "research/episodes/NSLAB-20300110-SYNTH/raw_blocks/bundle_manifest.json",
+    "research_episode.json": "research/episodes/NSLAB-20300110-SYNTH/raw_blocks/research_episode.json",
+    "source_ledger.jsonl": "research/episodes/NSLAB-20300110-SYNTH/raw_blocks/source_ledger.jsonl",
+    "validation_report.json": "research/episodes/NSLAB-20300110-SYNTH/raw_blocks/validation_report.json"
+  },
+  "raw_bundle_sha256": "49c89d2ad788f2d6e75fd3c43021951e2d0196db23c63348d59005ac8fb273fa",
+  "record_manifest_path": "memory/record_manifests/NSLAB-20300110-SYNTH.json",
+  "schema_version": "nslab.research_bundle_envelope.v1",
+  "trade_date": "2030-01-10"
+}

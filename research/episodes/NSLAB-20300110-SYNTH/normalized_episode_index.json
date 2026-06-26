@@ -1,0 +1,37 @@
+{
+  "available_from": "2030-01-11T00:00:00+09:00",
+  "blind_valid": true,
+  "bundle_status": "ACCEPT_FULL",
+  "candidate_screening_summary": {},
+  "cutoff_at": "2030-01-10T08:59:59+09:00",
+  "entity_quality_summary": {},
+  "entity_resolution_summary": {},
+  "episode_id": "NSLAB-20300110-SYNTH",
+  "fact_quality_summary": {},
+  "next_trade_date": null,
+  "previous_trade_date": null,
+  "raw_block_names": [
+    "brain_delta.jsonl",
+    "bundle_manifest.json",
+    "research_episode.json",
+    "source_ledger.jsonl",
+    "validation_report.json"
+  ],
+  "record_count_by_type": {
+    "blind_leader_preference_pair": 1,
+    "supervised_issuer_day_case": 1
+  },
+  "record_ids": [
+    "BRAIN-SYNTH-ISSUER",
+    "BRAIN-SYNTH-PAIR"
+  ],
+  "research_daily_source": null,
+  "schema_version": "nslab.normalized_episode_index.v1",
+  "source_ids": [
+    "SRC-SYNTH-1"
+  ],
+  "trade_date": "2030-01-10",
+  "training_eligible_record_count": 2,
+  "window_start": null,
+  "winner_census": {}
+}

@@ -102,10 +102,12 @@ class BrainCompiler:
         episodes = self.store.list_accepted()
         covered_ids = [episode.episode_id for episode in episodes]
         source_hashes = self.store.accepted_hashes()
+        brain_record_hashes = _brain_record_hashes(self.root)
         created_at = _deterministic_rebuild_timestamp(episodes)
         version = _deterministic_brain_version(
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
+            brain_record_hashes=brain_record_hashes,
             shard_episode_count=self.shard_episode_count,
         )
         claims = _dedupe_claims(
@@ -249,6 +251,7 @@ class BrainCompiler:
                 )
         episodes = self.store.list_accepted()
         source_hashes = self.store.accepted_hashes()
+        brain_record_hashes = _brain_record_hashes(self.root)
         try:
             current_manifest = self._read_current_manifest()
         except ValueError:
@@ -279,6 +282,7 @@ class BrainCompiler:
         version = _deterministic_brain_version(
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
+            brain_record_hashes=brain_record_hashes,
             shard_episode_count=self.shard_episode_count,
         )
         try:
@@ -788,10 +792,12 @@ def _deterministic_brain_version(
     *,
     covered_episode_ids: list[str],
     source_hashes: dict[str, str],
+    brain_record_hashes: dict[str, str] | None = None,
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
 ) -> str:
     payload = {
         "brain_files": BRAIN_FILES,
+        "brain_record_hashes": brain_record_hashes or {},
         "compiler_version": CATALOG_COMPILER_VERSION,
         "covered_episode_ids": covered_episode_ids,
         "shard_episode_count": max(1, shard_episode_count),
@@ -805,13 +811,22 @@ def expected_brain_version(
     *,
     covered_episode_ids: list[str],
     source_hashes: dict[str, str],
+    brain_record_hashes: dict[str, str] | None = None,
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
 ) -> str:
     return _deterministic_brain_version(
         covered_episode_ids=covered_episode_ids,
         source_hashes=source_hashes,
+        brain_record_hashes=brain_record_hashes,
         shard_episode_count=shard_episode_count,
     )
+
+
+def _brain_record_hashes(root: Path) -> dict[str, str]:
+    return {
+        record.record_id: record.normalized_payload_sha256
+        for record in BrainRecordStore(root).list_records()
+    }
 
 
 def _episode_shards(

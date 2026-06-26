@@ -1,0 +1,34 @@
+{
+  "BRAIN-SYNTH-ISSUER": {
+    "available_from": "2030-01-11T00:00:00+09:00",
+    "episode_id": "NSLAB-20300110-SYNTH",
+    "normalized_payload_sha256": "12f4f71c6617b68465deea686d868358d18f564890e508f3eef33cb3246959c9",
+    "record_type": "supervised_issuer_day_case",
+    "trade_date": "2030-01-10",
+    "training_eligible": "true"
+  },
+  "BRAIN-SYNTH-PAIR": {
+    "available_from": "2030-01-11T00:00:00+09:00",
+    "episode_id": "NSLAB-20300110-SYNTH",
+    "normalized_payload_sha256": "775c75d1d911172cf4ab1260c5d3ed1d1067ee1bff68ac9442eda54a7d71bc59",
+    "record_type": "blind_leader_preference_pair",
+    "trade_date": "2030-01-10",
+    "training_eligible": "true"
+  },
+  "EP-2991eb145f59:legacy_catalog_record": {
+    "available_from": "2026-06-25T00:00:00+09:00",
+    "episode_id": "EP-2991eb145f59",
+    "normalized_payload_sha256": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
+    "record_type": "memory_claim",
+    "trade_date": "2026-06-24",
+    "training_eligible": "false"
+  },
+  "EP-f56c790fe2fc:legacy_catalog_record": {
+    "available_from": "2026-06-25T00:00:00+09:00",
+    "episode_id": "EP-f56c790fe2fc",
+    "normalized_payload_sha256": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a",
+    "record_type": "memory_claim",
+    "trade_date": "2026-06-24",
+    "training_eligible": "false"
+  }
+}

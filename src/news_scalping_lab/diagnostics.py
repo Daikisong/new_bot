@@ -13,6 +13,7 @@ from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 
@@ -69,6 +70,13 @@ def production_readiness_report(
     )
     if isinstance(record_coverage, dict) and record_coverage.get("coverage_complete") is not True:
         findings.append("records: record coverage is incomplete")
+    vector_index = report.get("vector_index")
+    if isinstance(vector_index, dict):
+        embedding_method = vector_index.get("embedding_method")
+        if embedding_method == VECTOR_EMBEDDING_METHOD:
+            findings.append(
+                "embedding: deterministic mock vector index cannot be production semantic index"
+            )
     return {
         "schema_version": "nslab.production_readiness.v1",
         "passed": not findings,

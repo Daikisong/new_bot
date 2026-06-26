@@ -1,6 +1,6 @@
 # Brain Compile Report
 
-- brain_version: `brain-9040eaf777`
+- brain_version: `brain-8cd4d47576`
 - compiler_mode: `full`
 - accepted_episode_count: `2`
 - covered_episode_count: `2`

@@ -198,6 +198,10 @@ def _audit_deterministic_brain_state(
         expected_brain_version(
             covered_episode_ids=[episode.episode_id for episode in accepted],
             source_hashes=source_hashes,
+            brain_record_hashes={
+                record.record_id: record.normalized_payload_sha256
+                for record in BrainRecordStore(root).list_records()
+            },
             shard_episode_count=shard_episode_count,
         )
         if shard_episode_count is not None

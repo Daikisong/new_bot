@@ -10,7 +10,7 @@ from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS, export_json_schemas
-from news_scalping_lab.diagnostics import build_doctor_report
+from news_scalping_lab.diagnostics import build_doctor_report, production_readiness_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, write_json
@@ -492,6 +492,26 @@ def test_doctor_report_readiness_flags_unsupported_price_provider(tmp_path) -> N
         "finding_count": 1,
         "findings": ["price: unsupported provider unknown-price"],
     }
+
+
+def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "deterministic_hashing_v1",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert (
+        "embedding: deterministic mock vector index cannot be production semantic index"
+        in production["findings"]
+    )
 
 
 def test_doctor_strict_exits_nonzero_when_readiness_has_findings(

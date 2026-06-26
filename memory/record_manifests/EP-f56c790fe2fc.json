@@ -1,0 +1,14 @@
+{
+  "episode_id": "EP-f56c790fe2fc",
+  "record_count": 1,
+  "record_counts_by_type": {
+    "memory_claim": 1
+  },
+  "record_ids": [
+    "EP-f56c790fe2fc:legacy_catalog_record"
+  ],
+  "records_file": "memory/records/EP-f56c790fe2fc.jsonl",
+  "records_sha256": "2977ef39a0282881c9a1be72332c3cf3c02937103a03eb5a19afcc91ee61dc2c",
+  "schema_version": "nslab.record_manifest.v1",
+  "training_eligible_record_count": 0
+}

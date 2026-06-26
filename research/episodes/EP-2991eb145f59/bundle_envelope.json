@@ -1,0 +1,27 @@
+{
+  "adapter_name": "legacy-migration",
+  "available_from": "2026-06-25T00:00:00+09:00",
+  "blind_valid": true,
+  "bundle_schema_version": "nslab.legacy_research_episode.v1",
+  "bundle_status": "LEGACY_ACCEPTED",
+  "cutoff_at": "2026-06-24T08:59:59+09:00",
+  "episode_id": "EP-2991eb145f59",
+  "episode_schema_version": "nslab.research_episode.v1",
+  "import_status": "catalog_only",
+  "manifest_schema_version": null,
+  "normalized_episode_index_path": "research/episodes/EP-2991eb145f59/normalized_episode_index.json",
+  "provenance_closure_status": "legacy_catalog_only",
+  "raw_block_counts": {
+    "legacy_research_episode.json": 1
+  },
+  "raw_block_hashes": {
+    "legacy_research_episode.json": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5"
+  },
+  "raw_block_paths": {
+    "legacy_research_episode.json": "research/episodes/EP-2991eb145f59/raw_blocks/legacy_research_episode.json"
+  },
+  "raw_bundle_sha256": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
+  "record_manifest_path": "memory/record_manifests/EP-2991eb145f59.json",
+  "schema_version": "nslab.research_bundle_envelope.v1",
+  "trade_date": "2026-06-24"
+}

@@ -1,0 +1,21 @@
+{
+  "episode_count": 3,
+  "record_count": 4,
+  "record_counts_by_evidence_phase": {
+    "AUDIT": 2,
+    "POSTMORTEM": 2
+  },
+  "record_counts_by_training_target": {
+    "issuer_day_price_response": 1,
+    "legacy_catalog_only": 2,
+    "outcome_preferred_candidate": 1
+  },
+  "record_counts_by_type": {
+    "blind_leader_preference_pair": 1,
+    "memory_claim": 2,
+    "supervised_issuer_day_case": 1
+  },
+  "records_sha256": "ee9912b30061a1d3e1c6169b12dd46df3e116d4bd387f771b0934f8741c02d0d",
+  "schema_version": "nslab.record_index_manifest.v1",
+  "training_eligible_record_count": 2
+}

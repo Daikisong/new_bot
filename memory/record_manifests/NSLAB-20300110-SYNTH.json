@@ -1,0 +1,16 @@
+{
+  "episode_id": "NSLAB-20300110-SYNTH",
+  "record_count": 2,
+  "record_counts_by_type": {
+    "blind_leader_preference_pair": 1,
+    "supervised_issuer_day_case": 1
+  },
+  "record_ids": [
+    "BRAIN-SYNTH-ISSUER",
+    "BRAIN-SYNTH-PAIR"
+  ],
+  "records_file": "memory/records/NSLAB-20300110-SYNTH.jsonl",
+  "records_sha256": "f012a1aa270673c2818e9208d5aa84389da10afe214c79d97cc09bdf5975a1e7",
+  "schema_version": "nslab.record_manifest.v1",
+  "training_eligible_record_count": 2
+}
