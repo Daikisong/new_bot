@@ -56,6 +56,84 @@ EXPECTED_WAREHOUSE_FILES = (
     "record_coverage.parquet",
 )
 
+_FILTER_VALUE_KEYS = {
+    "ticker": "tickers_json",
+    "company_name": "company_names_json",
+    "theme_id": "theme_ids_json",
+    "path_type": "path_types_json",
+    "response_class": "response_classes_json",
+}
+
+_PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
+    "ticker": (
+        "ticker",
+        "candidate_ticker",
+        "blind_preferred_ticker",
+        "blind_rejected_ticker",
+        "outcome_winner_ticker",
+        "missed_ticker",
+        "corrected_ticker",
+        "issuer_ticker",
+    ),
+    "company_name": (
+        "company_name",
+        "candidate_company_name",
+        "blind_preferred_company_name",
+        "blind_rejected_company_name",
+        "outcome_winner_company_name",
+        "missed_company_name",
+        "corrected_company_name",
+        "company_name_on_D",
+        "issuer_company_name",
+    ),
+    "theme_id": (
+        "theme_id",
+        "theme_ids",
+        "candidate_theme_id",
+        "missed_theme_id",
+        "corrected_theme_id",
+    ),
+    "path_type": (
+        "path_type",
+        "candidate_path_type",
+        "missed_path_type",
+        "corrected_path_type",
+    ),
+    "response_class": (
+        "response_class",
+        "candidate_response_class",
+        "blind_response_class",
+        "outcome_response_class",
+    ),
+}
+
+_PAYLOAD_NESTED_FILTER_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
+    "ticker": (
+        ("D_outcome", "ticker"),
+        ("D_outcome", "code"),
+        ("outcome", "ticker"),
+        ("outcome", "code"),
+        ("issuer_day_outcome", "ticker"),
+        ("issuer_day_outcome", "code"),
+    ),
+    "company_name": (
+        ("D_outcome", "company_name"),
+        ("D_outcome", "company_name_on_D"),
+        ("D_outcome", "name"),
+        ("outcome", "company_name"),
+        ("outcome", "company_name_on_D"),
+        ("outcome", "name"),
+        ("issuer_day_outcome", "company_name"),
+        ("issuer_day_outcome", "company_name_on_D"),
+        ("issuer_day_outcome", "name"),
+    ),
+    "response_class": (
+        ("D_outcome", "response_class"),
+        ("outcome", "response_class"),
+        ("issuer_day_outcome", "response_class"),
+    ),
+}
+
 
 class WarehouseStore:
     def __init__(self, root: Path) -> None:
@@ -354,26 +432,38 @@ class WarehouseStore:
         return len(rows)
 
     def write_brain_records(self, records: list[BrainRecordEnvelope]) -> int:
-        rows = [
-            {
-                "record_id": record.record_id,
-                "record_type": record.record_type,
-                "episode_id": record.episode_id,
-                "trade_date": record.trade_date.isoformat(),
-                "available_from": record.available_from.isoformat(),
-                "training_target": record.training_target,
-                "evidence_phase": record.evidence_phase,
-                "training_eligible": record.training_eligible,
-                "eligibility_reason": record.eligibility_reason,
-                "status": record.status,
-                "confidence_label": record.confidence_label,
-                "typed_payload_status": record.typed_payload_status,
-                "raw_payload_sha256": record.raw_payload_sha256,
-                "normalized_payload_sha256": record.normalized_payload_sha256,
-                "payload_json": _json(record.payload),
-            }
-            for record in records
-        ]
+        rows: list[dict[str, Any]] = []
+        for record in records:
+            filter_values = _brain_record_filter_values(record.payload)
+            rows.append(
+                {
+                    "record_id": record.record_id,
+                    "record_type": record.record_type,
+                    "episode_id": record.episode_id,
+                    "trade_date": record.trade_date.isoformat(),
+                    "available_from": record.available_from.isoformat(),
+                    "training_target": record.training_target,
+                    "evidence_phase": record.evidence_phase,
+                    "training_eligible": record.training_eligible,
+                    "eligibility_reason": record.eligibility_reason,
+                    "status": record.status,
+                    "confidence_label": record.confidence_label,
+                    "typed_payload_status": record.typed_payload_status,
+                    "raw_payload_sha256": record.raw_payload_sha256,
+                    "normalized_payload_sha256": record.normalized_payload_sha256,
+                    "ticker": _first_filter_value(filter_values["ticker"]),
+                    "company_name": _first_filter_value(filter_values["company_name"]),
+                    "theme_id": _first_filter_value(filter_values["theme_id"]),
+                    "path_type": _first_filter_value(filter_values["path_type"]),
+                    "response_class": _first_filter_value(filter_values["response_class"]),
+                    "tickers_json": _json(filter_values["ticker"]),
+                    "company_names_json": _json(filter_values["company_name"]),
+                    "theme_ids_json": _json(filter_values["theme_id"]),
+                    "path_types_json": _json(filter_values["path_type"]),
+                    "response_classes_json": _json(filter_values["response_class"]),
+                    "payload_json": _json(record.payload),
+                }
+            )
         self._write_rows("brain_records.parquet", rows)
         return len(rows)
 
@@ -574,6 +664,8 @@ class WarehouseStore:
             raise FileNotFoundError(
                 "warehouse brain_records.parquet not found; run warehouse rebuild"
             )
+        if _parquet_has_only_empty_marker(parquet_path):
+            return []
         sql_path = parquet_path.as_posix().replace("'", "''")
         where = ["1 = 1"]
         params: list[Any] = []
@@ -584,21 +676,10 @@ class WarehouseStore:
             where.append(f"{column} = ?")
             params.append(value)
 
-        def add_payload_filter(key: str, value: str | None) -> None:
-            if value is None:
-                return
-            where.append(f"json_extract_string(payload_json, '$.{key}') = ?")
-            params.append(value)
-
         add_string_filter("record_type", record_type)
         add_string_filter("training_target", training_target)
         add_string_filter("evidence_phase", evidence_phase)
         add_string_filter("confidence_label", confidence_label)
-        add_payload_filter("ticker", ticker)
-        add_payload_filter("company_name", company_name)
-        add_payload_filter("theme_id", theme_id)
-        add_payload_filter("path_type", path_type)
-        add_payload_filter("response_class", response_class)
         if training_eligible is not None:
             where.append("training_eligible = ?")
             params.append(training_eligible)
@@ -611,7 +692,6 @@ class WarehouseStore:
         if available_from_as_of is not None:
             where.append("cast(available_from as TIMESTAMPTZ) <= cast(? as TIMESTAMPTZ)")
             params.append(available_from_as_of)
-        params.append(limit)
         query = f"""
             select
                 record_id,
@@ -624,16 +704,20 @@ class WarehouseStore:
                 training_eligible,
                 status,
                 confidence_label,
-                json_extract_string(payload_json, '$.ticker') as ticker,
-                json_extract_string(payload_json, '$.company_name') as company_name,
-                json_extract_string(payload_json, '$.theme_id') as theme_id,
-                json_extract_string(payload_json, '$.path_type') as path_type,
-                json_extract_string(payload_json, '$.response_class') as response_class,
+                ticker,
+                company_name,
+                theme_id,
+                path_type,
+                response_class,
+                tickers_json,
+                company_names_json,
+                theme_ids_json,
+                path_types_json,
+                response_classes_json,
                 payload_json
             from read_parquet('{sql_path}')
             where {' and '.join(where)}
             order by trade_date, record_id
-            limit ?
         """
         try:
             with duckdb.connect(database=":memory:") as connection:
@@ -645,8 +729,24 @@ class WarehouseStore:
         for row in rows:
             result = dict(zip(columns, row, strict=True))
             payload_json = result.pop("payload_json", "{}")
+            filter_columns = {
+                key: result.pop(value_key, "[]")
+                for key, value_key in _FILTER_VALUE_KEYS.items()
+            }
+            if not _matches_row_filters(
+                result,
+                filter_columns=filter_columns,
+                ticker=ticker,
+                company_name=company_name,
+                theme_id=theme_id,
+                path_type=path_type,
+                response_class=response_class,
+            ):
+                continue
             result["payload"] = _loads_json_object(payload_json)
             results.append(result)
+            if len(results) >= limit:
+                break
         return results
 
     def _append_or_replace_by_key(self, filename: str, rows: list[dict[str, Any]], key: str) -> None:
@@ -690,6 +790,14 @@ def _loads_json_object(value: object) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _parquet_has_only_empty_marker(path: Path) -> bool:
+    try:
+        table = pq.read_table(path)  # type: ignore[no-untyped-call]
+    except (OSError, pa.ArrowInvalid):
+        return False
+    return bool(table.num_columns == 1 and table.column_names == ["_empty"])
+
+
 def _json(value: Any) -> str:
     if isinstance(value, list):
         return json.dumps(
@@ -700,6 +808,92 @@ def _json(value: Any) -> str:
     if hasattr(value, "model_dump"):
         return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _brain_record_filter_values(payload: dict[str, Any]) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for field_name, aliases in _PAYLOAD_FILTER_ALIASES.items():
+        collected: list[str] = []
+        for alias in aliases:
+            collected.extend(_string_values(payload.get(alias)))
+        for parent_key, child_key in _PAYLOAD_NESTED_FILTER_ALIASES.get(field_name, ()):
+            parent = payload.get(parent_key)
+            if isinstance(parent, dict):
+                collected.extend(_string_values(parent.get(child_key)))
+        values[field_name] = _unique_strings(collected)
+    return values
+
+
+def _matches_row_filters(
+    result: dict[str, Any],
+    *,
+    filter_columns: dict[str, object],
+    ticker: str | None,
+    company_name: str | None,
+    theme_id: str | None,
+    path_type: str | None,
+    response_class: str | None,
+) -> bool:
+    return (
+        _matches_filter_value(result, filter_columns, "ticker", ticker)
+        and _matches_filter_value(result, filter_columns, "company_name", company_name)
+        and _matches_filter_value(result, filter_columns, "theme_id", theme_id)
+        and _matches_filter_value(result, filter_columns, "path_type", path_type)
+        and _matches_filter_value(result, filter_columns, "response_class", response_class)
+    )
+
+
+def _matches_filter_value(
+    result: dict[str, Any],
+    filter_columns: dict[str, object],
+    field_name: str,
+    expected: str | None,
+) -> bool:
+    if expected is None:
+        return True
+    values = _string_values(result.get(field_name))
+    values.extend(_string_values(_loads_json_list(filter_columns.get(field_name))))
+    return expected in set(values)
+
+
+def _loads_json_list(value: object) -> list[Any]:
+    if not isinstance(value, str) or not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _first_filter_value(values: list[str]) -> str | None:
+    return values[0] if values else None
+
+
+def _string_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return [str(value)]
+    if isinstance(value, list | tuple | set):
+        values: list[str] = []
+        for item in value:
+            values.extend(_string_values(item))
+        return values
+    return []
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            unique.append(value)
+            seen.add(value)
+    return unique
 
 
 def _record_case_row(

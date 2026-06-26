@@ -990,6 +990,15 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert queried_rows[0]["record_id"] == "BRAIN-SYNTH-ISSUER"
     assert queried_rows[0]["ticker"] == "000001"
     assert queried_rows[0]["payload"]["issuer_day_case_id"] == "20300110:000001"
+    pair_alias_rows = WarehouseStore(tmp_path).query_brain_records(
+        record_type="blind_leader_preference_pair",
+        ticker="000002",
+        training_eligible=True,
+        available_from_as_of="2030-01-11T00:00:00+09:00",
+    )
+    assert [row["record_id"] for row in pair_alias_rows] == ["BRAIN-SYNTH-PAIR"]
+    assert pair_alias_rows[0]["ticker"] == "000001"
+    assert pair_alias_rows[0]["payload"]["blind_rejected_ticker"] == "000002"
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
 
 

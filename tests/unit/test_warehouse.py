@@ -25,7 +25,8 @@ def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
     counts = WarehouseStore(tmp_path).rebuild_all()
-    inspected = WarehouseStore(tmp_path).counts()
+    warehouse = WarehouseStore(tmp_path)
+    inspected = warehouse.counts()
 
     assert counts["research_episodes"] == 0
     assert sorted(inspected) == sorted(EXPECTED_WAREHOUSE_FILES)
@@ -33,6 +34,7 @@ def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
     assert inspected["events.parquet"] == 0
     assert inspected["mechanism_memory.parquet"] == 0
     assert inspected["company_memory.parquet"] == 0
+    assert warehouse.query_brain_records(record_type="supervised_issuer_day_case") == []
 
 
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
