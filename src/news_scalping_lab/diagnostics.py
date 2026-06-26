@@ -42,6 +42,7 @@ ENV_KEYS = [
     "BRAVE_SEARCH_API_KEY",
 ]
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
+PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
 
 
 def production_readiness_report(
@@ -57,6 +58,16 @@ def production_readiness_report(
     openai_status = _nested_dict(report, "api_connections", "openai").get("status")
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
+    web_provider = settings.web_provider.strip().lower()
+    brave_status = _nested_dict(report, "api_connections", "brave_search").get("status")
+    if web_provider == "mock":
+        findings.append("web: mock provider cannot supply production evidence")
+    elif web_provider not in PRODUCTION_WEB_PROVIDER_ALIASES:
+        findings.append(f"web: unsupported production provider {settings.web_provider}")
+    elif brave_status != "configured_not_called":
+        findings.append(
+            "brave_search: production web research requires configured Brave Search API key"
+        )
     brain = report.get("brain")
     if isinstance(brain, dict):
         brain_audit = _nested_dict(brain, "audit")
@@ -281,11 +292,21 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
     llm_provider = settings.llm_provider.strip().lower()
     if llm_provider not in OPENAI_PROVIDER_ALIASES:
         llm_provider = "openai"
+    web_provider = settings.web_provider.strip().lower()
+    if web_provider not in PRODUCTION_WEB_PROVIDER_ALIASES:
+        web_provider = "brave"
+    required_environment = {
+        "NSLAB_LLM_PROVIDER": llm_provider,
+        "OPENAI_API_KEY": "<required>",
+        "NSLAB_WEB_PROVIDER": web_provider,
+        settings.brave_search_api_key_env: "<required>",
+    }
+    if settings.brave_search_api_key_env != "BRAVE_SEARCH_API_KEY":
+        required_environment["NSLAB_BRAVE_SEARCH_API_KEY_ENV"] = (
+            settings.brave_search_api_key_env
+        )
     return {
-        "required_environment": {
-            "NSLAB_LLM_PROVIDER": llm_provider,
-            "OPENAI_API_KEY": "<required>",
-        },
+        "required_environment": required_environment,
         "commands": [
             f"{python_command} brain rebuild --mode llm-full",
             f"{python_command} warehouse rebuild",

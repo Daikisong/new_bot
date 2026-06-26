@@ -171,13 +171,17 @@ nslab doctor --production
 provider and normalized brain records.
 `catalog` preserves the deterministic compiler for tests, offline smoke, and
 legacy migration, but `doctor --production` rejects catalog/full/incremental brain
-manifests as production research brains.
+manifests as production research brains. Production readiness also rejects mock
+web research evidence; configure a live provider before treating web citations as
+production evidence.
 When production readiness fails, `doctor --production` includes
 `required_environment` and `remediation_commands`; the normal production sequence is:
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai
 set OPENAI_API_KEY=...
+set NSLAB_WEB_PROVIDER=brave
+set BRAVE_SEARCH_API_KEY=...
 python -m news_scalping_lab.cli brain rebuild --mode llm-full
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli brain audit --deep

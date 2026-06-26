@@ -269,6 +269,8 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
     assert production["required_environment"] == {
         "NSLAB_LLM_PROVIDER": "openai",
         "OPENAI_API_KEY": "<required>",
+        "NSLAB_WEB_PROVIDER": "brave",
+        "BRAVE_SEARCH_API_KEY": "<required>",
     }
     assert production["remediation_commands"] == [
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
@@ -580,6 +582,40 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
     assert production["remediation_commands"][0].endswith("brain rebuild --mode llm-full")
 
 
+def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="mock")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert "web: mock provider cannot supply production evidence" in production["findings"]
+    assert production["required_environment"]["NSLAB_WEB_PROVIDER"] == "brave"
+    assert production["required_environment"]["BRAVE_SEARCH_API_KEY"] == "<required>"
+
+
+def test_production_readiness_requires_brave_api_key_for_live_web(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "missing_api_key"},
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert (
+        "brave_search: production web research requires configured Brave Search API key"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     report: dict[str, object] = {}
@@ -590,6 +626,8 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
     assert production["required_environment"] == {
         "NSLAB_LLM_PROVIDER": "openai",
         "OPENAI_API_KEY": "<required>",
+        "NSLAB_WEB_PROVIDER": "brave",
+        "BRAVE_SEARCH_API_KEY": "<required>",
     }
     assert production["remediation_commands"] == [
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
