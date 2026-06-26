@@ -1,10 +1,27 @@
 {
-  "migrated_episode_count": 2,
-  "migrated_episode_ids": [
+  "catalog_only": true,
+  "dropped_record_count": 0,
+  "findings": [],
+  "ineligible_record_count": 2,
+  "legacy_source_record_count": 2,
+  "migrated_episode_count": 0,
+  "migrated_episode_ids": [],
+  "migrated_record_count": 0,
+  "normalized_record_count": 2,
+  "passed": true,
+  "quarantined_record_count": 0,
+  "raw_record_count": 2,
+  "record_counts_by_type": {
+    "memory_claim": 2
+  },
+  "schema_version": "nslab.legacy_migration_report.v1",
+  "skipped_episode_count": 2,
+  "skipped_episode_ids": [
     "EP-2991eb145f59",
     "EP-f56c790fe2fc"
   ],
-  "skipped_episode_count": 0,
-  "skipped_episode_ids": [],
-  "status": "catalog_only_legacy_migration"
+  "skipped_existing_record_count": 2,
+  "source_episode_count": 2,
+  "status": "catalog_only_legacy_migration",
+  "training_eligible_record_count": 0
 }

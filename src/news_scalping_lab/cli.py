@@ -576,11 +576,21 @@ def research_migrate_legacy() -> None:
     settings = load_settings()
     store = ResearchStore(settings.project_root)
     record_store = BrainRecordStore(settings.project_root)
+    accepted_episodes = store.list_accepted()
     migrated: list[str] = []
     skipped: list[str] = []
-    for episode in store.list_accepted():
-        if record_store.read_episode_records(episode.episode_id):
+    skipped_existing_record_count = 0
+    record_counts_by_type: Counter[str] = Counter()
+    training_eligible_record_count = 0
+    for episode in accepted_episodes:
+        existing_records = record_store.read_episode_records(episode.episode_id)
+        if existing_records:
             skipped.append(episode.episode_id)
+            skipped_existing_record_count += len(existing_records)
+            for existing_record in existing_records:
+                record_counts_by_type[existing_record.record_type] += 1
+                if existing_record.training_eligible:
+                    training_eligible_record_count += 1
             continue
         record = _legacy_episode_record(episode)
         envelope = _legacy_record_envelope(episode, record)
@@ -602,16 +612,37 @@ def research_migrate_legacy() -> None:
         except (OSError, ValueError) as exc:
             _exit_with_error(exc)
         migrated.append(episode.episode_id)
+        record_counts_by_type[record.record_type] += 1
+        if record.training_eligible:
+            training_eligible_record_count += 1
+    migrated_record_count = len(migrated)
+    normalized_record_count = migrated_record_count + skipped_existing_record_count
+    report_payload = {
+        "schema_version": "nslab.legacy_migration_report.v1",
+        "passed": True,
+        "findings": [],
+        "status": "catalog_only_legacy_migration",
+        "catalog_only": True,
+        "source_episode_count": len(accepted_episodes),
+        "legacy_source_record_count": len(accepted_episodes),
+        "raw_record_count": len(accepted_episodes),
+        "normalized_record_count": normalized_record_count,
+        "migrated_record_count": migrated_record_count,
+        "skipped_existing_record_count": skipped_existing_record_count,
+        "training_eligible_record_count": training_eligible_record_count,
+        "ineligible_record_count": normalized_record_count - training_eligible_record_count,
+        "dropped_record_count": 0,
+        "quarantined_record_count": 0,
+        "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
+        "migrated_episode_count": len(migrated),
+        "skipped_episode_count": len(skipped),
+        "migrated_episode_ids": migrated,
+        "skipped_episode_ids": skipped,
+    }
     write_diagnostic_report(
         settings.project_root,
         "migration_report",
-        {
-            "migrated_episode_count": len(migrated),
-            "skipped_episode_count": len(skipped),
-            "migrated_episode_ids": migrated,
-            "skipped_episode_ids": skipped,
-            "status": "catalog_only_legacy_migration",
-        },
+        report_payload,
     )
     _echo({"migrated_episode_ids": migrated, "skipped_episode_ids": skipped})
 

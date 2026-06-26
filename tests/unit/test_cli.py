@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,9 @@ from typer.testing import CliRunner
 import news_scalping_lab.cli as cli_module
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.utils import KST
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
@@ -285,6 +289,52 @@ def test_research_import_batch_cli_reports_source_file_errors(
     assert "research import-batch failed for" in result.output
     assert "research.md" in result.output
     assert "semantic import failed" in result.output
+
+
+def test_research_migrate_legacy_writes_catalog_only_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    store = ResearchStore(tmp_path)
+    trade_day = date(2030, 1, 10)
+    episode = ResearchEpisode(
+        episode_id="EP-legacy-cli",
+        trade_date=trade_day,
+        cutoff_at=datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST),
+        created_at=datetime.combine(trade_day, time(16, 0, 0), tzinfo=KST),
+        research_version="legacy-cli-test",
+        price_source_snapshot={"source": "legacy-cli-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Legacy accepted episode.",
+            open_world_mechanisms=["legacy migration -> catalog-only record"],
+        ),
+        available_from=datetime.combine(date(2030, 1, 11), time(0, 0, 0), tzinfo=KST),
+    )
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["research", "migrate-legacy"])
+
+    assert result.exit_code == 0, result.output
+    report = json.loads(
+        (tmp_path / "diagnostics" / "migration_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["schema_version"] == "nslab.legacy_migration_report.v1"
+    assert report["passed"] is True
+    assert report["catalog_only"] is True
+    assert report["source_episode_count"] == 1
+    assert report["legacy_source_record_count"] == 1
+    assert report["raw_record_count"] == 1
+    assert report["normalized_record_count"] == 1
+    assert report["training_eligible_record_count"] == 0
+    assert report["ineligible_record_count"] == 1
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_record_count"] == 0
+    assert report["record_counts_by_type"] == {"memory_claim": 1}
 
 
 def test_analyze_cli_reports_analysis_errors(
