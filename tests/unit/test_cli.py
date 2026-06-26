@@ -275,6 +275,8 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
         "invalid_available_from_record_count": 0,
         "outcome_label_quality_valid": False,
         "invalid_outcome_label_quality_record_count": 1,
+        "typed_payload_valid": False,
+        "invalid_typed_payload_record_count": 1,
         "validation": {"passed": False, "hash_mismatches": {"brain_delta.jsonl": {}}},
     }
 
@@ -302,6 +304,8 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert report["available_from_valid"] is True
     assert report["outcome_label_quality_valid"] is False
     assert report["invalid_outcome_label_quality_record_count"] == 1
+    assert report["typed_payload_valid"] is False
+    assert report["invalid_typed_payload_record_count"] == 1
     assert report["validation"]["passed"] is False
 
 

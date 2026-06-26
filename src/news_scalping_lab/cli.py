@@ -575,6 +575,10 @@ def research_inspect_bundle(path: Path) -> None:
             "invalid_outcome_label_quality_record_count": inspection.get(
                 "invalid_outcome_label_quality_record_count"
             ),
+            "typed_payload_valid": inspection.get("typed_payload_valid"),
+            "invalid_typed_payload_record_count": inspection.get(
+                "invalid_typed_payload_record_count"
+            ),
             "validation": inspection.get("validation"),
         },
     )
