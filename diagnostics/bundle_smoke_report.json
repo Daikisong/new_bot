@@ -25,6 +25,7 @@
         "invalid_available_from_record_count": 0,
         "invalid_outcome_label_quality_record_count": 0,
         "manifest_schema_version": "nslab.bundle_manifest.v11",
+        "missing_payload_reference_count": 0,
         "missing_source_reference_count": 0,
         "normalized_record_count": 2,
         "outcome_label_quality_valid": true,
