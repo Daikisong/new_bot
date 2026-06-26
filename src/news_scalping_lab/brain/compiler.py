@@ -63,6 +63,7 @@ LLM_FULL_RECORD_SHARD_SIZE = 50
 class LLMFullCompileResult:
     category_outputs: dict[str, str]
     manifest: dict[str, Any]
+    run_metadata: dict[str, Any]
 
 
 class BrainCompiler:
@@ -225,6 +226,7 @@ class BrainCompiler:
             claims,
             category_outputs=llm_compile.category_outputs,
             llm_compile_metadata=llm_compile.manifest,
+            llm_compile_run_metadata=llm_compile.run_metadata,
             compiled_claims=compiled_claims,
         )
         self._write_mechanism_memory(manifest, [])
@@ -508,6 +510,7 @@ class BrainCompiler:
         category_outputs: dict[str, str] | None = None,
         llm_compile_metadata: dict[str, Any] | None = None,
         compiled_claims: list[CompiledBrainClaim] | None = None,
+        llm_compile_run_metadata: dict[str, Any] | None = None,
     ) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
@@ -553,6 +556,7 @@ class BrainCompiler:
                 compiled_claims=compiled_claims,
                 record_coverage=record_coverage,
                 llm_compile_metadata=llm_compile_metadata,
+                llm_compile_run_metadata=llm_compile_run_metadata,
             ),
         )
         write_diagnostic_report(self.root, "record_coverage_report", record_coverage)
@@ -1161,6 +1165,7 @@ def _brain_compile_diagnostic_report(
     compiled_claims: list[CompiledBrainClaim] | None,
     record_coverage: dict[str, object],
     llm_compile_metadata: dict[str, Any] | None,
+    llm_compile_run_metadata: dict[str, Any] | None,
 ) -> dict[str, Any]:
     llm_compile: dict[str, Any] = (
         llm_compile_metadata if isinstance(llm_compile_metadata, dict) else {}
@@ -1209,6 +1214,9 @@ def _brain_compile_diagnostic_report(
         "record_coverage": _record_coverage_summary(record_coverage),
         "llm_compile_present": llm_compile_present,
         "llm_compile": llm_compile_metadata,
+        "llm_compile_run_present": isinstance(llm_compile_run_metadata, dict)
+        and bool(llm_compile_run_metadata),
+        "llm_compile_run": llm_compile_run_metadata,
     }
 
 
@@ -1371,7 +1379,7 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        output, cache_key, _ = await _cached_generate_text(
+        output, cache_key, cache_hit = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:shard:{shard_index:04d}",
@@ -1390,6 +1398,7 @@ async def _compile_llm_category_outputs(
                 "cache_key": cache_key,
                 "record_ids": [record.record_id for record in shard],
                 "record_count": len(shard),
+                "cache_hit": cache_hit,
                 "summary": output,
             }
         )
@@ -1410,7 +1419,7 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        synthesis, synthesis_cache_key, _ = await _cached_generate_text(
+        synthesis, synthesis_cache_key, synthesis_cache_hit = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:synthesis:{category}",
@@ -1432,7 +1441,7 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        review, review_cache_key, _ = await _cached_generate_text(
+        review, review_cache_key, review_cache_hit = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:review:{category}",
@@ -1470,9 +1479,20 @@ async def _compile_llm_category_outputs(
                 "compiled_claim_count": len(category_compiled_claim_ids),
                 "compiled_claim_ids": category_compiled_claim_ids,
                 "synthesis_cache_key": synthesis_cache_key,
+                "synthesis_cache_hit": synthesis_cache_hit,
                 "review_cache_key": review_cache_key,
+                "review_cache_hit": review_cache_hit,
             }
         )
+    llm_cache_hit_count = sum(
+        1 for shard in shard_summaries if shard.get("cache_hit") is True
+    ) + sum(
+        int(category.get("synthesis_cache_hit") is True)
+        + int(category.get("review_cache_hit") is True)
+        for category in categories
+    )
+    llm_generation_count = len(shard_summaries) + len(categories) * 2
+    llm_live_call_count = llm_generation_count - llm_cache_hit_count
     manifest = {
         "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
         "compiler_version": LLM_FULL_COMPILER_VERSION,
@@ -1481,6 +1501,7 @@ async def _compile_llm_category_outputs(
         "model": model,
         "source_record_count": len(sorted_records),
         "compiled_claim_count": len(compiled_claims),
+        "llm_generation_count": llm_generation_count,
         "record_shard_size": LLM_FULL_RECORD_SHARD_SIZE,
         "record_shard_count": len(shard_summaries),
         "record_shards": [
@@ -1493,9 +1514,52 @@ async def _compile_llm_category_outputs(
             for shard in shard_summaries
         ],
         "category_count": len(categories),
-        "categories": categories,
+        "categories": [
+            {
+                key: value
+                for key, value in category.items()
+                if key not in {"synthesis_cache_hit", "review_cache_hit"}
+            }
+            for category in categories
+        ],
     }
-    return LLMFullCompileResult(category_outputs=outputs, manifest=manifest)
+    run_metadata = {
+        "schema_version": "nslab.llm_full_brain_compile_run.v1",
+        "brain_version": brain_version,
+        "provider": provider_name,
+        "model": model,
+        "llm_generation_count": llm_generation_count,
+        "llm_live_call_count": llm_live_call_count,
+        "llm_cache_hit_count": llm_cache_hit_count,
+        "llm_cache_miss_count": llm_live_call_count,
+        "all_outputs_from_cache": llm_generation_count > 0 and llm_live_call_count == 0,
+        "record_shards": [
+            {
+                "shard_index": shard["shard_index"],
+                "cache_key": shard["cache_key"],
+                "record_count": shard["record_count"],
+                "cache_hit": shard["cache_hit"],
+            }
+            for shard in shard_summaries
+        ],
+        "categories": [
+            {
+                "category": category["category"],
+                "file_name": category["file_name"],
+                "source_record_count": category["source_record_count"],
+                "synthesis_cache_key": category["synthesis_cache_key"],
+                "synthesis_cache_hit": category["synthesis_cache_hit"],
+                "review_cache_key": category["review_cache_key"],
+                "review_cache_hit": category["review_cache_hit"],
+            }
+            for category in categories
+        ],
+    }
+    return LLMFullCompileResult(
+        category_outputs=outputs,
+        manifest=manifest,
+        run_metadata=run_metadata,
+    )
 
 
 def _compiled_claim_ids_for_category(

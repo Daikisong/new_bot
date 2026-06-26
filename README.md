@@ -185,6 +185,9 @@ production evidence.
 When production readiness fails, `doctor --production` includes
 real bundle smoke status, `required_environment`, and `remediation_commands`; the
 normal production sequence is:
+For `llm-full` brains it also reports `llm_full_brain`, which verifies the
+compile manifest, compiled claims JSONL, provider/model, category counts, and the
+latest compile run cache/live-call accounting from `diagnostics/brain_compile_report.json`.
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai

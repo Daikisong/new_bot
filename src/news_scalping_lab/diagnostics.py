@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.audits.coverage import audit_coverage
-from news_scalping_lab.brain.compiler import current_brain_version
+from news_scalping_lab.brain.compiler import BRAIN_FILES, current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
@@ -94,9 +94,12 @@ def production_readiness_report(
             findings.append("brain: accepted episodes are not fully covered")
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
+    llm_full_brain = _llm_full_brain_status(settings, build_mode=build_mode)
     if build_mode != "llm-full":
         observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
+    elif llm_full_brain["passed"] is not True:
+        findings.extend(f"brain: {finding}" for finding in llm_full_brain["findings"])
     record_coverage = _read_optional_json(
         settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
     )
@@ -116,6 +119,7 @@ def production_readiness_report(
         "finding_count": len(findings),
         "findings": findings,
         "real_bundle_smoke": real_bundle_smoke,
+        "llm_full_brain": llm_full_brain,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
@@ -442,6 +446,141 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",
         ],
+    }
+
+
+def _llm_full_brain_status(
+    settings: Settings,
+    *,
+    build_mode: object,
+) -> dict[str, Any]:
+    current_dir = settings.project_root / "brain" / "current"
+    compile_manifest_path = current_dir / "llm_compile_manifest.json"
+    compiled_claims_path = current_dir / "compiled_claims.jsonl"
+    compile_report_path = settings.project_root / "diagnostics" / "brain_compile_report.json"
+    compile_manifest = _read_optional_json(compile_manifest_path)
+    compile_report = _read_optional_json(compile_report_path)
+    compile_run = (
+        compile_report.get("llm_compile_run")
+        if isinstance(compile_report, dict)
+        else None
+    )
+    compile_run = compile_run if isinstance(compile_run, dict) else None
+    compiled_claim_count = _jsonl_line_count(compiled_claims_path)
+    findings: list[str] = []
+    status = {
+        "schema_version": "nslab.production_llm_full_brain.v1",
+        "build_mode": build_mode if isinstance(build_mode, str) else None,
+        "applicable": build_mode == "llm-full",
+        "compile_manifest_path": relative_to_root(
+            compile_manifest_path,
+            settings.project_root,
+        ),
+        "compile_manifest_exists": compile_manifest is not None,
+        "compiled_claims_path": relative_to_root(
+            compiled_claims_path,
+            settings.project_root,
+        ),
+        "compiled_claims_exists": compiled_claims_path.exists(),
+        "compiled_claim_jsonl_count": compiled_claim_count,
+        "compile_report_path": relative_to_root(
+            compile_report_path,
+            settings.project_root,
+        ),
+        "compile_report_exists": compile_report is not None,
+        "compile_run_present": compile_run is not None,
+        "provider": compile_manifest.get("provider")
+        if isinstance(compile_manifest, dict)
+        else None,
+        "model": compile_manifest.get("model")
+        if isinstance(compile_manifest, dict)
+        else None,
+        "brain_version": compile_manifest.get("brain_version")
+        if isinstance(compile_manifest, dict)
+        else None,
+        "source_record_count": _int_from_mapping(compile_manifest, "source_record_count"),
+        "compiled_claim_count": _int_from_mapping(compile_manifest, "compiled_claim_count"),
+        "record_shard_count": _int_from_mapping(compile_manifest, "record_shard_count"),
+        "category_count": _int_from_mapping(compile_manifest, "category_count"),
+        "llm_generation_count": _int_from_mapping(compile_manifest, "llm_generation_count"),
+        "run_brain_version": compile_run.get("brain_version")
+        if isinstance(compile_run, dict)
+        else None,
+        "run_llm_generation_count": _int_from_mapping(compile_run, "llm_generation_count"),
+        "run_llm_live_call_count": _int_from_mapping(compile_run, "llm_live_call_count"),
+        "run_llm_cache_hit_count": _int_from_mapping(compile_run, "llm_cache_hit_count"),
+        "run_all_outputs_from_cache": compile_run.get("all_outputs_from_cache")
+        if isinstance(compile_run, dict)
+        else None,
+    }
+    if build_mode != "llm-full":
+        return {
+            **status,
+            "passed": False,
+            "status": "not_applicable",
+            "finding_count": 0,
+            "findings": [],
+        }
+    if compile_manifest is None:
+        findings.append("llm-full compile manifest is missing")
+    else:
+        provider = status["provider"]
+        model = status["model"]
+        if not isinstance(provider, str) or not provider or provider.lower() == "mock":
+            findings.append("llm-full compile provider is missing or mock")
+        elif provider.strip().lower() != settings.llm_provider.strip().lower():
+            findings.append("llm-full compile provider does not match configured provider")
+        if not isinstance(model, str) or not model or "mock" in model.lower():
+            findings.append("llm-full compile model is missing or mock")
+        source_record_count = status["source_record_count"]
+        if not isinstance(source_record_count, int) or source_record_count <= 0:
+            findings.append("llm-full compile source records are missing")
+        manifest_claim_count = status["compiled_claim_count"]
+        if not isinstance(manifest_claim_count, int) or manifest_claim_count <= 0:
+            findings.append("llm-full compile manifest has no compiled claims")
+        elif manifest_claim_count != compiled_claim_count:
+            findings.append("llm-full compiled claim count does not match JSONL file")
+        record_shard_count = status["record_shard_count"]
+        if not isinstance(record_shard_count, int) or record_shard_count <= 0:
+            findings.append("llm-full record shard accounting is missing")
+        category_count = status["category_count"]
+        if category_count != len(BRAIN_FILES):
+            findings.append("llm-full category count does not match brain category files")
+        manifest_generation_count = status["llm_generation_count"]
+        if not isinstance(manifest_generation_count, int) or manifest_generation_count <= 0:
+            findings.append("llm-full LLM generation accounting is missing")
+        if compile_run is None:
+            findings.append("llm-full compile run diagnostics are missing")
+        else:
+            brain_version = status["brain_version"]
+            run_brain_version = status["run_brain_version"]
+            if (
+                isinstance(brain_version, str)
+                and brain_version
+                and run_brain_version != brain_version
+            ):
+                findings.append("llm-full compile run diagnostics do not match current brain")
+            generation_count = status["run_llm_generation_count"]
+            live_call_count = status["run_llm_live_call_count"]
+            cache_hit_count = status["run_llm_cache_hit_count"]
+            if (
+                not isinstance(generation_count, int)
+                or not isinstance(live_call_count, int)
+                or not isinstance(cache_hit_count, int)
+                or generation_count <= 0
+                or live_call_count + cache_hit_count != generation_count
+            ):
+                findings.append("llm-full LLM generation cache/live-call accounting is invalid")
+    if not compiled_claims_path.exists():
+        findings.append("compiled claims JSONL is missing")
+    elif compiled_claim_count <= 0:
+        findings.append("compiled claims JSONL is empty")
+    return {
+        **status,
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
     }
 
 
@@ -825,6 +964,22 @@ def _read_optional_json(path: Path) -> dict[str, Any] | None:
     except ValueError:
         return None
     return payload
+
+
+def _jsonl_line_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+    except OSError:
+        return 0
+
+
+def _int_from_mapping(source: object, key: str) -> int | None:
+    if not isinstance(source, dict):
+        return None
+    value = source.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _string_list(value: object) -> list[str]:

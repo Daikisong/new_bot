@@ -93,6 +93,10 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
     assert compile_manifest["compiled_claim_count"] == 2
+    assert compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
+    assert "llm_live_call_count" not in compile_manifest
+    assert "cache_hit" not in compile_manifest["record_shards"][0]
+    assert "synthesis_cache_hit" not in compile_manifest["categories"][0]
     assert compile_report["schema_version"] == "nslab.brain_compile_diagnostics.v1"
     assert compile_report["compiler_mode"] == "llm-full"
     assert compile_report["compiler_provider"] == "openai"
@@ -100,6 +104,21 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_report["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert compile_report["compiled_claim_count"] == 2
     assert compile_report["llm_compile_present"] is True
+    assert compile_report["llm_compile_run_present"] is True
+    assert compile_report["llm_compile_run"]["llm_generation_count"] == (
+        1 + len(BRAIN_FILES) * 2
+    )
+    assert compile_report["llm_compile_run"]["llm_live_call_count"] == compile_report[
+        "llm_compile_run"
+    ]["llm_generation_count"]
+    assert compile_report["llm_compile_run"]["llm_cache_hit_count"] == 0
+    assert compile_report["llm_compile_run"]["all_outputs_from_cache"] is False
+    assert compile_report["llm_compile_run"]["record_shards"][0]["cache_hit"] is False
+    assert all(
+        category["synthesis_cache_hit"] is False
+        and category["review_cache_hit"] is False
+        for category in compile_report["llm_compile_run"]["categories"]
+    )
     assert compile_report["category_claim_counts"]["single_event"] == 1
     assert compile_report["category_claim_counts"]["counterexamples"] == 1
     assert compile_report["category_source_record_counts"]["single_event"] == 1
@@ -136,10 +155,30 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     llm.calls.clear()
     llm.embed_calls.clear()
     second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+    second_compile_manifest = read_json(
+        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
+    )
+    second_compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
 
     assert second_manifest.brain_version == manifest.brain_version
     assert llm.calls == []
     assert llm.embed_calls
+    assert second_compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
+    assert second_compile_manifest == compile_manifest
+    assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
+    assert second_compile_report["llm_compile_run"]["llm_cache_hit_count"] == (
+        second_compile_report["llm_compile_run"]["llm_generation_count"]
+    )
+    assert second_compile_report["llm_compile_run"]["all_outputs_from_cache"] is True
+    assert all(
+        shard["cache_hit"] is True
+        for shard in second_compile_report["llm_compile_run"]["record_shards"]
+    )
+    assert all(
+        category["synthesis_cache_hit"] is True
+        and category["review_cache_hit"] is True
+        for category in second_compile_report["llm_compile_run"]["categories"]
+    )
 
 
 def _write_openai_config(root: Path) -> None:
