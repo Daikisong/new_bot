@@ -131,12 +131,7 @@ class BaseBundleAdapter:
         )
         normalized_records = self.normalize_brain_records(parsed)
         import_loss_summary = _import_loss_summary(parsed, normalized_records)
-        import_loss_audit_passed = (
-            import_loss_summary["record_id_set_matches_raw"] is True
-            and import_loss_summary["record_type_counts_match_raw"] is True
-            and import_loss_summary["training_eligible_count_matches_raw"] is True
-            and import_loss_summary["raw_payload_hashes_match"] is True
-        )
+        import_loss_audit_passed = _import_loss_audit_passed(import_loss_summary)
         validation = {
             "schema_version": "nslab.versioned_bundle_validation.v1",
             "adapter": self.name,
@@ -560,6 +555,10 @@ def import_versioned_bundle(
                 "training_eligible_record_count": raw_only_stored.training_eligible_record_count,
                 "raw_only_record_count": raw_only_stored.record_count,
                 **import_loss_summary,
+                "import_loss_audit_passed": validation.get(
+                    "import_loss_audit_passed",
+                    _import_loss_audit_passed(import_loss_summary),
+                ),
                 "dropped_record_count": 0,
                 "quarantined_record_count": 0,
                 "record_counts_by_type": dict(
@@ -660,6 +659,10 @@ def import_versioned_bundle(
         "normalized_record_count": stored.record_count,
         "training_eligible_record_count": stored.training_eligible_record_count,
         **import_loss_summary,
+        "import_loss_audit_passed": validation.get(
+            "import_loss_audit_passed",
+            _import_loss_audit_passed(import_loss_summary),
+        ),
         "dropped_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": dict(
@@ -720,6 +723,7 @@ def _quarantine_validation_failure(
                 1 for record in records if record.training_eligible
             ),
             **_import_loss_summary(parsed, records),
+            "import_loss_audit_passed": validation.get("import_loss_audit_passed"),
             "dropped_record_count": 0,
             "quarantined_record_count": 1,
             "quarantine": quarantine.as_posix(),
@@ -727,6 +731,15 @@ def _quarantine_validation_failure(
         },
     )
     return quarantine
+
+
+def _import_loss_audit_passed(summary: dict[str, Any]) -> bool:
+    return (
+        summary["record_id_set_matches_raw"] is True
+        and summary["record_type_counts_match_raw"] is True
+        and summary["training_eligible_count_matches_raw"] is True
+        and summary["raw_payload_hashes_match"] is True
+    )
 
 
 def select_adapter(parsed: GenericParsedBundle) -> BundleVersionAdapter | None:

@@ -528,6 +528,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["staged_unknown_typed_payload_count"] == 0
     assert report["staged_raw_only_record_count"] == 0
     import_report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert import_report["import_loss_audit_passed"] is True
     assert import_report["record_id_set_matches_raw"] is True
     assert import_report["raw_payload_hashes_match"] is True
     assert import_report["record_type_counts_match_raw"] is True
@@ -581,6 +582,7 @@ def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
     assert report["dropped_record_count"] == 0
     assert report["quarantined_record_count"] == 1
+    assert report["import_loss_audit_passed"] is False
     assert report["training_eligible_count_matches_raw"] is False
     assert report["validation"]["import_loss_audit_passed"] is False
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
@@ -1745,6 +1747,7 @@ def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "forward_compatible_raw_only"
     assert report["raw_only_record_count"] == 3
+    assert report["import_loss_audit_passed"] is False
     assert report["dropped_record_count"] == 0
     assert report["quarantined_record_count"] == 0
     audit = audit_record_store(tmp_path)
