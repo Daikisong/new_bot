@@ -710,6 +710,8 @@ def _llm_full_brain_status(
                 or live_call_count + cache_hit_count != generation_count
             ):
                 findings.append("llm-full LLM generation cache/live-call accounting is invalid")
+            elif live_call_count <= 0 or status["run_all_outputs_from_cache"] is True:
+                findings.append("llm-full production compile has no live LLM calls")
     if not compiled_claims_path.exists():
         findings.append("compiled claims JSONL is missing")
     elif compiled_claim_count <= 0:

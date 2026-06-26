@@ -190,6 +190,8 @@ real bundle smoke/import status, `required_environment`, and
 For `llm-full` brains it also reports `llm_full_brain`, which verifies the
 compile manifest, compiled claims JSONL, provider/model, category counts, and the
 latest compile run cache/live-call accounting from `diagnostics/brain_compile_report.json`.
+All-cache `llm-full` rebuilds are useful reproducibility evidence, but production
+readiness requires at least one live LLM call in the latest compile run.
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai
