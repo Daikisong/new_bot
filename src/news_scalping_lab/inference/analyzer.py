@@ -110,10 +110,10 @@ CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
 FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
 SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
     "positive_analogs",
-    "negative_analogs",
+    "negative_controls",
     "near_misses",
     "counterexamples",
-    "leader_selection_cases",
+    "leader_selection_pairs",
     "theme_formation_failures",
     "candidate_generation_errors",
 )
@@ -1322,8 +1322,8 @@ class DailyAnalyzer:
         return (
             "Create additional semantic retrieval queries as SemanticRetrievalPlan. "
             "Queries must be mechanism-oriented and must cover every required category: "
-            "positive analogs, negative analogs, near misses, counterexamples, "
-            "leader-selection cases, theme-formation failures, and candidate-generation "
+            "positive analogs, negative controls, near misses, counterexamples, "
+            "leader-selection pairs, theme-formation failures, and candidate-generation "
             "errors. Do not use exact keyword matching as a gate and do not request "
             "cutoff-after evidence.\n"
             "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---\n"
@@ -4065,16 +4065,20 @@ def _normalize_semantic_retrieval_category(value: str) -> str | None:
         "positive": "positive_analogs",
         "positive_analog": "positive_analogs",
         "positive_analogs": "positive_analogs",
-        "negative": "negative_analogs",
-        "negative_analog": "negative_analogs",
-        "negative_analogs": "negative_analogs",
+        "negative": "negative_controls",
+        "negative_analog": "negative_controls",
+        "negative_analogs": "negative_controls",
+        "negative_control": "negative_controls",
+        "negative_controls": "negative_controls",
         "near_miss": "near_misses",
         "near_misses": "near_misses",
         "counterexample": "counterexamples",
         "counterexamples": "counterexamples",
-        "leader_selection": "leader_selection_cases",
-        "leader_selection_case": "leader_selection_cases",
-        "leader_selection_cases": "leader_selection_cases",
+        "leader_selection": "leader_selection_pairs",
+        "leader_selection_case": "leader_selection_pairs",
+        "leader_selection_cases": "leader_selection_pairs",
+        "leader_selection_pair": "leader_selection_pairs",
+        "leader_selection_pairs": "leader_selection_pairs",
         "theme_formation_failure": "theme_formation_failures",
         "theme_formation_failures": "theme_formation_failures",
         "candidate_generation_error": "candidate_generation_errors",
@@ -4088,11 +4092,11 @@ def _normalize_semantic_retrieval_category(value: str) -> str | None:
 def _semantic_record_filters(category: str) -> dict[str, Any]:
     if category == "positive_analogs":
         return {"training_eligible": True}
-    if category in {"negative_analogs", "near_misses"}:
+    if category in {"negative_controls", "near_misses"}:
         return {"training_eligible": False}
     if category == "counterexamples":
         return {"record_type": "counterexample"}
-    if category == "leader_selection_cases":
+    if category == "leader_selection_pairs":
         return {"record_type": "blind_leader_preference_pair"}
     if category == "theme_formation_failures":
         return {"record_type": "supervised_theme_formation_case"}

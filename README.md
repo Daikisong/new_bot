@@ -269,7 +269,8 @@ sources. The review records novelty, first-public evidence time, contract stage,
 customer/period/economic attribution fields, and dilution or financing risks; code
 validates schema, source IDs, hashes, and cutoff timing.
 After the exhaustive memory sweep, the LLM writes `semantic_retrieval_plan.json`
-with the required positive/negative/near-miss/counterexample/leader/theme-failure
+with the required positive analog, negative control, near-miss, counterexample,
+leader-selection pair, theme-formation failure, and candidate-generation error
 query categories. The engine executes those queries against accepted episodes and
 brain records, filters unavailable future evidence, and persists
 `semantic_retrieval.jsonl` with category-level episode IDs, record IDs, and the

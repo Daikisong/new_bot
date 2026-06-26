@@ -519,6 +519,7 @@ class MemorySweeper:
             "related_lessons": lessons,
             "positive_analogs": summaries,
             "negative_analogs": [],
+            "negative_controls": [],
             "near_misses": [miss for episode in episodes for miss in episode.misses],
             "counterexamples": [
                 claim.statement for episode in episodes for claim in episode.counterexamples
@@ -586,6 +587,12 @@ class MemorySweeper:
                 }
             ],
             "negative_analogs": [
+                _record_summary(record)
+                for record in records
+                if "error_case" in record.record_type
+                or record.record_type in {"counterexample"}
+            ],
+            "negative_controls": [
                 _record_summary(record)
                 for record in records
                 if "error_case" in record.record_type

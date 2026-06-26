@@ -1531,7 +1531,7 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
     retrieval_dir.mkdir(parents=True)
     plan_path = retrieval_dir / "semantic_retrieval_plan.json"
     result_path = retrieval_dir / "semantic_retrieval.jsonl"
-    categories = ["positive_analogs", "negative_analogs"]
+    categories = ["positive_analogs", "negative_controls"]
     plan_payload = {
         "schema_version": "nslab.semantic_retrieval_plan.v1",
         "run_id": "RUN-linked",
@@ -1544,8 +1544,8 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
                 "rationale": "positive cases",
             },
             {
-                "category": "negative_analogs",
-                "query": "negative structural analog",
+                "category": "negative_controls",
+                "query": "negative control structural analog",
                 "rationale": "negative cases",
             },
         ],
@@ -1568,9 +1568,9 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
             "schema_version": "nslab.semantic_retrieval_result.v1",
             "run_id": "RUN-linked",
             "query_index": 2,
-            "category": "negative_analogs",
-            "query": "negative structural analog",
-            "query_sha256": sha256_text("negative structural analog"),
+            "category": "negative_controls",
+            "query": "negative control structural analog",
+            "query_sha256": sha256_text("negative control structural analog"),
             "included_episode_ids": [],
             "excluded_episode_ids": ["EP-2"],
             "result_count": 0,
@@ -1603,7 +1603,7 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
                 "required_categories": categories,
                 "category_query_counts": {
                     "positive_analogs": 1,
-                    "negative_analogs": 1,
+                    "negative_controls": 1,
                 },
                 "query_count": 2,
                 "included_episode_count": 1,
@@ -1650,7 +1650,7 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
         "required_categories": categories,
         "category_query_counts": {
             "positive_analogs": 1,
-            "negative_analogs": 1,
+            "negative_controls": 1,
         },
         "query_count": 2,
         "included_episode_count": 1,

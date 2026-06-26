@@ -15,7 +15,11 @@ from news_scalping_lab.context.episode_scope import inspect_manifest_episode_sco
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
-from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.inference.analyzer import (
+    DailyAnalyzer,
+    _normalize_semantic_retrieval_category,
+    _semantic_record_filters,
+)
 from news_scalping_lab.records.models import (
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
@@ -167,6 +171,21 @@ def test_normalize_analysis_mode_accepts_only_supported_modes() -> None:
 
     with pytest.raises(ValueError, match="analysis mode must be one of"):
         normalize_analysis_mode("retrieval")
+
+
+def test_semantic_retrieval_categories_match_record_level_contract() -> None:
+    assert _normalize_semantic_retrieval_category("negative_analogs") == (
+        "negative_controls"
+    )
+    assert _normalize_semantic_retrieval_category("leader_selection_cases") == (
+        "leader_selection_pairs"
+    )
+    assert _semantic_record_filters("negative_controls") == {
+        "training_eligible": False
+    }
+    assert _semantic_record_filters("leader_selection_pairs") == {
+        "record_type": "blind_leader_preference_pair"
+    }
 
 
 def test_context_assembler_rejects_unknown_analysis_mode(tmp_path) -> None:

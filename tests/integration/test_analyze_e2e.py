@@ -183,10 +183,10 @@ class RecordingBlindLLM:
                 cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
                 required_categories=[
                     "positive_analogs",
-                    "negative_analogs",
+                    "negative_controls",
                     "near_misses",
                     "counterexamples",
-                    "leader_selection_cases",
+                    "leader_selection_pairs",
                     "theme_formation_failures",
                     "candidate_generation_errors",
                 ],
@@ -198,10 +198,10 @@ class RecordingBlindLLM:
                     )
                     for category in [
                         "positive_analogs",
-                        "negative_analogs",
+                        "negative_controls",
                         "near_misses",
                         "counterexamples",
-                        "leader_selection_cases",
+                        "leader_selection_pairs",
                         "theme_formation_failures",
                         "candidate_generation_errors",
                     ]
@@ -729,19 +729,19 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["semantic_retrieval_summary"] == {
         "required_categories": [
             "positive_analogs",
-            "negative_analogs",
+            "negative_controls",
             "near_misses",
             "counterexamples",
-            "leader_selection_cases",
+            "leader_selection_pairs",
             "theme_formation_failures",
             "candidate_generation_errors",
         ],
         "category_query_counts": {
             "positive_analogs": 1,
-            "negative_analogs": 1,
+            "negative_controls": 1,
             "near_misses": 1,
             "counterexamples": 1,
-            "leader_selection_cases": 1,
+            "leader_selection_pairs": 1,
             "theme_formation_failures": 1,
             "candidate_generation_errors": 1,
         },
