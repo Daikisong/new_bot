@@ -142,6 +142,42 @@
       "title": "Blind Web Search Call Count",
       "type": "integer"
     },
+    "brain_compiler_catalog_only": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Brain Compiler Catalog Only"
+    },
+    "brain_compiler_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Brain Compiler Model"
+    },
+    "brain_compiler_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Brain Compiler Provider"
+    },
     "brain_file_hashes": {
       "additionalProperties": {
         "type": "string"
@@ -276,6 +312,18 @@
       },
       "title": "Candidate Web Source Ids",
       "type": "array"
+    },
+    "compiler_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compiler Mode"
     },
     "continuation_analysis_status": {
       "default": "LIMITED_OR_UNAVAILABLE",

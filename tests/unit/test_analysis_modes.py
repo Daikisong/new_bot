@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.brain.compiler import CATALOG_COMPILER_VERSION, BrainCompiler
 from news_scalping_lab.cli import _inspect_context_manifest
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.assembler import ContextAssembler
@@ -585,6 +585,10 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.excluded_retrieved_record_ids == ["BRAIN-FUTURE"]
     assert manifest.semantic_retrieval_record_ids == ["BRAIN-AVAILABLE"]
     assert manifest.excluded_semantic_retrieval_record_ids == ["BRAIN-FUTURE"]
+    assert manifest.compiler_mode == "asof_context"
+    assert manifest.brain_compiler_provider == "deterministic_catalog"
+    assert manifest.brain_compiler_model == CATALOG_COMPILER_VERSION
+    assert manifest.brain_compiler_catalog_only is False
     assert manifest.record_sweep_artifacts
     assert manifest.record_sweep_shard_count == 1
     assert manifest.errors == []
@@ -599,6 +603,12 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == [
         "BRAIN-FUTURE"
     ]
+    assert synthesis_payload["brain_compiler"] == {
+        "mode": "asof_context",
+        "provider": "deterministic_catalog",
+        "model": CATALOG_COMPILER_VERSION,
+        "catalog_only": False,
+    }
     assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
         "record_ids"
     ] == ["BRAIN-AVAILABLE"]
@@ -678,7 +688,10 @@ async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episode
         )
         store.save_episode(episode)
         store.accept(episode.episode_id)
-    BrainCompiler(tmp_path).rebuild(mode="full")
+    BrainCompiler(
+        tmp_path,
+        shard_episode_count=settings.limits.shard_episode_count,
+    ).rebuild(mode="full")
     news_csv = tmp_path / "brain_mode_news.csv"
     news_csv.write_text(
         "page,row,date,time,title,body\n"
@@ -700,6 +713,10 @@ async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episode
     assert manifest.accepted_episode_count == 2
     assert manifest.swept_episode_count == 2
     assert manifest.swept_episode_ids == ["EP-brain-mode-0", "EP-brain-mode-1"]
+    assert manifest.compiler_mode == "full"
+    assert manifest.brain_compiler_provider == "deterministic_catalog"
+    assert manifest.brain_compiler_model == CATALOG_COMPILER_VERSION
+    assert manifest.brain_compiler_catalog_only is True
     assert manifest.memory_sweep_artifacts
     assert manifest.shard_brain_files
     assert manifest.shard_brain_file_hashes
@@ -713,3 +730,12 @@ async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episode
     ]
     assert all(payload["mode"] == "brain" for payload in sweep_payloads)
     assert all((tmp_path / relative_path).exists() for relative_path in manifest.shard_brain_files)
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert synthesis_payload["brain_compiler"] == {
+        "mode": "full",
+        "provider": "deterministic_catalog",
+        "model": CATALOG_COMPILER_VERSION,
+        "catalog_only": True,
+    }

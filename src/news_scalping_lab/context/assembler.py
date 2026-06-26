@@ -10,6 +10,7 @@ from pathlib import Path
 
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
+    CATALOG_COMPILER_VERSION,
     SHARD_BRAIN_EPISODE_COUNT,
     BrainCompiler,
     current_brain_file_hashes,
@@ -40,8 +41,20 @@ from news_scalping_lab.utils import (
 @dataclass(frozen=True)
 class BrainContextFiles:
     brain_version: str | None
+    compiler_mode: str | None
+    brain_compiler_provider: str | None
+    brain_compiler_model: str | None
+    brain_compiler_catalog_only: bool | None
     brain_file_hashes: dict[str, str]
     shard_brain_file_hashes: dict[str, str]
+
+
+@dataclass(frozen=True)
+class BrainCompilerMetadata:
+    mode: str | None
+    provider: str | None
+    model: str | None
+    catalog_only: bool | None
 
 
 class ContextAssembler:
@@ -164,6 +177,10 @@ class ContextAssembler:
             news_window_start_at=default_news_window_start(trade_date),
             news_window_end_at=cutoff_at,
             brain_version=brain_context.brain_version,
+            compiler_mode=brain_context.compiler_mode,
+            brain_compiler_provider=brain_context.brain_compiler_provider,
+            brain_compiler_model=brain_context.brain_compiler_model,
+            brain_compiler_catalog_only=brain_context.brain_compiler_catalog_only,
             brain_files=list(brain_context.brain_file_hashes.keys()),
             brain_file_hashes=brain_context.brain_file_hashes,
             shard_brain_files=list(brain_context.shard_brain_file_hashes.keys()),
@@ -336,8 +353,13 @@ class ContextAssembler:
             source = self.root / relative_path
             if source.is_file():
                 shutil.copy2(source, shard_dir / source.name)
+        compiler_metadata = _current_brain_compiler_metadata(self.root)
         return BrainContextFiles(
             brain_version=brain_version,
+            compiler_mode=compiler_metadata.mode,
+            brain_compiler_provider=compiler_metadata.provider,
+            brain_compiler_model=compiler_metadata.model,
+            brain_compiler_catalog_only=compiler_metadata.catalog_only,
             brain_file_hashes=_file_hashes_relative_to_root(self.root, brain_dir),
             shard_brain_file_hashes=_file_hashes_relative_to_root(self.root, shard_dir),
         )
@@ -443,6 +465,10 @@ class ContextAssembler:
             )
         return BrainContextFiles(
             brain_version=version,
+            compiler_mode="asof_context",
+            brain_compiler_provider="deterministic_catalog",
+            brain_compiler_model=CATALOG_COMPILER_VERSION,
+            brain_compiler_catalog_only=False,
             brain_file_hashes=_file_hashes_relative_to_root(self.root, brain_dir),
             shard_brain_file_hashes=_file_hashes_relative_to_root(self.root, shard_dir),
         )
@@ -478,6 +504,43 @@ def _file_hashes_relative_to_root(root: Path, directory: Path) -> dict[str, str]
         for path in sorted(directory.glob("*"))
         if path.is_file()
     }
+
+
+def _current_brain_compiler_metadata(root: Path) -> BrainCompilerMetadata:
+    brain_manifest = _read_json_object(root / "brain" / "current" / "brain_manifest.json")
+    llm_manifest = _read_json_object(root / "brain" / "current" / "llm_compile_manifest.json")
+    compiler_mode = _string_value(brain_manifest.get("build_mode"))
+    if compiler_mode is None and llm_manifest:
+        compiler_mode = "llm-full"
+    provider = _string_value(llm_manifest.get("provider"))
+    model = _string_value(llm_manifest.get("model"))
+    if compiler_mode in {"catalog", "full", "incremental"}:
+        provider = provider or "deterministic_catalog"
+        model = model or CATALOG_COMPILER_VERSION
+    return BrainCompilerMetadata(
+        mode=compiler_mode,
+        provider=provider,
+        model=model,
+        catalog_only=_bool_value(brain_manifest.get("catalog_only")),
+    )
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _string_value(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _bool_value(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def _dedupe_claims(claims: list[MemoryClaim]) -> list[MemoryClaim]:

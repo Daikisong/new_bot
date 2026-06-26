@@ -590,6 +590,10 @@ class ContextManifest(StrictModel):
     no_d_outcome_exposed: bool = True
     continuation_analysis_status: str = "LIMITED_OR_UNAVAILABLE"
     brain_version: str | None = None
+    compiler_mode: str | None = None
+    brain_compiler_provider: str | None = None
+    brain_compiler_model: str | None = None
+    brain_compiler_catalog_only: bool | None = None
     brain_files: list[str] = Field(default_factory=list)
     brain_file_hashes: dict[str, str] = Field(default_factory=dict)
     shard_brain_files: list[str] = Field(default_factory=list)

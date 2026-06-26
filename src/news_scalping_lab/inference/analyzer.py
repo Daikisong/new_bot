@@ -377,6 +377,10 @@ class DailyAnalyzer:
             context_payload={
                 "run_id": manifest.run_id,
                 "brain_version": manifest.brain_version,
+                "compiler_mode": manifest.compiler_mode,
+                "brain_compiler_provider": manifest.brain_compiler_provider,
+                "brain_compiler_model": manifest.brain_compiler_model,
+                "brain_compiler_catalog_only": manifest.brain_compiler_catalog_only,
                 "accepted_episode_count": manifest.accepted_episode_count,
                 "swept_episode_count": manifest.swept_episode_count,
                 "swept_episode_ids": manifest.swept_episode_ids,
@@ -2809,6 +2813,12 @@ class DailyAnalyzer:
             "run_id": manifest.run_id,
             "trade_date": prediction.trade_date.isoformat(),
             "cutoff_at": prediction.cutoff_at.isoformat(),
+            "brain_compiler": {
+                "mode": manifest.compiler_mode,
+                "provider": manifest.brain_compiler_provider,
+                "model": manifest.brain_compiler_model,
+                "catalog_only": manifest.brain_compiler_catalog_only,
+            },
             "current_news": news_texts,
             "open_world_first_analysis": self._read_open_world_first_analysis_context(
                 manifest
