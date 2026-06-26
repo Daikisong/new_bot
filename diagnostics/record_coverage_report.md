@@ -5,8 +5,8 @@
 - audit_only_record_count: `2`
 - available_record_count: `4`
 - available_record_count_as_of: `4`
-- brain_version: `brain-8cd4d47576`
-- build_mode: `full`
+- brain_version: `brain-a7e8edc8ef`
+- build_mode: `catalog`
 - catalog_only: `True`
 - compiled_record_count: `4`
 - coverage_complete: `True`
@@ -35,6 +35,7 @@
 - memory_claim: `2`
 - supervised_issuer_day_case: `1`
 
+- record_coverage_as_of: `2026-06-26T12:28:23.361737+09:00`
 - schema_version: `nslab.record_coverage_manifest.v1`
 - swept_record_count: `4`
 ## swept_record_ids

@@ -20,7 +20,7 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
         "python -m news_scalping_lab.cli init",
         "python -m news_scalping_lab.cli doctor",
         "python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv",
-        "python -m news_scalping_lab.cli brain rebuild --mode full",
+        "python -m news_scalping_lab.cli brain rebuild --mode catalog --allow-catalog",
         "python -m news_scalping_lab.cli brain audit",
         "python -m news_scalping_lab.cli warehouse rebuild",
         (
@@ -29,7 +29,10 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
             "--mode exhaustive --web-search"
         ),
         "python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24",
-        "python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode full",
+        (
+            "python -m news_scalping_lab.cli brain update --episode 2026-06-24 "
+            "--mode catalog --allow-catalog"
+        ),
     ]
 
 
@@ -56,7 +59,10 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     init = RUNNER.invoke(app, ["init"])
     doctor = RUNNER.invoke(app, ["doctor"])
     inspected = RUNNER.invoke(app, ["news", "inspect", "docs/csv/news_20260624.csv"])
-    rebuilt = RUNNER.invoke(app, ["brain", "rebuild", "--mode", "full"])
+    rebuilt = RUNNER.invoke(
+        app,
+        ["brain", "rebuild", "--mode", "catalog", "--allow-catalog"],
+    )
     brain_audit = RUNNER.invoke(app, ["brain", "audit"])
     warehouse = RUNNER.invoke(app, ["warehouse", "rebuild"])
     analyzed = RUNNER.invoke(
@@ -248,7 +254,15 @@ def test_readme_quick_start_commands_produce_demo_outputs(
 
     updated = RUNNER.invoke(
         app,
-        ["brain", "update", "--episode", "2026-06-24", "--mode", "full"],
+        [
+            "brain",
+            "update",
+            "--episode",
+            "2026-06-24",
+            "--mode",
+            "catalog",
+            "--allow-catalog",
+        ],
     )
     assert updated.exit_code == 0, updated.output
     update_manifest = json.loads(updated.output)

@@ -638,6 +638,7 @@ def _audit_deterministic_brain_state(
         findings.append("brain shard_episode_count missing or invalid")
     expected_version = (
         expected_brain_version(
+            compiler_mode=_string_value(current_manifest.get("build_mode")) or "catalog",
             covered_episode_ids=[episode.episode_id for episode in accepted],
             source_hashes=source_hashes,
             brain_record_hashes={

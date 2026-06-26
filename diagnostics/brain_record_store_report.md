@@ -38,6 +38,8 @@
 - beneficiary_cases: `0`
 - brain_records: `4`
 - company_memory: `5`
+- company_memory_delta_records: `0`
+- company_memory_delta_written: `0`
 - daily_outcomes: `1`
 - direct_event_cases: `0`
 - error_cases: `0`

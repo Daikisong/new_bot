@@ -1,7 +1,7 @@
 # Brain Compile Report
 
 - accepted_episode_count: `2`
-- brain_version: `brain-8cd4d47576`
+- brain_version: `brain-a7e8edc8ef`
 - catalog_only: `True`
 ## category_claim_counts
 
@@ -67,7 +67,7 @@
 - claim_count: `7`
 - compiled_claim_count: `0`
 - compiled_claims_file_present: `False`
-- compiler_mode: `full`
+- compiler_mode: `catalog`
 - compiler_model: `nslab.brain.catalog.compiler.v3`
 - compiler_provider: `deterministic_catalog`
 - compiler_version: `nslab.brain.catalog.compiler.v3`
@@ -76,8 +76,8 @@
 
 - deep: `True`
 - passed: `True`
-- brain_version: `brain-8cd4d47576`
-- brain_build_mode: `full`
+- brain_version: `brain-a7e8edc8ef`
+- brain_build_mode: `catalog`
 - catalog_only: `True`
 - coverage_complete: `True`
 - record_coverage_complete: `True`
@@ -103,6 +103,7 @@
 - accepted_record_count: `4`
 - audit_only_record_count: `2`
 - available_record_count: `4`
+- available_record_count_as_of: `4`
 - compiled_record_count: `4`
 - coverage_complete: `True`
 - ineligible_record_count: `2`
@@ -111,6 +112,7 @@
 - record_counts_by_type: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
 - swept_record_count: `4`
 - training_eligible_available_record_count: `2`
+- training_eligible_record_count_as_of: `2`
 - unswept_record_ids: `[]`
 
 - schema_version: `nslab.brain_compile_diagnostics.v1`

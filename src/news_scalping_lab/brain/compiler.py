@@ -198,6 +198,7 @@ class BrainCompiler:
         brain_record_hashes = _brain_record_hashes(self.root)
         created_at = _deterministic_rebuild_timestamp(episodes)
         version = _deterministic_brain_version(
+            compiler_mode="full" if mode == "full" else "catalog",
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
             brain_record_hashes=brain_record_hashes,
@@ -383,6 +384,7 @@ class BrainCompiler:
         previous_version = current_manifest.brain_version
         created_at = _deterministic_rebuild_timestamp(episodes)
         version = _deterministic_brain_version(
+            compiler_mode="incremental",
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
             brain_record_hashes=brain_record_hashes,
@@ -927,6 +929,7 @@ class BrainCompiler:
 
 def _deterministic_brain_version(
     *,
+    compiler_mode: str = "catalog",
     covered_episode_ids: list[str],
     source_hashes: dict[str, str],
     brain_record_hashes: dict[str, str] | None = None,
@@ -935,6 +938,7 @@ def _deterministic_brain_version(
     payload = {
         "brain_files": BRAIN_FILES,
         "brain_record_hashes": brain_record_hashes or {},
+        "compiler_mode": compiler_mode,
         "compiler_version": CATALOG_COMPILER_VERSION,
         "covered_episode_ids": covered_episode_ids,
         "shard_episode_count": max(1, shard_episode_count),
@@ -946,12 +950,14 @@ def _deterministic_brain_version(
 
 def expected_brain_version(
     *,
+    compiler_mode: str = "catalog",
     covered_episode_ids: list[str],
     source_hashes: dict[str, str],
     brain_record_hashes: dict[str, str] | None = None,
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
 ) -> str:
     return _deterministic_brain_version(
+        compiler_mode=compiler_mode,
         covered_episode_ids=covered_episode_ids,
         source_hashes=source_hashes,
         brain_record_hashes=brain_record_hashes,

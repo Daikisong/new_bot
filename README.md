@@ -11,18 +11,18 @@ python -m pip install -e ".[dev]"
 python -m news_scalping_lab.cli init
 python -m news_scalping_lab.cli doctor
 python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv
-python -m news_scalping_lab.cli brain rebuild --mode full
+python -m news_scalping_lab.cli brain rebuild --mode catalog --allow-catalog
 python -m news_scalping_lab.cli brain audit
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive --web-search
 python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
-python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode full
+python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode catalog --allow-catalog
 ```
 
-This quick start uses the deterministic `--mode full` compatibility path so it
-works with the default mock provider. Production rebuilds omit `--mode` or pass
-`--mode llm-full`; mock providers are rejected instead of being promoted as a
-production brain.
+This quick start uses the deterministic `--mode catalog --allow-catalog` path so
+it works with the default mock provider while remaining clearly marked as
+catalog-only. Production rebuilds omit `--mode` or pass `--mode llm-full`; mock
+providers are rejected instead of being promoted as a production brain.
 
 The same mock end-to-end flow is also available as one command:
 
@@ -85,7 +85,7 @@ Batch flow:
 
 ```bash
 nslab research import-batch data/inbox/research/
-nslab brain rebuild --mode full
+nslab brain rebuild --mode catalog --allow-catalog
 nslab brain audit
 ```
 
@@ -151,12 +151,13 @@ backfilled into earlier runs.
 `brain update --episode` defaults to `llm-full`, rebuilds through the production
 compiler, and fails without a real provider. Offline smoke and legacy migration
 flows must opt into the deterministic compatibility path with
-`brain update --episode <id> --mode full`; that path performs a safe incremental
-merge when the current brain already covers the prior accepted set exactly. If
-the current manifest is missing or drift is detected in compatibility mode, it
-falls back to `brain rebuild --mode full`; full rebuilds remain reproducible from
-accepted source episodes. `brain audit` reports the current build mode while
-preserving the last full rebuild timestamp across incremental updates.
+`brain update --episode <id> --mode catalog --allow-catalog`; that path performs
+a safe incremental merge when the current brain already covers the prior accepted
+set exactly. If the current manifest is missing or drift is detected in
+compatibility mode, it falls back to `brain rebuild --mode catalog
+--allow-catalog`; catalog rebuilds remain reproducible from accepted source
+episodes. `brain audit` reports the current build mode while preserving the last
+full rebuild timestamp across incremental updates.
 Brain shard summaries and daily memory-sweep shards both use
 `limits.shard_episode_count` from `configs/default.yaml`, so context budget changes
 are reflected in rebuilds and run manifests instead of being hidden in code.
