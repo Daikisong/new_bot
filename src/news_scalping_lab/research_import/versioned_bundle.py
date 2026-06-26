@@ -56,8 +56,10 @@ class BundleImportResult:
 
 @dataclass(frozen=True)
 class BlockHashValidation:
-    mismatches: dict[str, dict[str, str]]
+    mismatches: dict[str, dict[str, Any]]
     self_referential: dict[str, dict[str, str]]
+    expectation_sources: dict[str, list[dict[str, str]]]
+    expectation_conflicts: dict[str, list[dict[str, str]]]
 
 
 class BundleVersionAdapter(Protocol):
@@ -125,6 +127,8 @@ class BaseBundleAdapter:
             "block_hashes": block_hashes,
             "hash_mismatches": hash_mismatches,
             "self_referential_hashes": hash_validation.self_referential,
+            "hash_expectation_sources": hash_validation.expectation_sources,
+            "hash_expectation_conflicts": hash_validation.expectation_conflicts,
             "source_reference_count": sum(
                 len(_string_list(record.get("provenance_source_ids")))
                 for record in records
@@ -142,6 +146,7 @@ class BaseBundleAdapter:
             validation["record_count_matches_manifest"] is True
             and validation["training_eligible_count_matches_manifest"] is True
             and not hash_mismatches
+            and not hash_validation.expectation_conflicts
             and not missing_source_refs
         )
         return validation
@@ -869,6 +874,7 @@ def _hash_validation(
     expected_hashes: dict[str, str] = {}
     actual_hashes = _block_hashes(parsed)
     self_referential: dict[str, dict[str, str]] = {}
+    expectation_sources: dict[str, list[dict[str, str]]] = {}
     embedded = manifest.get("embedded_blocks")
     if isinstance(embedded, dict):
         for block_name, block_meta in embedded.items():
@@ -884,12 +890,25 @@ def _hash_validation(
                         "reason": "hash is declared inside the same block it describes",
                     }
                     continue
-                expected_hashes[block_name] = sha
+                _add_hash_expectation(
+                    expected_hashes,
+                    expectation_sources,
+                    block_name=block_name,
+                    expected=sha,
+                    source="bundle_manifest.embedded_blocks",
+                    replace=True,
+                )
     checked_hashes = validation_report.get("checked_artifact_hashes")
     if isinstance(checked_hashes, dict):
         for key, value in checked_hashes.items():
             if isinstance(key, str) and isinstance(value, str) and key in parsed.payload_blocks:
-                expected_hashes.setdefault(key, value)
+                _add_hash_expectation(
+                    expected_hashes,
+                    expectation_sources,
+                    block_name=key,
+                    expected=value,
+                    source="validation_report.checked_artifact_hashes",
+                )
     legacy_fields = {
         "blind_prediction.json": "prediction_sha256",
         "research_report.md": "research_report_sha256",
@@ -902,11 +921,23 @@ def _hash_validation(
     for block_name, field_name in legacy_fields.items():
         value = manifest.get(field_name)
         if isinstance(value, str) and value:
-            expected_hashes.setdefault(block_name, value)
+            _add_hash_expectation(
+                expected_hashes,
+                expectation_sources,
+                block_name=block_name,
+                expected=value,
+                source=f"bundle_manifest.{field_name}",
+            )
+    expectation_conflicts = _hash_expectation_conflicts(expectation_sources)
     mismatches = {
         block_name: {
             "expected": expected,
             "actual": actual_hashes.get(block_name, ""),
+            "sources": [
+                source["source"]
+                for source in expectation_sources.get(block_name, [])
+                if source["expected"] == expected
+            ],
         }
         for block_name, expected in sorted(expected_hashes.items())
         if block_name in actual_hashes and actual_hashes[block_name] != expected
@@ -914,4 +945,36 @@ def _hash_validation(
     return BlockHashValidation(
         mismatches=mismatches,
         self_referential=dict(sorted(self_referential.items())),
+        expectation_sources=dict(sorted(expectation_sources.items())),
+        expectation_conflicts=expectation_conflicts,
     )
+
+
+def _add_hash_expectation(
+    expected_hashes: dict[str, str],
+    expectation_sources: dict[str, list[dict[str, str]]],
+    *,
+    block_name: str,
+    expected: str,
+    source: str,
+    replace: bool = False,
+) -> None:
+    expectation_sources.setdefault(block_name, []).append(
+        {
+            "expected": expected,
+            "source": source,
+        }
+    )
+    if replace or block_name not in expected_hashes:
+        expected_hashes[block_name] = expected
+
+
+def _hash_expectation_conflicts(
+    expectation_sources: dict[str, list[dict[str, str]]],
+) -> dict[str, list[dict[str, str]]]:
+    conflicts: dict[str, list[dict[str, str]]] = {}
+    for block_name, sources in sorted(expectation_sources.items()):
+        expected_values = {source["expected"] for source in sources}
+        if len(expected_values) > 1:
+            conflicts[block_name] = sources
+    return conflicts

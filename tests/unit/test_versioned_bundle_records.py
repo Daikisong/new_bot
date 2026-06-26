@@ -28,6 +28,7 @@ def _synthetic_v11_bundle(
     *,
     schema_version: str = "nslab.research_bundle.v11",
     include_unknown: bool = True,
+    validation_checked_hashes: dict[str, str] | None = None,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -101,15 +102,18 @@ def _synthetic_v11_bundle(
         ensure_ascii=False,
         sort_keys=True,
     )
-    validation_report = json.dumps(
-        {
-            "schema_version": "nslab.validation_report.v3",
-            "critical_error_count": 0,
-            "computed_counts": {
-                "brain_delta_record_count": len(records),
-                "training_eligible_record_count": 2,
-            },
+    validation_payload = {
+        "schema_version": "nslab.validation_report.v3",
+        "critical_error_count": 0,
+        "computed_counts": {
+            "brain_delta_record_count": len(records),
+            "training_eligible_record_count": 2,
         },
+    }
+    if validation_checked_hashes is not None:
+        validation_payload["checked_artifact_hashes"] = validation_checked_hashes
+    validation_report = json.dumps(
+        validation_payload,
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -260,6 +264,9 @@ def test_invalid_bundle_can_only_be_staged_not_accepted(tmp_path: Path) -> None:
     )
     assert staged.accepted is False
     assert staged.validation["passed"] is False
+    assert staged.validation["hash_mismatches"]["brain_delta.jsonl"]["sources"] == [
+        "bundle_manifest.embedded_blocks"
+    ]
     assert len(BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")) == 2
     assert BrainRecordStore(tmp_path).list_records() == []
 
@@ -311,6 +318,38 @@ def test_self_referential_manifest_hash_is_reported_without_blocking_import(
     assert imported.validation["self_referential_hashes"]["bundle_manifest.json"][
         "expected"
     ] == "1" * 64
+
+
+def test_conflicting_hash_expectation_sources_block_acceptance(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "conflicting_hash_sources_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            validation_checked_hashes={"brain_delta.jsonl": "2" * 64},
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert validation["passed"] is False
+    assert validation["hash_mismatches"] == {}
+    assert validation["hash_expectation_conflicts"]["brain_delta.jsonl"] == [
+        {
+            "expected": validation["block_hashes"]["brain_delta.jsonl"],
+            "source": "bundle_manifest.embedded_blocks",
+        },
+        {
+            "expected": "2" * 64,
+            "source": "validation_report.checked_artifact_hashes",
+        },
+    ]
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
 
 
 def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Path) -> None:
