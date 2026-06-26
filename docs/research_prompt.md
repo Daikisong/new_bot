@@ -7,6 +7,560 @@ execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
 ```
 
 
+────────────────────────────────────────
+GOLD-RUN HARD GUARD — 20260622 품질 회귀 방지 규칙
+────────────────────────────────────────
+
+이 파일 전체가 실행 프롬프트다. 사용자는 별도 설명 대신 이 Markdown을 읽게 할 수 있으며, 이 섹션은 아래 모든 본문보다 우선한다.
+
+이번 실행의 목표는 `20260622_nslab_episode_bundle.example.md`와 같은 gold-shape episode를 만드는 것이다.
+단, 20260622의 숫자값을 하드코딩하지 않는다. 20260622는 형식·검증·record 밀도·phase 분리의 기준 fixture이며, 이번 날짜의 실제 `row_count`, `event_count`, `outcome_count`, `brain_delta_record_count`는 입력 데이터에서 계산한다.
+
+## G0. 이번 보강의 재발 방지 대상
+
+다음 사고가 하나라도 발생하면 `ACCEPT_FULL`을 선언하지 않는다.
+
+```text
+final_watchlist가 20개를 초과했는데 validator가 통과
+validator가 생성된 결과값을 expected로 재사용
+candidate pool과 final watchlist 혼합
+reason이 P시점 소형시총·거래회전·최근 고가 이력뿐인데 final watchlist 편입
+brain_delta를 record-level 학습재료가 아니라 20~40개 요약 교훈으로 축소
+schema_version 또는 artifact_type을 gold-shape와 다르게 생성
+canonical_graph_sha256·renderer_version·validator_version 누락
+context에 이미 D outcome이 있는데 새 BLIND로 ACCEPT_FULL 생성
+CSV 확보 실패 후 다른 날짜 CSV 또는 샌드박스 잔존 파일 사용
+```
+
+## G1. 자기 결과를 정답으로 삼는 validator 금지
+
+`validate_nslab_bundle.py`는 생성된 결과값을 expected로 사용하면 안 된다.
+
+금지 예:
+
+```text
+final_watchlist가 25개라서 expected_rank_set = 1..25로 설정
+실제 brain_delta가 42개라서 expected_brain_delta_count = 42로 설정
+생성된 marker 개수를 expected marker count로 설정
+생성된 schema_version을 expected schema_version으로 설정
+생성된 bundle_status를 expected bundle_status로 설정
+```
+
+validator의 expected 값은 반드시 다음 중 하나에서만 온다.
+
+```text
+1. 이 프롬프트의 명시 상수
+2. CSV/price snapshot을 실제 파싱해 계산한 입력 row_count/outcome row_count
+3. canonical_graph에서 BLIND seal 전에 확정한 object count
+4. research_daily access JSON의 sha256/row_count
+5. 20260622 gold fixture에서 가져온 구조적 상수
+```
+
+각 critical check는 다음 필드를 반드시 가진다.
+
+```json
+{
+  "check_id": "...",
+  "passed": true,
+  "actual": "실제 계산값",
+  "expected": "프로토콜 상수 또는 입력에서 계산한 값",
+  "expected_source": "PROMPT_CONSTANT | INPUT_PARSE | ACCESS_JSON | CANONICAL_GRAPH_PRESEAL | GOLD_SHAPE_CONSTANT",
+  "severity": "critical | warning",
+  "error_ids": []
+}
+```
+
+다음 중 하나라도 있으면 즉시 실패다.
+
+```text
+expected_source == GENERATED_OUTPUT
+expected_source == SELF_DECLARED_MANIFEST
+critical check의 actual 또는 expected가 null
+필수 critical check 누락
+validator 내부에서 final_watchlist max_rank를 expected rank max로 사용
+```
+
+실패 처리:
+
+```text
+validator_exit_code = 2
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_SELF_REFERENCE
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G2. Gold-shape front matter hard contract
+
+최종 bundle front matter는 반드시 다음 값을 사용한다.
+
+```yaml
+schema_version: nslab.research_bundle.v11
+artifact_type: research_episode_bundle
+execution_protocol_version: nslab.brain_grade_semantic_provenance_locked.v11
+```
+
+다음 필드는 front matter와 `bundle_manifest.json`에 모두 존재해야 한다.
+
+```text
+episode_id
+trade_date
+previous_trade_date
+next_trade_date
+window_start
+cutoff_at
+input_file
+input_sha256
+blind_packet_manifest_sha256
+sealed_blind_report_sha256
+research_daily_access_sha256
+blind_snapshot_sha256
+outcome_snapshot_sha256
+canonical_graph_sha256
+canonical_graph_object_counts
+renderer_version
+renderer_sha256
+validator_version
+validator_sha256
+validator_exit_code
+created_at
+```
+
+금지:
+
+```text
+schema_version: nslab.episode_bundle.v11
+artifact_type: nslab_episode_bundle
+canonical_graph_sha256 누락
+renderer_version 누락
+validator_version 누락
+```
+
+위반 시:
+
+```text
+bundle_status = QUARANTINE_SCHEMA_CONTRACT_VIOLATION
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G3. final_watchlist / candidate pool / continuation pool 분리
+
+아래 네 집합을 절대 섞지 않는다.
+
+```text
+1. direct_observation_population
+   - 전수 관측 모집단
+   - 개수 제한 없음
+
+2. candidate_screening_population
+   - 모든 observation의 INCLUDE / WATCH / EXCLUDE 심사
+   - 개수 제한 없음
+
+3. continuation_watchlist 또는 continuation_pool
+   - D-1 수급·고가·회전율 기반 별도 pool
+   - final_watchlist가 아님
+   - 개수 제한 없음 또는 별도 top N 가능
+   - final rank와 다른 continuation_rank를 사용
+
+4. final_watchlist
+   - 최종 장전 관심종목
+   - 반드시 1~20개
+   - rank는 1부터 N까지 연속
+   - N <= 20
+```
+
+validator hard check:
+
+```python
+final_watchlist_size = len(blind_prediction["final_watchlist"])
+rank_set = sorted(item["rank"] for item in blind_prediction["final_watchlist"])
+expected_rank_set = list(range(1, final_watchlist_size + 1))
+
+assert final_watchlist_size <= 20
+assert rank_set == expected_rank_set
+assert max(rank_set, default=0) <= 20
+assert duplicate_ticker_count(final_watchlist) == 0
+```
+
+다음 방식은 금지한다.
+
+```text
+expected_rank_set = list(range(1, max(rank_set)+1))만으로 통과 처리
+final_watchlist가 25개인데 rank_sequence_valid=true 처리
+rank 21~25를 final_watchlist에 넣고 “연속이라서 유효”로 처리
+```
+
+위반 시:
+
+```text
+watchlist_size_violation_count += 1
+watchlist_rank_over_20_count += 1
+critical_error_count += 1
+bundle_status = QUARANTINE_FINAL_WATCHLIST_CONTRACT
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G4. final candidate reason 품질 제한
+
+`final_watchlist`에 들어가는 각 candidate는 다음 중 하나 이상의 concrete catalyst를 가져야 한다.
+
+```text
+계약/수주/공급/프로젝트 확정
+제품 개발 완료 + 상업화/출시/생산/매출 연결 문구
+기술수출/임상/허가/승인/과제 선정 등 바이오 단계 진전
+자사주 소각/배당/명확한 주주환원
+최대주주/전략투자자 자금 투입 + overhang 완화 근거
+cutoff 이전 issuer-scoped event와 직접 연결된 named beneficiary path
+```
+
+다음 reason만으로 final_watchlist에 넣으면 안 된다.
+
+```text
+P시점 소형 시총
+P시점 중소형 시총
+P시점 거래 회전 존재
+최근 5거래일 10% 이상 고가 이력
+최근 5거래일 고가 반복
+전일 급등
+D-1 상한가
+대형주라 탄성 제한
+issuer-specific 사건이 있다
+일반 테마 문맥이 있다
+```
+
+위 feature는 보조 feature로만 허용한다.
+
+각 final item은 반드시 다음을 가진다.
+
+```text
+source_fact_ids >= 1
+supporting_fact_ids >= 1 또는 supporting_inference_ids >= 1
+source_ids >= 1
+preopen_thesis가 완전한 문장
+why_now가 원문 fact 또는 safe D-1 feature와 연결
+red_team_counterargument가 1개 이상
+```
+
+`source_event_ids`만 있고 `source_fact_ids`가 없으면 final candidate로 인정하지 않는다.
+
+위반 시:
+
+```text
+final_candidate_without_fact_count += 1
+weak_final_reason_count += 1
+critical_error_count += 1
+ACCEPT_FULL 금지
+```
+
+## G5. Brain Delta는 요약문이 아니라 record-level 학습 재료다
+
+`brain_delta.jsonl`은 고수준 교훈 20~40개짜리 요약 파일이 아니다.
+`news-scalping-lab`이 수입할 record-level memory source다.
+
+반드시 다음 record population을 보존한다.
+
+```text
+1. supervised_issuer_day_case
+   - trade_date + ticker 단위
+   - unique issuer-day 1개당 1 record
+   - D outcome label 포함
+   - sample_weight 포함
+   - training_eligible 명시
+
+2. supervised_direct_event_case
+   - screening/event 단위
+   - blind decision + source facts + D outcome 포함
+   - event-level sample_weight 포함
+
+3. supervised_theme_formation_case
+   - sealed theme universe 기준
+   - post-seal member mutation 금지
+
+4. blind_leader_preference_pair
+   - BLIND에서 봉인한 pair만
+   - outcome 뒤 방향성 확인/교정
+
+5. candidate_generation_error_case / ranking_error_case / timing_impossible_case / newsless_case
+   - 단, outcome-only 관계를 training_eligible로 승격 금지
+```
+
+minimum count contract:
+
+```text
+expected_brain_delta_min =
+    issuer_day_case_count
+  + direct_event_case_count
+  + theme_formation_case_count
+  + blind_leader_pair_count
+```
+
+validator hard check:
+
+```python
+assert brain_delta_record_count >= expected_brain_delta_min
+assert brain_delta_count_by_type["supervised_issuer_day_case"] == issuer_day_case_count
+assert brain_delta_count_by_type["supervised_direct_event_case"] == direct_event_case_count
+assert brain_delta_count_by_type["blind_leader_preference_pair"] == blind_leader_pair_count
+```
+
+특정 population이 0이면 `validation_report.json`에 그 이유를 기록한다.
+`요약 교훈만 생성`은 `ACCEPT_FULL` 사유가 될 수 없다.
+
+위반 시:
+
+```text
+brain_delta_underfilled_count += 1
+critical_error_count += 1
+bundle_status = QUARANTINE_BRAIN_DELTA_UNDERFILLED
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G6. Canonical graph first
+
+JSON, JSONL, Markdown 표를 따로 만들지 않는다.
+
+반드시 먼저 내부 작업 디렉터리에 `canonical_graph.json`을 만든다.
+그 뒤 renderer는 canonical graph에서만 다음을 렌더링한다.
+
+```text
+blind_report.md
+postmortem_report.md
+research_report.md
+blind_prediction.json
+row_disposition.jsonl
+entity_ledger_blind.jsonl
+fact_ledger_blind.jsonl
+inference_ledger_blind.jsonl
+candidate_screening.jsonl
+blind_packet_manifest.json
+entity_resolution.jsonl
+outcome_ledger.jsonl
+research_episode.json
+brain_delta.jsonl
+source_ledger.jsonl
+id_registry.json
+validation_report.json
+bundle_manifest.json
+```
+
+Markdown 표와 JSON의 숫자가 다르면 renderer bug로 본다.
+
+```text
+bundle_status = QUARANTINE_RENDERER_INCONSISTENCY
+brain_eligible = false
+ACCEPT_FULL 금지
+```
+
+## G7. validator 필수 hard checks
+
+`validate_nslab_bundle.py`는 최소 다음 check_id를 실제 계산해야 한다.
+
+```text
+schema_contract_verified
+required_marker_count_verified
+json_parse_all_verified
+jsonl_parse_all_verified
+input_sha256_verified
+input_row_count_verified
+csv_control_char_count_zero
+research_daily_access_sha_verified
+blind_snapshot_sha_verified
+outcome_snapshot_sha_verified
+row_disposition_count_equals_news_rows
+outcome_ledger_count_equals_outcome_rows
+final_watchlist_size_lte_20
+final_watchlist_rank_sequence_1_to_N
+final_watchlist_max_rank_lte_20
+final_watchlist_duplicate_ticker_zero
+final_candidate_source_fact_present
+weak_final_reason_zero
+blind_report_phase_leak_zero
+embedded_blind_report_hash_match
+separator_count_equals_1
+id_registry_duplicate_zero
+id_registry_orphan_reference_zero
+source_reference_missing_zero
+fact_quote_found_count_equals_fact_count
+fact_quote_offset_verified
+accepted_issuer_false_positive_zero
+prefix_or_substring_binding_zero
+group_brand_venue_product_generic_binding_zero
+issuer_day_dedup_verified
+direct_event_case_count_verified
+brain_delta_record_count_verified
+training_eligible_record_count_verified
+theme_hindsight_separation_verified
+retrospective_theme_outcome_only_training_zero
+leader_pair_direction_verified
+postmortem_correction_semantic_consistency_verified
+placeholder_token_count_zero
+incomplete_sentence_count_zero
+canonical_graph_consistency_verified
+validator_expected_source_not_generated_output
+```
+
+다음 중 하나라도 있으면 `ACCEPT_FULL` 금지:
+
+```text
+누락된 hard check
+expected가 생성 결과에서 복사된 check
+actual/expected가 null인 critical check
+critical check failed
+validator_exit_code != 0
+critical_error_count > 0
+```
+
+## G8. 20260622 fixture 구조 회귀검사
+
+가능하면 `docs/20260622_nslab_episode_bundle.example.md`를 열어 형식 회귀검사 fixture로 사용한다.
+비교 대상은 숫자값 자체가 아니라 구조다.
+
+반드시 확인할 것:
+
+```text
+schema_version == nslab.research_bundle.v11
+artifact_type == research_episode_bundle
+final_watchlist size <= 20
+front matter에 canonical_graph_sha256 존재
+renderer_version 존재
+validator_version 존재
+bundle_manifest에 fact_record_count 존재
+issuer_day_case_count 존재
+direct_event_case_count 존재
+brain_delta_record_count 존재
+training_eligible_record_count 존재
+validation_report에 critical_error_count == 0
+brain_delta가 record-level population을 가진다
+```
+
+fixture와 다른 구조를 만들 경우 `schema_deviation_report`에 기록한다.
+critical field deviation이면 `ACCEPT_FULL` 금지다.
+
+## G9. CSV 확보·정화 preflight
+
+선택 CSV는 반드시 byte로 확보하고 전체 파싱한다.
+
+성공 조건:
+
+```text
+local_csv_basename == selected_input_file
+byte_size > 0
+sha256 계산 완료
+columns == page,row,date,time,title,body
+CSV full parse 성공
+row_count > 0
+min/max published_at 계산 성공
+time_unverified_rows 계산 완료
+ESC(0x1b) count == 0
+ETX(0x03) count == 0
+tab/LF/CR 제외 C0 control char count == 0
+```
+
+제어문자가 있으면:
+
+```text
+1. 원본 sha256과 control char count를 audit에 기록
+2. ESC/ETX 및 허용되지 않는 C0 control char만 제거한 sanitized copy 생성
+3. row_count와 columns가 동일한지 검증
+4. sanitized sha256을 input_sha256으로 사용
+5. sanitize_report를 source_ledger와 validation_report에 기록
+```
+
+CSV 확보 또는 full parse 실패 시:
+
+```text
+다른 날짜 CSV 사용 금지
+샌드박스 잔존 파일 사용 금지
+최신 CSV로 대체 금지
+가격 snapshot 날짜로 뉴스 날짜 변경 금지
+output은 QUARANTINE_INPUT_UNPARSED 또는 CSV_ACQUIRE_FAILED만 허용
+ACCEPT_FULL 금지
+```
+
+## G10. context contamination guard
+
+이 대화/세션에 이미 해당 D의 outcome snapshot 숫자, winner list, postmortem 결과가 노출되어 있으면 새 BLIND 연구로 `ACCEPT_FULL`을 만들 수 없다.
+
+다음 중 하나라도 true이면:
+
+```text
+context_already_contains_D_outcome_before_formal_renderer_seal == true
+D outcome rows were printed before BLIND seal
+D winner census was discussed before BLIND seal
+previous attempt’s postmortem for same D is present in context
+```
+
+처리:
+
+```text
+bundle_status = QUARANTINE_CONTEXT_CONTAMINATED
+blind_valid = false
+forecast_evaluation_eligible = false
+brain_eligible = false
+```
+
+단, 이미 봉인된 이전 BLIND packet을 그대로 재사용하고 그 hash가 검증되면 `POSTMORTEM_ONLY_REPAIR`는 가능하다.
+이 경우에도 새로 BLIND 후보를 고치지 않는다.
+
+## G11. 최종 ACCEPT_FULL 판정식
+
+`ACCEPT_FULL`은 다음 식으로만 결정한다.
+
+```python
+accept_full_allowed = (
+    schema_contract_verified
+    and csv_full_parse_complete
+    and research_daily_access_verified
+    and blind_snapshot_hash_verified
+    and outcome_snapshot_hash_verified
+    and blind_packet_hash_verified
+    and embedded_blind_report_hash_match
+    and final_watchlist_size <= 20
+    and final_watchlist_rank_sequence_valid
+    and final_watchlist_max_rank <= 20
+    and final_watchlist_duplicate_ticker_count == 0
+    and required_marker_count_verified
+    and id_references_valid
+    and source_references_valid
+    and fact_quote_entailment_valid
+    and weak_final_reason_count == 0
+    and theme_hindsight_separation_valid
+    and brain_delta_record_count_verified
+    and validator_expected_source_not_generated_output
+    and validator_exit_code == 0
+    and critical_error_count == 0
+    and context_contamination_count == 0
+)
+```
+
+if `accept_full_allowed is not True`:
+
+```text
+bundle_status != ACCEPT_FULL
+brain_eligible = false
+```
+
+`ACCEPT_FULL`, `brain_eligible`, `validator_exit_code`는 사람이 임의로 쓰지 않는다.
+반드시 `validate_nslab_bundle.py`의 계산 결과를 그대로 사용한다.
+
+## G12. 실패해도 거짓 성공보다 낫다
+
+이 프롬프트의 목표는 언제나 `ACCEPT_FULL`이지만, 결함이 남은 `ACCEPT_FULL`은 가장 나쁜 결과다.
+다음 우선순위를 따른다.
+
+```text
+1. 완전 검증된 ACCEPT_FULL
+2. 원인과 ID가 분명한 QUARANTINE
+3. CSV/가격 확보 실패 영수증
+4. 검증되지 않은 ACCEPT_FULL 금지
+```
+
+최종 채팅 응답은 사용자의 별도 형식을 따르되, 생성된 실제 Markdown 파일 하나만 가리킨다.
+
+
 이 프로토콜의 핵심은 “연구량”보다 “학습 가능한 의미 정확도”다.
 원자 사실·추론·후보·결과 label의 경계를 보존하고, 근거 없는 feature나 사후 혼합 record를 두뇌에 넣지 않는다.
 
@@ -2232,7 +2786,22 @@ blind_limitations
 
 최종 watchlist는 최대 20개지만 직접 observation과 screening 모집단에는 개수 제한을 두지 않는다.
 
+이 제한은 권고가 아니라 hard gate다.
+
+```text
+final_watchlist_size <= 20
+max(final_watchlist.rank) <= 20
+rank_set == 1..N
+duplicate_ticker_count == 0
+```
+
+rank 21 이상은 final_watchlist에 존재할 수 없다. 21번째 이후 후보는 `candidate_screening_population`, `secondary_watch_pool`, `continuation_watchlist`, `excluded_but_notable` 중 하나로 이동해야 한다.
+
 최종 rank는 1부터 N까지 빈칸 없이 연속돼야 한다. 후보 삭제 후 순위를 다시 매겨야 하며 10위·19위 같은 누락을 허용하지 않는다.
+
+validator는 `expected_rank_set`을 생성 결과의 `max_rank`에서 만들 수 없다. 반드시 `final_watchlist_size <= 20`을 먼저 확인하고, 그 뒤 `expected_rank_set = 1..final_watchlist_size`로 검증한다.
+
+최종 후보의 `reason`은 소형시총·거래회전·최근 고가 이력만으로 구성될 수 없다. 각 final item은 최소 1개 이상의 `source_fact_ids`와 원문 quote에 연결된 concrete catalyst를 가져야 한다.
 
 ## 3.16 BLIND 품질 게이트
 
@@ -4492,6 +5061,22 @@ error_scope_fixture_failure_count
 ```
 
 `validation_report.json`은 각 검사 항목의 실제 count·오류 ID·수리 이력을 가진다.
+
+각 critical check는 `actual`, `expected`, `expected_source`, `severity`, `error_ids`를 반드시 기록한다. `expected_source`가 `GENERATED_OUTPUT` 또는 `SELF_DECLARED_MANIFEST`이면 validator self-reference 오류로 처리한다.
+
+다음 check는 누락되면 critical error다.
+
+```text
+final_watchlist_size_lte_20
+final_watchlist_max_rank_lte_20
+final_watchlist_rank_sequence_1_to_N
+final_candidate_source_fact_present
+weak_final_reason_zero
+brain_delta_record_count_verified
+validator_expected_source_not_generated_output
+schema_contract_verified
+canonical_graph_consistency_verified
+```
 
 
 ## 11.1 ID Registry 계약
