@@ -494,6 +494,16 @@ def research_inspect_bundle(path: Path) -> None:
             "missing_source_reference_count": inspection.get(
                 "missing_source_reference_count"
             ),
+            "available_from_valid": inspection.get("available_from_valid"),
+            "invalid_available_from_record_count": inspection.get(
+                "invalid_available_from_record_count"
+            ),
+            "outcome_label_quality_valid": inspection.get(
+                "outcome_label_quality_valid"
+            ),
+            "invalid_outcome_label_quality_record_count": inspection.get(
+                "invalid_outcome_label_quality_record_count"
+            ),
             "validation": inspection.get("validation"),
         },
     )

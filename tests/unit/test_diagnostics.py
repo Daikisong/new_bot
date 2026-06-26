@@ -1983,6 +1983,8 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "training_eligible_count_matches_manifest": True,
         "available_from_valid": True,
         "invalid_available_from_record_count": 0,
+        "outcome_label_quality_valid": True,
+        "invalid_outcome_label_quality_record_count": 0,
         "hash_mismatch_count": 0,
         "hash_expectation_conflict_count": 0,
         "missing_source_reference_count": 0,

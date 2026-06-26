@@ -23,6 +23,14 @@ from news_scalping_lab.records.models import (
 from news_scalping_lab.records.store import BrainRecordStore, StoredBundleResult
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, parse_datetime, sha256_text, stable_id
 
+VALID_OUTCOME_LABEL_QUALITIES = frozenset(
+    {
+        "verified",
+        "quarantined",
+        "no_tradable_row",
+    }
+)
+
 
 class VersionedBundleImportError(ValueError):
     """Raised when a versioned bundle cannot be normalized safely."""
@@ -93,6 +101,9 @@ class BaseBundleAdapter:
         missing_source_refs = _missing_source_references(records, source_ids)
         invalid_available_from_fields = _invalid_bundle_available_from_fields(parsed)
         invalid_available_from_record_ids = _invalid_record_available_from_ids(records)
+        invalid_label_quality_record_ids = _invalid_outcome_label_quality_record_ids(
+            records
+        )
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -143,6 +154,8 @@ class BaseBundleAdapter:
             ),
             "invalid_available_from_fields": invalid_available_from_fields,
             "invalid_available_from_record_ids": invalid_available_from_record_ids,
+            "outcome_label_quality_valid": not invalid_label_quality_record_ids,
+            "invalid_outcome_label_quality_record_ids": invalid_label_quality_record_ids,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
             "critical_error_count": _int_field(
                 manifest,
@@ -157,6 +170,7 @@ class BaseBundleAdapter:
             and not hash_validation.expectation_conflicts
             and not missing_source_refs
             and validation["available_from_valid"] is True
+            and validation["outcome_label_quality_valid"] is True
         )
         return validation
 
@@ -405,6 +419,9 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     hash_conflicts = validation.get("hash_expectation_conflicts")
     missing_source_refs = validation.get("missing_source_references")
     invalid_available_from_record_ids = validation.get("invalid_available_from_record_ids")
+    invalid_label_quality_record_ids = validation.get(
+        "invalid_outcome_label_quality_record_ids"
+    )
     return {
         "path": path.as_posix(),
         "raw_bundle_sha256": file_sha256(path),
@@ -445,6 +462,12 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "invalid_available_from_record_count": (
             len(invalid_available_from_record_ids)
             if isinstance(invalid_available_from_record_ids, list)
+            else 0
+        ),
+        "outcome_label_quality_valid": validation.get("outcome_label_quality_valid"),
+        "invalid_outcome_label_quality_record_count": (
+            len(invalid_label_quality_record_ids)
+            if isinstance(invalid_label_quality_record_ids, list)
             else 0
         ),
         "inspection_status": (
@@ -1064,6 +1087,33 @@ def _invalid_record_available_from_ids(records: list[dict[str, Any]]) -> list[st
         identity = _optional_string(record.get("record_id")) or f"line:{line_number}"
         invalid.append(identity)
     return invalid
+
+
+def _invalid_outcome_label_quality_record_ids(
+    records: list[dict[str, Any]],
+) -> list[str]:
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        values = _outcome_label_quality_values(record)
+        if not values:
+            continue
+        if all(value in VALID_OUTCOME_LABEL_QUALITIES for value in values):
+            continue
+        identity = _optional_string(record.get("record_id")) or f"line:{line_number}"
+        invalid.append(identity)
+    return invalid
+
+
+def _outcome_label_quality_values(record: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    if "label_quality" in record:
+        value = record.get("label_quality")
+        values.append(value if isinstance(value, str) else "")
+    outcome = record.get("D_outcome")
+    if isinstance(outcome, dict) and "label_quality" in outcome:
+        value = outcome.get("label_quality")
+        values.append(value if isinstance(value, str) else "")
+    return values
 
 
 def _block_hashes(parsed: GenericParsedBundle) -> dict[str, str]:

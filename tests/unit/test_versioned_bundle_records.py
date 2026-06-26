@@ -35,6 +35,7 @@ def _synthetic_v11_bundle(
     include_unknown: bool = True,
     validation_checked_hashes: dict[str, str] | None = None,
     issuer_available_from: str | None = None,
+    issuer_label_quality: str | None = None,
     issuer_sample_weight: float = 1.0,
     direct_event_sample_weights: list[float] | None = None,
 ) -> str:
@@ -60,6 +61,14 @@ def _synthetic_v11_bundle(
             "training_eligible": True,
             "eligibility_reason": "synthetic verified label",
             "provenance_source_ids": ["SRC-SYNTH-1"],
+            **(
+                {
+                    "D_outcome": {"label_quality": issuer_label_quality},
+                    "label_quality": issuer_label_quality,
+                }
+                if issuer_label_quality is not None
+                else {}
+            ),
         },
         {
             "record_id": "BRAIN-SYNTH-PAIR",
@@ -881,6 +890,40 @@ def test_invalid_record_available_from_blocks_acceptance(tmp_path: Path) -> None
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
     assert report["validation"]["invalid_available_from_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER"
+    ]
+    assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
+def test_invalid_outcome_label_quality_blocks_acceptance(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "invalid_label_quality_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_label_quality="model_inference_unverified",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert inspection["validation_passed"] is False
+    assert inspection["outcome_label_quality_valid"] is False
+    assert inspection["invalid_outcome_label_quality_record_count"] == 1
+    assert validation["outcome_label_quality_valid"] is False
+    assert validation["invalid_outcome_label_quality_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER"
+    ]
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["validation"]["invalid_outcome_label_quality_record_ids"] == [
         "BRAIN-SYNTH-ISSUER"
     ]
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
