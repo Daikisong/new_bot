@@ -511,6 +511,56 @@ def test_warehouse_inspect_cli_reports_audit_errors(
     assert "warehouse inspect failed: invalid parquet" in result.output
 
 
+def test_full_check_cli_runs_configured_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    steps = (
+        ("lint", ["python", "-m", "ruff", "check", "."]),
+        ("audit", ["python", "-m", "news_scalping_lab.cli", "audit", "coverage"]),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> int:
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(cli_module, "_full_check_steps", lambda: steps)
+    monkeypatch.setattr(cli_module, "_run_full_check_step", fake_run)
+
+    result = CliRunner().invoke(app, ["full-check"])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [step[1] for step in steps]
+    assert '"passed": true' in result.output
+
+
+def test_full_check_cli_stops_on_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    steps = (
+        ("lint", ["python", "-m", "ruff", "check", "."]),
+        ("pytest", ["python", "-m", "pytest"]),
+        ("audit", ["python", "-m", "news_scalping_lab.cli", "audit", "coverage"]),
+    )
+    exit_codes = {"lint": 0, "pytest": 5, "audit": 0}
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> int:
+        seen.append(command)
+        step_name = next(name for name, step_command in steps if step_command == command)
+        return exit_codes[step_name]
+
+    monkeypatch.setattr(cli_module, "_full_check_steps", lambda: steps)
+    monkeypatch.setattr(cli_module, "_run_full_check_step", fake_run)
+
+    result = CliRunner().invoke(app, ["full-check"])
+
+    assert result.exit_code == 5
+    assert seen == [steps[0][1], steps[1][1]]
+    assert '"passed": false' in result.output
+    assert '"failed": "pytest"' in result.output
+
+
 def test_warehouse_inspect_cli_includes_counts_and_status(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

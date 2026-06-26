@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from collections import Counter
 from collections.abc import Iterable
 from datetime import date, datetime
@@ -141,6 +143,35 @@ def _exit_with_error(exc: Exception) -> NoReturn:
     raise typer.Exit(code=1) from exc
 
 
+def _full_check_steps() -> tuple[tuple[str, list[str]], ...]:
+    python = sys.executable
+    return (
+        ("ruff", [python, "-m", "ruff", "check", "."]),
+        ("mypy", [python, "-m", "mypy", "src/news_scalping_lab"]),
+        ("pytest", [python, "-m", "pytest"]),
+        ("audit hardcoding", [python, "-m", "news_scalping_lab.cli", "audit", "hardcoding"]),
+        ("audit provenance", [python, "-m", "news_scalping_lab.cli", "audit", "provenance"]),
+        (
+            "audit lookahead",
+            [
+                python,
+                "-m",
+                "news_scalping_lab.cli",
+                "audit",
+                "lookahead",
+                "--trade-date",
+                "2026-06-24",
+            ],
+        ),
+        ("audit coverage", [python, "-m", "news_scalping_lab.cli", "audit", "coverage"]),
+        ("brain audit", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
+    )
+
+
+def _run_full_check_step(command: list[str]) -> int:
+    return subprocess.run(command, check=False).returncode
+
+
 @app.command()
 def init() -> None:
     settings = load_settings()
@@ -172,6 +203,19 @@ def doctor(
     readiness = report.get("readiness")
     if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
         raise typer.Exit(code=1)
+
+
+@app.command("full-check")
+def full_check() -> None:
+    results: list[dict[str, object]] = []
+    for name, command in _full_check_steps():
+        typer.echo(f"running {name}: {' '.join(command)}", err=True)
+        exit_code = _run_full_check_step(command)
+        results.append({"name": name, "command": command, "exit_code": exit_code})
+        if exit_code != 0:
+            _echo({"passed": False, "failed": name, "results": results})
+            raise typer.Exit(code=exit_code)
+    _echo({"passed": True, "results": results})
 
 
 @app.command("ui")

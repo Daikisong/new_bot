@@ -24,7 +24,8 @@ audit:
 	python -m news_scalping_lab.cli audit coverage
 	python -m news_scalping_lab.cli brain audit
 
-full-check: check audit
+full-check:
+	python -m news_scalping_lab.cli full-check
 
 demo:
 	python -m news_scalping_lab.cli init

@@ -327,7 +327,8 @@ def test_makefile_exposes_quality_and_project_audit_targets() -> None:
         "\tpython -m news_scalping_lab.cli audit lookahead --trade-date 2026-06-24",
         "\tpython -m news_scalping_lab.cli audit coverage",
         "\tpython -m news_scalping_lab.cli brain audit",
-        "full-check: check audit",
+        "full-check:",
+        "\tpython -m news_scalping_lab.cli full-check",
         "demo:",
         "\tpython -m news_scalping_lab.cli brain audit",
         "\tpython -m news_scalping_lab.cli warehouse rebuild",
@@ -352,6 +353,7 @@ def test_readme_documents_full_project_quality_gate() -> None:
         "python -m ruff check .",
         "python -m mypy src/news_scalping_lab",
         "python -m pytest",
+        "python -m news_scalping_lab.cli full-check",
         "make full-check",
     ]
 
