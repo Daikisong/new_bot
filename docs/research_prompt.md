@@ -4,9 +4,270 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v17_semantic_type_checker_no_literal_denylist
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, phase 오염·다운로드 계층 혼동·validator 셀프채점·상장사 의미 오결속·근거 없는 catalyst/mechanism 생성·final filler 후보를 막는다. 단, 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v19_autonomous_full_run_no_premature_quarantine
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다.
 ```
+
+
+────────────────────────────────────────
+AUTONOMOUS FULL-RUN LOCK — 조기 포기·조기 격리 금지
+────────────────────────────────────────
+
+이 섹션은 실행자의 태도를 고정하는 최상위 완주 규칙이다.
+`PHASE COCKPIT LOCK`은 순서를 막고, 이 섹션은 빠른 실패 보고서·격리 skeleton으로 도망가는 행동을 막는다.
+
+목표는 빠른 채팅 답변이 아니라, 시간이 오래 걸려도 실제로 `ACCEPT_FULL + direct_brain_ingest_ready=true`까지 도달하는 것이다.
+
+## AF0. 기본 목표는 항상 ACCEPT_FULL이다
+
+이번 실행의 기본 목표는 항상 다음이다.
+
+```text
+primary_target = ACCEPT_FULL
+brain_eligible_target = true
+direct_brain_ingest_ready_target = true
+requires_manual_research_review_target = false
+research_effort_budget = exhaustive_current_response_no_time_cap
+quarantine_is_last_resort = true
+```
+
+다음 문장은 작업 초반의 결론으로 쓰지 않는다.
+
+```text
+완전한 연구는 실현 불가능할 수 있다
+일단 격리 파일을 만들겠다
+시간상 전체 파싱은 어렵다
+raw가 많아서 하나하나 못 본다
+JSON 다운로드가 까다로우므로 QUARANTINE으로 처리한다
+20분 안에 안 끝나므로 실패 번들을 만들겠다
+```
+
+위 표현은 모든 acquisition fallback, deterministic full parse, canonical_graph repair, renderer/validator repair loop를 끝까지 수행한 뒤에도 terminal blocker가 남았을 때만 `fatal_blockers` 설명에 쓸 수 있다.
+
+## AF1. 오래 걸리는 것은 정상이다
+
+이 작업은 원래 오래 걸리는 전수 연구다. 실행자는 속도를 이유로 연구 범위를 줄이지 않는다.
+
+다음을 금지한다.
+
+```text
+부분 파싱만 하고 전체 row_disposition 생략
+상위 몇 행만 보고 후보 생성
+price snapshot이 2600행 이상이라고 outcome ledger 생략
+brain_delta를 요약 교훈 몇 개로 축소
+critical validator 오류를 warning으로 낮추기
+repair loop 없이 QUARANTINE으로 종료
+```
+
+반드시 수행한다.
+
+```text
+뉴스 CSV full parse
+뉴스 CSV 전 행 row_disposition 생성
+P blind snapshot machine parse
+issuer/entity gate 통과 observation 전수 screening
+final 후보마다 semantic audit
+BLIND packet 실제 파일 저장·해시·봉인
+seal receipt 검증
+seal 이후 D outcome snapshot machine parse
+full-market outcome ledger와 winner census 생성
+issuer-day/direct-event/theme/pair brain_delta 생성
+renderer와 validator 독립 실행
+repair loop 후 최종 재검증
+```
+
+뉴스나 가격 행이 많으면 사람이 한 줄씩 정독하는 대신 parser·ledger·validator를 사용한다. “행이 많다”는 실패 사유가 아니라 machine-parse를 써야 한다는 신호다.
+
+## AF2. recoverable과 fatal을 먼저 분리한다
+
+오류를 발견하면 즉시 QUARANTINE으로 종료하지 말고 먼저 다음처럼 분류한다.
+
+```text
+RECOVERABLE_ACQUISITION_ERROR
+- curl/urllib/socket/DNS 실패
+- GitHub JSON/CSV 다운로드 방식 혼동
+- MIME sniff 오판
+- 파일명이 맞지만 blob HTML만 먼저 열린 상태
+- GitHub blob 화면이 too large to display를 표시
+처리: web/browser 또는 download fallback 재시도. ACCEPT_FULL 가능.
+
+RECOVERABLE_RENDER_VALIDATE_ERROR
+- count/hash/manifest 불일치
+- marker 불일치
+- renderer/validator hash 갱신 누락
+- direct_ingest_contract 계산값 불일치
+- cross-block input_coverage_warning 불일치
+처리: canonical_graph 수정 후 재렌더·재검증. ACCEPT_FULL 가능.
+
+RECOVERABLE_SEMANTIC_ERROR
+- 특정 final 후보의 quote_role/catalyst_type 불일치
+- unsupported mechanism
+- generic why_now
+- final filler 후보
+- 단순 언급을 catalyst로 승격한 후보
+처리: 해당 후보를 final에서 제거하거나 audit-only로 강등하고 재검증. ACCEPT_FULL 가능.
+
+FATAL_PHASE_LABEL_CONTAMINATION
+- BLIND seal 전에 outcome snapshot header/row_count/parse/sample/label/high_return/upper_limit 등 실제 label 또는 행 내용이 모델 context에 들어옴
+- BLIND 후보·순위 생성 뒤 D outcome을 보고 BLIND를 수정함
+처리: 같은 실행 ACCEPT_FULL 금지. QUARANTINE_PHASE_CONTAMINATED.
+```
+
+## AF3. pre-seal outcome 파일 접촉의 3단계 분류
+
+`access JSON`의 `outcome_snapshot_path`, expected sha256, expected row_count, expected bytes를 읽는 것은 오염이 아니다. 이것은 가격 label이 아니라 routing metadata다.
+
+BLIND seal 전 outcome 관련 접촉은 다음 3단계로 분류한다.
+
+### AF3-A. 안전한 metadata 접근
+
+아래는 오염이 아니다.
+
+```text
+access JSON의 outcome_snapshot_path 문자열
+access JSON의 expected outcome sha256 문자열
+access JSON의 expected outcome row_count 숫자
+access JSON의 expected outcome bytes 숫자
+```
+
+### AF3-B. 파일 download-only 또는 hash-only 접촉
+
+아래는 실수지만, 가격 label이 모델 context에 들어오지 않았으면 즉시 최종 QUARANTINE으로 가지 않는다.
+
+```text
+outcome 파일이 로컬에 생김
+outcome 파일을 다운로드했지만 header/row/sample/label을 읽지 않음
+outcome 파일의 sha256 또는 byte_size만 계산했고 row/header/label을 보지 않음
+```
+
+이 경우 다음 repair를 수행한다.
+
+```text
+1. outcome 파일을 읽지 않은 상태로 삭제하거나 preseal_quarantine/ 디렉터리로 이동한다.
+2. access_log.jsonl에 PRESEAL_OUTCOME_FILE_TOUCH_REPAIRED로 기록한다.
+3. phase_state를 PHASE_1_BUILD_BLIND_ONLY로 되돌린다.
+4. 이미 생성한 BLIND draft artifact가 있으면 폐기하고 canonical_graph를 초기화한다.
+5. BLIND를 처음부터 다시 생성·봉인한다.
+6. PHASE_2 seal receipt가 검증된 뒤 outcome snapshot을 다시 다운로드·검증한다.
+```
+
+이 repair가 가능하려면 다음 값이 모두 0이어야 한다.
+
+```text
+preseal_outcome_header_read_count == 0
+preseal_outcome_row_count_count == 0
+preseal_outcome_parse_count == 0
+preseal_outcome_print_count == 0
+preseal_outcome_label_calculation_count == 0
+preseal_outcome_used_in_blind_graph_count == 0
+```
+
+### AF3-C. 실제 label/content 오염
+
+다음 중 하나라도 발생하면 download-only가 아니라 content contamination이다.
+
+```text
+outcome snapshot header를 읽음
+outcome snapshot row_count를 계산함
+pandas/csv로 outcome을 parse함
+head/tail/grep/sample을 출력함
+upper_limit_touched, upper_limit_closed, high_return_pct, close_return_pct, high_return_rank를 계산하거나 출력함
+blind_snapshot과 outcome_snapshot을 같은 loop/list에서 함께 parse함
+```
+
+이 경우 같은 실행에서 `ACCEPT_FULL`로 복구하지 않는다. 단, 이때도 긴 가짜 연구를 만들지 말고 최소 격리 파일만 남긴다.
+
+```text
+bundle_status = QUARANTINE_PHASE_CONTAMINATED
+blind_valid = false
+forecast_evaluation_eligible = false
+brain_eligible = false
+direct_brain_ingest_ready = false
+final_watchlist = []
+outcome_ledger = []
+training_eligible_record_count = 0
+fatal_blockers = [PRESEAL_OUTCOME_LABEL_OR_CONTENT_ACCESS]
+```
+
+## AF4. 도구 실행 전 phase preflight를 수행한다
+
+도구를 호출하기 전에, 실행자는 곧 실행할 shell/Python 코드가 phase를 위반하지 않는지 먼저 검사한다.
+특히 PHASE_2 전 코드에 다음 패턴이 있으면 실행하지 말고 코드를 고친다.
+
+```text
+for path in [blind_snapshot_path, outcome_snapshot_path]
+for name in ['blind_snapshot_...', 'outcome_snapshot_...']
+sha256sum blind_snapshot_... outcome_snapshot_...
+pd.read_csv(outcome_snapshot_...)
+csv.DictReader(open(outcome_snapshot_...))
+upper touched / closed / h20 계산
+```
+
+핵심 원칙:
+
+```text
+PHASE_2 전에는 blind_snapshot만 실제 파일로 다룬다.
+PHASE_2 seal receipt가 검증되기 전에는 outcome 파일 내용을 절대 읽지 않는다.
+```
+
+## AF5. QUARANTINE skeleton 금지
+
+진짜 fatal contamination이 아닌데 다음 형태로 끝내는 것은 금지한다.
+
+```text
+row_disposition과 후보 audit 일부만 만들고 final_watchlist를 비워 둔 QUARANTINE skeleton
+brain_delta_record_count가 1~몇 개뿐인 격리 파일
+validator_exit_code != 0인데 최종 산출물 생성만 하고 중단
+“후보 풀은 디버깅용”이라는 이유로 연구를 끝낸 파일
+```
+
+정상 또는 recoverable 실행에서는 반드시 완전 연구 산출물로 수리한다.
+
+```text
+row_disposition_count == news_row_count
+fact/inference/screening 전수 생성
+final_semantic_audit 전수 생성
+final_watchlist는 0~20개이되, 강한 후보가 있으면 비우지 않는다
+outcome_ledger full-market 생성
+brain_delta record-level population 생성
+direct_ingest_contract 생성
+validator_exit_code == 0까지 repair loop 수행
+```
+
+## AF6. repair loop는 실제로 수행한다
+
+validator가 critical error를 반환하면 즉시 격리하지 않는다. 수리 가능한 오류는 canonical_graph를 고친 뒤 재렌더·재검증한다.
+
+수리 후에는 반드시 다음 순서를 반복한다.
+
+```text
+canonical_graph 수정
+→ renderer 재실행
+→ validator 재실행
+→ validation_report 갱신
+→ bundle_manifest 갱신
+→ direct_ingest_contract 갱신
+→ final bundle 재조립
+→ final bundle 재검증
+```
+
+repair loop는 최대 16회까지 허용한다. 각 loop는 `repair_log.jsonl`에 무엇을 고쳤는지 기록한다.
+최대 횟수 안에 모든 critical check가 통과하면 `ACCEPT_FULL`이다. 최대 횟수 후에도 critical error가 남으면 그때만 `QUARANTINE_REPAIR_EXHAUSTED`다.
+
+## AF7. 중간 질문 없이 내부 로그로 계속한다
+
+작업 중 문제가 있으면 사용자에게 묻지 말고 다음 파일에 기록한 뒤 계속한다.
+
+```text
+acquisition_warnings.jsonl
+repair_log.jsonl
+phase_state.json
+access_log.jsonl
+validation_report.json
+attempt_history.jsonl
+```
+
+최종 채팅 응답이 한 줄이어야 하더라도 내부 작업량을 줄이지 않는다. 최종 응답이 짧은 것은 출력 형식일 뿐이고, 내부 연구는 full episode bundle 기준으로 수행한다.
 
 
 ────────────────────────────────────────
@@ -59,7 +320,8 @@ PHASE_5_FINAL_ACCEPT_OR_QUARANTINE
 
 6. PHASE_5_FINAL_ACCEPT_OR_QUARANTINE
    - validator_exit_code == 0, critical_error_count == 0, direct_brain_ingest_ready == true일 때만 ACCEPT_FULL이다.
-   - 하나라도 실패하면 명시적 QUARANTINE으로 끝낸다.
+   - critical error가 있으면 먼저 PHASE_4 repair loop로 돌려 canonical_graph를 수리한다.
+   - 수리 불가능한 오염 또는 repair loop 소진이 확인된 뒤에만 명시적 QUARANTINE으로 끝낸다.
 ```
 
 ## PC1. pre-seal outcome hard stop
@@ -72,15 +334,14 @@ price_YYYYMMDD_outcome.csv 다운로드
 YYYYMMDD.csv를 outcome snapshot으로 저장
 outcome snapshot byte_size 계산
 outcome snapshot sha256 계산
-outcome snapshot header 읽기
-outcome snapshot row_count 계산
+outcome snapshot header 읽기 또는 row_count 계산은 accepted attempt에서는 금지지만, discarded attempt에서는 metadata-only recoverable로 처리 가능
 outcome snapshot pandas/csv parse
 outcome snapshot head/tail/grep/find/sample 출력
 upper_limit_touched, upper_limit_closed, high_return_pct, close_return_pct, high_return_rank 계산
 blind_snapshot과 outcome_snapshot을 같은 for-loop/list에서 함께 다운로드·검증·parse
 ```
 
-PHASE_2 전 코드에서 다음 패턴이 보이면 즉시 오염이다.
+PHASE_2 전 코드에서 다음 패턴이 보이면 먼저 실행하지 않고 코드를 고친다. 이미 실행했다면 아래 recoverable/fatal 분류를 적용한다.
 
 ```text
 for path in [blind_snapshot_path, outcome_snapshot_path]
@@ -91,7 +352,23 @@ sha256sum blind_snapshot_... outcome_snapshot_...
 upper touched / closed / h20 count를 BLIND seal 전 출력
 ```
 
-오염 발생 시 수리하지 않는다. 같은 실행에서 ACCEPT_FULL로 복구할 수 없다.
+오염 발생 시 먼저 `RECOVERABLE_PRESEAL_OUTCOME_METADATA_ACCESS`인지 `FATAL_PHASE_CONTENT_CONTAMINATION`인지 분리한다.
+
+```text
+RECOVERABLE_PRESEAL_OUTCOME_METADATA_ACCESS
+- BLIND seal 전에 outcome 파일이 로컬에 저장되었거나 stat/byte_size/sha256만 계산되었다.
+- outcome header, row_count, row sample, price value cell, high_return, close_return, upper_limit, winner census, response_class가 모두 노출되지 않았다.
+- BLIND graph, candidate_screening, final_watchlist, brain_delta에 outcome 값이 쓰이지 않았다.
+- 이 경우 현재 run_attempt는 폐기하고 새 workspace에서 clean run_attempt를 자동 시작한다.
+- 최종 QUARANTINE으로 도망가지 않고 ACCEPT_FULL을 계속 목표로 한다.
+
+FATAL_PHASE_CONTENT_CONTAMINATION
+- BLIND seal 전에 outcome 파일의 실제 row 또는 price label을 읽었다.
+- row sample 출력, pandas/csv row parse, high_return/close_return/upper_limit 계산, winner census 출력 중 하나라도 발생했다.
+- 이 경우 같은 세션에서 ACCEPT_FULL로 복구할 수 없다.
+```
+
+fatal 오염일 때만 다음으로 종료한다.
 
 ```text
 bundle_status = QUARANTINE_PHASE_CONTAMINATED
@@ -100,6 +377,14 @@ forecast_evaluation_eligible = false
 brain_eligible = false
 direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
+```
+
+recoverable metadata-only 오염은 최종 종료가 아니라 attempt discard/restart 사유다.
+
+```text
+discard_current_run_attempt = true
+start_new_clean_run_attempt = true
+final_quarantine_immediate = false
 ```
 
 ## PC2. 파일 잔존물 처리
@@ -145,7 +430,9 @@ csv_full_parse_complete
 research_daily_access_verified
 blind_snapshot_only_used_preseal
 blind_packet_sealed_before_outcome
-preseal_outcome_download_count == 0
+preseal_outcome_content_access_count == 0
+preseal_outcome_label_access_count == 0
+(preseal_outcome_download_count == 0 or preseal_outcome_download_only_repaired == true)
 preseal_outcome_parse_count == 0
 preseal_outcome_label_calculation_count == 0
 final_watchlist_size <= 20
@@ -167,6 +454,8 @@ id_source_fact_reference_closure_verified
 validation_report.critical_error_count == 0
 validator_exit_code == 0
 direct_brain_ingest_ready == true
+final_run_attempt_clean == true
+discarded_attempts_not_used_in_blind_graph == true
 semantic_type_firewall_fixture_all_passed
 final_candidate_entity_role_allowed_verified
 final_candidate_catalyst_alignment_verified
@@ -244,23 +533,41 @@ preseal_outcome_row_count_count
 preseal_outcome_parse_count
 preseal_outcome_print_count
 preseal_outcome_used_in_blind_graph_count
+preseal_outcome_download_only_repaired
+blind_graph_rebuilt_after_repair
+preseal_outcome_content_access_count
+preseal_outcome_label_access_count
 ```
 
-ACCEPT_FULL 조건:
+ACCEPT_FULL 조건은 **accepted clean-room attempt 기준**으로 계산한다. discarded attempt의 download/stat/sha/header/row_count metadata-only 접촉은 `attempt_history.jsonl`에만 남기고 accepted attempt counters에는 섞지 않는다.
 
 ```text
+attempt_history_present == true
+accepted_attempt.status == ACCEPTED_CLEAN
 access_log_present == true
 phase_state_transition_valid == true
 blind_seal_receipt_verified_before_outcome_access == true
-preseal_outcome_download_count == 0
-preseal_outcome_stat_count == 0
-preseal_outcome_read_bytes_count == 0
-preseal_outcome_sha256_count == 0
-preseal_outcome_header_read_count == 0
-preseal_outcome_row_count_count == 0
-preseal_outcome_parse_count == 0
-preseal_outcome_print_count == 0
-preseal_outcome_used_in_blind_graph_count == 0
+accepted_attempt.preseal_outcome_download_count == 0
+accepted_attempt.preseal_outcome_stat_count == 0
+accepted_attempt.preseal_outcome_read_bytes_count == 0
+accepted_attempt.preseal_outcome_sha256_count == 0
+accepted_attempt.preseal_outcome_header_read_count == 0
+accepted_attempt.preseal_outcome_row_count_count == 0
+accepted_attempt.preseal_outcome_parse_count == 0
+accepted_attempt.preseal_outcome_print_count == 0
+accepted_attempt.preseal_outcome_content_access_count == 0
+accepted_attempt.preseal_outcome_label_access_count == 0
+accepted_attempt.preseal_outcome_used_in_blind_graph_count == 0
+semantic_contamination_seen_in_any_attempt == false
+```
+
+이전 discarded attempt에 아래만 있었다면 ACCEPT_FULL 금지 사유가 아니다.
+
+```text
+preseal outcome download/stat/sha256/byte_size/header/row_count metadata only
+AND no data row/sample/parse/price label/winner/output
+AND attempt discarded before BLIND graph/final_watchlist generation
+AND clean-room attempt rebuilt BLIND from scratch
 ```
 
 `access_log.jsonl`이 없거나 validator가 로그를 실제로 읽지 않으면:
@@ -272,13 +579,13 @@ direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
 ```
 
-BLIND report의 “D snapshot 다운로드 0” 선언은 access_log 계산값과 같아야 한다. 둘이 다르면 access_log를 진실로 보고 `QUARANTINE_PHASE_AUDIT_MISMATCH`로 처리한다.
+BLIND report의 “D snapshot 다운로드 0” 선언은 access_log 계산값과 같아야 한다. 단, `preseal_outcome_download_only_repaired == true`인 경우 BLIND report는 “D snapshot content access 0 / download-only repaired true”로 정확히 기록해야 한다. 둘이 다르면 access_log를 진실로 보고 `QUARANTINE_PHASE_AUDIT_MISMATCH`로 처리한다.
 
 ────────────────────────────────────────
 
 
 ────────────────────────────────────────
-SEMANTIC TYPE SYSTEM LOCK v17.1 — quote_role ↔ catalyst_type 일반 타입 검사
+SEMANTIC TYPE SYSTEM LOCK v18.1 — quote_role ↔ catalyst_type 일반 타입 검사
 ────────────────────────────────────────
 
 이 섹션은 특정 종목명 예외표가 아니다. 20241213류 오류를 종목명 blacklist로 막지 않고, **quote의 역할과 경제 사건 타입의 호환성**으로 막는다.
@@ -1299,15 +1606,15 @@ canonical_graph 갱신
 → final bundle 재검증
 ```
 
-repair loop는 최대 8회까지 수행한다.
+repair loop는 최대 16회까지 수행한다.
 
 ```text
-8회 안에 모든 critical check가 통과하면:
+16회 안에 모든 critical check가 통과하면:
   bundle_status = ACCEPT_FULL
   brain_eligible = true
   direct_brain_ingest_ready = true
 
-8회 후에도 critical error가 남으면:
+16회 후에도 critical error가 남으면:
   bundle_status = QUARANTINE_REPAIR_EXHAUSTED
   brain_eligible = false
   direct_brain_ingest_ready = false
@@ -1793,7 +2100,9 @@ final_candidate_economic_mechanism_present
 access_log_present
 phase_state_transition_valid
 blind_seal_receipt_verified_before_outcome_access
-preseal_outcome_download_count_zero
+preseal_outcome_download_count_zero_or_download_only_repaired
+preseal_outcome_content_access_count_zero
+preseal_outcome_label_access_count_zero
 preseal_outcome_stat_count_zero
 preseal_outcome_read_bytes_count_zero
 preseal_outcome_sha256_count_zero
@@ -1958,18 +2267,23 @@ accept_full_allowed = (
     and cross_block_input_coverage_consistency_verified
     and cross_block_population_count_consistency_verified
     and renderer_validator_independence_verified
+    and attempt_history_present
+    and accepted_attempt.status == ACCEPTED_CLEAN
     and access_log_present
     and phase_state_transition_valid
     and blind_seal_receipt_verified_before_outcome_access
-    and preseal_outcome_download_count == 0
-    and preseal_outcome_stat_count == 0
-    and preseal_outcome_read_bytes_count == 0
-    and preseal_outcome_sha256_count == 0
-    and preseal_outcome_header_read_count == 0
-    and preseal_outcome_row_count_count == 0
-    and preseal_outcome_parse_count == 0
-    and preseal_outcome_print_count == 0
-    and preseal_outcome_used_in_blind_graph_count == 0
+    and accepted_attempt.preseal_outcome_download_count == 0
+    and accepted_attempt.preseal_outcome_content_access_count == 0
+    and accepted_attempt.preseal_outcome_label_access_count == 0
+    and accepted_attempt.preseal_outcome_stat_count == 0
+    and accepted_attempt.preseal_outcome_read_bytes_count == 0
+    and accepted_attempt.preseal_outcome_sha256_count == 0
+    and accepted_attempt.preseal_outcome_header_read_count == 0
+    and accepted_attempt.preseal_outcome_row_count_count == 0
+    and accepted_attempt.preseal_outcome_parse_count == 0
+    and accepted_attempt.preseal_outcome_print_count == 0
+    and accepted_attempt.preseal_outcome_used_in_blind_graph_count == 0
+    and semantic_contamination_seen_in_any_attempt == false
     and blind_report_access_log_parity_verified
     and markdown_final_watchlist_table_count_consistency_verified
     and markdown_final_watchlist_size <= 20
@@ -2202,8 +2516,7 @@ BLIND 봉인 전에는 `outcome_snapshot_path`의 문자열, expected sha256, ex
 outcome snapshot 파일 다운로드
 outcome snapshot byte_size 계산
 outcome snapshot sha256 계산
-outcome snapshot header 읽기
-outcome snapshot row_count 계산
+outcome snapshot header 읽기 또는 row_count 계산은 accepted attempt에서는 금지지만, discarded attempt에서는 metadata-only recoverable로 처리 가능
 outcome snapshot pandas/csv parse
 outcome snapshot의 high_return_pct, close_return_pct, upper_limit_touched, upper_limit_closed 등 가격 label 열람
 outcome snapshot 파일 미리보기·head·tail·grep·sample 출력
@@ -2223,7 +2536,11 @@ printed_before_seal
 used_in_blind_graph
 ```
 
-이전 실행 잔존 파일이고 이번 실행에서 읽지 않았다면 BLIND 작업 전에 삭제하거나 quarantine 디렉터리로 이동하고 `acquisition_warnings`에 기록한다. 이번 실행에서 BLIND seal 전에 outcome 파일을 다운로드·해시·행수계산·parse·출력·BLIND graph 사용 중 하나라도 수행했다면 다음으로 처리한다.
+이전 실행 잔존 파일이고 이번 실행에서 읽지 않았다면 BLIND 작업 전에 삭제하거나 quarantine 디렉터리로 이동하고 `acquisition_warnings`에 기록한다.
+
+이번 실행에서 BLIND seal 전에 outcome 파일이 다운로드되었거나 sha256·byte_size·header·row_count 같은 metadata만 계산되었고, data row parse·sample 출력·price label 계산·winner census·BLIND graph 사용이 모두 0이면 `RECOVERABLE_PRESEAL_OUTCOME_METADATA_TOUCH`로 처리한다. 이 경우 해당 attempt를 폐기하고 파일을 삭제하거나 `preseal_quarantine/`으로 이동한 뒤 새 clean-room attempt에서 BLIND phase를 처음부터 다시 생성·봉인한다. 이 상태는 ACCEPT_FULL을 금지하지 않는다.
+
+하지만 BLIND seal 전에 outcome 파일의 data row parse·sample 출력·high_return/close_return/upper_limit 계산·winner census 출력·BLIND graph 사용 중 하나라도 수행했다면 다음으로 처리한다.
 
 ```text
 context_already_contains_D_outcome = true
@@ -2231,13 +2548,16 @@ bundle_status = QUARANTINE_PHASE_CONTAMINATED
 blind_valid = false
 forecast_evaluation_eligible = false
 brain_eligible = false
+direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
 ```
 
 validator hard check:
 
 ```text
-preseal_outcome_download_count_zero
+preseal_outcome_download_count_zero_or_download_only_repaired
+preseal_outcome_content_access_count_zero
+preseal_outcome_label_access_count_zero
 preseal_outcome_sha256_count_zero
 preseal_outcome_header_read_count_zero
 preseal_outcome_row_count_count_zero
@@ -2432,7 +2752,7 @@ research_daily_access_root = atlas/research_daily/access
 
 ## G19. ACCEPT_FULL target repair loop hard guard
 
-`ACCEPT_FULL`은 가짜 성공 선언이 아니라 자동 import-ready 상태의 최종 계산 결과다. 이번 실행은 가능한 한 `ACCEPT_FULL`을 목표로 자동 수리하되, 수리 불가능한 오염을 숨기지 않는다.
+`ACCEPT_FULL`은 가짜 성공 선언이 아니라 자동 import-ready 상태의 최종 계산 결과다. 이번 실행은 가능한 한 `ACCEPT_FULL`을 목표로 자동 수리하되, 수리 불가능한 오염을 숨기지 않는다. 단, “수리 불가능”은 실제 access_log·validator·phase_state로 증명되어야 하며, 작업량이 많거나 어렵다는 이유로 추정하지 않는다.
 
 자동 수리 원칙:
 
@@ -2463,19 +2783,19 @@ direct_ingest_contract count/hash 불일치
 수리 불가능한 오류:
 
 ```text
-BLIND seal 전 outcome snapshot download/hash/header/parse/print
+BLIND seal 전 outcome snapshot 실제 내용 접근: data row parse/sample 출력/high_return/close_return/upper_limit/winner census 계산
 같은 D outcome을 이미 본 context에서 새 BLIND 생성
 CSV full parse 실패
 research_daily access 또는 snapshot hash 검증 실패
 공식 비거래일
 ```
 
-수리 가능한 오류는 최대 8회까지 자동 수리한다. 수리 불가능한 오류는 같은 실행에서 `ACCEPT_FULL`로 만들지 않고 명시적 QUARANTINE으로 종료한다.
+수리 가능한 오류는 최대 16회까지 자동 수리한다. 수리 불가능한 오류는 같은 실행에서 `ACCEPT_FULL`로 만들지 않고 명시적 QUARANTINE으로 종료한다.
 
 validator hard check:
 
 ```text
-repair_attempt_count <= 8
+repair_attempt_count <= 16
 repair_loop_executed_or_not_needed == true
 remaining_fixable_critical_error_count == 0
 unsafely_downgraded_critical_error_count == 0
@@ -3086,7 +3406,7 @@ confirmed and issuer-attributable fact with a visible commercial, regulatory, or
 
 정보가 부족하면 문장을 억지 완성하지 말고 `null`, 빈 배열, 또는 명시적 `UNRESOLVED`를 사용한다.
 
-최종 산출물 전 코드 validator를 실행하고 최대 8회 자동 수리한다.
+최종 산출물 전 코드 validator를 실행하고 최대 16회 자동 수리한다.
 
 수리 대상:
 
@@ -3104,7 +3424,7 @@ leader pair label 방향 오류
 manifest와 실제 블록 불일치
 ```
 
-8회 후에도 critical error가 남으면 `ACCEPT_FULL`을 선언하지 않는다. 오류가 있는 Brain Delta를 두뇌에 넣는 것보다 `QUARANTINE`이 우선이다.
+16회 후에도 critical error가 남으면 `ACCEPT_FULL`을 선언하지 않는다. 오류가 있는 Brain Delta를 두뇌에 넣는 것보다 `QUARANTINE`이 우선이다.
 
 
 ## 0.18 하나의 canonical research graph만 진실 원천으로 사용한다
@@ -7066,7 +7386,7 @@ reason
 20. deterministic renderer로 BLIND·POSTMORTEM·기계 artifact·draft bundle 생성
 21. 독립 semantic auditor로 모든 training-eligible 사후 오류 교훈과 retrospective member edge를 전수 감사
 22. validate_nslab_bundle.py로 JSON·JSONL·entity binding·fact entailment·ID·source·rank·report phase·theme hindsight·pair 방향·사후 교훈 의미정합성·동일 ticker 오류 scope·retrospective member cutoff provenance·placeholder·텍스트 완전성 전수 검증
-23. critical error가 있으면 critical gate를 낮추지 말고 canonical graph만 수정한 뒤 최대 8회 19번부터 다시 실행
+23. critical error가 있으면 critical gate를 낮추지 말고 canonical graph만 수정한 뒤 최대 16회 19번부터 다시 실행
 24. validator exit_code == 0이고 critical_error_count == 0이면 bundle_manifest를 실제 artifact hash/count로 갱신
 25. validation_report와 bundle_manifest 계산값으로 direct_ingest_contract.json 생성·검증
 26. direct_brain_ingest_ready == true이고 fatal_blockers == []일 때만 ACCEPT_FULL final bundle 조립
@@ -7085,7 +7405,7 @@ D outcome이 BLIND 전에 실제 노출됨
 research_daily snapshot hash 불일치가 재시도 후에도 지속
 ```
 
-오염이 아니라 단순 파일 일시 오류라면 재시도·검증 후 가능한 영역을 완료한다.
+오염이 아니라 단순 파일 일시 오류라면 재시도·검증 후 가능한 영역을 완료한다. 단순 다운로드·JSON·렌더·검증 오류를 이유로 조기 격리 skeleton을 만들지 않는다. fatal content contamination이 아닌 한 ACCEPT_FULL을 목표로 repair loop를 끝까지 수행한다.
 
 
 ## 14.1 `ACCEPT_FULL` 선언 제한
