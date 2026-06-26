@@ -353,7 +353,7 @@ class ContextAssembler:
         for file_name in BRAIN_FILES:
             title = file_name.removesuffix(".md").replace("_", " ").title()
             (brain_dir / file_name).write_text(
-                compiler._brain_file_body(title, manifest, claims),
+                compiler._brain_file_body(title, manifest, claims, file_name=file_name),
                 encoding="utf-8",
             )
         (brain_dir / "claims.jsonl").write_text(

@@ -10,6 +10,13 @@
 - Every output must include provenance and a context manifest.
 - Completion requires `ruff`, `mypy`, and `pytest` to pass.
 
+Record rules: brain_delta is a first-class source of truth and must never be
+discarded. Production brain uses llm-full mode; catalog/full/incremental outputs
+are not production brains. Episode coverage is not record coverage. Training
+exports must originate from explicit eligible records when `memory/records/`
+exists. Unknown bundle versions or record types must be preserved or quarantined,
+never silently dropped.
+
 Test commands:
 
 ```bash

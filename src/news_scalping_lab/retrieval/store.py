@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import (
     VECTOR_DIMENSIONS,
     DeterministicHashEmbeddingProvider,
@@ -24,6 +26,7 @@ from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, 
 
 VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v1"
 VECTOR_INDEX_RECORDS = "episodes.jsonl"
+VECTOR_INDEX_BRAIN_RECORDS = "brain_records.jsonl"
 VECTOR_INDEX_MANIFEST = "manifest.json"
 
 
@@ -41,6 +44,7 @@ class LocalRetrievalStore:
         self.store = ResearchStore(root)
         self.index_dir = root / "memory" / "vector_index"
         self.records_path = self.index_dir / VECTOR_INDEX_RECORDS
+        self.brain_records_path = self.index_dir / VECTOR_INDEX_BRAIN_RECORDS
         self.manifest_path = self.index_dir / VECTOR_INDEX_MANIFEST
 
     def add_episode(self, episode: ResearchEpisode) -> None:
@@ -75,6 +79,44 @@ class LocalRetrievalStore:
             return [episode_id for score, episode_id in scored if score > 0][:limit]
         return [episode_id for _score, episode_id in scored[:limit]]
 
+    def search_records(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        record_type: str | None = None,
+        training_eligible: bool | None = None,
+    ) -> list[str]:
+        if self.force_empty:
+            return []
+        records = self._current_brain_records()
+        if records is None:
+            self.rebuild_index()
+            records = self._current_brain_records()
+        if not records:
+            return []
+        filtered = [
+            record
+            for record in records
+            if (record_type is None or record.get("record_type") == record_type)
+            and (
+                training_eligible is None
+                or record.get("training_eligible") is training_eligible
+            )
+        ]
+        query_terms = text_terms(query)
+        query_vector = self.embedding_provider.embed_texts([query])[0]
+        scored: list[tuple[float, str]] = []
+        for record in filtered:
+            record_id = str(record["record_id"])
+            document_terms = {str(term) for term in record["terms"]}
+            embedding = [float(value) for value in record["embedding"]]
+            overlap = len(query_terms & document_terms)
+            vector_score = _cosine_similarity(query_vector, embedding)
+            scored.append((overlap + vector_score, record_id))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [record_id for _score, record_id in scored[:limit]]
+
     def list_all_episodes(self) -> list[ResearchEpisode]:
         return self.store.list_accepted()
 
@@ -83,6 +125,13 @@ class LocalRetrievalStore:
             episode
             for episode in self.store.list_accepted()
             if is_available_as_of(episode.available_from, cutoff_at)
+        ]
+
+    def get_records_available_as_of(self, cutoff_at: datetime) -> list[BrainRecordEnvelope]:
+        return [
+            record
+            for record in BrainRecordStore(self.root).list_records()
+            if is_available_as_of(record.available_from, cutoff_at)
         ]
 
     def rebuild_index(self) -> dict[str, object]:
@@ -101,20 +150,51 @@ class LocalRetrievalStore:
                     "embedding": vector,
                 }
             )
+        brain_records = BrainRecordStore(self.root).list_records()
+        record_texts = [_brain_record_text(record) for record in brain_records]
+        record_vectors = self.embedding_provider.embed_texts(record_texts)
+        indexed_brain_records: list[dict[str, object]] = []
+        for record, text, vector in zip(brain_records, record_texts, record_vectors, strict=True):
+            indexed_brain_records.append(
+                {
+                    "record_id": record.record_id,
+                    "episode_id": record.episode_id,
+                    "record_type": record.record_type,
+                    "training_target": record.training_target,
+                    "trade_date": record.trade_date.isoformat(),
+                    "available_from": record.available_from.isoformat(),
+                    "training_eligible": record.training_eligible,
+                    "text_sha256": sha256_text(text),
+                    "terms": sorted(text_terms(text)),
+                    "embedding": vector,
+                }
+            )
         payload = "".join(
             json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records
         )
         self.records_path.write_text(payload, encoding="utf-8")
+        brain_record_payload = "".join(
+            json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+            for record in indexed_brain_records
+        )
+        self.brain_records_path.write_text(brain_record_payload, encoding="utf-8")
         accepted_hashes = self.store.accepted_hashes()
+        brain_record_hashes = {
+            record.record_id: record.normalized_payload_sha256 for record in brain_records
+        }
         manifest = {
             "schema_version": VECTOR_INDEX_SCHEMA_VERSION,
             "embedding_method": self.embedding_provider.embedding_method,
             "dimensions": self.embedding_provider.dimensions,
             "record_count": len(records),
+            "brain_record_count": len(indexed_brain_records),
             "accepted_episode_count": len(accepted_hashes),
             "accepted_hashes": accepted_hashes,
+            "brain_record_hashes": brain_record_hashes,
             "records_file": VECTOR_INDEX_RECORDS,
             "records_sha256": sha256_text(payload),
+            "brain_records_file": VECTOR_INDEX_BRAIN_RECORDS,
+            "brain_records_sha256": sha256_text(brain_record_payload),
         }
         write_json(self.manifest_path, manifest)
         return manifest
@@ -138,19 +218,39 @@ class LocalRetrievalStore:
             return None
         return records
 
+    def _current_brain_records(self) -> list[dict[str, Any]] | None:
+        inspection = inspect_vector_index(self.root)
+        if inspection.get("status") != "current":
+            return None
+        try:
+            records = [
+                json.loads(line)
+                for line in self.brain_records_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not all(_is_brain_index_record(record) for record in records):
+            return None
+        return records
+
 
 def inspect_vector_index(root: Path) -> dict[str, object]:
     index_dir = root / "memory" / "vector_index"
     manifest_path = index_dir / VECTOR_INDEX_MANIFEST
     records_path = index_dir / VECTOR_INDEX_RECORDS
+    brain_records_path = index_dir / VECTOR_INDEX_BRAIN_RECORDS
     base: dict[str, object] = {
         "path": index_dir.as_posix(),
         "exists": index_dir.exists(),
         "manifest_exists": manifest_path.exists(),
         "records_exists": records_path.exists(),
+        "brain_records_exists": brain_records_path.exists(),
         "status": "missing",
         "record_count": 0,
+        "brain_record_count": 0,
         "accepted_episode_count": len(ResearchStore(root).accepted_hashes()),
+        "source_brain_record_count": len(BrainRecordStore(root).list_records()),
     }
     if not manifest_path.exists() or not records_path.exists():
         return base
@@ -166,19 +266,35 @@ def inspect_vector_index(root: Path) -> dict[str, object]:
             "embedding_method": manifest.get("embedding_method"),
             "dimensions": manifest.get("dimensions"),
             "record_count": manifest.get("record_count", 0),
+            "brain_record_count": manifest.get("brain_record_count", 0),
             "indexed_accepted_episode_count": manifest.get("accepted_episode_count", 0),
         }
     )
     try:
         records_payload = records_path.read_text(encoding="utf-8")
+        brain_records_payload = (
+            brain_records_path.read_text(encoding="utf-8")
+            if brain_records_path.exists()
+            else ""
+        )
     except OSError:
         return {**base, "status": "invalid"}
     accepted_hashes = ResearchStore(root).accepted_hashes()
+    brain_record_hashes = {
+        record.record_id: record.normalized_payload_sha256
+        for record in BrainRecordStore(root).list_records()
+    }
     if manifest.get("schema_version") != VECTOR_INDEX_SCHEMA_VERSION:
         return {**base, "status": "invalid"}
     if manifest.get("records_sha256") != sha256_text(records_payload):
         return {**base, "status": "invalid"}
+    if manifest.get("brain_records_sha256", sha256_text("")) != sha256_text(
+        brain_records_payload
+    ):
+        return {**base, "status": "invalid"}
     if manifest.get("accepted_hashes") != accepted_hashes:
+        return {**base, "status": "stale"}
+    if manifest.get("brain_record_hashes", {}) != brain_record_hashes:
         return {**base, "status": "stale"}
     return {**base, "status": "current"}
 
@@ -194,6 +310,21 @@ def _episode_text(episode: ResearchEpisode) -> str:
             " ".join(claim.mechanism for claim in episode.lessons),
             " ".join(claim.mechanism for claim in episode.counterexamples),
             " ".join(episode.misses),
+        ]
+    )
+
+
+def _brain_record_text(record: BrainRecordEnvelope) -> str:
+    payload_text = json.dumps(record.payload, ensure_ascii=False, sort_keys=True)
+    return " ".join(
+        [
+            record.record_id,
+            record.record_type,
+            record.training_target or "",
+            record.evidence_phase,
+            record.status,
+            record.confidence_label,
+            payload_text,
         ]
     )
 
@@ -236,6 +367,24 @@ def _is_index_record(value: object) -> bool:
     if not isinstance(value, dict):
         return False
     if not isinstance(value.get("episode_id"), str):
+        return False
+    terms = value.get("terms")
+    embedding = value.get("embedding")
+    return (
+        isinstance(terms, list)
+        and all(isinstance(term, str) for term in terms)
+        and isinstance(embedding, list)
+        and len(embedding) == VECTOR_DIMENSIONS
+        and all(isinstance(item, int | float) for item in embedding)
+    )
+
+
+def _is_brain_index_record(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if not isinstance(value.get("record_id"), str):
+        return False
+    if not isinstance(value.get("record_type"), str):
         return False
     terms = value.get("terms")
     embedding = value.get("embedding")

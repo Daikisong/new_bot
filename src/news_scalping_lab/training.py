@@ -7,6 +7,7 @@ reasoning from postmortem labels so hindsight never becomes a fake blind answer.
 from __future__ import annotations
 
 import json
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,9 @@ from news_scalping_lab.contracts.models import (
     OutcomeLabels,
     ResearchEpisode,
 )
+from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, stable_id, write_json
 
@@ -32,6 +36,12 @@ TASK_TRAINING_CATEGORY = {
     "failure_correction": "failure_correction_examples",
     "candidate_outcome_eval": "evaluation_examples",
     "failure_code_eval": "evaluation_examples",
+    "record_supervised_issuer_day": "issuer_day_supervised_records",
+    "record_supervised_direct_event": "direct_event_supervised_records",
+    "record_supervised_theme_formation": "theme_formation_examples",
+    "record_beneficiary_discovery": "beneficiary_discovery_examples",
+    "record_error_correction": "failure_correction_examples",
+    "record_eval": "evaluation_examples",
 }
 
 REQUIRED_TRAINING_CATEGORIES = [
@@ -63,6 +73,36 @@ class TrainingExportResult:
     row_count: int
 
 
+def audit_training_exports(root: Path) -> dict[str, Any]:
+    findings: list[str] = []
+    manifests: dict[str, Any] = {}
+    for kind in sorted(VALID_KINDS):
+        manifest_path = root / "training_exports" / kind / "manifest.json"
+        if not manifest_path.exists():
+            findings.append(f"{kind}: manifest is missing")
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            findings.append(f"{kind}: manifest is invalid JSON: {exc}")
+            continue
+        manifests[kind] = manifest
+        output_file = manifest.get("output_file")
+        if not isinstance(output_file, str) or not (root / output_file).exists():
+            findings.append(f"{kind}: output_file is missing")
+        if (
+            manifest.get("source_mode") == "brain_records"
+            and manifest.get("weight_validation_status") == "failed"
+        ):
+            findings.append(f"{kind}: record weight validation failed")
+    return {
+        "schema_version": "nslab.training_audit.v1",
+        "passed": not findings,
+        "findings": findings,
+        "manifests": manifests,
+    }
+
+
 def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     if kind not in VALID_KINDS:
         raise ValueError("kind must be sft, preference, or evals")
@@ -71,13 +111,21 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     store = ResearchStore(root)
     episodes = store.list_accepted()
     source_hashes = store.accepted_hashes()
-    rows = _rows_for_kind(kind, episodes, source_hashes=source_hashes)
+    records = BrainRecordStore(root).list_records()
+    source_mode = "brain_records" if records else "legacy_research_episodes"
+    rows = (
+        _record_rows_for_kind(kind, records)
+        if records
+        else _rows_for_kind(kind, episodes, source_hashes=source_hashes)
+    )
     row_episode_ids = {
         episode_id
         for row in rows
         if isinstance(episode_id := row.get("episode_id"), str) and episode_id
     }
-    skipped = _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
+    skipped = [] if records else _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
+    skipped_records = _skipped_records(kind, records) if records else []
+    weight_validation = _record_weight_validation(records) if records else {}
     path = target_dir / f"{kind}.jsonl"
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
@@ -95,14 +143,35 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         {
             "schema_version": "nslab.training_export_manifest.v1",
             "kind": kind,
+            "source_mode": source_mode,
             "created_at": now_kst().isoformat(),
             "row_count": len(rows),
             "episode_count": len(episodes),
+            "source_episode_count": len({record.episode_id for record in records})
+            if records
+            else len(episodes),
+            "source_record_count": len(records),
+            "eligible_record_count": sum(
+                1 for record in records if _record_selected_for_kind(kind, record)
+            ),
+            "exported_record_count": len(
+                {
+                    record_id
+                    for row in rows
+                    if isinstance(record_id := row.get("record_id"), str)
+                    and record_id
+                }
+            ),
+            "skipped_record_count": len(skipped_records),
+            "skipped_records": skipped_records,
             "episode_ids": [episode.episode_id for episode in episodes],
             "eligible_episode_count": len(episodes) - len(skipped),
             "skipped_episode_count": len(skipped),
             "skipped_episodes": skipped,
             "source_hashes": source_hashes,
+            "source_record_hashes": {
+                record.record_id: record.normalized_payload_sha256 for record in records
+            },
             "output_file": _project_relative_path(root, path),
             "output_sha256": file_sha256(path),
             "phase_outputs": phase_outputs,
@@ -118,6 +187,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
                 1 for row in rows if row["hindsight_safe_for_blind_sft"] is False
             ),
             "source_phase_counts": _source_phase_counts(rows),
+            "counts_by_record_type": _record_type_counts(records),
+            "counts_by_training_target": _record_training_target_counts(records),
+            "weight_validation_status": weight_validation.get("status"),
+            "weight_validation": weight_validation,
             "notes": [
                 (
                     "The combined output_file is for audit and compatibility; "
@@ -132,6 +205,37 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
                 "Do not train postmortem labels as if they were blind answers.",
                 "Rows with source_phase=POSTMORTEM must not be mixed into blind SFT.",
             ],
+        },
+    )
+    write_diagnostic_report(
+        root,
+        "training_export_report",
+        {
+            "kind": kind,
+            "source_mode": source_mode,
+            "source_episode_count": len({record.episode_id for record in records})
+            if records
+            else len(episodes),
+            "source_record_count": len(records),
+            "eligible_record_count": sum(
+                1
+                for record in records
+                if _record_selected_for_kind(kind, record) and record.training_eligible
+            ),
+            "exported_record_count": len(
+                {
+                    record_id
+                    for row in rows
+                    if isinstance(record_id := row.get("record_id"), str)
+                    and record_id
+                }
+            ),
+            "row_count": len(rows),
+            "skipped_record_count": len(skipped_records),
+            "counts_by_record_type": _record_type_counts(records),
+            "counts_by_training_target": _record_training_target_counts(records),
+            "weight_validation": weight_validation,
+            "output_file": _project_relative_path(root, path),
         },
     )
     return TrainingExportResult(path=path, manifest_path=manifest_path, row_count=len(rows))
@@ -195,6 +299,170 @@ def _rows_for_kind(
         for episode in episodes
         for row in _eval_rows(episode, source_hashes=source_hashes)
     ]
+
+
+def _record_rows_for_kind(
+    kind: str,
+    records: list[BrainRecordEnvelope],
+) -> list[dict[str, Any]]:
+    selected = [
+        record
+        for record in records
+        if _record_selected_for_kind(kind, record) and record.training_eligible
+    ]
+    if kind == "sft":
+        return [_record_sft_row(record) for record in selected]
+    if kind == "preference":
+        return [_record_preference_row(record) for record in selected]
+    return [_record_eval_row(record) for record in selected]
+
+
+def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
+    if kind == "preference":
+        return record.record_type == "blind_leader_preference_pair"
+    if kind == "evals":
+        return record.record_type in {
+            "supervised_issuer_day_case",
+            "supervised_direct_event_case",
+            "supervised_theme_formation_case",
+            "beneficiary_discovery_case",
+        }
+    return record.record_type in {
+        "supervised_issuer_day_case",
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+        "beneficiary_discovery_case",
+        "candidate_generation_error_case",
+        "candidate_ranking_error_case",
+        "row_disposition_error_case",
+        "entity_resolution_error_case",
+    }
+
+
+def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
+    task = _record_sft_task(record)
+    return _training_record_row(
+        task=task,
+        record=record,
+        split="sft_records",
+        input_payload={
+            "record_type": record.record_type,
+            "training_target": record.training_target,
+            "safe_D1_features": record.payload.get("safe_D1_features"),
+            "blind_fact_ids": record.payload.get("blind_fact_ids", []),
+            "blind_inference_ids": record.payload.get("blind_inference_ids", []),
+            "event_ids": record.payload.get("event_ids", []),
+            "payload": record.payload,
+        },
+        output_payload={
+            "response_class": record.payload.get("response_class"),
+            "outcome": record.payload.get("D_outcome"),
+            "sample_weight": record.payload.get("sample_weight"),
+            "attribution_status": record.payload.get("attribution_status"),
+            "eligibility_reason": record.eligibility_reason,
+        },
+        hindsight_safe=False,
+    )
+
+
+def _record_preference_row(record: BrainRecordEnvelope) -> dict[str, Any]:
+    payload = record.payload
+    training_mode = (
+        "positive_preference"
+        if payload.get("blind_preference_correct") is True
+        else "correction"
+    )
+    return _training_record_row(
+        task="positive_vs_negative_candidate_preference",
+        record=record,
+        split="preference",
+        input_payload={
+            "blind_pair_id": payload.get("blind_pair_id"),
+            "blind_preferred_candidate_id": payload.get("blind_preferred_candidate_id"),
+            "blind_rejected_candidate_id": payload.get("blind_rejected_candidate_id"),
+            "safe_D1_features": payload.get("safe_D1_features"),
+        },
+        output_payload={
+            "outcome_preferred_candidate_id": payload.get("outcome_preferred_candidate_id"),
+            "outcome_rejected_candidate_id": payload.get("outcome_rejected_candidate_id"),
+            "blind_preference_correct": payload.get("blind_preference_correct"),
+            "training_mode": training_mode,
+        },
+        hindsight_safe=False,
+    )
+
+
+def _record_eval_row(record: BrainRecordEnvelope) -> dict[str, Any]:
+    return _training_record_row(
+        task="record_eval",
+        record=record,
+        split="evals",
+        input_payload={
+            "record_id": record.record_id,
+            "record_type": record.record_type,
+            "safe_D1_features": record.payload.get("safe_D1_features"),
+        },
+        output_payload={
+            "response_class": record.payload.get("response_class"),
+            "outcome": record.payload.get("D_outcome"),
+            "label_quality": _nested_get(record.payload, "D_outcome", "label_quality"),
+        },
+        hindsight_safe=False,
+    )
+
+
+def _record_sft_task(record: BrainRecordEnvelope) -> str:
+    if record.record_type == "supervised_issuer_day_case":
+        return "record_supervised_issuer_day"
+    if record.record_type == "supervised_direct_event_case":
+        return "record_supervised_direct_event"
+    if record.record_type == "supervised_theme_formation_case":
+        return "record_supervised_theme_formation"
+    if record.record_type == "beneficiary_discovery_case":
+        return "record_beneficiary_discovery"
+    return "record_error_correction"
+
+
+def _training_record_row(
+    *,
+    task: str,
+    record: BrainRecordEnvelope,
+    input_payload: dict[str, Any],
+    output_payload: dict[str, Any],
+    split: str,
+    hindsight_safe: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "nslab.training_example.v2",
+        "example_id": stable_id("TRN", split, task, record.record_id),
+        "task": task,
+        "training_category": _training_category_for_task(task),
+        "split": split,
+        "record_id": record.record_id,
+        "record_type": record.record_type,
+        "episode_id": record.episode_id,
+        "trade_date": record.trade_date.isoformat(),
+        "available_from": record.available_from.isoformat(),
+        "hindsight_safe_for_blind_sft": hindsight_safe,
+        "source_phase": "BLIND" if hindsight_safe else "POSTMORTEM",
+        "eligibility_basis": {
+            "required_fields": ["training_eligible"],
+            "satisfied": record.training_eligible,
+            "field_values": {"training_eligible": record.training_eligible},
+            "reasons": {"training_eligible": record.eligibility_reason or ""},
+        },
+        "input": input_payload,
+        "output": output_payload,
+        "provenance": [
+            {
+                "source_id": source_id,
+                "source_type": "brain_record_provenance",
+                "uri": f"memory/records/{record.episode_id}.jsonl#{record.record_id}",
+                "content_sha256": record.normalized_payload_sha256,
+            }
+            for source_id in record.provenance_source_ids
+        ],
+    }
 
 
 def _sft_rows(
@@ -635,3 +903,80 @@ def _source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         phase = str(row["source_phase"])
         counts[phase] = counts.get(phase, 0) + 1
     return counts
+
+
+def _skipped_records(
+    kind: str,
+    records: list[BrainRecordEnvelope],
+) -> list[dict[str, Any]]:
+    skipped: list[dict[str, Any]] = []
+    for record in records:
+        if not _record_selected_for_kind(kind, record):
+            continue
+        if record.training_eligible:
+            continue
+        skipped.append(
+            {
+                "record_id": record.record_id,
+                "record_type": record.record_type,
+                "episode_id": record.episode_id,
+                "reason": record.eligibility_reason or "training_eligible=false",
+            }
+        )
+    return skipped
+
+
+def _record_type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
+    return dict(sorted(Counter(record.record_type for record in records).items()))
+
+
+def _record_training_target_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
+    return dict(
+        sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
+    )
+
+
+def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
+    issuer_keys: set[tuple[str, str]] = set()
+    duplicate_issuer_day_keys: list[str] = []
+    direct_weights: dict[str, float] = defaultdict(float)
+    for record in records:
+        if not record.training_eligible:
+            continue
+        if record.record_type == "supervised_issuer_day_case":
+            key = (
+                record.trade_date.isoformat(),
+                str(record.payload.get("ticker") or ""),
+            )
+            if key in issuer_keys:
+                duplicate_issuer_day_keys.append("|".join(key))
+            issuer_keys.add(key)
+        if record.record_type == "supervised_direct_event_case":
+            issuer_day_case_id = record.payload.get("issuer_day_case_id")
+            if not isinstance(issuer_day_case_id, str) or not issuer_day_case_id:
+                issuer_day_case_id = f"{record.trade_date.isoformat()}:{record.payload.get('ticker') or ''}"
+            sample_weight = record.payload.get("sample_weight", 0.0)
+            if isinstance(sample_weight, int | float) and not isinstance(sample_weight, bool):
+                direct_weights[issuer_day_case_id] += float(sample_weight)
+    weight_mismatches = {
+        key: round(total, 12)
+        for key, total in sorted(direct_weights.items())
+        if abs(total - 1.0) > 0.000001
+    }
+    return {
+        "status": "passed"
+        if not duplicate_issuer_day_keys and not weight_mismatches
+        else "failed",
+        "duplicate_issuer_day_count": len(duplicate_issuer_day_keys),
+        "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
+        "direct_event_weight_sum_mismatches": weight_mismatches,
+    }
+
+
+def _nested_get(payload: dict[str, Any], *keys: str) -> Any:
+    current: Any = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current

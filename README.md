@@ -40,6 +40,9 @@ runs/manifests/<run_id>.json
 research/accepted/EP-*.json
 brain/current/brain_manifest.json
 brain/current/coverage_manifest.json
+brain/current/record_coverage_manifest.json
+memory/records/<episode_id>.jsonl
+memory/record_manifests/<episode_id>.json
 ```
 
 ## Local UI
@@ -86,6 +89,41 @@ for manual validation first. The command reports imported/accepted IDs, counts,
 source files, and skipped non-file paths, and exits non-zero for missing or
 non-directory input paths.
 
+Versioned research bundles:
+
+```bash
+nslab research inspect-bundle docs/20260622_nslab_episode_bundle.example.md
+nslab research import-bundle path/to/bundle.md --validate --accept
+nslab memory stats
+nslab memory audit --deep
+```
+
+`inspect-bundle` is version-aware and reports bundle, manifest, and episode schema
+versions, raw/normalized brain record counts, training-eligible counts, type
+distribution, provenance closure, and hash mismatches. `import-bundle` preserves the
+original Markdown bundle, raw blocks, normalized episode index, record manifest, and
+canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
+legacy `ResearchEpisode` model. Unsupported future bundle versions are quarantined
+under `data/quarantine/research_bundles/` without dropping the source bundle.
+
+Canonical record artifacts:
+
+```text
+data/raw/research/<bundle_sha>.md
+research/episodes/<episode_id>/original_bundle.md
+research/episodes/<episode_id>/bundle_envelope.json
+research/episodes/<episode_id>/normalized_episode_index.json
+research/episodes/<episode_id>/raw_blocks/
+research/episodes/<episode_id>/validation_report.json
+memory/records/<episode_id>.jsonl
+memory/record_manifests/<episode_id>.json
+memory/record_index/
+```
+
+Known `brain_delta` record types are typed and preserved. Unknown record types are
+kept as `UNKNOWN_TYPED_PAYLOAD`, forced to `training_eligible=false`, and reported
+by `nslab memory audit --deep` rather than silently dropped.
+
 `brain update --episode` performs a safe incremental merge when the current brain
 already covers the prior accepted set exactly. If the current manifest is missing
 or drift is detected, it falls back to `brain rebuild --mode full`; full rebuilds
@@ -96,12 +134,26 @@ Brain shard summaries and daily memory-sweep shards both use
 `limits.shard_episode_count` from `configs/default.yaml`, so context budget changes
 are reflected in rebuilds and run manifests instead of being hidden in code.
 
-`brain rebuild` also refreshes `memory/vector_index/manifest.json` and
-`memory/vector_index/episodes.jsonl`. The local index is built through a
-deterministic embedding provider projection of accepted episodes; it supports
-retrieval but is never a candidate gate. `nslab audit coverage` fails if brain
-coverage is incomplete, the vector index is stale, or the warehouse research
-episode projection is out of sync.
+`brain rebuild` also refreshes `memory/vector_index/manifest.json`,
+`memory/vector_index/episodes.jsonl`, and `memory/vector_index/brain_records.jsonl`.
+The local index is built through a deterministic embedding provider projection of
+accepted episodes and normalized records; it supports retrieval but is never a
+candidate gate. `nslab audit coverage` fails if brain coverage is incomplete, the
+vector index is stale, record coverage is incomplete, or warehouse projections are
+out of sync.
+
+Production brain compilation is guarded:
+
+```bash
+nslab brain rebuild --mode llm-full
+nslab brain rebuild --mode catalog --allow-catalog
+nslab doctor --production
+```
+
+`llm-full` requires a real non-mock LLM provider and normalized brain records.
+`catalog` preserves the deterministic compiler for tests, offline smoke, and
+legacy migration, but `doctor --production` rejects catalog/full/incremental brain
+manifests as production research brains.
 
 Strict and free-form semantic imports preserve the raw source under
 `data/raw/research/`. Strict imports record source file, text, and canonical JSON
@@ -213,6 +265,11 @@ nslab training export-evals
 ```
 
 Each export writes a compatibility JSONL plus a manifest under `training_exports/<kind>/`.
+When canonical brain records exist, exports use explicit eligible records as the
+source of truth. Preference rows come only from sealed
+`blind_leader_preference_pair` records, not from cross-products of positive and
+negative candidates. Ineligible records are excluded from JSONL outputs and listed
+in the manifest with record IDs and reasons.
 The manifest also records `phase_outputs.BLIND` and `phase_outputs.POSTMORTEM`
 JSONL files with independent hashes and row counts. Use the BLIND phase file for
 blind-only SFT; failure-correction rows stay in the POSTMORTEM phase file.
@@ -222,6 +279,8 @@ beneficiary discovery, leader comparison, preference, and failure-correction exa
 stay separated and auditable.
 `nslab audit provenance` recomputes export hashes, row counts, category counts, and
 BLIND/POSTMORTEM phase consistency from the JSONL rows.
+Use `nslab training audit` to verify exported files, record weight checks, and
+record-backed manifest consistency.
 
 ## Session Pack
 
@@ -369,6 +428,7 @@ Canonical research stays under `research/`, `memory/`, and `brain/`.
 ```bash
 nslab warehouse rebuild
 nslab warehouse inspect
+nslab warehouse verify
 ```
 
 `warehouse inspect` preserves top-level row counts for each Parquet file and adds
@@ -387,4 +447,38 @@ warehouse/daily_outcomes.parquet
 warehouse/market_memory.parquet
 warehouse/mechanism_memory.parquet
 warehouse/company_memory.parquet
+warehouse/brain_records.parquet
+warehouse/issuer_day_cases.parquet
+warehouse/direct_event_cases.parquet
+warehouse/theme_formation_cases.parquet
+warehouse/beneficiary_cases.parquet
+warehouse/leader_pairs.parquet
+warehouse/error_cases.parquet
+warehouse/memory_claims.parquet
+warehouse/research_questions.parquet
+warehouse/record_provenance.parquet
+warehouse/record_coverage.parquet
+```
+
+Record-level warehouse verification checks row-count parity against
+`memory/records/*.jsonl`, record ID uniqueness, type-specific table counts,
+training eligibility flags, provenance links, and record coverage groups.
+
+## Diagnostics
+
+Operational commands write machine and Markdown reports under `diagnostics/`:
+
+```text
+diagnostics/bundle_import_report.json
+diagnostics/bundle_import_report.md
+diagnostics/brain_record_store_report.json
+diagnostics/brain_record_store_report.md
+diagnostics/record_coverage_report.json
+diagnostics/record_coverage_report.md
+diagnostics/brain_compile_report.json
+diagnostics/brain_compile_report.md
+diagnostics/training_export_report.json
+diagnostics/training_export_report.md
+diagnostics/migration_report.json
+diagnostics/migration_report.md
 ```

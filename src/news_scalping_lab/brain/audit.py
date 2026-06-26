@@ -14,11 +14,12 @@ from news_scalping_lab.brain.compiler import (
     expected_brain_version,
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
+from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json
 
 
-def audit_brain(root: Path) -> dict[str, object]:
+def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     store = ResearchStore(root)
     accepted = store.list_accepted()
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
@@ -38,6 +39,8 @@ def audit_brain(root: Path) -> dict[str, object]:
         accepted=accepted,
         source_hashes=source_hashes,
     )
+    record_audit = _audit_record_coverage(root)
+    record_store_audit = audit_record_store(root, deep=deep)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *claim_audit["claims_without_support"],
@@ -49,6 +52,8 @@ def audit_brain(root: Path) -> dict[str, object]:
         *mechanism_audit["mechanisms_with_unknown_success_cases"],
         *mechanism_audit["mechanisms_without_provenance"],
         *determinism_audit["determinism_findings"],
+        *record_audit["record_coverage_findings"],
+        *record_store_audit["findings"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     return {
@@ -59,6 +64,8 @@ def audit_brain(root: Path) -> dict[str, object]:
         **claim_audit,
         **mechanism_audit,
         **determinism_audit,
+        **record_audit,
+        "record_store_audit": record_store_audit,
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
         "brain_version": current_brain_version(root),
@@ -121,6 +128,53 @@ def _audit_deterministic_brain_state(
         "shard_episode_count": shard_episode_count,
         "version_matches_expected": version_matches_expected,
         "snapshot_matches_current": snapshot_matches_current,
+    }
+
+
+def _audit_record_coverage(root: Path) -> dict[str, Any]:
+    records = BrainRecordStore(root).list_records()
+    if not records:
+        return {
+            "accepted_record_count": 0,
+            "available_record_count": 0,
+            "training_eligible_available_record_count": 0,
+            "swept_record_count": 0,
+            "unswept_record_ids": [],
+            "record_coverage_complete": True,
+            "record_coverage_findings": [],
+        }
+    manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
+    if not manifest_path.exists():
+        return {
+            "accepted_record_count": len(records),
+            "available_record_count": len(records),
+            "training_eligible_available_record_count": sum(
+                1 for record in records if record.training_eligible
+            ),
+            "swept_record_count": 0,
+            "unswept_record_ids": [record.record_id for record in records],
+            "record_coverage_complete": False,
+            "record_coverage_findings": ["record coverage manifest is missing"],
+        }
+    manifest = read_json(manifest_path)
+    swept_ids = set(_string_list(manifest.get("swept_record_ids")))
+    record_ids = {record.record_id for record in records}
+    unswept = sorted(record_ids - swept_ids)
+    findings = []
+    if unswept:
+        findings.append("record coverage manifest has unswept records")
+    if manifest.get("accepted_record_count") != len(records):
+        findings.append("record coverage manifest count does not match record store")
+    return {
+        "accepted_record_count": len(records),
+        "available_record_count": len(records),
+        "training_eligible_available_record_count": sum(
+            1 for record in records if record.training_eligible
+        ),
+        "swept_record_count": len(swept_ids & record_ids),
+        "unswept_record_ids": unswept,
+        "record_coverage_complete": not findings,
+        "record_coverage_findings": findings,
     }
 
 

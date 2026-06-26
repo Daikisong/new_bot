@@ -33,11 +33,18 @@ from news_scalping_lab.context.session_pack import (
     export_session_pack,
 )
 from news_scalping_lab.contracts.schemas import export_json_schemas
-from news_scalping_lab.diagnostics import build_doctor_report
+from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.diagnostics import build_doctor_report, production_readiness_report
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.records.models import (
+    BrainRecordEnvelope,
+    NormalizedEpisodeIndex,
+    ResearchBundleEnvelope,
+)
+from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.reporting.bundle import export_analysis_bundle
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
@@ -48,8 +55,12 @@ from news_scalping_lab.research_import.bundle import (
     WEB_TIMESTAMP_PRECISIONS,
 )
 from news_scalping_lab.research_import.importer import ResearchImporter
+from news_scalping_lab.research_import.versioned_bundle import (
+    import_versioned_bundle,
+    inspect_versioned_bundle,
+)
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.training import export_training
+from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.ui.launcher import (
     StreamlitLaunchConfig,
     StreamlitLaunchError,
@@ -74,6 +85,7 @@ context_app = typer.Typer(help="Context manifest and session pack commands")
 audit_app = typer.Typer(help="Audit commands")
 training_app = typer.Typer(help="Training export commands")
 warehouse_app = typer.Typer(help="Warehouse projection commands")
+memory_app = typer.Typer(help="Brain record memory commands")
 
 app.add_typer(news_app, name="news")
 app.add_typer(research_app, name="research")
@@ -82,6 +94,7 @@ app.add_typer(context_app, name="context")
 app.add_typer(audit_app, name="audit")
 app.add_typer(training_app, name="training")
 app.add_typer(warehouse_app, name="warehouse")
+app.add_typer(memory_app, name="memory")
 
 WEB_SOURCE_REQUIRED_FIELDS = {
     "schema_version",
@@ -257,12 +270,27 @@ def doctor(
             help="Exit non-zero when readiness checks report attention.",
         ),
     ] = False,
+    production: Annotated[
+        bool,
+        typer.Option(
+            "--production",
+            help="Run production readiness checks for llm-full brain usage.",
+        ),
+    ] = False,
 ) -> None:
     settings = load_settings()
     report = build_doctor_report(settings)
+    if production:
+        report["production_readiness"] = production_readiness_report(report, settings)
     _echo(report)
     readiness = report.get("readiness")
+    production_readiness = report.get("production_readiness")
     if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
+        raise typer.Exit(code=1)
+    if production and (
+        not isinstance(production_readiness, dict)
+        or production_readiness.get("passed") is not True
+    ):
         raise typer.Exit(code=1)
 
 
@@ -391,6 +419,104 @@ def research_import(path: Path, mode: str = "auto") -> None:
     )
 
 
+@research_app.command("inspect-bundle")
+def research_inspect_bundle(path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        typer.echo(f"research bundle file not found: {path}", err=True)
+        raise typer.Exit(code=1)
+    try:
+        _echo(inspect_versioned_bundle(path))
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+
+
+@research_app.command("import-bundle")
+def research_import_bundle(
+    path: Path,
+    validate: Annotated[bool, typer.Option("--validate/--no-validate")] = True,
+    accept: Annotated[bool, typer.Option("--accept/--no-accept")] = False,
+) -> None:
+    if not path.exists() or not path.is_file():
+        typer.echo(f"research bundle file not found: {path}", err=True)
+        raise typer.Exit(code=1)
+    settings = load_settings()
+    try:
+        result = import_versioned_bundle(
+            path,
+            root=settings.project_root,
+            validate=validate,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "imported": result.status == "imported",
+            "status": result.status,
+            "accepted": accept and result.status == "imported",
+            "adapter": result.adapter_name,
+            "episode_id": result.episode_id,
+            "bundle_schema_version": result.bundle_schema_version,
+            "record_count": result.record_count,
+            "training_eligible_record_count": result.training_eligible_record_count,
+            "envelope": result.envelope_path.as_posix()
+            if result.envelope_path is not None
+            else None,
+            "records": result.record_path.as_posix()
+            if result.record_path is not None
+            else None,
+            "manifest": result.manifest_path.as_posix()
+            if result.manifest_path is not None
+            else None,
+            "validation": result.validation,
+        }
+    )
+
+
+@research_app.command("migrate-legacy")
+def research_migrate_legacy() -> None:
+    settings = load_settings()
+    store = ResearchStore(settings.project_root)
+    record_store = BrainRecordStore(settings.project_root)
+    migrated: list[str] = []
+    skipped: list[str] = []
+    for episode in store.list_accepted():
+        if record_store.read_episode_records(episode.episode_id):
+            skipped.append(episode.episode_id)
+            continue
+        record = _legacy_episode_record(episode)
+        envelope = _legacy_record_envelope(episode, record)
+        index = _legacy_normalized_index(episode, record)
+        source_path = settings.project_root / "research" / "accepted" / f"{episode.episode_id}.json"
+        try:
+            record_store.store_bundle(
+                source_path=source_path,
+                envelope=envelope,
+                index=index,
+                records=[record],
+                raw_blocks={"legacy_research_episode.json": source_path.read_text(encoding="utf-8")},
+                validation_report={
+                    "schema_version": "nslab.legacy_migration_report.v1",
+                    "passed": True,
+                    "catalog_only": True,
+                },
+            )
+        except (OSError, ValueError) as exc:
+            _exit_with_error(exc)
+        migrated.append(episode.episode_id)
+    write_diagnostic_report(
+        settings.project_root,
+        "migration_report",
+        {
+            "migrated_episode_count": len(migrated),
+            "skipped_episode_count": len(skipped),
+            "migrated_episode_ids": migrated,
+            "skipped_episode_ids": skipped,
+            "status": "catalog_only_legacy_migration",
+        },
+    )
+    _echo({"migrated_episode_ids": migrated, "skipped_episode_ids": skipped})
+
+
 @research_app.command("import-batch")
 def research_import_batch(
     directory: Path,
@@ -481,7 +607,13 @@ def research_reject(episode_id: str) -> None:
 
 
 @brain_app.command("rebuild")
-def brain_rebuild(mode: str = "full") -> None:
+def brain_rebuild(
+    mode: Annotated[str, typer.Option("--mode")] = "full",
+    allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
+) -> None:
+    if mode == "catalog" and not allow_catalog:
+        typer.echo("catalog rebuild requires --allow-catalog", err=True)
+        raise typer.Exit(code=1)
     settings = load_settings()
     try:
         manifest = BrainCompiler(
@@ -508,9 +640,11 @@ def brain_update(episode: Annotated[str, typer.Option("--episode")]) -> None:
 
 
 @brain_app.command("audit")
-def brain_audit() -> None:
+def brain_audit(
+    deep: Annotated[bool, typer.Option("--deep")] = False,
+) -> None:
     settings = load_settings()
-    result = audit_brain(settings.project_root)
+    result = audit_brain(settings.project_root, deep=deep)
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
@@ -5673,6 +5807,15 @@ def training_export_evals() -> None:
     _export_training_kind("evals")
 
 
+@training_app.command("audit")
+def training_audit() -> None:
+    settings = load_settings()
+    result = audit_training_exports(settings.project_root)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
 def _export_training_kind(kind: str) -> None:
     settings = load_settings()
     try:
@@ -5732,6 +5875,158 @@ def warehouse_inspect() -> None:
                 "findings": warehouse_findings,
             },
         }
+    )
+
+
+@warehouse_app.command("verify")
+def warehouse_verify() -> None:
+    settings = load_settings()
+    try:
+        coverage = audit_coverage(settings.project_root)
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    findings = coverage.get("findings", [])
+    warehouse_findings = [
+        finding
+        for finding in findings
+        if isinstance(finding, str) and finding.startswith("warehouse: ")
+    ] if isinstance(findings, list) else []
+    result = {
+        "passed": not warehouse_findings
+        and coverage.get("warehouse_required_files_present") is True
+        and coverage.get("warehouse_projection_synced") is True,
+        "warehouse_counts": coverage.get("warehouse_counts", {}),
+        "warehouse_findings": warehouse_findings,
+        "required_files": coverage.get("warehouse_required_files", []),
+    }
+    _echo(result)
+    if not result["passed"]:
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("inspect")
+def memory_inspect(
+    episode: Annotated[str, typer.Option("--episode")],
+) -> None:
+    settings = load_settings()
+    records = BrainRecordStore(settings.project_root).read_episode_records(episode)
+    _echo(
+        {
+            "episode_id": episode,
+            "record_count": len(records),
+            "training_eligible_record_count": sum(
+                1 for record in records if record.training_eligible
+            ),
+            "record_ids": [record.record_id for record in records],
+            "record_counts_by_type": dict(
+                Counter(record.record_type for record in records)
+            ),
+        }
+    )
+
+
+@memory_app.command("inspect-record")
+def memory_inspect_record(record_id: str) -> None:
+    settings = load_settings()
+    try:
+        record = BrainRecordStore(settings.project_root).get_record(record_id)
+    except FileNotFoundError as exc:
+        _exit_with_error(exc)
+    _echo(record.model_dump(mode="json"))
+
+
+@memory_app.command("stats")
+def memory_stats() -> None:
+    settings = load_settings()
+    _echo(BrainRecordStore(settings.project_root).stats())
+
+
+@memory_app.command("audit")
+def memory_audit(
+    deep: Annotated[bool, typer.Option("--deep")] = False,
+) -> None:
+    settings = load_settings()
+    result = audit_record_store(settings.project_root, deep=deep)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+def _legacy_episode_record(episode: Any) -> BrainRecordEnvelope:
+    payload = {
+        "record_type": "memory_claim",
+        "record_id": f"{episode.episode_id}:legacy_catalog_record",
+        "episode_id": episode.episode_id,
+        "trade_date": episode.trade_date.isoformat(),
+        "available_from": episode.available_from.isoformat(),
+        "training_target": "legacy_catalog_only",
+        "summary": episode.blind_analysis.summary,
+        "open_world_mechanisms": episode.blind_analysis.open_world_mechanisms,
+        "training_eligible": False,
+        "eligibility_reason": "legacy v1 episode migrated as catalog_only memory",
+    }
+    payload_sha = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=str(payload["record_id"]),
+        record_type="memory_claim",
+        episode_id=episode.episode_id,
+        trade_date=episode.trade_date,
+        available_from=episode.available_from,
+        training_target="legacy_catalog_only",
+        evidence_phase="AUDIT",
+        training_eligible=False,
+        eligibility_reason="legacy v1 episode migrated as catalog_only memory",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=[f"{episode.episode_id}:accepted_episode"],
+        raw_payload_sha256=payload_sha,
+        normalized_payload_sha256=payload_sha,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="legacy_research_episode.json",
+        source_line=None,
+        payload=payload,
+    )
+
+
+def _legacy_record_envelope(
+    episode: Any,
+    record: BrainRecordEnvelope,
+) -> ResearchBundleEnvelope:
+    return ResearchBundleEnvelope(
+        bundle_schema_version="nslab.legacy_research_episode.v1",
+        manifest_schema_version=None,
+        episode_schema_version=episode.schema_version,
+        episode_id=episode.episode_id,
+        trade_date=episode.trade_date,
+        cutoff_at=episode.cutoff_at,
+        available_from=episode.available_from,
+        bundle_status="LEGACY_ACCEPTED",
+        blind_valid=True,
+        raw_bundle_sha256=record.normalized_payload_sha256,
+        raw_block_hashes={"legacy_research_episode.json": record.normalized_payload_sha256},
+        raw_block_counts={"legacy_research_episode.json": 1},
+        provenance_closure_status="legacy_catalog_only",
+        adapter_name="legacy-migration",
+        import_status="catalog_only",
+    )
+
+
+def _legacy_normalized_index(
+    episode: Any,
+    record: BrainRecordEnvelope,
+) -> NormalizedEpisodeIndex:
+    return NormalizedEpisodeIndex(
+        episode_id=episode.episode_id,
+        trade_date=episode.trade_date,
+        cutoff_at=episode.cutoff_at,
+        available_from=episode.available_from,
+        bundle_status="LEGACY_ACCEPTED",
+        blind_valid=True,
+        raw_block_names=["legacy_research_episode.json"],
+        record_ids=[record.record_id],
+        record_count_by_type={record.record_type: 1},
+        training_eligible_record_count=0,
+        source_ids=[f"{episode.episode_id}:accepted_episode"],
     )
 
 

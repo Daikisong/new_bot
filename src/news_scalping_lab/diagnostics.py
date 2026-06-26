@@ -43,6 +43,41 @@ ENV_KEYS = [
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 
 
+def production_readiness_report(
+    report: dict[str, Any],
+    settings: Settings,
+) -> dict[str, Any]:
+    findings: list[str] = []
+    if settings.llm_provider.strip().lower() == "mock":
+        findings.append("llm: mock provider cannot compile production brain")
+    if settings.llm.provider.strip().lower() == "mock":
+        findings.append("llm_model: mock model profile cannot compile production brain")
+    openai_status = _nested_dict(report, "api_connections", "openai").get("status")
+    if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
+        findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
+    brain = report.get("brain")
+    if isinstance(brain, dict):
+        coverage = brain.get("coverage")
+        if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
+            findings.append("brain: accepted episodes are not fully covered")
+    brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
+    build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
+    if build_mode in {"catalog", "catalog_only", "full", "incremental"}:
+        findings.append("brain: current manifest is catalog_only, not llm-full")
+    record_coverage = _read_optional_json(
+        settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
+    )
+    if isinstance(record_coverage, dict) and record_coverage.get("coverage_complete") is not True:
+        findings.append("records: record coverage is incomplete")
+    return {
+        "schema_version": "nslab.production_readiness.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+    }
+
+
 def build_doctor_report(settings: Settings) -> dict[str, Any]:
     store = ResearchStore(settings.project_root)
     accepted_episode_count = len(store.list_accepted())
@@ -472,6 +507,16 @@ def _read_json_object(path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid JSON: {path.as_posix()}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path.as_posix()}")
+    return payload
+
+
+def _read_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = _read_json_object(path)
+    except ValueError:
+        return None
     return payload
 
 

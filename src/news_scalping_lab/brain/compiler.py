@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
+from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
+from news_scalping_lab.config import load_settings
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ClaimStatus,
@@ -16,6 +20,11 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -73,7 +82,9 @@ class BrainCompiler:
             directory.mkdir(parents=True, exist_ok=True)
 
     def rebuild(self, *, mode: str = "full") -> BrainManifest:
-        if mode != "full":
+        if mode == "llm-full":
+            return self._rebuild_llm_full()
+        if mode not in {"full", "catalog"}:
             raise ValueError("only full rebuild is currently supported")
         previous_version = current_brain_version(self.root)
         episodes = self.store.list_accepted()
@@ -108,7 +119,7 @@ class BrainCompiler:
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
-            build_mode="full",
+            build_mode="full" if mode == "full" else "catalog",
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(episodes),
@@ -121,6 +132,79 @@ class BrainCompiler:
         self._write_current(manifest, claims)
         self._write_mechanism_memory(manifest, mechanisms)
         self._write_shard_brains(manifest, episodes)
+        self._write_immutable_snapshot(version)
+        (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
+        if previous_version != version:
+            write_rebuild_diff(self.root, previous_version, version)
+        LocalRetrievalStore(self.root).rebuild_index()
+        WarehouseStore(self.root).rebuild_all()
+        return manifest
+
+    def _rebuild_llm_full(self) -> BrainManifest:
+        settings = load_settings(self.root)
+        if settings.llm_provider.strip().lower() == "mock":
+            raise ValueError("llm-full brain rebuild requires a real LLM provider")
+        if settings.llm.provider.strip().lower() == "mock":
+            raise ValueError("llm-full brain rebuild requires a non-mock model profile")
+        records = BrainRecordStore(self.root).list_records()
+        if not records:
+            raise ValueError("llm-full brain rebuild requires normalized brain records")
+        provider = create_llm_provider(settings)
+        previous_version = current_brain_version(self.root)
+        accepted_episodes = self.store.list_accepted()
+        covered_ids = sorted(
+            {
+                *[episode.episode_id for episode in accepted_episodes],
+                *[record.episode_id for record in records],
+            }
+        )
+        source_hashes = {
+            **self.store.accepted_hashes(),
+            **{
+                f"record:{record.record_id}": record.normalized_payload_sha256
+                for record in records
+            },
+        }
+        created_at = max(record.available_from for record in records)
+        version = stable_id(
+            "brain",
+            canonical_json(
+                {
+                    "schema": "nslab.brain.llm_full.v1",
+                    "covered_episode_ids": covered_ids,
+                    "source_hashes": source_hashes,
+                    "model": settings.llm.model,
+                    "provider": settings.llm_provider,
+                }
+            ),
+            length=10,
+        )
+        claims = self._claims_from_records(records)
+        manifest = BrainManifest(
+            brain_version=version,
+            created_at=created_at,
+            build_mode="llm-full",
+            last_full_rebuild_at=created_at,
+            updated_episode_id=None,
+            accepted_episode_count=len(accepted_episodes),
+            covered_episode_count=len(covered_ids),
+            covered_episode_ids=covered_ids,
+            claim_ids=[claim.claim_id for claim in claims],
+            source_hashes=source_hashes,
+            coverage_complete=True,
+        )
+        category_outputs = asyncio.run(
+            _compile_llm_category_outputs(
+                provider=provider,
+                records=records,
+                brain_version=version,
+                provider_name=settings.llm_provider,
+                model=settings.llm.model,
+            )
+        )
+        self._write_current(manifest, claims, category_outputs=category_outputs)
+        self._write_mechanism_memory(manifest, [])
+        self._write_shard_brains(manifest, accepted_episodes)
         self._write_immutable_snapshot(version)
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
         if previous_version != version:
@@ -336,11 +420,59 @@ class BrainCompiler:
             )
         return memories
 
-    def _write_current(self, manifest: BrainManifest, claims: list[MemoryClaim]) -> None:
+    def _claims_from_records(self, records: list[BrainRecordEnvelope]) -> list[MemoryClaim]:
+        claims: list[MemoryClaim] = []
+        for record in records:
+            if not record.training_eligible:
+                continue
+            statement = _record_claim_statement(record)
+            claims.append(
+                MemoryClaim(
+                    claim_id=stable_id("CL", record.record_id, record.normalized_payload_sha256),
+                    statement=statement,
+                    mechanism=str(record.training_target or record.record_type),
+                    scope=f"record-derived {record.record_type}",
+                    conditions=[
+                        "use only when the record is available as of the analysis cutoff",
+                        "check counterexamples and negative controls before applying",
+                    ],
+                    failure_modes=["overgeneralization", "hindsight contamination"],
+                    support_episode_ids=[record.episode_id],
+                    contradiction_episode_ids=[],
+                    near_miss_episode_ids=[],
+                    status=ClaimStatus.TENTATIVE,
+                    confidence_label=ConfidenceLabel.LOW,
+                    first_observed_at=record.trade_date,
+                    last_updated_at=record.available_from,
+                    available_from=record.available_from,
+                    provenance=[
+                        Provenance(
+                            source_id=record.record_id,
+                            source_type="brain_record",
+                            uri=f"memory/records/{record.episode_id}.jsonl#{record.record_id}",
+                            content_sha256=record.normalized_payload_sha256,
+                            observed_at=record.available_from,
+                        )
+                    ],
+                )
+            )
+        return _dedupe_claims(claims)
+
+    def _write_current(
+        self,
+        manifest: BrainManifest,
+        claims: list[MemoryClaim],
+        *,
+        category_outputs: dict[str, str] | None = None,
+    ) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
             title = file_name.removesuffix(".md").replace("_", " ").title()
-            body = self._brain_file_body(title, manifest, claims)
+            body = (
+                category_outputs[file_name]
+                if category_outputs is not None and file_name in category_outputs
+                else self._brain_file_body(title, manifest, claims, file_name=file_name)
+            )
             (self.current_dir / file_name).write_text(body, encoding="utf-8")
         claims_path = self.current_dir / "claims.jsonl"
         claims_path.write_text(
@@ -352,7 +484,23 @@ class BrainCompiler:
             claims_path.read_text(encoding="utf-8"), encoding="utf-8"
         )
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
+        record_coverage = self._record_coverage_manifest(manifest)
+        write_json(self.current_dir / "record_coverage_manifest.json", record_coverage)
         write_json(self.current_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
+        write_diagnostic_report(
+            self.root,
+            "brain_compile_report",
+            {
+                "brain_version": manifest.brain_version,
+                "compiler_mode": manifest.build_mode,
+                "accepted_episode_count": manifest.accepted_episode_count,
+                "covered_episode_count": manifest.covered_episode_count,
+                "claim_count": len(claims),
+                "category_file_count": len(BRAIN_FILES),
+                "category_files": BRAIN_FILES,
+            },
+        )
+        write_diagnostic_report(self.root, "record_coverage_report", record_coverage)
 
     def _write_mechanism_memory(
         self,
@@ -504,21 +652,30 @@ class BrainCompiler:
         return "\n".join(lines).rstrip() + "\n"
 
     def _brain_file_body(
-        self, title: str, manifest: BrainManifest, claims: list[MemoryClaim]
+        self,
+        title: str,
+        manifest: BrainManifest,
+        claims: list[MemoryClaim],
+        *,
+        file_name: str,
     ) -> str:
+        category = _brain_category(file_name)
+        category_claims = _claims_for_category(claims, category)
         lines = [
             f"# {title}",
             "",
             f"Brain version: `{manifest.brain_version}`",
             f"Accepted episodes covered: {manifest.covered_episode_count}/{manifest.accepted_episode_count}",
+            f"Build mode: `{manifest.build_mode}`",
+            f"Category: `{category}`",
             "",
             "This file stores abstract mechanisms and cautions. It is not a keyword map, ticker list, or score table.",
             "",
         ]
-        if not claims:
+        if not category_claims:
             lines.extend(
                 [
-                    "No accepted research episodes are available yet.",
+                    "No category-specific claims are available yet.",
                     (
                         "Daily analysis must still run open-world reasoning from current news "
                         "and web/company verification."
@@ -526,7 +683,7 @@ class BrainCompiler:
                 ]
             )
         else:
-            for claim in claims:
+            for claim in category_claims:
                 lines.extend(
                     [
                         f"## {claim.claim_id}",
@@ -541,6 +698,40 @@ class BrainCompiler:
                     ]
                 )
         return "\n".join(lines).rstrip() + "\n"
+
+    def _record_coverage_manifest(self, manifest: BrainManifest) -> dict[str, object]:
+        records = BrainRecordStore(self.root).list_records()
+        record_counts_by_type = Counter(record.record_type for record in records)
+        record_counts_by_phase = Counter(record.evidence_phase for record in records)
+        record_counts_by_target = Counter(
+            record.training_target or "UNKNOWN" for record in records
+        )
+        record_ids = [record.record_id for record in records]
+        return {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "brain_version": manifest.brain_version,
+            "build_mode": manifest.build_mode,
+            "accepted_episode_count": manifest.accepted_episode_count,
+            "accepted_record_count": len(records),
+            "available_record_count": len(records),
+            "training_eligible_available_record_count": sum(
+                1 for record in records if record.training_eligible
+            ),
+            "compiled_record_count": len(records),
+            "swept_record_count": len(records),
+            "swept_record_ids": record_ids,
+            "unswept_record_ids": [],
+            "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
+            "record_counts_by_evidence_phase": dict(sorted(record_counts_by_phase.items())),
+            "record_counts_by_training_target": dict(sorted(record_counts_by_target.items())),
+            "ineligible_record_count": sum(
+                1 for record in records if not record.training_eligible
+            ),
+            "audit_only_record_count": sum(
+                1 for record in records if record.evidence_phase == "AUDIT"
+            ),
+            "coverage_complete": True,
+        }
 
     def _coverage_manifest(self, manifest: BrainManifest) -> dict[str, object]:
         missing = sorted(set(self.store.accepted_hashes()) - set(manifest.covered_episode_ids))
@@ -815,3 +1006,162 @@ def _copy_immutable_directory(*, source_dir: Path, target_dir: Path, label: str)
             )
         return
     shutil.copytree(source_dir, target_dir)
+
+
+def _brain_category(file_name: str) -> str:
+    if "single_event" in file_name:
+        return "single_event"
+    if "theme_formation" in file_name:
+        return "theme_formation"
+    if "beneficiary" in file_name:
+        return "beneficiary_discovery"
+    if "leader" in file_name:
+        return "leader_selection"
+    if "continuation" in file_name:
+        return "continuation"
+    if "failure" in file_name:
+        return "failure_modes"
+    if "counterexamples" in file_name:
+        return "counterexamples"
+    if "market_memory" in file_name:
+        return "market_memory"
+    return "world_model"
+
+
+def _claims_for_category(
+    claims: list[MemoryClaim],
+    category: str,
+) -> list[MemoryClaim]:
+    if category == "world_model":
+        return claims[:20]
+    predicates = {
+        "single_event": ("direct", "issuer", "single", "event"),
+        "theme_formation": ("theme", "formation"),
+        "beneficiary_discovery": ("beneficiary", "discovery"),
+        "leader_selection": ("leader", "preference", "ranking"),
+        "continuation": ("continuation",),
+        "failure_modes": ("error", "failure", "miss"),
+        "counterexamples": ("counterexample", "negative"),
+        "market_memory": ("memory", "market"),
+    }
+    needles = predicates.get(category, ())
+    selected = [
+        claim
+        for claim in claims
+        if any(
+            needle in f"{claim.statement} {claim.mechanism} {claim.scope}".lower()
+            for needle in needles
+        )
+    ]
+    return selected or claims[: min(5, len(claims))]
+
+
+def _record_claim_statement(record: BrainRecordEnvelope) -> str:
+    response_class = record.payload.get("response_class")
+    target = record.training_target or record.record_type
+    if isinstance(response_class, str) and response_class:
+        return (
+            f"{record.record_type} supports studying {target} with "
+            f"observed response_class={response_class}."
+        )
+    return f"{record.record_type} supports studying {target} with preserved provenance."
+
+
+async def _compile_llm_category_outputs(
+    *,
+    provider: LLMProvider,
+    records: list[BrainRecordEnvelope],
+    brain_version: str,
+    provider_name: str,
+    model: str,
+) -> dict[str, str]:
+    outputs: dict[str, str] = {}
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        category_records = _records_for_category(records, category)
+        prompt = _brain_category_prompt(
+            category=category,
+            records=category_records,
+            brain_version=brain_version,
+            provider_name=provider_name,
+            model=model,
+        )
+        text = await provider.generate_text(prompt=prompt, purpose=f"brain_compile:{category}")
+        outputs[file_name] = (
+            f"# {file_name.removesuffix('.md').replace('_', ' ').title()}\n\n"
+            f"Brain version: `{brain_version}`\n"
+            f"Build mode: `llm-full`\n"
+            f"Provider: `{provider_name}`\n"
+            f"Model: `{model}`\n"
+            f"Category: `{category}`\n"
+            f"Source record count: {len(category_records)}\n\n"
+            f"{text.strip()}\n\n"
+            "## Supporting Records\n\n"
+            + "\n".join(f"- `{record.record_id}` ({record.record_type})" for record in category_records[:200])
+            + "\n"
+        )
+    return outputs
+
+
+def _records_for_category(
+    records: list[BrainRecordEnvelope],
+    category: str,
+) -> list[BrainRecordEnvelope]:
+    mapping = {
+        "single_event": {"supervised_direct_event_case", "supervised_issuer_day_case"},
+        "theme_formation": {"supervised_theme_formation_case"},
+        "beneficiary_discovery": {"beneficiary_discovery_case"},
+        "leader_selection": {"blind_leader_preference_pair"},
+        "failure_modes": {
+            "candidate_generation_error_case",
+            "candidate_ranking_error_case",
+            "row_disposition_error_case",
+            "entity_resolution_error_case",
+        },
+        "counterexamples": {"counterexample"},
+        "market_memory": {"memory_claim", "mechanism_memory", "company_memory_delta"},
+    }
+    if category == "world_model":
+        return records
+    allowed = mapping.get(category, set())
+    selected = [record for record in records if record.record_type in allowed]
+    return selected or records[: min(20, len(records))]
+
+
+def _brain_category_prompt(
+    *,
+    category: str,
+    records: list[BrainRecordEnvelope],
+    brain_version: str,
+    provider_name: str,
+    model: str,
+) -> str:
+    compact_records = [
+        {
+            "record_id": record.record_id,
+            "record_type": record.record_type,
+            "training_target": record.training_target,
+            "evidence_phase": record.evidence_phase,
+            "response_class": record.payload.get("response_class"),
+            "status": record.status,
+            "confidence_label": record.confidence_label,
+            "provenance_source_ids": record.provenance_source_ids[:5],
+        }
+        for record in records[:200]
+    ]
+    return json.dumps(
+        {
+            "instruction": (
+                "Synthesize category-specific research brain claims. Avoid ticker, "
+                "company, theme, region, or beneficiary lookup rules. Every claim "
+                "must cite supporting record IDs and state boundary conditions."
+            ),
+            "brain_version": brain_version,
+            "category": category,
+            "provider": provider_name,
+            "model": model,
+            "records": compact_records,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )

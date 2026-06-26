@@ -22,6 +22,9 @@ from news_scalping_lab.contracts.models import (
     MechanismMemory,
     ResearchEpisode,
 )
+from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
 
@@ -35,6 +38,17 @@ EXPECTED_WAREHOUSE_FILES = (
     "market_memory.parquet",
     "mechanism_memory.parquet",
     "company_memory.parquet",
+    "brain_records.parquet",
+    "issuer_day_cases.parquet",
+    "direct_event_cases.parquet",
+    "theme_formation_cases.parquet",
+    "beneficiary_cases.parquet",
+    "leader_pairs.parquet",
+    "error_cases.parquet",
+    "memory_claims.parquet",
+    "research_questions.parquet",
+    "record_provenance.parquet",
+    "record_coverage.parquet",
 )
 
 
@@ -58,6 +72,34 @@ class WarehouseStore:
             "predictions": self.write_predictions_from_files(),
             "daily_outcomes": self.write_daily_outcomes_from_files(),
         }
+        records = BrainRecordStore(self.root).list_records()
+        counts.update(
+            {
+                "brain_records": self.write_brain_records(records),
+                "issuer_day_cases": self.write_issuer_day_cases(records),
+                "direct_event_cases": self.write_direct_event_cases(records),
+                "theme_formation_cases": self.write_theme_formation_cases(records),
+                "beneficiary_cases": self.write_beneficiary_cases(records),
+                "leader_pairs": self.write_leader_pairs(records),
+                "error_cases": self.write_error_cases(records),
+                "memory_claims": self.write_memory_claim_records(records),
+                "research_questions": self.write_research_questions(records),
+                "record_provenance": self.write_record_provenance(records),
+                "record_coverage": self.write_record_coverage(records),
+            }
+        )
+        write_diagnostic_report(
+            self.root,
+            "brain_record_store_report",
+            {
+                "record_count": len(records),
+                "training_eligible_record_count": sum(
+                    1 for record in records if record.training_eligible
+                ),
+                "warehouse_counts": counts,
+                "dropped_record_count": 0,
+            },
+        )
         return counts
 
     def write_events(self, episodes: list[ResearchEpisode]) -> int:
@@ -272,6 +314,183 @@ class WarehouseStore:
         self._write_rows("daily_outcomes.parquet", rows)
         return len(rows)
 
+    def write_brain_records(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            {
+                "record_id": record.record_id,
+                "record_type": record.record_type,
+                "episode_id": record.episode_id,
+                "trade_date": record.trade_date.isoformat(),
+                "available_from": record.available_from.isoformat(),
+                "training_target": record.training_target,
+                "evidence_phase": record.evidence_phase,
+                "training_eligible": record.training_eligible,
+                "eligibility_reason": record.eligibility_reason,
+                "status": record.status,
+                "confidence_label": record.confidence_label,
+                "typed_payload_status": record.typed_payload_status,
+                "raw_payload_sha256": record.raw_payload_sha256,
+                "normalized_payload_sha256": record.normalized_payload_sha256,
+                "payload_json": _json(record.payload),
+            }
+            for record in records
+        ]
+        self._write_rows("brain_records.parquet", rows)
+        return len(rows)
+
+    def write_issuer_day_cases(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=(
+                    "issuer_day_case_id",
+                    "ticker",
+                    "company_name",
+                    "response_class",
+                    "attribution_status",
+                    "sample_weight",
+                ),
+            )
+            for record in records
+            if record.record_type == "supervised_issuer_day_case"
+        ]
+        self._write_rows("issuer_day_cases.parquet", rows)
+        return len(rows)
+
+    def write_direct_event_cases(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=(
+                    "case_id",
+                    "issuer_day_case_id",
+                    "ticker",
+                    "company_name",
+                    "event_id",
+                    "observation_id",
+                    "candidate_decision",
+                    "response_class",
+                    "sample_weight",
+                ),
+            )
+            for record in records
+            if record.record_type == "supervised_direct_event_case"
+        ]
+        self._write_rows("direct_event_cases.parquet", rows)
+        return len(rows)
+
+    def write_theme_formation_cases(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=(
+                    "theme_id",
+                    "theme_name",
+                    "formation_status",
+                    "actual_leader_ticker",
+                ),
+            )
+            for record in records
+            if record.record_type == "supervised_theme_formation_case"
+        ]
+        self._write_rows("theme_formation_cases.parquet", rows)
+        return len(rows)
+
+    def write_beneficiary_cases(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=("case_id", "ticker", "company_name", "theme_id"),
+            )
+            for record in records
+            if record.record_type == "beneficiary_discovery_case"
+        ]
+        self._write_rows("beneficiary_cases.parquet", rows)
+        return len(rows)
+
+    def write_leader_pairs(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=(
+                    "blind_pair_id",
+                    "theme_id",
+                    "blind_preferred_candidate_id",
+                    "blind_rejected_candidate_id",
+                    "outcome_preferred_candidate_id",
+                    "training_example_type",
+                    "blind_preference_correct",
+                ),
+            )
+            for record in records
+            if record.record_type == "blind_leader_preference_pair"
+        ]
+        self._write_rows("leader_pairs.parquet", rows)
+        return len(rows)
+
+    def write_error_cases(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(record, extra_fields=("error_id", "error_type", "correction_mode"))
+            for record in records
+            if record.record_type.endswith("_error_case")
+        ]
+        self._write_rows("error_cases.parquet", rows)
+        return len(rows)
+
+    def write_memory_claim_records(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(
+                record,
+                extra_fields=("claim_id", "mechanism_id", "counterexample_id", "statement"),
+            )
+            for record in records
+            if record.record_type in {"memory_claim", "mechanism_memory", "counterexample"}
+        ]
+        self._write_rows("memory_claims.parquet", rows)
+        return len(rows)
+
+    def write_research_questions(self, records: list[BrainRecordEnvelope]) -> int:
+        rows = [
+            _record_case_row(record, extra_fields=("question_id", "question", "priority"))
+            for record in records
+            if record.record_type == "research_question"
+        ]
+        self._write_rows("research_questions.parquet", rows)
+        return len(rows)
+
+    def write_record_provenance(self, records: list[BrainRecordEnvelope]) -> int:
+        rows: list[dict[str, Any]] = []
+        for record in records:
+            for source_id in record.provenance_source_ids:
+                rows.append(
+                    {
+                        "record_id": record.record_id,
+                        "episode_id": record.episode_id,
+                        "record_type": record.record_type,
+                        "source_id": source_id,
+                    }
+                )
+        self._write_rows("record_provenance.parquet", rows)
+        return len(rows)
+
+    def write_record_coverage(self, records: list[BrainRecordEnvelope]) -> int:
+        grouped: dict[tuple[str, str], list[BrainRecordEnvelope]] = {}
+        for record in records:
+            grouped.setdefault((record.episode_id, record.record_type), []).append(record)
+        rows = [
+            {
+                "episode_id": episode_id,
+                "record_type": record_type,
+                "record_count": len(group_records),
+                "training_eligible_record_count": sum(
+                    1 for record in group_records if record.training_eligible
+                ),
+            }
+            for (episode_id, record_type), group_records in sorted(grouped.items())
+        ]
+        self._write_rows("record_coverage.parquet", rows)
+        return len(rows)
+
     def write_empty(self, filename: str) -> None:
         self._write_rows(filename, [])
 
@@ -329,6 +548,27 @@ def _json(value: Any) -> str:
     if hasattr(value, "model_dump"):
         return json.dumps(value.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _record_case_row(
+    record: BrainRecordEnvelope,
+    *,
+    extra_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "record_id": record.record_id,
+        "episode_id": record.episode_id,
+        "trade_date": record.trade_date.isoformat(),
+        "available_from": record.available_from.isoformat(),
+        "record_type": record.record_type,
+        "training_target": record.training_target,
+        "training_eligible": record.training_eligible,
+        "payload_json": _json(record.payload),
+    }
+    for field_name in extra_fields:
+        value = record.payload.get(field_name)
+        row[field_name] = _json(value) if isinstance(value, list | dict) else value
+    return row
 
 
 def previous_trade_day(trade_day: date) -> date:

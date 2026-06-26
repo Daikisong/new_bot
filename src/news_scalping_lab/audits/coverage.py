@@ -10,6 +10,7 @@ import duckdb
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
@@ -20,6 +21,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
     brain = audit_brain(root)
     accepted_episode_count = _int_value(brain.get("accepted_episode_count"))
     accepted_episodes = ResearchStore(root).list_accepted()
+    records = BrainRecordStore(root).list_records()
     vector_index = inspect_vector_index(root)
     warehouse_counts = WarehouseStore(root).counts()
     warehouse_research_episode_count = _int_value(
@@ -28,6 +30,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
     warehouse_expected_source_counts = _warehouse_expected_source_counts(
         root,
         accepted_episodes,
+        records=records,
     )
     warehouse_count_mismatches = _warehouse_count_mismatches(
         warehouse_counts,
@@ -133,8 +136,11 @@ def _int_value(value: object) -> int:
 def _warehouse_expected_source_counts(
     root: Path,
     accepted_episodes: list[ResearchEpisode],
+    *,
+    records: list[Any],
 ) -> dict[str, dict[str, int | str]]:
     accepted_counts = _accepted_episode_projection_counts(accepted_episodes)
+    record_counts = _record_projection_counts(records)
     return {
         "events.parquet": {
             "expected": accepted_counts["events"],
@@ -169,6 +175,50 @@ def _warehouse_expected_source_counts(
                 root / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
             ),
             "source_label": "source mechanism memory records",
+        },
+        "brain_records.parquet": {
+            "expected": record_counts["brain_records"],
+            "source_label": "normalized brain records",
+        },
+        "issuer_day_cases.parquet": {
+            "expected": record_counts["issuer_day_cases"],
+            "source_label": "issuer-day brain records",
+        },
+        "direct_event_cases.parquet": {
+            "expected": record_counts["direct_event_cases"],
+            "source_label": "direct event brain records",
+        },
+        "theme_formation_cases.parquet": {
+            "expected": record_counts["theme_formation_cases"],
+            "source_label": "theme formation brain records",
+        },
+        "beneficiary_cases.parquet": {
+            "expected": record_counts["beneficiary_cases"],
+            "source_label": "beneficiary discovery brain records",
+        },
+        "leader_pairs.parquet": {
+            "expected": record_counts["leader_pairs"],
+            "source_label": "sealed leader preference pair records",
+        },
+        "error_cases.parquet": {
+            "expected": record_counts["error_cases"],
+            "source_label": "brain error case records",
+        },
+        "memory_claims.parquet": {
+            "expected": record_counts["memory_claims"],
+            "source_label": "brain memory claim records",
+        },
+        "research_questions.parquet": {
+            "expected": record_counts["research_questions"],
+            "source_label": "research question records",
+        },
+        "record_provenance.parquet": {
+            "expected": record_counts["record_provenance"],
+            "source_label": "record provenance links",
+        },
+        "record_coverage.parquet": {
+            "expected": record_counts["record_coverage"],
+            "source_label": "episode/type record coverage groups",
         },
     }
 
@@ -351,6 +401,64 @@ def _accepted_episode_projection_counts(episodes: list[ResearchEpisode]) -> dict
             len(episode.lessons) + len(episode.counterexamples)
             for episode in episodes
         ),
+    }
+
+
+def _record_projection_counts(records: list[Any]) -> dict[str, int]:
+    grouped = {
+        (
+            str(getattr(record, "episode_id", "")),
+            str(getattr(record, "record_type", "")),
+        )
+        for record in records
+    }
+    return {
+        "brain_records": len(records),
+        "issuer_day_cases": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "supervised_issuer_day_case"
+        ),
+        "direct_event_cases": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "supervised_direct_event_case"
+        ),
+        "theme_formation_cases": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "supervised_theme_formation_case"
+        ),
+        "beneficiary_cases": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "beneficiary_discovery_case"
+        ),
+        "leader_pairs": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "blind_leader_preference_pair"
+        ),
+        "error_cases": sum(
+            1
+            for record in records
+            if str(getattr(record, "record_type", "")).endswith("_error_case")
+        ),
+        "memory_claims": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None)
+            in {"memory_claim", "mechanism_memory", "counterexample"}
+        ),
+        "research_questions": sum(
+            1
+            for record in records
+            if getattr(record, "record_type", None) == "research_question"
+        ),
+        "record_provenance": sum(
+            len(getattr(record, "provenance_source_ids", [])) for record in records
+        ),
+        "record_coverage": len(grouped),
     }
 
 
