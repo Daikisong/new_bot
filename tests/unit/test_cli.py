@@ -176,6 +176,61 @@ def test_research_import_cli_reports_import_errors(
     assert "mode rejected during import: unsupported" in result.output
 
 
+def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text("bundle", encoding="utf-8")
+    inspection = {
+        "inspection_status": "validation_failed",
+        "path": bundle.as_posix(),
+        "bundle_schema_version": "nslab.research_bundle.v11",
+        "manifest_schema_version": "nslab.bundle_manifest.v11",
+        "episode_schema_version": "nslab.research_episode.v11",
+        "adapter": "v11",
+        "supported": True,
+        "forward_compatible_raw_only": False,
+        "episode_id": "NSLAB-20300110-SYNTH",
+        "trade_date": "2030-01-10",
+        "raw_record_count": 327,
+        "normalized_record_count": 327,
+        "training_eligible_record_count": 325,
+        "dropped_record_count": 0,
+        "quarantined_record_count": 0,
+        "record_counts_by_type": {"supervised_issuer_day_case": 150},
+        "validation_passed": False,
+        "record_count_matches_manifest": True,
+        "training_eligible_count_matches_manifest": True,
+        "hash_mismatch_count": 16,
+        "hash_expectation_conflict_count": 0,
+        "missing_source_reference_count": 0,
+        "validation": {"passed": False, "hash_mismatches": {"brain_delta.jsonl": {}}},
+    }
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "inspect_versioned_bundle", lambda path: inspection)
+
+    result = CliRunner().invoke(app, ["research", "inspect-bundle", str(bundle)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["inspection_status"] == "validation_failed"
+    report = json.loads(
+        (tmp_path / "diagnostics" / "bundle_inspection_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["schema_version"] == "nslab.bundle_inspection_diagnostics.v1"
+    assert report["status"] == "validation_failed"
+    assert report["bundle_version"] == "nslab.research_bundle.v11"
+    assert report["raw_record_count"] == 327
+    assert report["normalized_record_count"] == 327
+    assert report["dropped_record_count"] == 0
+    assert report["hash_mismatch_count"] == 16
+    assert report["validation"]["passed"] is False
+
+
 def test_research_import_batch_cli_reports_source_file_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

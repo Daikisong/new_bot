@@ -182,7 +182,17 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     unknown = next(record for record in records if record.record_id == "BRAIN-SYNTH-UNKNOWN")
     assert inspection["adapter"] == "v11"
     assert inspection["record_count"] == 3
+    assert inspection["raw_record_count"] == 3
+    assert inspection["normalized_record_count"] == 3
+    assert inspection["dropped_record_count"] == 0
+    assert inspection["quarantined_record_count"] == 0
     assert inspection["training_eligible_record_count"] == 2
+    assert inspection["validation_passed"] is True
+    assert inspection["record_count_matches_manifest"] is True
+    assert inspection["training_eligible_count_matches_manifest"] is True
+    assert inspection["hash_mismatch_count"] == 0
+    assert inspection["missing_source_reference_count"] == 0
+    assert inspection["inspection_status"] == "validation_passed"
     assert result.record_count == 3
     assert result.training_eligible_record_count == 2
     assert unknown.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"

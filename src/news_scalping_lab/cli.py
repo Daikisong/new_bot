@@ -447,9 +447,53 @@ def research_inspect_bundle(path: Path) -> None:
         typer.echo(f"research bundle file not found: {path}", err=True)
         raise typer.Exit(code=1)
     try:
-        _echo(inspect_versioned_bundle(path))
+        inspection = inspect_versioned_bundle(path)
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
+    settings = load_settings()
+    write_diagnostic_report(
+        settings.project_root,
+        "bundle_inspection_report",
+        {
+            "schema_version": "nslab.bundle_inspection_diagnostics.v1",
+            "status": inspection.get("inspection_status"),
+            "path": relative_to_root(path, settings.project_root),
+            "bundle_version": inspection.get("bundle_schema_version"),
+            "manifest_schema_version": inspection.get("manifest_schema_version"),
+            "episode_schema_version": inspection.get("episode_schema_version"),
+            "adapter": inspection.get("adapter"),
+            "supported": inspection.get("supported"),
+            "forward_compatible_raw_only": inspection.get(
+                "forward_compatible_raw_only"
+            ),
+            "episode_id": inspection.get("episode_id"),
+            "trade_date": inspection.get("trade_date"),
+            "raw_record_count": inspection.get("raw_record_count"),
+            "normalized_record_count": inspection.get("normalized_record_count"),
+            "training_eligible_record_count": inspection.get(
+                "training_eligible_record_count"
+            ),
+            "dropped_record_count": inspection.get("dropped_record_count"),
+            "quarantined_record_count": inspection.get("quarantined_record_count"),
+            "record_counts_by_type": inspection.get("record_counts_by_type"),
+            "validation_passed": inspection.get("validation_passed"),
+            "record_count_matches_manifest": inspection.get(
+                "record_count_matches_manifest"
+            ),
+            "training_eligible_count_matches_manifest": inspection.get(
+                "training_eligible_count_matches_manifest"
+            ),
+            "hash_mismatch_count": inspection.get("hash_mismatch_count"),
+            "hash_expectation_conflict_count": inspection.get(
+                "hash_expectation_conflict_count"
+            ),
+            "missing_source_reference_count": inspection.get(
+                "missing_source_reference_count"
+            ),
+            "validation": inspection.get("validation"),
+        },
+    )
+    _echo(inspection)
 
 
 @research_app.command("import-bundle")
