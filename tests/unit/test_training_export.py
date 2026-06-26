@@ -445,11 +445,58 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert training_report["unique_exported_record_count"] == 2
     assert training_report["unique_skipped_record_count"] == 1
     assert training_report["source_phase_counts"] == {"POSTMORTEM": 3}
+    assert training_report["source_record_hash_count"] == 3
+    assert sorted(training_report["source_record_hashes"]) == [
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    ]
     assert training_report["unique_exported_record_ids"] == [
         "BRAIN-ISSUER",
         "BRAIN-PAIR",
     ]
     assert training_report["unique_skipped_record_ids"] == ["BRAIN-MEMORY"]
+
+
+def test_training_audit_requires_brain_record_source_hashes(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        )
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    manifest.pop("source_record_hashes")
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert "sft: source_record_hashes are missing" in audit["findings"]
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["passed"] is False
+    assert "sft: source_record_hashes are missing" in training_report["findings"]
 
 
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:

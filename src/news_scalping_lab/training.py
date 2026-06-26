@@ -104,6 +104,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             continue
         manifests[kind] = manifest
         summaries[kind] = _training_manifest_summary(manifest)
+        _audit_source_hash_contract(kind, manifest, findings)
         source_record_ids.update(_source_record_ids_from_manifest(manifest))
         training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
         output_file = manifest.get("output_file")
@@ -178,6 +179,14 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
             "hindsight_row_count": _sum_int(summaries, "hindsight_row_count"),
             "source_phase_counts": _sum_counter(summaries, "source_phase_counts"),
+            "source_hashes": _merge_string_maps(summaries, "source_hashes"),
+            "source_record_hashes": _merge_string_maps(
+                summaries,
+                "source_record_hashes",
+            ),
+            "source_record_hash_count": len(
+                _merge_string_maps(summaries, "source_record_hashes")
+            ),
             "counts_by_record_type": _max_counter(summaries, "counts_by_record_type"),
             "counts_by_training_target": _max_counter(
                 summaries,
@@ -191,6 +200,42 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         },
     )
     return report
+
+
+def _audit_source_hash_contract(
+    kind: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if manifest.get("source_mode") != "brain_records":
+        return
+    hashes = manifest.get("source_record_hashes")
+    if not isinstance(hashes, dict) or not hashes:
+        findings.append(f"{kind}: source_record_hashes are missing")
+        return
+    invalid_ids = [
+        str(record_id)
+        for record_id, digest in hashes.items()
+        if not isinstance(record_id, str)
+        or not record_id
+        or not isinstance(digest, str)
+        or len(digest) != 64
+    ]
+    if invalid_ids:
+        findings.append(
+            f"{kind}: source_record_hashes contain invalid hash entries: "
+            f"{', '.join(sorted(invalid_ids))}"
+        )
+    expected_count = manifest.get("source_record_count")
+    if (
+        isinstance(expected_count, int)
+        and not isinstance(expected_count, bool)
+        and expected_count != len(hashes)
+    ):
+        findings.append(
+            f"{kind}: source_record_hashes count {len(hashes)} does not match "
+            f"source_record_count {expected_count}"
+        )
 
 
 def _source_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
@@ -388,6 +433,9 @@ def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "category_counts": manifest.get("category_counts", {}),
         "missing_training_categories": manifest.get("missing_training_categories", []),
         "source_phase_counts": manifest.get("source_phase_counts", {}),
+        "source_hashes": _string_map(manifest.get("source_hashes")),
+        "source_record_hashes": _string_map(manifest.get("source_record_hashes")),
+        "source_record_hash_count": len(_string_map(manifest.get("source_record_hashes"))),
         "weight_validation_status": manifest.get("weight_validation_status"),
         "output_file": manifest.get("output_file"),
     }
@@ -442,6 +490,28 @@ def _sum_counter(
             ):
                 counter[item_key] += item_value
     return dict(sorted(counter.items()))
+
+
+def _string_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        item_key: item_value
+        for item_key, item_value in sorted(value.items())
+        if isinstance(item_key, str) and isinstance(item_value, str)
+    }
+
+
+def _merge_string_maps(
+    summaries: dict[str, dict[str, Any]],
+    key: str,
+) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for summary in summaries.values():
+        value = summary.get(key)
+        if isinstance(value, dict):
+            merged.update(_string_map(value))
+    return dict(sorted(merged.items()))
 
 
 def _project_relative_path(root: Path, path: Path) -> str:
