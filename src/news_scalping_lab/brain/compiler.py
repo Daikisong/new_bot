@@ -875,17 +875,19 @@ class BrainCompiler:
             record.training_target or "UNKNOWN" for record in records
         )
         record_ids = [record.record_id for record in records]
+        training_eligible_count = sum(1 for record in records if record.training_eligible)
         return {
             "schema_version": "nslab.record_coverage_manifest.v1",
             "brain_version": manifest.brain_version,
             "build_mode": manifest.build_mode,
             "catalog_only": manifest.catalog_only,
+            "record_coverage_as_of": manifest.created_at.isoformat(),
             "accepted_episode_count": manifest.accepted_episode_count,
             "accepted_record_count": len(records),
             "available_record_count": len(records),
-            "training_eligible_available_record_count": sum(
-                1 for record in records if record.training_eligible
-            ),
+            "available_record_count_as_of": len(records),
+            "training_eligible_available_record_count": training_eligible_count,
+            "training_eligible_record_count_as_of": training_eligible_count,
             "compiled_record_count": len(records),
             "swept_record_count": len(records),
             "swept_record_ids": record_ids,
@@ -1577,7 +1579,9 @@ def _record_coverage_summary(record_coverage: dict[str, object]) -> dict[str, ob
     keys = (
         "accepted_record_count",
         "available_record_count",
+        "available_record_count_as_of",
         "training_eligible_available_record_count",
+        "training_eligible_record_count_as_of",
         "compiled_record_count",
         "swept_record_count",
         "unswept_record_ids",

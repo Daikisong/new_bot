@@ -240,6 +240,13 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert brain_manifest["catalog_only"] is True
     assert coverage_manifest["catalog_only"] is True
     assert record_coverage_manifest["catalog_only"] is True
+    assert record_coverage_manifest["record_coverage_as_of"] == manifest.created_at.isoformat()
+    assert record_coverage_manifest["available_record_count_as_of"] == (
+        record_coverage_manifest["available_record_count"]
+    )
+    assert record_coverage_manifest["training_eligible_record_count_as_of"] == (
+        record_coverage_manifest["training_eligible_available_record_count"]
+    )
     assert brain_report["latest_brain_audit"]["catalog_only"] is True
     assert "Catalog only: `True`" in brain_text
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
@@ -1418,7 +1425,9 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
         {
             "accepted_record_count": 0,
             "available_record_count": 0,
+            "available_record_count_as_of": 0,
             "training_eligible_available_record_count": 2,
+            "training_eligible_record_count_as_of": 2,
             "compiled_record_count": 0,
             "swept_record_count": 1,
             "swept_record_ids": ["BRAIN-UNKNOWN", "BRAIN-UNKNOWN"],
@@ -1446,7 +1455,9 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
         "record coverage manifest unswept ids do not match record store",
         "record coverage manifest count does not match record store",
         "record coverage manifest available count does not match record store",
+        "record coverage manifest as-of available count does not match record store",
         "record coverage manifest training eligible count does not match record store",
+        "record coverage manifest as-of training eligible count does not match record store",
         "record coverage manifest compiled count does not match record store",
         "record coverage manifest swept count does not match swept IDs",
         "record coverage manifest type counts do not match record store",

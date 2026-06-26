@@ -663,7 +663,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         return {
             "accepted_record_count": 0,
             "available_record_count": 0,
+            "available_record_count_as_of": 0,
             "training_eligible_available_record_count": 0,
+            "training_eligible_record_count_as_of": 0,
             "swept_record_count": 0,
             "unswept_record_ids": [],
             "record_coverage_complete": True,
@@ -674,7 +676,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         return {
             "accepted_record_count": len(records),
             "available_record_count": len(records),
+            "available_record_count_as_of": len(records),
             "training_eligible_available_record_count": training_eligible_count,
+            "training_eligible_record_count_as_of": training_eligible_count,
             "swept_record_count": 0,
             "unswept_record_ids": [record.record_id for record in records],
             "record_coverage_complete": False,
@@ -685,7 +689,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         return {
             "accepted_record_count": len(records),
             "available_record_count": len(records),
+            "available_record_count_as_of": len(records),
             "training_eligible_available_record_count": training_eligible_count,
+            "training_eligible_record_count_as_of": training_eligible_count,
             "swept_record_count": 0,
             "unswept_record_ids": [record.record_id for record in records],
             "record_coverage_complete": False,
@@ -717,9 +723,24 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         findings.append(
             "record coverage manifest available count does not match record store"
         )
+    if (
+        manifest.get("available_record_count_as_of") is not None
+        and manifest.get("available_record_count_as_of") != len(records)
+    ):
+        findings.append(
+            "record coverage manifest as-of available count does not match record store"
+        )
     if manifest.get("training_eligible_available_record_count") != training_eligible_count:
         findings.append(
             "record coverage manifest training eligible count does not match record store"
+        )
+    if (
+        manifest.get("training_eligible_record_count_as_of") is not None
+        and manifest.get("training_eligible_record_count_as_of")
+        != training_eligible_count
+    ):
+        findings.append(
+            "record coverage manifest as-of training eligible count does not match record store"
         )
     if manifest.get("compiled_record_count") != len(records):
         findings.append(
@@ -755,7 +776,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     return {
         "accepted_record_count": len(records),
         "available_record_count": len(records),
+        "available_record_count_as_of": len(records),
         "training_eligible_available_record_count": training_eligible_count,
+        "training_eligible_record_count_as_of": training_eligible_count,
         "swept_record_count": len(swept_ids & record_ids),
         "unswept_record_ids": unswept,
         "record_coverage_complete": not findings,
