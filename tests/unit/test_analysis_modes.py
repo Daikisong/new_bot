@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime
 
 import pytest
@@ -13,6 +14,45 @@ from news_scalping_lab.contracts.models import BlindAnalysis, PathType, Research
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, read_json
+
+
+class OrderAssertingRetrieval:
+    def __init__(self, first_pass_completed: Callable[[], bool]) -> None:
+        self.first_pass_completed = first_pass_completed
+        self.queries: list[str] = []
+
+    def add_episode(self, episode: ResearchEpisode) -> None:
+        raise AssertionError("test retrieval does not accept added episodes")
+
+    def search_semantic(self, query: str, *, limit: int = 10) -> list[str]:
+        assert self.first_pass_completed(), (
+            "current-news first pass must finish before past semantic retrieval"
+        )
+        self.queries.append(query)
+        return []
+
+    def list_all_episodes(self) -> list[ResearchEpisode]:
+        return []
+
+    def get_available_as_of(self, cutoff_at: datetime) -> list[ResearchEpisode]:
+        return []
+
+
+class FirstPassTrackingAnalyzer(DailyAnalyzer):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        first_pass_state: dict[str, bool],
+        retrieval: OrderAssertingRetrieval,
+    ) -> None:
+        self.first_pass_state = first_pass_state
+        super().__init__(settings, retrieval=retrieval)
+
+    def _infer_first_pass_mechanisms(self, news_texts: list[str]) -> list[str]:
+        mechanisms = super()._infer_first_pass_mechanisms(news_texts)
+        self.first_pass_state["completed"] = True
+        return mechanisms
 
 
 def test_normalize_analysis_mode_accepts_only_supported_modes() -> None:
@@ -208,6 +248,40 @@ async def test_daily_analyzer_rejects_unknown_analysis_mode_before_writing_outpu
 
     assert list((tmp_path / "predictions").glob("*.json")) == []
     assert list((tmp_path / "runs" / "manifests").glob("*.json")) == []
+
+
+@pytest.mark.asyncio
+async def test_daily_analyzer_runs_current_news_first_pass_before_past_retrieval(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "first_pass_order_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","FirstPassCo, fresh catalyst",'
+        '"The analyzer must read current news before searching past research."\n',
+        encoding="utf-8",
+    )
+    first_pass_state = {"completed": False}
+    retrieval = OrderAssertingRetrieval(lambda: first_pass_state["completed"])
+
+    analysis = await FirstPassTrackingAnalyzer(
+        settings,
+        first_pass_state=first_pass_state,
+        retrieval=retrieval,
+    ).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    assert first_pass_state["completed"] is True
+    assert retrieval.queries
+    assert analysis.context_manifest.retrieved_episode_ids == []
 
 
 def test_session_pack_rejects_unknown_analysis_mode_before_writing_pack(tmp_path) -> None:

@@ -204,6 +204,9 @@ class DailyAnalyzer:
                 }
             )
         )
+        blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
+        news_texts = [item.combined_text for item in blind_news_items]
+        first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
         retrieved_ids, excluded_retrieved_ids = self._filter_retrieved_ids_available_as_of(
@@ -257,8 +260,6 @@ class DailyAnalyzer:
 
         manifest.price_snapshot.source_name = self._blind_price_source_name()
 
-        blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
-        news_texts = [item.combined_text for item in blind_news_items]
         _news_novelty_review, novelty_prompt_hash, novelty_prompt_tokens = (
             await self._run_news_novelty_review(
                 news_texts=news_texts,
@@ -267,7 +268,6 @@ class DailyAnalyzer:
             )
         )
         manifest.token_counts["news_novelty_review_prompt"] = novelty_prompt_tokens
-        first_pass_mechanisms = self._infer_first_pass_mechanisms(news_texts)
         sweep = MemorySweeper(
             self.root,
             shard_episode_count=self.settings.limits.shard_episode_count,
