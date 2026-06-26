@@ -55,6 +55,7 @@ class BrainRecordStore:
         records: list[BrainRecordEnvelope],
         raw_blocks: dict[str, str],
         validation_report: dict[str, Any],
+        accepted: bool = True,
     ) -> StoredBundleResult:
         source_hash = file_sha256(source_path)
         episode_dir = self.research_episodes_dir / envelope.episode_id
@@ -71,7 +72,7 @@ class BrainRecordStore:
                 f"quarantined at {quarantine.as_posix()}"
             )
 
-        existing_ids = self.record_id_index()
+        existing_ids = _record_id_index(self.list_records(accepted_only=False))
         for record in records:
             existing = existing_ids.get(record.record_id)
             if existing is None:
@@ -126,6 +127,8 @@ class BrainRecordStore:
         record_manifest = {
             "schema_version": "nslab.record_manifest.v1",
             "episode_id": envelope.episode_id,
+            "accepted": accepted,
+            "acceptance_status": "accepted" if accepted else "staged",
             "record_count": len(records),
             "training_eligible_record_count": eligible_count,
             "record_counts_by_type": dict(sorted(record_counts.items())),
@@ -179,11 +182,42 @@ class BrainRecordStore:
         )
         return target_dir
 
-    def list_records(self) -> list[BrainRecordEnvelope]:
+    def list_records(self, *, accepted_only: bool = True) -> list[BrainRecordEnvelope]:
         records: list[BrainRecordEnvelope] = []
         for path in sorted(self.records_dir.glob("*.jsonl")):
+            if accepted_only and not self.episode_records_accepted(path.stem):
+                continue
             records.extend(self.read_episode_records(path.stem))
         return sorted(records, key=lambda record: (record.trade_date, record.record_id))
+
+    def episode_records_accepted(self, episode_id: str) -> bool:
+        manifest_path = self.record_manifests_dir / f"{episode_id}.json"
+        if not manifest_path.exists():
+            return True
+        payload = read_json(manifest_path)
+        if not isinstance(payload, dict):
+            return True
+        return payload.get("accepted") is not False
+
+    def accept_episode_records(self, episode_id: str) -> Path:
+        records_path = self.records_dir / f"{episode_id}.jsonl"
+        if not records_path.exists():
+            raise FileNotFoundError(f"records not found for episode: {episode_id}")
+        manifest_path = self.record_manifests_dir / f"{episode_id}.json"
+        payload = read_json(manifest_path) if manifest_path.exists() else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        payload.update(
+            {
+                "schema_version": payload.get("schema_version", "nslab.record_manifest.v1"),
+                "episode_id": episode_id,
+                "accepted": True,
+                "acceptance_status": "accepted",
+            }
+        )
+        write_json(manifest_path, payload)
+        self.rebuild_indexes()
+        return manifest_path
 
     def read_episode_records(self, episode_id: str) -> list[BrainRecordEnvelope]:
         path = self.records_dir / f"{episode_id}.jsonl"
@@ -226,17 +260,7 @@ class BrainRecordStore:
 
     def rebuild_indexes(self) -> dict[str, Any]:
         records = self.list_records()
-        by_record_id = {
-            record.record_id: {
-                "episode_id": record.episode_id,
-                "record_type": record.record_type,
-                "trade_date": record.trade_date.isoformat(),
-                "available_from": record.available_from.isoformat(),
-                "training_eligible": str(record.training_eligible).lower(),
-                "normalized_payload_sha256": record.normalized_payload_sha256,
-            }
-            for record in records
-        }
+        by_record_id = _record_id_index(records)
         counts_by_type = Counter(record.record_type for record in records)
         counts_by_phase = Counter(record.evidence_phase for record in records)
         counts_by_target = Counter(
@@ -335,6 +359,20 @@ def _record_stats(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
         "record_counts_by_training_target": dict(
             sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
         ),
+    }
+
+
+def _record_id_index(records: list[BrainRecordEnvelope]) -> dict[str, dict[str, str]]:
+    return {
+        record.record_id: {
+            "episode_id": record.episode_id,
+            "record_type": record.record_type,
+            "trade_date": record.trade_date.isoformat(),
+            "available_from": record.available_from.isoformat(),
+            "training_eligible": str(record.training_eligible).lower(),
+            "normalized_payload_sha256": record.normalized_payload_sha256,
+        }
+        for record in records
     }
 
 

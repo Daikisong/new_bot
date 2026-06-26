@@ -1,4 +1,6 @@
 {
+  "acceptance_status": "accepted",
+  "accepted": true,
   "episode_id": "NSLAB-20300110-SYNTH",
   "record_count": 2,
   "record_counts_by_type": {

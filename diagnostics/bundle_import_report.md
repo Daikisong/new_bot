@@ -4,6 +4,8 @@
 - adapter: `v11`
 - bundle_version: `nslab.research_bundle.v11`
 - episode_id: `NSLAB-20300110-SYNTH`
+- accepted: `True`
+- acceptance_status: `accepted`
 - raw_record_count: `2`
 - normalized_record_count: `2`
 - training_eligible_record_count: `2`

@@ -14,7 +14,7 @@
   "kind": "evals",
   "output_file": "training_exports/evals/evals.jsonl",
   "row_count": 1,
-  "skipped_record_count": 0,
+  "skipped_record_count": 3,
   "source_episode_count": 3,
   "source_mode": "brain_records",
   "source_record_count": 4,

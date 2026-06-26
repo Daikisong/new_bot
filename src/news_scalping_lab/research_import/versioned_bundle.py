@@ -45,6 +45,7 @@ class BundleImportResult:
     adapter_name: str
     episode_id: str
     bundle_schema_version: str
+    accepted: bool
     record_count: int
     training_eligible_record_count: int
     envelope_path: Path | None
@@ -350,6 +351,7 @@ def import_versioned_bundle(
     *,
     root: Path,
     validate: bool = True,
+    accepted: bool = True,
 ) -> BundleImportResult:
     parsed = parse_generic_bundle(path)
     adapter = select_adapter(parsed)
@@ -386,6 +388,7 @@ def import_versioned_bundle(
             adapter_name="unsupported",
             episode_id=episode_id,
             bundle_schema_version=bundle_schema_version(parsed),
+            accepted=False,
             record_count=0,
             training_eligible_record_count=0,
             envelope_path=quarantine / "quarantine.json",
@@ -407,12 +410,15 @@ def import_versioned_bundle(
         records=records,
         raw_blocks=parsed.payload_blocks,
         validation_report=validation,
+        accepted=accepted,
     )
     diagnostics_payload = {
         "status": "imported",
         "adapter": adapter.name,
         "bundle_version": bundle_schema_version(parsed),
         "episode_id": _episode_id(parsed),
+        "accepted": accepted,
+        "acceptance_status": "accepted" if accepted else "staged",
         "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
         "normalized_record_count": stored.record_count,
         "training_eligible_record_count": stored.training_eligible_record_count,
@@ -424,23 +430,12 @@ def import_versioned_bundle(
         "validation": validation,
     }
     write_diagnostic_report(root, "bundle_import_report", diagnostics_payload)
-    write_diagnostic_report(
-        root,
-        "brain_record_store_report",
-        {
-            "episode_id": _episode_id(parsed),
-            "record_count": stored.record_count,
-            "training_eligible_record_count": stored.training_eligible_record_count,
-            "records_file": stored.record_path.relative_to(root).as_posix(),
-            "manifest_file": stored.manifest_path.relative_to(root).as_posix(),
-            "dropped_record_count": 0,
-        },
-    )
     return BundleImportResult(
         status="imported",
         adapter_name=adapter.name,
         episode_id=_episode_id(parsed),
         bundle_schema_version=bundle_schema_version(parsed),
+        accepted=accepted,
         record_count=stored.record_count,
         training_eligible_record_count=stored.training_eligible_record_count,
         envelope_path=stored.envelope_path,

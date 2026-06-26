@@ -208,6 +208,38 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
 
 
+def test_versioned_bundle_can_stage_records_until_accepted(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+
+    staged = import_versioned_bundle(bundle, root=tmp_path, accepted=False)
+    store = BrainRecordStore(tmp_path)
+
+    assert staged.accepted is False
+    assert staged.manifest_path is not None
+    assert len(store.read_episode_records("NSLAB-20300110-SYNTH")) == 2
+    assert store.list_records() == []
+    staged_manifest = _read_json(staged.manifest_path)
+    assert staged_manifest["accepted"] is False
+    assert staged_manifest["acceptance_status"] == "staged"
+    assert WarehouseStore(tmp_path).rebuild_all()["brain_records"] == 0
+
+    accepted = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    assert accepted.accepted is True
+    assert accepted.manifest_path is not None
+    assert {record.record_id for record in store.list_records()} == {
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+    }
+    accepted_manifest = _read_json(accepted.manifest_path)
+    assert accepted_manifest["accepted"] is True
+    assert accepted_manifest["acceptance_status"] == "accepted"
+    assert WarehouseStore(tmp_path).rebuild_all()["brain_records"] == 2
+
+
 def test_unknown_bundle_version_is_quarantined_without_record_loss(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

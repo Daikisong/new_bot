@@ -65,6 +65,11 @@ KIND_TRAINING_CATEGORIES = {
     "evals": ["evaluation_examples"],
 }
 
+RECORD_SFT_TRAINING_CATEGORIES = [
+    "issuer_day_supervised_records",
+    "direct_event_supervised_records",
+]
+
 
 @dataclass(frozen=True)
 class TrainingExportResult:
@@ -118,6 +123,12 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         if records
         else _rows_for_kind(kind, episodes, source_hashes=source_hashes)
     )
+    training_categories = _training_categories_for_kind(kind, source_mode=source_mode)
+    source_episode_ids = (
+        sorted({record.episode_id for record in records})
+        if records
+        else [episode.episode_id for episode in episodes]
+    )
     row_episode_ids = {
         episode_id
         for row in rows
@@ -146,13 +157,13 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "source_mode": source_mode,
             "created_at": now_kst().isoformat(),
             "row_count": len(rows),
-            "episode_count": len(episodes),
-            "source_episode_count": len({record.episode_id for record in records})
-            if records
-            else len(episodes),
+            "episode_count": len(source_episode_ids),
+            "source_episode_count": len(source_episode_ids),
             "source_record_count": len(records),
             "eligible_record_count": sum(
-                1 for record in records if _record_selected_for_kind(kind, record)
+                1
+                for record in records
+                if _record_selected_for_kind(kind, record) and record.training_eligible
             ),
             "exported_record_count": len(
                 {
@@ -164,8 +175,8 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             ),
             "skipped_record_count": len(skipped_records),
             "skipped_records": skipped_records,
-            "episode_ids": [episode.episode_id for episode in episodes],
-            "eligible_episode_count": len(episodes) - len(skipped),
+            "episode_ids": source_episode_ids,
+            "eligible_episode_count": len(source_episode_ids) - len(skipped),
             "skipped_episode_count": len(skipped),
             "skipped_episodes": skipped,
             "source_hashes": source_hashes,
@@ -177,9 +188,15 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "phase_outputs": phase_outputs,
             "task_counts": _task_counts(rows),
             "required_training_categories": REQUIRED_TRAINING_CATEGORIES,
-            "training_categories": KIND_TRAINING_CATEGORIES[kind],
-            "category_counts": _category_counts(rows, kind=kind),
-            "missing_training_categories": _missing_training_categories(rows, kind=kind),
+            "training_categories": training_categories,
+            "category_counts": _category_counts(
+                rows,
+                training_categories=training_categories,
+            ),
+            "missing_training_categories": _missing_training_categories(
+                rows,
+                training_categories=training_categories,
+            ),
             "blind_safe_row_count": sum(
                 1 for row in rows if row["hindsight_safe_for_blind_sft"] is True
             ),
@@ -880,19 +897,36 @@ def _task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def _category_counts(rows: list[dict[str, Any]], *, kind: str) -> dict[str, int]:
-    counts = dict.fromkeys(KIND_TRAINING_CATEGORIES[kind], 0)
+def _training_categories_for_kind(kind: str, *, source_mode: str) -> list[str]:
+    categories = list(KIND_TRAINING_CATEGORIES[kind])
+    if kind == "sft" and source_mode == "brain_records":
+        for category in RECORD_SFT_TRAINING_CATEGORIES:
+            if category not in categories:
+                categories.append(category)
+    return categories
+
+
+def _category_counts(
+    rows: list[dict[str, Any]],
+    *,
+    training_categories: list[str],
+) -> dict[str, int]:
+    counts = dict.fromkeys(training_categories, 0)
     for row in rows:
         category = str(row["training_category"])
         counts[category] = counts.get(category, 0) + 1
     return counts
 
 
-def _missing_training_categories(rows: list[dict[str, Any]], *, kind: str) -> list[str]:
-    counts = _category_counts(rows, kind=kind)
+def _missing_training_categories(
+    rows: list[dict[str, Any]],
+    *,
+    training_categories: list[str],
+) -> list[str]:
+    counts = _category_counts(rows, training_categories=training_categories)
     return [
         category
-        for category in KIND_TRAINING_CATEGORIES[kind]
+        for category in training_categories
         if counts.get(category, 0) == 0
     ]
 
@@ -912,15 +946,17 @@ def _skipped_records(
     skipped: list[dict[str, Any]] = []
     for record in records:
         if not _record_selected_for_kind(kind, record):
-            continue
-        if record.training_eligible:
+            reason = "record_type_not_selected_for_export_kind"
+        elif not record.training_eligible:
+            reason = record.eligibility_reason or "training_eligible=false"
+        else:
             continue
         skipped.append(
             {
                 "record_id": record.record_id,
                 "record_type": record.record_type,
                 "episode_id": record.episode_id,
-                "reason": record.eligibility_reason or "training_eligible=false",
+                "reason": reason,
             }
         )
     return skipped

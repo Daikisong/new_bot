@@ -7,7 +7,7 @@
 - eligible_record_count: `1`
 - exported_record_count: `1`
 - row_count: `1`
-- skipped_record_count: `0`
+- skipped_record_count: `3`
 ## counts_by_record_type
 
 - blind_leader_preference_pair: `1`

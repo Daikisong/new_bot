@@ -1,4 +1,6 @@
 {
+  "acceptance_status": "accepted",
+  "accepted": true,
   "adapter": "v11",
   "bundle_version": "nslab.research_bundle.v11",
   "dropped_record_count": 0,

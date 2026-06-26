@@ -447,6 +447,7 @@ def research_import_bundle(
             path,
             root=settings.project_root,
             validate=validate,
+            accepted=accept,
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -454,7 +455,7 @@ def research_import_bundle(
         {
             "imported": result.status == "imported",
             "status": result.status,
-            "accepted": accept and result.status == "imported",
+            "accepted": result.accepted,
             "adapter": result.adapter_name,
             "episode_id": result.episode_id,
             "bundle_schema_version": result.bundle_schema_version,

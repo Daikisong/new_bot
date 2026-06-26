@@ -23,6 +23,7 @@ from news_scalping_lab.contracts.models import (
     RelationClass,
 )
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
     CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
@@ -35,7 +36,11 @@ from news_scalping_lab.research_import.semantic import (
     SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
     build_semantic_import_prompt,
 )
-from news_scalping_lab.training import KIND_TRAINING_CATEGORIES, REQUIRED_TRAINING_CATEGORIES
+from news_scalping_lab.training import (
+    KIND_TRAINING_CATEGORIES,
+    RECORD_SFT_TRAINING_CATEGORIES,
+    REQUIRED_TRAINING_CATEGORIES,
+)
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -6155,7 +6160,8 @@ def _check_training_export_manifest(
 ) -> None:
     label = _display_path(root, manifest_path)
     kind = manifest_path.parent.name
-    allowed_categories = KIND_TRAINING_CATEGORIES.get(kind)
+    source_mode = manifest.get("source_mode")
+    allowed_categories = _training_export_allowed_categories(kind, source_mode)
     if manifest.get("schema_version") != "nslab.training_export_manifest.v1":
         findings.append(f"{label}: training export schema_version invalid")
     if manifest.get("kind") != kind:
@@ -6180,31 +6186,174 @@ def _check_training_export_manifest(
     if not output_path.exists():
         findings.append(f"{label}: training export output_file not found")
         return
-    source_hashes = _training_export_source_hashes(root, label, manifest, findings)
-    source_payloads = _training_export_source_payloads(root, source_hashes)
     expected_sha = manifest.get("output_sha256")
     if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
         findings.append(f"{label}: training export output_sha256 mismatch")
     rows = _read_training_export_rows(output_path, label, findings)
-    _check_training_export_episode_scope(
-        root,
-        label,
-        manifest,
-        rows,
-        source_hashes=source_hashes,
-        findings=findings,
-    )
-    _check_training_export_rows(
+    if source_mode == "brain_records":
+        source_record_hashes = _training_export_source_record_hashes(
+            root,
+            label,
+            manifest,
+            findings,
+        )
+        _check_training_export_record_scope(
+            root,
+            label,
+            manifest,
+            rows,
+            source_record_hashes=source_record_hashes,
+            findings=findings,
+        )
+        _check_training_export_record_rows(
+            label,
+            kind,
+            allowed_categories,
+            rows,
+            source_record_hashes=source_record_hashes,
+            findings=findings,
+        )
+    else:
+        source_hashes = _training_export_source_hashes(root, label, manifest, findings)
+        source_payloads = _training_export_source_payloads(root, source_hashes)
+        _check_training_export_episode_scope(
+            root,
+            label,
+            manifest,
+            rows,
+            source_hashes=source_hashes,
+            findings=findings,
+        )
+        _check_training_export_rows(
+            label,
+            kind,
+            allowed_categories,
+            rows,
+            source_hashes=source_hashes,
+            source_payloads=source_payloads,
+            findings=findings,
+        )
+    _check_training_export_manifest_counts(
         label,
         kind,
-        allowed_categories,
+        manifest,
         rows,
-        source_hashes=source_hashes,
-        source_payloads=source_payloads,
-        findings=findings,
+        allowed_categories,
+        findings,
     )
-    _check_training_export_manifest_counts(label, kind, manifest, rows, findings)
     _check_training_export_phase_outputs(root, label, manifest, rows, findings)
+
+
+def _training_export_allowed_categories(
+    kind: str,
+    source_mode: object,
+) -> list[str] | None:
+    categories = KIND_TRAINING_CATEGORIES.get(kind)
+    if categories is None:
+        return None
+    allowed = list(categories)
+    if kind == "sft" and source_mode == "brain_records":
+        for category in RECORD_SFT_TRAINING_CATEGORIES:
+            if category not in allowed:
+                allowed.append(category)
+    return allowed
+
+
+def _training_export_source_record_hashes(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> dict[str, str]:
+    raw = manifest.get("source_record_hashes")
+    if not isinstance(raw, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) and value
+        for key, value in raw.items()
+    ):
+        findings.append(f"{label}: training export source_record_hashes invalid")
+        return {}
+    source_record_hashes = dict(raw)
+    accepted_record_hashes = {
+        record.record_id: record.normalized_payload_sha256
+        for record in BrainRecordStore(root).list_records()
+    }
+    if source_record_hashes != accepted_record_hashes:
+        findings.append(f"{label}: training export source_record_hashes mismatch")
+    if manifest.get("source_record_count") != len(accepted_record_hashes):
+        findings.append(f"{label}: training export source_record_count mismatch")
+    return source_record_hashes
+
+
+def _check_training_export_record_scope(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    source_record_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    accepted_records = BrainRecordStore(root).list_records()
+    accepted_record_ids = {record.record_id for record in accepted_records}
+    source_record_ids = set(source_record_hashes)
+    if source_record_ids != accepted_record_ids:
+        findings.append(f"{label}: training export record source scope mismatch")
+
+    episode_ids = _training_export_manifest_episode_ids(label, manifest, findings)
+    record_episode_ids = {record.episode_id for record in accepted_records}
+    if episode_ids is not None and set(episode_ids) != record_episode_ids:
+        findings.append(f"{label}: training export record episode_ids mismatch")
+    if manifest.get("episode_count") != len(record_episode_ids):
+        findings.append(f"{label}: training export record episode_count mismatch")
+    if manifest.get("source_episode_count") != len(record_episode_ids):
+        findings.append(f"{label}: training export record source_episode_count mismatch")
+
+    skipped_record_ids = _training_export_skipped_record_ids(label, manifest, findings)
+    if skipped_record_ids is None:
+        skipped_record_ids = set()
+    if not skipped_record_ids <= source_record_ids:
+        findings.append(f"{label}: training export skipped_record_ids mismatch")
+    if manifest.get("skipped_record_count") != len(skipped_record_ids):
+        findings.append(f"{label}: training export skipped_record_count mismatch")
+
+    row_record_ids = {
+        record_id
+        for row in rows
+        if isinstance(record_id := row.get("record_id"), str) and record_id
+    }
+    if not row_record_ids <= source_record_ids:
+        findings.append(f"{label}: training export row record scope mismatch")
+    if row_record_ids & skipped_record_ids:
+        findings.append(f"{label}: training export skipped_record row overlap")
+    if row_record_ids | skipped_record_ids != source_record_ids:
+        findings.append(f"{label}: training export record coverage mismatch")
+
+
+def _training_export_skipped_record_ids(
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> set[str] | None:
+    raw = manifest.get("skipped_records")
+    if not isinstance(raw, list):
+        findings.append(f"{label}: training export skipped_records invalid")
+        return None
+    skipped_ids: list[str] = []
+    invalid = False
+    for item in raw:
+        if not isinstance(item, dict):
+            invalid = True
+            continue
+        record_id = item.get("record_id")
+        if not isinstance(record_id, str) or not record_id:
+            invalid = True
+            continue
+        skipped_ids.append(record_id)
+    if invalid:
+        findings.append(f"{label}: training export skipped_records invalid")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        findings.append(f"{label}: training export skipped_record_ids duplicate")
+    return set(skipped_ids)
 
 
 def _training_export_source_hashes(
@@ -6373,6 +6522,122 @@ def _read_training_export_rows(
             continue
         rows.append(row)
     return rows
+
+
+def _check_training_export_record_rows(
+    label: str,
+    kind: str,
+    allowed_categories: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    source_record_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    for index, row in enumerate(rows, start=1):
+        if row.get("schema_version") != "nslab.training_example.v2":
+            findings.append(f"{label}: training export row {index} schema_version invalid")
+        task = row.get("task")
+        if not isinstance(task, str) or not task:
+            findings.append(f"{label}: training export row {index} task invalid")
+        category = row.get("training_category")
+        if category not in allowed_categories:
+            findings.append(f"{label}: training export row {index} category invalid")
+        split = row.get("split")
+        expected_split = _expected_training_export_record_split(kind)
+        if split != expected_split:
+            findings.append(f"{label}: training export row {index} split mismatch")
+        _check_training_export_record_example_id(label, index, row, findings)
+        source_phase = row.get("source_phase")
+        hindsight_safe = row.get("hindsight_safe_for_blind_sft")
+        if source_phase not in {"BLIND", "POSTMORTEM"}:
+            findings.append(f"{label}: training export row {index} source_phase invalid")
+        if not isinstance(hindsight_safe, bool):
+            findings.append(f"{label}: training export row {index} hindsight flag invalid")
+            continue
+        expected_phase = "BLIND" if hindsight_safe else "POSTMORTEM"
+        if source_phase != expected_phase:
+            findings.append(f"{label}: training export row {index} source_phase mismatch")
+        if kind in {"preference", "evals"} and hindsight_safe:
+            findings.append(f"{label}: training export row {index} must be postmortem-only")
+        _check_training_export_record_row_provenance(
+            label,
+            index,
+            row,
+            source_record_hashes=source_record_hashes,
+            findings=findings,
+        )
+
+
+def _expected_training_export_record_split(kind: str) -> str:
+    if kind == "sft":
+        return "sft_records"
+    if kind == "preference":
+        return "preference"
+    return "evals"
+
+
+def _check_training_export_record_example_id(
+    label: str,
+    index: int,
+    row: dict[str, Any],
+    findings: list[str],
+) -> None:
+    example_id = row.get("example_id")
+    task = row.get("task")
+    split = row.get("split")
+    record_id = row.get("record_id")
+    if (
+        not isinstance(example_id, str)
+        or not example_id
+        or not isinstance(task, str)
+        or not task
+        or not isinstance(split, str)
+        or not split
+        or not isinstance(record_id, str)
+        or not record_id
+    ):
+        findings.append(f"{label}: training export row {index} example_id invalid")
+        return
+    expected = stable_id("TRN", split, task, record_id)
+    if example_id != expected:
+        findings.append(f"{label}: training export row {index} example_id mismatch")
+
+
+def _check_training_export_record_row_provenance(
+    label: str,
+    index: int,
+    row: dict[str, Any],
+    *,
+    source_record_hashes: dict[str, str],
+    findings: list[str],
+) -> None:
+    provenance = row.get("provenance")
+    if not isinstance(provenance, list) or not provenance:
+        findings.append(f"{label}: training export row {index} provenance missing")
+        return
+    if not all(isinstance(item, dict) for item in provenance):
+        findings.append(f"{label}: training export row {index} provenance invalid")
+        return
+    record_id = row.get("record_id")
+    episode_id = row.get("episode_id")
+    if not isinstance(record_id, str) or not record_id:
+        findings.append(f"{label}: training export row {index} record_id invalid")
+        return
+    if not isinstance(episode_id, str) or not episode_id:
+        findings.append(f"{label}: training export row {index} episode_id invalid")
+        return
+    expected_hash = source_record_hashes.get(record_id)
+    if expected_hash is None:
+        findings.append(f"{label}: training export row {index} source_record_hash missing")
+        return
+    expected_uri = f"memory/records/{episode_id}.jsonl#{record_id}"
+    if not any(
+        entry.get("source_type") == "brain_record_provenance"
+        and entry.get("uri") == expected_uri
+        and entry.get("content_sha256") == expected_hash
+        for entry in provenance
+    ):
+        findings.append(f"{label}: training export row {index} brain record provenance mismatch")
 
 
 def _check_training_export_rows(
@@ -6571,16 +6836,21 @@ def _check_training_export_manifest_counts(
     kind: str,
     manifest: dict[str, Any],
     rows: list[dict[str, Any]],
+    allowed_categories: list[str],
     findings: list[str],
 ) -> None:
     if manifest.get("row_count") != len(rows):
         findings.append(f"{label}: training export row_count mismatch")
     if manifest.get("task_counts") != _training_task_counts(rows):
         findings.append(f"{label}: training export task_counts mismatch")
-    if manifest.get("category_counts") != _training_category_counts(rows, kind=kind):
+    if manifest.get("category_counts") != _training_category_counts(
+        rows,
+        allowed_categories=allowed_categories,
+    ):
         findings.append(f"{label}: training export category_counts mismatch")
     if manifest.get("missing_training_categories") != _training_missing_categories(
-        rows, kind=kind
+        rows,
+        allowed_categories=allowed_categories,
     ):
         findings.append(f"{label}: training export missing_training_categories mismatch")
     if manifest.get("source_phase_counts") != _training_source_phase_counts(rows):
@@ -6662,8 +6932,12 @@ def _training_task_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def _training_category_counts(rows: list[dict[str, Any]], *, kind: str) -> dict[str, int]:
-    counts = dict.fromkeys(KIND_TRAINING_CATEGORIES[kind], 0)
+def _training_category_counts(
+    rows: list[dict[str, Any]],
+    *,
+    allowed_categories: list[str],
+) -> dict[str, int]:
+    counts = dict.fromkeys(allowed_categories, 0)
     for row in rows:
         category = row.get("training_category")
         if isinstance(category, str):
@@ -6671,9 +6945,13 @@ def _training_category_counts(rows: list[dict[str, Any]], *, kind: str) -> dict[
     return counts
 
 
-def _training_missing_categories(rows: list[dict[str, Any]], *, kind: str) -> list[str]:
-    counts = _training_category_counts(rows, kind=kind)
-    return [category for category in KIND_TRAINING_CATEGORIES[kind] if counts.get(category, 0) == 0]
+def _training_missing_categories(
+    rows: list[dict[str, Any]],
+    *,
+    allowed_categories: list[str],
+) -> list[str]:
+    counts = _training_category_counts(rows, allowed_categories=allowed_categories)
+    return [category for category in allowed_categories if counts.get(category, 0) == 0]
 
 
 def _training_source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
