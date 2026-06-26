@@ -172,6 +172,59 @@ def _run_full_check_step(command: list[str]) -> int:
     return subprocess.run(command, check=False).returncode
 
 
+def _demo_steps(
+    *,
+    news: Path,
+    trade_date: str,
+    cutoff: str,
+    mode: str,
+    web_search: bool,
+) -> tuple[tuple[str, list[str]], ...]:
+    python = sys.executable
+    analyze_command = [
+        python,
+        "-m",
+        "news_scalping_lab.cli",
+        "analyze",
+        "--news",
+        news.as_posix(),
+        "--trade-date",
+        trade_date,
+        "--cutoff",
+        cutoff,
+        "--mode",
+        mode,
+    ]
+    if web_search:
+        analyze_command.append("--web-search")
+    return (
+        ("init", [python, "-m", "news_scalping_lab.cli", "init"]),
+        (
+            "news inspect",
+            [python, "-m", "news_scalping_lab.cli", "news", "inspect", news.as_posix()],
+        ),
+        (
+            "brain rebuild",
+            [python, "-m", "news_scalping_lab.cli", "brain", "rebuild", "--mode", "full"],
+        ),
+        ("brain audit", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
+        ("warehouse rebuild", [python, "-m", "news_scalping_lab.cli", "warehouse", "rebuild"]),
+        ("analyze", analyze_command),
+        (
+            "evaluate",
+            [python, "-m", "news_scalping_lab.cli", "evaluate", "--trade-date", trade_date],
+        ),
+        (
+            "brain update",
+            [python, "-m", "news_scalping_lab.cli", "brain", "update", "--episode", trade_date],
+        ),
+    )
+
+
+def _run_demo_step(command: list[str]) -> int:
+    return subprocess.run(command, check=False).returncode
+
+
 @app.command()
 def init() -> None:
     settings = load_settings()
@@ -211,6 +264,33 @@ def full_check() -> None:
     for name, command in _full_check_steps():
         typer.echo(f"running {name}: {' '.join(command)}", err=True)
         exit_code = _run_full_check_step(command)
+        results.append({"name": name, "command": command, "exit_code": exit_code})
+        if exit_code != 0:
+            _echo({"passed": False, "failed": name, "results": results})
+            raise typer.Exit(code=exit_code)
+    _echo({"passed": True, "results": results})
+
+
+@app.command("demo")
+def demo(
+    news: Annotated[Path, typer.Option("--news")] = Path("docs/csv/news_20260624.csv"),
+    trade_date: Annotated[str, typer.Option("--trade-date")] = "2026-06-24",
+    cutoff: Annotated[str, typer.Option("--cutoff")] = "2026-06-24T08:59:59+09:00",
+    mode: Annotated[str, typer.Option("--mode")] = "exhaustive",
+    web_search: Annotated[bool, typer.Option("--web-search/--no-web-search")] = True,
+) -> None:
+    _parse_date(trade_date)
+    _parse_cutoff(cutoff)
+    results: list[dict[str, object]] = []
+    for name, command in _demo_steps(
+        news=news,
+        trade_date=trade_date,
+        cutoff=cutoff,
+        mode=mode,
+        web_search=web_search,
+    ):
+        typer.echo(f"running {name}: {' '.join(command)}", err=True)
+        exit_code = _run_demo_step(command)
         results.append({"name": name, "command": command, "exit_code": exit_code})
         if exit_code != 0:
             _echo({"passed": False, "failed": name, "results": results})

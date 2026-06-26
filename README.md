@@ -19,6 +19,12 @@ python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
 python -m news_scalping_lab.cli brain update --episode 2026-06-24
 ```
 
+The same mock end-to-end flow is also available as one command:
+
+```bash
+python -m news_scalping_lab.cli demo
+```
+
 `doctor` prints a JSON readiness report for environment variables, API provider
 readiness, DuckDB/warehouse state, stock-web configuration, brain HEAD, accepted
 episode count, vector index state, and schema versions. Use `doctor --strict` in

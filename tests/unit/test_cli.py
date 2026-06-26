@@ -561,6 +561,72 @@ def test_full_check_cli_stops_on_first_failure(
     assert '"failed": "pytest"' in result.output
 
 
+def test_demo_cli_runs_configured_steps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    steps = (
+        ("init", ["python", "-m", "news_scalping_lab.cli", "init"]),
+        ("analyze", ["python", "-m", "news_scalping_lab.cli", "analyze"]),
+    )
+    seen: list[list[str]] = []
+
+    def fake_steps(**kwargs: object) -> tuple[tuple[str, list[str]], ...]:
+        assert kwargs["trade_date"] == "2030-01-10"
+        assert kwargs["web_search"] is False
+        return steps
+
+    def fake_run(command: list[str]) -> int:
+        seen.append(command)
+        return 0
+
+    monkeypatch.setattr(cli_module, "_demo_steps", fake_steps)
+    monkeypatch.setattr(cli_module, "_run_demo_step", fake_run)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "demo",
+            "--news",
+            str(tmp_path / "news.csv"),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "2030-01-10T08:59:59+09:00",
+            "--no-web-search",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen == [step[1] for step in steps]
+    assert '"passed": true' in result.output
+
+
+def test_demo_cli_stops_on_first_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    steps = (
+        ("init", ["python", "-m", "news_scalping_lab.cli", "init"]),
+        ("analyze", ["python", "-m", "news_scalping_lab.cli", "analyze"]),
+        ("evaluate", ["python", "-m", "news_scalping_lab.cli", "evaluate"]),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str]) -> int:
+        seen.append(command)
+        return 7 if command == steps[1][1] else 0
+
+    monkeypatch.setattr(cli_module, "_demo_steps", lambda **kwargs: steps)
+    monkeypatch.setattr(cli_module, "_run_demo_step", fake_run)
+
+    result = CliRunner().invoke(app, ["demo"])
+
+    assert result.exit_code == 7
+    assert seen == [steps[0][1], steps[1][1]]
+    assert '"passed": false' in result.output
+    assert '"failed": "analyze"' in result.output
+
+
 def test_warehouse_inspect_cli_includes_counts_and_status(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
