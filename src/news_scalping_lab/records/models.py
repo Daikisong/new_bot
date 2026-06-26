@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from news_scalping_lab.contracts.models import RelationClass
+
 VALID_OUTCOME_LABEL_QUALITIES = frozenset(
     {
         "verified",
@@ -307,7 +309,7 @@ class EventTickerEdgeRecord(FlexiblePayloadModel):
     event_id: str | None = None
     ticker: str | None = None
     company_name: str | None = None
-    relation_class: str | None = None
+    relation_class: RelationClass | None = None
     relation_explanation: str | None = None
     directly_mentioned: bool | None = None
     path_type: str | None = None

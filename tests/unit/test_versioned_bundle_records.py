@@ -15,6 +15,7 @@ from news_scalping_lab.records.models import (
     BlindLeaderPreferencePair,
     CandidateGenerationErrorCase,
     CounterexampleRecord,
+    EventTickerEdgeRecord,
     SupervisedDirectEventCase,
     SupervisedIssuerDayCase,
     SupervisedThemeFormationCase,
@@ -129,6 +130,17 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "boundary_conditions": ["already priced in"],
         }
     )
+    edge = EventTickerEdgeRecord.model_validate(
+        {
+            "record_type": "event_ticker_edge",
+            "edge_id": "EDGE-1",
+            "event_id": "EVT-1",
+            "ticker": "000001",
+            "company_name": "Edge Co",
+            "relation_class": "DIRECT",
+            "directly_mentioned": True,
+        }
+    )
 
     assert issuer.safe_D1_features == {"P_amount_rank": 11}
     assert issuer.event_level_weights == {"EVT-1": 1.0}
@@ -138,6 +150,14 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
     assert pair.training_mode == "positive_preference"
     assert error.missed_company_name == "Missed Co"
     assert counterexample.contradicted_claim_ids == ["CL-1"]
+    assert edge.relation_class == "DIRECT"
+    with pytest.raises(ValueError):
+        EventTickerEdgeRecord.model_validate(
+            {
+                "record_type": "event_ticker_edge",
+                "relation_class": "STATIC_MAP",
+            }
+        )
 
 
 def _synthetic_v11_bundle(
@@ -152,6 +172,7 @@ def _synthetic_v11_bundle(
     issuer_sample_weight: float = 1.0,
     direct_event_sample_weights: list[float] | None = None,
     include_event_edge: bool = False,
+    event_edge_relation_class: str = "DIRECT",
     include_error_correction: bool = False,
     include_company_memory_delta: bool = False,
     source_event_ids: list[str] | None = None,
@@ -242,7 +263,7 @@ def _synthetic_v11_bundle(
                 "event_id": "EVT-SYNTH-1",
                 "ticker": "000001",
                 "company_name": "Synthetic Issuer",
-                "relation_class": "DIRECT",
+                "relation_class": event_edge_relation_class,
                 "relation_explanation": "Synthetic direct event edge.",
                 "directly_mentioned": True,
                 "training_eligible": False,
@@ -1096,6 +1117,33 @@ def test_event_ticker_edge_records_project_to_warehouse_and_coverage(
     }
     assert audit["warehouse_count_mismatches"] == {}
     assert audit["warehouse_identity_mismatches"] == {}
+
+
+def test_invalid_event_ticker_edge_relation_class_blocks_bundle_acceptance(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "invalid_event_edge_relation_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            include_event_edge=True,
+            event_edge_relation_class="STATIC_MAP",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is False
+    assert inspection["typed_payload_valid"] is False
+    assert inspection["invalid_typed_payload_record_count"] == 1
+    assert inspection["validation"]["invalid_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-EDGE"
+    ]
+    assert inspection["raw_record_count"] == inspection["normalized_record_count"]
+    assert inspection["dropped_record_count"] == 0
+    with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
+        import_versioned_bundle(bundle, root=tmp_path)
 
 
 def test_warehouse_rebuild_applies_company_memory_delta_records(

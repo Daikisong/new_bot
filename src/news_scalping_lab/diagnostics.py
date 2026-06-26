@@ -1252,6 +1252,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("record_type_counts_match_raw") is True
         and inspection.get("training_eligible_count_matches_raw") is True
         and inspection.get("raw_payload_hashes_match") is True
+        and inspection.get("typed_payload_valid") is True
     )
     return {
         "status": "passed" if smoke_passed else "failed",
@@ -1291,6 +1292,10 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "raw_payload_hashes_match": inspection.get("raw_payload_hashes_match"),
         "raw_payload_hash_mismatch_record_ids": inspection.get(
             "raw_payload_hash_mismatch_record_ids"
+        ),
+        "typed_payload_valid": inspection.get("typed_payload_valid"),
+        "invalid_typed_payload_record_count": inspection.get(
+            "invalid_typed_payload_record_count"
         ),
         "dropped_record_count": inspection.get("dropped_record_count"),
         "quarantined_record_count": inspection.get("quarantined_record_count"),

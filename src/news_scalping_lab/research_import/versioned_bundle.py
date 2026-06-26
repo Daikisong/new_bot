@@ -13,6 +13,8 @@ from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Protocol
 
+from pydantic import ValidationError
+
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import (
     KNOWN_RECORD_PAYLOAD_MODELS,
@@ -109,6 +111,7 @@ class BaseBundleAdapter:
         invalid_label_quality_record_ids = _invalid_outcome_label_quality_record_ids(
             records
         )
+        invalid_typed_payload_record_ids = _invalid_typed_payload_record_ids(records)
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -166,6 +169,8 @@ class BaseBundleAdapter:
             "invalid_available_from_record_ids": invalid_available_from_record_ids,
             "outcome_label_quality_valid": not invalid_label_quality_record_ids,
             "invalid_outcome_label_quality_record_ids": invalid_label_quality_record_ids,
+            "typed_payload_valid": not invalid_typed_payload_record_ids,
+            "invalid_typed_payload_record_ids": invalid_typed_payload_record_ids,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
             "critical_error_count": _int_field(
                 manifest,
@@ -182,6 +187,7 @@ class BaseBundleAdapter:
             and not missing_payload_refs
             and validation["available_from_valid"] is True
             and validation["outcome_label_quality_valid"] is True
+            and validation["typed_payload_valid"] is True
         )
         return validation
 
@@ -435,6 +441,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     invalid_label_quality_record_ids = validation.get(
         "invalid_outcome_label_quality_record_ids"
     )
+    invalid_typed_payload_record_ids = validation.get("invalid_typed_payload_record_ids")
     return {
         "path": path.as_posix(),
         "raw_bundle_sha256": file_sha256(path),
@@ -485,6 +492,12 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "invalid_outcome_label_quality_record_count": (
             len(invalid_label_quality_record_ids)
             if isinstance(invalid_label_quality_record_ids, list)
+            else 0
+        ),
+        "typed_payload_valid": validation.get("typed_payload_valid"),
+        "invalid_typed_payload_record_count": (
+            len(invalid_typed_payload_record_ids)
+            if isinstance(invalid_typed_payload_record_ids, list)
             else 0
         ),
         "inspection_status": (
@@ -802,7 +815,17 @@ def _record_envelope(
     training_eligible = bool(payload.get("training_eligible") is True)
     eligibility_reason = _optional_string(payload.get("eligibility_reason"))
     if payload_model is not None:
-        payload_model.model_validate(payload)
+        try:
+            payload_model.model_validate(payload)
+        except ValidationError:
+            typed_payload_status = "UNKNOWN_TYPED_PAYLOAD"
+            training_eligible = False
+            eligibility_reason = (
+                (eligibility_reason + "; " if eligibility_reason else "")
+                + "known record_type payload failed typed validation; preserved as raw payload"
+            )
+            normalized_payload["training_eligible"] = False
+            normalized_payload["eligibility_reason"] = eligibility_reason
     else:
         training_eligible = False
         eligibility_reason = (
@@ -1186,6 +1209,22 @@ def _invalid_outcome_label_quality_record_ids(
             continue
         identity = _optional_string(record.get("record_id")) or f"line:{line_number}"
         invalid.append(identity)
+    return invalid
+
+
+def _invalid_typed_payload_record_ids(records: list[dict[str, Any]]) -> list[str]:
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        record_type = record.get("record_type")
+        if not isinstance(record_type, str):
+            continue
+        payload_model = KNOWN_RECORD_PAYLOAD_MODELS.get(record_type)
+        if payload_model is None:
+            continue
+        try:
+            payload_model.model_validate(record)
+        except ValidationError:
+            invalid.append(_record_identity(record, line_number))
     return invalid
 
 

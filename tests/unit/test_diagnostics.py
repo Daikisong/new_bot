@@ -1568,6 +1568,40 @@ def test_real_bundle_smoke_rejects_missing_payload_references(
     assert report["inspections"][0]["inspection"]["missing_payload_reference_count"] == 1
 
 
+def test_real_bundle_smoke_rejects_invalid_typed_payload(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        inspection = _valid_v11_bundle_inspection(path)
+        inspection["typed_payload_valid"] = False
+        inspection["invalid_typed_payload_record_count"] = 1
+        inspection["validation"] = {
+            **dict(inspection["validation"]),
+            "passed": False,
+            "typed_payload_valid": False,
+            "invalid_typed_payload_record_ids": ["BRAIN-invalid-typed"],
+        }
+        return inspection
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "failed"
+    assert report["passed"] is False
+    assert report["first_production_status"] == "failed"
+    assert report["production_failed_inspection_count"] == 1
+    assert report["inspections"][0]["inspection"]["typed_payload_valid"] is False
+    assert report["inspections"][0]["inspection"]["invalid_typed_payload_record_count"] == 1
+
+
 def test_real_bundle_smoke_rejects_import_loss_parity_gap(
     tmp_path,
     monkeypatch,
@@ -2343,6 +2377,8 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "training_eligible_count_matches_raw": True,
         "raw_payload_hashes_match": True,
         "raw_payload_hash_mismatch_record_ids": [],
+        "typed_payload_valid": True,
+        "invalid_typed_payload_record_count": 0,
         "validation_passed": True,
         "record_count_matches_manifest": True,
         "training_eligible_count_matches_manifest": True,
@@ -2360,6 +2396,8 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
             "blind_valid": True,
             "validator_exit_code_zero": True,
             "critical_error_count_zero": True,
+            "typed_payload_valid": True,
+            "invalid_typed_payload_record_ids": [],
         },
     }
 
