@@ -74,6 +74,7 @@
     "records_with_naive_available_from": [],
     "records_with_raw_payload_hash_mismatch": [],
     "schema_version": "nslab.record_store_audit.v1",
+    "source_ledger_source_id_mismatch_episode_ids": [],
     "staged_record_count": 0,
     "staged_stats": {
       "episode_count": 0,

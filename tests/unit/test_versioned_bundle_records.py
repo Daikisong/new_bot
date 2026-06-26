@@ -448,6 +448,49 @@ def test_record_store_deep_audit_rejects_tampered_import_parity(
     ]
 
 
+def test_record_store_deep_audit_rejects_source_ledger_source_id_gap(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    envelope_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "bundle_envelope.json"
+    )
+    envelope = _read_json(envelope_path)
+    source_ledger_path = tmp_path / envelope["raw_block_paths"]["source_ledger.jsonl"]
+    tampered_ledger = json.dumps(
+        {
+            "source_id": "SRC-TAMPERED",
+            "source_type": "synthetic_fixture",
+            "title": "Tampered source",
+        },
+        ensure_ascii=False,
+    )
+    source_ledger_path.write_text(tampered_ledger, encoding="utf-8")
+    envelope["raw_block_hashes"]["source_ledger.jsonl"] = sha256_text(tampered_ledger)
+    envelope_path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["raw_block_hash_mismatch_episode_ids"] == []
+    assert audit["source_ledger_source_id_mismatch_episode_ids"] == [
+        "NSLAB-20300110-SYNTH"
+    ]
+    assert (
+        "source_ledger source IDs do not match normalized episode index"
+        in audit["findings"]
+    )
+
+
 def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

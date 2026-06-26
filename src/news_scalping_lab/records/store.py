@@ -483,6 +483,7 @@ def _audit_deep_record_store(
         "records_with_invalid_source_line": [],
         "records_with_raw_payload_hash_mismatch": [],
         "eligible_records_with_unknown_provenance_sources": [],
+        "source_ledger_source_id_mismatch_episode_ids": [],
         "records_with_naive_available_from": [],
         "findings": [],
     }
@@ -554,6 +555,14 @@ def _audit_deep_record_store(
                 episode_id=episode_id,
                 records=episode_records,
                 envelope=envelope,
+                result=result,
+            )
+            _audit_source_ledger_source_ids(
+                root=root,
+                episode_id=episode_id,
+                raw_block_paths=raw_block_paths,
+                source_ids=source_ids,
+                skip_catalog_only=allow_block_only_trace,
                 result=result,
             )
         _audit_record_source_lines(
@@ -631,6 +640,43 @@ def _audit_provenance_source_closure(
             result["eligible_records_with_unknown_provenance_sources"].append(
                 record.record_id
             )
+
+
+def _audit_source_ledger_source_ids(
+    *,
+    root: Path,
+    episode_id: str,
+    raw_block_paths: dict[str, str],
+    source_ids: set[str],
+    skip_catalog_only: bool,
+    result: dict[str, Any],
+) -> None:
+    if skip_catalog_only:
+        return
+    relative_path = raw_block_paths.get("source_ledger.jsonl")
+    if relative_path is None:
+        if source_ids:
+            result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
+        return
+    path = root / relative_path
+    if not path.exists():
+        result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
+        return
+    ledger_ids: set[str] = set()
+    for line in _nonempty_lines(path.read_text(encoding="utf-8")):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
+            return
+        if not isinstance(payload, dict):
+            result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
+            return
+        source_id = payload.get("source_id")
+        if isinstance(source_id, str) and source_id:
+            ledger_ids.add(source_id)
+    if ledger_ids != source_ids:
+        result["source_ledger_source_id_mismatch_episode_ids"].append(episode_id)
 
 
 def _audit_raw_block_hashes(
@@ -864,6 +910,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         "records_with_raw_payload_hash_mismatch": "record raw payload hashes do not match source lines",
         "eligible_records_with_unknown_provenance_sources": (
             "eligible record provenance_source_ids are not closed by source ledger"
+        ),
+        "source_ledger_source_id_mismatch_episode_ids": (
+            "source_ledger source IDs do not match normalized episode index"
         ),
         "records_with_naive_available_from": "record available_from values are timezone-naive",
     }
