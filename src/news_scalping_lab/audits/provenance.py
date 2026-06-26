@@ -5071,6 +5071,13 @@ def _check_manifest_final_synthesis_context_artifact(
             f"{prediction_path.name}: context manifest final_synthesis_context_summary "
             "mismatch"
         )
+    _check_final_synthesis_record_id_availability(
+        root,
+        prediction_path,
+        manifest,
+        context_payload,
+        findings,
+    )
     _check_final_synthesis_embedded_artifacts(
         root,
         prediction_path,
@@ -5078,6 +5085,116 @@ def _check_manifest_final_synthesis_context_artifact(
         context_payload,
         findings,
     )
+
+
+def _check_final_synthesis_record_id_availability(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    cutoff_at = _parse_context_cutoff_at(manifest.get("cutoff_at"))
+    if cutoff_at is None:
+        return
+    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+    field_record_ids: dict[str, list[str]] = {}
+    for field in (
+        "retrieved_record_ids",
+        "semantic_retrieval_record_ids",
+        "counterexample_record_ids",
+        "positive_record_ids",
+        "negative_record_ids",
+    ):
+        if field not in context_payload:
+            continue
+        value = context_payload.get(field)
+        if not isinstance(value, list) or not all(
+            isinstance(record_id, str) for record_id in value
+        ):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context {field} is invalid"
+            )
+            continue
+        field_record_ids[field] = _unique_strings(value)
+    _collect_final_synthesis_record_object_ids(
+        context_payload,
+        field_record_ids=field_record_ids,
+        findings=findings,
+        prediction_path=prediction_path,
+    )
+    for field, record_ids in field_record_ids.items():
+        for record_id in record_ids:
+            record = records_by_id.get(record_id)
+            if record is None:
+                findings.append(
+                    f"{prediction_path.name}: final_synthesis_context {field} "
+                    f"references unknown record: {record_id}"
+                )
+                continue
+            if not is_available_as_of(record.available_from, cutoff_at):
+                findings.append(
+                    f"{prediction_path.name}: final_synthesis_context {field} "
+                    f"exposes future record: {record_id}"
+                )
+
+
+def _collect_final_synthesis_record_object_ids(
+    context_payload: dict[str, Any],
+    *,
+    field_record_ids: dict[str, list[str]],
+    findings: list[str],
+    prediction_path: Path,
+) -> None:
+    for field in ("retrieved_records", "counterexample_records"):
+        value = context_payload.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context {field} is invalid"
+            )
+            continue
+        ids: list[str] = []
+        for item in value:
+            if not isinstance(item, dict):
+                findings.append(
+                    f"{prediction_path.name}: final_synthesis_context {field} is invalid"
+                )
+                ids = []
+                break
+            record_id = item.get("record_id")
+            if isinstance(record_id, str) and record_id:
+                ids.append(record_id)
+        if ids:
+            field_record_ids[field] = _unique_strings(ids)
+
+    contributions = context_payload.get("record_level_shard_contributions")
+    if contributions is None:
+        return
+    if not isinstance(contributions, list):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "record_level_shard_contributions is invalid"
+        )
+        return
+    ids = []
+    for item in contributions:
+        if not isinstance(item, dict):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context "
+                "record_level_shard_contributions is invalid"
+            )
+            ids = []
+            break
+        payload = item.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        record_ids = payload.get("record_ids")
+        if isinstance(record_ids, list):
+            ids.extend(record_id for record_id in record_ids if isinstance(record_id, str))
+    if ids:
+        field_record_ids["record_level_shard_contributions"] = _unique_strings(ids)
 
 
 def _check_final_synthesis_embedded_artifacts(
