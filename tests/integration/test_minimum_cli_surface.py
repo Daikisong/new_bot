@@ -80,7 +80,10 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     _assert_ok("research accept", accepted)
     assert "research/accepted/EP-cli-one.json" in accepted.output
 
-    first_update = RUNNER.invoke(app, ["brain", "update", "--episode", "EP-cli-one"])
+    first_update = RUNNER.invoke(
+        app,
+        ["brain", "update", "--episode", "EP-cli-one", "--mode", "full"],
+    )
     _assert_ok("brain update", first_update)
     first_version = json.loads(first_update.output)["brain_version"]
 
@@ -2236,7 +2239,10 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     _assert_ok("audit provenance after evaluate", post_eval_provenance)
     assert json.loads(post_eval_provenance.output)["checked_evaluation_episode_files"] >= 1
 
-    postmortem_update = RUNNER.invoke(app, ["brain", "update", "--episode", "2030-01-12"])
+    postmortem_update = RUNNER.invoke(
+        app,
+        ["brain", "update", "--episode", "2030-01-12", "--mode", "full"],
+    )
     _assert_ok("brain update postmortem", postmortem_update)
     assert evaluation_episode_id in json.loads(postmortem_update.output)["covered_episode_ids"]
 

@@ -631,7 +631,7 @@ def brain_rebuild(
 @brain_app.command("update")
 def brain_update(
     episode: Annotated[str, typer.Option("--episode")],
-    mode: Annotated[str, typer.Option("--mode")] = "full",
+    mode: Annotated[str, typer.Option("--mode")] = "llm-full",
     allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
 ) -> None:
     if mode == "catalog" and not allow_catalog:

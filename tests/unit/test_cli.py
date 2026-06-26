@@ -512,6 +512,37 @@ def test_brain_update_cli_passes_mode(
     assert captured_modes == ["EP-test:llm-full"]
 
 
+def test_brain_update_cli_defaults_to_llm_full(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_modes: list[str] = []
+
+    class CapturingBrainCompiler:
+        def __init__(
+            self,
+            root: Path,
+            store: object | None = None,
+            *,
+            shard_episode_count: int,
+        ) -> None:
+            self.root = root
+            self.store = store
+            self.shard_episode_count = shard_episode_count
+
+        def update(self, *, episode_id: str, mode: str = "full") -> _BrainResult:
+            captured_modes.append(f"{episode_id}:{mode}")
+            return _BrainResult(shard_episode_count=self.shard_episode_count)
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "BrainCompiler", CapturingBrainCompiler)
+
+    result = CliRunner().invoke(app, ["brain", "update", "--episode", "EP-test"])
+
+    assert result.exit_code == 0, result.output
+    assert captured_modes == ["EP-test:llm-full"]
+
+
 def test_brain_diff_cli_reports_missing_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

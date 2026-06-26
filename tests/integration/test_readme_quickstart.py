@@ -29,7 +29,7 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
             "--mode exhaustive --web-search"
         ),
         "python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24",
-        "python -m news_scalping_lab.cli brain update --episode 2026-06-24",
+        "python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode full",
     ]
 
 
@@ -248,7 +248,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
 
     updated = RUNNER.invoke(
         app,
-        ["brain", "update", "--episode", "2026-06-24"],
+        ["brain", "update", "--episode", "2026-06-24", "--mode", "full"],
     )
     assert updated.exit_code == 0, updated.output
     update_manifest = json.loads(updated.output)

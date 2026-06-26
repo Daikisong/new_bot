@@ -16,7 +16,7 @@ python -m news_scalping_lab.cli brain audit
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive --web-search
 python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
-python -m news_scalping_lab.cli brain update --episode 2026-06-24
+python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode full
 ```
 
 This quick start uses the deterministic `--mode full` compatibility path so it
@@ -135,9 +135,11 @@ both record `available_from` and payload `known_at` must be cutoff-available bef
 they can enter daily analysis context, so later business relations are not
 backfilled into earlier runs.
 
-`brain update --episode` performs a safe incremental merge when the current brain
-already covers the prior accepted set exactly. `brain update --mode llm-full`
-rebuilds through the production compiler and fails without a real provider. If
+`brain update --episode` defaults to `llm-full`, rebuilds through the production
+compiler, and fails without a real provider. Offline smoke and legacy migration
+flows must opt into the deterministic compatibility path with
+`brain update --episode <id> --mode full`; that path performs a safe incremental
+merge when the current brain already covers the prior accepted set exactly. If
 the current manifest is missing or drift is detected in compatibility mode, it
 falls back to `brain rebuild --mode full`; full rebuilds remain reproducible from
 accepted source episodes. `brain audit` reports the current build mode while
