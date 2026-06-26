@@ -261,6 +261,39 @@ def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None
     assert [relative for relative in expected_dirs if not (tmp_path / relative).is_dir()] == []
 
 
+def test_goal_source_package_structure_is_tracked() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    package_root = repo_root / "src" / "news_scalping_lab"
+    expected_packages = [
+        "agents",
+        "audits",
+        "brain",
+        "context",
+        "contracts",
+        "evaluation",
+        "inference",
+        "ingest",
+        "llm",
+        "memory",
+        "outcomes",
+        "prices",
+        "reporting",
+        "research_import",
+        "retrieval",
+        "tools",
+        "ui",
+        "web",
+    ]
+
+    missing = [
+        relative
+        for relative in expected_packages
+        if not (package_root / relative / "__init__.py").is_file()
+    ]
+
+    assert missing == []
+
+
 def test_write_default_config_files_bootstraps_missing_configs_without_overwrite(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
