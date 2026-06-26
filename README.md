@@ -194,6 +194,9 @@ For `llm-full` brains it also reports `llm_full_brain`, which verifies the
 compile manifest, compiled claims JSONL, configured provider/model match,
 category counts, and the latest compile run cache/live-call accounting from
 `diagnostics/brain_compile_report.json`.
+It also reports `record_store`, a deep record-store audit summary that gates
+production on brain_delta raw/normalized ID parity, training-eligible/type-count
+parity, raw payload hash traceability, provenance closure, and record counts.
 All-cache `llm-full` rebuilds are useful reproducibility evidence, but production
 readiness requires at least one live LLM call in the latest compile run and all
 compile evidence must match the current brain manifest version. The compile

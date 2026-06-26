@@ -166,6 +166,30 @@ def test_analyze_cli_explicit_mode_overrides_configured_default(
     assert json.loads(result.output)["mode"] == "brain"
 
 
+def test_doctor_production_cli_reports_record_store_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["doctor", "--production"])
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    production = payload["production_readiness"]
+    record_store = production["record_store"]
+    assert production["passed"] is False
+    assert record_store["schema_version"] == "nslab.production_record_store.v1"
+    assert record_store["deep"] is True
+    assert record_store["passed"] is True
+    assert record_store["record_count"] == 0
+    assert "llm: mock provider cannot compile production brain" in production["findings"]
+
+
 def test_news_inspect_cli_reports_csv_validation_errors(tmp_path: Path) -> None:
     news_csv = tmp_path / "bad_news.csv"
     news_csv.write_text("date\n2030-01-10\n", encoding="utf-8")
