@@ -1246,27 +1246,34 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     ) in audit["brain_diversity_findings"]
 
 
-def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordEnvelope:
+def _compiled_claim_test_record(
+    record_id: str,
+    episode_id: str,
+    *,
+    record_type: str = "memory_claim",
+    training_target: str = "compiled_claim_audit_fixture",
+    training_eligible: bool = False,
+) -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
     payload = {
         "record_id": record_id,
-        "record_type": "memory_claim",
+        "record_type": record_type,
         "episode_id": episode_id,
         "trade_date": "2030-01-10",
         "available_from": available_from.isoformat(),
-        "training_target": "compiled_claim_audit_fixture",
-        "training_eligible": False,
+        "training_target": training_target,
+        "training_eligible": training_eligible,
     }
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
-        record_type="memory_claim",
+        record_type=record_type,
         episode_id=episode_id,
         trade_date=date(2030, 1, 10),
         available_from=available_from,
-        training_target="compiled_claim_audit_fixture",
+        training_target=training_target,
         evidence_phase="AUDIT",
-        training_eligible=False,
+        training_eligible=training_eligible,
         eligibility_reason="compiled claim audit fixture",
         status="tentative",
         confidence_label="low",
@@ -1278,6 +1285,67 @@ def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordE
         source_line=1,
         payload=payload,
     )
+
+
+def test_catalog_brain_compile_report_records_category_source_type_distribution(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    episode_id = "EP-record-category-distribution"
+    records = [
+        _compiled_claim_test_record(
+            "BRAIN-ISSUER",
+            episode_id,
+            record_type="supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+        ),
+        _compiled_claim_test_record(
+            "BRAIN-PAIR",
+            episode_id,
+            record_type="blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            training_eligible=True,
+        ),
+        _compiled_claim_test_record(
+            "BRAIN-MEMORY",
+            episode_id,
+            record_type="memory_claim",
+            training_target="legacy_catalog_only",
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode_id}.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    assert report["compiler_mode"] == "full"
+    assert report["category_source_record_type_counts"]["world_model"] == {
+        "blind_leader_preference_pair": 1,
+        "memory_claim": 1,
+        "supervised_issuer_day_case": 1,
+    }
+    assert report["category_source_record_type_counts"]["single_event"] == {
+        "supervised_issuer_day_case": 1
+    }
+    assert report["category_source_record_type_counts"]["leader_selection"] == {
+        "blind_leader_preference_pair": 1
+    }
+    assert report["category_source_record_type_counts"]["market_memory"] == {
+        "memory_claim": 1
+    }
+    assert report["category_source_record_type_counts"]["theme_formation"] == {}
+    assert report["category_source_record_counts"]["world_model"] == 3
+    assert report["category_source_record_counts"]["single_event"] == 1
+    assert report["category_source_record_counts"]["leader_selection"] == 1
+    assert report["category_source_record_counts"]["market_memory"] == 1
+    assert report["category_source_record_counts"]["theme_formation"] == 0
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:

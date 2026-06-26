@@ -53,6 +53,26 @@ BRAIN_FILES = [
     "07_counterexamples.md",
     "08_market_memory.md",
 ]
+CATEGORY_RECORD_TYPE_ROUTES = {
+    "single_event": {"supervised_direct_event_case", "supervised_issuer_day_case"},
+    "theme_formation": {"supervised_theme_formation_case"},
+    "beneficiary_discovery": {"beneficiary_discovery_case"},
+    "leader_selection": {"blind_leader_preference_pair"},
+    "continuation": {
+        "mechanism_memory",
+        "memory_claim",
+        "company_memory_delta",
+        "event_ticker_edge",
+    },
+    "failure_modes": {
+        "candidate_generation_error_case",
+        "candidate_ranking_error_case",
+        "row_disposition_error_case",
+        "entity_resolution_error_case",
+    },
+    "counterexamples": {"counterexample"},
+    "market_memory": {"memory_claim", "mechanism_memory", "company_memory_delta"},
+}
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v3"
@@ -618,7 +638,8 @@ class BrainCompiler:
         elif compiled_claims_path.exists():
             compiled_claims_path.unlink()
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
-        record_coverage = self._record_coverage_manifest(manifest)
+        records = BrainRecordStore(self.root).list_records()
+        record_coverage = self._record_coverage_manifest(manifest, records=records)
         write_json(self.current_dir / "record_coverage_manifest.json", record_coverage)
         llm_manifest_path = self.current_dir / "llm_compile_manifest.json"
         if llm_compile_metadata is not None:
@@ -633,6 +654,7 @@ class BrainCompiler:
                 manifest=manifest,
                 claims=claims,
                 compiled_claims=compiled_claims,
+                records=records,
                 record_coverage=record_coverage,
                 llm_compile_metadata=llm_compile_metadata,
                 llm_compile_run_metadata=llm_compile_run_metadata,
@@ -839,8 +861,14 @@ class BrainCompiler:
                 )
         return "\n".join(lines).rstrip() + "\n"
 
-    def _record_coverage_manifest(self, manifest: BrainManifest) -> dict[str, object]:
-        records = BrainRecordStore(self.root).list_records()
+    def _record_coverage_manifest(
+        self,
+        manifest: BrainManifest,
+        *,
+        records: list[BrainRecordEnvelope] | None = None,
+    ) -> dict[str, object]:
+        if records is None:
+            records = BrainRecordStore(self.root).list_records()
         record_counts_by_type = Counter(record.record_type for record in records)
         record_counts_by_phase = Counter(record.evidence_phase for record in records)
         record_counts_by_target = Counter(
@@ -1390,6 +1418,7 @@ def _brain_compile_diagnostic_report(
     manifest: BrainManifest,
     claims: list[MemoryClaim],
     compiled_claims: list[CompiledBrainClaim] | None,
+    records: list[BrainRecordEnvelope],
     record_coverage: dict[str, object],
     llm_compile_metadata: dict[str, Any] | None,
     llm_compile_run_metadata: dict[str, Any] | None,
@@ -1417,7 +1446,14 @@ def _brain_compile_diagnostic_report(
         claims=claims,
         compiled_claims=compiled_claims,
     )
-    category_source_record_counts = _category_source_record_counts(llm_compile)
+    category_source_record_type_counts = _category_source_record_type_counts(
+        llm_compile=llm_compile,
+        records=records,
+    )
+    category_source_record_counts = _category_source_record_counts(
+        llm_compile,
+        category_source_record_type_counts,
+    )
     return {
         "schema_version": "nslab.brain_compile_diagnostics.v1",
         "brain_version": manifest.brain_version,
@@ -1439,6 +1475,7 @@ def _brain_compile_diagnostic_report(
         },
         "category_claim_ids": category_claim_ids,
         "category_source_record_counts": category_source_record_counts,
+        "category_source_record_type_counts": category_source_record_type_counts,
         "record_coverage": _record_coverage_summary(record_coverage),
         "llm_compile_present": llm_compile_present,
         "llm_compile": llm_compile_metadata,
@@ -1466,19 +1503,74 @@ def _category_claim_ids(
     return dict(sorted(ids.items()))
 
 
-def _category_source_record_counts(llm_compile: dict[str, Any]) -> dict[str, int]:
+def _category_source_record_counts(
+    llm_compile: dict[str, Any],
+    category_source_record_type_counts: dict[str, dict[str, int]],
+) -> dict[str, int]:
     counts: dict[str, int] = {}
     categories = llm_compile.get("categories")
-    if not isinstance(categories, list):
-        return counts
-    for category in categories:
-        if not isinstance(category, dict):
-            continue
-        category_name = category.get("category")
-        count = category.get("source_record_count")
-        if isinstance(category_name, str) and isinstance(count, int):
-            counts[category_name] = count
+    if isinstance(categories, list):
+        for category in categories:
+            if not isinstance(category, dict):
+                continue
+            category_name = category.get("category")
+            count = category.get("source_record_count")
+            if isinstance(category_name, str) and isinstance(count, int):
+                counts[category_name] = count
+    for category_name, type_counts in category_source_record_type_counts.items():
+        counts.setdefault(category_name, sum(type_counts.values()))
     return dict(sorted(counts.items()))
+
+
+def _category_source_record_type_counts(
+    *,
+    llm_compile: dict[str, Any],
+    records: list[BrainRecordEnvelope],
+) -> dict[str, dict[str, int]]:
+    records_by_id = {record.record_id: record for record in records}
+    categories = llm_compile.get("categories")
+    if isinstance(categories, list):
+        exact_counts: dict[str, dict[str, int]] = {}
+        for category in categories:
+            if not isinstance(category, dict):
+                continue
+            category_name = category.get("category")
+            record_ids = category.get("source_record_ids")
+            if not isinstance(category_name, str) or not isinstance(record_ids, list):
+                continue
+            category_records = [
+                records_by_id[record_id]
+                for record_id in record_ids
+                if isinstance(record_id, str) and record_id in records_by_id
+            ]
+            counts = _record_type_counts(category_records)
+            unknown_count = sum(
+                1
+                for record_id in record_ids
+                if isinstance(record_id, str) and record_id not in records_by_id
+            )
+            if unknown_count:
+                counts["UNKNOWN_RECORD"] = unknown_count
+            exact_counts[category_name] = dict(sorted(counts.items()))
+        if exact_counts:
+            return dict(sorted(exact_counts.items()))
+
+    fallback_counts: dict[str, dict[str, int]] = {}
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        if category == "world_model":
+            category_records = records
+        else:
+            allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
+            category_records = [
+                record for record in records if record.record_type in allowed
+            ]
+        fallback_counts[category] = _record_type_counts(category_records)
+    return dict(sorted(fallback_counts.items()))
+
+
+def _record_type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
+    return dict(sorted(Counter(record.record_type for record in records).items()))
 
 
 def _record_coverage_summary(record_coverage: dict[str, object]) -> dict[str, object]:
@@ -1803,29 +1895,9 @@ def _records_for_category(
     records: list[BrainRecordEnvelope],
     category: str,
 ) -> list[BrainRecordEnvelope]:
-    mapping = {
-        "single_event": {"supervised_direct_event_case", "supervised_issuer_day_case"},
-        "theme_formation": {"supervised_theme_formation_case"},
-        "beneficiary_discovery": {"beneficiary_discovery_case"},
-        "leader_selection": {"blind_leader_preference_pair"},
-        "continuation": {
-            "mechanism_memory",
-            "memory_claim",
-            "company_memory_delta",
-            "event_ticker_edge",
-        },
-        "failure_modes": {
-            "candidate_generation_error_case",
-            "candidate_ranking_error_case",
-            "row_disposition_error_case",
-            "entity_resolution_error_case",
-        },
-        "counterexamples": {"counterexample"},
-        "market_memory": {"memory_claim", "mechanism_memory", "company_memory_delta"},
-    }
     if category == "world_model":
         return records
-    allowed = mapping.get(category, set())
+    allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
     selected = [record for record in records if record.record_type in allowed]
     return selected or records[: min(20, len(records))]
 
