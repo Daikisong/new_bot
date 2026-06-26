@@ -4,6 +4,8 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v13
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, critical gate를 낮추지 않고 자동 수리로 진짜 FULL만 허용한다.
 ```
 
 
@@ -76,6 +78,10 @@ semantic audit이 NOT_ENTAILED/UNSUPPORTED/cross-event leak를 남김
 bundle_manifest count/hash와 실제 artifact가 다름
 validation_report의 critical_error_count > 0
 validator_exit_code != 0
+direct_ingest_contract.json block이 누락됨
+direct_ingest_contract.record_import_manifest count가 실제 brain_delta/source/fact/id count와 불일치
+direct_ingest_contract.hard_gate_summary가 validation_report와 모순됨
+repair_loop가 필요한 오류를 발견했는데 자동 수리·재검증을 수행하지 않음
 ```
 
 위 조건 중 하나라도 true인데 `bundle_status: ACCEPT_FULL` 또는 `brain_eligible: true`를 쓰는 것은 오류다.
@@ -371,6 +377,133 @@ direct_brain_ingest_ready = false
 ACCEPT_FULL 금지
 ```
 
+
+## D6.1 ACCEPT_FULL target repair loop
+
+이번 실행의 목표 상태는 다음이다.
+
+```text
+bundle_status = ACCEPT_FULL
+brain_eligible = true
+direct_brain_ingest_ready = true
+requires_manual_research_review = false
+requires_posthoc_prompt_repair = false
+automated_import_expected_to_pass = true
+```
+
+단, `ACCEPT_FULL`은 선언 목표가 아니라 `validate_nslab_bundle.py`가 계산한 결과다.
+
+validator가 critical error를 발견하면 critical gate를 낮추지 말고 다음 순서로 자동 수리한다.
+
+```text
+1. renderer/validator hash 또는 entrypoint 독립성 오류
+   - render_nslab_bundle.py와 validate_nslab_bundle.py를 물리적으로 분리한다.
+   - 두 파일의 SHA-256을 다시 계산한다.
+   - renderer_sha256 != validator_sha256을 만족시킨다.
+   - combined script 환경이면 combined_tool_sha256, renderer_entrypoint_sha256, validator_entrypoint_sha256을 모두 기록하고 entrypoint hash가 서로 달라야 한다.
+
+2. final_watchlist가 20개 초과
+   - rank 21 이후 항목은 final_watchlist에서 제거한다.
+   - 제거한 항목은 candidate_pool, continuation_pool, WATCH_SECONDARY, ranking_error_case 중 하나로 보존한다.
+   - Markdown final table과 blind_prediction.json은 canonical_graph에서 다시 렌더링한다.
+
+3. final candidate reason이 약함
+   - P시점 소형시총, 거래회전, 최근 고가 이력, 전일 급등만 근거인 항목은 final에서 내린다.
+   - concrete catalyst가 있고 source fact로 결속된 다음 후보가 있으면 승격한다.
+   - 승격할 후보가 없으면 final_watchlist는 20개 미만으로 둔다.
+   - final_watchlist rank는 반드시 1..N으로 재번호화한다.
+
+4. final candidate에 source fact 또는 primary quote가 없음
+   - 원문 exact_quote가 있는 fact를 연결한다.
+   - 연결할 수 없으면 final에서 제거하고 candidate_generation_error 또는 WATCH_SECONDARY로 보존한다.
+
+5. score와 rank 의미 불명확
+   - rank_sort_key를 blind_score_desc 또는 committee_rank 중 하나로 선언한다.
+   - committee_rank이면 rank_reason에 score보다 우선한 이유를 후보별로 기록한다.
+
+6. brain_delta가 요약문으로 축소됨
+   - supervised_issuer_day_case, supervised_direct_event_case, supervised_theme_formation_case, blind_leader_preference_pair, candidate_generation_error_case를 record-level로 재생성한다.
+   - record count와 raw_payload_sha256을 bundle_manifest와 direct_ingest_contract에 다시 기록한다.
+
+7. Markdown·JSON·JSONL count/hash 불일치
+   - Markdown을 직접 고치지 않는다.
+   - canonical_graph를 수정한 뒤 renderer로 전체 artifact를 재렌더링한다.
+
+8. validator가 generated output을 expected로 사용
+   - 해당 validator를 폐기하고 다시 작성한다.
+   - expected_source는 PROMPT_CONSTANT, INPUT_PARSE, ACCESS_JSON, CANONICAL_GRAPH_PRESEAL, GOLD_SHAPE_CONSTANT 중 하나여야 한다.
+
+9. direct_ingest_contract 불일치
+   - validation_report와 bundle_manifest의 실제 계산값을 기준으로 contract를 다시 생성한다.
+   - fatal_blockers가 하나라도 남으면 direct_brain_ingest_ready=false로 둔다.
+
+10. BLIND seal 전 outcome 파일 접근 또는 context contamination
+   - 같은 실행에서 ACCEPT_FULL로 수리하지 않는다.
+   - bundle_status = QUARANTINE_PHASE_CONTAMINATED 또는 QUARANTINE_CONTEXT_CONTAMINATED
+   - blind_valid = false
+   - brain_eligible = false
+   - direct_brain_ingest_ready = false
+```
+
+수리 후에는 반드시 아래 순서를 반복한다.
+
+```text
+canonical_graph 갱신
+→ renderer 재실행
+→ validator 재실행
+→ validation_report 갱신
+→ bundle_manifest 갱신
+→ direct_ingest_contract 갱신
+→ final bundle 재조립
+→ final bundle 재검증
+```
+
+repair loop는 최대 8회까지 수행한다.
+
+```text
+8회 안에 모든 critical check가 통과하면:
+  bundle_status = ACCEPT_FULL
+  brain_eligible = true
+  direct_brain_ingest_ready = true
+
+8회 후에도 critical error가 남으면:
+  bundle_status = QUARANTINE_REPAIR_EXHAUSTED
+  brain_eligible = false
+  direct_brain_ingest_ready = false
+```
+
+절대 금지:
+
+```text
+critical check를 warning으로 낮춰서 ACCEPT_FULL 만들기
+validator_exit_code를 수동으로 0으로 쓰기
+critical_error_count를 수동으로 0으로 쓰기
+renderer/validator hash 동일 문제를 무시하기
+final_watchlist 20개 초과를 “연속 rank라서 정상”으로 처리하기
+weak final reason을 그대로 둔 채 ACCEPT_FULL 선언하기
+direct_ingest_contract의 fatal_blockers를 지워서 ready=true로 만들기
+```
+
+전체 bundle을 QUARANTINE해야 하는 오류와 개별 record만 training_eligible=false로 내려도 되는 오류를 구분한다.
+
+```text
+전체 ACCEPT_FULL 금지:
+- schema/front matter 오류
+- renderer/validator 독립성 오류
+- BLIND 전 outcome 접근
+- final_watchlist 20개 초과
+- Markdown/JSON final watchlist 불일치
+- ID/source/fact orphan
+- fact quote 미존재 또는 offset 불일치
+- validator self-reference
+- brain_delta record population 부족
+
+개별 record downgrade 가능:
+- 특정 후보의 인과가 약함
+- 테마 수혜주 cutoff 전 결속 부족
+- 좋은 뉴스이나 가격 반응 약함
+- winner가 newsless/outcome-only임
+```
 ## D7. 최종 응답 원칙
 
 최종 산출물은 실제 다운로드 가능한 Markdown 파일 하나다.
@@ -749,6 +882,7 @@ source_ledger.jsonl
 id_registry.json
 validation_report.json
 bundle_manifest.json
+direct_ingest_contract.json
 ```
 
 Markdown 표와 JSON의 숫자가 다르면 renderer bug로 본다.
@@ -814,6 +948,12 @@ preseal_outcome_download_count_zero
 preseal_outcome_parse_count_zero
 markdown_final_watchlist_table_count_consistency_verified
 markdown_final_watchlist_size_lte_20
+direct_ingest_contract_present
+direct_ingest_contract_json_valid
+direct_brain_ingest_ready_computed_by_validator
+direct_ingest_contract_count_hash_parity_verified
+direct_ingest_contract_fatal_blockers_empty_if_accept_full
+repair_loop_executed_or_not_needed
 ```
 
 다음 중 하나라도 있으면 `ACCEPT_FULL` 금지:
@@ -960,6 +1100,14 @@ accept_full_allowed = (
     and validator_exit_code == 0
     and critical_error_count == 0
     and context_contamination_count == 0
+    and direct_ingest_contract_present
+    and direct_ingest_contract_json_valid
+    and direct_ingest_contract_count_hash_parity_verified
+    and direct_brain_ingest_ready is True
+    and requires_manual_research_review is False
+    and requires_posthoc_prompt_repair is False
+    and automated_import_expected_to_pass is True
+    and direct_ingest_contract_fatal_blockers_count == 0
 )
 ```
 
@@ -1404,6 +1552,68 @@ research_daily_access_root = atlas/research_daily/access
 
 연구 결과는 사람이 읽는 보고서와 기계가 수입할 수 있는 구조화 데이터를 함께 담은 단일 Markdown 번들로 남긴다.
 
+
+## G19. ACCEPT_FULL target repair loop hard guard
+
+`ACCEPT_FULL`은 가짜 성공 선언이 아니라 자동 import-ready 상태의 최종 계산 결과다. 이번 실행은 가능한 한 `ACCEPT_FULL`을 목표로 자동 수리하되, 수리 불가능한 오염을 숨기지 않는다.
+
+자동 수리 원칙:
+
+```text
+- gate를 낮추지 않는다.
+- expected 값을 결과물에 맞춰 바꾸지 않는다.
+- Markdown을 손으로 고치지 않고 canonical_graph를 수정한 뒤 재렌더링한다.
+- 수리 후 항상 validator를 재실행한다.
+- validation_report, bundle_manifest, direct_ingest_contract를 마지막 검증 결과로 다시 쓴다.
+```
+
+수리 가능한 오류:
+
+```text
+renderer/validator 물리 분리 실패
+final_watchlist 20개 초과
+rank gap 또는 duplicate ticker
+source_fact_ids 누락
+weak final reason
+score/rank semantics 누락
+brain_delta record population 부족
+Markdown/JSON count 불일치
+ID/source/fact orphan
+placeholder 또는 incomplete sentence
+direct_ingest_contract count/hash 불일치
+```
+
+수리 불가능한 오류:
+
+```text
+BLIND seal 전 outcome snapshot download/hash/header/parse/print
+같은 D outcome을 이미 본 context에서 새 BLIND 생성
+CSV full parse 실패
+research_daily access 또는 snapshot hash 검증 실패
+공식 비거래일
+```
+
+수리 가능한 오류는 최대 8회까지 자동 수리한다. 수리 불가능한 오류는 같은 실행에서 `ACCEPT_FULL`로 만들지 않고 명시적 QUARANTINE으로 종료한다.
+
+validator hard check:
+
+```text
+repair_attempt_count <= 8
+repair_loop_executed_or_not_needed == true
+remaining_fixable_critical_error_count == 0
+unsafely_downgraded_critical_error_count == 0
+quarantine_if_unrepairable_error == true
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_REPAIR_CONTRACT_VIOLATION
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
 ────────────────────────────────────────
 0. 절대 불변 원칙
 ────────────────────────────────────────
@@ -1998,7 +2208,7 @@ confirmed and issuer-attributable fact with a visible commercial, regulatory, or
 
 정보가 부족하면 문장을 억지 완성하지 말고 `null`, 빈 배열, 또는 명시적 `UNRESOLVED`를 사용한다.
 
-최종 산출물 전 코드 validator를 실행하고 최대 5회 자동 수리한다.
+최종 산출물 전 코드 validator를 실행하고 최대 8회 자동 수리한다.
 
 수리 대상:
 
@@ -2016,7 +2226,7 @@ leader pair label 방향 오류
 manifest와 실제 블록 불일치
 ```
 
-5회 후에도 critical error가 남으면 `ACCEPT_FULL`을 선언하지 않는다. 오류가 있는 Brain Delta를 두뇌에 넣는 것보다 `QUARANTINE`이 우선이다.
+8회 후에도 critical error가 남으면 `ACCEPT_FULL`을 선언하지 않는다. 오류가 있는 Brain Delta를 두뇌에 넣는 것보다 `QUARANTINE`이 우선이다.
 
 
 ## 0.18 하나의 canonical research graph만 진실 원천으로 사용한다
@@ -2148,6 +2358,7 @@ research_episode.json
 각 JSONL ledger
 id_registry.json
 bundle_manifest.json
+direct_ingest_contract.json
 ```
 
 특히 다음 값은 renderer가 canonical object에서 직접 가져와야 한다.
@@ -5184,6 +5395,10 @@ renderer_sha256: <SHA256>
 validator_version: <VERSION>
 validator_sha256: <SHA256>
 validator_exit_code: 0
+direct_brain_ingest_ready: true
+requires_manual_research_review: false
+requires_posthoc_prompt_repair: false
+automated_import_expected_to_pass: true
 created_at: <CREATED_AT>
 ```
 
@@ -5648,6 +5863,9 @@ access·snapshot hash 일치
 bundle_manifest의 크기·SHA-256 일치
 id_registry와 실제 artifact 일치
 validation_report critical_error_count == 0
+direct_ingest_contract 존재·JSON parse 성공
+direct_ingest_contract record count/hash가 실제 artifact와 일치
+direct_brain_ingest_ready가 validator 계산 결과와 일치
 ```
 
 검증기는 실제 artifact를 읽어 계산한다. LLM의 자기 선언을 검증 결과로 사용하지 않는다.
@@ -5877,7 +6095,11 @@ canonical_graph_consistency_verified
   "noncritical_warnings": [],
   "repairs": [],
   "critical_error_count": 0,
-  "accept_full_allowed": true
+  "accept_full_allowed": true,
+  "direct_ingest_ready": true,
+  "direct_ingest_contract_sha256": "",
+  "repair_loop_executed_or_not_needed": true,
+  "remaining_fixable_critical_error_count": 0
 }
 ```
 
@@ -5957,11 +6179,12 @@ reason
 20. deterministic renderer로 BLIND·POSTMORTEM·기계 artifact·draft bundle 생성
 21. 독립 semantic auditor로 모든 training-eligible 사후 오류 교훈과 retrospective member edge를 전수 감사
 22. validate_nslab_bundle.py로 JSON·JSONL·entity binding·fact entailment·ID·source·rank·report phase·theme hindsight·pair 방향·사후 교훈 의미정합성·동일 ticker 오류 scope·retrospective member cutoff provenance·placeholder·텍스트 완전성 전수 검증
-23. critical error가 있으면 canonical graph만 수정하고 최대 5회 19번부터 다시 실행
-24. validator exit_code == 0이고 critical_error_count == 0일 때만 direct_ingest_contract.json 생성·검증
-25. direct_brain_ingest_ready == true일 때만 ACCEPT_FULL final bundle 조립
-26. final bundle을 다시 추출·재검증하고 draft와 hash 비교
-27. 실제 다운로드 가능한 MD 파일 생성
+23. critical error가 있으면 critical gate를 낮추지 말고 canonical graph만 수정한 뒤 최대 8회 19번부터 다시 실행
+24. validator exit_code == 0이고 critical_error_count == 0이면 bundle_manifest를 실제 artifact hash/count로 갱신
+25. validation_report와 bundle_manifest 계산값으로 direct_ingest_contract.json 생성·검증
+26. direct_brain_ingest_ready == true이고 fatal_blockers == []일 때만 ACCEPT_FULL final bundle 조립
+27. final bundle을 다시 추출·재검증하고 draft와 hash 비교
+28. 실제 다운로드 가능한 MD 파일 생성
 ```
 
 조기 종료하지 않는다.
