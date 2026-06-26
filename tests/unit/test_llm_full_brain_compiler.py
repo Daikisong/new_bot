@@ -57,12 +57,26 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
                 record_type="supervised_direct_event_case",
                 training_target="direct_event_response",
                 response_class="positive_high10",
+                payload_extra={
+                    "issuer_day_case_id": "20300110:000001",
+                    "path_type": "SINGLE_EVENT",
+                    "event_ids": ["EVT-1", "EVT-2"],
+                    "safe_D1_features": {"gap_rate": 0.03, "volume_rank": 2},
+                    "D_outcome": {"label_quality": "verified", "return_pct": 12.4},
+                    "sample_weight": 0.75,
+                    "attribution_status": "direct_event_supported",
+                },
             ),
             _record(
                 "BRAIN-COUNTER",
                 record_type="counterexample",
                 training_target="counterexample",
                 response_class="negative_control",
+                payload_extra={
+                    "counterexample_id": "CE-1",
+                    "path_type": "THEME_BENEFICIARY",
+                    "outcome": {"label_quality": "verified", "return_pct": -3.0},
+                },
             ),
         ],
     )
@@ -79,6 +93,43 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert len([purpose for purpose in purposes if ":review:" in purpose]) == len(
         BRAIN_FILES
     )
+    shard_prompt = json.loads(
+        next(prompt for purpose, prompt in llm.calls if purpose == "brain_compile:shard:0001")
+    )
+    shard_direct_record = next(
+        record
+        for record in shard_prompt["records"]
+        if record["record_id"] == "BRAIN-DIRECT"
+    )
+    assert shard_direct_record["routing_features"] == {
+        "record_type": "supervised_direct_event_case",
+        "training_target": "direct_event_response",
+        "evidence_phase": "POSTMORTEM",
+        "path_type": "SINGLE_EVENT",
+        "response_class": "positive_high10",
+        "attribution_status": "direct_event_supported",
+    }
+    assert shard_direct_record["payload_summary"]["issuer_day_case_id"] == (
+        "20300110:000001"
+    )
+    assert shard_direct_record["payload_summary"]["safe_D1_features"] == {
+        "gap_rate": 0.03,
+        "volume_rank": 2,
+    }
+    assert shard_direct_record["payload_summary"]["D_outcome"] == {
+        "label_quality": "verified",
+        "return_pct": 12.4,
+    }
+    single_event_prompt = json.loads(
+        next(
+            prompt
+            for purpose, prompt in llm.calls
+            if purpose == "brain_compile:synthesis:single_event"
+        )
+    )
+    single_event_record = single_event_prompt["records"][0]
+    assert single_event_record["payload_summary"]["event_ids"] == ["EVT-1", "EVT-2"]
+    assert single_event_record["payload_summary"]["sample_weight"] == 0.75
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
@@ -250,6 +301,7 @@ def _record(
     record_type: str,
     training_target: str,
     response_class: str,
+    payload_extra: dict[str, object] | None = None,
 ) -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
     payload = {
@@ -261,6 +313,8 @@ def _record(
         "training_target": training_target,
         "response_class": response_class,
     }
+    if payload_extra:
+        payload.update(payload_extra)
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,

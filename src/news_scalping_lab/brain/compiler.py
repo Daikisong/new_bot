@@ -58,6 +58,76 @@ SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v3"
 LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v2"
 LLM_FULL_RECORD_SHARD_SIZE = 50
+LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
+LLM_PROMPT_MAX_LIST_ITEMS = 12
+LLM_PROMPT_MAX_STRING_LENGTH = 800
+LLM_PROMPT_PAYLOAD_FIELDS = (
+    "issuer_day_case_id",
+    "case_id",
+    "blind_pair_id",
+    "error_id",
+    "mechanism_id",
+    "claim_id",
+    "counterexample_id",
+    "question_id",
+    "edge_id",
+    "ticker",
+    "company_name",
+    "event_id",
+    "event_ids",
+    "fact_ids",
+    "inference_ids",
+    "blind_fact_ids",
+    "blind_inference_ids",
+    "source_ids",
+    "safe_D1_features",
+    "D_outcome",
+    "outcome",
+    "response_class",
+    "sample_weight",
+    "label_quality",
+    "attribution_status",
+    "path_type",
+    "candidate_path_type",
+    "theme_id",
+    "peer_universe",
+    "blind_preferred_candidate_id",
+    "blind_rejected_candidate_id",
+    "outcome_preferred_candidate_id",
+    "outcome_rejected_candidate_id",
+    "blind_preferred_ticker",
+    "blind_rejected_ticker",
+    "outcome_winner_ticker",
+    "blind_preference_correct",
+    "original_decision",
+    "corrected_decision",
+    "correction_mode",
+    "correction_rationale",
+    "error_type",
+    "relation_class",
+    "relation_explanation",
+    "directly_mentioned",
+    "known_at",
+    "business_descriptions",
+    "supply_chain_roles",
+    "prior_market_narratives",
+    "contradictory_relations",
+    "statement",
+    "mechanism",
+    "scope",
+    "conditions",
+    "boundary_conditions",
+    "failure_modes",
+)
+LLM_PROMPT_PAYLOAD_DUPLICATE_FIELDS = {
+    "schema_version",
+    "record_id",
+    "record_type",
+    "episode_id",
+    "trade_date",
+    "available_from",
+    "training_target",
+}
 
 
 @dataclass(frozen=True)
@@ -1756,17 +1826,107 @@ def _brain_category_review_prompt(
 
 
 def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
-    return {
+    compact: dict[str, Any] = {
         "record_id": record.record_id,
         "record_type": record.record_type,
         "training_target": record.training_target,
         "evidence_phase": record.evidence_phase,
-        "response_class": record.payload.get("response_class"),
-        "path_type": record.payload.get("path_type"),
         "status": record.status,
         "confidence_label": record.confidence_label,
         "provenance_source_ids": record.provenance_source_ids[:5],
     }
+    routing_features = _record_routing_features(record)
+    if routing_features:
+        compact["routing_features"] = routing_features
+    payload_summary = _compact_payload_for_llm_prompt(record.payload)
+    if payload_summary:
+        compact["payload_summary"] = payload_summary
+    return compact
+
+
+def _record_routing_features(record: BrainRecordEnvelope) -> dict[str, Any]:
+    payload = record.payload
+    routing = {
+        "record_type": record.record_type,
+        "training_target": record.training_target,
+        "evidence_phase": record.evidence_phase,
+        "path_type": payload.get("path_type") or payload.get("candidate_path_type"),
+        "response_class": payload.get("response_class"),
+        "attribution_status": payload.get("attribution_status"),
+        "error_type": payload.get("error_type"),
+        "correction_mode": payload.get("correction_mode"),
+        "theme_id": payload.get("theme_id"),
+        "relation_class": payload.get("relation_class"),
+        "blind_preference_correct": payload.get("blind_preference_correct"),
+    }
+    return {
+        key: value
+        for key, value in routing.items()
+        if not _empty_prompt_value(value)
+    }
+
+
+def _compact_payload_for_llm_prompt(payload: dict[str, Any]) -> dict[str, Any]:
+    selected: dict[str, Any] = {}
+    for key in LLM_PROMPT_PAYLOAD_FIELDS:
+        if key not in payload:
+            continue
+        value = _compact_prompt_value(payload[key], depth=0)
+        if not _empty_prompt_value(value):
+            selected[key] = value
+        if len(selected) >= LLM_PROMPT_MAX_PAYLOAD_FIELDS:
+            return selected
+    if selected:
+        return selected
+    for key in sorted(payload):
+        if key in LLM_PROMPT_PAYLOAD_DUPLICATE_FIELDS:
+            continue
+        value = _compact_prompt_value(payload[key], depth=0)
+        if not _empty_prompt_value(value):
+            selected[key] = value
+        if len(selected) >= LLM_PROMPT_MAX_PAYLOAD_FIELDS:
+            break
+    return selected
+
+
+def _compact_prompt_value(value: Any, *, depth: int) -> Any:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if len(stripped) <= LLM_PROMPT_MAX_STRING_LENGTH:
+            return stripped
+        return stripped[:LLM_PROMPT_MAX_STRING_LENGTH] + "...[truncated]"
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, date | datetime):
+        return value.isoformat()
+    if isinstance(value, list):
+        if depth >= 4:
+            return f"[nested list with {len(value)} items]"
+        return [
+            compact_item
+            for item in value[:LLM_PROMPT_MAX_LIST_ITEMS]
+            if not _empty_prompt_value(
+                compact_item := _compact_prompt_value(item, depth=depth + 1)
+            )
+        ]
+    if isinstance(value, dict):
+        if depth >= 4:
+            return f"[nested object with {len(value)} keys]"
+        selected: dict[str, Any] = {}
+        for key, nested in sorted(value.items(), key=lambda item: str(item[0]))[
+            :LLM_PROMPT_MAX_PAYLOAD_FIELDS
+        ]:
+            compact_nested = _compact_prompt_value(nested, depth=depth + 1)
+            if not _empty_prompt_value(compact_nested):
+                selected[str(key)] = compact_nested
+        return selected
+    if value is None:
+        return None
+    return str(value)
+
+
+def _empty_prompt_value(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
 
 
 def _compact_shard_summaries(shard_summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
