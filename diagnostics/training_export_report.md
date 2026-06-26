@@ -28,6 +28,23 @@
 - exported_record_count: `3`
 - row_count: `3`
 - skipped_record_count: `9`
+- per_export_eligible_record_count: `3`
+- per_export_exported_record_count: `3`
+- per_export_skipped_record_count: `9`
+- unique_source_record_count: `4`
+- unique_training_eligible_record_count: `2`
+- unique_exported_record_count: `2`
+- unique_skipped_record_count: `2`
+## unique_exported_record_ids
+
+- `BRAIN-SYNTH-ISSUER`
+- `BRAIN-SYNTH-PAIR`
+
+## unique_skipped_record_ids
+
+- `EP-2991eb145f59:legacy_catalog_record`
+- `EP-f56c790fe2fc:legacy_catalog_record`
+
 - blind_safe_row_count: `0`
 - hindsight_row_count: `3`
 ## counts_by_record_type

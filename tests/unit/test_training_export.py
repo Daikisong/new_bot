@@ -16,9 +16,10 @@ from news_scalping_lab.contracts.models import (
     RelationClass,
     ResearchEpisode,
 )
+from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
-from news_scalping_lab.utils import KST, canonical_json, read_json, stable_id
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, stable_id
 
 
 def _accepted_episode() -> ResearchEpisode:
@@ -103,6 +104,50 @@ def _write_jsonl(path, rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
+    )
+
+
+def _brain_record(
+    record_id: str,
+    record_type: str,
+    *,
+    training_target: str,
+    training_eligible: bool,
+    payload: dict[str, object] | None = None,
+) -> BrainRecordEnvelope:
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    body = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "episode_id": "EP-record-training",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": training_target,
+        "training_eligible": training_eligible,
+        **(payload or {}),
+    }
+    payload_hash = sha256_text(canonical_json(body))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id="EP-record-training",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target=training_target,
+        evidence_phase="POSTMORTEM",
+        training_eligible=training_eligible,
+        eligibility_reason="record training fixture"
+        if training_eligible
+        else "audit-only fixture",
+        status="tentative",
+        confidence_label="medium",
+        provenance_source_ids=[f"SRC-{record_id}"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=body,
     )
 
 
@@ -335,6 +380,74 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "leader_selection_comparisons": 1,
         "failure_correction_examples": 1,
     }
+
+
+def test_training_export_report_separates_unique_and_per_export_record_counts(
+    tmp_path,
+) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-PAIR",
+            "blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            training_eligible=True,
+            payload={
+                "blind_pair_id": "PAIR-1",
+                "blind_preferred_ticker": "111111",
+                "blind_rejected_ticker": "222222",
+                "outcome_winner_ticker": "111111",
+                "blind_preference_correct": True,
+            },
+        ),
+        _brain_record(
+            "BRAIN-MEMORY",
+            "memory_claim",
+            training_target="legacy_catalog_only",
+            training_eligible=False,
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+
+    export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    assert audit_training_exports(tmp_path)["passed"] is True
+
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["source_record_count"] == 3
+    assert training_report["eligible_record_count"] == 3
+    assert training_report["exported_record_count"] == 3
+    assert training_report["skipped_record_count"] == 6
+    assert training_report["per_export_eligible_record_count"] == 3
+    assert training_report["per_export_exported_record_count"] == 3
+    assert training_report["per_export_skipped_record_count"] == 6
+    assert training_report["unique_source_record_count"] == 3
+    assert training_report["unique_training_eligible_record_count"] == 2
+    assert training_report["unique_exported_record_count"] == 2
+    assert training_report["unique_skipped_record_count"] == 1
+    assert training_report["unique_exported_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-PAIR",
+    ]
+    assert training_report["unique_skipped_record_ids"] == ["BRAIN-MEMORY"]
 
 
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:

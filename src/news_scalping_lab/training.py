@@ -89,6 +89,9 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     manifests: dict[str, Any] = {}
     summaries: dict[str, dict[str, Any]] = {}
+    source_record_ids: set[str] = set()
+    training_eligible_record_ids: set[str] = set()
+    exported_record_ids: set[str] = set()
     for kind in sorted(VALID_KINDS):
         manifest_path = root / "training_exports" / kind / "manifest.json"
         if not manifest_path.exists():
@@ -101,6 +104,8 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             continue
         manifests[kind] = manifest
         summaries[kind] = _training_manifest_summary(manifest)
+        source_record_ids.update(_source_record_ids_from_manifest(manifest))
+        training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
         output_file = manifest.get("output_file")
         output_rows: list[dict[str, Any]] = []
         output_path = _artifact_path(root, output_file)
@@ -118,6 +123,9 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 findings=findings,
             )
             _audit_training_rows(kind, output_rows, findings)
+            row_record_ids = _record_ids_from_rows(output_rows)
+            exported_record_ids.update(row_record_ids)
+            training_eligible_record_ids.update(row_record_ids)
         if (
             manifest.get("source_mode") == "brain_records"
             and manifest.get("weight_validation_status") == "failed"
@@ -126,6 +134,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         if manifest.get("source_mode") == "brain_records" and kind == "preference":
             _audit_record_preference_rows(kind, output_rows, findings)
         _audit_phase_outputs(kind, root, manifest, findings)
+    unique_skipped_record_ids = sorted(source_record_ids - exported_record_ids)
     report = {
         "schema_version": "nslab.training_audit.v1",
         "passed": not findings,
@@ -148,6 +157,24 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "exported_record_count": _sum_int(summaries, "exported_record_count"),
             "row_count": _sum_int(summaries, "row_count"),
             "skipped_record_count": _sum_int(summaries, "skipped_record_count"),
+            "per_export_eligible_record_count": _sum_int(
+                summaries,
+                "eligible_record_count",
+            ),
+            "per_export_exported_record_count": _sum_int(
+                summaries,
+                "exported_record_count",
+            ),
+            "per_export_skipped_record_count": _sum_int(
+                summaries,
+                "skipped_record_count",
+            ),
+            "unique_source_record_count": len(source_record_ids),
+            "unique_training_eligible_record_count": len(training_eligible_record_ids),
+            "unique_exported_record_count": len(exported_record_ids),
+            "unique_skipped_record_count": len(unique_skipped_record_ids),
+            "unique_exported_record_ids": sorted(exported_record_ids),
+            "unique_skipped_record_ids": unique_skipped_record_ids,
             "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
             "hindsight_row_count": _sum_int(summaries, "hindsight_row_count"),
             "counts_by_record_type": _max_counter(summaries, "counts_by_record_type"),
@@ -163,6 +190,34 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         },
     )
     return report
+
+
+def _source_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    hashes = manifest.get("source_record_hashes")
+    if not isinstance(hashes, dict):
+        return set()
+    return {record_id for record_id in hashes if isinstance(record_id, str)}
+
+
+def _eligible_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    eligible_ids: set[str] = set()
+    skipped_records = manifest.get("skipped_records")
+    if isinstance(skipped_records, list):
+        for item in skipped_records:
+            if not isinstance(item, dict) or item.get("training_eligible") is not True:
+                continue
+            record_id = item.get("record_id")
+            if isinstance(record_id, str):
+                eligible_ids.add(record_id)
+    return eligible_ids
+
+
+def _record_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
+    return {
+        record_id
+        for row in rows
+        if isinstance(record_id := row.get("record_id"), str) and record_id
+    }
 
 
 def export_training(root: Path, *, kind: str) -> TrainingExportResult:
