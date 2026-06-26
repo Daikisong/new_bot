@@ -663,6 +663,12 @@ def _real_bundle_import_status(
     )
     envelope = _read_optional_json(envelope_path)
     record_manifest = _read_optional_json(record_manifest_path)
+    record_path = settings.project_root / "memory" / "records" / f"{episode_id}.jsonl"
+    if isinstance(record_manifest, dict):
+        records_file = record_manifest.get("records_file")
+        if isinstance(records_file, str) and records_file:
+            record_path = settings.path(Path(records_file))
+    record_file_stats = _record_file_stats(record_path)
     if envelope is None:
         findings.append("selected real bundle has not been imported into record store")
     else:
@@ -706,6 +712,35 @@ def _real_bundle_import_status(
             != expected_record_counts_by_type
         ):
             findings.append("record manifest type counts do not match real smoke")
+        manifest_records_sha = record_manifest.get("records_sha256")
+        if (
+            isinstance(manifest_records_sha, str)
+            and record_file_stats["sha256"] != manifest_records_sha
+        ):
+            findings.append("record JSONL sha does not match record manifest")
+
+    if record_file_stats["exists"] is not True:
+        findings.append("record JSONL for selected real bundle is missing")
+    elif record_file_stats["invalid_line_count"] != 0:
+        findings.append("record JSONL for selected real bundle has invalid rows")
+    else:
+        if (
+            isinstance(expected_record_count, int)
+            and record_file_stats["record_count"] != expected_record_count
+        ):
+            findings.append("record JSONL count does not match real smoke")
+        if (
+            isinstance(expected_training_count, int)
+            and record_file_stats["training_eligible_record_count"]
+            != expected_training_count
+        ):
+            findings.append(
+                "record JSONL training eligible count does not match real smoke"
+            )
+        if isinstance(expected_record_counts_by_type, dict) and (
+            record_file_stats["record_counts_by_type"] != expected_record_counts_by_type
+        ):
+            findings.append("record JSONL type counts do not match real smoke")
 
     return {
         **base,
@@ -721,6 +756,15 @@ def _real_bundle_import_status(
             settings.project_root,
         ),
         "record_manifest_exists": record_manifest is not None,
+        "record_path": relative_to_root(record_path, settings.project_root),
+        "record_file_exists": record_file_stats["exists"],
+        "record_file_sha256": record_file_stats["sha256"],
+        "observed_record_count": record_file_stats["record_count"],
+        "observed_training_eligible_record_count": record_file_stats[
+            "training_eligible_record_count"
+        ],
+        "observed_record_counts_by_type": record_file_stats["record_counts_by_type"],
+        "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
         "passed": not findings,
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
@@ -1338,6 +1382,52 @@ def _jsonl_line_count(path: Path) -> int:
         return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
     except OSError:
         return 0
+
+
+def _record_file_stats(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "exists": False,
+            "sha256": None,
+            "record_count": 0,
+            "training_eligible_record_count": 0,
+            "record_counts_by_type": {},
+            "invalid_line_count": 0,
+        }
+    record_count = 0
+    training_eligible_count = 0
+    record_counts_by_type: dict[str, int] = {}
+    invalid_line_count = 0
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+        invalid_line_count = 1
+    for line in lines:
+        if not line.strip():
+            continue
+        record_count += 1
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            invalid_line_count += 1
+            continue
+        if not isinstance(payload, dict):
+            invalid_line_count += 1
+            continue
+        if payload.get("training_eligible") is True:
+            training_eligible_count += 1
+        record_type = payload.get("record_type")
+        if isinstance(record_type, str) and record_type:
+            record_counts_by_type[record_type] = record_counts_by_type.get(record_type, 0) + 1
+    return {
+        "exists": True,
+        "sha256": file_sha256(path),
+        "record_count": record_count,
+        "training_eligible_record_count": training_eligible_count,
+        "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
+        "invalid_line_count": invalid_line_count,
+    }
 
 
 def _int_from_mapping(source: object, key: str) -> int | None:
