@@ -524,6 +524,39 @@ def test_doctor_report_readiness_flags_missing_required_api_keys(
     }
 
 
+def test_doctor_production_report_requires_real_api_connections_for_mock_defaults(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    normal_report = build_doctor_report(settings)
+    production_report = build_doctor_report(settings, production=True)
+
+    assert normal_report["api_connections"]["openai"]["required"] is False
+    assert normal_report["api_connections"]["openai"]["status"] == "not_required"
+    assert normal_report["api_connections"]["brave_search"]["required"] is False
+    assert normal_report["api_connections"]["brave_search"]["status"] == "not_required"
+    assert production_report["api_connections"]["openai"]["required"] is True
+    assert production_report["api_connections"]["openai"]["configured"] is False
+    assert production_report["api_connections"]["openai"]["status"] == "missing_api_key"
+    assert production_report["api_connections"]["brave_search"]["required"] is True
+    assert production_report["api_connections"]["brave_search"]["configured"] is False
+    assert (
+        production_report["api_connections"]["brave_search"]["status"]
+        == "missing_api_key"
+    )
+    assert production_report["readiness"]["passed"] is False
+    assert production_report["readiness"]["findings"] == [
+        "brave_search: required API key is missing",
+        "openai: required API key is missing",
+    ]
+
+
 def test_doctor_report_readiness_flags_missing_openai_sdk_when_provider_enabled(
     tmp_path,
     monkeypatch,

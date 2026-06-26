@@ -305,7 +305,7 @@ def doctor(
     ] = False,
 ) -> None:
     settings = load_settings()
-    report = build_doctor_report(settings)
+    report = build_doctor_report(settings, production=production)
     if production:
         report["production_readiness"] = production_readiness_report(report, settings)
     _echo(report)

@@ -278,7 +278,11 @@ def real_bundle_smoke_report(
     }
 
 
-def build_doctor_report(settings: Settings) -> dict[str, Any]:
+def build_doctor_report(
+    settings: Settings,
+    *,
+    production: bool = False,
+) -> dict[str, Any]:
     store = ResearchStore(settings.project_root)
     accepted_episode_count = len(store.list_accepted())
     stock_web_path = _resolved_optional_path(settings, settings.stock_web_path)
@@ -312,15 +316,15 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
         "environment": _environment_status(settings),
         "api_connections": {
             "openai": {
-                "required": _openai_required(settings),
+                "required": _openai_required(settings, production=production),
                 "configured": bool(settings.env_value("OPENAI_API_KEY")),
                 "sdk": _openai_sdk_status(),
-                "status": _openai_status(settings),
+                "status": _openai_status(settings, production=production),
             },
             "brave_search": {
-                "required": _brave_search_required(settings),
+                "required": _brave_search_required(settings, production=production),
                 "configured": bool(settings.env_value(settings.brave_search_api_key_env)),
-                "status": _brave_search_status(settings),
+                "status": _brave_search_status(settings, production=production),
             },
         },
         "stock_web": {
@@ -1245,8 +1249,8 @@ def _environment_status(settings: Settings) -> dict[str, dict[str, object]]:
     return status
 
 
-def _openai_status(settings: Settings) -> str:
-    if not _openai_required(settings):
+def _openai_status(settings: Settings, *, production: bool = False) -> str:
+    if not _openai_required(settings, production=production):
         return "not_required"
     if not settings.env_value("OPENAI_API_KEY"):
         return "missing_api_key"
@@ -1258,8 +1262,8 @@ def _openai_status(settings: Settings) -> str:
     return "configured_not_called"
 
 
-def _openai_required(settings: Settings) -> bool:
-    return settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES
+def _openai_required(settings: Settings, *, production: bool = False) -> bool:
+    return production or settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES
 
 
 def _openai_sdk_status() -> dict[str, Any]:
@@ -1296,12 +1300,16 @@ def _openai_sdk_status() -> dict[str, Any]:
     }
 
 
-def _brave_search_required(settings: Settings) -> bool:
-    return settings.web_provider.strip().lower() in {"brave", "brave-search", "brave-news"}
+def _brave_search_required(settings: Settings, *, production: bool = False) -> bool:
+    return production or settings.web_provider.strip().lower() in {
+        "brave",
+        "brave-search",
+        "brave-news",
+    }
 
 
-def _brave_search_status(settings: Settings) -> str:
-    if not _brave_search_required(settings):
+def _brave_search_status(settings: Settings, *, production: bool = False) -> str:
+    if not _brave_search_required(settings, production=production):
         return "not_required"
     if settings.env_value(settings.brave_search_api_key_env):
         return "configured_not_called"
