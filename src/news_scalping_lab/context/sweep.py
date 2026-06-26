@@ -17,7 +17,10 @@ from typing import Any
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
-from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.models import (
+    CANDIDATE_ERROR_RECORD_TYPES,
+    BrainRecordEnvelope,
+)
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -596,7 +599,7 @@ class MemorySweeper:
             "candidate_generation_errors": [
                 _record_summary(record)
                 for record in records
-                if record.record_type == "candidate_generation_error_case"
+                if record.record_type in CANDIDATE_ERROR_RECORD_TYPES
             ],
             "supporting_points": first_pass_mechanisms,
             "objections": [

@@ -84,7 +84,7 @@ class LocalRetrievalStore:
         query: str,
         *,
         limit: int = 10,
-        record_type: str | None = None,
+        record_type: str | tuple[str, ...] | list[str] | set[str] | None = None,
         training_target: str | None = None,
         trade_date_from: str | None = None,
         trade_date_to: str | None = None,
@@ -109,7 +109,7 @@ class LocalRetrievalStore:
         filtered = [
             record
             for record in records
-            if (record_type is None or record.get("record_type") == record_type)
+            if _matches_optional_string_filter(record.get("record_type"), record_type)
             and (
                 training_target is None
                 or record.get("training_target") == training_target
@@ -513,6 +513,17 @@ def _datetime_leq(raw_value: str, upper: datetime) -> bool:
     except ValueError:
         return False
     return value <= upper
+
+
+def _matches_optional_string_filter(
+    value: object,
+    expected: str | tuple[str, ...] | list[str] | set[str] | None,
+) -> bool:
+    if expected is None:
+        return True
+    if isinstance(expected, str):
+        return value == expected
+    return isinstance(value, str) and value in expected
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:

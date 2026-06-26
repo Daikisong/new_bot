@@ -66,6 +66,7 @@ from news_scalping_lab.prices.base import (
     PriceSource,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.records.models import CANDIDATE_ERROR_RECORD_TYPES
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -4096,7 +4097,7 @@ def _semantic_record_filters(category: str) -> dict[str, Any]:
     if category == "theme_formation_failures":
         return {"record_type": "supervised_theme_formation_case"}
     if category == "candidate_generation_errors":
-        return {"record_type": "candidate_generation_error_case"}
+        return {"record_type": sorted(CANDIDATE_ERROR_RECORD_TYPES)}
     return {}
 
 

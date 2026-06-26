@@ -600,7 +600,12 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
         row for row in semantic_rows if row["category"] == "candidate_generation_errors"
     )
     assert candidate_error_row["record_retrieval_filters"] == {
-        "record_type": "candidate_generation_error_case"
+        "record_type": [
+            "candidate_generation_error_case",
+            "candidate_ranking_error_case",
+            "entity_resolution_error_case",
+            "row_disposition_error_case",
+        ]
     }
     assert candidate_error_row["included_record_ids"] == []
     assert candidate_error_row["excluded_record_ids"] == []

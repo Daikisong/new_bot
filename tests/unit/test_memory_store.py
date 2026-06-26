@@ -56,6 +56,38 @@ def _store_retrieval_records(tmp_path) -> None:
             response_class="negative_control",
             available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
         ),
+        _retrieval_record(
+            "BRAIN-REC-GEN-ERROR",
+            record_type="candidate_generation_error_case",
+            ticker="000003",
+            theme_id="theme-error",
+            response_class="candidate_missed",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        ),
+        _retrieval_record(
+            "BRAIN-REC-RANK-ERROR",
+            record_type="candidate_ranking_error_case",
+            ticker="000004",
+            theme_id="theme-error",
+            response_class="leader_missed",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        ),
+        _retrieval_record(
+            "BRAIN-REC-ROW-ERROR",
+            record_type="row_disposition_error_case",
+            ticker="000005",
+            theme_id="theme-error",
+            response_class="row_misclassified",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        ),
+        _retrieval_record(
+            "BRAIN-REC-ENTITY-ERROR",
+            record_type="entity_resolution_error_case",
+            ticker="000006",
+            theme_id="theme-error",
+            response_class="entity_misresolved",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        ),
     ]
     raw_payload = "\n".join(record.model_dump_json() for record in records)
     raw_sha = sha256_text(raw_payload)
@@ -92,8 +124,12 @@ def _store_retrieval_records(tmp_path) -> None:
             record_count_by_type={
                 "supervised_direct_event_case": 1,
                 "counterexample": 1,
+                "candidate_generation_error_case": 1,
+                "candidate_ranking_error_case": 1,
+                "row_disposition_error_case": 1,
+                "entity_resolution_error_case": 1,
             },
-            training_eligible_record_count=1,
+            training_eligible_record_count=5,
             source_ids=["SRC-RETRIEVAL"],
         ),
         records=records,
@@ -250,6 +286,25 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
         training_eligible=True,
         available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
     ) == []
+    assert set(
+        memory.search_records(
+            "unseen wording",
+            record_type=(
+                "candidate_generation_error_case",
+                "candidate_ranking_error_case",
+                "row_disposition_error_case",
+                "entity_resolution_error_case",
+            ),
+            theme_id="theme-error",
+            available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            limit=10,
+        )
+    ) == {
+        "BRAIN-REC-GEN-ERROR",
+        "BRAIN-REC-RANK-ERROR",
+        "BRAIN-REC-ROW-ERROR",
+        "BRAIN-REC-ENTITY-ERROR",
+    }
 
 
 def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:

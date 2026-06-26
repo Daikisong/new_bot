@@ -223,6 +223,15 @@ TRAINING_RECORD_TYPES = {
     "entity_resolution_error_case",
 }
 
+CANDIDATE_ERROR_RECORD_TYPES = frozenset(
+    {
+        "candidate_generation_error_case",
+        "candidate_ranking_error_case",
+        "row_disposition_error_case",
+        "entity_resolution_error_case",
+    }
+)
+
 
 class CompiledBrainClaim(StrictRecordModel):
     schema_version: str = "nslab.compiled_brain_claim.v1"
