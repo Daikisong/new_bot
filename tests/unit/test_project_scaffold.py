@@ -328,6 +328,14 @@ def test_makefile_exposes_quality_and_project_audit_targets() -> None:
         "\tpython -m news_scalping_lab.cli audit coverage",
         "\tpython -m news_scalping_lab.cli brain audit",
         "full-check: check audit",
+        "demo:",
+        "\tpython -m news_scalping_lab.cli warehouse rebuild",
+        (
+            "\tpython -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv "
+            "--trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive"
+        ),
+        "\tpython -m news_scalping_lab.cli evaluate --trade-date 2026-06-24",
+        "\tpython -m news_scalping_lab.cli brain update --episode 2026-06-24",
     ]
 
     assert all(fragment in makefile for fragment in required_fragments)
