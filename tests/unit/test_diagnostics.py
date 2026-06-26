@@ -132,6 +132,8 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     assert report["stock_web"]["schema"]["source_name"] == "stock-web-test"
     assert report["warehouse"]["status"] == "ok"
     assert "research_episodes.parquet" in report["warehouse"]["counts"]
+    assert report["warehouse"]["duplicate_identities"] == {}
+    assert report["warehouse"]["weight_mismatches"] == {}
     assert report["database"]["engine"] == "duckdb"
     assert report["database"]["available"] is True
     assert isinstance(report["database"]["version"], str)
@@ -320,6 +322,62 @@ def test_doctor_report_readiness_flags_unsynced_warehouse(tmp_path) -> None:
         "finding_count": 1,
         "findings": ["warehouse: required projections are missing, unreadable, or unsynced"],
     }
+
+
+def test_doctor_report_exposes_warehouse_duplicate_and_weight_details(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+
+    def fake_audit_coverage(root: Path) -> dict[str, object]:
+        return {
+            "brain_audit_passed": True,
+            "brain_audit_findings": [],
+            "warehouse_counts": {"issuer_day_cases.parquet": 2},
+            "warehouse_required_files": ["issuer_day_cases.parquet"],
+            "warehouse_missing_files": [],
+            "warehouse_unreadable_files": [],
+            "warehouse_required_files_present": True,
+            "warehouse_synced": True,
+            "warehouse_projection_synced": False,
+            "warehouse_count_mismatches": {},
+            "warehouse_identity_mismatches": {},
+            "warehouse_duplicate_identities": {
+                "issuer_day_cases.parquet": ["2030-01-10|000001"]
+            },
+            "warehouse_weight_mismatches": {
+                "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+            },
+            "warehouse_expected_source_counts": {
+                "issuer_day_cases.parquet": {
+                    "expected": 1,
+                    "source_label": "issuer-day brain records",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_coverage",
+        fake_audit_coverage,
+    )
+
+    report = build_doctor_report(settings)
+
+    assert report["warehouse"]["status"] == "attention"
+    assert report["warehouse"]["duplicate_identities"] == {
+        "issuer_day_cases.parquet": ["2030-01-10|000001"]
+    }
+    assert report["warehouse"]["weight_mismatches"] == {
+        "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+    }
+    assert report["readiness"]["passed"] is False
+    assert (
+        "warehouse: required projections are missing, unreadable, or unsynced"
+        in report["readiness"]["findings"]
+    )
 
 
 def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:

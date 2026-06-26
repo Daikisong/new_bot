@@ -352,6 +352,14 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "projection_synced": coverage_audit.get("warehouse_projection_synced", False),
             "count_mismatches": coverage_audit.get("warehouse_count_mismatches", {}),
             "identity_mismatches": coverage_audit.get("warehouse_identity_mismatches", {}),
+            "duplicate_identities": coverage_audit.get(
+                "warehouse_duplicate_identities",
+                {},
+            ),
+            "weight_mismatches": coverage_audit.get(
+                "warehouse_weight_mismatches",
+                {},
+            ),
             "expected_source_counts": coverage_audit.get(
                 "warehouse_expected_source_counts",
                 {},

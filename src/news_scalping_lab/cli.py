@@ -6288,6 +6288,8 @@ def warehouse_inspect() -> None:
                 "unreadable_files": coverage.get("warehouse_unreadable_files"),
                 "count_mismatches": coverage.get("warehouse_count_mismatches"),
                 "identity_mismatches": coverage.get("warehouse_identity_mismatches"),
+                "duplicate_identities": coverage.get("warehouse_duplicate_identities"),
+                "weight_mismatches": coverage.get("warehouse_weight_mismatches"),
                 "findings": warehouse_findings,
             },
         }
@@ -6312,6 +6314,14 @@ def warehouse_verify() -> None:
         and coverage.get("warehouse_required_files_present") is True
         and coverage.get("warehouse_projection_synced") is True,
         "warehouse_counts": coverage.get("warehouse_counts", {}),
+        "warehouse_duplicate_identities": coverage.get(
+            "warehouse_duplicate_identities",
+            {},
+        ),
+        "warehouse_weight_mismatches": coverage.get(
+            "warehouse_weight_mismatches",
+            {},
+        ),
         "warehouse_findings": warehouse_findings,
         "required_files": coverage.get("warehouse_required_files", []),
     }

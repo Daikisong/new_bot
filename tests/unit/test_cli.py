@@ -952,3 +952,5 @@ def test_warehouse_inspect_cli_includes_counts_and_status(
     assert payload["status"]["unreadable_files"] == []
     assert payload["status"]["count_mismatches"] == {}
     assert payload["status"]["identity_mismatches"] == {}
+    assert payload["status"]["duplicate_identities"] == {}
+    assert payload["status"]["weight_mismatches"] == {}
