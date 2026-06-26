@@ -213,7 +213,14 @@ def _retrieval_record(
     )
 
 
-def _store_single_edge_record(tmp_path, *, path_type: str) -> None:
+def _store_single_edge_record(
+    tmp_path,
+    *,
+    path_type: str,
+    edge_origin: str = "CSV_INPUT",
+    source_time_verified: bool = True,
+    available_before_cutoff: bool = True,
+) -> None:
     available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
     payload = {
         "record_id": "BRAIN-EDGE",
@@ -229,6 +236,9 @@ def _store_single_edge_record(tmp_path, *, path_type: str) -> None:
         "company_name": "Edge Test Co",
         "relation_class": "DIRECT",
         "path_type": path_type,
+        "edge_origin": edge_origin,
+        "source_time_verified": source_time_verified,
+        "available_before_cutoff": available_before_cutoff,
         "training_eligible": True,
         "eligibility_reason": "unit test edge record",
     }
@@ -516,6 +526,63 @@ def test_record_store_audit_accepts_documented_event_ticker_edge_path_types(tmp_
 
     assert audit["passed"] is True
     assert audit["invalid_event_ticker_edge_path_type_record_ids"] == []
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == []
+
+
+def test_record_store_audit_rejects_outcome_only_training_eligible_edge(
+    tmp_path,
+) -> None:
+    _store_single_edge_record(
+        tmp_path,
+        path_type="MARKET_MEMORY",
+        edge_origin="OUTCOME_ONLY_ASSOCIATION",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
+        "BRAIN-EDGE"
+    ]
+    assert (
+        "training-eligible event_ticker_edge records require cutoff provenance"
+        in audit["findings"]
+    )
+
+
+def test_record_store_audit_rejects_after_cutoff_training_eligible_edge(
+    tmp_path,
+) -> None:
+    _store_single_edge_record(
+        tmp_path,
+        path_type="FUNDAMENTAL",
+        edge_origin="AFTER_CUTOFF_SOURCE",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
+        "BRAIN-EDGE"
+    ]
+
+
+def test_record_store_audit_rejects_unverified_training_eligible_edge(
+    tmp_path,
+) -> None:
+    _store_single_edge_record(
+        tmp_path,
+        path_type="DIRECT",
+        source_time_verified=False,
+        available_before_cutoff=True,
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
+        "BRAIN-EDGE"
+    ]
 
 
 def test_record_store_audit_rejects_backdated_company_memory_delta_known_at(

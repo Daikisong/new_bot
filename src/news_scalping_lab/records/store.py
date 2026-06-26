@@ -37,6 +37,11 @@ ALLOWED_EVENT_TICKER_EDGE_PATH_TYPES = {
     "MARKET_MEMORY",
 }
 
+FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS = {
+    "AFTER_CUTOFF_SOURCE",
+    "OUTCOME_ONLY_ASSOCIATION",
+}
+
 
 @dataclass(frozen=True)
 class StoredBundleResult:
@@ -571,6 +576,7 @@ def _audit_deep_record_store(
         "missing_payload_references": [],
         "records_with_naive_available_from": [],
         "invalid_event_ticker_edge_path_type_record_ids": [],
+        "event_ticker_edge_cutoff_provenance_violation_record_ids": [],
         "invalid_company_memory_delta_known_at_record_ids": [],
         "backdated_company_memory_delta_known_at_record_ids": [],
         "issuer_day_event_level_weight_mismatch_record_ids": [],
@@ -670,6 +676,10 @@ def _audit_deep_record_store(
             result=result,
         )
         _audit_event_ticker_edge_path_types(records=episode_records, result=result)
+        _audit_event_ticker_edge_cutoff_provenance(
+            records=episode_records,
+            result=result,
+        )
         _audit_company_memory_delta_known_at(records=episode_records, result=result)
         _audit_issuer_day_event_level_weights(records=episode_records, result=result)
     _append_deep_findings(result)
@@ -1049,6 +1059,47 @@ def _audit_event_ticker_edge_path_types(
             )
 
 
+def _audit_event_ticker_edge_cutoff_provenance(
+    *,
+    records: list[BrainRecordEnvelope],
+    result: dict[str, Any],
+) -> None:
+    for record in records:
+        if record.record_type != "event_ticker_edge" or not record.training_eligible:
+            continue
+        if _event_ticker_edge_cutoff_provenance_valid(record.payload):
+            continue
+        result["event_ticker_edge_cutoff_provenance_violation_record_ids"].append(
+            record.record_id
+        )
+
+
+def _event_ticker_edge_cutoff_provenance_valid(payload: dict[str, Any]) -> bool:
+    edge_origin = _normalized_edge_token(payload.get("edge_origin"))
+    source_kind = _normalized_edge_token(payload.get("source_kind"))
+    if (
+        edge_origin in FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS
+        or source_kind in FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS
+        or "OUTCOME_ONLY" in edge_origin
+        or "OUTCOME_ONLY" in source_kind
+    ):
+        return False
+    return (
+        _payload_bool_true(payload, "source_time_verified", "time_verified")
+        and payload.get("available_before_cutoff") is True
+    )
+
+
+def _payload_bool_true(payload: dict[str, Any], *field_names: str) -> bool:
+    return any(payload.get(field_name) is True for field_name in field_names)
+
+
+def _normalized_edge_token(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().replace("-", "_").replace(" ", "_").upper()
+
+
 def _audit_company_memory_delta_known_at(
     *,
     records: list[BrainRecordEnvelope],
@@ -1165,6 +1216,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         "records_with_naive_available_from": "record available_from values are timezone-naive",
         "invalid_event_ticker_edge_path_type_record_ids": (
             "event_ticker_edge path_type values are invalid"
+        ),
+        "event_ticker_edge_cutoff_provenance_violation_record_ids": (
+            "training-eligible event_ticker_edge records require cutoff provenance"
         ),
         "invalid_company_memory_delta_known_at_record_ids": (
             "company_memory_delta known_at values are invalid"
