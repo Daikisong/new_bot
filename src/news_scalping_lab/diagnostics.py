@@ -874,6 +874,7 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "invalid_event_ticker_edge_path_type_record_ids": [],
             "invalid_company_memory_delta_known_at_record_ids": [],
             "backdated_company_memory_delta_known_at_record_ids": [],
+            "issuer_day_event_level_weight_mismatch_record_ids": [],
         }
     findings = _string_list(audit.get("findings"))
     if audit.get("deep") is not True:
@@ -940,6 +941,10 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         ),
         "backdated_company_memory_delta_known_at_record_ids": audit.get(
             "backdated_company_memory_delta_known_at_record_ids",
+            [],
+        ),
+        "issuer_day_event_level_weight_mismatch_record_ids": audit.get(
+            "issuer_day_event_level_weight_mismatch_record_ids",
             [],
         ),
     }

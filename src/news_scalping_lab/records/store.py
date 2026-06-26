@@ -573,6 +573,7 @@ def _audit_deep_record_store(
         "invalid_event_ticker_edge_path_type_record_ids": [],
         "invalid_company_memory_delta_known_at_record_ids": [],
         "backdated_company_memory_delta_known_at_record_ids": [],
+        "issuer_day_event_level_weight_mismatch_record_ids": [],
         "findings": [],
     }
     for episode_id, episode_records in sorted(records_by_episode.items()):
@@ -670,6 +671,7 @@ def _audit_deep_record_store(
         )
         _audit_event_ticker_edge_path_types(records=episode_records, result=result)
         _audit_company_memory_delta_known_at(records=episode_records, result=result)
+        _audit_issuer_day_event_level_weights(records=episode_records, result=result)
     _append_deep_findings(result)
     return result
 
@@ -1081,6 +1083,38 @@ def _payload_datetime(value: object) -> datetime | None:
     return None
 
 
+def _audit_issuer_day_event_level_weights(
+    *,
+    records: list[BrainRecordEnvelope],
+    result: dict[str, Any],
+) -> None:
+    for record in records:
+        if (
+            record.record_type != "supervised_issuer_day_case"
+            or not record.training_eligible
+            or "event_level_weights" not in record.payload
+        ):
+            continue
+        weights = record.payload.get("event_level_weights")
+        if not isinstance(weights, dict) or not weights:
+            result["issuer_day_event_level_weight_mismatch_record_ids"].append(
+                record.record_id
+            )
+            continue
+        numeric_weights = [
+            float(value)
+            for value in weights.values()
+            if isinstance(value, int | float) and not isinstance(value, bool)
+        ]
+        if (
+            len(numeric_weights) != len(weights)
+            or abs(sum(numeric_weights) - 1.0) > 0.000001
+        ):
+            result["issuer_day_event_level_weight_mismatch_record_ids"].append(
+                record.record_id
+            )
+
+
 def _append_deep_findings(result: dict[str, Any]) -> None:
     finding_labels = {
         "missing_record_manifest_episode_ids": "record manifest is missing",
@@ -1137,6 +1171,9 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         ),
         "backdated_company_memory_delta_known_at_record_ids": (
             "company_memory_delta known_at values precede record available_from"
+        ),
+        "issuer_day_event_level_weight_mismatch_record_ids": (
+            "issuer-day event_level_weights must sum to 1"
         ),
     }
     findings = result["findings"]

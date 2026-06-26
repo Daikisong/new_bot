@@ -69,6 +69,7 @@
     "invalid_company_memory_delta_known_at_record_ids": [],
     "invalid_event_ticker_edge_path_type_record_ids": [],
     "invalid_outcome_label_quality_record_ids": [],
+    "issuer_day_event_level_weight_mismatch_record_ids": [],
     "manifest_count_mismatch_episode_ids": [],
     "manifest_hash_mismatch_episode_ids": [],
     "manifest_record_id_mismatch_episode_ids": [],

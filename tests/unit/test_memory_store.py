@@ -397,6 +397,108 @@ def _store_single_company_memory_delta_record(
     )
 
 
+def _store_single_issuer_day_record(
+    tmp_path,
+    *,
+    event_level_weights: dict[str, object],
+) -> None:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": "BRAIN-ISSUER",
+        "record_type": "supervised_issuer_day_case",
+        "episode_id": "NSLAB-20300110-ISSUER",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "issuer_day_price_response",
+        "evidence_phase": "POSTMORTEM",
+        "issuer_day_case_id": "20300110:000001",
+        "ticker": "000001",
+        "company_name": "Issuer Weight Co",
+        "event_ids": sorted(event_level_weights),
+        "sample_weight": 1.0,
+        "event_level_weights": event_level_weights,
+        "D_outcome": {"label_quality": "verified"},
+        "training_eligible": True,
+        "eligibility_reason": "unit test issuer-day record",
+    }
+    raw_payload_hash = sha256_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    )
+    normalized_payload_hash = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-ISSUER",
+        record_type="supervised_issuer_day_case",
+        episode_id="NSLAB-20300110-ISSUER",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="issuer_day_price_response",
+        evidence_phase="POSTMORTEM",
+        training_eligible=True,
+        eligibility_reason="unit test issuer-day record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-ISSUER"],
+        raw_payload_sha256=raw_payload_hash,
+        normalized_payload_sha256=normalized_payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+    raw_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    source_ledger_payload = json.dumps(
+        {"source_id": "SRC-ISSUER", "event_ids": sorted(event_level_weights)},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    raw_sha = sha256_text(raw_payload)
+    source_ledger_sha = sha256_text(source_ledger_payload)
+    source_path = tmp_path / "issuer_day_bundle.md"
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id="NSLAB-20300110-ISSUER",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={
+                "brain_delta.jsonl": raw_sha,
+                "source_ledger.jsonl": source_ledger_sha,
+            },
+            raw_block_counts={"brain_delta.jsonl": 1, "source_ledger.jsonl": 1},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id="NSLAB-20300110-ISSUER",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl", "source_ledger.jsonl"],
+            record_ids=["BRAIN-ISSUER"],
+            record_count_by_type={"supervised_issuer_day_case": 1},
+            training_eligible_record_count=1,
+            source_ids=["SRC-ISSUER"],
+        ),
+        records=[record],
+        raw_blocks={
+            "brain_delta.jsonl": raw_payload,
+            "source_ledger.jsonl": source_ledger_payload,
+        },
+        validation_report={"passed": True},
+    )
+
+
 def test_record_store_audit_rejects_invalid_event_ticker_edge_path_type(tmp_path) -> None:
     _store_single_edge_record(tmp_path, path_type="OUTCOME_ONLY")
 
@@ -469,6 +571,37 @@ def test_record_store_audit_accepts_temporal_company_memory_delta_known_at(
     assert audit["passed"] is True
     assert audit["invalid_company_memory_delta_known_at_record_ids"] == []
     assert audit["backdated_company_memory_delta_known_at_record_ids"] == []
+
+
+def test_record_store_audit_rejects_issuer_day_event_level_weight_mismatch(
+    tmp_path,
+) -> None:
+    _store_single_issuer_day_record(
+        tmp_path,
+        event_level_weights={"EVT-1": 0.25, "EVT-2": 0.5},
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["issuer_day_event_level_weight_mismatch_record_ids"] == [
+        "BRAIN-ISSUER"
+    ]
+    assert "issuer-day event_level_weights must sum to 1" in audit["findings"]
+
+
+def test_record_store_audit_accepts_balanced_issuer_day_event_level_weights(
+    tmp_path,
+) -> None:
+    _store_single_issuer_day_record(
+        tmp_path,
+        event_level_weights={"EVT-1": 0.25, "EVT-2": 0.75},
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is True
+    assert audit["issuer_day_event_level_weight_mismatch_record_ids"] == []
 
 
 def test_local_memory_store_adds_and_lists_accepted_episode(tmp_path) -> None:
