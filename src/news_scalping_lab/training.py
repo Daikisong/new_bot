@@ -1187,18 +1187,22 @@ def _skipped_records(
 ) -> list[dict[str, Any]]:
     skipped: list[dict[str, Any]] = []
     for record in records:
+        skip_reasons: list[str] = []
+        if not record.training_eligible:
+            skip_reasons.append(record.eligibility_reason or "training_eligible=false")
         if not _record_selected_for_kind(kind, record):
-            reason = "record_type_not_selected_for_export_kind"
-        elif not record.training_eligible:
-            reason = record.eligibility_reason or "training_eligible=false"
-        else:
+            skip_reasons.append("record_type_not_selected_for_export_kind")
+        if not skip_reasons:
             continue
         skipped.append(
             {
                 "record_id": record.record_id,
                 "record_type": record.record_type,
                 "episode_id": record.episode_id,
-                "reason": reason,
+                "training_eligible": record.training_eligible,
+                "eligibility_reason": record.eligibility_reason,
+                "reason": skip_reasons[0],
+                "skip_reasons": skip_reasons,
             }
         )
     return skipped

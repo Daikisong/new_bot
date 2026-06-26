@@ -456,6 +456,31 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
 
 
+def test_training_export_skip_manifest_keeps_ineligible_record_reason(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    preference = export_training(tmp_path, kind="preference")
+
+    manifest = _read_json(preference.manifest_path)
+    skipped_by_id = {
+        item["record_id"]: item for item in manifest["skipped_records"]
+    }
+    unknown = skipped_by_id["BRAIN-SYNTH-UNKNOWN"]
+    assert unknown["training_eligible"] is False
+    assert "unknown record_type preserved as raw payload" in unknown["eligibility_reason"]
+    assert unknown["reason"] == "unknown record_type preserved as raw payload"
+    assert unknown["skip_reasons"] == [
+        "unknown record_type preserved as raw payload",
+        "record_type_not_selected_for_export_kind",
+    ]
+
+
 def test_coverage_audit_rejects_duplicate_issuer_day_projection_keys(
     tmp_path: Path,
 ) -> None:
