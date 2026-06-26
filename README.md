@@ -77,10 +77,11 @@ Brain shard summaries and daily memory-sweep shards both use
 are reflected in rebuilds and run manifests instead of being hidden in code.
 
 `brain rebuild` also refreshes `memory/vector_index/manifest.json` and
-`memory/vector_index/episodes.jsonl`. The local index is a deterministic
-embedding-style projection of accepted episodes; it supports retrieval but is never
-a candidate gate. `nslab audit coverage` fails if brain coverage is incomplete, the
-vector index is stale, or the warehouse research episode projection is out of sync.
+`memory/vector_index/episodes.jsonl`. The local index is built through a
+deterministic embedding provider projection of accepted episodes; it supports
+retrieval but is never a candidate gate. `nslab audit coverage` fails if brain
+coverage is incomplete, the vector index is stale, or the warehouse research
+episode projection is out of sync.
 
 Strict and free-form semantic imports preserve the raw source under
 `data/raw/research/`. Strict imports record source file, text, and canonical JSON

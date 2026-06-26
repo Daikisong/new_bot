@@ -7,26 +7,37 @@ not block candidate generation.
 from __future__ import annotations
 
 import json
-import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.retrieval.embedding import (
+    VECTOR_DIMENSIONS,
+    DeterministicHashEmbeddingProvider,
+    LocalEmbeddingProvider,
+    text_bigrams,
+    text_terms,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, write_json
 
 VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v1"
 VECTOR_INDEX_RECORDS = "episodes.jsonl"
 VECTOR_INDEX_MANIFEST = "manifest.json"
-VECTOR_DIMENSIONS = 32
-VECTOR_EMBEDDING_METHOD = "deterministic_hashing_v1"
 
 
 class LocalRetrievalStore:
-    def __init__(self, root: Path, *, force_empty: bool = False) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        force_empty: bool = False,
+        embedding_provider: LocalEmbeddingProvider | None = None,
+    ) -> None:
         self.root = root
         self.force_empty = force_empty
+        self.embedding_provider = embedding_provider or DeterministicHashEmbeddingProvider()
         self.store = ResearchStore(root)
         self.index_dir = root / "memory" / "vector_index"
         self.records_path = self.index_dir / VECTOR_INDEX_RECORDS
@@ -48,8 +59,13 @@ class LocalRetrievalStore:
             self.rebuild_index()
             records = self._current_records()
         if records:
-            return _rank_index_records(query, records, limit=limit)
-        query_terms = _terms(query)
+            return _rank_index_records(
+                query,
+                records,
+                limit=limit,
+                embedding_provider=self.embedding_provider,
+            )
+        query_terms = text_terms(query)
         scored: list[tuple[float, str]] = []
         for episode in self.store.list_accepted():
             score = _semantic_score(query_terms, _episode_text(episode))
@@ -72,15 +88,17 @@ class LocalRetrievalStore:
     def rebuild_index(self) -> dict[str, object]:
         self.index_dir.mkdir(parents=True, exist_ok=True)
         records: list[dict[str, object]] = []
-        for episode in self.store.list_accepted():
-            text = _episode_text(episode)
+        episodes = self.store.list_accepted()
+        texts = [_episode_text(episode) for episode in episodes]
+        vectors = self.embedding_provider.embed_texts(texts)
+        for episode, text, vector in zip(episodes, texts, vectors, strict=True):
             records.append(
                 {
                     "episode_id": episode.episode_id,
                     "available_from": episode.available_from.isoformat(),
                     "text_sha256": sha256_text(text),
-                    "terms": sorted(_terms(text)),
-                    "embedding": _text_vector(text),
+                    "terms": sorted(text_terms(text)),
+                    "embedding": vector,
                 }
             )
         payload = "".join(
@@ -90,8 +108,8 @@ class LocalRetrievalStore:
         accepted_hashes = self.store.accepted_hashes()
         manifest = {
             "schema_version": VECTOR_INDEX_SCHEMA_VERSION,
-            "embedding_method": VECTOR_EMBEDDING_METHOD,
-            "dimensions": VECTOR_DIMENSIONS,
+            "embedding_method": self.embedding_provider.embedding_method,
+            "dimensions": self.embedding_provider.dimensions,
             "record_count": len(records),
             "accepted_episode_count": len(accepted_hashes),
             "accepted_hashes": accepted_hashes,
@@ -183,19 +201,25 @@ def _episode_text(episode: ResearchEpisode) -> str:
 def _semantic_score(query_terms: set[str], document: str) -> float:
     if not query_terms:
         return 0.0
-    document_terms = _terms(document)
+    document_terms = text_terms(document)
     if not document_terms:
         return 0.0
     overlap = len(query_terms & document_terms)
-    query_bigrams = _bigrams(" ".join(sorted(query_terms)))
-    document_bigrams = _bigrams(" ".join(sorted(document_terms)))
+    query_bigrams = text_bigrams(" ".join(sorted(query_terms)))
+    document_bigrams = text_bigrams(" ".join(sorted(document_terms)))
     bigram_overlap = len(query_bigrams & document_bigrams)
     return overlap + (bigram_overlap / max(1, len(query_bigrams)))
 
 
-def _rank_index_records(query: str, records: list[dict[str, Any]], *, limit: int) -> list[str]:
-    query_terms = _terms(query)
-    query_vector = _text_vector(query)
+def _rank_index_records(
+    query: str,
+    records: list[dict[str, Any]],
+    *,
+    limit: int,
+    embedding_provider: LocalEmbeddingProvider,
+) -> list[str]:
+    query_terms = text_terms(query)
+    query_vector = embedding_provider.embed_texts([query])[0]
     scored: list[tuple[float, str]] = []
     for record in records:
         episode_id = str(record["episode_id"])
@@ -224,31 +248,7 @@ def _is_index_record(value: object) -> bool:
     )
 
 
-def _text_vector(text: str) -> list[float]:
-    vector = [0.0 for _ in range(VECTOR_DIMENSIONS)]
-    features = [*_terms(text), *_bigrams(text)]
-    for feature in features:
-        digest = sha256_text(feature)
-        bucket = int(digest[:8], 16) % VECTOR_DIMENSIONS
-        sign = 1.0 if int(digest[8:10], 16) % 2 == 0 else -1.0
-        vector[bucket] += sign
-    magnitude = math.sqrt(sum(value * value for value in vector))
-    if magnitude == 0:
-        return vector
-    return [value / magnitude for value in vector]
-
-
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
     if len(left) != len(right):
         return 0.0
     return sum(left_value * right_value for left_value, right_value in zip(left, right, strict=True))
-
-
-def _terms(text: str) -> set[str]:
-    normalized = "".join(character.lower() if character.isalnum() else " " for character in text)
-    return {term for term in normalized.split() if len(term) > 1}
-
-
-def _bigrams(text: str) -> set[str]:
-    compact = "".join(character for character in text.lower() if character.isalnum())
-    return {compact[index : index + 2] for index in range(max(0, len(compact) - 1))}

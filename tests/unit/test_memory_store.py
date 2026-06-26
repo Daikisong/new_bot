@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.retrieval.embedding import DeterministicHashEmbeddingProvider
 from news_scalping_lab.retrieval.store import LocalRetrievalStore, inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST
@@ -118,3 +119,34 @@ def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(
     assert stale["status"] == "stale"
     assert rebuilt["record_count"] == 2
     assert inspect_vector_index(tmp_path)["status"] == "current"
+
+
+def test_local_retrieval_store_uses_injected_embedding_provider(tmp_path) -> None:
+    class RecordingEmbeddingProvider(DeterministicHashEmbeddingProvider):
+        embedding_method = "recording_hashing_v1"
+
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            self.calls.append(list(texts))
+            return super().embed_texts(texts)
+
+    provider = RecordingEmbeddingProvider()
+    memory = LocalRetrievalStore(tmp_path, embedding_provider=provider)
+    memory.add_episode(
+        _episode(
+            "EP-provider",
+            summary="Provider-backed memory summary.",
+            mechanism="provider mechanism",
+            available_at=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+    )
+
+    result = memory.search_semantic("provider query", limit=5)
+    index = memory.inspect_index()
+
+    assert result == ["EP-provider"]
+    assert index["embedding_method"] == "recording_hashing_v1"
+    assert provider.calls[0][0].startswith("EP-provider")
+    assert provider.calls[-1] == ["provider query"]
