@@ -831,6 +831,11 @@ def _real_bundle_import_status(
         if isinstance(records_file, str) and records_file:
             record_path = settings.path(Path(records_file))
     record_file_stats = _record_file_stats(record_path)
+    validation_raw_record_ids: list[str] = []
+    validation_normalized_record_ids: list[str] = []
+    validation_missing_normalized_record_ids: list[str] = []
+    validation_extra_normalized_record_ids: list[str] = []
+    validation_raw_payload_hash_mismatch_record_ids: list[str] = []
     if envelope is None:
         findings.append("selected real bundle has not been imported into record store")
     else:
@@ -883,6 +888,19 @@ def _real_bundle_import_status(
     if validation_report is None:
         findings.append("validation report for selected real bundle is missing")
     else:
+        validation_raw_record_ids = _string_list(validation_report.get("raw_record_ids"))
+        validation_normalized_record_ids = _string_list(
+            validation_report.get("normalized_record_ids")
+        )
+        validation_missing_normalized_record_ids = _string_list(
+            validation_report.get("missing_normalized_record_ids")
+        )
+        validation_extra_normalized_record_ids = _string_list(
+            validation_report.get("extra_normalized_record_ids")
+        )
+        validation_raw_payload_hash_mismatch_record_ids = _string_list(
+            validation_report.get("raw_payload_hash_mismatch_record_ids")
+        )
         if validation_report.get("passed") is not True:
             findings.append("validation report did not pass")
         if validation_report.get("import_loss_audit_passed") is not True:
@@ -905,6 +923,26 @@ def _real_bundle_import_status(
             )
         if validation_report.get("raw_payload_hashes_match") is not True:
             findings.append("validation report raw payload hash parity failed")
+        if _duplicate_strings(validation_raw_record_ids):
+            findings.append("validation report raw record IDs contain duplicates")
+        if _duplicate_strings(validation_normalized_record_ids):
+            findings.append("validation report normalized record IDs contain duplicates")
+        if expected_record_ids and validation_raw_record_ids and (
+            sorted(validation_raw_record_ids) != sorted(expected_record_ids)
+        ):
+            findings.append("validation report raw record IDs do not match real smoke")
+        if expected_record_ids and validation_normalized_record_ids and (
+            sorted(validation_normalized_record_ids) != sorted(expected_record_ids)
+        ):
+            findings.append(
+                "validation report normalized record IDs do not match real smoke"
+            )
+        if validation_missing_normalized_record_ids:
+            findings.append("validation report has missing normalized record IDs")
+        if validation_extra_normalized_record_ids:
+            findings.append("validation report has extra normalized record IDs")
+        if validation_raw_payload_hash_mismatch_record_ids:
+            findings.append("validation report has raw payload hash mismatches")
         if (
             isinstance(expected_record_count, int)
             and validation_report.get("record_count") != expected_record_count
@@ -1027,6 +1065,23 @@ def _real_bundle_import_status(
             validation_report.get("import_loss_audit_passed")
             if isinstance(validation_report, dict)
             else None
+        ),
+        "validation_report_raw_record_id_count": len(validation_raw_record_ids)
+        if validation_raw_record_ids
+        else None,
+        "validation_report_normalized_record_id_count": len(
+            validation_normalized_record_ids
+        )
+        if validation_normalized_record_ids
+        else None,
+        "validation_report_missing_normalized_record_ids": (
+            validation_missing_normalized_record_ids or None
+        ),
+        "validation_report_extra_normalized_record_ids": (
+            validation_extra_normalized_record_ids or None
+        ),
+        "validation_report_raw_payload_hash_mismatch_record_ids": (
+            validation_raw_payload_hash_mismatch_record_ids or None
         ),
         "record_manifest_path": relative_to_root(
             record_manifest_path,
