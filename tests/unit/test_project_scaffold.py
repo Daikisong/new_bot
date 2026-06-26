@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -64,6 +65,7 @@ def test_repository_agent_guidance_stays_short_and_operational() -> None:
     )
     assert "episode_id" not in guidance
     assert "ticker:" not in guidance.lower()
+    assert re.search(r"\b\d{6}\b", guidance) is None
 
 
 def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memory() -> None:
@@ -99,7 +101,7 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
 
     assert all(fragment in skill for fragment in required_fragments)
     assert "THEME_MAP" not in skill
-    assert "000000" not in skill
+    assert re.search(r"\b\d{6}\b", skill) is None
 
 
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
