@@ -118,6 +118,30 @@ def test_analyze_cli_explicit_mode_overrides_configured_default(
     assert json.loads(result.output)["mode"] == "brain"
 
 
+def test_news_inspect_cli_reports_csv_validation_errors(tmp_path: Path) -> None:
+    news_csv = tmp_path / "bad_news.csv"
+    news_csv.write_text("date\n2030-01-10\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["news", "inspect", str(news_csv)])
+
+    assert result.exit_code == 1
+    assert "CSV missing required columns: time, title" in result.output
+
+
+def test_news_import_cli_reports_csv_validation_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    news_csv = tmp_path / "bad_news.csv"
+    news_csv.write_text("date\n2030-01-10\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["news", "import", str(news_csv)])
+
+    assert result.exit_code == 1
+    assert "CSV missing required columns: time, title" in result.output
+
+
 def test_analyze_cli_reports_analysis_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -248,6 +272,30 @@ def test_brain_rebuild_cli_passes_configured_shard_episode_count(
     assert result.exit_code == 0, result.output
     assert captured_counts == [3]
     assert json.loads(result.output)["shard_episode_count"] == 3
+
+
+def test_brain_rebuild_cli_reports_invalid_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["brain", "rebuild", "--mode", "incremental"])
+
+    assert result.exit_code == 1
+    assert "only full rebuild is currently supported" in result.output
+
+
+def test_brain_diff_cli_reports_missing_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["brain", "diff", "missing-a", "missing-b"])
+
+    assert result.exit_code == 1
+    assert "brain snapshot not found: missing-a" in result.output
 
 
 def test_warehouse_inspect_cli_includes_counts_and_status(

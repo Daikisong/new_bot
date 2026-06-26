@@ -192,7 +192,10 @@ def ui(
 
 @news_app.command("inspect")
 def news_inspect(csv_path: Path) -> None:
-    batch = load_news_csv(csv_path)
+    try:
+        batch = load_news_csv(csv_path)
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             "path": csv_path.as_posix(),
@@ -214,7 +217,10 @@ def news_inspect(csv_path: Path) -> None:
 @news_app.command("import")
 def news_import(csv_path: Path) -> None:
     settings = load_settings()
-    batch = import_news_csv(csv_path, settings.path("data/raw/news"))
+    try:
+        batch = import_news_csv(csv_path, settings.path("data/raw/news"))
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             "imported": True,
@@ -333,10 +339,13 @@ def research_reject(episode_id: str) -> None:
 @brain_app.command("rebuild")
 def brain_rebuild(mode: str = "full") -> None:
     settings = load_settings()
-    manifest = BrainCompiler(
-        settings.project_root,
-        shard_episode_count=settings.limits.shard_episode_count,
-    ).rebuild(mode=mode)
+    try:
+        manifest = BrainCompiler(
+            settings.project_root,
+            shard_episode_count=settings.limits.shard_episode_count,
+        ).rebuild(mode=mode)
+    except (FileNotFoundError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(manifest.model_dump(mode="json"))
 
 
@@ -366,8 +375,11 @@ def brain_audit() -> None:
 @brain_app.command("diff")
 def brain_diff(version_a: str, version_b: str) -> None:
     settings = load_settings()
-    diff = build_brain_diff(settings.project_root, version_a, version_b)
-    markdown_path = write_brain_diff_markdown(settings.project_root, diff)
+    try:
+        diff = build_brain_diff(settings.project_root, version_a, version_b)
+        markdown_path = write_brain_diff_markdown(settings.project_root, diff)
+    except (FileNotFoundError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo({**diff, "markdown_path": markdown_path.as_posix()})
 
 
