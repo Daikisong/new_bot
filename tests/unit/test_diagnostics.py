@@ -16,9 +16,16 @@ from news_scalping_lab.diagnostics import (
     production_readiness_report,
     real_bundle_smoke_report,
 )
+from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, file_sha256, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    sha256_text,
+    write_json,
+)
 from news_scalping_lab.warehouse import WarehouseStore
 
 RUNNER = CliRunner()
@@ -1656,6 +1663,7 @@ def test_production_readiness_accepts_real_smoke_import_link(
             "training_eligible_record_count": inspection[
                 "training_eligible_record_count"
             ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
         },
     )
     write_json(
@@ -1741,6 +1749,7 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
             "training_eligible_record_count": inspection[
                 "training_eligible_record_count"
             ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
         },
     )
     record_path.write_text(
@@ -1840,6 +1849,7 @@ def test_production_readiness_rejects_real_import_index_id_mismatch(
             "training_eligible_record_count": inspection[
                 "training_eligible_record_count"
             ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
         },
     )
     write_json(
@@ -1927,6 +1937,7 @@ def test_production_readiness_rejects_real_import_duplicate_record_ids(
             "training_eligible_record_count": inspection[
                 "training_eligible_record_count"
             ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
         },
     )
     write_json(
@@ -1970,6 +1981,115 @@ def test_production_readiness_rejects_real_import_duplicate_record_ids(
     )
     assert (
         "real_bundle_import: record JSONL has duplicate record IDs"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_failed_deep_record_store_audit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+
+    def failed_record_store_audit(root: Path, *, deep: bool = False) -> dict[str, object]:
+        assert root == tmp_path
+        assert deep is True
+        return {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": False,
+            "deep": True,
+            "record_count": 2,
+            "all_record_count": 2,
+            "staged_record_count": 0,
+            "episode_count": 1,
+            "training_eligible_record_count": 2,
+            "brain_delta_record_id_mismatch_episode_ids": ["EP-import-loss"],
+            "records_with_raw_payload_hash_mismatch": ["BRAIN-import-loss-1"],
+            "findings": [
+                "brain_delta raw record IDs do not match normalized records",
+                "record raw payload hashes do not match source lines",
+            ],
+        }
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_record_store",
+        failed_record_store_audit,
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_store"]["passed"] is False
+    assert production["record_store"]["deep"] is True
+    assert production["record_store"]["brain_delta_record_id_mismatch_episode_ids"] == [
+        "EP-import-loss"
+    ]
+    assert production["record_store"]["records_with_raw_payload_hash_mismatch"] == [
+        "BRAIN-import-loss-1"
+    ]
+    assert (
+        "records: brain_delta raw record IDs do not match normalized records"
+        in production["findings"]
+    )
+    assert (
+        "records: record raw payload hashes do not match source lines"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_requires_deep_record_store_audit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+
+    def shallow_record_store_audit(root: Path, *, deep: bool = False) -> dict[str, object]:
+        assert root == tmp_path
+        assert deep is True
+        return {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": True,
+            "deep": False,
+            "record_count": 0,
+            "all_record_count": 0,
+            "staged_record_count": 0,
+            "episode_count": 0,
+            "training_eligible_record_count": 0,
+            "findings": [],
+        }
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_record_store",
+        shallow_record_store_audit,
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_store"]["passed"] is False
+    assert production["record_store"]["status"] == "attention"
+    assert (
+        "records: deep record-store audit was not run"
         in production["findings"]
     )
 
@@ -2026,6 +2146,8 @@ def _write_real_smoke_records(
     episode_id: str,
     inspection: dict[str, object],
 ) -> Path:
+    episode_dir = root / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True, exist_ok=True)
     record_path = root / "memory" / "records" / f"{episode_id}.jsonl"
     record_path.parent.mkdir(parents=True, exist_ok=True)
     record_counts_by_type = inspection["record_counts_by_type"]
@@ -2033,25 +2155,98 @@ def _write_real_smoke_records(
     training_eligible_count = inspection["training_eligible_record_count"]
     assert isinstance(training_eligible_count, int)
     record_ids = _real_smoke_record_ids(inspection)
-    rows: list[dict[str, object]] = []
+    source_id = _real_smoke_source_id(episode_id)
+    trade_day = date.fromisoformat(str(inspection["trade_date"]))
+    available_from = datetime(2026, 6, 23, 0, 0, 0, tzinfo=KST)
+    raw_rows: list[dict[str, object]] = []
+    records: list[BrainRecordEnvelope] = []
     record_index = 0
     for record_type, count in sorted(record_counts_by_type.items()):
         assert isinstance(record_type, str)
         assert isinstance(count, int)
         for _index in range(count):
-            rows.append(
-                {
-                    "record_id": record_ids[record_index],
-                    "record_type": record_type,
-                    "training_eligible": len(rows) < training_eligible_count,
-                }
+            training_eligible = len(raw_rows) < training_eligible_count
+            raw_payload = {
+                "record_id": record_ids[record_index],
+                "record_type": record_type,
+                "episode_id": episode_id,
+                "trade_date": trade_day.isoformat(),
+                "available_from": available_from.isoformat(),
+                "training_eligible": training_eligible,
+                "provenance_source_ids": [source_id],
+            }
+            raw_payload_sha = sha256_text(
+                json.dumps(raw_payload, ensure_ascii=False, sort_keys=True)
             )
+            records.append(
+                BrainRecordEnvelope(
+                    record_id=record_ids[record_index],
+                    record_type=record_type,
+                    episode_id=episode_id,
+                    trade_date=trade_day,
+                    available_from=available_from,
+                    training_target="real_smoke_fixture",
+                    evidence_phase="POSTMORTEM",
+                    training_eligible=training_eligible,
+                    eligibility_reason="real smoke fixture",
+                    status="tentative",
+                    confidence_label="low",
+                    provenance_source_ids=[source_id],
+                    raw_payload_sha256=raw_payload_sha,
+                    normalized_payload_sha256=sha256_text(
+                        canonical_json(raw_payload)
+                    ),
+                    typed_payload_status="KNOWN_TYPED_PAYLOAD",
+                    source_block="brain_delta.jsonl",
+                    source_line=len(raw_rows) + 1,
+                    payload=raw_payload,
+                )
+            )
+            raw_rows.append(raw_payload)
             record_index += 1
-    record_path.write_text(
-        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+    brain_delta_path = episode_dir / "brain_delta.jsonl"
+    source_ledger_path = episode_dir / "source_ledger.jsonl"
+    brain_delta_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in raw_rows),
         encoding="utf-8",
     )
+    source_ledger_path.write_text(
+        json.dumps({"source_id": source_id}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    record_path.write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+    envelope_path = episode_dir / "bundle_envelope.json"
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    assert isinstance(envelope, dict)
+    envelope.update(
+        {
+            "raw_block_paths": {
+                "brain_delta.jsonl": brain_delta_path.relative_to(root).as_posix(),
+                "source_ledger.jsonl": source_ledger_path.relative_to(root).as_posix(),
+            },
+            "raw_block_hashes": {
+                "brain_delta.jsonl": sha256_text(
+                    brain_delta_path.read_text(encoding="utf-8")
+                ),
+                "source_ledger.jsonl": sha256_text(
+                    source_ledger_path.read_text(encoding="utf-8")
+                ),
+            },
+            "raw_block_counts": {
+                "brain_delta.jsonl": len(raw_rows),
+                "source_ledger.jsonl": 1,
+            },
+        }
+    )
+    write_json(envelope_path, envelope)
     return record_path
+
+
+def _real_smoke_source_id(episode_id: str) -> str:
+    return f"{episode_id}:source"
 
 
 def _real_smoke_record_ids(inspection: dict[str, object]) -> list[str]:

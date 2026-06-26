@@ -13,6 +13,7 @@ from news_scalping_lab.brain.compiler import BRAIN_FILES, current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.records.store import audit_record_store
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
@@ -135,6 +136,9 @@ def production_readiness_report(
         findings.append("records: record coverage manifest is missing")
     elif record_coverage.get("coverage_complete") is not True:
         findings.append("records: record coverage is incomplete")
+    record_store = _production_record_store_status(settings)
+    if record_store["passed"] is not True:
+        findings.extend(f"records: {finding}" for finding in record_store["findings"])
     warehouse = _production_warehouse_status(report.get("warehouse"))
     if warehouse["passed"] is not True:
         findings.extend(f"warehouse: {finding}" for finding in warehouse["findings"])
@@ -157,6 +161,7 @@ def production_readiness_report(
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
         "llm_full_brain": llm_full_brain,
+        "record_store": record_store,
         "warehouse": warehouse,
         "semantic_index": semantic_index,
         "required_environment": remediation["required_environment"],
@@ -632,6 +637,92 @@ def _production_warehouse_status(warehouse: object) -> dict[str, Any]:
         "identity_mismatches": warehouse.get("identity_mismatches", {}),
         "duplicate_identities": warehouse.get("duplicate_identities", {}),
         "weight_mismatches": warehouse.get("weight_mismatches", {}),
+    }
+
+
+def _production_record_store_status(settings: Settings) -> dict[str, Any]:
+    try:
+        audit = audit_record_store(settings.project_root, deep=True)
+    except Exception as exc:
+        finding = f"deep record-store audit failed: {type(exc).__name__}"
+        return {
+            "schema_version": "nslab.production_record_store.v1",
+            "passed": False,
+            "status": "attention",
+            "finding_count": 1,
+            "findings": [finding],
+            "deep": True,
+            "record_count": None,
+            "all_record_count": None,
+            "staged_record_count": None,
+            "episode_count": None,
+            "training_eligible_record_count": None,
+            "duplicate_record_ids": [],
+            "unknown_training_enabled_record_ids": [],
+            "payload_hash_mismatch_record_ids": [],
+            "eligible_records_without_provenance": [],
+            "brain_delta_count_mismatch_episode_ids": [],
+            "brain_delta_record_id_mismatch_episode_ids": [],
+            "brain_delta_training_eligible_mismatch_episode_ids": [],
+            "brain_delta_type_count_mismatch_episode_ids": [],
+            "records_with_raw_payload_hash_mismatch": [],
+            "raw_block_hash_mismatch_episode_ids": [],
+        }
+    findings = _string_list(audit.get("findings"))
+    if audit.get("deep") is not True:
+        findings.append("deep record-store audit was not run")
+    passed = audit.get("passed") is True and audit.get("deep") is True
+    if not passed and not findings:
+        findings.append("deep record-store audit failed")
+    return {
+        "schema_version": "nslab.production_record_store.v1",
+        "passed": passed,
+        "status": "ready" if passed else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "deep": audit.get("deep"),
+        "record_count": audit.get("record_count"),
+        "all_record_count": audit.get("all_record_count"),
+        "staged_record_count": audit.get("staged_record_count"),
+        "episode_count": audit.get("episode_count"),
+        "training_eligible_record_count": audit.get("training_eligible_record_count"),
+        "duplicate_record_ids": audit.get("duplicate_record_ids", []),
+        "unknown_training_enabled_record_ids": audit.get(
+            "unknown_training_enabled_record_ids",
+            [],
+        ),
+        "payload_hash_mismatch_record_ids": audit.get(
+            "payload_hash_mismatch_record_ids",
+            [],
+        ),
+        "eligible_records_without_provenance": audit.get(
+            "eligible_records_without_provenance",
+            [],
+        ),
+        "brain_delta_count_mismatch_episode_ids": audit.get(
+            "brain_delta_count_mismatch_episode_ids",
+            [],
+        ),
+        "brain_delta_record_id_mismatch_episode_ids": audit.get(
+            "brain_delta_record_id_mismatch_episode_ids",
+            [],
+        ),
+        "brain_delta_training_eligible_mismatch_episode_ids": audit.get(
+            "brain_delta_training_eligible_mismatch_episode_ids",
+            [],
+        ),
+        "brain_delta_type_count_mismatch_episode_ids": audit.get(
+            "brain_delta_type_count_mismatch_episode_ids",
+            [],
+        ),
+        "records_with_raw_payload_hash_mismatch": audit.get(
+            "records_with_raw_payload_hash_mismatch",
+            [],
+        ),
+        "raw_block_hash_mismatch_episode_ids": audit.get(
+            "raw_block_hash_mismatch_episode_ids",
+            [],
+        ),
     }
 
 
