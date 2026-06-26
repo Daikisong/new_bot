@@ -231,6 +231,31 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert report["validation"]["passed"] is False
 
 
+def test_research_smoke_bundle_cli_writes_pending_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+
+    result = CliRunner().invoke(app, ["research", "smoke-bundle"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == "nslab.real_bundle_smoke.v1"
+    assert payload["status"] == "pending"
+    assert payload["passed"] is False
+    report = json.loads(
+        (tmp_path / "diagnostics" / "bundle_smoke_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["status"] == "pending"
+
+    required = CliRunner().invoke(app, ["research", "smoke-bundle", "--require-valid"])
+
+    assert required.exit_code == 1
+
+
 def test_research_import_batch_cli_reports_source_file_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

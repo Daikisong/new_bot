@@ -35,7 +35,11 @@ from news_scalping_lab.context.session_pack import (
 )
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
-from news_scalping_lab.diagnostics import build_doctor_report, production_readiness_report
+from news_scalping_lab.diagnostics import (
+    build_doctor_report,
+    production_readiness_report,
+    real_bundle_smoke_report,
+)
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
@@ -494,6 +498,34 @@ def research_inspect_bundle(path: Path) -> None:
         },
     )
     _echo(inspection)
+
+
+@research_app.command("smoke-bundle")
+def research_smoke_bundle(
+    path: Annotated[
+        Path | None,
+        typer.Option(
+            "--path",
+            help=(
+                "Explicit bundle path. When omitted, NSLAB_REAL_BUNDLE_PATH and "
+                "repository candidate directories are searched."
+            ),
+        ),
+    ] = None,
+    require_valid: Annotated[
+        bool,
+        typer.Option(
+            "--require-valid",
+            help="Exit non-zero unless a production-source v11 ACCEPT_FULL smoke passes.",
+        ),
+    ] = False,
+) -> None:
+    settings = load_settings()
+    report = real_bundle_smoke_report(settings, explicit_path=path)
+    write_diagnostic_report(settings.project_root, "bundle_smoke_report", report)
+    _echo(report)
+    if require_valid and report.get("passed") is not True:
+        raise typer.Exit(code=1)
 
 
 @research_app.command("import-bundle")

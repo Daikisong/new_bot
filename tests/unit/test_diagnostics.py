@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -10,7 +11,11 @@ from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS, export_json_schemas
-from news_scalping_lab.diagnostics import build_doctor_report, production_readiness_report
+from news_scalping_lab.diagnostics import (
+    build_doctor_report,
+    production_readiness_report,
+    real_bundle_smoke_report,
+)
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, write_json
@@ -273,6 +278,7 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
         "BRAVE_SEARCH_API_KEY": "<required>",
     }
     assert production["remediation_commands"] == [
+        "python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
         "python -m news_scalping_lab.cli warehouse rebuild",
         "python -m news_scalping_lab.cli brain audit --deep",
@@ -579,7 +585,10 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
         in production["findings"]
     )
     assert production["required_environment"]["OPENAI_API_KEY"] == "<required>"
-    assert production["remediation_commands"][0].endswith("brain rebuild --mode llm-full")
+    assert any(
+        command.endswith("brain rebuild --mode llm-full")
+        for command in production["remediation_commands"]
+    )
 
 
 def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
@@ -616,6 +625,92 @@ def test_production_readiness_requires_brave_api_key_for_live_web(tmp_path) -> N
     )
 
 
+def test_real_bundle_smoke_reports_pending_when_no_candidate_exists(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["schema_version"] == "nslab.real_bundle_smoke.v1"
+    assert report["status"] == "pending"
+    assert report["passed"] is False
+    assert report["real_smoke_pending"] is True
+    assert report["candidate_count"] == 0
+    assert report["search_order"] == ["cli", "env", "data_inbox", "tests_fixture"]
+
+
+def test_real_bundle_smoke_passes_only_for_production_source_bundle(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "passed"
+    assert report["passed"] is True
+    assert report["real_valid_smoke_count"] == 1
+    assert report["synthetic_valid_smoke_count"] == 0
+    assert report["selected"]["source"] == "data_inbox"
+    assert report["selected"]["inspection"]["raw_record_count"] == 327
+
+
+def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    fixture_dir = tmp_path / "tests" / "fixtures" / "research_bundles"
+    fixture_dir.mkdir(parents=True)
+    (fixture_dir / "synthetic_bundle.md").write_text("synthetic bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "synthetic_only"
+    assert report["passed"] is False
+    assert report["real_smoke_pending"] is True
+    assert report["real_valid_smoke_count"] == 0
+    assert report["synthetic_valid_smoke_count"] == 1
+
+
+def test_real_bundle_smoke_prioritizes_failed_production_candidate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    fixture_dir = tmp_path / "tests" / "fixtures" / "research_bundles"
+    fixture_dir.mkdir(parents=True)
+    fixture = fixture_dir / "synthetic_bundle.md"
+    fixture.write_text("synthetic bundle", encoding="utf-8")
+    real_candidate = tmp_path / "real_bundle.md"
+    real_candidate.write_text("real bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        if path == real_candidate:
+            return _invalid_v11_bundle_inspection(path)
+        return _valid_v11_bundle_inspection(path)
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings, explicit_path=real_candidate)
+
+    assert report["status"] == "failed"
+    assert report["passed"] is False
+    assert report["production_failed_inspection_count"] == 1
+    assert report["synthetic_valid_smoke_count"] == 1
+
+
 def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     report: dict[str, object] = {}
@@ -629,7 +724,12 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "NSLAB_WEB_PROVIDER": "brave",
         "BRAVE_SEARCH_API_KEY": "<required>",
     }
+    assert (
+        "real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending"
+        in production["findings"]
+    )
     assert production["remediation_commands"] == [
+        "python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
         "python -m news_scalping_lab.cli warehouse rebuild",
         "python -m news_scalping_lab.cli brain audit --deep",
@@ -656,3 +756,51 @@ def test_doctor_strict_exits_nonzero_when_readiness_has_findings(
     payload = json.loads(strict.output)
     assert payload["readiness"]["passed"] is False
     assert "openai: required API key is missing" in payload["readiness"]["findings"]
+
+
+def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
+    return {
+        "path": path.as_posix(),
+        "bundle_schema_version": "nslab.research_bundle.v11",
+        "manifest_schema_version": "nslab.bundle_manifest.v11",
+        "episode_schema_version": "nslab.research_episode.v11",
+        "adapter": "v11",
+        "supported": True,
+        "episode_id": "NSLAB-20260622-REAL",
+        "trade_date": "2026-06-22",
+        "raw_record_count": 327,
+        "normalized_record_count": 327,
+        "training_eligible_record_count": 325,
+        "dropped_record_count": 0,
+        "quarantined_record_count": 0,
+        "record_counts_by_type": {
+            "supervised_issuer_day_case": 150,
+            "supervised_direct_event_case": 171,
+            "supervised_theme_formation_case": 3,
+            "blind_leader_preference_pair": 3,
+        },
+        "validation_passed": True,
+        "record_count_matches_manifest": True,
+        "training_eligible_count_matches_manifest": True,
+        "hash_mismatch_count": 0,
+        "hash_expectation_conflict_count": 0,
+        "missing_source_reference_count": 0,
+        "validation": {
+            "passed": True,
+            "bundle_status_accept_full": True,
+            "blind_valid": True,
+            "validator_exit_code_zero": True,
+            "critical_error_count_zero": True,
+        },
+    }
+
+
+def _invalid_v11_bundle_inspection(path: Path) -> dict[str, object]:
+    inspection = _valid_v11_bundle_inspection(path)
+    inspection["validation_passed"] = False
+    inspection["hash_mismatch_count"] = 1
+    inspection["validation"] = {
+        **dict(inspection["validation"]),
+        "passed": False,
+    }
+    return inspection

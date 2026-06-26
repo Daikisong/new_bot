@@ -99,6 +99,7 @@ Versioned research bundles:
 
 ```bash
 nslab research inspect-bundle docs/20260622_nslab_episode_bundle.example.md
+nslab research smoke-bundle --path path/to/real_bundle.md --require-valid
 nslab research import-bundle path/to/bundle.md --validate --accept
 nslab memory apply-company-deltas --as-of 2026-06-24T08:59:59+09:00
 nslab memory stats
@@ -107,7 +108,11 @@ nslab memory audit --deep
 
 `inspect-bundle` is version-aware and reports bundle, manifest, and episode schema
 versions, raw/normalized brain record counts, training-eligible counts, type
-distribution, provenance closure, and hash mismatches. `import-bundle` preserves the
+distribution, provenance closure, and hash mismatches. `smoke-bundle` searches the
+explicit `--path`, `NSLAB_REAL_BUNDLE_PATH`, `data/inbox/research/`, then
+`tests/fixtures/research_bundles/`, writes `diagnostics/bundle_smoke_report.*`,
+and treats fixture-only success as synthetic smoke rather than production real
+smoke. `import-bundle` preserves the
 original Markdown bundle, raw blocks, normalized episode index, record manifest, and
 canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
 legacy `ResearchEpisode` model. Unsupported future bundle versions that still
@@ -178,13 +183,16 @@ manifests as production research brains. Production readiness also rejects mock
 web research evidence; configure a live provider before treating web citations as
 production evidence.
 When production readiness fails, `doctor --production` includes
-`required_environment` and `remediation_commands`; the normal production sequence is:
+real bundle smoke status, `required_environment`, and `remediation_commands`; the
+normal production sequence is:
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai
 set OPENAI_API_KEY=...
 set NSLAB_WEB_PROVIDER=brave
 set BRAVE_SEARCH_API_KEY=...
+set NSLAB_REAL_BUNDLE_PATH=path\to\real_bundle.md
+python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid
 python -m news_scalping_lab.cli brain rebuild --mode llm-full
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli brain audit --deep
@@ -514,6 +522,8 @@ Operational commands write machine and Markdown reports under `diagnostics/`:
 ```text
 diagnostics/bundle_import_report.json
 diagnostics/bundle_import_report.md
+diagnostics/bundle_smoke_report.json
+diagnostics/bundle_smoke_report.md
 diagnostics/brain_record_store_report.json
 diagnostics/brain_record_store_report.md
 diagnostics/record_coverage_report.json

@@ -13,14 +13,17 @@ from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.utils import relative_to_root
 
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
     "NSLAB_WEB_PROVIDER",
     "NSLAB_PRICE_PROVIDER",
+    "NSLAB_REAL_BUNDLE_PATH",
     "NSLAB_BRAVE_SEARCH_API_KEY_ENV",
     "NSLAB_BRAVE_SEARCH_COUNT",
     "NSLAB_BRAVE_SEARCH_COUNTRY",
@@ -43,6 +46,12 @@ ENV_KEYS = [
 ]
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
+REAL_BUNDLE_ENV_KEY = "NSLAB_REAL_BUNDLE_PATH"
+REAL_BUNDLE_SEARCH_DIRS = (
+    ("data_inbox", Path("data/inbox/research")),
+    ("tests_fixture", Path("tests/fixtures/research_bundles")),
+)
+REAL_BUNDLE_PRODUCTION_SOURCES = {"cli", "env", "data_inbox"}
 
 
 def production_readiness_report(
@@ -51,6 +60,13 @@ def production_readiness_report(
 ) -> dict[str, Any]:
     findings: list[str] = []
     remediation = _production_remediation(settings)
+    real_bundle_smoke = real_bundle_smoke_report(settings)
+    if real_bundle_smoke["status"] == "pending":
+        findings.append("real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending")
+    elif real_bundle_smoke["status"] == "synthetic_only":
+        findings.append("real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending")
+    elif real_bundle_smoke["status"] != "passed":
+        findings.append("real_bundle: v11 ACCEPT_FULL smoke failed")
     if settings.llm_provider.strip().lower() == "mock":
         findings.append("llm: mock provider cannot compile production brain")
     if settings.llm.provider.strip().lower() == "mock":
@@ -99,8 +115,120 @@ def production_readiness_report(
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+        "real_bundle_smoke": real_bundle_smoke,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
+    }
+
+
+def real_bundle_smoke_report(
+    settings: Settings,
+    *,
+    explicit_path: Path | None = None,
+) -> dict[str, Any]:
+    search_locations, candidates = _real_bundle_candidates(
+        settings,
+        explicit_path=explicit_path,
+    )
+    inspections: list[dict[str, Any]] = []
+    for candidate in candidates:
+        path = Path(str(candidate["absolute_path"]))
+        if not path.exists() or not path.is_file():
+            inspections.append(
+                {
+                    **candidate,
+                    "status": "missing",
+                    "inspectable": False,
+                    "production_source": candidate["source"]
+                    in REAL_BUNDLE_PRODUCTION_SOURCES,
+                }
+            )
+            continue
+        try:
+            inspection = inspect_versioned_bundle(path)
+        except (OSError, ValueError) as exc:
+            inspections.append(
+                {
+                    **candidate,
+                    "status": "inspection_failed",
+                    "inspectable": False,
+                    "production_source": candidate["source"]
+                    in REAL_BUNDLE_PRODUCTION_SOURCES,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+        summary = _real_bundle_inspection_summary(inspection)
+        inspections.append(
+            {
+                **candidate,
+                "status": summary["status"],
+                "inspectable": True,
+                "production_source": candidate["source"]
+                in REAL_BUNDLE_PRODUCTION_SOURCES,
+                "inspection": summary,
+            }
+        )
+
+    valid_inspections = [
+        item
+        for item in inspections
+        if isinstance(item.get("inspection"), dict)
+        and item["inspection"].get("v11_accept_full_smoke_passed") is True
+    ]
+    real_valid_inspections = [
+        item for item in valid_inspections if item.get("production_source") is True
+    ]
+    synthetic_valid_inspections = [
+        item for item in valid_inspections if item.get("source") == "tests_fixture"
+    ]
+    failed_inspection_count = sum(
+        1
+        for item in inspections
+        if item.get("inspectable") is True
+        and isinstance(item.get("inspection"), dict)
+        and item["inspection"].get("v11_accept_full_smoke_passed") is not True
+    )
+    production_failed_inspection_count = sum(
+        1
+        for item in inspections
+        if item.get("production_source") is True
+        and (
+            item.get("inspectable") is not True
+            or not isinstance(item.get("inspection"), dict)
+            or item["inspection"].get("v11_accept_full_smoke_passed") is not True
+        )
+    )
+    if real_valid_inspections:
+        status = "passed"
+    elif production_failed_inspection_count:
+        status = "failed"
+    elif synthetic_valid_inspections:
+        status = "synthetic_only"
+    elif inspections:
+        status = "failed" if failed_inspection_count else "pending"
+    else:
+        status = "pending"
+    selected = real_valid_inspections[0] if real_valid_inspections else None
+    return {
+        "schema_version": "nslab.real_bundle_smoke.v1",
+        "status": status,
+        "passed": status == "passed",
+        "real_smoke_pending": status != "passed",
+        "search_order": ["cli", "env", "data_inbox", "tests_fixture"],
+        "environment_key": REAL_BUNDLE_ENV_KEY,
+        "search_locations": search_locations,
+        "candidate_count": len(candidates),
+        "inspected_count": len(
+            [item for item in inspections if item.get("inspectable") is True]
+        ),
+        "valid_smoke_count": len(valid_inspections),
+        "real_valid_smoke_count": len(real_valid_inspections),
+        "synthetic_valid_smoke_count": len(synthetic_valid_inspections),
+        "failed_inspection_count": failed_inspection_count,
+        "production_failed_inspection_count": production_failed_inspection_count,
+        "selected": selected,
+        "inspections": inspections,
     }
 
 
@@ -308,11 +436,120 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
     return {
         "required_environment": required_environment,
         "commands": [
+            f"{python_command} research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
             f"{python_command} brain rebuild --mode llm-full",
             f"{python_command} warehouse rebuild",
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",
         ],
+    }
+
+
+def _real_bundle_candidates(
+    settings: Settings,
+    *,
+    explicit_path: Path | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    search_locations: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+
+    def add_location(source: str, path: Path, *, configured: bool) -> None:
+        resolved = settings.path(path)
+        search_locations.append(
+            {
+                "source": source,
+                "path": relative_to_root(resolved, settings.project_root),
+                "exists": resolved.exists(),
+                "is_file": resolved.is_file(),
+                "is_dir": resolved.is_dir(),
+                "configured": configured,
+            }
+        )
+        if resolved.is_file():
+            add_candidate(source, resolved)
+        elif resolved.is_dir():
+            for item in sorted(resolved.rglob("*.md")):
+                if item.is_file():
+                    add_candidate(source, item)
+
+    def add_candidate(source: str, path: Path) -> None:
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append(
+            {
+                "source": source,
+                "path": relative_to_root(path, settings.project_root),
+                "absolute_path": resolved.as_posix(),
+            }
+        )
+
+    if explicit_path is not None:
+        add_location("cli", explicit_path, configured=True)
+    env_path = settings.env_value(REAL_BUNDLE_ENV_KEY)
+    if env_path:
+        add_location("env", Path(env_path), configured=True)
+    for source, relative in REAL_BUNDLE_SEARCH_DIRS:
+        add_location(source, relative, configured=False)
+    return search_locations, candidates
+
+
+def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any]:
+    validation = inspection.get("validation")
+    validation = validation if isinstance(validation, dict) else {}
+    bundle_version = inspection.get("bundle_schema_version")
+    adapter = inspection.get("adapter")
+    is_v11 = adapter == "v11" and bundle_version == "nslab.research_bundle.v11"
+    smoke_passed = (
+        is_v11
+        and inspection.get("validation_passed") is True
+        and validation.get("bundle_status_accept_full") is True
+        and validation.get("blind_valid") is True
+        and validation.get("validator_exit_code_zero") is True
+        and validation.get("critical_error_count_zero") is True
+        and inspection.get("record_count_matches_manifest") is True
+        and inspection.get("training_eligible_count_matches_manifest") is True
+        and inspection.get("dropped_record_count") == 0
+        and inspection.get("hash_mismatch_count") == 0
+        and inspection.get("hash_expectation_conflict_count") == 0
+        and inspection.get("missing_source_reference_count") == 0
+    )
+    return {
+        "status": "passed" if smoke_passed else "failed",
+        "v11_accept_full_smoke_passed": smoke_passed,
+        "bundle_version": bundle_version,
+        "manifest_schema_version": inspection.get("manifest_schema_version"),
+        "episode_schema_version": inspection.get("episode_schema_version"),
+        "adapter": adapter,
+        "supported": inspection.get("supported"),
+        "episode_id": inspection.get("episode_id"),
+        "trade_date": inspection.get("trade_date"),
+        "raw_record_count": inspection.get("raw_record_count"),
+        "normalized_record_count": inspection.get("normalized_record_count"),
+        "training_eligible_record_count": inspection.get(
+            "training_eligible_record_count"
+        ),
+        "dropped_record_count": inspection.get("dropped_record_count"),
+        "quarantined_record_count": inspection.get("quarantined_record_count"),
+        "record_counts_by_type": inspection.get("record_counts_by_type"),
+        "validation_passed": inspection.get("validation_passed"),
+        "bundle_status_accept_full": validation.get("bundle_status_accept_full"),
+        "blind_valid": validation.get("blind_valid"),
+        "validator_exit_code_zero": validation.get("validator_exit_code_zero"),
+        "critical_error_count_zero": validation.get("critical_error_count_zero"),
+        "record_count_matches_manifest": inspection.get("record_count_matches_manifest"),
+        "training_eligible_count_matches_manifest": inspection.get(
+            "training_eligible_count_matches_manifest"
+        ),
+        "hash_mismatch_count": inspection.get("hash_mismatch_count"),
+        "hash_expectation_conflict_count": inspection.get(
+            "hash_expectation_conflict_count"
+        ),
+        "missing_source_reference_count": inspection.get(
+            "missing_source_reference_count"
+        ),
     }
 
 
