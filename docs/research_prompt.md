@@ -4,8 +4,491 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v21_brain_delta_density_market_state_override_locked
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다. v21은 brain_delta 최소 밀도와 body table/list extractor hard gate를 유지하되, market_state/정치테마/투자주의 연속성 후보는 수량 hard cap으로 금지하지 않고 market_state lane·fatigue audit·override audit으로 검증한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v22_0622_reference_outcome_to_news_ledger_parity_locked
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성한다. 20260622 gold example은 숫자·종목·점수의 복사 대상이 아니라 phase 분리, row-level provenance, record-level brain_delta, validator 계산 방식의 구조 레퍼런스로만 참고한다. 초반 다운로드·JSON·대용량 파싱 난관에서 조기 QUARANTINE으로 빠지지 않고, 사용 가능한 도구와 시간을 충분히 사용해 전수 파싱·canonical_graph 수리·renderer/validator 재실행을 반복한다. 단, 실제 outcome label이 BLIND seal 전에 노출된 irrecoverable phase contamination, validator 셀프채점, 상장사 의미 오결속, 근거 없는 catalyst/mechanism 생성, final filler 후보는 반드시 막는다. 종목명·문자열 blacklist가 아니라 quote_role·issuer_role_anchor·material_fact_class·catalyst_type 호환성으로 final 후보를 검증한다. v22는 v21의 brain_delta 밀도·market_state override·body table/list extractor를 유지하고, 추가로 source/fact/inference ledger population parity, outcome→news postmortem audit, validation_report actual/expected 구조화를 hard gate로 추가한다.
+```
+
+
+────────────────────────────────────────
+V22 REGRESSION LOCK — 0622 구조 레퍼런스·ledger parity·outcome→news 감사
+────────────────────────────────────────
+
+이 섹션은 20241202류 회귀와 “상한가 → 뉴스” 사후 감사 누락을 막기 위한 최상위 추가 게이트다. 아래 `V21 REGRESSION LOCK`, `AUTONOMOUS FULL-RUN LOCK`, `PHASE COCKPIT LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
+
+핵심 방향은 다음 한 줄이다.
+
+```text
+20260622 gold example은 따라 써도 되는 문체·구조의 기준점이지만, 숫자·종목·rank·score를 복제하지 말고 이번 D의 입력과 outcome에서 계산한 record 장부로만 채운다.
+```
+
+## V22.0 Gold reference anti-overfit rule
+
+가능하면 다음 파일을 구조 reference로 먼저 읽는다.
+
+```text
+gold_reference_primary = docs/example.md
+gold_reference_fallback = 20260622_nslab_episode_bundle.example.md
+```
+
+이 reference에서 참고할 수 있는 것은 다음뿐이다.
+
+```text
+front matter shape
+BLIND/POSTMORTEM 물리적 분리 방식
+logical block 구성
+row-level source ledger 방식
+brain_delta supervised record 방식
+validation_report check object 방식
+renderer/validator provenance 방식
+outcome-only relation을 수혜관계로 소급하지 않는 태도
+```
+
+다음은 절대 복사하지 않는다.
+
+```text
+0622의 row_count, source_ledger_count, brain_delta_count 같은 숫자
+0622의 종목명, sector, final_watchlist, rank, score
+0622의 특정 실패·성공 결론
+0622의 candidate pool 크기
+0622의 outcome 분포
+```
+
+validator hard check:
+
+```text
+gold_reference_loaded_or_declared_unavailable == true
+gold_reference_usage_scope == STRUCTURE_ONLY
+gold_reference_numeric_copy_count == 0
+gold_reference_candidate_copy_count == 0
+gold_reference_overfit_count == 0
+```
+
+`gold_reference_loaded_or_declared_unavailable`가 false이면 warning이 아니라 critical이다. 단, reference 파일을 도구 제약으로 못 읽었을 경우에는 `acquisition_warnings.jsonl`에 남기고, 이 프롬프트에 명시된 gold-shape 상수로 대체한다.
+
+## V22.1 Source / fact / inference ledger population parity gate
+
+`ACCEPT_FULL`은 final 후보 20개만 그럴듯하게 쓰는 파일이 아니다. 전체 연구 장부가 import 가능한 밀도로 닫혀야 한다.
+
+### V22.1-A source_ledger row-level coverage
+
+`source_ledger.jsonl`은 파일 단위 source만 담으면 부족하다. 정상 거래일 `ACCEPT_FULL`에서는 입력 CSV의 모든 row에 대해 row-level source record를 만든다.
+
+각 news row source record 최소 필드:
+
+```json
+{
+  "source_id": "SRC-NEWS-000001",
+  "source_type": "news_csv_row",
+  "row_id": "NEWS-000001",
+  "input_file": "news_YYYYMMDD.csv",
+  "title": "원문 제목",
+  "published_at": "YYYY-MM-DDTHH:MM:SS+09:00",
+  "available_before_cutoff": true,
+  "time_verified": true,
+  "content_sha256": "row title+body hash",
+  "body_missing": false,
+  "usage_phase": "BLIND",
+  "notes": "source ledger에는 본문을 중복 복제하지 않고 row_id/hash로 추적한다"
+}
+```
+
+필수 source coverage:
+
+```text
+source_ledger_news_row_count == news_row_count
+source_ledger_core_file_source_count >= 6
+source_ledger_count >= news_row_count + source_ledger_core_file_source_count
+source_ledger_missing_news_row_count == 0
+source_ledger_duplicate_news_row_source_id_count == 0
+```
+
+core file sources:
+
+```text
+SRC-MAIN-PROMPT
+SRC-NEWS-CSV
+SRC-RESEARCH-DAILY-MANIFEST
+SRC-RESEARCH-DAILY-SCHEMA
+SRC-TRADING-CALENDAR
+SRC-ACCESS-JSON
+SRC-BLIND-SNAPSHOT
+SRC-OUTCOME-SNAPSHOT(post-seal only)
+```
+
+### V22.1-B fact ledger parity
+
+`fact_ledger_blind.jsonl`은 final 후보만을 위한 장식 장부가 아니다. Issuer Entity Gate를 통과하고 `candidate_screening.jsonl`에 오른 observation은 최소 하나의 primary fact 또는 명시적 no-fact rejection reason을 가져야 한다.
+
+허용 구조:
+
+```text
+candidate_screening.source_fact_ids_count >= 1
+또는
+candidate_screening.no_fact_rejection_reason in [
+  NOT_ISSUER_SCOPED,
+  MARKET_FLOW_TABLE_ONLY,
+  BODY_TABLE_CONTEXT_ONLY,
+  COMMON_NOUN_OR_HOMONYM,
+  ATTENDEE_LIST_ONLY,
+  MANUFACTURER_ONLY,
+  INVESTOR_HOLDING_ONLY,
+  P_SNAPSHOT_ONLY,
+  DUPLICATE_EVENT,
+  ROUTINE_ADMIN_NOTICE_ONLY
+]
+```
+
+정상 `ACCEPT_FULL` hard checks:
+
+```text
+candidate_screening_count == issuer_observation_count
+candidate_screening_unlinked_to_fact_or_rejection_count == 0
+final_candidate_primary_fact_missing_count == 0
+watch_secondary_primary_fact_or_rejection_missing_count == 0
+exclude_primary_fact_or_rejection_missing_count == 0
+fact_exact_quote_found_count == fact_ledger_count
+fact_offset_mismatch_count == 0
+fact_source_id_missing_count == 0
+fact_row_id_missing_in_source_ledger_count == 0
+```
+
+### V22.1-C inference / mechanism linkage parity
+
+final candidate의 `economic_mechanism`은 산문 템플릿이 아니라 fact에 붙은 검증된 inference여야 한다.
+
+각 final item은 다음 중 하나를 반드시 가진다.
+
+```text
+supporting_inference_ids_count >= 1
+또는
+mechanism_in_fact_id_count >= 1 and inference_exempt_reason == MECHANISM_DIRECTLY_STATED_IN_FACT
+```
+
+`inference_ledger_blind.jsonl` 최소 필드:
+
+```text
+inference_id
+statement
+inference_type
+supporting_fact_ids
+scope_event_ids
+scope_entity_ids
+mechanism_target
+uncertainty
+verifier_decision
+verifier_reason
+```
+
+검증 규칙:
+
+```text
+final_supported_inference_or_exempt_count == final_watchlist_count
+final_unsupported_mechanism_count == 0
+inference_supporting_fact_missing_count == 0
+inference_cross_event_leak_count == 0
+inference_cross_issuer_leak_count == 0
+mechanism_template_only_count == 0
+```
+
+### V22.1-D ledger population audit block
+
+최종 bundle은 다음 block을 반드시 포함한다.
+
+```text
+<!-- NSLAB:BEGIN ledger_population_audit.json -->
+...
+<!-- NSLAB:END ledger_population_audit.json -->
+```
+
+스키마 최소 필드:
+
+```json
+{
+  "schema_version": "nslab.ledger_population_audit.v1",
+  "news_row_count": 0,
+  "source_ledger_news_row_count": 0,
+  "source_ledger_core_file_source_count": 0,
+  "issuer_observation_count": 0,
+  "candidate_screening_count": 0,
+  "fact_ledger_count": 0,
+  "inference_ledger_count": 0,
+  "candidate_screening_unlinked_to_fact_or_rejection_count": 0,
+  "final_supported_inference_or_exempt_count": 0,
+  "final_watchlist_count": 0,
+  "checks": {
+    "source_ledger_row_coverage_verified": true,
+    "fact_screening_population_parity_verified": true,
+    "inference_mechanism_linkage_verified": true,
+    "source_fact_id_closure_verified": true
+  },
+  "fatal_blockers": []
+}
+```
+
+위 `fatal_blockers`가 비어 있지 않으면 `direct_brain_ingest_ready=false`다.
+
+## V22.2 Outcome→News post-seal audit gate
+
+POSTMORTEM은 final 후보 성과만 보는 것이 아니다. 거래일 D의 상한가·고가 leaders를 outcome에서 먼저 찾고, 그 ticker를 cutoff 이전 뉴스 입력으로 역추적해야 한다.
+
+이 감사는 반드시 `PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL` 이후에만 수행한다. BLIND를 수정하는 데 사용하지 않는다.
+
+### V22.2-A outcome leader cohort
+
+다음 집합을 모두 만든다.
+
+```text
+upper_limit_touched_leaders
+upper_limit_closed_leaders
+high_return_ge_20_leaders
+high_return_top_30_clean_leaders
+final_watchlist_outcome_join
+```
+
+중복 ticker는 하나의 `outcome_leader_id`로 합친다.
+
+각 leader record 최소 필드:
+
+```json
+{
+  "outcome_leader_id": "OL-000001",
+  "ticker": "000000",
+  "name_on_D": "회사명",
+  "market": "KOSDAQ",
+  "response_class": "LIMIT_UP_CLOSED | LIMIT_UP_TOUCHED | HIGH20 | HIGH10 | ...",
+  "high_return_pct": 0.0,
+  "close_return_pct": 0.0,
+  "upper_limit_touched": false,
+  "upper_limit_closed": false,
+  "label_quality": "verified | quarantined",
+  "outcome_source_id": "SRC-RD-OUTCOME-YYYYMMDD"
+}
+```
+
+### V22.2-B cutoff news reverse search
+
+각 outcome leader에 대해 입력 CSV 안에서 다음 순서로 검색한다.
+
+```text
+1. ticker literal exact match
+2. blind/outcome snapshot의 company name exact match
+3. accepted entity alias exact match
+4. body table/list extractor 결과
+5. sealed theme universe의 cutoff-before member edge
+6. market_state / continuation pool의 P snapshot-only edge
+```
+
+금지:
+
+```text
+사후 웹검색 결과로 cutoff row를 만든 척하기
+결과에서 함께 올랐다는 이유만으로 같은 테마 edge 생성
+fuzzy substring만으로 hit 처리
+회사명 아닌 일반어를 ticker hit로 처리
+input_news_hits가 없는데 direct catalyst를 생성
+```
+
+### V22.2-C outcome_to_news_audit.jsonl 필수
+
+최종 bundle에는 다음 block을 반드시 포함한다.
+
+```text
+<!-- NSLAB:BEGIN outcome_to_news_audit.jsonl -->
+...
+<!-- NSLAB:END outcome_to_news_audit.jsonl -->
+```
+
+각 record 최소 필드:
+
+```json
+{
+  "audit_id": "OTN-000001",
+  "outcome_leader_id": "OL-000001",
+  "ticker": "000000",
+  "name_on_D": "회사명",
+  "outcome_response_class": "LIMIT_UP_CLOSED",
+  "input_news_hit_status": "DIRECT_TICKER_HIT | DIRECT_NAME_HIT | BODY_TABLE_HIT | SEALED_THEME_MEMBER | CONTINUATION_POOL_ONLY | NO_INPUT_NEWS_HIT | UNRESOLVED_NAME_COLLISION",
+  "matched_row_ids": [],
+  "matched_source_ids": [],
+  "matched_fact_ids": [],
+  "matched_observation_ids": [],
+  "matched_screening_ids": [],
+  "was_in_final_watchlist": false,
+  "was_in_candidate_screening": false,
+  "was_in_continuation_pool": false,
+  "postmortem_classification": "BLIND_FINAL_HIT | RANKING_MISS | CANDIDATE_GENERATION_MISS | SCREENED_OUT_BUT_WINNER | CONTINUATION_POOL_HIT | NEWSLESS_OR_UNEXPLAINED | RETROSPECTIVE_THEME_ONLY | PRICE_MEMORY_ONLY | LABEL_QUARANTINED",
+  "training_eligible": false,
+  "training_eligibility_reason": "",
+  "no_hallucinated_catalyst": true
+}
+```
+
+### V22.2-D outcome leader census block
+
+최종 bundle에는 다음 block을 반드시 포함한다.
+
+```text
+<!-- NSLAB:BEGIN outcome_leader_census.jsonl -->
+...
+<!-- NSLAB:END outcome_leader_census.jsonl -->
+```
+
+`outcome_leader_census.jsonl`과 `outcome_to_news_audit.jsonl`은 1:1이어야 한다.
+
+```text
+outcome_leader_census_count == outcome_to_news_audit_count
+outcome_to_news_missing_audit_count == 0
+outcome_to_news_duplicate_audit_count == 0
+```
+
+### V22.2-E classification policy
+
+분류 규칙:
+
+```text
+was_in_final_watchlist == true and response strong
+→ BLIND_FINAL_HIT
+
+was_in_candidate_screening == true and was_in_final_watchlist == false and response strong
+→ RANKING_MISS 또는 SCREENED_OUT_BUT_WINNER
+
+input_news_hit_status in [DIRECT_TICKER_HIT, DIRECT_NAME_HIT, BODY_TABLE_HIT]
+and was_in_candidate_screening == false
+→ CANDIDATE_GENERATION_MISS
+
+input_news_hit_status == CONTINUATION_POOL_ONLY
+→ CONTINUATION_POOL_HIT 또는 PRICE_MEMORY_ONLY
+
+input_news_hit_status == NO_INPUT_NEWS_HIT
+→ NEWSLESS_OR_UNEXPLAINED
+
+input_news_hit_status == RETROSPECTIVE_THEME_ONLY
+→ training_eligible=false
+```
+
+중요:
+
+```text
+NEWSLESS_OR_UNEXPLAINED는 실패가 아니라 중요한 학습 record다.
+NO_INPUT_NEWS_HIT인 상한가에 억지 catalyst를 만들지 않는다.
+input_news_hits가 있었는데 놓친 경우와 애초에 뉴스가 없던 경우를 반드시 구분한다.
+```
+
+validator hard check:
+
+```text
+outcome_to_news_audit_executed == true
+outcome_leader_census_count >= upper_limit_touched_count
+outcome_to_news_audit_count == outcome_leader_census_count
+outcome_to_news_missing_audit_count == 0
+outcome_to_news_hallucinated_catalyst_count == 0
+outcome_to_news_direct_hit_without_source_id_count == 0
+outcome_to_news_no_input_news_hit_with_direct_catalyst_count == 0
+candidate_generation_error_case_count >= outcome_to_news_candidate_generation_miss_count
+newsless_or_unexplained_case_count >= outcome_to_news_newsless_count
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_OUTCOME_TO_NEWS_AUDIT_INCOMPLETE
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V22.3 validation_report actual/expected object hard gate
+
+`validation_report.json`의 checks는 문자열 리스트가 아니다. 각 check는 반드시 object다.
+
+허용 스키마:
+
+```json
+{
+  "checks": {
+    "check_id": {
+      "check_id": "check_id",
+      "passed": true,
+      "actual": {},
+      "expected": {},
+      "expected_source": "PROMPT_CONSTANT | INPUT_PARSE | ACCESS_JSON | CANONICAL_GRAPH_PRESEAL | CANONICAL_GRAPH_POSTSEAL | GOLD_SHAPE_CONSTANT",
+      "severity": "critical | warning",
+      "error_ids": []
+    }
+  }
+}
+```
+
+금지:
+
+```text
+checks: ["brain_delta_density_verified", "source_ledger_ok"]
+actual 누락
+expected 누락
+expected_source 누락
+passed만 true로 나열
+validation_report check와 direct_ingest_contract hard_gate_summary 불일치
+```
+
+V22 필수 check_id:
+
+```text
+gold_reference_structure_only_verified
+source_ledger_row_coverage_verified
+fact_screening_population_parity_verified
+inference_mechanism_linkage_verified
+ledger_population_audit_verified
+outcome_leader_census_verified
+outcome_to_news_audit_executed
+outcome_to_news_audit_coverage_verified
+outcome_to_news_no_hallucinated_catalyst_verified
+validation_check_object_schema_verified
+direct_ingest_contract_validation_parity_verified
+```
+
+하나라도 없거나 object schema를 만족하지 않으면:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATION_REPORT_NOT_STRUCTURED
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V22.4 direct_ingest_contract count/hash parity 확장
+
+`direct_ingest_contract.json.record_import_manifest`에는 기존 count 외에 다음을 추가한다.
+
+```json
+{
+  "source_ledger_news_row_count": 0,
+  "outcome_leader_census_count": 0,
+  "outcome_to_news_audit_count": 0,
+  "ledger_population_audit_sha256": "",
+  "outcome_to_news_audit_sha256": "",
+  "outcome_leader_census_sha256": "",
+  "validation_check_object_schema_verified": true
+}
+```
+
+`direct_brain_ingest_ready=true`인 경우 위 값은 실제 artifact parse 결과와 일치해야 한다.
+
+## V22.5 final response and importer safety
+
+최종 채팅 응답이 한 줄이어야 해도 내부 bundle은 V22 block을 모두 포함해야 한다. `outcome_to_news_audit.jsonl`과 `ledger_population_audit.json`가 없으면 파일이 아무리 보기 좋아도 importer-ready가 아니다.
+
+요약:
+
+```text
+0622는 구조 reference다.
+이번 D의 입력은 이번 D의 full parse로만 결정한다.
+source_ledger는 모든 news row를 추적한다.
+fact/inference는 screening/final mechanism과 닫혀야 한다.
+outcome leader는 post-seal 후 반드시 input news로 역추적한다.
+없으면 newsless로 남기고, 억지 catalyst를 만들지 않는다.
+validation_report는 actual/expected object로 계산 증거를 남긴다.
 ```
 
 
@@ -389,6 +872,17 @@ market_state_excess_counts_are_not_fatal_without_override_check_verified
 market_state_only_not_outrank_quality_A_direct_event_without_override_verified
 body_table_extractor_executed
 body_table_candidate_generation_audit_verified
+gold_reference_structure_only_verified
+source_ledger_row_coverage_verified
+fact_screening_population_parity_verified
+inference_mechanism_linkage_verified
+ledger_population_audit_verified
+outcome_leader_census_verified
+outcome_to_news_audit_executed
+outcome_to_news_audit_coverage_verified
+outcome_to_news_no_hallucinated_catalyst_verified
+validation_check_object_schema_verified
+direct_ingest_contract_validation_parity_verified
 ```
 
 위 check는 산문 선언이 아니라 validator가 artifact와 canonical_graph를 다시 읽어 계산해야 한다.
@@ -1723,6 +2217,9 @@ logical blocks:
 - final_semantic_audit.jsonl
 - market_state_override_audit.jsonl
 - body_table_candidate_generation_audit.jsonl
+- ledger_population_audit.json
+- outcome_leader_census.jsonl
+- outcome_to_news_audit.jsonl
 - phase_state.json
 - access_log.jsonl
 - phase_audit_report.json
@@ -2424,6 +2921,9 @@ candidate_screening.jsonl
 final_semantic_audit.jsonl
 market_state_override_audit.jsonl
 body_table_candidate_generation_audit.jsonl
+ledger_population_audit.json
+outcome_leader_census.jsonl
+outcome_to_news_audit.jsonl
 blind_packet_manifest.json
 entity_resolution.jsonl
 outcome_ledger.jsonl
@@ -3307,6 +3807,9 @@ candidate_screening.jsonl
 final_semantic_audit.jsonl
 market_state_override_audit.jsonl
 body_table_candidate_generation_audit.jsonl
+ledger_population_audit.json
+outcome_leader_census.jsonl
+outcome_to_news_audit.jsonl
 blind_packet_manifest.json
 ```
 
@@ -4405,6 +4908,9 @@ candidate_screening.jsonl
 final_semantic_audit.jsonl
 market_state_override_audit.jsonl
 body_table_candidate_generation_audit.jsonl
+ledger_population_audit.json
+outcome_leader_census.jsonl
+outcome_to_news_audit.jsonl
 blind_packet_manifest.json
 entity_resolution.jsonl
 outcome_ledger.jsonl
@@ -4458,6 +4964,15 @@ bundle_manifest.json
 
 <!-- NSLAB:BEGIN body_table_candidate_generation_audit.jsonl -->
 <!-- NSLAB:END body_table_candidate_generation_audit.jsonl -->
+
+<!-- NSLAB:BEGIN ledger_population_audit.json -->
+<!-- NSLAB:END ledger_population_audit.json -->
+
+<!-- NSLAB:BEGIN outcome_leader_census.jsonl -->
+<!-- NSLAB:END outcome_leader_census.jsonl -->
+
+<!-- NSLAB:BEGIN outcome_to_news_audit.jsonl -->
+<!-- NSLAB:END outcome_to_news_audit.jsonl -->
 
 <!-- NSLAB:BEGIN blind_packet_manifest.json -->
 <!-- NSLAB:END blind_packet_manifest.json -->
@@ -7825,6 +8340,12 @@ research_daily snapshot hash 불일치가 재시도 후에도 지속
 
 ```text
 semantic_feature_error_count > 0
+source_ledger_missing_news_row_count > 0
+candidate_screening_unlinked_to_fact_or_rejection_count > 0
+final_unsupported_mechanism_count > 0
+outcome_to_news_missing_audit_count > 0
+outcome_to_news_hallucinated_catalyst_count > 0
+validation_check_object_schema_error_count > 0
 fact_quote_not_found_count > 0
 cross_issuer_feature_leak_count > 0
 cross_event_feature_leak_count > 0
