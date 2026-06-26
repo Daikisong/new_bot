@@ -662,11 +662,13 @@ def _real_bundle_import_status(
 
     episode_dir = settings.project_root / "research" / "episodes" / episode_id
     envelope_path = episode_dir / "bundle_envelope.json"
+    normalized_index_path = episode_dir / "normalized_episode_index.json"
     original_bundle_path = episode_dir / "original_bundle.md"
     record_manifest_path = (
         settings.project_root / "memory" / "record_manifests" / f"{episode_id}.json"
     )
     envelope = _read_optional_json(envelope_path)
+    normalized_index = _read_optional_json(normalized_index_path)
     record_manifest = _read_optional_json(record_manifest_path)
     record_path = settings.project_root / "memory" / "records" / f"{episode_id}.jsonl"
     if isinstance(record_manifest, dict):
@@ -694,6 +696,28 @@ def _real_bundle_import_status(
             findings.append("stored original bundle sha does not match real smoke")
     else:
         findings.append("stored original bundle is missing")
+    if normalized_index is None:
+        findings.append("normalized episode index for selected real bundle is missing")
+    else:
+        if (
+            isinstance(expected_record_count, int)
+            and len(_string_list(normalized_index.get("record_ids")))
+            != expected_record_count
+        ):
+            findings.append("normalized episode index count does not match real smoke")
+        if (
+            isinstance(expected_training_count, int)
+            and normalized_index.get("training_eligible_record_count")
+            != expected_training_count
+        ):
+            findings.append(
+                "normalized episode index training eligible count does not match real smoke"
+            )
+        if isinstance(expected_record_counts_by_type, dict) and (
+            normalized_index.get("record_count_by_type")
+            != expected_record_counts_by_type
+        ):
+            findings.append("normalized episode index type counts do not match real smoke")
     if record_manifest is None:
         findings.append("record manifest for selected real bundle is missing")
     else:
@@ -746,11 +770,27 @@ def _real_bundle_import_status(
             record_file_stats["record_counts_by_type"] != expected_record_counts_by_type
         ):
             findings.append("record JSONL type counts do not match real smoke")
+    if (
+        normalized_index is not None
+        and record_manifest is not None
+        and record_file_stats["exists"] is True
+        and record_file_stats["invalid_line_count"] == 0
+    ):
+        record_ids = sorted(_string_list(record_file_stats["record_ids"]))
+        if sorted(_string_list(record_manifest.get("record_ids"))) != record_ids:
+            findings.append("record manifest IDs do not match record JSONL")
+        if sorted(_string_list(normalized_index.get("record_ids"))) != record_ids:
+            findings.append("normalized episode index IDs do not match record JSONL")
 
     return {
         **base,
         "envelope_path": relative_to_root(envelope_path, settings.project_root),
         "envelope_exists": envelope is not None,
+        "normalized_index_path": relative_to_root(
+            normalized_index_path,
+            settings.project_root,
+        ),
+        "normalized_index_exists": normalized_index is not None,
         "original_bundle_path": relative_to_root(
             original_bundle_path,
             settings.project_root,
@@ -769,6 +809,7 @@ def _real_bundle_import_status(
             "training_eligible_record_count"
         ],
         "observed_record_counts_by_type": record_file_stats["record_counts_by_type"],
+        "observed_record_ids": record_file_stats["record_ids"],
         "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
         "passed": not findings,
         "status": "ready" if not findings else "attention",
@@ -1401,11 +1442,13 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
             "record_count": 0,
             "training_eligible_record_count": 0,
             "record_counts_by_type": {},
+            "record_ids": [],
             "invalid_line_count": 0,
         }
     record_count = 0
     training_eligible_count = 0
     record_counts_by_type: dict[str, int] = {}
+    record_ids: list[str] = []
     invalid_line_count = 0
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -1426,6 +1469,9 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
             continue
         if payload.get("training_eligible") is True:
             training_eligible_count += 1
+        record_id = payload.get("record_id")
+        if isinstance(record_id, str) and record_id:
+            record_ids.append(record_id)
         record_type = payload.get("record_type")
         if isinstance(record_type, str) and record_type:
             record_counts_by_type[record_type] = record_counts_by_type.get(record_type, 0) + 1
@@ -1435,6 +1481,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
         "record_count": record_count,
         "training_eligible_record_count": training_eligible_count,
         "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
+        "record_ids": record_ids,
         "invalid_line_count": invalid_line_count,
     }
 

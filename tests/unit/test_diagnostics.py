@@ -1497,6 +1497,17 @@ def test_production_readiness_accepts_real_smoke_import_link(
         encoding="utf-8",
     )
     record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+        },
+    )
     write_json(
         tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
         {
@@ -1506,6 +1517,7 @@ def test_production_readiness_accepts_real_smoke_import_link(
                 "training_eligible_record_count"
             ],
             "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
             "records_sha256": file_sha256(record_path),
         },
@@ -1525,6 +1537,7 @@ def test_production_readiness_accepts_real_smoke_import_link(
 
     assert production["real_bundle_smoke"]["status"] == "passed"
     assert production["real_bundle_import"]["passed"] is True
+    assert production["real_bundle_import"]["normalized_index_exists"] is True
     assert production["real_bundle_import"]["record_manifest_exists"] is True
     assert production["real_bundle_import"]["record_file_exists"] is True
     assert production["real_bundle_import"]["observed_record_count"] == 327
@@ -1567,6 +1580,17 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
         encoding="utf-8",
     )
     record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+        },
+    )
     record_path.write_text(
         json.dumps(
             {
@@ -1587,6 +1611,7 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
                 "training_eligible_record_count"
             ],
             "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
             "records_sha256": "0" * 64,
         },
@@ -1620,6 +1645,81 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
     )
     assert (
         "real_bundle_import: record JSONL type counts do not match real smoke"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_real_import_index_id_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": [*record_ids[:-1], "wrong-record-id"],
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+        },
+    )
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
+            "records_file": record_path.relative_to(tmp_path).as_posix(),
+            "records_sha256": file_sha256(record_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_import"]["passed"] is False
+    assert (
+        "real_bundle_import: normalized episode index IDs do not match record JSONL"
         in production["findings"]
     )
 
@@ -1682,23 +1782,37 @@ def _write_real_smoke_records(
     assert isinstance(record_counts_by_type, dict)
     training_eligible_count = inspection["training_eligible_record_count"]
     assert isinstance(training_eligible_count, int)
+    record_ids = _real_smoke_record_ids(inspection)
     rows: list[dict[str, object]] = []
+    record_index = 0
     for record_type, count in sorted(record_counts_by_type.items()):
         assert isinstance(record_type, str)
         assert isinstance(count, int)
-        for index in range(count):
+        for _index in range(count):
             rows.append(
                 {
-                    "record_id": f"{record_type}-{index}",
+                    "record_id": record_ids[record_index],
                     "record_type": record_type,
                     "training_eligible": len(rows) < training_eligible_count,
                 }
             )
+            record_index += 1
     record_path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
     )
     return record_path
+
+
+def _real_smoke_record_ids(inspection: dict[str, object]) -> list[str]:
+    record_counts_by_type = inspection["record_counts_by_type"]
+    assert isinstance(record_counts_by_type, dict)
+    record_ids: list[str] = []
+    for record_type, count in sorted(record_counts_by_type.items()):
+        assert isinstance(record_type, str)
+        assert isinstance(count, int)
+        record_ids.extend(f"{record_type}-{index}" for index in range(count))
+    return record_ids
 
 
 def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
