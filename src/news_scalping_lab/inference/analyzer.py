@@ -310,6 +310,7 @@ class DailyAnalyzer:
             current_news_texts=news_texts,
             first_pass_mechanisms=first_pass_mechanisms,
             model_config=self.llm_model_config,
+            brain_version=manifest.brain_version,
         )
         manifest.accepted_episode_count = sweep.accepted_episode_count
         manifest.swept_episode_count = len(sweep.swept_episode_ids)

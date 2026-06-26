@@ -25,6 +25,12 @@ from news_scalping_lab.prices.base import (
     BlindPriceGuard,
     PriceRecord,
 )
+from news_scalping_lab.records.models import (
+    BrainRecordEnvelope,
+    NormalizedEpisodeIndex,
+    ResearchBundleEnvelope,
+)
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
 from news_scalping_lab.research_import.semantic import (
     SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
@@ -60,6 +66,102 @@ def _sweep_shard_hash(source_hashes: dict[str, str]) -> str:
                 for episode_id, source_hash in sorted(source_hashes.items())
             ]
         )
+    )
+
+
+def _record_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"record_id": record_id, "source_sha256": source_hash}
+                for record_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
+
+
+def _brain_record_for_sweep_audit(
+    record_id: str,
+    *,
+    episode_id: str,
+    available_from: datetime,
+) -> BrainRecordEnvelope:
+    payload = {
+        "record_id": record_id,
+        "record_type": "supervised_direct_event_case",
+        "episode_id": episode_id,
+        "trade_date": "2030-01-09",
+        "available_from": available_from.isoformat(),
+        "training_target": "direct_event_response",
+        "evidence_phase": "BLIND_SAFE",
+        "ticker": "000001",
+        "company_name": "Record Sweep Audit Co",
+        "response_class": "positive_high10",
+        "training_eligible": True,
+        "provenance_source_ids": ["SRC-RECORD-SWEEP-AUDIT"],
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type="supervised_direct_event_case",
+        episode_id=episode_id,
+        trade_date=date(2030, 1, 9),
+        available_from=available_from,
+        training_target="direct_event_response",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=True,
+        eligibility_reason="unit test record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-RECORD-SWEEP-AUDIT"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+
+
+def _store_brain_records_for_sweep_audit(
+    root: Path,
+    records: list[BrainRecordEnvelope],
+) -> None:
+    episode_id = records[0].episode_id
+    source_path = root / "synthetic_record_bundle.md"
+    raw_payload = "\n".join(record.model_dump_json() for record in records)
+    raw_sha = sha256_text(raw_payload)
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(root).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"brain_delta.jsonl": sha256_text(raw_payload)},
+            raw_block_counts={"brain_delta.jsonl": len(records)},
+            adapter_name="unit-test",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl"],
+        ),
+        records=records,
+        raw_blocks={"brain_delta.jsonl": raw_payload},
+        validation_report={"passed": True},
+        accepted=True,
     )
 
 
@@ -3317,6 +3419,12 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
             available_from=datetime(2030, 1, 9, 0, 0, 0, tzinfo=KST),
         )
         write_json(accepted_dir / f"{episode_id}.json", episode.model_dump(mode="json"))
+    record = _brain_record_for_sweep_audit(
+        "REC-sweep-1",
+        episode_id="NSLAB-20300109-RECORD-SWEEP",
+        available_from=datetime(2030, 1, 9, 0, 0, 0, tzinfo=KST),
+    )
+    _store_brain_records_for_sweep_audit(tmp_path, [record])
     sweep_path = (
         tmp_path
         / "runs"
@@ -3344,6 +3452,32 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "from_cache": False,
     }
     write_json(sweep_path, sweep_payload)
+    record_sweep_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "record_sweep"
+        / "RUN-linked"
+        / "record_shard_0001.json"
+    )
+    record_sweep_ref = record_sweep_path.relative_to(tmp_path).as_posix()
+    record_source_hashes = {
+        "REC-sweep-1": record.normalized_payload_sha256,
+    }
+    record_sweep_payload = {
+        "schema_version": "nslab.record_memory_sweep_contribution.v1",
+        "cache_key": "RECSWEEP-linked",
+        "mode": "exhaustive",
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "brain_version": "brain-linked",
+        "record_shard_sha256": _record_sweep_shard_hash(record_source_hashes),
+        "record_shard_source_hashes": record_source_hashes,
+        "record_count": 1,
+        "record_ids": ["REC-sweep-1"],
+        "from_cache": False,
+    }
+    write_json(record_sweep_path, record_sweep_payload)
     write_json(
         tmp_path / "predictions" / "2030-01-10.json",
         {
@@ -3370,6 +3504,14 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
             "memory_sweep_artifact_hashes": {sweep_ref: file_sha256(sweep_path)},
             "memory_sweep_shard_count": 1,
             "memory_sweep_cache_hits": 0,
+            "swept_record_ids": ["REC-sweep-1"],
+            "swept_record_count": 1,
+            "record_sweep_artifacts": [record_sweep_ref],
+            "record_sweep_artifact_hashes": {
+                record_sweep_ref: file_sha256(record_sweep_path),
+            },
+            "record_sweep_shard_count": 1,
+            "record_sweep_cache_hits": 0,
         },
     )
     (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
@@ -3433,6 +3575,61 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "2030-01-10.json: memory sweep artifact source hash mismatch: "
         f"{sweep_ref}#EP-sweep-2"
     ) in hash_findings
+
+    write_json(sweep_path, sweep_payload)
+    tampered_record_sweep = {
+        **record_sweep_payload,
+        "schema_version": "tampered.record_sweep",
+        "record_ids": [],
+    }
+    write_json(record_sweep_path, tampered_record_sweep)
+
+    failed_record = audit_provenance(tmp_path)
+
+    assert not failed_record["passed"]
+    record_findings = failed_record["findings"]
+    assert (
+        "2030-01-10.json: context manifest record sweep artifact sha256 mismatch: "
+        f"{record_sweep_ref}"
+    ) in record_findings
+    assert (
+        "2030-01-10.json: record sweep artifact schema mismatch: "
+        f"{record_sweep_ref}"
+    ) in record_findings
+    assert (
+        "2030-01-10.json: record sweep artifact record_count mismatch: "
+        f"{record_sweep_ref}"
+    ) in record_findings
+    assert (
+        "2030-01-10.json: record sweep artifact source hashes invalid: "
+        f"{record_sweep_ref}"
+    ) in record_findings
+    assert (
+        "2030-01-10.json: context manifest record_sweep swept record ids mismatch"
+    ) in record_findings
+
+    tampered_record_sweep = {
+        **record_sweep_payload,
+        "record_shard_sha256": "0" * 64,
+        "record_shard_source_hashes": {
+            **record_source_hashes,
+            "REC-sweep-1": "1" * 64,
+        },
+    }
+    write_json(record_sweep_path, tampered_record_sweep)
+
+    failed_record_hashes = audit_provenance(tmp_path)
+
+    assert not failed_record_hashes["passed"]
+    record_hash_findings = failed_record_hashes["findings"]
+    assert (
+        "2030-01-10.json: record sweep artifact record_shard_sha256 mismatch: "
+        f"{record_sweep_ref}"
+    ) in record_hash_findings
+    assert (
+        "2030-01-10.json: record sweep artifact source hash mismatch: "
+        f"{record_sweep_ref}#REC-sweep-1"
+    ) in record_hash_findings
 
 
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:

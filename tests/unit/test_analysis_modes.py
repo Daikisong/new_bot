@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.cli import _inspect_context_manifest
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
@@ -592,6 +593,21 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.semantic_retrieval_summary["included_record_count"] == 1
     assert manifest.semantic_retrieval_summary["excluded_record_count"] == 1
     assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True
+    saved_manifest_path = tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json"
+    inspection = _inspect_context_manifest(
+        tmp_path,
+        saved_manifest_path,
+        read_json(saved_manifest_path),
+    )
+    record_sweep = inspection["record_sweep"]
+    assert record_sweep["passed"] is True
+    assert record_sweep["hashes_verified"] is True
+    assert record_sweep["metadata_verified"] is True
+    assert record_sweep["source_hashes_verified"] is True
+    assert record_sweep["shard_count_verified"] is True
+    assert record_sweep["cache_hits_verified"] is True
+    assert record_sweep["swept_record_ids_verified"] is True
+    assert record_sweep["observed_record_ids"] == ["BRAIN-AVAILABLE"]
 
 
 @pytest.mark.asyncio

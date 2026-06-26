@@ -866,6 +866,7 @@ def _inspect_context_manifest(
     )
     supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
     memory_sweep = _inspect_memory_sweep_artifacts(root, manifest)
+    record_sweep = _inspect_record_sweep_artifacts(root, manifest)
     llm_traces = _inspect_llm_traces(root, manifest)
     manifest_reproducibility = _inspect_manifest_reproducibility_fields(root, manifest)
     return {
@@ -886,6 +887,7 @@ def _inspect_context_manifest(
         },
         "supporting_artifacts": supporting_artifacts,
         "memory_sweep": memory_sweep,
+        "record_sweep": record_sweep,
         "llm_traces": llm_traces,
         "reproducibility_checks_passed": _prediction_artifact_status_passed(
             prediction
@@ -896,6 +898,7 @@ def _inspect_context_manifest(
         and _context_file_group_status_passed(shard_brain_files)
         and _supporting_artifacts_status_passed(supporting_artifacts)
         and _memory_sweep_status_passed(memory_sweep)
+        and _record_sweep_status_passed(record_sweep)
         and _llm_trace_status_passed(llm_traces)
         and _manifest_reproducibility_status_passed(manifest_reproducibility),
     }
@@ -4036,6 +4039,225 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
     return status
 
 
+def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    raw_artifacts = manifest.get("record_sweep_artifacts")
+    raw_hashes = manifest.get("record_sweep_artifact_hashes")
+    expected_shard_count = _optional_int(manifest.get("record_sweep_shard_count"))
+    expected_cache_hits = _optional_int(manifest.get("record_sweep_cache_hits"))
+    expected_swept_count = _optional_int(manifest.get("swept_record_count"))
+    expected_swept_ids = manifest.get("swept_record_ids")
+    status: dict[str, Any] = {
+        "configured": raw_artifacts is not None,
+        "artifact_count": 0,
+        "hash_count": 0,
+        "expected_shard_count": expected_shard_count,
+        "expected_cache_hits": expected_cache_hits,
+        "expected_swept_record_count": expected_swept_count,
+        "observed_cache_hits": 0,
+        "observed_record_ids": [],
+        "duplicate_artifacts": [],
+        "missing_hashes": [],
+        "extra_hashes": [],
+        "path_escape_errors": [],
+        "missing_files": [],
+        "hash_mismatches": [],
+        "invalid_json": [],
+        "schema_mismatches": [],
+        "metadata_mismatches": [],
+        "record_count_mismatches": [],
+        "source_hash_mismatches": [],
+        "shard_hash_mismatches": [],
+        "path_within_project": None,
+        "exists_verified": None,
+        "hashes_verified": None,
+        "metadata_verified": None,
+        "source_hashes_verified": None,
+        "shard_count_verified": None,
+        "cache_hits_verified": None,
+        "swept_record_ids_verified": None,
+        "errors": [],
+    }
+    if raw_artifacts is None:
+        status["errors"].append("record_sweep_artifacts_missing")
+        status["passed"] = False
+        return status
+    if not isinstance(raw_artifacts, list) or not all(
+        isinstance(item, str) and item for item in raw_artifacts
+    ):
+        status["errors"].append("record_sweep_artifacts_invalid")
+        status["passed"] = False
+        return status
+    if not isinstance(raw_hashes, dict):
+        raw_hashes = {}
+        if raw_artifacts:
+            status["errors"].append("record_sweep_artifact_hashes_missing_or_invalid")
+    elif any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in raw_hashes.items()
+    ):
+        raw_hashes = {}
+        status["errors"].append("record_sweep_artifact_hashes_invalid")
+
+    artifact_refs = [str(item) for item in raw_artifacts]
+    hash_refs = {str(key): str(value) for key, value in raw_hashes.items()}
+    status["artifact_count"] = len(artifact_refs)
+    status["hash_count"] = len(hash_refs)
+    status["duplicate_artifacts"] = sorted(
+        {artifact_ref for artifact_ref in artifact_refs if artifact_refs.count(artifact_ref) > 1}
+    )
+    artifact_ref_set = set(artifact_refs)
+    hash_ref_set = set(hash_refs)
+    status["missing_hashes"] = sorted(artifact_ref_set - hash_ref_set)
+    status["extra_hashes"] = sorted(hash_ref_set - artifact_ref_set)
+
+    observed_record_ids: list[str] = []
+    mode = manifest.get("mode")
+    trade_date = manifest.get("trade_date")
+    cutoff_at = manifest.get("cutoff_at")
+    brain_version = manifest.get("brain_version")
+    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+    for artifact_ref in artifact_refs:
+        artifact_path = _resolve_project_artifact(root, artifact_ref)
+        if artifact_path is None:
+            status["path_escape_errors"].append(artifact_ref)
+            continue
+        if not artifact_path.exists():
+            status["missing_files"].append(artifact_ref)
+            continue
+        expected_hash = hash_refs.get(artifact_ref)
+        if expected_hash is not None and file_sha256(artifact_path) != expected_hash:
+            status["hash_mismatches"].append(artifact_ref)
+        try:
+            payload = read_json(artifact_path)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            status["invalid_json"].append(artifact_ref)
+            continue
+        if not isinstance(payload, dict):
+            status["invalid_json"].append(artifact_ref)
+            continue
+        if payload.get("schema_version") != "nslab.record_memory_sweep_contribution.v1":
+            status["schema_mismatches"].append(artifact_ref)
+        mismatched_fields = [
+            field
+            for field, expected in (
+                ("mode", mode),
+                ("trade_date", trade_date),
+                ("cutoff_at", cutoff_at),
+                ("brain_version", brain_version),
+            )
+            if expected is not None and payload.get(field) != expected
+        ]
+        if mismatched_fields:
+            status["metadata_mismatches"].append(
+                {"path": artifact_ref, "fields": mismatched_fields}
+            )
+        record_ids = payload.get("record_ids")
+        if not isinstance(record_ids, list) or not all(
+            isinstance(record_id, str) for record_id in record_ids
+        ):
+            status["record_count_mismatches"].append(artifact_ref)
+            continue
+        observed_record_ids.extend(record_ids)
+        if payload.get("record_count") != len(record_ids):
+            status["record_count_mismatches"].append(artifact_ref)
+        source_hashes = _record_sweep_source_hashes(
+            payload.get("record_shard_source_hashes"),
+            record_ids,
+        )
+        if source_hashes is None:
+            status["source_hash_mismatches"].append(
+                {"path": artifact_ref, "reason": "invalid_or_missing_source_hashes"}
+            )
+        else:
+            expected_shard_hash = _record_sweep_shard_hash(source_hashes)
+            if payload.get("record_shard_sha256") != expected_shard_hash:
+                status["shard_hash_mismatches"].append(artifact_ref)
+            for record_id, recorded_hash in sorted(source_hashes.items()):
+                record = records_by_id.get(record_id)
+                actual_hash = record.normalized_payload_sha256 if record is not None else None
+                if actual_hash != recorded_hash:
+                    status["source_hash_mismatches"].append(
+                        {
+                            "path": artifact_ref,
+                            "record_id": record_id,
+                            "expected": recorded_hash,
+                            "actual": actual_hash,
+                        }
+                    )
+        if payload.get("from_cache") is True:
+            status["observed_cache_hits"] += 1
+
+    status["observed_record_ids"] = observed_record_ids
+    status["path_within_project"] = not status["path_escape_errors"]
+    status["exists_verified"] = status["path_within_project"] and not status["missing_files"]
+    status["hashes_verified"] = (
+        status["exists_verified"]
+        and not status["duplicate_artifacts"]
+        and not status["missing_hashes"]
+        and not status["extra_hashes"]
+        and not status["hash_mismatches"]
+    )
+    status["metadata_verified"] = (
+        status["exists_verified"]
+        and not status["invalid_json"]
+        and not status["schema_mismatches"]
+        and not status["metadata_mismatches"]
+        and not status["record_count_mismatches"]
+        and not status["source_hash_mismatches"]
+        and not status["shard_hash_mismatches"]
+    )
+    status["source_hashes_verified"] = (
+        status["exists_verified"]
+        and not status["source_hash_mismatches"]
+        and not status["shard_hash_mismatches"]
+    )
+    status["shard_count_verified"] = expected_shard_count == status["artifact_count"]
+    status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
+    if isinstance(expected_swept_ids, list) and all(
+        isinstance(record_id, str) for record_id in expected_swept_ids
+    ):
+        status["swept_record_ids_verified"] = (
+            Counter(observed_record_ids) == Counter(expected_swept_ids)
+            and expected_swept_count == len(expected_swept_ids)
+        )
+    else:
+        status["errors"].append("swept_record_ids_invalid")
+        status["swept_record_ids_verified"] = False
+
+    if status["duplicate_artifacts"]:
+        status["errors"].append("record_sweep_artifacts_duplicates")
+    if status["path_escape_errors"]:
+        status["errors"].append("record_sweep_artifact_path_escapes_project_root")
+    if status["missing_files"]:
+        status["errors"].append("record_sweep_artifact_missing_files")
+    if status["missing_hashes"]:
+        status["errors"].append("record_sweep_artifact_hashes_missing_hashes")
+    if status["extra_hashes"]:
+        status["errors"].append("record_sweep_artifact_hashes_extra_hashes")
+    if status["hash_mismatches"]:
+        status["errors"].append("record_sweep_artifact_hashes_mismatches")
+    if status["invalid_json"]:
+        status["errors"].append("record_sweep_artifact_invalid_json")
+    if status["schema_mismatches"]:
+        status["errors"].append("record_sweep_artifact_schema_mismatches")
+    if status["metadata_mismatches"]:
+        status["errors"].append("record_sweep_artifact_metadata_mismatches")
+    if status["record_count_mismatches"]:
+        status["errors"].append("record_sweep_artifact_record_count_mismatches")
+    if status["source_hash_mismatches"]:
+        status["errors"].append("record_sweep_artifact_source_hash_mismatches")
+    if status["shard_hash_mismatches"]:
+        status["errors"].append("record_sweep_artifact_shard_hash_mismatches")
+    if not status["shard_count_verified"]:
+        status["errors"].append("record_sweep_shard_count_mismatch")
+    if not status["cache_hits_verified"]:
+        status["errors"].append("record_sweep_cache_hits_mismatch")
+    if not status["swept_record_ids_verified"]:
+        status["errors"].append("record_sweep_swept_record_ids_mismatch")
+    status["passed"] = _record_sweep_status_passed(status)
+    return status
+
+
 def _memory_sweep_source_hashes(
     value: object,
     episode_ids: list[str],
@@ -4056,6 +4278,31 @@ def _memory_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
             [
                 {"episode_id": episode_id, "source_sha256": source_hash}
                 for episode_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
+
+
+def _record_sweep_source_hashes(
+    value: object,
+    record_ids: list[str],
+) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+        return None
+    hashes = {str(key): str(item) for key, item in value.items()}
+    if sorted(hashes) != sorted(record_ids):
+        return None
+    return hashes
+
+
+def _record_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"record_id": record_id, "source_sha256": source_hash}
+                for record_id, source_hash in sorted(source_hashes.items())
             ]
         )
     )
@@ -4932,6 +5179,21 @@ def _memory_sweep_status_passed(status: dict[str, Any]) -> bool:
         and status.get("shard_count_verified")
         and status.get("cache_hits_verified")
         and status.get("swept_episode_ids_verified")
+        and not status.get("errors")
+    )
+
+
+def _record_sweep_status_passed(status: dict[str, Any]) -> bool:
+    return bool(
+        status.get("configured")
+        and status.get("path_within_project")
+        and status.get("exists_verified")
+        and status.get("hashes_verified")
+        and status.get("metadata_verified")
+        and status.get("source_hashes_verified")
+        and status.get("shard_count_verified")
+        and status.get("cache_hits_verified")
+        and status.get("swept_record_ids_verified")
         and not status.get("errors")
     )
 

@@ -162,6 +162,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
             _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
+            _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_retrieval_miss_open_world_outputs(path, prediction, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
@@ -2713,6 +2714,162 @@ def _check_manifest_memory_sweep_artifacts(
         findings.append(f"{prediction_path.name}: context manifest swept_episode_ids is invalid")
 
 
+def _check_manifest_record_sweep_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    raw_artifacts = manifest.get("record_sweep_artifacts")
+    if raw_artifacts is None:
+        return
+    if not isinstance(raw_artifacts, list) or not all(
+        isinstance(item, str) and item for item in raw_artifacts
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest record_sweep_artifacts is invalid"
+        )
+        return
+    artifact_refs = [str(item) for item in raw_artifacts]
+    if not artifact_refs:
+        return
+    raw_hashes = manifest.get("record_sweep_artifact_hashes")
+    hashes: dict[str, str] = {}
+    if (
+        not isinstance(raw_hashes, dict)
+        or not raw_hashes
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in raw_hashes.items()
+        )
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest record_sweep_artifact_hashes is invalid"
+        )
+    else:
+        hashes = {str(key): str(value) for key, value in raw_hashes.items()}
+
+    if len(artifact_refs) != len(set(artifact_refs)):
+        findings.append(f"{prediction_path.name}: context manifest duplicate record sweep artifact")
+    missing_hashes = sorted(set(artifact_refs) - set(hashes))
+    extra_hashes = sorted(set(hashes) - set(artifact_refs))
+    if missing_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest missing record_sweep_artifact_hashes: "
+            f"{', '.join(missing_hashes)}"
+        )
+    if extra_hashes:
+        findings.append(
+            f"{prediction_path.name}: context manifest unlisted record_sweep_artifact_hashes: "
+            f"{', '.join(extra_hashes)}"
+        )
+
+    expected_mode = manifest.get("mode")
+    expected_trade_date = manifest.get("trade_date")
+    expected_cutoff_at = manifest.get("cutoff_at")
+    expected_brain_version = manifest.get("brain_version")
+    observed_record_ids: list[str] = []
+    observed_cache_hits = 0
+    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+    for artifact_ref in artifact_refs:
+        artifact_path = _resolve_manifest_path(root, artifact_ref)
+        if artifact_path is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest record sweep artifact path "
+                f"escapes project root: {artifact_ref}"
+            )
+            continue
+        if not artifact_path.exists():
+            findings.append(
+                f"{prediction_path.name}: context manifest record sweep artifact not found: "
+                f"{artifact_ref}"
+            )
+            continue
+        expected_hash = hashes.get(artifact_ref)
+        if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
+            findings.append(
+                f"{prediction_path.name}: context manifest record sweep artifact sha256 "
+                f"mismatch: {artifact_ref}"
+            )
+        payload = _read_json_object(artifact_path, findings)
+        if payload is None:
+            continue
+        if payload.get("schema_version") != "nslab.record_memory_sweep_contribution.v1":
+            findings.append(
+                f"{prediction_path.name}: record sweep artifact schema mismatch: "
+                f"{artifact_ref}"
+            )
+        for field, expected in (
+            ("mode", expected_mode),
+            ("trade_date", expected_trade_date),
+            ("cutoff_at", expected_cutoff_at),
+            ("brain_version", expected_brain_version),
+        ):
+            if expected is not None and payload.get(field) != expected:
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact {field} mismatch: "
+                    f"{artifact_ref}"
+                )
+        record_ids = payload.get("record_ids")
+        if not isinstance(record_ids, list) or not all(
+            isinstance(record_id, str) for record_id in record_ids
+        ):
+            findings.append(
+                f"{prediction_path.name}: record sweep artifact record_ids invalid: "
+                f"{artifact_ref}"
+            )
+            continue
+        observed_record_ids.extend(record_ids)
+        if payload.get("record_count") != len(record_ids):
+            findings.append(
+                f"{prediction_path.name}: record sweep artifact record_count mismatch: "
+                f"{artifact_ref}"
+            )
+        source_hashes = _record_sweep_source_hashes(
+            payload.get("record_shard_source_hashes"),
+            record_ids,
+        )
+        if source_hashes is None:
+            findings.append(
+                f"{prediction_path.name}: record sweep artifact source hashes invalid: "
+                f"{artifact_ref}"
+            )
+        else:
+            expected_shard_hash = _record_sweep_shard_hash(source_hashes)
+            if payload.get("record_shard_sha256") != expected_shard_hash:
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact "
+                    f"record_shard_sha256 mismatch: {artifact_ref}"
+                )
+            for record_id, recorded_hash in sorted(source_hashes.items()):
+                record = records_by_id.get(record_id)
+                actual_hash = record.normalized_payload_sha256 if record is not None else None
+                if actual_hash != recorded_hash:
+                    findings.append(
+                        f"{prediction_path.name}: record sweep artifact source hash "
+                        f"mismatch: {artifact_ref}#{record_id}"
+                    )
+        if payload.get("from_cache") is True:
+            observed_cache_hits += 1
+
+    expected_shard_count = manifest.get("record_sweep_shard_count")
+    if isinstance(expected_shard_count, int) and expected_shard_count != len(artifact_refs):
+        findings.append(f"{prediction_path.name}: context manifest record_sweep_shard_count mismatch")
+    expected_cache_hits = manifest.get("record_sweep_cache_hits")
+    if isinstance(expected_cache_hits, int) and expected_cache_hits != observed_cache_hits:
+        findings.append(f"{prediction_path.name}: context manifest record_sweep_cache_hits mismatch")
+    expected_swept_ids = manifest.get("swept_record_ids")
+    if isinstance(expected_swept_ids, list) and all(
+        isinstance(record_id, str) for record_id in expected_swept_ids
+    ):
+        if Counter(observed_record_ids) != Counter(expected_swept_ids):
+            findings.append(
+                f"{prediction_path.name}: context manifest record_sweep swept record ids mismatch"
+            )
+    else:
+        findings.append(f"{prediction_path.name}: context manifest swept_record_ids is invalid")
+
+
 def _memory_sweep_source_hashes(
     value: object,
     episode_ids: list[str],
@@ -2733,6 +2890,31 @@ def _memory_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
             [
                 {"episode_id": episode_id, "source_sha256": source_hash}
                 for episode_id, source_hash in sorted(source_hashes.items())
+            ]
+        )
+    )
+
+
+def _record_sweep_source_hashes(
+    value: object,
+    record_ids: list[str],
+) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items()):
+        return None
+    hashes = {str(key): str(item) for key, item in value.items()}
+    if sorted(hashes) != sorted(record_ids):
+        return None
+    return hashes
+
+
+def _record_sweep_shard_hash(source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"record_id": record_id, "source_sha256": source_hash}
+                for record_id, source_hash in sorted(source_hashes.items())
             ]
         )
     )

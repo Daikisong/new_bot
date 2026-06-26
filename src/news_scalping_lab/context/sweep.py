@@ -70,6 +70,7 @@ class MemorySweeper:
         current_news_texts: list[str],
         first_pass_mechanisms: list[str],
         model_config: dict[str, object] | None = None,
+        brain_version: str | None = None,
         prompt_version: str = MEMORY_SWEEP_PROMPT_VERSION,
     ) -> SweepResult:
         mode = normalize_analysis_mode(mode)
@@ -110,7 +111,7 @@ class MemorySweeper:
         record_cache_hits = 0
         run_dir = self.checkpoint_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        brain_version = current_brain_version(self.root) or "none"
+        effective_brain_version = brain_version or current_brain_version(self.root) or "none"
         news_hash = sha256_text("\n---NEWS---\n".join(current_news_texts))
         accepted_hashes = self.store.accepted_hashes()
         shards = list(self._shards(accepted))
@@ -122,7 +123,7 @@ class MemorySweeper:
             shard_hash = _episode_shard_hash(episode_source_hashes)
             cache_key = stable_id(
                 "SWEEP",
-                brain_version,
+                effective_brain_version,
                 news_hash,
                 shard_hash,
                 mode,
@@ -138,7 +139,7 @@ class MemorySweeper:
                 mode=mode,
                 trade_date=trade_date,
                 cutoff_at=cutoff_at,
-                brain_version=brain_version,
+                brain_version=effective_brain_version,
                 news_hash=news_hash,
                 shard_hash=shard_hash,
                 episode_ids=episode_ids,
@@ -155,7 +156,7 @@ class MemorySweeper:
                     mode=mode,
                     trade_date=trade_date,
                     cutoff_at=cutoff_at,
-                    brain_version=brain_version,
+                    brain_version=effective_brain_version,
                     news_hash=news_hash,
                     shard_hash=shard_hash,
                     shard_index=shard_index,
@@ -178,7 +179,7 @@ class MemorySweeper:
             shard_hash = _record_shard_hash(record_source_hashes)
             cache_key = stable_id(
                 "RECSWEEP",
-                brain_version,
+                effective_brain_version,
                 news_hash,
                 shard_hash,
                 mode,
@@ -194,7 +195,7 @@ class MemorySweeper:
                 mode=mode,
                 trade_date=trade_date,
                 cutoff_at=cutoff_at,
-                brain_version=brain_version,
+                brain_version=effective_brain_version,
                 news_hash=news_hash,
                 shard_hash=shard_hash,
                 record_ids=record_ids,
@@ -211,7 +212,7 @@ class MemorySweeper:
                     mode=mode,
                     trade_date=trade_date,
                     cutoff_at=cutoff_at,
-                    brain_version=brain_version,
+                    brain_version=effective_brain_version,
                     news_hash=news_hash,
                     shard_hash=shard_hash,
                     shard_index=shard_index,
