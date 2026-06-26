@@ -329,6 +329,7 @@ def test_makefile_exposes_quality_and_project_audit_targets() -> None:
         "\tpython -m news_scalping_lab.cli brain audit",
         "full-check: check audit",
         "demo:",
+        "\tpython -m news_scalping_lab.cli brain audit",
         "\tpython -m news_scalping_lab.cli warehouse rebuild",
         (
             "\tpython -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv "
