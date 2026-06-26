@@ -229,6 +229,20 @@ def real_bundle_smoke_report(
     synthetic_valid_inspections = [
         item for item in valid_inspections if item.get("production_source") is not True
     ]
+    production_inspections = [
+        item for item in inspections if item.get("production_source") is True
+    ]
+    first_production_inspection = (
+        production_inspections[0] if production_inspections else None
+    )
+    first_production_passed = (
+        isinstance(first_production_inspection, dict)
+        and isinstance(first_production_inspection.get("inspection"), dict)
+        and first_production_inspection["inspection"].get(
+            "v11_accept_full_smoke_passed"
+        )
+        is True
+    )
     failed_inspection_count = sum(
         1
         for item in inspections
@@ -246,17 +260,17 @@ def real_bundle_smoke_report(
             or item["inspection"].get("v11_accept_full_smoke_passed") is not True
         )
     )
-    if real_valid_inspections:
-        status = "passed"
-    elif production_failed_inspection_count:
-        status = "failed"
+    if first_production_inspection is not None:
+        status = "passed" if first_production_passed else "failed"
     elif synthetic_valid_inspections:
         status = "synthetic_only"
+    elif production_failed_inspection_count:
+        status = "failed"
     elif inspections:
         status = "failed" if failed_inspection_count else "pending"
     else:
         status = "pending"
-    selected = real_valid_inspections[0] if real_valid_inspections else None
+    selected = first_production_inspection if first_production_passed else None
     return {
         "schema_version": "nslab.real_bundle_smoke.v1",
         "status": status,
@@ -274,6 +288,21 @@ def real_bundle_smoke_report(
         "synthetic_valid_smoke_count": len(synthetic_valid_inspections),
         "failed_inspection_count": failed_inspection_count,
         "production_failed_inspection_count": production_failed_inspection_count,
+        "first_production_source": (
+            first_production_inspection.get("source")
+            if first_production_inspection is not None
+            else None
+        ),
+        "first_production_status": (
+            first_production_inspection.get("status")
+            if first_production_inspection is not None
+            else None
+        ),
+        "first_production_path": (
+            first_production_inspection.get("path")
+            if first_production_inspection is not None
+            else None
+        ),
         "selected": selected,
         "inspections": inspections,
     }

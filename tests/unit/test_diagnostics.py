@@ -1329,6 +1329,8 @@ def test_real_bundle_smoke_passes_only_for_production_source_bundle(
     assert report["passed"] is True
     assert report["real_valid_smoke_count"] == 1
     assert report["synthetic_valid_smoke_count"] == 0
+    assert report["first_production_source"] == "data_inbox"
+    assert report["first_production_status"] == "passed"
     assert report["selected"]["source"] == "data_inbox"
     assert report["selected"]["inspection"]["raw_record_count"] == 327
 
@@ -1353,6 +1355,8 @@ def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
     assert report["real_smoke_pending"] is True
     assert report["real_valid_smoke_count"] == 0
     assert report["synthetic_valid_smoke_count"] == 1
+    assert report["first_production_source"] is None
+    assert report["first_production_status"] is None
 
 
 def test_real_bundle_smoke_keeps_explicit_fixture_path_synthetic_only(
@@ -1429,8 +1433,47 @@ def test_real_bundle_smoke_prioritizes_failed_production_candidate(
 
     assert report["status"] == "failed"
     assert report["passed"] is False
+    assert report["selected"] is None
+    assert report["first_production_source"] == "cli"
+    assert report["first_production_status"] == "failed"
     assert report["production_failed_inspection_count"] == 1
     assert report["synthetic_valid_smoke_count"] == 1
+
+
+def test_real_bundle_smoke_does_not_skip_failed_earlier_production_candidate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    env_candidate = tmp_path / "external" / "real_bundle.md"
+    env_candidate.parent.mkdir()
+    env_candidate.write_text("later valid real bundle", encoding="utf-8")
+    monkeypatch.setenv("NSLAB_REAL_BUNDLE_PATH", env_candidate.as_posix())
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    inbox_candidate = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    inbox_candidate.write_text("earlier invalid real bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        if path.resolve() == inbox_candidate.resolve():
+            return _invalid_v11_bundle_inspection(path)
+        return _valid_v11_bundle_inspection(path)
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "failed"
+    assert report["passed"] is False
+    assert report["selected"] is None
+    assert report["first_production_source"] == "data_inbox"
+    assert report["first_production_status"] == "failed"
+    assert report["production_failed_inspection_count"] == 1
+    assert report["real_valid_smoke_count"] == 1
+    assert [
+        item["source"]
+        for item in report["inspections"]
+        if item["production_source"] is True
+    ] == ["data_inbox", "env"]
 
 
 def test_production_readiness_rejects_real_smoke_without_import(
