@@ -6506,9 +6506,32 @@ def memory_inspect(
             "training_eligible_record_count": sum(
                 1 for record in records if record.training_eligible
             ),
+            "ineligible_record_count": sum(
+                1 for record in records if not record.training_eligible
+            ),
             "record_ids": [record.record_id for record in records],
             "record_counts_by_type": dict(
-                Counter(record.record_type for record in records)
+                sorted(Counter(record.record_type for record in records).items())
+            ),
+            "record_counts_by_evidence_phase": dict(
+                sorted(Counter(record.evidence_phase for record in records).items())
+            ),
+            "record_counts_by_training_target": dict(
+                sorted(
+                    Counter(
+                        record.training_target or "UNKNOWN" for record in records
+                    ).items()
+                )
+            ),
+            "record_counts_by_typed_payload_status": dict(
+                sorted(
+                    Counter(record.typed_payload_status for record in records).items()
+                )
+            ),
+            "unknown_typed_payload_count": sum(
+                1
+                for record in records
+                if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
             ),
         }
     )

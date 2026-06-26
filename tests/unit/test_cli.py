@@ -892,6 +892,36 @@ def test_memory_audit_cli_writes_diagnostic_report(
     assert markdown_path.exists()
 
 
+def test_memory_inspect_cli_reports_record_level_counts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "inspect", "--episode", "EP-cli"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["episode_id"] == "EP-cli"
+    assert payload["record_count"] == 1
+    assert payload["training_eligible_record_count"] == 0
+    assert payload["ineligible_record_count"] == 1
+    assert payload["record_ids"] == ["BRAIN-CLI"]
+    assert payload["record_counts_by_type"] == {"memory_claim": 1}
+    assert payload["record_counts_by_evidence_phase"] == {"AUDIT": 1}
+    assert payload["record_counts_by_training_target"] == {"cli_contract": 1}
+    assert payload["record_counts_by_typed_payload_status"] == {
+        "KNOWN_TYPED_PAYLOAD": 1
+    }
+    assert payload["unknown_typed_payload_count"] == 0
+
+
 def test_memory_inspect_record_cli_outputs_record_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
