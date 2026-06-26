@@ -17,6 +17,8 @@ T = TypeVar("T", bound=BaseModel)
 class RecordingBrainLLM:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.embed_calls: list[tuple[str, list[str]]] = []
+        self.embedding_model = "embed-brain-test"
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         self.calls.append((purpose, prompt))
@@ -30,6 +32,10 @@ class RecordingBrainLLM:
         purpose: str,
     ) -> T:
         raise AssertionError("llm-full brain compile should use text synthesis")
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        self.embed_calls.append((purpose, list(texts)))
+        return [[float(index + 1), float(len(text) % 7)] for index, text in enumerate(texts)]
 
 
 def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
@@ -70,9 +76,13 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         BRAIN_FILES
     )
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
+    vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
+    assert vector_manifest["embedding_method"] == "llm_embedding:openai:embed-brain-test"
+    assert vector_manifest["dimensions"] == 2
+    assert llm.embed_calls
     single_event = (tmp_path / "brain" / "current" / "01_single_event_patterns.md").read_text(
         encoding="utf-8"
     )
@@ -83,10 +93,12 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     )
 
     llm.calls.clear()
+    llm.embed_calls.clear()
     second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
 
     assert second_manifest.brain_version == manifest.brain_version
     assert llm.calls == []
+    assert llm.embed_calls
 
 
 def _write_openai_config(root: Path) -> None:

@@ -150,11 +150,13 @@ are reflected in rebuilds and run manifests instead of being hidden in code.
 
 `brain rebuild` also refreshes `memory/vector_index/manifest.json`,
 `memory/vector_index/episodes.jsonl`, and `memory/vector_index/brain_records.jsonl`.
-The local index is built through a deterministic embedding provider projection of
-accepted episodes and normalized records; it supports retrieval but is never a
-candidate gate. `nslab audit coverage` fails if brain coverage is incomplete, the
-vector index is stale, record coverage is incomplete, or warehouse projections are
-out of sync.
+Catalog/local rebuilds use a deterministic embedding provider projection of
+accepted episodes and normalized records. `llm-full` rebuilds use the configured
+LLM embedding provider, so `doctor --production` can reject deterministic indexes
+instead of promoting them as production semantic indexes. Retrieval supports
+analysis, but it is never a candidate gate. `nslab audit coverage` fails if brain
+coverage is incomplete, the vector index is stale, record coverage is incomplete,
+or warehouse projections are out of sync.
 
 Production brain compilation is guarded:
 

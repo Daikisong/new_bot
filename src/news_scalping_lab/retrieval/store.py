@@ -193,6 +193,11 @@ class LocalRetrievalStore:
         brain_records = BrainRecordStore(self.root).list_records()
         record_texts = [_brain_record_text(record) for record in brain_records]
         record_vectors = self.embedding_provider.embed_texts(record_texts)
+        dimensions = _vector_dimensions(
+            vectors,
+            record_vectors,
+            fallback=getattr(self.embedding_provider, "dimensions", VECTOR_DIMENSIONS),
+        )
         indexed_brain_records: list[dict[str, object]] = []
         for record, text, vector in zip(brain_records, record_texts, record_vectors, strict=True):
             payload = record.payload
@@ -233,7 +238,7 @@ class LocalRetrievalStore:
         manifest = {
             "schema_version": VECTOR_INDEX_SCHEMA_VERSION,
             "embedding_method": self.embedding_provider.embedding_method,
-            "dimensions": self.embedding_provider.dimensions,
+            "dimensions": dimensions,
             "record_count": len(records),
             "brain_record_count": len(indexed_brain_records),
             "accepted_episode_count": len(accepted_hashes),
@@ -254,6 +259,7 @@ class LocalRetrievalStore:
         inspection = inspect_vector_index(self.root)
         if inspection.get("status") != "current":
             return None
+        dimensions = _inspection_dimensions(inspection)
         try:
             records = [
                 json.loads(line)
@@ -262,7 +268,7 @@ class LocalRetrievalStore:
             ]
         except (OSError, json.JSONDecodeError):
             return None
-        if not all(_is_index_record(record) for record in records):
+        if not all(_is_index_record(record, dimensions=dimensions) for record in records):
             return None
         return records
 
@@ -270,6 +276,7 @@ class LocalRetrievalStore:
         inspection = inspect_vector_index(self.root)
         if inspection.get("status") != "current":
             return None
+        dimensions = _inspection_dimensions(inspection)
         try:
             records = [
                 json.loads(line)
@@ -278,7 +285,9 @@ class LocalRetrievalStore:
             ]
         except (OSError, json.JSONDecodeError):
             return None
-        if not all(_is_brain_index_record(record) for record in records):
+        if not all(
+            _is_brain_index_record(record, dimensions=dimensions) for record in records
+        ):
             return None
         return records
 
@@ -411,7 +420,7 @@ def _rank_index_records(
     return [episode_id for _score, episode_id in scored[:limit]]
 
 
-def _is_index_record(value: object) -> bool:
+def _is_index_record(value: object, *, dimensions: int) -> bool:
     if not isinstance(value, dict):
         return False
     if not isinstance(value.get("episode_id"), str):
@@ -422,12 +431,12 @@ def _is_index_record(value: object) -> bool:
         isinstance(terms, list)
         and all(isinstance(term, str) for term in terms)
         and isinstance(embedding, list)
-        and len(embedding) == VECTOR_DIMENSIONS
+        and len(embedding) == dimensions
         and all(isinstance(item, int | float) for item in embedding)
     )
 
 
-def _is_brain_index_record(value: object) -> bool:
+def _is_brain_index_record(value: object, *, dimensions: int) -> bool:
     if not isinstance(value, dict):
         return False
     if not isinstance(value.get("record_id"), str):
@@ -440,9 +449,33 @@ def _is_brain_index_record(value: object) -> bool:
         isinstance(terms, list)
         and all(isinstance(term, str) for term in terms)
         and isinstance(embedding, list)
-        and len(embedding) == VECTOR_DIMENSIONS
+        and len(embedding) == dimensions
         and all(isinstance(item, int | float) for item in embedding)
     )
+
+
+def _vector_dimensions(
+    *vector_groups: list[list[float]],
+    fallback: object,
+) -> int:
+    dimensions = _positive_int(fallback)
+    for vectors in vector_groups:
+        for vector in vectors:
+            if dimensions is None:
+                dimensions = len(vector)
+            elif len(vector) != dimensions:
+                raise ValueError(
+                    f"embedding dimensions mismatch: expected {dimensions}, got {len(vector)}"
+                )
+    return dimensions or VECTOR_DIMENSIONS
+
+
+def _inspection_dimensions(inspection: dict[str, object]) -> int:
+    return _positive_int(inspection.get("dimensions")) or VECTOR_DIMENSIONS
+
+
+def _positive_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
 def _date_in_range(

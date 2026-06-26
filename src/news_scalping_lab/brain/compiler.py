@@ -27,6 +27,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
+from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -229,7 +230,18 @@ class BrainCompiler:
         (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
         if previous_version != version:
             write_rebuild_diff(self.root, previous_version, version)
-        LocalRetrievalStore(self.root).rebuild_index()
+        LocalRetrievalStore(
+            self.root,
+            embedding_provider=AsyncEmbeddingProviderAdapter(
+                provider,
+                embedding_method=_llm_embedding_method(
+                    provider_name=settings.llm_provider,
+                    model=getattr(provider, "embedding_model", None)
+                    or settings.llm.embedding_model
+                    or "configured",
+                ),
+            ),
+        ).rebuild_index()
         WarehouseStore(self.root).rebuild_all()
         return manifest
 
@@ -1073,6 +1085,10 @@ def _brain_category(file_name: str) -> str:
     if "market_memory" in file_name:
         return "market_memory"
     return "world_model"
+
+
+def _llm_embedding_method(*, provider_name: str, model: str) -> str:
+    return f"llm_embedding:{provider_name}:{model}"
 
 
 def _category_focus(category: str) -> str:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
-from typing import Protocol
+from collections.abc import Coroutine
+from typing import Any, Protocol
 
 from news_scalping_lab.llm.base import EmbeddingProvider
 from news_scalping_lab.utils import sha256_text
@@ -35,6 +37,34 @@ class DeterministicHashEmbeddingProvider:
         return self.embed_texts(texts)
 
 
+class AsyncEmbeddingProviderAdapter:
+    """Synchronous adapter for production LLM embedding providers."""
+
+    def __init__(
+        self,
+        provider: EmbeddingProvider,
+        *,
+        embedding_method: str,
+    ) -> None:
+        self.provider = provider
+        self.embedding_method = embedding_method
+        self.dimensions = 0
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        _ensure_no_running_loop()
+        vectors = _run_embedding(
+            self.provider.embed(texts=texts, purpose="vector_index.rebuild")
+        )
+        if vectors:
+            self.dimensions = len(vectors[0])
+        return vectors
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return await self.provider.embed(texts=texts, purpose=purpose)
+
+
 def text_terms(text: str) -> set[str]:
     normalized = "".join(character.lower() if character.isalnum() else " " for character in text)
     return {term for term in normalized.split() if len(term) > 1}
@@ -57,3 +87,17 @@ def _text_vector(text: str, *, dimensions: int) -> list[float]:
     if magnitude == 0:
         return vector
     return [value / magnitude for value in vector]
+
+
+def _ensure_no_running_loop() -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        "production vector index rebuild cannot run inside an active asyncio event loop"
+    )
+
+
+def _run_embedding(coro: Coroutine[Any, Any, list[list[float]]]) -> list[list[float]]:
+    return asyncio.run(coro)

@@ -297,3 +297,35 @@ def test_local_retrieval_store_uses_injected_embedding_provider(tmp_path) -> Non
     assert index["embedding_method"] == "recording_hashing_v1"
     assert provider.calls[0][0].startswith("EP-provider")
     assert provider.calls[-1] == ["provider query"]
+
+
+def test_vector_index_supports_provider_specific_dimensions(tmp_path) -> None:
+    class TwoDimensionalEmbeddingProvider:
+        embedding_method = "two_dimensional_provider_v1"
+        dimensions = 2
+
+        def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            return [[float(len(text)), 1.0] for text in texts]
+
+        async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+            return self.embed_texts(texts)
+
+    memory = LocalRetrievalStore(
+        tmp_path,
+        embedding_provider=TwoDimensionalEmbeddingProvider(),
+    )
+    memory.add_episode(
+        _episode(
+            "EP-two-dim",
+            summary="Two dimensional provider summary.",
+            mechanism="provider-specific embedding dimensions",
+            available_at=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+    )
+
+    index = memory.inspect_index()
+
+    assert index["status"] == "current"
+    assert index["embedding_method"] == "two_dimensional_provider_v1"
+    assert index["dimensions"] == 2
+    assert memory.search_semantic("two dimensional query", limit=1) == ["EP-two-dim"]
