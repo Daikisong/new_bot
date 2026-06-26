@@ -108,9 +108,10 @@ nslab memory audit --deep
 
 `inspect-bundle` is version-aware and reports bundle, manifest, and episode schema
 versions, raw/normalized brain record counts, training-eligible counts, type
-distribution, provenance closure, and hash mismatches. `smoke-bundle` searches the
-explicit `--path`, `NSLAB_REAL_BUNDLE_PATH`, `data/inbox/research/`, then
-`tests/fixtures/research_bundles/`, writes `diagnostics/bundle_smoke_report.*`,
+distribution, provenance closure, and hash mismatches. `smoke-bundle` searches
+`data/inbox/research/`, `tests/fixtures/research_bundles/`,
+`NSLAB_REAL_BUNDLE_PATH`, then the explicit `--path`, writes
+`diagnostics/bundle_smoke_report.*`,
 and treats fixture-only success as synthetic smoke rather than production real
 smoke. Explicit `.example.md` bundles are also kept out of production smoke so
 documentation samples cannot satisfy real-bundle readiness. Production readiness

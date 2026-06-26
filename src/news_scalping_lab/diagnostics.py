@@ -52,6 +52,7 @@ REAL_BUNDLE_SEARCH_DIRS = (
     ("tests_fixture", Path("tests/fixtures/research_bundles")),
 )
 REAL_BUNDLE_PRODUCTION_SOURCES = {"cli", "env", "data_inbox"}
+REAL_BUNDLE_SEARCH_ORDER = ["data_inbox", "tests_fixture", "env", "cli"]
 
 
 def production_readiness_report(
@@ -261,7 +262,7 @@ def real_bundle_smoke_report(
         "status": status,
         "passed": status == "passed",
         "real_smoke_pending": status != "passed",
-        "search_order": ["cli", "env", "data_inbox", "tests_fixture"],
+        "search_order": REAL_BUNDLE_SEARCH_ORDER,
         "environment_key": REAL_BUNDLE_ENV_KEY,
         "search_locations": search_locations,
         "candidate_count": len(candidates),
@@ -993,13 +994,13 @@ def _real_bundle_candidates(
             }
         )
 
-    if explicit_path is not None:
-        add_location("cli", explicit_path, configured=True)
+    for source, relative in REAL_BUNDLE_SEARCH_DIRS:
+        add_location(source, relative, configured=False)
     env_path = settings.env_value(REAL_BUNDLE_ENV_KEY)
     if env_path:
         add_location("env", Path(env_path), configured=True)
-    for source, relative in REAL_BUNDLE_SEARCH_DIRS:
-        add_location(source, relative, configured=False)
+    if explicit_path is not None:
+        add_location("cli", explicit_path, configured=True)
     return search_locations, candidates
 
 

@@ -1307,7 +1307,7 @@ def test_real_bundle_smoke_reports_pending_when_no_candidate_exists(tmp_path) ->
     assert report["passed"] is False
     assert report["real_smoke_pending"] is True
     assert report["candidate_count"] == 0
-    assert report["search_order"] == ["cli", "env", "data_inbox", "tests_fixture"]
+    assert report["search_order"] == ["data_inbox", "tests_fixture", "env", "cli"]
 
 
 def test_real_bundle_smoke_passes_only_for_production_source_bundle(
@@ -1377,7 +1377,7 @@ def test_real_bundle_smoke_keeps_explicit_fixture_path_synthetic_only(
     assert report["real_smoke_pending"] is True
     assert report["real_valid_smoke_count"] == 0
     assert report["synthetic_valid_smoke_count"] == 1
-    assert report["inspections"][0]["source"] == "cli"
+    assert report["inspections"][0]["source"] == "tests_fixture"
     assert report["inspections"][0]["production_source"] is False
 
 
