@@ -706,6 +706,7 @@ def _record_envelope(
             + "unknown record_type preserved as raw payload"
         )
         normalized_payload["training_eligible"] = False
+        normalized_payload["eligibility_reason"] = eligibility_reason
     raw_payload_sha = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_sha = sha256_text(canonical_json(normalized_payload))
     record_id = _record_id(payload, episode_id, record_type, normalized_payload_sha)

@@ -227,6 +227,13 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert result.training_eligible_record_count == 2
     assert unknown.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
     assert unknown.training_eligible is False
+    assert unknown.eligibility_reason is not None
+    assert "unknown record_type preserved as raw payload" in unknown.eligibility_reason
+    assert unknown.payload["training_eligible"] is False
+    assert (
+        unknown.payload["eligibility_reason"]
+        == "unknown record_type preserved as raw payload"
+    )
     assert (tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "original_bundle.md").exists()
     assert (tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl").exists()
 
