@@ -29,6 +29,7 @@ def _synthetic_v11_bundle(
     schema_version: str = "nslab.research_bundle.v11",
     include_unknown: bool = True,
     validation_checked_hashes: dict[str, str] | None = None,
+    issuer_available_from: str | None = None,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -40,7 +41,7 @@ def _synthetic_v11_bundle(
             "record_type": "supervised_issuer_day_case",
             "episode_id": episode_id,
             "trade_date": trade_day.isoformat(),
-            "available_from": available_from,
+            "available_from": issuer_available_from or available_from,
             "status": "tentative",
             "confidence_label": "low",
             "training_target": "issuer_day_price_response",
@@ -447,6 +448,38 @@ def test_conflicting_hash_expectation_sources_block_acceptance(tmp_path: Path) -
 
     with pytest.raises(VersionedBundleImportError):
         import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+
+def test_invalid_record_available_from_blocks_acceptance(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "invalid_available_from_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_available_from="not-a-timestamp",
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert inspection["validation_passed"] is False
+    assert inspection["available_from_valid"] is False
+    assert inspection["invalid_available_from_record_count"] == 1
+    assert validation["available_from_valid"] is False
+    assert validation["invalid_available_from_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["validation"]["invalid_available_from_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER"
+    ]
+    assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
 def test_unknown_bundle_version_with_common_records_is_staged_raw_only(

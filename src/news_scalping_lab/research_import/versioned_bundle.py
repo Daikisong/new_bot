@@ -91,6 +91,8 @@ class BaseBundleAdapter:
         records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
         source_ids = _source_ids(parsed)
         missing_source_refs = _missing_source_references(records, source_ids)
+        invalid_available_from_fields = _invalid_bundle_available_from_fields(parsed)
+        invalid_available_from_record_ids = _invalid_record_available_from_ids(records)
         expected_record_count = _int_field(
             manifest,
             "brain_delta_record_count",
@@ -135,6 +137,12 @@ class BaseBundleAdapter:
             ),
             "missing_source_references": missing_source_refs,
             "provenance_closure_status": "closed" if not missing_source_refs else "missing_refs",
+            "available_from_valid": (
+                not invalid_available_from_fields
+                and not invalid_available_from_record_ids
+            ),
+            "invalid_available_from_fields": invalid_available_from_fields,
+            "invalid_available_from_record_ids": invalid_available_from_record_ids,
             "validator_exit_code": _int_field(manifest, "validator_exit_code"),
             "critical_error_count": _int_field(
                 manifest,
@@ -148,6 +156,7 @@ class BaseBundleAdapter:
             and not hash_mismatches
             and not hash_validation.expectation_conflicts
             and not missing_source_refs
+            and validation["available_from_valid"] is True
         )
         return validation
 
@@ -395,6 +404,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     hash_mismatches = validation.get("hash_mismatches")
     hash_conflicts = validation.get("hash_expectation_conflicts")
     missing_source_refs = validation.get("missing_source_references")
+    invalid_available_from_record_ids = validation.get("invalid_available_from_record_ids")
     return {
         "path": path.as_posix(),
         "raw_bundle_sha256": file_sha256(path),
@@ -430,6 +440,12 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         ),
         "missing_source_reference_count": (
             len(missing_source_refs) if isinstance(missing_source_refs, list) else 0
+        ),
+        "available_from_valid": validation.get("available_from_valid"),
+        "invalid_available_from_record_count": (
+            len(invalid_available_from_record_ids)
+            if isinstance(invalid_available_from_record_ids, list)
+            else 0
         ),
         "inspection_status": (
             "validation_passed" if validation.get("passed") is True else "validation_failed"
@@ -1020,6 +1036,33 @@ def _missing_source_references(
             if source_id not in source_ids:
                 missing.add(source_id)
     return sorted(missing)
+
+
+def _invalid_bundle_available_from_fields(parsed: GenericParsedBundle) -> list[str]:
+    invalid: list[str] = []
+    sources: tuple[tuple[str, dict[str, Any] | dict[str, str]], ...] = (
+        ("front_matter", parsed.front_matter),
+        ("bundle_manifest.json", _manifest(parsed)),
+        ("research_episode.json", _episode(parsed)),
+    )
+    for source_name, source in sources:
+        if "available_from" not in source:
+            continue
+        if _optional_datetime(source.get("available_from")) is None:
+            invalid.append(f"{source_name}.available_from")
+    return invalid
+
+
+def _invalid_record_available_from_ids(records: list[dict[str, Any]]) -> list[str]:
+    invalid: list[str] = []
+    for line_number, record in enumerate(records, start=1):
+        if "available_from" not in record:
+            continue
+        if _optional_datetime(record.get("available_from")) is not None:
+            continue
+        identity = _optional_string(record.get("record_id")) or f"line:{line_number}"
+        invalid.append(identity)
+    return invalid
 
 
 def _block_hashes(parsed: GenericParsedBundle) -> dict[str, str]:

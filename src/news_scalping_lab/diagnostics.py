@@ -902,6 +902,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("record_count_matches_manifest") is True
         and inspection.get("training_eligible_count_matches_manifest") is True
         and inspection.get("dropped_record_count") == 0
+        and inspection.get("available_from_valid") is True
         and inspection.get("hash_mismatch_count") == 0
         and inspection.get("hash_expectation_conflict_count") == 0
         and inspection.get("missing_source_reference_count") == 0
@@ -933,6 +934,10 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "record_count_matches_manifest": inspection.get("record_count_matches_manifest"),
         "training_eligible_count_matches_manifest": inspection.get(
             "training_eligible_count_matches_manifest"
+        ),
+        "available_from_valid": inspection.get("available_from_valid"),
+        "invalid_available_from_record_count": inspection.get(
+            "invalid_available_from_record_count"
         ),
         "hash_mismatch_count": inspection.get("hash_mismatch_count"),
         "hash_expectation_conflict_count": inspection.get(
