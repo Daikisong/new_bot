@@ -240,11 +240,14 @@ def research_import(path: Path, mode: str = "auto") -> None:
         typer.echo(f"research import path is not a file: {path}", err=True)
         raise typer.Exit(code=1)
     settings = load_settings()
-    episode = ResearchImporter(
-        settings.project_root,
-        llm=create_llm_provider(settings),
-        llm_max_retries=settings.llm.max_retries,
-    ).import_path(path, mode=mode)
+    try:
+        episode = ResearchImporter(
+            settings.project_root,
+            llm=create_llm_provider(settings),
+            llm_max_retries=settings.llm.max_retries,
+        ).import_path(path, mode=mode)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(
         {
             "imported": True,
@@ -269,11 +272,14 @@ def research_import_batch(
     if not directory.is_dir():
         typer.echo(f"research import-batch path is not a directory: {directory}", err=True)
         raise typer.Exit(code=1)
-    importer = ResearchImporter(
-        settings.project_root,
-        llm=create_llm_provider(settings),
-        llm_max_retries=settings.llm.max_retries,
-    )
+    try:
+        importer = ResearchImporter(
+            settings.project_root,
+            llm=create_llm_provider(settings),
+            llm_max_retries=settings.llm.max_retries,
+        )
+    except (RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     store = ResearchStore(settings.project_root)
     imported: list[str] = []
     accepted: list[str] = []
@@ -283,11 +289,17 @@ def research_import_batch(
         if not path.is_file():
             skipped_paths.append(path.as_posix())
             continue
-        episode = importer.import_path(path, mode=mode)
+        try:
+            episode = importer.import_path(path, mode=mode)
+        except (OSError, RuntimeError, ValueError) as exc:
+            _exit_with_error(RuntimeError(f"research import-batch failed for {path}: {exc}"))
         imported.append(episode.episode_id)
         source_files.append(path.as_posix())
         if accept:
-            store.accept(episode.episode_id)
+            try:
+                store.accept(episode.episode_id)
+            except (FileNotFoundError, OSError) as exc:
+                _exit_with_error(RuntimeError(f"research accept failed for {path}: {exc}"))
             accepted.append(episode.episode_id)
     _echo(
         {

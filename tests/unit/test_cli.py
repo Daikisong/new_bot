@@ -149,6 +149,64 @@ def test_news_import_cli_reports_csv_validation_errors(
     assert "CSV missing required columns: time, title" in result.output
 
 
+def test_research_import_cli_reports_import_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "research.md"
+    source.write_text("free-form research", encoding="utf-8")
+
+    class FailingResearchImporter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def import_path(self, path: Path, *, mode: str = "auto") -> object:
+            raise ValueError(f"mode rejected during import: {mode}")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "create_llm_provider", lambda settings: object())
+    monkeypatch.setattr(cli_module, "ResearchImporter", FailingResearchImporter)
+
+    result = CliRunner().invoke(
+        app,
+        ["research", "import", str(source), "--mode", "unsupported"],
+    )
+
+    assert result.exit_code == 1
+    assert "mode rejected during import: unsupported" in result.output
+
+
+def test_research_import_batch_cli_reports_source_file_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    source = inbox / "research.md"
+    source.write_text("free-form research", encoding="utf-8")
+
+    class FailingResearchImporter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def import_path(self, path: Path, *, mode: str = "auto") -> object:
+            raise RuntimeError("semantic import failed")
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "create_llm_provider", lambda settings: object())
+    monkeypatch.setattr(cli_module, "ResearchImporter", FailingResearchImporter)
+
+    result = CliRunner().invoke(
+        app,
+        ["research", "import-batch", str(inbox), "--mode", "semantic"],
+    )
+
+    assert result.exit_code == 1
+    assert "research import-batch failed for" in result.output
+    assert "research.md" in result.output
+    assert "semantic import failed" in result.output
+
+
 def test_analyze_cli_reports_analysis_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
