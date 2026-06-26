@@ -657,6 +657,18 @@ def test_full_check_cli_stops_on_first_failure(
     assert '"failed": "pytest"' in result.output
 
 
+def test_full_check_steps_export_training_before_training_audit() -> None:
+    step_names = [name for name, command in cli_module._full_check_steps()]
+
+    assert "training export-sft" in step_names
+    assert "training export-preference" in step_names
+    assert "training export-evals" in step_names
+    assert "training audit" in step_names
+    assert step_names.index("training export-sft") < step_names.index("training audit")
+    assert step_names.index("training export-preference") < step_names.index("training audit")
+    assert step_names.index("training export-evals") < step_names.index("training audit")
+
+
 def test_demo_cli_runs_configured_steps(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -708,11 +720,12 @@ def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
     )
     step_names = [name for name, command in steps]
 
-    assert step_names[-5:] == [
+    assert step_names[-6:] == [
         "warehouse rebuild after update",
         "training export-sft",
         "training export-preference",
         "training export-evals",
+        "training audit",
         "brain audit after update",
     ]
     assert step_names.index("brain update") < step_names.index("training export-sft")

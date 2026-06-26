@@ -319,7 +319,9 @@ stay separated and auditable.
 `nslab audit provenance` recomputes export hashes, row counts, category counts, and
 BLIND/POSTMORTEM phase consistency from the JSONL rows.
 Use `nslab training audit` to verify exported files, record weight checks, and
-record-backed manifest consistency.
+record-backed manifest consistency. The audit reads the JSONL outputs directly and
+fails on ineligible exported rows, sealed-pair preference violations, hash/count
+mismatches, or BLIND/POSTMORTEM phase mixing.
 
 ## Session Pack
 

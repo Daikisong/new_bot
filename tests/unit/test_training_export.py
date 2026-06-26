@@ -17,7 +17,7 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.training import export_training
+from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.utils import KST, canonical_json, read_json, stable_id
 
 
@@ -97,6 +97,13 @@ def _accepted_episode() -> ResearchEpisode:
 
 def _jsonl(path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _write_jsonl(path, rows: list[dict[str, object]]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_path) -> None:
@@ -308,6 +315,64 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert preference_manifest["missing_training_categories"] == []
     assert evals_manifest["category_counts"] == {"evaluation_examples": 3}
     assert evals_manifest["missing_training_categories"] == []
+    assert audit_training_exports(tmp_path)["passed"] is True
+
+
+def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    assert audit_training_exports(tmp_path)["passed"] is True
+
+    rows = _jsonl(sft.path)
+    rows[0]["eligibility_basis"]["satisfied"] = False
+    _write_jsonl(sft.path, rows)
+    manifest = read_json(sft.manifest_path)
+    blind_path = tmp_path / manifest["phase_outputs"]["BLIND"]["output_file"]
+    blind_rows = _jsonl(blind_path)
+    blind_rows[0]["source_phase"] = "POSTMORTEM"
+    _write_jsonl(blind_path, blind_rows)
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert any(finding.startswith("sft: exported ineligible row") for finding in audit["findings"])
+    assert any(finding == "sft: output_file sha256 mismatch" for finding in audit["findings"])
+    assert any(
+        finding.startswith("sft: phase_outputs.BLIND contains POSTMORTEM row")
+        for finding in audit["findings"]
+    )
+
+
+def test_training_audit_rejects_non_sealed_preference_record_rows(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(preference.manifest_path)
+    manifest["source_mode"] = "brain_records"
+    preference.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert any(
+        finding.startswith(
+            "preference: brain record preference row is not a sealed leader pair"
+        )
+        for finding in audit["findings"]
+    )
 
 
 def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:

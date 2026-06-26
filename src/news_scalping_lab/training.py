@@ -93,13 +93,30 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             continue
         manifests[kind] = manifest
         output_file = manifest.get("output_file")
-        if not isinstance(output_file, str) or not (root / output_file).exists():
+        output_rows: list[dict[str, Any]] = []
+        output_path = _artifact_path(root, output_file)
+        if output_path is None or not output_path.exists():
             findings.append(f"{kind}: output_file is missing")
+        else:
+            output_rows = _read_training_rows(kind, "output_file", output_path, findings)
+            _audit_training_artifact(
+                kind=kind,
+                label="output_file",
+                path=output_path,
+                rows=output_rows,
+                expected_count=manifest.get("row_count"),
+                expected_sha256=manifest.get("output_sha256"),
+                findings=findings,
+            )
+            _audit_training_rows(kind, output_rows, findings)
         if (
             manifest.get("source_mode") == "brain_records"
             and manifest.get("weight_validation_status") == "failed"
         ):
             findings.append(f"{kind}: record weight validation failed")
+        if manifest.get("source_mode") == "brain_records" and kind == "preference":
+            _audit_record_preference_rows(kind, output_rows, findings)
+        _audit_phase_outputs(kind, root, manifest, findings)
     return {
         "schema_version": "nslab.training_audit.v1",
         "passed": not findings,
@@ -291,6 +308,144 @@ def _write_phase_outputs(
             "hindsight_safe_for_blind_sft": phase == "BLIND",
         }
     return outputs
+
+
+def _artifact_path(root: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else root / path
+
+
+def _read_training_rows(
+    kind: str,
+    label: str,
+    path: Path,
+    findings: list[str],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            findings.append(f"{kind}: {label} line {line_number} is invalid JSON: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            findings.append(f"{kind}: {label} line {line_number} is not an object")
+            continue
+        rows.append(payload)
+    return rows
+
+
+def _audit_training_artifact(
+    *,
+    kind: str,
+    label: str,
+    path: Path,
+    rows: list[dict[str, Any]],
+    expected_count: object,
+    expected_sha256: object,
+    findings: list[str],
+) -> None:
+    if isinstance(expected_count, int) and not isinstance(expected_count, bool):
+        if len(rows) != expected_count:
+            findings.append(
+                f"{kind}: {label} row_count mismatch expected {expected_count}, got {len(rows)}"
+            )
+    else:
+        findings.append(f"{kind}: {label} row_count is missing or invalid")
+    if isinstance(expected_sha256, str) and expected_sha256:
+        actual_sha256 = file_sha256(path)
+        if actual_sha256 != expected_sha256:
+            findings.append(f"{kind}: {label} sha256 mismatch")
+    else:
+        findings.append(f"{kind}: {label} sha256 is missing")
+
+
+def _audit_training_rows(
+    kind: str,
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    for row in rows:
+        example_id = _row_identifier(row)
+        eligibility = row.get("eligibility_basis")
+        if not isinstance(eligibility, dict) or eligibility.get("satisfied") is not True:
+            findings.append(f"{kind}: exported ineligible row {example_id}")
+        source_phase = row.get("source_phase")
+        hindsight_safe = row.get("hindsight_safe_for_blind_sft")
+        if source_phase == "BLIND" and hindsight_safe is not True:
+            findings.append(f"{kind}: BLIND row is not marked blind-safe {example_id}")
+        elif source_phase == "POSTMORTEM" and hindsight_safe is not False:
+            findings.append(f"{kind}: POSTMORTEM row is marked blind-safe {example_id}")
+        elif source_phase not in {"BLIND", "POSTMORTEM"}:
+            findings.append(f"{kind}: row has invalid source_phase {example_id}")
+
+
+def _audit_record_preference_rows(
+    kind: str,
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    for row in rows:
+        if row.get("record_type") != "blind_leader_preference_pair":
+            findings.append(
+                f"{kind}: brain record preference row is not a sealed leader pair "
+                f"{_row_identifier(row)}"
+            )
+
+
+def _audit_phase_outputs(
+    kind: str,
+    root: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    phase_outputs = manifest.get("phase_outputs")
+    if not isinstance(phase_outputs, dict):
+        findings.append(f"{kind}: phase_outputs is missing")
+        return
+    for phase in ("BLIND", "POSTMORTEM"):
+        metadata = phase_outputs.get(phase)
+        if not isinstance(metadata, dict):
+            findings.append(f"{kind}: phase_outputs.{phase} is missing")
+            continue
+        path = _artifact_path(root, metadata.get("output_file"))
+        if path is None or not path.exists():
+            findings.append(f"{kind}: phase_outputs.{phase} output_file is missing")
+            continue
+        rows = _read_training_rows(kind, f"phase_outputs.{phase}", path, findings)
+        _audit_training_artifact(
+            kind=kind,
+            label=f"phase_outputs.{phase}",
+            path=path,
+            rows=rows,
+            expected_count=metadata.get("row_count"),
+            expected_sha256=metadata.get("output_sha256"),
+            findings=findings,
+        )
+        for row in rows:
+            example_id = _row_identifier(row)
+            if row.get("source_phase") != phase:
+                findings.append(
+                    f"{kind}: phase_outputs.{phase} contains {row.get('source_phase')} "
+                    f"row {example_id}"
+                )
+            expected_blind_safe = phase == "BLIND"
+            if row.get("hindsight_safe_for_blind_sft") is not expected_blind_safe:
+                findings.append(
+                    f"{kind}: phase_outputs.{phase} blind-safe flag mismatch {example_id}"
+                )
+
+
+def _row_identifier(row: dict[str, Any]) -> str:
+    for key in ("example_id", "record_id", "episode_id"):
+        value = row.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return "<unknown>"
 
 
 def _rows_for_kind(
