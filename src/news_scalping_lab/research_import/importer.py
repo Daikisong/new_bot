@@ -6,8 +6,14 @@ import asyncio
 import shutil
 from datetime import datetime, time
 from pathlib import Path
+from typing import Literal, Protocol, Self
 
-from news_scalping_lab.contracts.models import BlindAnalysis, Provenance, ResearchEpisode
+from news_scalping_lab.contracts.models import (
+    BlindAnalysis,
+    MemoryClaim,
+    Provenance,
+    ResearchEpisode,
+)
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
@@ -32,6 +38,17 @@ from news_scalping_lab.utils import (
     sha256_text,
     stable_id,
 )
+
+
+class ProvenanceModel(Protocol):
+    provenance: list[Provenance]
+
+    def model_copy(
+        self,
+        *,
+        update: dict[str, object] | None = None,
+        deep: bool = False,
+    ) -> Self: ...
 
 
 class ResearchImporter:
@@ -179,6 +196,14 @@ class ResearchImporter:
             source_id=provenance.source_id,
             source_segments=source_segments,
         )
+        output_field_source_ids = {
+            field_name: [provenance.source_id]
+            for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
+        }
+        for record in output_text_provenance:
+            field_name = record.get("field_name")
+            if isinstance(field_name, str) and field_name:
+                output_field_source_ids.setdefault(field_name, [provenance.source_id])
         input_audit = {
             "semantic_import": {
                 "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
@@ -194,14 +219,32 @@ class ResearchImporter:
                     canonical_json(output_text_provenance)
                 ),
                 "output_text_provenance": output_text_provenance,
-                "output_field_source_ids": {
-                    field_name: [provenance.source_id]
-                    for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
-                },
+                "output_field_source_ids": output_field_source_ids,
             }
         }
         available_from = draft.available_from or datetime.combine(
             next_trading_day(draft.trade_date), time(0, 0, 0), tzinfo=KST
+        )
+        blind_predictions = _with_import_provenance(draft.blind_predictions, provenance)
+        observed_events = _with_import_provenance(draft.observed_events, provenance)
+        event_ticker_edges = _with_import_provenance(
+            [
+                edge.model_copy(update={"episode_id": episode_id})
+                for edge in draft.event_ticker_edges
+            ],
+            provenance,
+        )
+        lessons = _semantic_claims_with_episode_support(
+            draft.lessons,
+            provenance=provenance,
+            episode_id=episode_id,
+            support_field="support_episode_ids",
+        )
+        counterexamples = _semantic_claims_with_episode_support(
+            draft.counterexamples,
+            provenance=provenance,
+            episode_id=episode_id,
+            support_field="contradiction_episode_ids",
         )
         return ResearchEpisode(
             episode_id=episode_id,
@@ -219,15 +262,54 @@ class ResearchImporter:
                 initial_uncertainties=draft.initial_uncertainties,
                 provenance=[provenance],
             ),
-            blind_predictions=[],
-            observed_events=[],
-            event_ticker_edges=[],
-            lessons=[],
-            counterexamples=[],
-            misses=[],
+            blind_predictions=blind_predictions,
+            observed_events=observed_events,
+            event_ticker_edges=event_ticker_edges,
+            lessons=lessons,
+            counterexamples=counterexamples,
+            misses=draft.misses,
             provenance=[provenance],
             available_from=available_from,
         )
+
+
+def _with_import_provenance[TProvenanceModel: ProvenanceModel](
+    items: list[TProvenanceModel],
+    provenance: Provenance,
+) -> list[TProvenanceModel]:
+    updated: list[TProvenanceModel] = []
+    for item in items:
+        if item.provenance:
+            updated.append(item)
+        else:
+            updated.append(item.model_copy(update={"provenance": [provenance]}))
+    return updated
+
+
+def _semantic_claims_with_episode_support(
+    claims: list[MemoryClaim],
+    *,
+    provenance: Provenance,
+    episode_id: str,
+    support_field: Literal["support_episode_ids", "contradiction_episode_ids"],
+) -> list[MemoryClaim]:
+    updated_claims: list[MemoryClaim] = []
+    for claim in claims:
+        support_ids = (
+            claim.support_episode_ids
+            if support_field == "support_episode_ids"
+            else claim.contradiction_episode_ids
+        )
+        updates: dict[str, object] = {}
+        if isinstance(support_ids, list) and not support_ids:
+            updates[support_field] = [episode_id]
+        if not claim.provenance:
+            updates["provenance"] = [provenance]
+        if updates:
+            updated_claims.append(claim.model_copy(update=updates))
+        else:
+            updated_claims.append(claim)
+    return updated_claims
 
 
 def _output_text_provenance(
@@ -265,6 +347,150 @@ def _output_text_provenance(
             _output_text_field_provenance(
                 field_name="blind_analysis.initial_uncertainties",
                 text=uncertainty,
+                source_id=source_id,
+                source_segment_indices=source_segment_indices,
+                item_index=item_index,
+            )
+        )
+    for item_index, candidate in enumerate(draft.blind_predictions, start=1):
+        for field_name, text in (
+            ("blind_predictions.thesis", candidate.thesis),
+            ("blind_predictions.why_now", candidate.why_now),
+            ("blind_predictions.novel_reasoning", candidate.novel_reasoning),
+        ):
+            records.extend(
+                _output_text_field_provenance(
+                    field_name=field_name,
+                    text=text,
+                    source_id=source_id,
+                    source_segment_indices=source_segment_indices,
+                    item_index=item_index,
+                )
+            )
+        for field_name, values in (
+            ("blind_predictions.causal_chain", candidate.causal_chain),
+            ("blind_predictions.direct_evidence", candidate.direct_evidence),
+            ("blind_predictions.inferred_evidence", candidate.inferred_evidence),
+            (
+                "blind_predictions.market_memory_evidence",
+                candidate.market_memory_evidence,
+            ),
+            ("blind_predictions.prior_positive_cases", candidate.prior_positive_cases),
+            ("blind_predictions.prior_negative_cases", candidate.prior_negative_cases),
+            ("blind_predictions.counterarguments", candidate.counterarguments),
+            (
+                "blind_predictions.disconfirming_conditions",
+                candidate.disconfirming_conditions,
+            ),
+        ):
+            records.extend(
+                _output_text_sequence_provenance(
+                    field_name=field_name,
+                    values=values,
+                    source_id=source_id,
+                    source_segment_indices=source_segment_indices,
+                    item_index=item_index,
+                )
+            )
+    for item_index, event in enumerate(draft.observed_events, start=1):
+        for field_name, text in (
+            ("observed_events.title", event.title),
+            ("observed_events.body", event.body),
+        ):
+            records.extend(
+                _output_text_field_provenance(
+                    field_name=field_name,
+                    text=text,
+                    source_id=source_id,
+                    source_segment_indices=source_segment_indices,
+                    item_index=item_index,
+                )
+            )
+    for item_index, edge in enumerate(draft.event_ticker_edges, start=1):
+        for field_name, text in (
+            ("event_ticker_edges.relation_explanation", edge.relation_explanation),
+            ("event_ticker_edges.temporal_validity", edge.temporal_validity),
+        ):
+            records.extend(
+                _output_text_field_provenance(
+                    field_name=field_name,
+                    text=text,
+                    source_id=source_id,
+                    source_segment_indices=source_segment_indices,
+                    item_index=item_index,
+                )
+            )
+        for field_name, values in (
+            ("event_ticker_edges.fundamental_evidence", edge.fundamental_evidence),
+            ("event_ticker_edges.narrative_evidence", edge.narrative_evidence),
+            ("event_ticker_edges.market_memory_evidence", edge.market_memory_evidence),
+        ):
+            records.extend(
+                _output_text_sequence_provenance(
+                    field_name=field_name,
+                    values=values,
+                    source_id=source_id,
+                    source_segment_indices=source_segment_indices,
+                    item_index=item_index,
+                )
+            )
+    for field_name, claims in (
+        ("lessons", draft.lessons),
+        ("counterexamples", draft.counterexamples),
+    ):
+        for item_index, claim in enumerate(claims, start=1):
+            for claim_field_name, text in (
+                (f"{field_name}.statement", claim.statement),
+                (f"{field_name}.mechanism", claim.mechanism),
+                (f"{field_name}.scope", claim.scope),
+            ):
+                records.extend(
+                    _output_text_field_provenance(
+                        field_name=claim_field_name,
+                        text=text,
+                        source_id=source_id,
+                        source_segment_indices=source_segment_indices,
+                        item_index=item_index,
+                    )
+                )
+            for claim_field_name, values in (
+                (f"{field_name}.conditions", claim.conditions),
+                (f"{field_name}.failure_modes", claim.failure_modes),
+            ):
+                records.extend(
+                    _output_text_sequence_provenance(
+                        field_name=claim_field_name,
+                        values=values,
+                        source_id=source_id,
+                        source_segment_indices=source_segment_indices,
+                        item_index=item_index,
+                    )
+                )
+    records.extend(
+        _output_text_sequence_provenance(
+            field_name="misses",
+            values=draft.misses,
+            source_id=source_id,
+            source_segment_indices=source_segment_indices,
+        )
+    )
+    return records
+
+
+def _output_text_sequence_provenance(
+    *,
+    field_name: str,
+    values: list[str],
+    source_id: str,
+    source_segment_indices: list[int],
+    item_index: int | None = None,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for subitem_index, value in enumerate(values, start=1):
+        records.extend(
+            _output_text_field_provenance(
+                field_name=f"{field_name}[{subitem_index}]",
+                text=value,
                 source_id=source_id,
                 source_segment_indices=source_segment_indices,
                 item_index=item_index,

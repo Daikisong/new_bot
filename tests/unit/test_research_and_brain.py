@@ -81,6 +81,103 @@ class RecordingSemanticLLM:
         return [[0.0] for _ in texts]
 
 
+class RichSemanticLLM:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        raise AssertionError("semantic import should request structured output")
+
+    async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        self.calls.append(
+            {"prompt": prompt, "response_model": response_model, "purpose": purpose}
+        )
+        assert response_model is SemanticResearchDraft
+        trade_day = date(2040, 2, 3)
+        cutoff_at = datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST)
+        available_from = datetime.combine(
+            next_trading_day(trade_day),
+            time(0, 0, 0),
+            tzinfo=KST,
+        )
+        draft = SemanticResearchDraft(
+            trade_date=trade_day,
+            cutoff_at=cutoff_at,
+            research_version="semantic-rich-test",
+            summary="Rich semantic import supplied a canonical episode.",
+            open_world_mechanisms=["source note -> canonical episode collections"],
+            initial_uncertainties=["candidate mapping needs human review"],
+            price_source_snapshot={"source": "rich-semantic-test"},
+            available_from=available_from,
+            blind_predictions=[
+                Candidate(
+                    rank=1,
+                    ticker="424242",
+                    company_name="Rich Semantic Co",
+                    path_type=PathType.SINGLE_EVENT,
+                    event_ids=["EVT-rich"],
+                    thesis="Rich semantic candidate thesis.",
+                    why_now="The imported note links the event to the company.",
+                    causal_chain=["event appears", "company is identified"],
+                    direct_evidence=["The source names Rich Semantic Co."],
+                    novel_reasoning="The source uses a newly described mechanism.",
+                    provenance=[],
+                )
+            ],
+            observed_events=[
+                NewsItem(
+                    event_id="EVT-rich",
+                    row_number=1,
+                    published_at=cutoff_at,
+                    title="Rich semantic event",
+                    body="The source describes a cutoff-safe event.",
+                    source_id="SRC-rich",
+                    provenance=[],
+                )
+            ],
+            event_ticker_edges=[
+                EventTickerEdge(
+                    edge_id="EDGE-rich",
+                    episode_id="EP-placeholder",
+                    event_id="EVT-rich",
+                    ticker="424242",
+                    company_name="Rich Semantic Co",
+                    relation_class=RelationClass.DIRECT,
+                    relation_explanation="The source directly connects event and ticker.",
+                    directly_mentioned=True,
+                    narrative_evidence=["The source states the direct connection."],
+                    temporal_validity="Known before the cutoff.",
+                    provenance=[],
+                )
+            ],
+            lessons=[
+                MemoryClaim(
+                    claim_id="CL-rich-lesson",
+                    statement="Semantic imports can carry canonical lesson claims.",
+                    mechanism="semantic import",
+                    scope="unit test",
+                    available_from=available_from,
+                    provenance=[],
+                )
+            ],
+            counterexamples=[
+                MemoryClaim(
+                    claim_id="CL-rich-counterexample",
+                    statement="Semantic imports can carry canonical counterexample claims.",
+                    mechanism="semantic import",
+                    scope="unit test",
+                    available_from=available_from,
+                    provenance=[],
+                )
+            ],
+            misses=["The source omits downstream price validation."],
+        )
+        return draft  # type: ignore[return-value]
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return [[0.0] for _ in texts]
+
+
 def _batch_episode(episode_id: str, summary: str) -> ResearchEpisode:
     trade_day = date(2030, 1, 10)
     return ResearchEpisode(
@@ -1396,6 +1493,63 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert trace["input"]["prompt_sha256"] == semantic_audit["prompt_sha256"]
     assert trace["input"]["response_model"] == "SemanticResearchDraft"
     assert trace["output"]["trade_date"] == "2040-02-03"
+
+    audit = audit_provenance(tmp_path)
+    assert audit["passed"], audit["findings"]
+
+
+def test_semantic_import_preserves_canonical_episode_collections(tmp_path) -> None:
+    source = tmp_path / "rich_freeform_notes.md"
+    source.write_text(
+        "Rich source note names a candidate. It also records a lesson and a miss.",
+        encoding="utf-8",
+    )
+    llm = RichSemanticLLM()
+
+    episode = ResearchImporter(tmp_path, llm=llm).import_path(source, mode="semantic")
+
+    assert episode.research_version == "semantic-rich-test"
+    assert [candidate.ticker for candidate in episode.blind_predictions] == ["424242"]
+    assert (
+        episode.blind_predictions[0].provenance[0].source_id
+        == episode.provenance[0].source_id
+    )
+    assert (
+        episode.observed_events[0].provenance[0].source_id
+        == episode.provenance[0].source_id
+    )
+    assert episode.event_ticker_edges[0].episode_id == episode.episode_id
+    assert (
+        episode.event_ticker_edges[0].provenance[0].source_id
+        == episode.provenance[0].source_id
+    )
+    assert episode.lessons[0].support_episode_ids == [episode.episode_id]
+    assert episode.lessons[0].provenance[0].source_id == episode.provenance[0].source_id
+    assert episode.counterexamples[0].contradiction_episode_ids == [episode.episode_id]
+    assert (
+        episode.counterexamples[0].provenance[0].source_id
+        == episode.provenance[0].source_id
+    )
+    assert episode.misses == ["The source omits downstream price validation."]
+
+    semantic_audit = episode.input_audit["semantic_import"]
+    output_text_fields = {
+        record["field_name"] for record in semantic_audit["output_text_provenance"]
+    }
+    assert {
+        "blind_predictions.thesis",
+        "blind_predictions.direct_evidence[1]",
+        "observed_events.body",
+        "event_ticker_edges.relation_explanation",
+        "event_ticker_edges.narrative_evidence[1]",
+        "lessons.statement",
+        "counterexamples.statement",
+        "misses[1]",
+    }.issubset(output_text_fields)
+    for field_name in output_text_fields:
+        assert semantic_audit["output_field_source_ids"][field_name] == [
+            episode.provenance[0].source_id
+        ]
 
     audit = audit_provenance(tmp_path)
     assert audit["passed"], audit["findings"]

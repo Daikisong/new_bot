@@ -8,7 +8,13 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from news_scalping_lab.contracts.models import StrictModel
+from news_scalping_lab.contracts.models import (
+    Candidate,
+    EventTickerEdge,
+    MemoryClaim,
+    NewsItem,
+    StrictModel,
+)
 from news_scalping_lab.utils import canonical_json, sha256_text
 
 SEMANTIC_IMPORT_PROMPT_VERSION = "semantic_import.v1"
@@ -40,6 +46,12 @@ class SemanticResearchDraft(StrictModel):
     input_news_hashes: list[str] = Field(default_factory=list)
     price_source_snapshot: dict[str, Any] = Field(default_factory=dict)
     available_from: datetime | None = None
+    blind_predictions: list[Candidate] = Field(default_factory=list)
+    observed_events: list[NewsItem] = Field(default_factory=list)
+    event_ticker_edges: list[EventTickerEdge] = Field(default_factory=list)
+    lessons: list[MemoryClaim] = Field(default_factory=list)
+    counterexamples: list[MemoryClaim] = Field(default_factory=list)
+    misses: list[str] = Field(default_factory=list)
 
     @field_validator("summary")
     @classmethod
@@ -63,7 +75,8 @@ def build_semantic_import_prompt(*, root: Path, source_path: Path, source_sha256
     else:
         instructions = (
             "Convert the research source into nslab.semantic_research_draft.v1. "
-            "Return only structured data."
+            "Return only structured data. Populate optional canonical episode lists "
+            "only when they are directly supported by the source text."
         )
     source_metadata = {
         "prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION,
@@ -74,7 +87,9 @@ def build_semantic_import_prompt(*, root: Path, source_path: Path, source_sha256
     return "\n\n".join(
         [
             instructions.strip(),
-            "Return a SemanticResearchDraft. Do not invent ticker/theme mappings.",
+            "Return a SemanticResearchDraft. Do not invent ticker/theme mappings. "
+            "Leave blind_predictions, observed_events, event_ticker_edges, lessons, "
+            "counterexamples, and misses empty unless the source supports them.",
             "---SOURCE_METADATA---",
             canonical_json(source_metadata),
             "---SOURCE_TEXT---",

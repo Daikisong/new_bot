@@ -1972,6 +1972,137 @@ def _expected_semantic_output_text_records(episode: dict[str, Any]) -> list[dict
                         item_index=item_index,
                     )
                 )
+    blind_predictions = episode.get("blind_predictions")
+    if isinstance(blind_predictions, list):
+        for item_index, candidate in enumerate(blind_predictions, start=1):
+            if not isinstance(candidate, dict):
+                continue
+            for field_name in (
+                "thesis",
+                "why_now",
+                "novel_reasoning",
+            ):
+                text = candidate.get(field_name)
+                if isinstance(text, str):
+                    records.extend(
+                        _semantic_text_records_for_field(
+                            field_name=f"blind_predictions.{field_name}",
+                            text=text,
+                            item_index=item_index,
+                        )
+                    )
+            for field_name in (
+                "causal_chain",
+                "direct_evidence",
+                "inferred_evidence",
+                "market_memory_evidence",
+                "prior_positive_cases",
+                "prior_negative_cases",
+                "counterarguments",
+                "disconfirming_conditions",
+            ):
+                records.extend(
+                    _semantic_text_records_for_sequence(
+                        field_name=f"blind_predictions.{field_name}",
+                        values=candidate.get(field_name),
+                        item_index=item_index,
+                    )
+                )
+    observed_events = episode.get("observed_events")
+    if isinstance(observed_events, list):
+        for item_index, event in enumerate(observed_events, start=1):
+            if not isinstance(event, dict):
+                continue
+            for field_name in ("title", "body"):
+                text = event.get(field_name)
+                if isinstance(text, str):
+                    records.extend(
+                        _semantic_text_records_for_field(
+                            field_name=f"observed_events.{field_name}",
+                            text=text,
+                            item_index=item_index,
+                        )
+                    )
+    event_ticker_edges = episode.get("event_ticker_edges")
+    if isinstance(event_ticker_edges, list):
+        for item_index, edge in enumerate(event_ticker_edges, start=1):
+            if not isinstance(edge, dict):
+                continue
+            for field_name in ("relation_explanation", "temporal_validity"):
+                text = edge.get(field_name)
+                if isinstance(text, str):
+                    records.extend(
+                        _semantic_text_records_for_field(
+                            field_name=f"event_ticker_edges.{field_name}",
+                            text=text,
+                            item_index=item_index,
+                        )
+                    )
+            for field_name in (
+                "fundamental_evidence",
+                "narrative_evidence",
+                "market_memory_evidence",
+            ):
+                records.extend(
+                    _semantic_text_records_for_sequence(
+                        field_name=f"event_ticker_edges.{field_name}",
+                        values=edge.get(field_name),
+                        item_index=item_index,
+                    )
+                )
+    for field_name in ("lessons", "counterexamples"):
+        claims = episode.get(field_name)
+        if not isinstance(claims, list):
+            continue
+        for item_index, claim in enumerate(claims, start=1):
+            if not isinstance(claim, dict):
+                continue
+            for claim_field_name in ("statement", "mechanism", "scope"):
+                text = claim.get(claim_field_name)
+                if isinstance(text, str):
+                    records.extend(
+                        _semantic_text_records_for_field(
+                            field_name=f"{field_name}.{claim_field_name}",
+                            text=text,
+                            item_index=item_index,
+                        )
+                    )
+            for claim_field_name in ("conditions", "failure_modes"):
+                records.extend(
+                    _semantic_text_records_for_sequence(
+                        field_name=f"{field_name}.{claim_field_name}",
+                        values=claim.get(claim_field_name),
+                        item_index=item_index,
+                    )
+                )
+    records.extend(
+        _semantic_text_records_for_sequence(
+            field_name="misses",
+            values=episode.get("misses"),
+        )
+    )
+    return records
+
+
+def _semantic_text_records_for_sequence(
+    *,
+    field_name: str,
+    values: object,
+    item_index: int | None = None,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    if not isinstance(values, list):
+        return records
+    for subitem_index, value in enumerate(values, start=1):
+        if not isinstance(value, str):
+            continue
+        records.extend(
+            _semantic_text_records_for_field(
+                field_name=f"{field_name}[{subitem_index}]",
+                text=value,
+                item_index=item_index,
+            )
+        )
     return records
 
 
