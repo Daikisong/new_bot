@@ -8,6 +8,377 @@ execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
 
 
 ────────────────────────────────────────
+DIRECT-INGEST GOLD LOCK — 사람 후검수 없는 자동 import-ready 산출물 규칙
+────────────────────────────────────────
+
+이 섹션은 이 프롬프트의 최상위 품질 계약이다. 아래 본문·기존 GOLD-RUN HARD GUARD·일반 실행 절차보다 우선한다.
+
+목표는 단순히 사람이 읽기 좋은 연구 보고서가 아니라, repo의 자동 importer가 사람 후검수 없이 바로 수입할 수 있는 `ingest-ready research bundle`을 생성하는 것이다.
+
+정확한 의미는 다음과 같다.
+
+```text
+GPT 세션의 책임:
+- CSV와 research_daily를 실제 확보·파싱·검증한다.
+- BLIND 패킷을 물리적으로 먼저 봉인한다.
+- outcome을 post-seal 이후에만 연다.
+- canonical_graph에서 모든 artifact를 렌더링한다.
+- 실행 코드 validator로 전수 검증한다.
+- 최종 Markdown 자체가 자동 import에 필요한 모든 record·hash·count·contract를 포함하게 한다.
+
+repo 자동 로딩 공정의 책임:
+- 생성된 Markdown을 import한다.
+- warehouse/brain을 rebuild한다.
+
+금지:
+- 사람이 나중에 읽고 고쳐야 하는 ACCEPT_FULL
+- repo import 단계에서 오류가 잡힐 것을 기대한 ACCEPT_FULL
+- “대체로 좋아 보임”을 ACCEPT_FULL로 쓰는 것
+```
+
+## D0. Direct ingest-ready의 판정
+
+최종 bundle이 `ACCEPT_FULL` 및 `brain_eligible=true`를 선언하려면 다음도 반드시 true여야 한다.
+
+```text
+direct_brain_ingest_ready == true
+requires_manual_research_review == false
+requires_posthoc_prompt_repair == false
+requires_human_semantic_review == false
+automated_import_expected_to_pass == true
+```
+
+이 값들은 LLM 자기 선언이 아니라 `validate_nslab_bundle.py`가 계산한 hard gate 결과에서만 온다.
+
+다음 중 하나라도 발생하면 `direct_brain_ingest_ready=false`이며 `ACCEPT_FULL` 금지다.
+
+```text
+schema_version != nslab.research_bundle.v11
+artifact_type != research_episode_bundle
+final_watchlist_size > 20
+Markdown final watchlist table이 20개 초과
+final_watchlist rank가 1..N 연속이 아님
+candidate pool이 final_watchlist에 섞임
+final item에 primary_fact_ids가 없음
+final item의 thesis가 일반 템플릿·시장 feature만으로 구성됨
+final item의 economic_mechanism이 없음
+final item의 red_team_counterargument가 후보 고유 실패조건이 아님
+brain_delta가 record-level population이 아니라 요약 교훈 중심임
+brain_delta_count_by_type와 issuer_day/direct_event/theme/pair count가 불일치
+renderer와 validator가 독립 검증 책임을 갖지 않음
+renderer_sha256 == validator_sha256인데 별도 entrypoint hash가 없음
+validator의 expected_source가 GENERATED_OUTPUT 또는 SELF_DECLARED_MANIFEST임
+outcome snapshot이 BLIND seal 전에 다운로드·해시·parse·출력됨
+BLIND report에 D outcome 숫자·response·상한가 적중이 섞임
+source/fact/id orphan이 하나라도 있음
+fact exact_quote가 원문 row에 없거나 offset이 틀림
+semantic audit이 NOT_ENTAILED/UNSUPPORTED/cross-event leak를 남김
+bundle_manifest count/hash와 실제 artifact가 다름
+validation_report의 critical_error_count > 0
+validator_exit_code != 0
+```
+
+위 조건 중 하나라도 true인데 `bundle_status: ACCEPT_FULL` 또는 `brain_eligible: true`를 쓰는 것은 오류다.
+
+## D1. `direct_ingest_contract.json` artifact 필수
+
+최종 bundle에는 다음 block을 반드시 포함한다.
+
+```text
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+...
+<!-- NSLAB:END direct_ingest_contract.json -->
+```
+
+스키마는 최소 다음을 포함한다.
+
+```json
+{
+  "schema_version": "nslab.direct_ingest_contract.v1",
+  "episode_id": "",
+  "trade_date": "",
+  "direct_brain_ingest_ready": true,
+  "requires_manual_research_review": false,
+  "requires_posthoc_prompt_repair": false,
+  "requires_human_semantic_review": false,
+  "automated_import_expected_to_pass": true,
+  "expected_import_command": "nslab research import-bundle <bundle_path> --validate --accept",
+  "expected_followup_commands": [
+    "nslab warehouse rebuild",
+    "nslab brain rebuild --mode llm-full"
+  ],
+  "hard_gate_summary": {
+    "schema_contract_verified": true,
+    "csv_full_parse_complete": true,
+    "research_daily_access_verified": true,
+    "blind_packet_sealed": true,
+    "outcome_access_after_seal_only": true,
+    "final_watchlist_size_lte_20": true,
+    "markdown_final_watchlist_size_lte_20": true,
+    "renderer_validator_independence_verified": true,
+    "brain_delta_record_level": true,
+    "record_count_hash_parity_ready": true,
+    "source_fact_id_closure_verified": true,
+    "critical_error_count": 0,
+    "validator_exit_code": 0
+  },
+  "record_import_manifest": {
+    "brain_delta_record_count": 0,
+    "training_eligible_record_count": 0,
+    "issuer_day_case_count": 0,
+    "direct_event_case_count": 0,
+    "theme_formation_case_count": 0,
+    "blind_leader_pair_count": 0,
+    "source_ledger_count": 0,
+    "fact_ledger_count": 0,
+    "id_registry_count": 0
+  },
+  "fatal_blockers": []
+}
+```
+
+`direct_brain_ingest_ready=true`인 경우 `fatal_blockers`는 반드시 빈 배열이어야 한다. 하나라도 blocker가 있으면 상태는 다음으로 둔다.
+
+```text
+bundle_status = QUARANTINE_DIRECT_INGEST_NOT_READY
+brain_eligible = false
+direct_brain_ingest_ready = false
+```
+
+## D2. 0622 fixture parity contract
+
+`20260622_nslab_episode_bundle.example.md`는 숫자값이 아니라 구조 fixture다.
+
+최종 bundle은 0622와 최소한 다음 구조가 같아야 한다.
+
+```text
+front matter:
+- schema_version: nslab.research_bundle.v11
+- artifact_type: research_episode_bundle
+- bundle_status: ACCEPT_FULL 또는 명시적 QUARANTINE
+- blind_valid
+- blind_packet_manifest_sha256
+- sealed_blind_report_sha256
+- research_daily_access_sha256
+- blind_snapshot_sha256
+- outcome_snapshot_sha256
+- canonical_graph_sha256
+- renderer_version / renderer_sha256
+- validator_version / validator_sha256
+- validator_exit_code
+
+logical blocks:
+- research_report.md
+- blind_report.md
+- postmortem_report.md
+- blind_prediction.json
+- row_disposition.jsonl
+- entity_ledger_blind.jsonl
+- fact_ledger_blind.jsonl
+- inference_ledger_blind.jsonl
+- candidate_screening.jsonl
+- blind_packet_manifest.json
+- entity_resolution.jsonl
+- outcome_ledger.jsonl
+- research_episode.json
+- brain_delta.jsonl
+- source_ledger.jsonl
+- id_registry.json
+- validation_report.json
+- bundle_manifest.json
+- direct_ingest_contract.json
+```
+
+추가 artifact는 허용되지만, 위 필수 artifact가 하나라도 없으면 `ACCEPT_FULL` 금지다.
+
+## D3. Renderer/validator 독립성은 최상위 fatal gate
+
+`renderer_sha256 == validator_sha256`이면 기본적으로 fatal이다.
+
+예외는 하나뿐이다. 한 파일에 renderer와 validator가 함께 들어 있는 combined script를 사용한 경우, 다음 세 값을 모두 기록하고 validator가 통과해야 한다.
+
+```text
+combined_tool_sha256
+renderer_entrypoint_sha256
+validator_entrypoint_sha256
+```
+
+그리고 반드시 다음이 성립해야 한다.
+
+```text
+renderer_entrypoint_sha256 != validator_entrypoint_sha256
+validator_does_not_import_renderer_state == true
+validator_expected_source_not_generated_output == true
+validator_recomputes_from_final_bundle_and_internal_artifacts == true
+```
+
+예외 조건을 충족하지 못하면 다음으로 처리한다.
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_NOT_INDEPENDENT
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## D4. Final watchlist는 실제 장전 decision label이다
+
+`final_watchlist`는 후보 저장소가 아니다. 자동 import 시 모델이 “실제 장전 선택”으로 학습하는 label이다.
+
+따라서 각 final item은 반드시 아래 필드를 가진다.
+
+```json
+{
+  "candidate_id": "CAND-...",
+  "rank": 1,
+  "ticker": "000000",
+  "name": "회사명",
+  "catalyst_type": "CONTRACT_ORDER | PRODUCT_COMMERCIALIZATION | BIO_STAGE_ADVANCE | CAPITAL_POLICY | STRATEGIC_INVESTMENT | NAMED_BENEFICIARY | CONTINUATION_EXPLICIT | OTHER_CONCRETE",
+  "primary_fact_ids": ["FACT-..."],
+  "primary_quote": "원문 최소 인용",
+  "source_ids": ["SRC-..."],
+  "supporting_inference_ids": [],
+  "economic_mechanism": "매출·비용·마진·자본정책·허가확률·수급 중 무엇이 왜 바뀌는지",
+  "why_now": "cutoff 이전 새 정보와 safe D-1 feature가 어떻게 결합되는지",
+  "red_team_counterargument": "해당 후보 고유 실패조건",
+  "outcome_fields_used": false
+}
+```
+
+다음 문구가 final item의 핵심 논지로 반복되면 fatal이다.
+
+```text
+issuer-specific 사건을 직접 FACT 범위에서만 관찰한다
+좋은 회사뉴스가 상한가형 사건과 동일하지 않을 수 있다
+장전 입력 뉴스의 직접 촉매와 직전 거래일 안전 스냅샷의 거래대금·회전율·탄력 조건을 함께 본 후보다
+P시점 소형 시총
+P시점 중소형 시총
+P시점 거래 회전 존재
+최근 5거래일 10% 이상 고가 이력
+최근 급등 흔적을 연속성과 선반영 양쪽으로 본다
+```
+
+이 문구들은 screening·red-team 보조 설명에는 쓸 수 있으나 final 선정의 중심 이유가 될 수 없다.
+
+validator는 final item마다 다음을 검사한다.
+
+```text
+primary_fact_ids_count >= 1
+primary_quote_found_in_fact_source == true
+economic_mechanism_nonempty == true
+why_now_nonempty == true
+red_team_counterargument_candidate_specific == true
+generic_text_signature_reuse_lte_3 == true
+```
+
+
+## D4.1 score와 rank 의미 고정
+
+`blind_score`, `score`, `feature_score`를 출력할 경우 rank와의 관계를 반드시 선언한다.
+
+허용되는 방식은 둘 중 하나다.
+
+```text
+rank_sort_key = blind_score_desc
+→ final_watchlist는 score 내림차순이어야 한다.
+```
+
+또는
+
+```text
+rank_sort_key = committee_rank
+→ score는 보조 feature일 뿐이다.
+→ 각 final item의 rank_reason에 score보다 우선순위가 달라진 이유를 기록한다.
+```
+
+관계 선언 없이 score가 낮은 후보가 rank 1이고 score가 높은 후보가 하위 rank에 있으면 다음으로 처리한다.
+
+```text
+rank_score_semantics_verified = false
+critical_error_count += 1
+bundle_status = QUARANTINE_RANK_SCORE_SEMANTICS
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## D5. Brain Delta import parity
+
+`brain_delta.jsonl`은 자동 import 대상이다. 다음 레코드 타입은 count와 payload hash를 manifest에 기록한다.
+
+```text
+supervised_issuer_day_case
+supervised_direct_event_case
+supervised_theme_formation_case
+blind_leader_preference_pair
+candidate_generation_error_case
+ranking_error_case
+timing_impossible_case
+newsless_or_unexplained_case
+negative_control_case
+```
+
+각 brain_delta record는 최소 다음을 가진다.
+
+```text
+brain_delta_id
+record_type
+trade_date
+available_from
+training_eligible
+sample_weight
+source_fact_ids
+source_inference_ids
+related_candidate_ids
+related_event_ids
+related_tickers
+outcome_label 또는 outcome_status
+eligibility_reason
+raw_payload_sha256
+```
+
+`training_eligible=true` record에서 다음은 금지한다.
+
+```text
+source_fact_ids == [] 이고 source_inference_ids == []
+retrospective outcome-only relation을 수혜관계로 승격
+candidate_generation_error를 성공 패턴으로 승격
+same ticker 여러 event의 sample_weight 합계 > 1
+```
+
+`bundle_manifest.json`와 `direct_ingest_contract.json`의 record count는 실제 `brain_delta.jsonl` 파싱 count와 일치해야 한다.
+
+## D6. 실패 처리 원칙
+
+목표는 항상 ingest-ready `ACCEPT_FULL`이다. 하지만 검증되지 않은 `ACCEPT_FULL`은 가장 나쁜 산출물이다.
+
+따라서 다음 우선순위를 따른다.
+
+```text
+1. ACCEPT_FULL + direct_brain_ingest_ready=true
+2. QUARANTINE_DIRECT_INGEST_NOT_READY + fatal_blockers 명시
+3. ACQUIRE_FAILED 또는 DEFERRED_NON_TRADING_DAY
+4. 검증되지 않은 ACCEPT_FULL 금지
+```
+
+작업자가 도구 제한으로 validator 코드를 실행하지 못하면 다음으로 처리한다.
+
+```text
+bundle_status = QUARANTINE_VALIDATOR_NOT_EXECUTED
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## D7. 최종 응답 원칙
+
+최종 산출물은 실제 다운로드 가능한 Markdown 파일 하나다.
+
+채팅 응답 형식은 사용자의 지시를 따른다. 파일 내부에서는 반드시 `direct_ingest_contract.json`으로 자동 import 가능 여부를 판정한다.
+
+
+────────────────────────────────────────
 BOOTSTRAP ACQUISITION RULE — MAIN PROMPT·CSV 확보 전용
 ────────────────────────────────────────
 
@@ -454,6 +825,10 @@ actual/expected가 null인 critical check
 critical check failed
 validator_exit_code != 0
 critical_error_count > 0
+direct_brain_ingest_ready != true
+requires_manual_research_review == true
+requires_posthoc_prompt_repair == true
+requires_human_semantic_review == true
 ```
 
 ## G8. 20260622 fixture 구조 회귀검사
@@ -2286,6 +2661,9 @@ bundle_manifest.json
 
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 <!-- NSLAB:END bundle_manifest.json -->
+
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+<!-- NSLAB:END direct_ingest_contract.json -->
 ```
 
 각 마커는 정확히 한 번만 존재해야 한다.
@@ -5580,9 +5958,10 @@ reason
 21. 독립 semantic auditor로 모든 training-eligible 사후 오류 교훈과 retrospective member edge를 전수 감사
 22. validate_nslab_bundle.py로 JSON·JSONL·entity binding·fact entailment·ID·source·rank·report phase·theme hindsight·pair 방향·사후 교훈 의미정합성·동일 ticker 오류 scope·retrospective member cutoff provenance·placeholder·텍스트 완전성 전수 검증
 23. critical error가 있으면 canonical graph만 수정하고 최대 5회 19번부터 다시 실행
-24. validator exit_code == 0이고 critical_error_count == 0일 때만 final bundle 조립
-25. final bundle을 다시 추출·재검증하고 draft와 hash 비교
-26. 실제 다운로드 가능한 MD 파일 생성
+24. validator exit_code == 0이고 critical_error_count == 0일 때만 direct_ingest_contract.json 생성·검증
+25. direct_brain_ingest_ready == true일 때만 ACCEPT_FULL final bundle 조립
+26. final bundle을 다시 추출·재검증하고 draft와 hash 비교
+27. 실제 다운로드 가능한 MD 파일 생성
 ```
 
 조기 종료하지 않는다.
