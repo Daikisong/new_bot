@@ -44,6 +44,7 @@
 
 - none
 
+- import_loss_audit_passed: `True`
 - dropped_record_count: `0`
 - quarantined_record_count: `0`
 ## record_counts_by_type
@@ -79,6 +80,22 @@
 - invalid_available_from_record_ids: `[]`
 - outcome_label_quality_valid: `True`
 - invalid_outcome_label_quality_record_ids: `[]`
+- typed_payload_valid: `True`
+- invalid_typed_payload_record_ids: `[]`
+- import_loss_audit_passed: `True`
+- raw_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
+- normalized_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
+- raw_record_without_id_count: `0`
+- record_id_set_comparable: `True`
+- record_id_set_matches_raw: `True`
+- missing_normalized_record_ids: `[]`
+- extra_normalized_record_ids: `[]`
+- raw_record_counts_by_type: `{'blind_leader_preference_pair': 1, 'supervised_issuer_day_case': 1}`
+- record_type_counts_match_raw: `True`
+- raw_training_eligible_record_count: `2`
+- training_eligible_count_matches_raw: `True`
+- raw_payload_hashes_match: `True`
+- raw_payload_hash_mismatch_record_ids: `[]`
 - validator_exit_code: `0`
 - critical_error_count: `0`
 - passed: `True`
