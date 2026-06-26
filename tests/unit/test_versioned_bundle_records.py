@@ -15,7 +15,7 @@ from news_scalping_lab.research_import.versioned_bundle import (
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
-from news_scalping_lab.training import export_training
+from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.utils import KST, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
@@ -30,6 +30,7 @@ def _synthetic_v11_bundle(
     include_unknown: bool = True,
     validation_checked_hashes: dict[str, str] | None = None,
     issuer_available_from: str | None = None,
+    issuer_sample_weight: float = 1.0,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -49,7 +50,7 @@ def _synthetic_v11_bundle(
             "ticker": "000001",
             "company_name": "Synthetic Issuer",
             "response_class": "positive_high10",
-            "sample_weight": 1.0,
+            "sample_weight": issuer_sample_weight,
             "training_eligible": True,
             "eligibility_reason": "synthetic verified label",
             "provenance_source_ids": ["SRC-SYNTH-1"],
@@ -311,6 +312,36 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert {row["record_id"] for row in sft_rows} == {"BRAIN-SYNTH-ISSUER"}
     assert {row["record_id"] for row in preference_rows} == {"BRAIN-SYNTH-PAIR"}
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
+
+
+def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "issuer_weight_gap_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(
+            include_unknown=False,
+            issuer_sample_weight=0.5,
+        ),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    manifest = _read_json(sft.manifest_path)
+    audit = audit_training_exports(tmp_path)
+
+    assert manifest["weight_validation_status"] == "failed"
+    assert manifest["weight_validation"]["issuer_day_weight_sum_mismatches"] == {
+        "2030-01-10|000001": 0.5
+    }
+    assert audit["passed"] is False
+    assert "sft: record weight validation failed" in audit["findings"]
 
 
 def test_versioned_bundle_can_stage_records_until_accepted(tmp_path: Path) -> None:

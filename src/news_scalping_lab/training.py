@@ -1217,6 +1217,7 @@ def _record_training_target_counts(records: list[BrainRecordEnvelope]) -> dict[s
 def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
     issuer_keys: set[tuple[str, str]] = set()
     duplicate_issuer_day_keys: list[str] = []
+    issuer_weights: dict[str, float] = defaultdict(float)
     direct_weights: dict[str, float] = defaultdict(float)
     for record in records:
         if not record.training_eligible:
@@ -1229,26 +1230,45 @@ def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, A
             if key in issuer_keys:
                 duplicate_issuer_day_keys.append("|".join(key))
             issuer_keys.add(key)
+            issuer_weights["|".join(key)] += _numeric_weight(
+                record.payload.get("sample_weight", 0.0)
+            )
         if record.record_type == "supervised_direct_event_case":
             issuer_day_case_id = record.payload.get("issuer_day_case_id")
             if not isinstance(issuer_day_case_id, str) or not issuer_day_case_id:
                 issuer_day_case_id = f"{record.trade_date.isoformat()}:{record.payload.get('ticker') or ''}"
-            sample_weight = record.payload.get("sample_weight", 0.0)
-            if isinstance(sample_weight, int | float) and not isinstance(sample_weight, bool):
-                direct_weights[issuer_day_case_id] += float(sample_weight)
-    weight_mismatches = {
+            direct_weights[issuer_day_case_id] += _numeric_weight(
+                record.payload.get("sample_weight", 0.0)
+            )
+    issuer_weight_mismatches = {
+        key: round(total, 12)
+        for key, total in sorted(issuer_weights.items())
+        if abs(total - 1.0) > 0.000001
+    }
+    direct_weight_mismatches = {
         key: round(total, 12)
         for key, total in sorted(direct_weights.items())
         if abs(total - 1.0) > 0.000001
     }
     return {
         "status": "passed"
-        if not duplicate_issuer_day_keys and not weight_mismatches
+        if (
+            not duplicate_issuer_day_keys
+            and not issuer_weight_mismatches
+            and not direct_weight_mismatches
+        )
         else "failed",
         "duplicate_issuer_day_count": len(duplicate_issuer_day_keys),
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
-        "direct_event_weight_sum_mismatches": weight_mismatches,
+        "issuer_day_weight_sum_mismatches": issuer_weight_mismatches,
+        "direct_event_weight_sum_mismatches": direct_weight_mismatches,
     }
+
+
+def _numeric_weight(value: object) -> float:
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return 0.0
 
 
 def _nested_get(payload: dict[str, Any], *keys: str) -> Any:
