@@ -5484,5 +5484,9 @@ def warehouse_inspect() -> None:
     _echo(WarehouseStore(settings.project_root).counts())
 
 
-if __name__ == "__main__":
+def main() -> None:
     app()
+
+
+if __name__ == "__main__":
+    main()

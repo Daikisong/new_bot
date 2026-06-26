@@ -22,5 +22,6 @@ def create_llm_provider(settings: Settings) -> LLMProvider:
             embedding_model=settings.llm.embedding_model,
             reasoning_effort=settings.llm.reasoning_effort,
             max_output_tokens=settings.llm.max_output_tokens,
+            api_key=settings.env_value("OPENAI_API_KEY"),
         )
     raise ValueError(f"unsupported LLM provider: {settings.llm_provider}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -61,12 +62,19 @@ class Settings(BaseModel):
     output_dirs: OutputDirs = Field(default_factory=OutputDirs)
     limits: Limits = Field(default_factory=Limits)
     llm: LLMModelSettings = Field(default_factory=LLMModelSettings)
+    dotenv_values: dict[str, str] = Field(default_factory=dict, exclude=True, repr=False)
 
     def path(self, relative: str | Path) -> Path:
         path = Path(relative)
         if path.is_absolute():
             return path
         return self.project_root / path
+
+    def env_value(self, key: str) -> str | None:
+        value = os.environ.get(key)
+        if value is not None:
+            return value
+        return self.dotenv_values.get(key)
 
 
 DEFAULT_PROJECT_DIRS = [
@@ -231,61 +239,62 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 def load_settings(project_root: Path | None = None) -> Settings:
     root = (project_root or Path.cwd()).resolve()
-    _load_dotenv(root / ".env")
+    dotenv_values = _load_dotenv(root / ".env")
+    effective_env = {**dotenv_values, **os.environ}
     data = _read_yaml(root / "configs" / "default.yaml")
     if "stock_web_path" in data and data["stock_web_path"] is not None:
         data["stock_web_path"] = Path(str(data["stock_web_path"]))
     if "stock_web_cache_path" in data and data["stock_web_cache_path"] is not None:
         data["stock_web_cache_path"] = Path(str(data["stock_web_cache_path"]))
 
-    settings = Settings(project_root=root, **data)
+    settings = Settings(project_root=root, dotenv_values=dotenv_values, **data)
 
-    llm_provider = os.getenv("NSLAB_LLM_PROVIDER")
+    llm_provider = effective_env.get("NSLAB_LLM_PROVIDER")
     if llm_provider:
         settings.llm_provider = llm_provider
-    web_provider = os.getenv("NSLAB_WEB_PROVIDER")
+    web_provider = effective_env.get("NSLAB_WEB_PROVIDER")
     if web_provider:
         settings.web_provider = web_provider
-    price_provider = os.getenv("NSLAB_PRICE_PROVIDER")
+    price_provider = effective_env.get("NSLAB_PRICE_PROVIDER")
     if price_provider:
         settings.price_provider = price_provider
-    brave_search_count = os.getenv("NSLAB_BRAVE_SEARCH_COUNT")
+    brave_search_count = effective_env.get("NSLAB_BRAVE_SEARCH_COUNT")
     if brave_search_count:
         settings.brave_search_count = int(brave_search_count)
-    brave_search_country = os.getenv("NSLAB_BRAVE_SEARCH_COUNTRY")
+    brave_search_country = effective_env.get("NSLAB_BRAVE_SEARCH_COUNTRY")
     if brave_search_country:
         settings.brave_search_country = brave_search_country
-    brave_search_lang = os.getenv("NSLAB_BRAVE_SEARCH_LANG")
+    brave_search_lang = effective_env.get("NSLAB_BRAVE_SEARCH_LANG")
     if brave_search_lang:
         settings.brave_search_lang = brave_search_lang
-    brave_search_ui_lang = os.getenv("NSLAB_BRAVE_SEARCH_UI_LANG")
+    brave_search_ui_lang = effective_env.get("NSLAB_BRAVE_SEARCH_UI_LANG")
     if brave_search_ui_lang:
         settings.brave_search_ui_lang = brave_search_ui_lang
-    brave_search_freshness_days = os.getenv("NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS")
+    brave_search_freshness_days = effective_env.get("NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS")
     if brave_search_freshness_days:
         settings.brave_search_freshness_days = int(brave_search_freshness_days)
-    brave_search_api_key_env = os.getenv("NSLAB_BRAVE_SEARCH_API_KEY_ENV")
+    brave_search_api_key_env = effective_env.get("NSLAB_BRAVE_SEARCH_API_KEY_ENV")
     if brave_search_api_key_env:
         settings.brave_search_api_key_env = brave_search_api_key_env
-    stock_path = os.getenv("NSLAB_STOCK_WEB_PATH")
+    stock_path = effective_env.get("NSLAB_STOCK_WEB_PATH")
     if stock_path:
         settings.stock_web_path = Path(stock_path)
         settings.price_provider = "stock-web"
-    stock_cache = os.getenv("NSLAB_STOCK_WEB_CACHE")
+    stock_cache = effective_env.get("NSLAB_STOCK_WEB_CACHE")
     if stock_cache and stock_cache.lower() in {"1", "true", "yes", "on"}:
         settings.stock_web_cache_enabled = True
         settings.price_provider = "stock-web"
-    stock_cache_path = os.getenv("NSLAB_STOCK_WEB_CACHE_PATH")
+    stock_cache_path = effective_env.get("NSLAB_STOCK_WEB_CACHE_PATH")
     if stock_cache_path:
         settings.stock_web_cache_path = Path(stock_cache_path)
-    stock_remote_url = os.getenv("NSLAB_STOCK_WEB_REMOTE_URL")
+    stock_remote_url = effective_env.get("NSLAB_STOCK_WEB_REMOTE_URL")
     if stock_remote_url:
         settings.stock_web_remote_url = stock_remote_url
-    max_concurrency = os.getenv("NSLAB_MAX_CONCURRENCY")
+    max_concurrency = effective_env.get("NSLAB_MAX_CONCURRENCY")
     if max_concurrency:
         settings.limits.max_concurrency = int(max_concurrency)
     settings.llm = _load_llm_model_settings(root, settings.llm_provider)
-    _apply_llm_env_overrides(settings)
+    _apply_llm_env_overrides(settings, effective_env)
     return settings
 
 
@@ -310,31 +319,32 @@ def _model_profile_key(provider: str) -> str:
     return normalized or "default"
 
 
-def _apply_llm_env_overrides(settings: Settings) -> None:
-    model = os.getenv("NSLAB_LLM_MODEL")
+def _apply_llm_env_overrides(settings: Settings, env: Mapping[str, str]) -> None:
+    model = env.get("NSLAB_LLM_MODEL")
     if model:
         settings.llm.model = model
     if _model_profile_key(settings.llm_provider) == "openai":
-        openai_model = os.getenv("NSLAB_OPENAI_MODEL")
+        openai_model = env.get("NSLAB_OPENAI_MODEL")
         if openai_model:
             settings.llm.model = openai_model
-        embedding_model = os.getenv("NSLAB_OPENAI_EMBEDDING_MODEL")
+        embedding_model = env.get("NSLAB_OPENAI_EMBEDDING_MODEL")
         if embedding_model:
             settings.llm.embedding_model = embedding_model
-    reasoning_effort = os.getenv("NSLAB_LLM_REASONING_EFFORT")
+    reasoning_effort = env.get("NSLAB_LLM_REASONING_EFFORT")
     if reasoning_effort:
         settings.llm.reasoning_effort = reasoning_effort
-    max_output_tokens = os.getenv("NSLAB_LLM_MAX_OUTPUT_TOKENS")
+    max_output_tokens = env.get("NSLAB_LLM_MAX_OUTPUT_TOKENS")
     if max_output_tokens:
         settings.llm.max_output_tokens = int(max_output_tokens)
-    max_retries = os.getenv("NSLAB_LLM_MAX_RETRIES")
+    max_retries = env.get("NSLAB_LLM_MAX_RETRIES")
     if max_retries:
         settings.llm.max_retries = int(max_retries)
 
 
-def _load_dotenv(path: Path) -> None:
+def _load_dotenv(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     if not path.exists():
-        return
+        return values
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -345,9 +355,10 @@ def _load_dotenv(path: Path) -> None:
             continue
         key, raw_value = line.split("=", 1)
         key = key.strip()
-        if not ENV_KEY_RE.match(key) or key in os.environ:
+        if not ENV_KEY_RE.match(key):
             continue
-        os.environ[key] = _dotenv_value(raw_value)
+        values[key] = _dotenv_value(raw_value)
+    return values
 
 
 def _dotenv_value(raw_value: str) -> str:

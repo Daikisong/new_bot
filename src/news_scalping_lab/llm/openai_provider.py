@@ -23,6 +23,7 @@ class OpenAIResponsesProvider:
         embedding_model: str | None = None,
         reasoning_effort: str | None = None,
         max_output_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> None:
         self.model = model or os.getenv("NSLAB_OPENAI_MODEL", "gpt-5-mini")
         self.embedding_model = embedding_model or os.getenv(
@@ -30,10 +31,11 @@ class OpenAIResponsesProvider:
         )
         self.reasoning_effort = reasoning_effort
         self.max_output_tokens = max_output_tokens
+        self.api_key = api_key
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         client_class = _async_openai_class()
-        client = client_class()
+        client = self._client(client_class)
         response = await client.responses.create(
             model=self.model,
             input=prompt,
@@ -46,7 +48,7 @@ class OpenAIResponsesProvider:
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
         client_class = _async_openai_class()
-        client = client_class()
+        client = self._client(client_class)
         responses = getattr(client, "responses", None)
         parse = getattr(responses, "parse", None)
         system_message = (
@@ -116,9 +118,14 @@ class OpenAIResponsesProvider:
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         client_class = _async_openai_class()
-        client = client_class()
+        client = self._client(client_class)
         response = await client.embeddings.create(model=self.embedding_model, input=texts)
         return [item.embedding for item in response.data]
+
+    def _client(self, client_class: Any) -> Any:
+        if self.api_key:
+            return client_class(api_key=self.api_key)
+        return client_class()
 
     def _responses_options(self) -> dict[str, Any]:
         options: dict[str, Any] = {}

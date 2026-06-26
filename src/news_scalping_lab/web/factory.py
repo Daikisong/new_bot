@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from news_scalping_lab.config import Settings
 from news_scalping_lab.web.provider import (
     BraveSearchWebResearchProvider,
@@ -17,7 +15,7 @@ def create_web_provider(settings: Settings) -> WebResearchProvider:
     if provider == "mock":
         return MockWebResearchProvider()
     if provider in {"brave", "brave-search", "brave-news"}:
-        api_key = os.getenv(settings.brave_search_api_key_env)
+        api_key = settings.env_value(settings.brave_search_api_key_env)
         if not api_key:
             raise ValueError(
                 f"{settings.brave_search_api_key_env} must be set for "

@@ -31,7 +31,7 @@ ui = [
 ]
 
 [project.scripts]
-nslab = "news_scalping_lab.cli:app"
+nslab = "news_scalping_lab.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

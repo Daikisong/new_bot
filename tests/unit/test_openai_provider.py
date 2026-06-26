@@ -193,6 +193,21 @@ def test_llm_factory_selects_openai_provider() -> None:
     assert provider.max_output_tokens == 2048
 
 
+def test_llm_factory_reads_openai_key_from_project_dotenv_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        llm_provider="openai",
+        dotenv_values={"OPENAI_API_KEY": "dotenv-openai-key"},
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    provider = create_llm_provider(settings)
+
+    assert isinstance(provider, OpenAIResponsesProvider)
+    assert provider.api_key == "dotenv-openai-key"
+
+
 def test_llm_factory_passes_model_settings_to_mock_provider() -> None:
     settings = Settings(llm_provider="mock")
     settings.llm.model = "deterministic-custom"

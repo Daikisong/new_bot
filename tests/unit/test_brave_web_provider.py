@@ -211,6 +211,22 @@ def test_create_web_provider_selects_brave_when_api_key_is_configured(
     provider = create_web_provider(settings)
 
     assert isinstance(provider, BraveSearchWebResearchProvider)
+    assert provider.api_key == "secret"
+
+
+def test_create_web_provider_reads_brave_key_from_project_dotenv_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        web_provider="brave",
+        dotenv_values={"BRAVE_SEARCH_API_KEY": "dotenv-secret"},
+    )
+    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+
+    provider = create_web_provider(settings)
+
+    assert isinstance(provider, BraveSearchWebResearchProvider)
+    assert provider.api_key == "dotenv-secret"
 
 
 def test_create_web_provider_rejects_brave_without_api_key(

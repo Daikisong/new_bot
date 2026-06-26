@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
@@ -75,17 +74,17 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "price": settings.price_provider,
         },
         "llm_model": settings.llm.model_dump(exclude_none=True),
-        "environment": _environment_status(),
+        "environment": _environment_status(settings),
         "api_connections": {
             "openai": {
                 "required": _openai_required(settings),
-                "configured": bool(os.getenv("OPENAI_API_KEY")),
+                "configured": bool(settings.env_value("OPENAI_API_KEY")),
                 "sdk": _openai_sdk_status(),
                 "status": _openai_status(settings),
             },
             "brave_search": {
                 "required": _brave_search_required(settings),
-                "configured": bool(os.getenv(settings.brave_search_api_key_env)),
+                "configured": bool(settings.env_value(settings.brave_search_api_key_env)),
                 "status": _brave_search_status(settings),
             },
         },
@@ -345,10 +344,10 @@ def _stock_web_effective_path(
     return None, "none"
 
 
-def _environment_status() -> dict[str, dict[str, object]]:
+def _environment_status(settings: Settings) -> dict[str, dict[str, object]]:
     status: dict[str, dict[str, object]] = {}
     for key in ENV_KEYS:
-        value = os.getenv(key)
+        value = settings.env_value(key)
         status[key] = {
             "set": value is not None,
             "value": "***" if key.endswith("KEY") and value else value,
@@ -359,7 +358,7 @@ def _environment_status() -> dict[str, dict[str, object]]:
 def _openai_status(settings: Settings) -> str:
     if not _openai_required(settings):
         return "not_required"
-    if not os.getenv("OPENAI_API_KEY"):
+    if not settings.env_value("OPENAI_API_KEY"):
         return "missing_api_key"
     sdk_status = _openai_sdk_status()
     if sdk_status.get("available") is not True:
@@ -414,7 +413,7 @@ def _brave_search_required(settings: Settings) -> bool:
 def _brave_search_status(settings: Settings) -> str:
     if not _brave_search_required(settings):
         return "not_required"
-    if os.getenv(settings.brave_search_api_key_env):
+    if settings.env_value(settings.brave_search_api_key_env):
         return "configured_not_called"
     return "missing_api_key"
 

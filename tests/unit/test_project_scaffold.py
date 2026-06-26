@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import tomllib
+from importlib import import_module
 from pathlib import Path
 
 import yaml
@@ -104,6 +106,18 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
     assert all(fragment in skill for fragment in required_fragments)
     assert "THEME_MAP" not in skill
     assert re.search(r"\b\d{6}\b", skill) is None
+
+
+def test_nslab_console_entrypoint_resolves_to_cli_main() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    target = pyproject["project"]["scripts"]["nslab"]
+    module_name, attribute_name = target.split(":", maxsplit=1)
+
+    module = import_module(module_name)
+
+    assert target == "news_scalping_lab.cli:main"
+    assert callable(getattr(module, attribute_name))
 
 
 def test_plans_document_tracks_goal_scope_without_domain_memory() -> None:
@@ -430,7 +444,9 @@ def test_load_settings_reads_project_dotenv_without_overriding_environment(
         tmp_path / "data/cache/custom-stock-web"
     )
     assert settings.path(settings.stock_web_path) == tmp_path / "data/cache/stock-web"
-    assert os.getenv("OPENAI_API_KEY") == "secret-from-dotenv"
+    assert settings.env_value("OPENAI_API_KEY") == "secret-from-dotenv"
+    assert os.getenv("OPENAI_API_KEY") is None
+    assert os.getenv("NSLAB_PRICE_PROVIDER") is None
 
     monkeypatch.setenv("NSLAB_LLM_PROVIDER", "mock")
     assert load_settings(tmp_path).llm_provider == "mock"
