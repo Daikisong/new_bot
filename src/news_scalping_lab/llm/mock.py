@@ -499,7 +499,11 @@ class DeterministicMockLLMProvider:
                 "open-world sector hypothesis generated from current evidence"
             ],
             beneficiary_investigation_questions=[
-                "Which listed entities have direct or indirect exposure to this catalyst?",
+                (
+                    "Which listed entities have direct, construction/execution, "
+                    "supply-chain, power, water, logistics, regional-asset, or "
+                    "market-memory exposure to this catalyst?"
+                ),
                 "Which candidates fail novelty, directness, dilution, or D-1 absorption checks?",
             ],
             uncertainties=[
