@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from pathlib import Path
+from typing import TypeVar
+
+from pydantic import BaseModel
+
+import news_scalping_lab.brain.compiler as compiler_module
+from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class RecordingBrainLLM:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        self.calls.append((purpose, prompt))
+        return f"{purpose} synthesized output"
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[T],
+        purpose: str,
+    ) -> T:
+        raise AssertionError("llm-full brain compile should use text synthesis")
+
+
+def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_openai_config(tmp_path)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    llm = RecordingBrainLLM()
+    monkeypatch.setattr(compiler_module, "create_llm_provider", lambda settings: llm)
+    _write_records(
+        tmp_path,
+        [
+            _record(
+                "BRAIN-DIRECT",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            ),
+            _record(
+                "BRAIN-COUNTER",
+                record_type="counterexample",
+                training_target="counterexample",
+                response_class="negative_control",
+            ),
+        ],
+    )
+
+    manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    purposes = [purpose for purpose, _prompt in llm.calls]
+    assert manifest.build_mode == "llm-full"
+    assert "brain_compile:shard:0001" in purposes
+    assert len([purpose for purpose in purposes if ":synthesis:" in purpose]) == len(
+        BRAIN_FILES
+    )
+    assert len([purpose for purpose in purposes if ":review:" in purpose]) == len(
+        BRAIN_FILES
+    )
+    compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
+    assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
+    assert compile_manifest["record_shard_count"] == 1
+    assert compile_manifest["category_count"] == len(BRAIN_FILES)
+    single_event = (tmp_path / "brain" / "current" / "01_single_event_patterns.md").read_text(
+        encoding="utf-8"
+    )
+    assert "## Category Synthesis" in single_event
+    assert "## Contradiction And Boundary Review" in single_event
+    assert len(list((tmp_path / "brain" / "llm_cache").glob("*.json"))) == (
+        1 + len(BRAIN_FILES) * 2
+    )
+
+    llm.calls.clear()
+    second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert second_manifest.brain_version == manifest.brain_version
+    assert llm.calls == []
+
+
+def _write_openai_config(root: Path) -> None:
+    configs = root / "configs"
+    configs.mkdir(parents=True, exist_ok=True)
+    (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
+    (configs / "models.yaml").write_text(
+        "\n".join(
+            [
+                "openai:",
+                "  provider: openai",
+                "  model: test-brain-model",
+                "  max_retries: 0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_records(root: Path, records: list[BrainRecordEnvelope]) -> None:
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-llm-full.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
+def _record(
+    record_id: str,
+    *,
+    record_type: str,
+    training_target: str,
+    response_class: str,
+) -> BrainRecordEnvelope:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "episode_id": "EP-llm-full",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": training_target,
+        "response_class": response_class,
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id="EP-llm-full",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target=training_target,
+        evidence_phase="POSTMORTEM",
+        training_eligible=record_type != "counterexample",
+        eligibility_reason="unit test llm-full record",
+        status="supported",
+        confidence_label="medium",
+        provenance_source_ids=["SRC-llm-full"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )

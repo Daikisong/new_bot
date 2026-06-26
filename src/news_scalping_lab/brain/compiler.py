@@ -6,8 +6,10 @@ import asyncio
 import json
 import shutil
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
 from news_scalping_lab.config import load_settings
@@ -32,6 +34,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     file_sha256,
     read_json,
+    sha256_text,
     stable_id,
     write_json,
 )
@@ -50,6 +53,14 @@ BRAIN_FILES = [
 ]
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
+LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v2"
+LLM_FULL_RECORD_SHARD_SIZE = 50
+
+
+@dataclass(frozen=True)
+class LLMFullCompileResult:
+    category_outputs: dict[str, str]
+    manifest: dict[str, Any]
 
 
 class BrainCompiler:
@@ -193,8 +204,9 @@ class BrainCompiler:
             source_hashes=source_hashes,
             coverage_complete=True,
         )
-        category_outputs = asyncio.run(
+        llm_compile = asyncio.run(
             _compile_llm_category_outputs(
+                root=self.root,
                 provider=provider,
                 records=records,
                 brain_version=version,
@@ -202,7 +214,12 @@ class BrainCompiler:
                 model=settings.llm.model,
             )
         )
-        self._write_current(manifest, claims, category_outputs=category_outputs)
+        self._write_current(
+            manifest,
+            claims,
+            category_outputs=llm_compile.category_outputs,
+            llm_compile_metadata=llm_compile.manifest,
+        )
         self._write_mechanism_memory(manifest, [])
         self._write_shard_brains(manifest, accepted_episodes)
         self._write_immutable_snapshot(version)
@@ -469,6 +486,7 @@ class BrainCompiler:
         claims: list[MemoryClaim],
         *,
         category_outputs: dict[str, str] | None = None,
+        llm_compile_metadata: dict[str, Any] | None = None,
     ) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
@@ -491,6 +509,11 @@ class BrainCompiler:
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
         record_coverage = self._record_coverage_manifest(manifest)
         write_json(self.current_dir / "record_coverage_manifest.json", record_coverage)
+        llm_manifest_path = self.current_dir / "llm_compile_manifest.json"
+        if llm_compile_metadata is not None:
+            write_json(llm_manifest_path, llm_compile_metadata)
+        elif llm_manifest_path.exists():
+            llm_manifest_path.unlink()
         write_json(self.current_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
         write_diagnostic_report(
             self.root,
@@ -503,6 +526,7 @@ class BrainCompiler:
                 "claim_count": len(claims),
                 "category_file_count": len(BRAIN_FILES),
                 "category_files": BRAIN_FILES,
+                "llm_compile": llm_compile_metadata,
             },
         )
         write_diagnostic_report(self.root, "record_coverage_report", record_coverage)
@@ -1074,24 +1098,98 @@ def _record_claim_statement(record: BrainRecordEnvelope) -> str:
 
 async def _compile_llm_category_outputs(
     *,
+    root: Path,
     provider: LLMProvider,
     records: list[BrainRecordEnvelope],
     brain_version: str,
     provider_name: str,
     model: str,
-) -> dict[str, str]:
+) -> LLMFullCompileResult:
+    cache_dir = root / "brain" / "llm_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    sorted_records = sorted(records, key=lambda record: record.record_id)
+    shard_summaries: list[dict[str, Any]] = []
+    for shard_index, shard in enumerate(
+        _record_shards(sorted_records, LLM_FULL_RECORD_SHARD_SIZE),
+        start=1,
+    ):
+        prompt = _brain_record_shard_prompt(
+            shard_index=shard_index,
+            records=shard,
+            brain_version=brain_version,
+            provider_name=provider_name,
+            model=model,
+        )
+        output, cache_key, _ = await _cached_generate_text(
+            provider=provider,
+            cache_dir=cache_dir,
+            purpose=f"brain_compile:shard:{shard_index:04d}",
+            prompt=prompt,
+            record_ids=[record.record_id for record in shard],
+            record_hashes={
+                record.record_id: record.normalized_payload_sha256
+                for record in shard
+            },
+            provider_name=provider_name,
+            model=model,
+        )
+        shard_summaries.append(
+            {
+                "shard_index": shard_index,
+                "cache_key": cache_key,
+                "record_ids": [record.record_id for record in shard],
+                "record_count": len(shard),
+                "summary": output,
+            }
+        )
     outputs: dict[str, str] = {}
+    categories: list[dict[str, Any]] = []
     for file_name in BRAIN_FILES:
         category = _brain_category(file_name)
         category_records = _records_for_category(records, category)
         prompt = _brain_category_prompt(
             category=category,
             records=category_records,
+            shard_summaries=shard_summaries,
             brain_version=brain_version,
             provider_name=provider_name,
             model=model,
         )
-        text = await provider.generate_text(prompt=prompt, purpose=f"brain_compile:{category}")
+        synthesis, synthesis_cache_key, _ = await _cached_generate_text(
+            provider=provider,
+            cache_dir=cache_dir,
+            purpose=f"brain_compile:synthesis:{category}",
+            prompt=prompt,
+            record_ids=[record.record_id for record in category_records],
+            record_hashes={
+                record.record_id: record.normalized_payload_sha256
+                for record in category_records
+            },
+            provider_name=provider_name,
+            model=model,
+        )
+        review_prompt = _brain_category_review_prompt(
+            category=category,
+            synthesis=synthesis,
+            records=category_records,
+            shard_summaries=shard_summaries,
+            brain_version=brain_version,
+            provider_name=provider_name,
+            model=model,
+        )
+        review, review_cache_key, _ = await _cached_generate_text(
+            provider=provider,
+            cache_dir=cache_dir,
+            purpose=f"brain_compile:review:{category}",
+            prompt=review_prompt,
+            record_ids=[record.record_id for record in category_records],
+            record_hashes={
+                record.record_id: record.normalized_payload_sha256
+                for record in category_records
+            },
+            provider_name=provider_name,
+            model=model,
+        )
         outputs[file_name] = (
             f"# {file_name.removesuffix('.md').replace('_', ' ').title()}\n\n"
             f"Brain version: `{brain_version}`\n"
@@ -1100,12 +1198,46 @@ async def _compile_llm_category_outputs(
             f"Model: `{model}`\n"
             f"Category: `{category}`\n"
             f"Source record count: {len(category_records)}\n\n"
-            f"{text.strip()}\n\n"
+            "## Category Synthesis\n\n"
+            f"{synthesis.strip()}\n\n"
+            "## Contradiction And Boundary Review\n\n"
+            f"{review.strip()}\n\n"
             "## Supporting Records\n\n"
             + "\n".join(f"- `{record.record_id}` ({record.record_type})" for record in category_records[:200])
             + "\n"
         )
-    return outputs
+        categories.append(
+            {
+                "category": category,
+                "file_name": file_name,
+                "source_record_count": len(category_records),
+                "source_record_ids": [record.record_id for record in category_records],
+                "synthesis_cache_key": synthesis_cache_key,
+                "review_cache_key": review_cache_key,
+            }
+        )
+    manifest = {
+        "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+        "compiler_version": LLM_FULL_COMPILER_VERSION,
+        "brain_version": brain_version,
+        "provider": provider_name,
+        "model": model,
+        "source_record_count": len(sorted_records),
+        "record_shard_size": LLM_FULL_RECORD_SHARD_SIZE,
+        "record_shard_count": len(shard_summaries),
+        "record_shards": [
+            {
+                key: value
+                for key, value in shard.items()
+                if key != "summary"
+                and key != "cache_hit"
+            }
+            for shard in shard_summaries
+        ],
+        "category_count": len(categories),
+        "categories": categories,
+    }
+    return LLMFullCompileResult(category_outputs=outputs, manifest=manifest)
 
 
 def _records_for_category(
@@ -1133,36 +1265,79 @@ def _records_for_category(
     return selected or records[: min(20, len(records))]
 
 
-def _brain_category_prompt(
+def _record_shards(
+    records: list[BrainRecordEnvelope],
+    shard_size: int,
+) -> list[list[BrainRecordEnvelope]]:
+    if not records:
+        return []
+    size = max(1, shard_size)
+    return [records[index : index + size] for index in range(0, len(records), size)]
+
+
+async def _cached_generate_text(
     *,
-    category: str,
+    provider: LLMProvider,
+    cache_dir: Path,
+    purpose: str,
+    prompt: str,
+    record_ids: list[str],
+    record_hashes: dict[str, str],
+    provider_name: str,
+    model: str,
+) -> tuple[str, str, bool]:
+    prompt_sha = sha256_text(prompt)
+    cache_payload = {
+        "compiler_version": LLM_FULL_COMPILER_VERSION,
+        "purpose": purpose,
+        "prompt_sha256": prompt_sha,
+        "provider": provider_name,
+        "model": model,
+        "record_ids": record_ids,
+        "record_hashes": record_hashes,
+    }
+    cache_key = stable_id("LLMBRAIN", canonical_json(cache_payload), length=20)
+    cache_path = cache_dir / f"{cache_key}.json"
+    if cache_path.exists():
+        cached = read_json(cache_path)
+        output = cached.get("output") if isinstance(cached, dict) else None
+        if isinstance(output, str):
+            return output, cache_key, True
+    output = await provider.generate_text(prompt=prompt, purpose=purpose)
+    write_json(
+        cache_path,
+        {
+            "schema_version": "nslab.llm_brain_compile_cache.v1",
+            "cache_key": cache_key,
+            **cache_payload,
+            "output_sha256": sha256_text(output),
+            "output": output,
+        },
+    )
+    return output, cache_key, False
+
+
+def _brain_record_shard_prompt(
+    *,
+    shard_index: int,
     records: list[BrainRecordEnvelope],
     brain_version: str,
     provider_name: str,
     model: str,
 ) -> str:
-    compact_records = [
-        {
-            "record_id": record.record_id,
-            "record_type": record.record_type,
-            "training_target": record.training_target,
-            "evidence_phase": record.evidence_phase,
-            "response_class": record.payload.get("response_class"),
-            "status": record.status,
-            "confidence_label": record.confidence_label,
-            "provenance_source_ids": record.provenance_source_ids[:5],
-        }
-        for record in records[:200]
-    ]
+    compact_records = [_compact_record_for_prompt(record) for record in records]
     return json.dumps(
         {
             "instruction": (
-                "Synthesize category-specific research brain claims. Avoid ticker, "
-                "company, theme, region, or beneficiary lookup rules. Every claim "
-                "must cite supporting record IDs and state boundary conditions."
+                "Summarize this record shard for a research brain map pass. "
+                "Extract reusable mechanisms, success/failure boundaries, near "
+                "misses, contradictions, and unresolved research questions. Cite "
+                "record IDs and avoid ticker, company, theme, region, or "
+                "beneficiary lookup rules."
             ),
+            "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
-            "category": category,
+            "shard_index": shard_index,
             "provider": provider_name,
             "model": model,
             "records": compact_records,
@@ -1170,3 +1345,93 @@ def _brain_category_prompt(
         ensure_ascii=False,
         sort_keys=True,
     )
+
+
+def _brain_category_prompt(
+    *,
+    category: str,
+    records: list[BrainRecordEnvelope],
+    shard_summaries: list[dict[str, Any]],
+    brain_version: str,
+    provider_name: str,
+    model: str,
+) -> str:
+    compact_records = [_compact_record_for_prompt(record) for record in records[:200]]
+    return json.dumps(
+        {
+            "instruction": (
+                "Reduce shard summaries and selected raw records into "
+                "category-specific research brain claims. Avoid ticker, company, "
+                "theme, region, or beneficiary lookup rules. Every claim must cite "
+                "supporting record IDs, state boundary conditions, and identify "
+                "contradicting or near-miss records when present."
+            ),
+            "compiler_version": LLM_FULL_COMPILER_VERSION,
+            "brain_version": brain_version,
+            "category": category,
+            "provider": provider_name,
+            "model": model,
+            "record_shard_summaries": _compact_shard_summaries(shard_summaries),
+            "records": compact_records,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _brain_category_review_prompt(
+    *,
+    category: str,
+    synthesis: str,
+    records: list[BrainRecordEnvelope],
+    shard_summaries: list[dict[str, Any]],
+    brain_version: str,
+    provider_name: str,
+    model: str,
+) -> str:
+    return json.dumps(
+        {
+            "instruction": (
+                "Review this category synthesis for contradictions, overreach, "
+                "missing boundary conditions, and claims supported only by a "
+                "single episode. Return concise corrections and unresolved risks. "
+                "Cite record IDs when possible."
+            ),
+            "compiler_version": LLM_FULL_COMPILER_VERSION,
+            "brain_version": brain_version,
+            "category": category,
+            "provider": provider_name,
+            "model": model,
+            "record_shard_summaries": _compact_shard_summaries(shard_summaries),
+            "records": [_compact_record_for_prompt(record) for record in records[:200]],
+            "synthesis": synthesis,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "record_type": record.record_type,
+        "training_target": record.training_target,
+        "evidence_phase": record.evidence_phase,
+        "response_class": record.payload.get("response_class"),
+        "path_type": record.payload.get("path_type"),
+        "status": record.status,
+        "confidence_label": record.confidence_label,
+        "provenance_source_ids": record.provenance_source_ids[:5],
+    }
+
+
+def _compact_shard_summaries(shard_summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "shard_index": shard["shard_index"],
+            "record_ids": shard["record_ids"],
+            "record_count": shard["record_count"],
+            "summary": shard["summary"],
+        }
+        for shard in shard_summaries
+    ]
