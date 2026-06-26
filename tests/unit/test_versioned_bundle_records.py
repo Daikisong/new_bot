@@ -8,6 +8,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.research_import.versioned_bundle import (
@@ -446,6 +447,41 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert {row["record_id"] for row in sft_rows} == {"BRAIN-SYNTH-ISSUER"}
     assert {row["record_id"] for row in preference_rows} == {"BRAIN-SYNTH-PAIR"}
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
+
+
+def test_coverage_audit_rejects_duplicate_issuer_day_projection_keys(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+    WarehouseStore(tmp_path).rebuild_all()
+
+    issuer_path = tmp_path / "warehouse" / "issuer_day_cases.parquet"
+    duplicate_path = tmp_path / "warehouse" / "issuer_day_cases_duplicate.parquet"
+    issuer_sql_path = issuer_path.as_posix().replace("'", "''")
+    duplicate_sql_path = duplicate_path.as_posix().replace("'", "''")
+    duckdb.sql(
+        "copy ("
+        f"select * from read_parquet('{issuer_sql_path}') "
+        "union all "
+        f"select * from read_parquet('{issuer_sql_path}')"
+        f") to '{duplicate_sql_path}' (format parquet)"
+    )
+    duplicate_path.replace(issuer_path)
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["warehouse_duplicate_identities"] == {
+        "issuer_day_cases.parquet": ["20300110:000001|2030-01-10|000001"]
+    }
+    assert (
+        "warehouse: issuer_day_cases.parquet duplicate ids: "
+        "20300110:000001|2030-01-10|000001"
+    ) in audit["findings"]
+    assert audit["warehouse_projection_synced"] is False
 
 
 def test_training_audit_rejects_issuer_day_weight_sum_mismatch(

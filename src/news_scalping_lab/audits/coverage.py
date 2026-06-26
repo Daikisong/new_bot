@@ -43,6 +43,10 @@ def audit_coverage(root: Path) -> dict[str, object]:
         root,
         warehouse_identity_expectations,
     )
+    warehouse_duplicate_identities = _warehouse_duplicate_identities(
+        root,
+        _warehouse_duplicate_identity_expectations(),
+    )
     missing_warehouse_files = [
         filename
         for filename in EXPECTED_WAREHOUSE_FILES
@@ -57,6 +61,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
     warehouse_synced = warehouse_research_episode_count == accepted_episode_count
     warehouse_projection_synced = not warehouse_count_mismatches and not (
         warehouse_identity_mismatches
+        or warehouse_duplicate_identities
     )
     warehouse_required_files_present = (
         not missing_warehouse_files and not unreadable_warehouse_files
@@ -88,6 +93,9 @@ def audit_coverage(root: Path) -> dict[str, object]:
             f"warehouse: {filename} ids mismatch; missing "
             f"{expectation['source_label']}: {missing}; extra projected ids: {extra}"
         )
+    for filename, duplicates in warehouse_duplicate_identities.items():
+        duplicate_values = ", ".join(duplicates)
+        findings.append(f"warehouse: {filename} duplicate ids: {duplicate_values}")
     return {
         **brain,
         "passed": (
@@ -106,6 +114,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
         "warehouse_expected_source_counts": warehouse_expected_source_counts,
         "warehouse_count_mismatches": warehouse_count_mismatches,
         "warehouse_identity_mismatches": warehouse_identity_mismatches,
+        "warehouse_duplicate_identities": warehouse_duplicate_identities,
         "warehouse_research_episode_count": warehouse_research_episode_count,
         "warehouse_synced": warehouse_synced,
         "warehouse_projection_synced": warehouse_projection_synced,
@@ -327,6 +336,30 @@ def _warehouse_identity_mismatches(
     return mismatches
 
 
+def _warehouse_duplicate_identity_expectations() -> dict[str, dict[str, Any]]:
+    return {
+        "issuer_day_cases.parquet": {
+            "columns": ("issuer_day_case_id", "trade_date", "ticker"),
+            "source_label": "issuer-day case ids",
+        },
+    }
+
+
+def _warehouse_duplicate_identities(
+    root: Path,
+    expectations: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    duplicates: dict[str, list[str]] = {}
+    for filename, expectation in expectations.items():
+        duplicate_values = _warehouse_duplicate_identity_values(
+            root / "warehouse" / filename,
+            tuple(expectation["columns"]),
+        )
+        if duplicate_values:
+            duplicates[filename] = duplicate_values
+    return duplicates
+
+
 def _warehouse_identity_values(path: Path, columns: tuple[str, ...]) -> list[str]:
     if not path.exists():
         return []
@@ -337,6 +370,26 @@ def _warehouse_identity_values(path: Path, columns: tuple[str, ...]) -> list[str
     try:
         rows = duckdb.sql(
             f"select {expression} as identity from read_parquet('{escaped_path}')"
+        ).fetchall()
+    except duckdb.Error:
+        return []
+    return [row[0] for row in rows if isinstance(row[0], str) and row[0]]
+
+
+def _warehouse_duplicate_identity_values(path: Path, columns: tuple[str, ...]) -> list[str]:
+    if not path.exists():
+        return []
+    escaped_path = path.as_posix().replace("'", "''")
+    expression = " || '|' || ".join(
+        f"coalesce(cast({column} as varchar), '')" for column in columns
+    )
+    try:
+        rows = duckdb.sql(
+            "select identity from ("
+            f"select {expression} as identity, count(*) as row_count "
+            f"from read_parquet('{escaped_path}') "
+            "group by identity having count(*) > 1"
+            ") order by identity"
         ).fetchall()
     except duckdb.Error:
         return []
