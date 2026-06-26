@@ -310,6 +310,25 @@ class ProviderTimestampRejectsUnknown:
         return False
 
 
+class ProviderRejectsPreCutoffTimestamp:
+    async def search(self, query: str, *, cutoff_at: datetime) -> list[WebSearchResult]:
+        return [
+            WebSearchResult(
+                source_id="WEB-REJECTED-PRE-CUTOFF",
+                title=query,
+                url="mock://rejected-pre-cutoff",
+                snippet="provider-level timestamp verification rejects this source",
+                published_at=cutoff_at - timedelta(minutes=1),
+            )
+        ]
+
+    async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        return url
+
+    async def verify_timestamp(self, result: WebSearchResult, *, cutoff_at: datetime) -> bool:
+        return False
+
+
 class MixedTemporalProvider:
     def __init__(self) -> None:
         self.open_calls: list[str] = []
@@ -357,6 +376,16 @@ async def test_temporal_web_guard_uses_provider_timestamp_verification() -> None
     assert await guard.search("query", cutoff_at=cutoff) == []
     assert guard.excluded_source_ids == ["WEB-UNVERIFIED"]
     assert guard.excluded_sources[0].reason == "missing_published_at"
+
+
+@pytest.mark.asyncio
+async def test_temporal_web_guard_rejects_provider_failed_timestamp_verification() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    guard = TemporalWebGuard(ProviderRejectsPreCutoffTimestamp())
+
+    assert await guard.search("query", cutoff_at=cutoff) == []
+    assert guard.excluded_source_ids == ["WEB-REJECTED-PRE-CUTOFF"]
+    assert guard.excluded_sources[0].reason == "timestamp_verification_failed"
 
 
 @pytest.mark.asyncio
