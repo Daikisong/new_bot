@@ -104,6 +104,46 @@ def test_repo_skill_documents_commands_outputs_and_recovery_without_domain_memor
     assert re.search(r"\b\d{6}\b", skill) is None
 
 
+def test_plans_document_tracks_goal_scope_without_domain_memory() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    plans = (repo_root / "PLANS.md").read_text(encoding="utf-8")
+
+    required_fragments = [
+        "# Implementation Plan",
+        "`news-scalping-lab`",
+        "LLM-native research-memory system",
+        "Production code must stay generic.",
+        "Research knowledge belongs in `research/`, `memory/`, and `brain/`",
+        "Scaffold a Python package, CLI, configs, schemas, prompts, data directories",
+        "canonical Pydantic contracts",
+        "immutable research import with strict JSON and semantic mock conversion paths",
+        "deterministic mock LLM, web, embedding, and price providers",
+        "OpenAI and stock-web adapter seams",
+        "brain rebuild, incremental update, and coverage audit",
+        "100% accepted episode coverage checks",
+        "exhaustive context assembly that sweeps every accepted episode",
+        "never treats retrieval misses as candidate blockers",
+        "`predictions/YYYY-MM-DD.json`",
+        "`reports/YYYY-MM-DD_preopen.md`",
+        "`runs/manifests/<run_id>.json`",
+        "evaluation, hardcoding audit, lookahead audit, provenance audit",
+        "session pack export, and training export",
+        "unit, integration, and metamorphic tests",
+        "`ruff`, `mypy`, and `pytest`",
+        "No production source mapping from region, theme, policy, keyword, company, or ticker",
+        "No D-day price access in blind inference.",
+        "No cutoff-after evidence in blind reports.",
+        "Exhaustive mode must record `swept_episode_count == accepted_episode_count`.",
+        "New research must change data/brain outputs, not source code.",
+        "Every output must have provenance and a context manifest.",
+    ]
+
+    assert all(fragment in plans for fragment in required_fragments)
+    assert "THEME_MAP" not in plans
+    assert "score += " not in plans
+    assert re.search(r"\b\d{6}\b", plans) is None
+
+
 def test_ensure_project_dirs_creates_goal_scaffold_directories(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
