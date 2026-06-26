@@ -11,10 +11,17 @@ DAILY_ONLY_INTRADAY_FIELDS_UNAVAILABLE = [
     "first_three_minute_return",
     "volatility_interruptions",
 ]
+PRICE_UNAVAILABLE_FLAG = "PRICE_UNAVAILABLE"
+NEW_LISTING_OR_NO_PREVIOUS_CLOSE_FLAG = "NEW_LISTING_OR_NO_PREVIOUS_CLOSE"
+REFERENCE_PRICE_UNCERTAIN_FLAG = "REFERENCE_PRICE_UNCERTAIN"
+CORPORATE_ACTION_SUSPECTED_FLAG = "CORPORATE_ACTION_SUSPECTED"
 
 
-def unavailable_outcome(flag: str = "PRICE_UNAVAILABLE") -> OutcomeLabels:
-    return OutcomeLabels(flags=[flag])
+def unavailable_outcome(flag: str = PRICE_UNAVAILABLE_FLAG) -> OutcomeLabels:
+    flags = [PRICE_UNAVAILABLE_FLAG]
+    if flag != PRICE_UNAVAILABLE_FLAG:
+        flags.append(flag)
+    return OutcomeLabels(flags=flags)
 
 
 def build_outcome_labels(

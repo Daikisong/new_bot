@@ -14,11 +14,18 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from news_scalping_lab.contracts.models import OutcomeLabels
-from news_scalping_lab.outcomes.labels import build_outcome_labels, unavailable_outcome
+from news_scalping_lab.outcomes.labels import (
+    CORPORATE_ACTION_SUSPECTED_FLAG,
+    NEW_LISTING_OR_NO_PREVIOUS_CLOSE_FLAG,
+    REFERENCE_PRICE_UNCERTAIN_FLAG,
+    build_outcome_labels,
+    unavailable_outcome,
+)
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.utils import read_json
 
 PRIMARY_STOCK_WEB_REMOTE_URL = "https://github.com/Songdaiki/stock-web.git"
+LISTED_SHARES_CHANGE_REVIEW_THRESHOLD_PCT = 5.0
 
 
 class GitRunner(Protocol):
@@ -135,8 +142,14 @@ class StockWebPriceSource:
         snapshot = next((record for record in all_records if record.trade_date == trade_date), None)
         previous_candidates = [record for record in all_records if record.trade_date < trade_date]
         previous = previous_candidates[-1] if previous_candidates else None
-        if snapshot is None or previous is None or previous.close in (None, 0):
+        if snapshot is None:
             return unavailable_outcome()
+        if previous is None:
+            return unavailable_outcome(NEW_LISTING_OR_NO_PREVIOUS_CLOSE_FLAG)
+        if previous.close is None or previous.close <= 0:
+            return unavailable_outcome(REFERENCE_PRICE_UNCERTAIN_FLAG)
+        if _has_suspicious_listed_shares_change(previous, snapshot):
+            return unavailable_outcome(CORPORATE_ACTION_SUSPECTED_FLAG)
         return build_outcome_labels(
             previous_close=previous.close,
             open_price=snapshot.open,
@@ -153,7 +166,7 @@ class StockWebPriceSource:
         universe: dict[str, OutcomeLabels] = {}
         for ticker in self._known_tickers():
             outcome = self.get_outcome(ticker, trade_date=trade_date)
-            if outcome.flags == ["PRICE_UNAVAILABLE"]:
+            if "PRICE_UNAVAILABLE" in outcome.flags:
                 continue
             universe[ticker] = outcome
         return universe
@@ -373,6 +386,15 @@ def _first_value(row: dict[str, str], aliases: list[str]) -> str | None:
         if value not in (None, ""):
             return value
     return None
+
+
+def _has_suspicious_listed_shares_change(previous: PriceRecord, snapshot: PriceRecord) -> bool:
+    if previous.listed_shares is None or snapshot.listed_shares is None:
+        return False
+    if previous.listed_shares <= 0:
+        return False
+    change_pct = abs(snapshot.listed_shares - previous.listed_shares) / previous.listed_shares * 100
+    return change_pct >= LISTED_SHARES_CHANGE_REVIEW_THRESHOLD_PCT
 
 
 def _normalize_ticker(ticker: str) -> str | None:

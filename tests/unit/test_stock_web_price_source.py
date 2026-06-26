@@ -6,6 +6,12 @@ from pathlib import Path
 import pytest
 
 from news_scalping_lab.config import Settings
+from news_scalping_lab.outcomes.labels import (
+    CORPORATE_ACTION_SUSPECTED_FLAG,
+    NEW_LISTING_OR_NO_PREVIOUS_CLOSE_FLAG,
+    PRICE_UNAVAILABLE_FLAG,
+    REFERENCE_PRICE_UNCERTAIN_FLAG,
+)
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.prices.mock import MockPriceSource
 from news_scalping_lab.prices.stock_web import StockWebPriceSource, ensure_stock_web_cache
@@ -169,6 +175,99 @@ def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> Non
     assert universe["005930"].upper_limit_touched is True
     assert universe["123456"].upper_limit_touched is False
     assert universe["999999"].one_price_upper_limit is True
+
+
+def test_stock_web_flags_unlabelable_reference_price_days(tmp_path) -> None:
+    atlas = tmp_path / "atlas"
+    shard_root = atlas / "ohlcv_tradable_by_symbol_year"
+    (atlas / "symbol_profiles" / "333").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "444").mkdir(parents=True)
+    (atlas / "symbol_profiles" / "555").mkdir(parents=True)
+    for ticker in ("333333", "444444", "555555"):
+        (shard_root / ticker[:3] / ticker).mkdir(parents=True)
+        (atlas / "symbol_profiles" / ticker[:3] / f"{ticker}.json").write_text(
+            f'{{"code":"{ticker}","available_years":[2030]}}',
+            encoding="utf-8",
+        )
+    (atlas / "manifest.json").write_text(
+        """
+{
+  "source_name": "stock-web-reference-flags-test",
+  "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (atlas / "schema.json").write_text(
+        """
+{
+  "tradable_shard_columns": {
+    "d": "date",
+    "o": "open",
+    "h": "high",
+    "l": "low",
+    "c": "close",
+    "s": "stocks"
+  }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (shard_root / "333" / "333333" / "2030.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c,s",
+                "2030-01-10,130,130,130,130,10000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (shard_root / "444" / "444444" / "2030.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c,s",
+                "2030-01-08,0,0,0,0,10000",
+                "2030-01-10,130,130,130,130,10000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (shard_root / "555" / "555555" / "2030.csv").write_text(
+        "\n".join(
+            [
+                "d,o,h,l,c,s",
+                "2030-01-08,100,100,100,100,10000",
+                "2030-01-10,130,130,130,130,11000",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    source = StockWebPriceSource(tmp_path)
+    new_listing = source.get_outcome("333333", trade_date=date(2030, 1, 10))
+    reference_uncertain = source.get_outcome("444444", trade_date=date(2030, 1, 10))
+    corporate_action = source.get_outcome("555555", trade_date=date(2030, 1, 10))
+    universe = source.get_outcome_universe(trade_date=date(2030, 1, 10))
+
+    assert new_listing.flags == [
+        PRICE_UNAVAILABLE_FLAG,
+        NEW_LISTING_OR_NO_PREVIOUS_CLOSE_FLAG,
+    ]
+    assert reference_uncertain.flags == [
+        PRICE_UNAVAILABLE_FLAG,
+        REFERENCE_PRICE_UNCERTAIN_FLAG,
+    ]
+    assert corporate_action.flags == [
+        PRICE_UNAVAILABLE_FLAG,
+        CORPORATE_ACTION_SUSPECTED_FLAG,
+    ]
+    assert new_listing.upper_limit_touched is None
+    assert reference_uncertain.upper_limit_touched is None
+    assert corporate_action.upper_limit_touched is None
+    assert universe == {}
 
 
 def test_stock_web_uses_schema_column_aliases_when_csv_headers_are_not_short_codes(
