@@ -35,6 +35,7 @@ from news_scalping_lab.contracts.models import (
     RelationClass,
     ResearchEpisode,
 )
+from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.semantic import (
     SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS,
@@ -1018,6 +1019,156 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
         "CL-validated-single-support",
     ]
     assert audit["validated_single_support_claims"] == ["CL-validated-single-support"]
+
+
+def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Compiled claim audit note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-SUPPORT", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    compiled_claims = [
+        CompiledBrainClaim(
+            claim_id="CC-no-record-support",
+            category="world_model",
+            statement="Compiled claims need record-level support.",
+            mechanism="compiled claim audit",
+            scope="audit fixture",
+            supporting_record_ids=[],
+            supporting_episode_ids=[episode.episode_id],
+            available_from=episode.available_from,
+        ),
+        CompiledBrainClaim(
+            claim_id="CC-unknown-records",
+            category="world_model",
+            statement="Compiled claim references must close.",
+            mechanism="compiled claim audit",
+            scope="audit fixture",
+            supporting_record_ids=["BRAIN-MISSING"],
+            contradicting_record_ids=["BRAIN-MISSING-CONTRA"],
+            supporting_episode_ids=["EP-unknown"],
+            contradicting_episode_ids=["EP-unknown-contra"],
+            available_from=episode.available_from,
+        ),
+        CompiledBrainClaim(
+            claim_id="CC-validated-single",
+            category="world_model",
+            statement="Validated compiled claim needs more than one-sided support.",
+            mechanism="compiled claim audit",
+            scope="audit fixture",
+            supporting_record_ids=["BRAIN-SUPPORT"],
+            supporting_episode_ids=[episode.episode_id],
+            status="validated",
+            available_from=episode.available_from,
+        ),
+    ]
+    (tmp_path / "brain" / "current" / "compiled_claims.jsonl").write_text(
+        "".join(claim.model_dump_json() + "\n" for claim in compiled_claims),
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "brain" / "current" / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "source_record_count": 2,
+            "record_shards": [
+                {
+                    "record_count": 2,
+                    "record_ids": ["BRAIN-SUPPORT", "BRAIN-SHARD-MISSING"],
+                }
+            ],
+            "categories": [
+                {
+                    "category": "world_model",
+                    "source_record_count": 2,
+                    "source_record_ids": ["BRAIN-SUPPORT"],
+                },
+                {
+                    "category": "single_event",
+                    "source_record_count": 1,
+                    "source_record_ids": ["BRAIN-CATEGORY-MISSING"],
+                },
+            ],
+        },
+    )
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["compiled_claims_without_supporting_records"] == [
+        "CC-no-record-support"
+    ]
+    assert audit["compiled_claims_with_unknown_supporting_records"] == [
+        "CC-unknown-records: BRAIN-MISSING"
+    ]
+    assert audit["compiled_claims_with_unknown_contradicting_records"] == [
+        "CC-unknown-records: BRAIN-MISSING-CONTRA"
+    ]
+    assert audit["compiled_claims_with_unknown_supporting_episodes"] == [
+        "CC-unknown-records: EP-unknown"
+    ]
+    assert audit["compiled_claims_with_unknown_contradicting_episodes"] == [
+        "CC-unknown-records: EP-unknown-contra"
+    ]
+    assert audit["validated_compiled_claims_without_contradictions"] == [
+        "CC-validated-single"
+    ]
+    assert audit["validated_compiled_claims_with_single_episode"] == [
+        "CC-validated-single"
+    ]
+    assert audit["llm_compile_unknown_record_ids"] == [
+        "BRAIN-CATEGORY-MISSING",
+        "BRAIN-SHARD-MISSING",
+    ]
+    assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
+    assert "llm compile manifest source_record_count does not match record store" in audit[
+        "llm_compile_findings"
+    ]
+
+
+def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordEnvelope:
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": record_id,
+        "record_type": "memory_claim",
+        "episode_id": episode_id,
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "compiled_claim_audit_fixture",
+        "training_eligible": False,
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type="memory_claim",
+        episode_id=episode_id,
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="compiled_claim_audit_fixture",
+        evidence_phase="AUDIT",
+        training_eligible=False,
+        eligibility_reason="compiled claim audit fixture",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-compiled-claim-audit"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
 
 
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(

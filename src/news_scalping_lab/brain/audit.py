@@ -15,6 +15,7 @@ from news_scalping_lab.brain.compiler import (
     expected_brain_version,
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
+from news_scalping_lab.records.models import CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import file_sha256, is_available_as_of, read_json, sha256_text
@@ -43,6 +44,8 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     record_audit = _audit_record_coverage(root)
     record_store_audit = audit_record_store(root, deep=deep)
     diversity_audit = _audit_brain_diversity(root)
+    llm_compile_audit = _audit_llm_compile_manifest(root)
+    compiled_claim_audit = _audit_compiled_claims(root, accepted_ids)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *claim_audit["claims_without_support"],
@@ -58,6 +61,8 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *record_audit["record_coverage_findings"],
         *record_store_audit["findings"],
         *diversity_audit["brain_diversity_findings"],
+        *llm_compile_audit["llm_compile_findings"],
+        *compiled_claim_audit["compiled_claim_findings"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
     return {
@@ -70,6 +75,8 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         **determinism_audit,
         **record_audit,
         **diversity_audit,
+        **llm_compile_audit,
+        **compiled_claim_audit,
         "record_store_audit": record_store_audit,
         "coverage_complete": coverage_complete,
         "passed": coverage_complete and not hard_findings,
@@ -150,6 +157,152 @@ def _category_record_type_distribution(
             counts[record_type] = counts.get(record_type, 0) + 1
         distribution[category_name] = dict(sorted(counts.items()))
     return distribution
+
+
+def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
+    manifest = _read_llm_compile_manifest(root)
+    findings: list[str] = []
+    unknown_record_ids: list[str] = []
+    category_count_mismatches: list[str] = []
+    shard_count_mismatches: list[str] = []
+    shard_record_ids: set[str] = set()
+    record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
+    if not manifest:
+        return {
+            "llm_compile_manifest_present": False,
+            "llm_compile_findings": findings,
+            "llm_compile_unknown_record_ids": unknown_record_ids,
+            "llm_compile_category_count_mismatches": category_count_mismatches,
+            "llm_compile_shard_count_mismatches": shard_count_mismatches,
+        }
+    source_count = _int_value(manifest.get("source_record_count"))
+    if source_count is None or source_count != len(record_ids):
+        findings.append("llm compile manifest source_record_count does not match record store")
+    for index, shard in enumerate(_dict_list(manifest.get("record_shards")), start=1):
+        ids = _string_list(shard.get("record_ids"))
+        shard_record_ids.update(ids)
+        if shard.get("record_count") != len(ids):
+            shard_count_mismatches.append(f"record_shards[{index}]")
+        unknown_record_ids.extend(record_id for record_id in ids if record_id not in record_ids)
+    if shard_count_mismatches:
+        findings.append("llm compile manifest shard record counts do not match record IDs")
+    if shard_record_ids != record_ids:
+        findings.append("llm compile manifest shard record IDs do not match record store")
+    for category in _dict_list(manifest.get("categories")):
+        category_name = _string_value(category.get("category")) or "UNKNOWN_CATEGORY"
+        ids = _string_list(category.get("source_record_ids"))
+        if category.get("source_record_count") != len(ids):
+            category_count_mismatches.append(category_name)
+        unknown_record_ids.extend(record_id for record_id in ids if record_id not in record_ids)
+    if category_count_mismatches:
+        findings.append("llm compile manifest category source counts do not match record IDs")
+    unknown_record_ids = sorted(set(unknown_record_ids))
+    if unknown_record_ids:
+        findings.append("llm compile manifest references unknown record IDs")
+    return {
+        "llm_compile_manifest_present": True,
+        "llm_compile_findings": findings,
+        "llm_compile_unknown_record_ids": unknown_record_ids,
+        "llm_compile_category_count_mismatches": sorted(category_count_mismatches),
+        "llm_compile_shard_count_mismatches": sorted(shard_count_mismatches),
+    }
+
+
+def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]:
+    path = root / "brain" / "current" / "compiled_claims.jsonl"
+    invalid_lines: list[str] = []
+    without_supporting_records: list[str] = []
+    unknown_supporting_records: list[str] = []
+    unknown_contradicting_records: list[str] = []
+    unknown_supporting_episodes: list[str] = []
+    unknown_contradicting_episodes: list[str] = []
+    validated_without_contradictions: list[str] = []
+    validated_single_episode: list[str] = []
+    findings: list[str] = []
+    if not path.exists():
+        return {
+            "compiled_claim_file_present": False,
+            "compiled_claim_findings": findings,
+            "invalid_compiled_claim_lines": invalid_lines,
+            "compiled_claims_without_supporting_records": without_supporting_records,
+            "compiled_claims_with_unknown_supporting_records": unknown_supporting_records,
+            "compiled_claims_with_unknown_contradicting_records": unknown_contradicting_records,
+            "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
+            "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
+            "validated_compiled_claims_without_contradictions": (
+                validated_without_contradictions
+            ),
+            "validated_compiled_claims_with_single_episode": validated_single_episode,
+        }
+    record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+            claim = CompiledBrainClaim.model_validate(raw)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            invalid_lines.append(f"compiled_claims.jsonl:{line_number}: {exc}")
+            continue
+        if not claim.supporting_record_ids:
+            without_supporting_records.append(claim.claim_id)
+        unknown_supporting = sorted(set(claim.supporting_record_ids) - record_ids)
+        if unknown_supporting:
+            unknown_supporting_records.append(
+                f"{claim.claim_id}: {', '.join(unknown_supporting)}"
+            )
+        unknown_contradicting = sorted(set(claim.contradicting_record_ids) - record_ids)
+        if unknown_contradicting:
+            unknown_contradicting_records.append(
+                f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
+            )
+        unknown_support_episodes = sorted(set(claim.supporting_episode_ids) - accepted_ids)
+        if unknown_support_episodes:
+            unknown_supporting_episodes.append(
+                f"{claim.claim_id}: {', '.join(unknown_support_episodes)}"
+            )
+        unknown_contradiction_episodes = sorted(
+            set(claim.contradicting_episode_ids) - accepted_ids
+        )
+        if unknown_contradiction_episodes:
+            unknown_contradicting_episodes.append(
+                f"{claim.claim_id}: {', '.join(unknown_contradiction_episodes)}"
+            )
+        if claim.status == "validated":
+            if not claim.contradicting_record_ids and not claim.contradicting_episode_ids:
+                validated_without_contradictions.append(claim.claim_id)
+            if len(set(claim.supporting_episode_ids)) <= 1:
+                validated_single_episode.append(claim.claim_id)
+    if invalid_lines:
+        findings.append("compiled claim lines are invalid")
+    if without_supporting_records:
+        findings.append("compiled claims are missing supporting_record_ids")
+    if unknown_supporting_records:
+        findings.append("compiled claims reference unknown supporting record IDs")
+    if unknown_contradicting_records:
+        findings.append("compiled claims reference unknown contradicting record IDs")
+    if unknown_supporting_episodes:
+        findings.append("compiled claims reference unknown supporting episode IDs")
+    if unknown_contradicting_episodes:
+        findings.append("compiled claims reference unknown contradicting episode IDs")
+    if validated_without_contradictions:
+        findings.append("validated compiled claims are missing contradiction evidence")
+    if validated_single_episode:
+        findings.append("validated compiled claims rely on one or zero supporting episodes")
+    return {
+        "compiled_claim_file_present": True,
+        "compiled_claim_findings": findings,
+        "invalid_compiled_claim_lines": invalid_lines,
+        "compiled_claims_without_supporting_records": without_supporting_records,
+        "compiled_claims_with_unknown_supporting_records": unknown_supporting_records,
+        "compiled_claims_with_unknown_contradicting_records": unknown_contradicting_records,
+        "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
+        "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
+        "validated_compiled_claims_without_contradictions": (
+            validated_without_contradictions
+        ),
+        "validated_compiled_claims_with_single_episode": validated_single_episode,
+    }
 
 
 def _duplicate_hash_groups(hashes: dict[str, str]) -> list[list[str]]:
@@ -411,8 +564,18 @@ def _string_list(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _string_value(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _int_value(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _string_dict(value: object) -> dict[str, str]:
