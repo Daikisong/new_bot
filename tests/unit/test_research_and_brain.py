@@ -417,6 +417,48 @@ def test_cli_research_import_reports_source_path_and_rejects_invalid_paths(
     assert "research import path is not a file" in not_file.output
 
 
+def test_cli_research_validate_accept_reject_report_missing_episode(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "data" / "inbox" / "research" / "review.json"
+    source.write_text(
+        _batch_episode("EP-cli-review", "Review command lesson.").model_dump_json(),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    imported = RUNNER.invoke(app, ["research", "import", str(source), "--mode", "strict"])
+    validated = RUNNER.invoke(app, ["research", "validate", "EP-cli-review"])
+    accepted = RUNNER.invoke(app, ["research", "accept", "EP-cli-review"])
+    rejected = RUNNER.invoke(app, ["research", "reject", "EP-cli-review"])
+
+    assert imported.exit_code == 0, imported.output
+    assert validated.exit_code == 0, validated.output
+    assert json.loads(validated.output) == {
+        "episode_id": "EP-cli-review",
+        "schema_version": "nslab.research_episode.v1",
+        "valid": True,
+    }
+    assert accepted.exit_code == 0, accepted.output
+    assert json.loads(accepted.output) == {
+        "accepted": "EP-cli-review",
+        "path": "research/accepted/EP-cli-review.json",
+    }
+    assert rejected.exit_code == 0, rejected.output
+    assert json.loads(rejected.output) == {
+        "path": "research/rejected/EP-cli-review.json",
+        "rejected": "EP-cli-review",
+    }
+
+    for command in ("validate", "accept", "reject"):
+        missing = RUNNER.invoke(app, ["research", command, "EP-missing"])
+        assert missing.exit_code == 1
+        assert "episode not found: EP-missing" in missing.output
+
+
 def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

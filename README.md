@@ -63,6 +63,8 @@ nslab brain audit
 
 `research import` reports the imported episode ID, trade date, mode, and source
 path, and exits non-zero for missing or non-file input paths.
+`research validate`, `research accept`, and `research reject` exit non-zero for
+unknown episode IDs; accept/reject outputs use project-relative paths.
 
 Batch flow:
 

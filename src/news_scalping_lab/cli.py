@@ -59,6 +59,7 @@ from news_scalping_lab.utils import (
     file_sha256,
     parse_datetime,
     read_json,
+    relative_to_root,
     sha256_text,
 )
 from news_scalping_lab.warehouse import WarehouseStore
@@ -283,7 +284,11 @@ def research_import_batch(
 @research_app.command("validate")
 def research_validate(episode_id: str) -> None:
     settings = load_settings()
-    episode = ResearchStore(settings.project_root).get_episode(episode_id)
+    try:
+        episode = ResearchStore(settings.project_root).get_episode(episode_id)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     _echo(
         {"valid": True, "episode_id": episode.episode_id, "schema_version": episode.schema_version}
     )
@@ -292,15 +297,23 @@ def research_validate(episode_id: str) -> None:
 @research_app.command("accept")
 def research_accept(episode_id: str) -> None:
     settings = load_settings()
-    path = ResearchStore(settings.project_root).accept(episode_id)
-    _echo({"accepted": episode_id, "path": path.as_posix()})
+    try:
+        path = ResearchStore(settings.project_root).accept(episode_id)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo({"accepted": episode_id, "path": relative_to_root(path, settings.project_root)})
 
 
 @research_app.command("reject")
 def research_reject(episode_id: str) -> None:
     settings = load_settings()
-    path = ResearchStore(settings.project_root).reject(episode_id)
-    _echo({"rejected": episode_id, "path": path.as_posix()})
+    try:
+        path = ResearchStore(settings.project_root).reject(episode_id)
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _echo({"rejected": episode_id, "path": relative_to_root(path, settings.project_root)})
 
 
 @brain_app.command("rebuild")
