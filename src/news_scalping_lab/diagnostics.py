@@ -17,7 +17,7 @@ from news_scalping_lab.research_import.versioned_bundle import inspect_versioned
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import relative_to_root
+from news_scalping_lab.utils import file_sha256, relative_to_root
 
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
@@ -67,6 +67,15 @@ def production_readiness_report(
         findings.append("real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending")
     elif real_bundle_smoke["status"] != "passed":
         findings.append("real_bundle: v11 ACCEPT_FULL smoke failed")
+    real_bundle_import = _real_bundle_import_status(settings, real_bundle_smoke)
+    if (
+        real_bundle_smoke["status"] == "passed"
+        and real_bundle_import["passed"] is not True
+    ):
+        findings.extend(
+            f"real_bundle_import: {finding}"
+            for finding in real_bundle_import["findings"]
+        )
     if settings.llm_provider.strip().lower() == "mock":
         findings.append("llm: mock provider cannot compile production brain")
     if settings.llm.provider.strip().lower() == "mock":
@@ -119,6 +128,7 @@ def production_readiness_report(
         "finding_count": len(findings),
         "findings": findings,
         "real_bundle_smoke": real_bundle_smoke,
+        "real_bundle_import": real_bundle_import,
         "llm_full_brain": llm_full_brain,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
@@ -449,6 +459,135 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
     }
 
 
+def _real_bundle_import_status(
+    settings: Settings,
+    real_bundle_smoke: dict[str, Any],
+) -> dict[str, Any]:
+    selected = real_bundle_smoke.get("selected")
+    selected = selected if isinstance(selected, dict) else None
+    inspection = selected.get("inspection") if selected is not None else None
+    inspection = inspection if isinstance(inspection, dict) else None
+    episode_id = inspection.get("episode_id") if inspection is not None else None
+    raw_bundle_sha256 = (
+        inspection.get("raw_bundle_sha256") if inspection is not None else None
+    )
+    expected_record_count = _int_from_mapping(inspection, "normalized_record_count")
+    expected_training_count = _int_from_mapping(
+        inspection,
+        "training_eligible_record_count",
+    )
+    expected_record_counts_by_type = (
+        inspection.get("record_counts_by_type") if inspection is not None else None
+    )
+    base = {
+        "schema_version": "nslab.real_bundle_import_status.v1",
+        "applicable": real_bundle_smoke.get("status") == "passed",
+        "selected_path": selected.get("path") if selected is not None else None,
+        "episode_id": episode_id if isinstance(episode_id, str) else None,
+        "raw_bundle_sha256": raw_bundle_sha256
+        if isinstance(raw_bundle_sha256, str)
+        else None,
+        "expected_record_count": expected_record_count,
+        "expected_training_eligible_record_count": expected_training_count,
+        "expected_record_counts_by_type": expected_record_counts_by_type
+        if isinstance(expected_record_counts_by_type, dict)
+        else None,
+    }
+    if real_bundle_smoke.get("status") != "passed":
+        return {
+            **base,
+            "passed": False,
+            "status": "not_applicable",
+            "finding_count": 0,
+            "findings": [],
+        }
+
+    findings: list[str] = []
+    if not isinstance(episode_id, str) or not episode_id:
+        findings.append("selected smoke bundle has no episode_id")
+        return {
+            **base,
+            "passed": False,
+            "status": "attention",
+            "finding_count": len(findings),
+            "findings": findings,
+        }
+    if not isinstance(raw_bundle_sha256, str) or not raw_bundle_sha256:
+        findings.append("selected smoke bundle has no raw_bundle_sha256")
+
+    episode_dir = settings.project_root / "research" / "episodes" / episode_id
+    envelope_path = episode_dir / "bundle_envelope.json"
+    original_bundle_path = episode_dir / "original_bundle.md"
+    record_manifest_path = (
+        settings.project_root / "memory" / "record_manifests" / f"{episode_id}.json"
+    )
+    envelope = _read_optional_json(envelope_path)
+    record_manifest = _read_optional_json(record_manifest_path)
+    if envelope is None:
+        findings.append("selected real bundle has not been imported into record store")
+    else:
+        if envelope.get("bundle_schema_version") != "nslab.research_bundle.v11":
+            findings.append("imported envelope is not v11")
+        if envelope.get("bundle_status") != "ACCEPT_FULL":
+            findings.append("imported envelope is not ACCEPT_FULL")
+        if envelope.get("blind_valid") is not True:
+            findings.append("imported envelope is not blind_valid")
+        if isinstance(raw_bundle_sha256, str) and (
+            envelope.get("raw_bundle_sha256") != raw_bundle_sha256
+        ):
+            findings.append("imported envelope raw bundle sha does not match real smoke")
+    if original_bundle_path.exists():
+        if isinstance(raw_bundle_sha256, str) and (
+            file_sha256(original_bundle_path) != raw_bundle_sha256
+        ):
+            findings.append("stored original bundle sha does not match real smoke")
+    else:
+        findings.append("stored original bundle is missing")
+    if record_manifest is None:
+        findings.append("record manifest for selected real bundle is missing")
+    else:
+        if record_manifest.get("accepted") is not True:
+            findings.append("record manifest for selected real bundle is not accepted")
+        if (
+            isinstance(expected_record_count, int)
+            and record_manifest.get("record_count") != expected_record_count
+        ):
+            findings.append("record manifest count does not match real smoke")
+        if (
+            isinstance(expected_training_count, int)
+            and record_manifest.get("training_eligible_record_count")
+            != expected_training_count
+        ):
+            findings.append(
+                "record manifest training eligible count does not match real smoke"
+            )
+        if isinstance(expected_record_counts_by_type, dict) and (
+            record_manifest.get("record_counts_by_type")
+            != expected_record_counts_by_type
+        ):
+            findings.append("record manifest type counts do not match real smoke")
+
+    return {
+        **base,
+        "envelope_path": relative_to_root(envelope_path, settings.project_root),
+        "envelope_exists": envelope is not None,
+        "original_bundle_path": relative_to_root(
+            original_bundle_path,
+            settings.project_root,
+        ),
+        "original_bundle_exists": original_bundle_path.exists(),
+        "record_manifest_path": relative_to_root(
+            record_manifest_path,
+            settings.project_root,
+        ),
+        "record_manifest_exists": record_manifest is not None,
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+    }
+
+
 def _llm_full_brain_status(
     settings: Settings,
     *,
@@ -658,6 +797,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
     return {
         "status": "passed" if smoke_passed else "failed",
         "v11_accept_full_smoke_passed": smoke_passed,
+        "raw_bundle_sha256": inspection.get("raw_bundle_sha256"),
         "bundle_version": bundle_version,
         "manifest_schema_version": inspection.get("manifest_schema_version"),
         "episode_schema_version": inspection.get("episode_schema_version"),

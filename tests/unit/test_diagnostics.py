@@ -18,7 +18,7 @@ from news_scalping_lab.diagnostics import (
 )
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, write_json
+from news_scalping_lab.utils import KST, file_sha256, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 
 RUNNER = CliRunner()
@@ -811,6 +811,102 @@ def test_real_bundle_smoke_prioritizes_failed_production_candidate(
     assert report["synthetic_valid_smoke_count"] == 1
 
 
+def test_production_readiness_rejects_real_smoke_without_import(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_smoke"]["status"] == "passed"
+    assert production["real_bundle_import"]["passed"] is False
+    assert production["real_bundle_import"]["envelope_exists"] is False
+    assert (
+        "real_bundle_import: selected real bundle has not been imported into record store"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_real_smoke_import_link(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_smoke"]["status"] == "passed"
+    assert production["real_bundle_import"]["passed"] is True
+    assert production["real_bundle_import"]["record_manifest_exists"] is True
+    assert not any(
+        finding.startswith("real_bundle_import:")
+        for finding in production["findings"]
+    )
+
+
 def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     report: dict[str, object] = {}
@@ -861,6 +957,7 @@ def test_doctor_strict_exits_nonzero_when_readiness_has_findings(
 def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
     return {
         "path": path.as_posix(),
+        "raw_bundle_sha256": file_sha256(path),
         "bundle_schema_version": "nslab.research_bundle.v11",
         "manifest_schema_version": "nslab.bundle_manifest.v11",
         "episode_schema_version": "nslab.research_episode.v11",

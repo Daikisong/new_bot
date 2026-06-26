@@ -397,6 +397,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     missing_source_refs = validation.get("missing_source_references")
     return {
         "path": path.as_posix(),
+        "raw_bundle_sha256": file_sha256(path),
         "bundle_schema_version": bundle_schema_version(parsed),
         "manifest_schema_version": _optional_string(_manifest(parsed).get("schema_version")),
         "episode_schema_version": _optional_string(_episode(parsed).get("schema_version")),
@@ -518,6 +519,7 @@ def import_versioned_bundle(
                 "status": "UNSUPPORTED_BUNDLE_VERSION",
                 "episode_id": episode_id,
                 "bundle_version": bundle_schema_version(parsed),
+                "raw_bundle_sha256": source_hash,
                 "dropped_record_count": 0,
                 "quarantined_record_count": 1,
                 "quarantine": quarantine.as_posix(),
@@ -567,6 +569,7 @@ def import_versioned_bundle(
         "adapter": adapter.name,
         "bundle_version": bundle_schema_version(parsed),
         "episode_id": _episode_id(parsed),
+        "raw_bundle_sha256": source_hash,
         "accepted": accepted,
         "acceptance_status": "accepted" if accepted else "staged",
         "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
@@ -625,6 +628,7 @@ def _quarantine_validation_failure(
             "adapter": adapter_name,
             "bundle_version": bundle_schema_version(parsed),
             "episode_id": episode_id,
+            "raw_bundle_sha256": source_hash,
             "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
             "normalized_record_count": len(records),
             "training_eligible_record_count": sum(
