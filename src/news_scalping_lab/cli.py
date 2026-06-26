@@ -190,7 +190,8 @@ def _full_check_steps() -> tuple[tuple[str, list[str]], ...]:
         ),
         ("training export-evals", [python, "-m", "news_scalping_lab.cli", "training", "export-evals"]),
         ("training audit", [python, "-m", "news_scalping_lab.cli", "training", "audit"]),
-        ("brain audit", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
+        ("memory audit deep", [python, "-m", "news_scalping_lab.cli", "memory", "audit", "--deep"]),
+        ("brain audit deep", [python, "-m", "news_scalping_lab.cli", "brain", "audit", "--deep"]),
     )
 
 
@@ -252,7 +253,14 @@ def _demo_steps(
         ),
         ("training export-evals", [python, "-m", "news_scalping_lab.cli", "training", "export-evals"]),
         ("training audit", [python, "-m", "news_scalping_lab.cli", "training", "audit"]),
-        ("brain audit after update", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
+        (
+            "memory audit deep after update",
+            [python, "-m", "news_scalping_lab.cli", "memory", "audit", "--deep"],
+        ),
+        (
+            "brain audit deep after update",
+            [python, "-m", "news_scalping_lab.cli", "brain", "audit", "--deep"],
+        ),
     )
 
 

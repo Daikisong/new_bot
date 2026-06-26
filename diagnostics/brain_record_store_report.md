@@ -11,26 +11,26 @@
 
 ## warehouse_counts
 
-- events: `0`
+- beneficiary_cases: `0`
+- brain_records: `4`
+- company_memory: `5`
+- daily_outcomes: `1`
+- direct_event_cases: `0`
+- error_cases: `0`
 - event_sources: `0`
-- research_episodes: `2`
 - event_ticker_edges: `0`
+- events: `0`
+- issuer_day_cases: `1`
+- leader_pairs: `1`
 - market_memory: `5`
 - mechanism_memory: `6`
-- company_memory: `5`
-- predictions: `1`
-- daily_outcomes: `1`
-- brain_records: `4`
-- issuer_day_cases: `1`
-- direct_event_cases: `0`
-- theme_formation_cases: `0`
-- beneficiary_cases: `0`
-- leader_pairs: `1`
-- error_cases: `0`
 - memory_claims: `2`
-- research_questions: `0`
-- record_provenance: `4`
+- predictions: `1`
 - record_coverage: `4`
+- record_provenance: `4`
+- research_episodes: `2`
+- research_questions: `0`
+- theme_formation_cases: `0`
 
 - dropped_record_count: `0`
 - quarantined_record_count: `0`

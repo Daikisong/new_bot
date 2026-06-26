@@ -357,6 +357,11 @@ def record_store_report_payload(
 ) -> dict[str, Any]:
     stats_value = audit_result.get("stats")
     stats = stats_value if isinstance(stats_value, dict) else {}
+    effective_warehouse_counts = (
+        warehouse_counts
+        if warehouse_counts is not None
+        else _existing_report_warehouse_counts(root)
+    )
     return {
         "schema_version": "nslab.brain_record_store_report.v1",
         "record_count": audit_result.get("record_count", 0),
@@ -365,7 +370,7 @@ def record_store_report_payload(
             0,
         ),
         "record_counts_by_type": stats.get("record_counts_by_type", {}),
-        "warehouse_counts": warehouse_counts or {},
+        "warehouse_counts": effective_warehouse_counts,
         "dropped_record_count": 0,
         "quarantined_record_count": quarantined_bundle_count(root),
         "audit_passed": audit_result.get("passed") is True,
@@ -378,6 +383,26 @@ def quarantined_bundle_count(root: Path) -> int:
     if not quarantine_dir.exists():
         return 0
     return sum(1 for path in quarantine_dir.iterdir() if path.is_dir())
+
+
+def _existing_report_warehouse_counts(root: Path) -> dict[str, int]:
+    report_path = root / "diagnostics" / "brain_record_store_report.json"
+    if not report_path.exists():
+        return {}
+    try:
+        payload = read_json(report_path)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    counts = payload.get("warehouse_counts")
+    if not isinstance(counts, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in counts.items()
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
 
 
 def _audit_deep_record_store(

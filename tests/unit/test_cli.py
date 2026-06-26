@@ -597,6 +597,12 @@ def test_memory_audit_cli_writes_diagnostic_report(
 ) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir(parents=True)
+    (diagnostics_dir / "brain_record_store_report.json").write_text(
+        json.dumps({"warehouse_counts": {"brain_records": 7}}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
 
     result = CliRunner().invoke(app, ["memory", "audit", "--deep"])
@@ -615,6 +621,7 @@ def test_memory_audit_cli_writes_diagnostic_report(
     assert report["record_store_audit"]["passed"] is True
     assert report["record_store_audit"]["deep"] is True
     assert report["record_count"] == 0
+    assert report["warehouse_counts"] == {"brain_records": 7}
     assert markdown_path.exists()
 
 
@@ -685,15 +692,22 @@ def test_full_check_cli_stops_on_first_failure(
 
 
 def test_full_check_steps_export_training_before_training_audit() -> None:
-    step_names = [name for name, command in cli_module._full_check_steps()]
+    steps = cli_module._full_check_steps()
+    step_names = [name for name, command in steps]
+    step_commands = dict(steps)
 
     assert "training export-sft" in step_names
     assert "training export-preference" in step_names
     assert "training export-evals" in step_names
     assert "training audit" in step_names
+    assert "memory audit deep" in step_names
+    assert "brain audit deep" in step_names
     assert step_names.index("training export-sft") < step_names.index("training audit")
     assert step_names.index("training export-preference") < step_names.index("training audit")
     assert step_names.index("training export-evals") < step_names.index("training audit")
+    assert step_names.index("memory audit deep") < step_names.index("brain audit deep")
+    assert step_commands["memory audit deep"][-2:] == ["audit", "--deep"]
+    assert step_commands["brain audit deep"][-2:] == ["audit", "--deep"]
 
 
 def test_demo_cli_runs_configured_steps(
@@ -747,15 +761,19 @@ def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
     )
     step_names = [name for name, command in steps]
 
-    assert step_names[-6:] == [
+    assert step_names[-7:] == [
         "warehouse rebuild after update",
         "training export-sft",
         "training export-preference",
         "training export-evals",
         "training audit",
-        "brain audit after update",
+        "memory audit deep after update",
+        "brain audit deep after update",
     ]
     assert step_names.index("brain update") < step_names.index("training export-sft")
+    assert step_names.index("memory audit deep after update") < step_names.index(
+        "brain audit deep after update"
+    )
 
 
 def test_demo_cli_stops_on_first_failure(
