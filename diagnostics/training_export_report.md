@@ -47,6 +47,10 @@
 
 - blind_safe_row_count: `0`
 - hindsight_row_count: `3`
+## source_phase_counts
+
+- POSTMORTEM: `3`
+
 ## counts_by_record_type
 
 - blind_leader_preference_pair: `1`

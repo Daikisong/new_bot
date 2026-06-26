@@ -370,6 +370,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert training_report["row_count"] == 9
     assert training_report["blind_safe_row_count"] == 4
     assert training_report["hindsight_row_count"] == 5
+    assert training_report["source_phase_counts"] == {"BLIND": 4, "POSTMORTEM": 5}
     assert training_report["exports"]["sft"]["row_count"] == 5
     assert training_report["exports"]["preference"]["row_count"] == 1
     assert training_report["exports"]["evals"]["row_count"] == 3
@@ -443,6 +444,7 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert training_report["unique_training_eligible_record_count"] == 2
     assert training_report["unique_exported_record_count"] == 2
     assert training_report["unique_skipped_record_count"] == 1
+    assert training_report["source_phase_counts"] == {"POSTMORTEM": 3}
     assert training_report["unique_exported_record_ids"] == [
         "BRAIN-ISSUER",
         "BRAIN-PAIR",

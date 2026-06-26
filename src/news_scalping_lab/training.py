@@ -177,6 +177,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "unique_skipped_record_ids": unique_skipped_record_ids,
             "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
             "hindsight_row_count": _sum_int(summaries, "hindsight_row_count"),
+            "source_phase_counts": _sum_counter(summaries, "source_phase_counts"),
             "counts_by_record_type": _max_counter(summaries, "counts_by_record_type"),
             "counts_by_training_target": _max_counter(
                 summaries,
@@ -421,6 +422,25 @@ def _max_counter(
         for item_key, item_value in value.items():
             if isinstance(item_key, str) and isinstance(item_value, int):
                 counter[item_key] = max(counter[item_key], item_value)
+    return dict(sorted(counter.items()))
+
+
+def _sum_counter(
+    summaries: dict[str, dict[str, Any]],
+    key: str,
+) -> dict[str, int]:
+    counter: Counter[str] = Counter()
+    for summary in summaries.values():
+        value = summary.get(key)
+        if not isinstance(value, dict):
+            continue
+        for item_key, item_value in value.items():
+            if (
+                isinstance(item_key, str)
+                and isinstance(item_value, int)
+                and not isinstance(item_value, bool)
+            ):
+                counter[item_key] += item_value
     return dict(sorted(counter.items()))
 
 

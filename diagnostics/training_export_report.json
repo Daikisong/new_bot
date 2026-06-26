@@ -141,6 +141,9 @@
   "schema_version": "nslab.training_export_diagnostics.v1",
   "skipped_record_count": 9,
   "source_episode_count": 3,
+  "source_phase_counts": {
+    "POSTMORTEM": 3
+  },
   "source_record_count": 4,
   "unique_exported_record_count": 2,
   "unique_exported_record_ids": [
