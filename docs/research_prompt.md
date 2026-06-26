@@ -3,7 +3,7 @@
 이번 실행은 실제 거래일 하루에 대한 독립 연구 episode 하나를 완성하는 작업이다.
 
 ```text
-execution_protocol_version = nslab.brain_grade_canonical_compiler.v10
+execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
 ```
 
 
@@ -24,7 +24,7 @@ leader pair의 BLIND 선택과 outcome target 분리
 사람용 보고서의 BLIND/POSTMORTEM 경계
 ```
 
-동시에 다음 재발 오류를 0건으로 만들기 위해 **canonical graph → deterministic renderer → executable validator** 구조를 추가한다.
+동시에 다음 재발 오류를 0건으로 만들기 위해 **canonical graph → deterministic renderer → executable validator → independent semantic auditor** 구조를 사용한다.
 
 ```text
 회사명 prefix·substring 오결속
@@ -34,6 +34,11 @@ leader pair의 BLIND 선택과 outcome target 분리
 수동으로 다시 쓴 표와 JSON의 불일치
 검증 boolean을 실제 계산 없이 true로 기록
 잘린 템플릿·범용 fallback 문구
+서로 다른 사건에 같은 사후 교정문을 복사
+원 FACT에 없는 산업·고객·공급망 메커니즘을 사후 교훈에 삽입
+같은 ticker가 이미 BLIND 후보에 있는데 다른 사건 누락을 issuer-level RANKING_MISS로 오분류
+retrospective theme 구성 종목을 cutoff 이전 관계 근거 없이 training eligible로 승격
+결과에서 함께 오른 종목이라는 이유만으로 수혜관계를 소급 생성
 ```
 
 사용자가 선택한 `news_YYYYMMDD.csv`는 원칙적으로 다음 구간의 뉴스를 포함한다.
@@ -776,6 +781,11 @@ cross-event·cross-issuer 누수
 BLIND report outcome 누수
 sealed theme hindsight 혼합
 leader pair target 방향
+사후 오류 교훈의 사건·사실 의미정합성
+generic correction의 cross-signature 재사용
+동일 ticker의 issuer/event 오류 scope 분류
+retrospective theme member별 cutoff provenance
+outcome-only theme relation의 training 승격
 placeholder·template token
 잘린 문장·fallback 문구
 manifest와 실제 count·hash 일치
@@ -858,6 +868,11 @@ prefix·substring issuer 오결속
 그룹·브랜드·장소·제품·일반명사 issuer 오인
 leader pair target 방향 오류
 sealed theme hindsight 혼합
+사후 교정문과 원 FACT의 의미 불일치
+서로 다른 사건에 generic correction 복사
+동일 ticker가 이미 후보인데 issuer-level 누락으로 오분류
+retrospective theme 종목별 cutoff 관계 provenance 누락
+outcome-only 종목 관계를 training eligible로 승격
 manifest와 실제 count·hash 불일치
 ```
 
@@ -878,6 +893,252 @@ manifest와 실제 count·hash 불일치
 ```
 
 정상 research_daily package가 존재하는 거래일에는 `ACCEPT_FULL`이 기대 상태다.
+
+## 0.22 사후 오류 교훈은 사건·사실 국소성을 강제한다
+
+사후 오류 레코드는 결과를 본 뒤 그럴듯한 일반론을 붙이는 자유 산문이 아니다.
+
+각 오류 레코드는 **그 오류가 실제로 발생한 봉인된 행·엔티티·사건·관측·screening·후보**와, 사후에 확인한 정확한 결과·출처만으로 구성하는 구조화된 반사실(counterfactual) 기록이다.
+
+다음 record_type에 이 계약을 적용한다.
+
+```text
+candidate_generation_error_case
+candidate_ranking_error_case
+event_thesis_selection_error_case
+row_disposition_error_case
+entity_resolution_error_case
+counterexample
+mechanism_memory
+memory_claim
+```
+
+각 오류 레코드는 반드시 다음을 가진다.
+
+```text
+error_subject_scope = ROW | ENTITY | EVENT | ISSUER | THEME | LEADER
+sealed_row_ids
+sealed_entity_ids
+sealed_event_ids
+sealed_observation_ids
+sealed_screening_ids
+sealed_candidate_ids
+semantic_basis_fact_ids
+semantic_basis_inference_ids
+postmortem_fact_ids
+semantic_basis_source_ids
+original_blind_state
+verified_outcome_state
+error_signature
+correction_principle_clauses
+counterfactual_action
+same_ticker_present_in_blind_pool
+same_ticker_present_in_final_watchlist
+semantic_audit
+```
+
+`correction_principle_clauses`의 각 항목은 다음 구조를 가진다.
+
+```json
+{
+  "clause_id": "CLAUSE-...",
+  "text": "",
+  "support_fact_ids": [],
+  "support_inference_ids": [],
+  "support_source_ids": [],
+  "support_phase": "SEALED_BLIND | POSTMORTEM_VERIFIED",
+  "same_event_or_explicit_comparison": true,
+  "entailment_verdict": "ENTAILED | SUPPORTED | UNSUPPORTED"
+}
+```
+
+다음은 금지한다.
+
+```text
+1. 같은 문장을 여러 오류 레코드에 기계적으로 복사
+2. 원 FACT에 없는 AI·공급망·고객점유율·수출·병목·임상·정책 메커니즘 삽입
+3. 투자주의·종가급변·상한가잔량 공지를 영업·AI·공급망 촉매로 재해석
+4. CB·CPS·유상증자·최대주주 변경을 공급계약·산업 수혜 교훈으로 재해석
+5. 원인을 확인하지 못한 가격 상승에 임의의 산업 설명 부여
+6. 다른 event·다른 issuer의 FACT를 명시적 비교 레코드 없이 가져오기
+7. 결과만 보고 “이런 특징을 봤어야 했다”는 미봉인 feature 생성
+8. 특정 티커를 다음부터 포함하라는 종목 암기형 교훈
+```
+
+오류 유형은 다음 규칙으로 결정한다.
+
+```text
+ROW_CLASSIFICATION_MISS
+= 입력 행이 가격 관련 사건인데 BLIND row disposition에서 누락·오분류
+
+ENTITY_MISSING / ENTITY_FALSE_POSITIVE / TICKER_BINDING_ERROR
+= 엔티티·상장사 동일성 단계의 오류
+
+CANDIDATE_SCREENING_MISS
+= observation과 screening은 존재하지만 사건 FACT를 잘못 읽어 INCLUDE/WATCH 후보로 올리지 못함
+
+CANDIDATE_GENERATION_MISS
+= screening이 후보 가능성을 인정했지만 concrete candidate를 만들지 못함
+
+RANKING_MISS
+= 해당 concrete candidate/ticker가 BLIND 후보 풀에 존재했으나 최종 순위에서 누락되거나 지나치게 낮았음
+
+EVENT_THESIS_SELECTION_MISS
+= 같은 ticker가 이미 최종 watchlist 또는 concrete pool에 있었지만, 실제 반응과 더 직접적으로 연결된 다른 event/thesis를 대표 논지로 선택하지 못함
+
+EVENT_ATTRIBUTION_MISS
+= 같은 issuer-day의 복수 사건 중 어느 사건의 귀속이 더 중요한지 잘못 선택하거나 불명확하게 처리함
+
+MARKET_STATE_OR_CONTINUATION_CASE
+= 투자주의·종가급변·상한가잔량·회전율·전일 상한가 같은 시장상태 신호
+
+CAPITAL_ACTION_RESPONSE_CASE
+= 유상증자·CB·CPS·감자·최대주주 변경·자사주·주식병합 등 자본행위 반응
+
+NEWSLESS_OR_UNEXPLAINED
+= cutoff 이전 검증 가능한 issuer·theme 촉매를 찾지 못함
+```
+
+**동일 ticker가 다른 event를 통해 final watchlist에 이미 존재하면 issuer-level `RANKING_MISS` 또는 “종목 누락”으로 기록하지 않는다.**
+
+이 경우 반드시 `EVENT_THESIS_SELECTION_MISS` 또는 `EVENT_ATTRIBUTION_MISS`로 기록하고, 다음을 함께 보존한다.
+
+```text
+existing_watchlist_candidate_ids
+selected_blind_event_ids
+missed_more_relevant_event_ids
+selected_thesis
+alternative_thesis
+outcome은 동일 issuer-day 공유 label이라는 사실
+```
+
+### 독립 사후 의미 감사
+
+Brain Delta를 확정하기 전에 오류 레코드만 별도 입력으로 하는 독립 의미 감사 패스를 수행한다.
+
+감사 입력은 다음으로 제한한다.
+
+```text
+해당 오류 레코드
+해당 레코드가 참조한 봉인 FACT·Inference 원문
+해당 레코드가 참조한 사후 FACT·출처
+같은 ticker-day의 BLIND candidate 존재 여부
+오류 taxonomy 정의
+```
+
+다른 사건의 설명문·다른 오류 레코드의 교정문은 감사 입력에 넣지 않는다.
+
+감사 출력은 각 레코드마다 다음을 가진다.
+
+```text
+semantic_audit_verdict = PASS | FAIL
+unsupported_concepts
+cross_event_concepts
+generic_template_suspected
+error_scope_correct
+error_type_correct
+same_ticker_scope_correct
+clause_support_complete
+failure_reasons
+```
+
+`training_eligible=true`가 되려면 `semantic_audit_verdict == PASS`여야 한다.
+
+정규화한 `correction_principle`이 둘 이상의 서로 다른 `error_signature`에 반복되면, 같은 메커니즘과 동일한 fact predicate 구조임을 독립 감사가 입증하지 않는 한 전부 FAIL이다.
+
+## 0.23 retrospective theme은 종목별 cutoff 관계 provenance를 강제한다
+
+결과 뒤 여러 종목이 함께 올랐다는 사실은 **테마 발견의 단서**일 뿐, 각 종목이 해당 테마의 수혜주였다는 장전 관계 증거가 아니다.
+
+retrospective theme은 다음 두 층으로 분리한다.
+
+```text
+THEME-LEVEL HYPOTHESIS
+결과 breadth를 보고 발견한 잠정 섹터 설명
+기본 training_eligible = false
+retrospective_memory_eligible = true 가능
+
+MEMBER-LEVEL VERIFIED EDGE
+각 종목과 사건·섹터의 관계가 cutoff 이전 공개 근거로 개별 검증된 경우
+해당 edge만 beneficiary/theme-discovery 학습 가능
+```
+
+각 retrospective theme 구성 종목마다 반드시 `retrospective_theme_member_edge`를 생성한다.
+
+필수 필드:
+
+```text
+edge_id
+retrospective_theme_id
+ticker
+company_name
+relation_class = DIRECT | FUNDAMENTAL | MARKET_MEMORY | CONTINUATION | INFERRED_NEW
+relation_statement
+relation_mechanism
+source_ids
+fact_ids
+inference_ids
+source_published_at
+source_time_verified
+available_before_cutoff
+relation_known_at_cutoff
+edge_origin = CSV_INPUT | PRIOR_CLEAN_MEMORY | POSTMORTEM_CUTOFF_SOURCE | AFTER_CUTOFF_SOURCE | OUTCOME_ONLY_ASSOCIATION
+outcome_used_to_discover
+outcome_used_as_relation_evidence
+semantic_edge_audit_verdict
+training_eligible
+eligibility_reason
+```
+
+종목 edge가 학습 적격이 되려면 다음을 모두 만족해야 한다.
+
+```text
+source_ids 비어 있지 않음
+모든 source_id가 source ledger에 존재
+source_time_verified == true
+source_published_at <= cutoff_at
+available_before_cutoff == true
+relation_known_at_cutoff == true
+edge_origin이 AFTER_CUTOFF_SOURCE 또는 OUTCOME_ONLY_ASSOCIATION이 아님
+outcome_used_as_relation_evidence == false
+관계 문장이 source FACT 또는 prior clean memory에 의해 ENTAILED/SUPPORTED
+semantic_edge_audit_verdict == PASS
+```
+
+결과에서 같이 오른 종목을 묶었지만 위 조건을 만족하지 못하면:
+
+```text
+training_eligible = false
+eligibility_reason = OUTCOME_ONLY_OR_UNVERIFIED_THEME_MEMBER
+```
+
+으로 남긴다.
+
+retrospective theme 자체에는 다음을 기록한다.
+
+```text
+all_observed_member_tickers
+verified_cutoff_member_edge_ids
+ineligible_member_tickers
+member_edge_coverage_ratio
+training_scope = HYPOTHESIS_ONLY | VERIFIED_MEMBER_EDGES_ONLY
+forecast_hit = false
+```
+
+다음 규칙을 지킨다.
+
+```text
+1. retrospective theme 전체를 BLIND theme 적중으로 승격하지 않는다.
+2. member_edge_coverage_ratio < 1이어도 검증된 edge 개별 학습은 가능하다.
+3. 그러나 theme 전체 member population을 학습 표본으로 쓰려면 coverage ratio == 1이어야 한다.
+4. cutoff 이후 기사·D 장중 공시·사후 “상승 이유” 기사만 있는 종목은 해당 날짜 장전 수혜주 학습에 사용하지 않는다.
+5. broad sector 동반 상승만으로 FUNDAMENTAL 또는 MARKET_MEMORY edge를 만들지 않는다.
+6. `blind_fact_ids=[]`, `source_ids=[]`, `time_verified=false`인 member를 training eligible로 둘 수 없다.
+```
+
+관계 edge에도 독립 의미 감사 패스를 수행한다.
+
+감사 입력은 해당 종목·해당 관계 source만 포함하며, 결과 수익률과 다른 테마 종목의 이름은 관계 입증 자료로 사용하지 않는다.
 
 ────────────────────────────────────────
 1. 날짜·거래일·비거래일 라우팅
@@ -2486,7 +2747,9 @@ corporate_action_quarantine
 
 positive·negative·near-miss를 모두 보존한다.
 
-## 5.3 후보 생성·순위 오류를 분리한다
+## 5.3 후보 생성·순위·사건 논지 오류를 분리한다
+
+허용 오류 유형:
 
 ```text
 ROW_CLASSIFICATION_MISS
@@ -2497,7 +2760,52 @@ EVENT_CLUSTER_ERROR
 CANDIDATE_SCREENING_MISS
 CANDIDATE_GENERATION_MISS
 RANKING_MISS
+EVENT_THESIS_SELECTION_MISS
+EVENT_ATTRIBUTION_MISS
+MARKET_STATE_OR_CONTINUATION_CASE
+CAPITAL_ACTION_RESPONSE_CASE
+NEWSLESS_OR_UNEXPLAINED
 ```
+
+오류를 만들기 전에 ticker 기준과 event 기준을 모두 대조한다.
+
+```text
+1. 실제 강한 상승 ticker가 BLIND observation에 있었는가
+2. screening에 있었는가
+3. concrete candidate에 있었는가
+4. final watchlist에 같은 ticker가 어떤 event로라도 있었는가
+5. 실제 반응과 더 가까운 event가 별도로 있었는가
+6. 같은 issuer-day에 복수 event가 있었는가
+```
+
+판정 규칙:
+
+```text
+같은 ticker가 final watchlist에 없음 + concrete candidate에도 없음
+→ 단계에 따라 SCREENING_MISS 또는 GENERATION_MISS
+
+같은 concrete candidate가 있었으나 final watchlist에서 빠짐/과도하게 낮음
+→ RANKING_MISS
+
+같은 ticker가 final watchlist에 이미 있으나 다른 event를 대표 논지로 선택
+→ EVENT_THESIS_SELECTION_MISS
+
+복수 event 중 인과 귀속을 잘못 단정하거나 선택하지 못함
+→ EVENT_ATTRIBUTION_MISS
+
+투자주의·상한가잔량·종가급변·전일 급등이 핵심 sealed 사실
+→ MARKET_STATE_OR_CONTINUATION_CASE
+
+유상증자·CB·CPS·감자·자사주·최대주주 변경이 핵심 sealed 사실
+→ CAPITAL_ACTION_RESPONSE_CASE
+
+cutoff 이전 검증 가능한 원인을 찾지 못함
+→ NEWSLESS_OR_UNEXPLAINED
+```
+
+각 오류는 0.22의 사건·사실 국소성 계약을 통과해야 한다.
+
+서로 다른 사건에 같은 correction 문구를 복사하지 않는다.
 
 ## 5.4 실제 승자 전수 연구
 
@@ -2528,10 +2836,16 @@ NEWSLESS_OR_UNEXPLAINED
 BLIND entity 존재 여부
 candidate screening 존재 여부
 BLIND concrete candidate 여부
+BLIND final watchlist에 같은 ticker가 다른 event로 존재하는지
+같은 issuer-day의 event 수와 대표 thesis
 BLIND rank
 cutoff 이전 외부 관계 증거
 D 장중 신규 촉매
+시장상태 공지인지 영업·산업 촉매인지
+자본행위인지 운영·수주 사건인지
 ```
+
+동일 ticker가 이미 watchlist에 있었다면 종목 누락으로 기록하지 않고 event/thesis 선택 오류로 분리한다.
 
 ## 5.5 Theme Formation Case
 
@@ -2582,19 +2896,57 @@ sealed peer negative controls
 
 ```text
 record_type = retrospective_theme_discovery
-training_target = candidate_generation_or_theme_discovery
+training_target = theme_hypothesis_or_verified_member_edge_discovery
 forecast_hit = false
 ```
 
-다음 날부터 잠정 memory로 사용할 수 있으나 `supervised_theme_formation_case`의 BLIND 적중 label에 섞지 않는다.
+retrospective theme을 만들 때 결과 상승 종목 목록만 저장하고 끝내지 않는다.
 
-### 5.5.3 Theme hindsight 혼합 금지 게이트
+각 구성 종목에 0.23의 `retrospective_theme_member_edge`를 생성하고 다음을 분리한다.
+
+```text
+all_observed_members
+verified_cutoff_members
+unverified_members
+after_cutoff_members
+outcome_only_members
+```
+
+retrospective theme record 자체의 기본값:
+
+```text
+training_eligible = false
+training_scope = HYPOTHESIS_ONLY
+retrospective_memory_eligible = true 가능
+```
+
+개별 member edge만 cutoff provenance가 완전할 때 `training_eligible=true`가 될 수 있다.
+
+모든 observed member를 하나의 학습 population으로 쓰려면:
+
+```text
+member_edge_coverage_ratio == 1.0
+verified_cutoff_member_count == all_observed_member_count
+after_cutoff_member_count == 0
+outcome_only_member_count == 0
+```
+
+이어야 한다.
+
+### 5.5.3 Theme hindsight·member provenance 게이트
 
 ```text
 postseal_only_winner_used_to_upgrade_blind_theme_count == 0
 after_cutoff_member_used_in_blind_theme_label_count == 0
 input_missing_member_used_in_blind_theme_label_count == 0
 sealed_peer_universe_mutation_after_outcome_count == 0
+retrospective_theme_training_record_without_member_edges_count == 0
+retrospective_theme_member_edge_missing_source_count == 0
+retrospective_theme_member_edge_time_unverified_count == 0
+retrospective_theme_member_edge_after_cutoff_marked_eligible_count == 0
+retrospective_theme_outcome_only_member_marked_eligible_count == 0
+retrospective_theme_relation_not_entailed_count == 0
+retrospective_theme_full_population_coverage_error_count == 0
 ```
 
 ## 5.6 Beneficiary Discovery Case
@@ -2608,12 +2960,30 @@ BLIND_CANDIDATE_EDGE
 BLIND_ARCHETYPE_MATCH
 POSTMORTEM_DISCOVERED_CUTOFF_EDGE
 AFTER_CUTOFF_EDGE
+OUTCOME_ONLY_ASSOCIATION
 NO_VERIFIED_EDGE
+```
+
+각 beneficiary case에는 반드시 종목별 관계 edge가 있어야 한다.
+
+```text
+relation_statement
+relation_class
+source_ids
+fact_ids
+source_published_at
+source_time_verified
+available_before_cutoff
+relation_known_at_cutoff
+edge_origin
+semantic_edge_audit_verdict
 ```
 
 `POSTMORTEM_DISCOVERED_CUTOFF_EDGE`는 다음 날부터 수혜주 발굴 기억으로 사용할 수 있으나, 해당 날짜의 BLIND 적중으로 계산하지 않는다.
 
-`AFTER_CUTOFF_EDGE`는 장전 학습에 사용하지 않는다.
+`AFTER_CUTOFF_EDGE`, `OUTCOME_ONLY_ASSOCIATION`, `NO_VERIFIED_EDGE`는 장전 수혜주 학습에 사용하지 않는다.
+
+결과에서 같은 방향으로 올랐다는 사실은 관계 증거가 아니다.
 
 ## 5.7 Leader Pair를 엄격히 구분한다
 
@@ -2832,9 +3202,41 @@ blind_theme_hypothesis_exists == true
 ```text
 BLIND row·entity·screening 원본이 봉인돼 있음
 + 실제 winner 또는 강한 상승 outcome이 verified
-+ 오류 phase와 오류 유형이 명시됨
++ 오류 phase·error_subject_scope·오류 유형이 명시됨
++ semantic_basis_fact_ids 또는 명시적 postmortem_fact_ids가 존재
++ 모든 correction clause에 support fact/source가 존재
++ 독립 semantic_audit_verdict == PASS
++ generic_template_used == false
++ correction 원리에 원 FACT에 없는 산업 개념이 없음
 + 수정 원리가 특정 티커 암기가 아님
 ```
+
+## 6.10.1 candidate_ranking·event thesis error training eligibility
+
+```text
+BLIND candidate pool과 final watchlist가 봉인돼 있음
++ same_ticker_present_in_blind_pool와 same_ticker_present_in_final_watchlist를 계산
++ ticker가 이미 final watchlist에 있으면 issuer-level RANKING_MISS가 아님
++ EVENT_THESIS_SELECTION_MISS 또는 EVENT_ATTRIBUTION_MISS로 올바르게 분류
++ 선택된 event와 놓친 event의 fact/source가 모두 존재
++ 독립 semantic audit 통과
+```
+
+## 6.10.2 retrospective theme member edge training eligibility
+
+```text
+member별 edge_id 존재
++ source_ids·fact_ids 존재
++ source_time_verified == true
++ source_published_at <= cutoff_at
++ available_before_cutoff == true
++ relation_known_at_cutoff == true
++ edge_origin not in {AFTER_CUTOFF_SOURCE, OUTCOME_ONLY_ASSOCIATION}
++ outcome_used_as_relation_evidence == false
++ semantic_edge_audit_verdict == PASS
+```
+
+retrospective theme 전체 population 학습은 member edge coverage ratio가 1.0일 때만 가능하다.
 
 ## 6.11 entity_error_training_eligible
 
@@ -2849,6 +3251,9 @@ BLIND entity ledger와 post-seal resolution이 모두 존재
 ```text
 BLIND 패킷이 깨끗하게 봉인됨
 + postmortem evidence의 시간·출처가 검증됨
++ 오류 교훈이면 사건·사실 국소성 및 독립 semantic audit 통과
++ retrospective theme이면 theme-level hypothesis와 member-level edge를 분리
++ training eligible member edge는 cutoff provenance를 완전 충족
 + memory claim이 tentative로 저장됨
 + available_from이 다음 실제 거래일 이상
 ```
@@ -2883,6 +3288,11 @@ BLIND report outcome 누수 0
 watchlist rank 연속성 통과
 theme hindsight 분리 통과
 leader pair target 방향 통과
+사후 오류 교훈 semantic consistency 통과
+generic correction template cross-signature reuse 0
+동일 ticker의 issuer/event 오류 scope 오분류 0
+retrospective theme member별 cutoff provenance 통과
+outcome-only theme member training eligible 0
 잘린 문장·템플릿 0
 placeholder·미치환 변수 0
 accepted issuer false positive 0
@@ -2909,6 +3319,8 @@ blind_leader_preference_pair
 retrospective_population_pair
 candidate_generation_error_case
 candidate_ranking_error_case
+event_thesis_selection_error_case
+retrospective_theme_member_edge
 row_disposition_error_case
 entity_resolution_error_case
 memory_claim
@@ -3082,18 +3494,59 @@ provenance_source_ids
   "record_type": "candidate_generation_error_case",
   "record_id": "",
   "episode_id": "",
+  "error_subject_scope": "ROW | ENTITY | EVENT | ISSUER | THEME | LEADER",
   "row_ids": [],
-  "entity_id": "",
-  "observation_id": "",
-  "screening_id": "",
+  "sealed_entity_ids": [],
+  "sealed_event_ids": [],
+  "sealed_observation_ids": [],
+  "sealed_screening_ids": [],
+  "sealed_candidate_ids": [],
   "ticker": "",
+  "company_name": "",
   "blind_decision": "",
-  "blind_fact_ids": [],
-  "blind_inference_ids": [],
+  "same_ticker_present_in_blind_pool": false,
+  "same_ticker_present_in_final_watchlist": false,
+  "same_ticker_candidate_ids": [],
+  "semantic_basis_fact_ids": [],
+  "semantic_basis_inference_ids": [],
+  "postmortem_fact_ids": [],
+  "semantic_basis_source_ids": [],
   "actual_outcome": {},
-  "error_type": "ROW_CLASSIFICATION_MISS | ENTITY_MISSING | CANDIDATE_SCREENING_MISS | CANDIDATE_GENERATION_MISS",
+  "error_type": "ROW_CLASSIFICATION_MISS | ENTITY_MISSING | ENTITY_FALSE_POSITIVE | TICKER_BINDING_ERROR | EVENT_CLUSTER_ERROR | CANDIDATE_SCREENING_MISS | CANDIDATE_GENERATION_MISS | RANKING_MISS | EVENT_THESIS_SELECTION_MISS | EVENT_ATTRIBUTION_MISS | MARKET_STATE_OR_CONTINUATION_CASE | CAPITAL_ACTION_RESPONSE_CASE | NEWSLESS_OR_UNEXPLAINED",
+  "error_signature": {
+    "event_family": "",
+    "fact_predicate_types": [],
+    "modality": "",
+    "error_scope": "",
+    "training_target": ""
+  },
   "correction_principle": "",
-  "training_target": "candidate_generation",
+  "correction_principle_clauses": [
+    {
+      "clause_id": "",
+      "text": "",
+      "support_fact_ids": [],
+      "support_inference_ids": [],
+      "support_source_ids": [],
+      "support_phase": "SEALED_BLIND | POSTMORTEM_VERIFIED",
+      "same_event_or_explicit_comparison": true,
+      "entailment_verdict": "ENTAILED | SUPPORTED | UNSUPPORTED"
+    }
+  ],
+  "counterfactual_action": "",
+  "generic_template_used": false,
+  "semantic_audit": {
+    "verdict": "PASS | FAIL",
+    "unsupported_concepts": [],
+    "cross_event_concepts": [],
+    "generic_template_suspected": false,
+    "error_scope_correct": true,
+    "error_type_correct": true,
+    "same_ticker_scope_correct": true,
+    "clause_support_complete": true,
+    "failure_reasons": []
+  },
+  "training_target": "candidate_generation_or_event_thesis_selection",
   "evidence_phase": "POSTMORTEM_ERROR_ANALYSIS",
   "training_eligible": true,
   "eligibility_reason": "",
@@ -3102,8 +3555,40 @@ provenance_source_ids
 }
 ```
 
+## 7.6.1 candidate_ranking_error_case와 event_thesis_selection_error_case
 
-## 7.6.1 모든 감독학습 레코드의 의미 근거 계약
+같은 ticker가 어떤 형태로 BLIND 후보·watchlist에 존재했는지 먼저 판정한다.
+
+```json
+{
+  "record_type": "candidate_ranking_error_case | event_thesis_selection_error_case",
+  "record_id": "",
+  "episode_id": "",
+  "ticker": "",
+  "company_name": "",
+  "error_subject_scope": "ISSUER | EVENT",
+  "existing_blind_candidate_ids": [],
+  "existing_final_watchlist_candidate_ids": [],
+  "selected_blind_event_ids": [],
+  "missed_more_relevant_event_ids": [],
+  "selected_thesis": "",
+  "alternative_thesis": "",
+  "semantic_basis_fact_ids": [],
+  "postmortem_fact_ids": [],
+  "actual_outcome": {},
+  "correction_principle_clauses": [],
+  "semantic_audit": {},
+  "training_target": "ranking | event_thesis_selection",
+  "training_eligible": true,
+  "eligibility_reason": "",
+  "available_from": "",
+  "provenance_source_ids": []
+}
+```
+
+같은 ticker가 final watchlist에 이미 존재하면 `record_type=candidate_ranking_error_case`, `error_subject_scope=ISSUER`로 저장할 수 없다.
+
+## 7.6.2 모든 감독학습 레코드의 의미 근거 계약
 
 다음 필드는 금지한다.
 
@@ -3124,6 +3609,85 @@ cross_event_leak_verified = true
 ```
 
 `training_eligible=true`가 되려면 참조된 fact가 모두 `ENTAILED`, inference가 모두 `SUPPORTED` 또는 허용된 `WEAKLY_SUPPORTED`여야 한다.
+
+사후 오류 레코드는 추가로 다음을 만족해야 한다.
+
+```text
+모든 correction clause가 같은 사건 FACT 또는 명시적 비교 FACT를 참조
+원 FACT에 없는 산업·고객·공급망·정책 개념 0
+서로 다른 error_signature 사이 generic correction 재사용 0
+독립 semantic audit PASS
+동일 ticker 후보 존재 여부에 맞는 오류 scope
+```
+
+## 7.6.3 retrospective_theme_discovery와 member edge 계약
+
+```json
+{
+  "record_type": "retrospective_theme_discovery",
+  "record_id": "",
+  "episode_id": "",
+  "retrospective_theme_id": "",
+  "theme_name": "",
+  "discovery_basis": "FULL_MARKET_OUTCOME_BREADTH",
+  "forecast_hit": false,
+  "all_observed_member_tickers": [],
+  "verified_cutoff_member_edge_ids": [],
+  "ineligible_member_tickers": [],
+  "member_edge_coverage_ratio": 0.0,
+  "training_scope": "HYPOTHESIS_ONLY | VERIFIED_MEMBER_EDGES_ONLY | FULL_MEMBER_POPULATION",
+  "training_target": "retrospective_theme_hypothesis",
+  "training_eligible": false,
+  "retrospective_memory_eligible": true,
+  "eligibility_reason": "",
+  "available_from": "",
+  "provenance_source_ids": []
+}
+```
+
+각 member는 별도 edge로 저장한다.
+
+```json
+{
+  "record_type": "retrospective_theme_member_edge",
+  "record_id": "",
+  "episode_id": "",
+  "edge_id": "",
+  "retrospective_theme_id": "",
+  "ticker": "",
+  "company_name": "",
+  "relation_class": "DIRECT | FUNDAMENTAL | MARKET_MEMORY | CONTINUATION | INFERRED_NEW",
+  "relation_statement": "",
+  "relation_mechanism": [],
+  "source_ids": [],
+  "fact_ids": [],
+  "inference_ids": [],
+  "source_published_at": [],
+  "source_time_verified": true,
+  "available_before_cutoff": true,
+  "relation_known_at_cutoff": true,
+  "edge_origin": "CSV_INPUT | PRIOR_CLEAN_MEMORY | POSTMORTEM_CUTOFF_SOURCE | AFTER_CUTOFF_SOURCE | OUTCOME_ONLY_ASSOCIATION",
+  "outcome_used_to_discover": true,
+  "outcome_used_as_relation_evidence": false,
+  "semantic_edge_audit": {
+    "verdict": "PASS | FAIL",
+    "relation_entailed": true,
+    "source_scope_correct": true,
+    "time_scope_correct": true,
+    "outcome_leak": false,
+    "failure_reasons": []
+  },
+  "training_target": "beneficiary_or_theme_member_edge_discovery",
+  "training_eligible": true,
+  "eligibility_reason": "",
+  "available_from": "",
+  "provenance_source_ids": []
+}
+```
+
+`retrospective_theme_discovery`는 결과에서 발견한 가설 기억이며, member edge를 자동으로 대표하지 않는다.
+
+`FULL_MEMBER_POPULATION`은 모든 observed member의 edge가 cutoff-valid일 때만 허용한다.
 
 ## 7.7 memory claim
 
@@ -3156,10 +3720,17 @@ research_question
 
 ```text
 실제 BLIND ledger와 사후 결과를 모두 참조
-오류가 어느 phase에서 발생했는지 명시
+오류가 어느 phase·어느 scope에서 발생했는지 명시
+모든 교정 clause가 fact/source로 지지됨
+독립 semantic audit PASS
+원 사건과 무관한 산업 메커니즘 삽입 0
+서로 다른 semantic signature에 generic correction 복사 0
+동일 ticker의 다른 BLIND event 존재 여부에 맞는 오류 taxonomy
 수정 원리가 특정 종목 암기나 고정 키워드 규칙이 아님
 cutoff 이후 사실과 cutoff 이전 사실을 분리
 ```
+
+retrospective theme·beneficiary 관계 레코드는 종목별 cutoff provenance가 없으면 training eligible이 될 수 없다.
 
 ## 7.9 available_from와 기억 승격
 
@@ -3184,7 +3755,7 @@ confidence_label = low
 
 ```json
 {
-  "schema_version": "nslab.blind_prediction.v10",
+  "schema_version": "nslab.blind_prediction.v11",
   "episode_id": "",
   "trade_date": "",
   "previous_trade_date": "",
@@ -3260,7 +3831,7 @@ max_source_date
 최종 bundle의 YAML front matter에는 최소한 다음을 기록한다.
 
 ```yaml
-schema_version: nslab.research_bundle.v10
+schema_version: nslab.research_bundle.v11
 artifact_type: research_episode_bundle
 episode_id: <EPISODE_ID>
 trade_date: <TRADE_DATE>
@@ -3268,7 +3839,7 @@ window_start: <WINDOW_START>
 cutoff_at: <CUTOFF_AT>
 input_file: <INPUT_FILE>
 input_sha256: <INPUT_SHA256>
-execution_protocol_version: nslab.brain_grade_canonical_compiler.v10
+execution_protocol_version: nslab.brain_grade_semantic_provenance_locked.v11
 bundle_status: <ACCEPT_FULL_OR_OTHER>
 blind_valid: true
 blind_packet_manifest_sha256: <SHA256>
@@ -3293,7 +3864,7 @@ created_at: <CREATED_AT>
 
 ```json
 {
-  "schema_version": "nslab.research_episode.v10",
+  "schema_version": "nslab.research_episode.v11",
   "episode_id": "",
   "trade_date": "",
   "previous_trade_date": "",
@@ -3301,7 +3872,7 @@ created_at: <CREATED_AT>
   "window_start": "",
   "cutoff_at": "",
   "created_at": "",
-  "execution_protocol_version": "nslab.brain_grade_canonical_compiler.v10",
+  "execution_protocol_version": "nslab.brain_grade_semantic_provenance_locked.v11",
   "bundle_status": "ACCEPT_FULL | ACCEPT_PARTIAL | PENDING_OUTCOME | QUARANTINE",
   "blind_valid": true,
   "blind_packet_manifest_sha256": "",
@@ -3433,9 +4004,15 @@ POSTMORTEM 보고서 순서:
 ## 23. forecast scorecard
 ## 24. issuer-day 감독학습 모집단
 ## 25. 직접뉴스 event-level 감독학습 모집단
-## 26. 후보 생성·순위 오류
+## 26. 후보 생성·순위·event thesis 오류
+- 각 오류마다 sealed FACT 요약, error_subject_scope, error_type, same-ticker BLIND 존재 여부, correction clause별 support를 표로 렌더링한다.
+- generic correction 문구를 쓰지 않는다.
+
 ## 27. 주도섹터 형성 연구 — sealed universe 기준
 ## 28. retrospective theme discovery
+- theme별 observed member와 verified cutoff member를 분리한다.
+- 각 종목의 source_id, published_at, time_verified, relation_class, edge_origin, semantic audit, training eligibility를 표로 렌더링한다.
+
 ## 29. 수혜주 발견 연구
 ## 30. 대장 선택 correction·confirmation 연구
 ## 31. 후보 실패·부정 대조군
@@ -3670,6 +4247,61 @@ blind_choice_not_separated_from_target_count == 0
 incomparable_pair_marked_eligible_count == 0
 ```
 
+## 10.7.5 사후 오류 교훈 의미정합성
+
+구조 검증과 독립 의미 감사를 함께 수행한다.
+
+```text
+correction_record_missing_semantic_basis_count == 0
+correction_clause_without_support_count == 0
+correction_support_fact_missing_count == 0
+correction_support_source_missing_count == 0
+correction_fact_event_mismatch_count == 0
+correction_cross_issuer_leak_count == 0
+unsupported_domain_concept_in_correction_count == 0
+generic_correction_reuse_across_signature_count == 0
+semantic_audit_fail_count == 0
+market_state_notice_miscast_as_operating_catalyst_count == 0
+capital_action_miscast_as_supply_chain_or_operating_catalyst_count == 0
+unexplained_move_given_unverified_causal_lesson_count == 0
+```
+
+정규화한 correction 문구가 반복되면 `error_signature`, fact predicate, modality, error scope가 모두 동일한지 검사한다.
+
+하나라도 다르면 범용 템플릿 복사로 판정한다.
+
+## 10.7.6 동일 ticker의 issuer/event 오류 scope
+
+```text
+issuer_omission_claim_for_ticker_present_in_blind_pool_count == 0
+issuer_ranking_miss_for_ticker_present_in_final_watchlist_count == 0
+same_ticker_other_event_not_reclassified_to_event_thesis_miss_count == 0
+event_thesis_miss_without_both_event_fact_sets_count == 0
+event_attribution_miss_without_issuer_day_multi_event_count == 0
+```
+
+같은 ticker가 final watchlist에 존재하면 “종목을 놓쳤다”는 교훈을 만들 수 없다.
+
+## 10.7.7 retrospective theme 종목별 provenance
+
+```text
+retrospective_theme_training_record_without_member_edges_count == 0
+retrospective_theme_member_edge_missing_source_count == 0
+retrospective_theme_member_edge_missing_fact_count == 0
+retrospective_theme_member_edge_time_unverified_count == 0
+retrospective_theme_member_edge_after_cutoff_marked_eligible_count == 0
+retrospective_theme_outcome_only_member_marked_eligible_count == 0
+retrospective_theme_outcome_used_as_relation_evidence_count == 0
+retrospective_theme_relation_not_entailed_count == 0
+retrospective_theme_semantic_edge_audit_fail_count == 0
+retrospective_theme_full_population_coverage_error_count == 0
+retrospective_theme_empty_blind_fact_training_eligible_count == 0
+```
+
+`training_scope=FULL_MEMBER_POPULATION`이면 `member_edge_coverage_ratio == 1.0`이어야 한다.
+
+`training_scope=VERIFIED_MEMBER_EDGES_ONLY`이면 검증된 edge만 Brain Delta에 학습 적격으로 들어가고 나머지 종목은 명시적으로 ineligible 상태를 유지한다.
+
 ## 10.8 번들 검증
 
 ```text
@@ -3722,9 +4354,62 @@ post-seal accepted issuer false positive 수 == 0
 entity binding regression failure 수 == 0
 canonical graph와 파생 artifact count mismatch 수 == 0
 manifest self-declaration과 validator 계산 불일치 수 == 0
+사후 correction clause support 누락 수 == 0
+원 FACT에 없는 산업 개념을 교정문에 삽입한 수 == 0
+서로 다른 error signature에 동일 generic correction을 사용한 수 == 0
+동일 ticker가 final watchlist에 있는데 issuer-level RANKING_MISS로 기록한 수 == 0
+retrospective theme member edge source 누락 수 == 0
+cutoff 이후 관계 edge를 training eligible로 둔 수 == 0
+outcome-only 동반상승을 수혜관계로 training eligible 처리한 수 == 0
 ```
 
 하나라도 위반하면 `ACCEPT_FULL`로 저장하지 않는다.
+
+## 10.10 의미·provenance synthetic regression fixture
+
+최종 validator는 실제 episode 데이터와 별도로 다음 가상 fixture를 실행한다.
+
+```text
+FIXTURE-A
+봉인 FACT = 투자주의 상한가잔량 공지
+제안 교정문 = AI 공급망 병목을 심사해야 한다
+기대 = FAIL_UNSUPPORTED_DOMAIN_CONCEPT
+
+FIXTURE-B
+봉인 FACT = CB·CPS·유상증자
+제안 교정문 = 고객점유율과 공급물량을 봐야 한다
+기대 = FAIL_CROSS_MECHANISM_TEMPLATE
+
+FIXTURE-C
+같은 ticker가 final watchlist에 EVENT-A로 존재
+실제 더 직접적인 EVENT-B가 별도로 존재
+제안 오류 = issuer-level RANKING_MISS
+기대 = FAIL_WRONG_ERROR_SCOPE, 정답 EVENT_THESIS_SELECTION_MISS
+
+FIXTURE-D
+retrospective theme member에 source_id 없음
+기대 = member training_eligible false
+
+FIXTURE-E
+관계 source published_at > cutoff_at
+기대 = AFTER_CUTOFF_EDGE, training_eligible false
+
+FIXTURE-F
+유일한 관계 근거가 D outcome에서 함께 상승했다는 사실
+기대 = OUTCOME_ONLY_ASSOCIATION, training_eligible false
+
+FIXTURE-G
+cutoff 이전 공식 source가 종목의 사업·지역·공급망 관계를 직접 지지
+기대 = semantic edge PASS, 개별 member edge training eligible 가능
+```
+
+다음 값이 모두 0이어야 한다.
+
+```text
+semantic_regression_fixture_failure_count
+retrospective_provenance_fixture_failure_count
+error_scope_fixture_failure_count
+```
 
 ────────────────────────────────────────
 11. Bundle Manifest
@@ -3734,11 +4419,11 @@ manifest self-declaration과 validator 계산 불일치 수 == 0
 
 ```json
 {
-  "schema_version": "nslab.bundle_manifest.v10",
+  "schema_version": "nslab.bundle_manifest.v11",
   "episode_id": "",
   "trade_date": "",
   "created_at": "",
-  "execution_protocol_version": "nslab.brain_grade_canonical_compiler.v10",
+  "execution_protocol_version": "nslab.brain_grade_semantic_provenance_locked.v11",
   "input_sha256": "",
   "blind_packet_manifest_sha256": "",
   "sealed_blind_report_sha256": "",
@@ -3762,6 +4447,11 @@ manifest self-declaration과 validator 계산 불일치 수 == 0
   "validator_exit_code": 0,
   "entity_binding_regression_test_count": 0,
   "entity_binding_regression_failure_count": 0,
+  "semantic_regression_fixture_failure_count": 0,
+  "retrospective_provenance_fixture_failure_count": 0,
+  "error_scope_fixture_failure_count": 0,
+  "postmortem_semantic_audit_record_count": 0,
+  "retrospective_theme_member_edge_count": 0,
   "placeholder_token_count": 0,
   "accepted_issuer_false_positive_count": 0,
   "embedded_blocks": {},
@@ -3783,6 +4473,11 @@ manifest self-declaration과 validator 계산 불일치 수 == 0
     "source_references_valid": true,
     "theme_hindsight_separation_valid": true,
     "leader_pair_direction_valid": true,
+    "postmortem_correction_semantic_consistency_valid": true,
+    "issuer_event_error_scope_valid": true,
+    "retrospective_theme_member_provenance_valid": true,
+    "outcome_only_relation_training_zero": true,
+    "semantic_regression_fixtures_valid": true,
     "report_phase_boundary_valid": true,
     "rank_sequence_valid": true,
     "text_completeness_valid": true,
@@ -3823,8 +4518,8 @@ manifest self-declaration과 validator 계산 불일치 수 == 0
 
 ```json
 {
-  "schema_version": "nslab.validation_report.v2",
-  "validator_version": "nslab.validator.v2",
+  "schema_version": "nslab.validation_report.v3",
+  "validator_version": "nslab.validator.v3",
   "validator_sha256": "",
   "executed_at": "",
   "exit_code": 0,
@@ -3857,7 +4552,10 @@ manifest self-declaration과 validator 계산 불일치 수 == 0
 9. 실제 verified 상한가 종목 중 cutoff 전에 예측 가능했던 종목은 몇 개인가?
 10. INPUT_MISSING·ENTITY_MISSING·THEME_MAP_MISSING·RANKING_MISS·TIMING_IMPOSSIBLE을 분리했는가?
 11. corporate action·신규상장으로 가격 라벨이 차단된 종목을 정상 사례와 섞지 않았는가?
-12. 이번 episode가 두뇌에 추가하는 메커니즘과 반례는 무엇인가?
+12. 각 사후 교정 교훈의 모든 문장이 해당 사건 FACT와 의미상 일치하는가?
+13. 같은 ticker가 이미 후보였는데 종목 누락으로 오분류한 사례는 없는가?
+14. retrospective theme의 각 종목에 cutoff 이전 관계 provenance가 있는가?
+15. 이번 episode가 두뇌에 추가하는 메커니즘과 반례는 무엇인가?
 ```
 
 ────────────────────────────────────────
@@ -3910,11 +4608,12 @@ reason
 18. Brain Delta 생성
 19. canonical research graph 최종화·ID registry 재생성
 20. deterministic renderer로 BLIND·POSTMORTEM·기계 artifact·draft bundle 생성
-21. validate_nslab_bundle.py로 JSON·JSONL·entity binding·fact entailment·ID·source·rank·report phase·theme hindsight·pair 방향·placeholder·텍스트 완전성 전수 검증
-22. critical error가 있으면 canonical graph만 수정하고 최대 5회 19번부터 다시 실행
-23. validator exit_code == 0이고 critical_error_count == 0일 때만 final bundle 조립
-24. final bundle을 다시 추출·재검증하고 draft와 hash 비교
-25. 실제 다운로드 가능한 MD 파일 생성
+21. 독립 semantic auditor로 모든 training-eligible 사후 오류 교훈과 retrospective member edge를 전수 감사
+22. validate_nslab_bundle.py로 JSON·JSONL·entity binding·fact entailment·ID·source·rank·report phase·theme hindsight·pair 방향·사후 교훈 의미정합성·동일 ticker 오류 scope·retrospective member cutoff provenance·placeholder·텍스트 완전성 전수 검증
+23. critical error가 있으면 canonical graph만 수정하고 최대 5회 19번부터 다시 실행
+24. validator exit_code == 0이고 critical_error_count == 0일 때만 final bundle 조립
+25. final bundle을 다시 추출·재검증하고 draft와 hash 비교
+26. 실제 다운로드 가능한 MD 파일 생성
 ```
 
 조기 종료하지 않는다.
@@ -3945,6 +4644,21 @@ report_phase_leak_count > 0
 watchlist_rank_gap_count > 0
 wrong_direction_training_label_count > 0
 postseal_winner_used_to_upgrade_blind_theme_count > 0
+correction_clause_without_support_count > 0
+unsupported_domain_concept_in_correction_count > 0
+generic_correction_reuse_across_signature_count > 0
+semantic_audit_fail_count > 0
+issuer_ranking_miss_for_ticker_present_in_final_watchlist_count > 0
+same_ticker_other_event_not_reclassified_to_event_thesis_miss_count > 0
+retrospective_theme_member_edge_missing_source_count > 0
+retrospective_theme_member_edge_time_unverified_count > 0
+retrospective_theme_member_edge_after_cutoff_marked_eligible_count > 0
+retrospective_theme_outcome_only_member_marked_eligible_count > 0
+retrospective_theme_relation_not_entailed_count > 0
+retrospective_theme_semantic_edge_audit_fail_count > 0
+semantic_regression_fixture_failure_count > 0
+retrospective_provenance_fixture_failure_count > 0
+error_scope_fixture_failure_count > 0
 incomplete_training_text_count > 0
 placeholder_token_count > 0
 accepted_issuer_false_positive_count > 0
