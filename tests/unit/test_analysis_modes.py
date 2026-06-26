@@ -12,7 +12,7 @@ from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST
+from news_scalping_lab.utils import KST, read_json
 
 
 def test_normalize_analysis_mode_accepts_only_supported_modes() -> None:
@@ -267,3 +267,61 @@ async def test_fast_mode_keeps_open_world_candidates_when_retrieval_misses(tmp_p
     assert beneficiary.memory_episode_ids == []
     assert "memory has no exact precedent" in beneficiary.novel_reasoning
     assert "UnseenFastCo" in {candidate.company_name for candidate in prediction.candidates}
+
+
+@pytest.mark.asyncio
+async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episodes(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    store = ResearchStore(tmp_path)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    for index in range(2):
+        episode = ResearchEpisode(
+            episode_id=f"EP-brain-mode-{index}",
+            trade_date=date(2030, 1, 9),
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            created_at=datetime(2030, 1, 9, 16, 0, 0, tzinfo=KST),
+            research_version="brain-mode-test",
+            price_source_snapshot={"source": "test"},
+            blind_analysis=BlindAnalysis(summary=f"Brain-mode lesson {index}."),
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        )
+        store.save_episode(episode)
+        store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "brain_mode_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","BrainModeCo, new catalyst",'
+        '"Brain mode should load shard brain context and keep coverage visible."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="brain",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    assert manifest.mode == "brain"
+    assert manifest.accepted_episode_count == 2
+    assert manifest.swept_episode_count == 2
+    assert manifest.swept_episode_ids == ["EP-brain-mode-0", "EP-brain-mode-1"]
+    assert manifest.memory_sweep_artifacts
+    assert manifest.shard_brain_files
+    assert manifest.shard_brain_file_hashes
+    assert manifest.errors == []
+    sweep_payloads = [
+        read_json(tmp_path / relative_path)
+        for relative_path in manifest.memory_sweep_artifacts
+    ]
+    assert [payload["episode_ids"] for payload in sweep_payloads] == [
+        ["EP-brain-mode-0", "EP-brain-mode-1"]
+    ]
+    assert all(payload["mode"] == "brain" for payload in sweep_payloads)
+    assert all((tmp_path / relative_path).exists() for relative_path in manifest.shard_brain_files)
