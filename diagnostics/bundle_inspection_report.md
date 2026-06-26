@@ -14,6 +14,438 @@
 - raw_record_count: `327`
 - normalized_record_count: `327`
 - training_eligible_record_count: `325`
+## raw_record_ids
+
+- `BRAIN-000001`
+- `BRAIN-000002`
+- `BRAIN-000003`
+- `BRAIN-000004`
+- `BRAIN-000005`
+- `BRAIN-000006`
+- `BRAIN-000007`
+- `BRAIN-000008`
+- `BRAIN-000009`
+- `BRAIN-000010`
+- `BRAIN-000011`
+- `BRAIN-000012`
+- `BRAIN-000013`
+- `BRAIN-000014`
+- `BRAIN-000015`
+- `BRAIN-000016`
+- `BRAIN-000017`
+- `BRAIN-000018`
+- `BRAIN-000019`
+- `BRAIN-000020`
+- `BRAIN-000021`
+- `BRAIN-000022`
+- `BRAIN-000023`
+- `BRAIN-000024`
+- `BRAIN-000025`
+- `BRAIN-000026`
+- `BRAIN-000027`
+- `BRAIN-000028`
+- `BRAIN-000029`
+- `BRAIN-000030`
+- `BRAIN-000031`
+- `BRAIN-000032`
+- `BRAIN-000033`
+- `BRAIN-000034`
+- `BRAIN-000035`
+- `BRAIN-000036`
+- `BRAIN-000037`
+- `BRAIN-000038`
+- `BRAIN-000039`
+- `BRAIN-000040`
+- `BRAIN-000041`
+- `BRAIN-000042`
+- `BRAIN-000043`
+- `BRAIN-000044`
+- `BRAIN-000045`
+- `BRAIN-000046`
+- `BRAIN-000047`
+- `BRAIN-000048`
+- `BRAIN-000049`
+- `BRAIN-000050`
+- `BRAIN-000051`
+- `BRAIN-000052`
+- `BRAIN-000053`
+- `BRAIN-000054`
+- `BRAIN-000055`
+- `BRAIN-000056`
+- `BRAIN-000057`
+- `BRAIN-000058`
+- `BRAIN-000059`
+- `BRAIN-000060`
+- `BRAIN-000061`
+- `BRAIN-000062`
+- `BRAIN-000063`
+- `BRAIN-000064`
+- `BRAIN-000065`
+- `BRAIN-000066`
+- `BRAIN-000067`
+- `BRAIN-000068`
+- `BRAIN-000069`
+- `BRAIN-000070`
+- `BRAIN-000071`
+- `BRAIN-000072`
+- `BRAIN-000073`
+- `BRAIN-000074`
+- `BRAIN-000075`
+- `BRAIN-000076`
+- `BRAIN-000077`
+- `BRAIN-000078`
+- `BRAIN-000079`
+- `BRAIN-000080`
+- `BRAIN-000081`
+- `BRAIN-000082`
+- `BRAIN-000083`
+- `BRAIN-000084`
+- `BRAIN-000085`
+- `BRAIN-000086`
+- `BRAIN-000087`
+- `BRAIN-000088`
+- `BRAIN-000089`
+- `BRAIN-000090`
+- `BRAIN-000091`
+- `BRAIN-000092`
+- `BRAIN-000093`
+- `BRAIN-000094`
+- `BRAIN-000095`
+- `BRAIN-000096`
+- `BRAIN-000097`
+- `BRAIN-000098`
+- `BRAIN-000099`
+- `BRAIN-000100`
+- `BRAIN-000101`
+- `BRAIN-000102`
+- `BRAIN-000103`
+- `BRAIN-000104`
+- `BRAIN-000105`
+- `BRAIN-000106`
+- `BRAIN-000107`
+- `BRAIN-000108`
+- `BRAIN-000109`
+- `BRAIN-000110`
+- `BRAIN-000111`
+- `BRAIN-000112`
+- `BRAIN-000113`
+- `BRAIN-000114`
+- `BRAIN-000115`
+- `BRAIN-000116`
+- `BRAIN-000117`
+- `BRAIN-000118`
+- `BRAIN-000119`
+- `BRAIN-000120`
+- `BRAIN-000121`
+- `BRAIN-000122`
+- `BRAIN-000123`
+- `BRAIN-000124`
+- `BRAIN-000125`
+- `BRAIN-000126`
+- `BRAIN-000127`
+- `BRAIN-000128`
+- `BRAIN-000129`
+- `BRAIN-000130`
+- `BRAIN-000131`
+- `BRAIN-000132`
+- `BRAIN-000133`
+- `BRAIN-000134`
+- `BRAIN-000135`
+- `BRAIN-000136`
+- `BRAIN-000137`
+- `BRAIN-000138`
+- `BRAIN-000139`
+- `BRAIN-000140`
+- `BRAIN-000141`
+- `BRAIN-000142`
+- `BRAIN-000143`
+- `BRAIN-000144`
+- `BRAIN-000145`
+- `BRAIN-000146`
+- `BRAIN-000147`
+- `BRAIN-000148`
+- `BRAIN-000149`
+- `BRAIN-000150`
+- `BRAIN-000151`
+- `BRAIN-000152`
+- `BRAIN-000153`
+- `BRAIN-000154`
+- `BRAIN-000155`
+- `BRAIN-000156`
+- `BRAIN-000157`
+- `BRAIN-000158`
+- `BRAIN-000159`
+- `BRAIN-000160`
+- `BRAIN-000161`
+- `BRAIN-000162`
+- `BRAIN-000163`
+- `BRAIN-000164`
+- `BRAIN-000165`
+- `BRAIN-000166`
+- `BRAIN-000167`
+- `BRAIN-000168`
+- `BRAIN-000169`
+- `BRAIN-000170`
+- `BRAIN-000171`
+- `BRAIN-000172`
+- `BRAIN-000173`
+- `BRAIN-000174`
+- `BRAIN-000175`
+- `BRAIN-000176`
+- `BRAIN-000177`
+- `BRAIN-000178`
+- `BRAIN-000179`
+- `BRAIN-000180`
+- `BRAIN-000181`
+- `BRAIN-000182`
+- `BRAIN-000183`
+- `BRAIN-000184`
+- `BRAIN-000185`
+- `BRAIN-000186`
+- `BRAIN-000187`
+- `BRAIN-000188`
+- `BRAIN-000189`
+- `BRAIN-000190`
+- `BRAIN-000191`
+- `BRAIN-000192`
+- `BRAIN-000193`
+- `BRAIN-000194`
+- `BRAIN-000195`
+- `BRAIN-000196`
+- `BRAIN-000197`
+- `BRAIN-000198`
+- `BRAIN-000199`
+- `BRAIN-000200`
+
+## normalized_record_ids
+
+- `BRAIN-000001`
+- `BRAIN-000002`
+- `BRAIN-000003`
+- `BRAIN-000004`
+- `BRAIN-000005`
+- `BRAIN-000006`
+- `BRAIN-000007`
+- `BRAIN-000008`
+- `BRAIN-000009`
+- `BRAIN-000010`
+- `BRAIN-000011`
+- `BRAIN-000012`
+- `BRAIN-000013`
+- `BRAIN-000014`
+- `BRAIN-000015`
+- `BRAIN-000016`
+- `BRAIN-000017`
+- `BRAIN-000018`
+- `BRAIN-000019`
+- `BRAIN-000020`
+- `BRAIN-000021`
+- `BRAIN-000022`
+- `BRAIN-000023`
+- `BRAIN-000024`
+- `BRAIN-000025`
+- `BRAIN-000026`
+- `BRAIN-000027`
+- `BRAIN-000028`
+- `BRAIN-000029`
+- `BRAIN-000030`
+- `BRAIN-000031`
+- `BRAIN-000032`
+- `BRAIN-000033`
+- `BRAIN-000034`
+- `BRAIN-000035`
+- `BRAIN-000036`
+- `BRAIN-000037`
+- `BRAIN-000038`
+- `BRAIN-000039`
+- `BRAIN-000040`
+- `BRAIN-000041`
+- `BRAIN-000042`
+- `BRAIN-000043`
+- `BRAIN-000044`
+- `BRAIN-000045`
+- `BRAIN-000046`
+- `BRAIN-000047`
+- `BRAIN-000048`
+- `BRAIN-000049`
+- `BRAIN-000050`
+- `BRAIN-000051`
+- `BRAIN-000052`
+- `BRAIN-000053`
+- `BRAIN-000054`
+- `BRAIN-000055`
+- `BRAIN-000056`
+- `BRAIN-000057`
+- `BRAIN-000058`
+- `BRAIN-000059`
+- `BRAIN-000060`
+- `BRAIN-000061`
+- `BRAIN-000062`
+- `BRAIN-000063`
+- `BRAIN-000064`
+- `BRAIN-000065`
+- `BRAIN-000066`
+- `BRAIN-000067`
+- `BRAIN-000068`
+- `BRAIN-000069`
+- `BRAIN-000070`
+- `BRAIN-000071`
+- `BRAIN-000072`
+- `BRAIN-000073`
+- `BRAIN-000074`
+- `BRAIN-000075`
+- `BRAIN-000076`
+- `BRAIN-000077`
+- `BRAIN-000078`
+- `BRAIN-000079`
+- `BRAIN-000080`
+- `BRAIN-000081`
+- `BRAIN-000082`
+- `BRAIN-000083`
+- `BRAIN-000084`
+- `BRAIN-000085`
+- `BRAIN-000086`
+- `BRAIN-000087`
+- `BRAIN-000088`
+- `BRAIN-000089`
+- `BRAIN-000090`
+- `BRAIN-000091`
+- `BRAIN-000092`
+- `BRAIN-000093`
+- `BRAIN-000094`
+- `BRAIN-000095`
+- `BRAIN-000096`
+- `BRAIN-000097`
+- `BRAIN-000098`
+- `BRAIN-000099`
+- `BRAIN-000100`
+- `BRAIN-000101`
+- `BRAIN-000102`
+- `BRAIN-000103`
+- `BRAIN-000104`
+- `BRAIN-000105`
+- `BRAIN-000106`
+- `BRAIN-000107`
+- `BRAIN-000108`
+- `BRAIN-000109`
+- `BRAIN-000110`
+- `BRAIN-000111`
+- `BRAIN-000112`
+- `BRAIN-000113`
+- `BRAIN-000114`
+- `BRAIN-000115`
+- `BRAIN-000116`
+- `BRAIN-000117`
+- `BRAIN-000118`
+- `BRAIN-000119`
+- `BRAIN-000120`
+- `BRAIN-000121`
+- `BRAIN-000122`
+- `BRAIN-000123`
+- `BRAIN-000124`
+- `BRAIN-000125`
+- `BRAIN-000126`
+- `BRAIN-000127`
+- `BRAIN-000128`
+- `BRAIN-000129`
+- `BRAIN-000130`
+- `BRAIN-000131`
+- `BRAIN-000132`
+- `BRAIN-000133`
+- `BRAIN-000134`
+- `BRAIN-000135`
+- `BRAIN-000136`
+- `BRAIN-000137`
+- `BRAIN-000138`
+- `BRAIN-000139`
+- `BRAIN-000140`
+- `BRAIN-000141`
+- `BRAIN-000142`
+- `BRAIN-000143`
+- `BRAIN-000144`
+- `BRAIN-000145`
+- `BRAIN-000146`
+- `BRAIN-000147`
+- `BRAIN-000148`
+- `BRAIN-000149`
+- `BRAIN-000150`
+- `BRAIN-000151`
+- `BRAIN-000152`
+- `BRAIN-000153`
+- `BRAIN-000154`
+- `BRAIN-000155`
+- `BRAIN-000156`
+- `BRAIN-000157`
+- `BRAIN-000158`
+- `BRAIN-000159`
+- `BRAIN-000160`
+- `BRAIN-000161`
+- `BRAIN-000162`
+- `BRAIN-000163`
+- `BRAIN-000164`
+- `BRAIN-000165`
+- `BRAIN-000166`
+- `BRAIN-000167`
+- `BRAIN-000168`
+- `BRAIN-000169`
+- `BRAIN-000170`
+- `BRAIN-000171`
+- `BRAIN-000172`
+- `BRAIN-000173`
+- `BRAIN-000174`
+- `BRAIN-000175`
+- `BRAIN-000176`
+- `BRAIN-000177`
+- `BRAIN-000178`
+- `BRAIN-000179`
+- `BRAIN-000180`
+- `BRAIN-000181`
+- `BRAIN-000182`
+- `BRAIN-000183`
+- `BRAIN-000184`
+- `BRAIN-000185`
+- `BRAIN-000186`
+- `BRAIN-000187`
+- `BRAIN-000188`
+- `BRAIN-000189`
+- `BRAIN-000190`
+- `BRAIN-000191`
+- `BRAIN-000192`
+- `BRAIN-000193`
+- `BRAIN-000194`
+- `BRAIN-000195`
+- `BRAIN-000196`
+- `BRAIN-000197`
+- `BRAIN-000198`
+- `BRAIN-000199`
+- `BRAIN-000200`
+
+- raw_record_without_id_count: `0`
+- record_id_set_comparable: `True`
+- record_id_set_matches_raw: `True`
+## missing_normalized_record_ids
+
+- none
+
+## extra_normalized_record_ids
+
+- none
+
+## raw_record_counts_by_type
+
+- blind_leader_preference_pair: `3`
+- supervised_direct_event_case: `171`
+- supervised_issuer_day_case: `150`
+- supervised_theme_formation_case: `3`
+
+- record_type_counts_match_raw: `True`
+- raw_training_eligible_record_count: `325`
+- training_eligible_count_matches_raw: `True`
+- raw_payload_hashes_match: `True`
+## raw_payload_hash_mismatch_record_ids
+
+- none
+
 - dropped_record_count: `0`
 - quarantined_record_count: `0`
 ## record_counts_by_type
@@ -29,6 +461,11 @@
 - hash_mismatch_count: `16`
 - hash_expectation_conflict_count: `0`
 - missing_source_reference_count: `0`
+- missing_payload_reference_count: `0`
+- available_from_valid: `True`
+- invalid_available_from_record_count: `0`
+- outcome_label_quality_valid: `True`
+- invalid_outcome_label_quality_record_count: `0`
 ## validation
 
 - schema_version: `nslab.versioned_bundle_validation.v1`
@@ -49,6 +486,14 @@
 - source_reference_count: `823`
 - missing_source_references: `[]`
 - provenance_closure_status: `closed`
+- payload_reference_count: `722`
+- missing_payload_references: `[]`
+- payload_reference_closure_status: `closed`
+- available_from_valid: `True`
+- invalid_available_from_fields: `[]`
+- invalid_available_from_record_ids: `[]`
+- outcome_label_quality_valid: `True`
+- invalid_outcome_label_quality_record_ids: `[]`
 - validator_exit_code: `0`
 - critical_error_count: `0`
 - passed: `False`

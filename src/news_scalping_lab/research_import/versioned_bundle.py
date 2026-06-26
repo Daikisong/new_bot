@@ -426,6 +426,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     validation = effective_adapter.validate(parsed) if effective_adapter is not None else {}
     raw_record_count = len(parsed.jsonl_blocks.get("brain_delta.jsonl", []))
     normalized_record_count = len(records)
+    import_loss_summary = _import_loss_summary(parsed, records)
     hash_mismatches = validation.get("hash_mismatches")
     hash_conflicts = validation.get("hash_expectation_conflicts")
     missing_source_refs = validation.get("missing_source_references")
@@ -453,6 +454,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "training_eligible_record_count": sum(
             1 for record in records if record.training_eligible
         ),
+        **import_loss_summary,
         "dropped_record_count": max(0, raw_record_count - normalized_record_count),
         "quarantined_record_count": 0,
         "record_counts_by_type": dict(
@@ -520,6 +522,7 @@ def import_versioned_bundle(
                 validation_report=validation,
                 accepted=False,
             )
+            import_loss_summary = _import_loss_summary(parsed, records)
             diagnostics_payload = {
                 "status": "forward_compatible_raw_only",
                 "adapter": raw_only_adapter.name,
@@ -531,6 +534,7 @@ def import_versioned_bundle(
                 "normalized_record_count": raw_only_stored.record_count,
                 "training_eligible_record_count": raw_only_stored.training_eligible_record_count,
                 "raw_only_record_count": raw_only_stored.record_count,
+                **import_loss_summary,
                 "dropped_record_count": 0,
                 "quarantined_record_count": 0,
                 "record_counts_by_type": dict(
@@ -618,6 +622,7 @@ def import_versioned_bundle(
         validation_report=validation,
         accepted=accepted,
     )
+    import_loss_summary = _import_loss_summary(parsed, records)
     diagnostics_payload = {
         "status": "imported",
         "adapter": adapter.name,
@@ -629,6 +634,7 @@ def import_versioned_bundle(
         "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
         "normalized_record_count": stored.record_count,
         "training_eligible_record_count": stored.training_eligible_record_count,
+        **import_loss_summary,
         "dropped_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": dict(
@@ -688,6 +694,7 @@ def _quarantine_validation_failure(
             "training_eligible_record_count": sum(
                 1 for record in records if record.training_eligible
             ),
+            **_import_loss_summary(parsed, records),
             "dropped_record_count": 0,
             "quarantined_record_count": 1,
             "quarantine": quarantine.as_posix(),
@@ -702,6 +709,65 @@ def select_adapter(parsed: GenericParsedBundle) -> BundleVersionAdapter | None:
         if adapter.supports(parsed):
             return adapter
     return None
+
+
+def _import_loss_summary(
+    parsed: GenericParsedBundle,
+    records: list[BrainRecordEnvelope],
+) -> dict[str, Any]:
+    raw_records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+    raw_record_ids = [
+        _record_identity(record, line_number)
+        for line_number, record in enumerate(raw_records, start=1)
+    ]
+    normalized_record_ids = [record.record_id for record in records]
+    raw_explicit_record_ids = [
+        record_id for record_id in raw_record_ids if not record_id.startswith("line:")
+    ]
+    raw_id_set_comparable = len(raw_explicit_record_ids) == len(raw_record_ids)
+    missing_normalized_record_ids = sorted(set(raw_explicit_record_ids) - set(normalized_record_ids))
+    extra_normalized_record_ids = sorted(set(normalized_record_ids) - set(raw_explicit_record_ids))
+    raw_counts_by_type = dict(
+        sorted(
+            Counter(str(record.get("record_type") or "unknown") for record in raw_records).items()
+        )
+    )
+    normalized_counts_by_type = dict(
+        sorted(Counter(record.record_type for record in records).items())
+    )
+    raw_training_eligible_count = sum(
+        1 for record in raw_records if record.get("training_eligible") is True
+    )
+    raw_hashes = [
+        sha256_text(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        for record in raw_records
+    ]
+    raw_payload_hash_mismatch_record_ids = [
+        record.record_id
+        for record, expected_hash in zip(records, raw_hashes, strict=False)
+        if record.raw_payload_sha256 != expected_hash
+    ]
+    return {
+        "raw_record_ids": raw_record_ids,
+        "normalized_record_ids": normalized_record_ids,
+        "raw_record_without_id_count": len(raw_record_ids) - len(raw_explicit_record_ids),
+        "record_id_set_comparable": raw_id_set_comparable,
+        "record_id_set_matches_raw": (
+            not missing_normalized_record_ids and not extra_normalized_record_ids
+            if raw_id_set_comparable
+            else None
+        ),
+        "missing_normalized_record_ids": missing_normalized_record_ids,
+        "extra_normalized_record_ids": extra_normalized_record_ids,
+        "raw_record_counts_by_type": raw_counts_by_type,
+        "record_type_counts_match_raw": raw_counts_by_type == normalized_counts_by_type,
+        "raw_training_eligible_record_count": raw_training_eligible_count,
+        "training_eligible_count_matches_raw": raw_training_eligible_count
+        == sum(1 for record in records if record.training_eligible),
+        "raw_payload_hashes_match": not raw_payload_hash_mismatch_record_ids
+        and len(raw_hashes) == len(records),
+        "raw_payload_hash_mismatch_record_ids": raw_payload_hash_mismatch_record_ids,
+    }
 
 
 def bundle_schema_version(parsed: GenericParsedBundle) -> str:

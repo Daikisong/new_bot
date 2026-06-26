@@ -477,6 +477,33 @@ def research_inspect_bundle(path: Path) -> None:
             "training_eligible_record_count": inspection.get(
                 "training_eligible_record_count"
             ),
+            "raw_record_ids": inspection.get("raw_record_ids"),
+            "normalized_record_ids": inspection.get("normalized_record_ids"),
+            "raw_record_without_id_count": inspection.get(
+                "raw_record_without_id_count"
+            ),
+            "record_id_set_comparable": inspection.get("record_id_set_comparable"),
+            "record_id_set_matches_raw": inspection.get("record_id_set_matches_raw"),
+            "missing_normalized_record_ids": inspection.get(
+                "missing_normalized_record_ids"
+            ),
+            "extra_normalized_record_ids": inspection.get(
+                "extra_normalized_record_ids"
+            ),
+            "raw_record_counts_by_type": inspection.get("raw_record_counts_by_type"),
+            "record_type_counts_match_raw": inspection.get(
+                "record_type_counts_match_raw"
+            ),
+            "raw_training_eligible_record_count": inspection.get(
+                "raw_training_eligible_record_count"
+            ),
+            "training_eligible_count_matches_raw": inspection.get(
+                "training_eligible_count_matches_raw"
+            ),
+            "raw_payload_hashes_match": inspection.get("raw_payload_hashes_match"),
+            "raw_payload_hash_mismatch_record_ids": inspection.get(
+                "raw_payload_hash_mismatch_record_ids"
+            ),
             "dropped_record_count": inspection.get("dropped_record_count"),
             "quarantined_record_count": inspection.get("quarantined_record_count"),
             "record_counts_by_type": inspection.get("record_counts_by_type"),

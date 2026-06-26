@@ -334,6 +334,31 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert inspection["validation_passed"] is True
     assert inspection["record_count_matches_manifest"] is True
     assert inspection["training_eligible_count_matches_manifest"] is True
+    assert inspection["record_id_set_comparable"] is True
+    assert inspection["record_id_set_matches_raw"] is True
+    assert inspection["raw_record_without_id_count"] == 0
+    assert inspection["missing_normalized_record_ids"] == []
+    assert inspection["extra_normalized_record_ids"] == []
+    assert inspection["raw_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert inspection["normalized_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert inspection["raw_record_counts_by_type"] == {
+        "blind_leader_preference_pair": 1,
+        "future_record_type": 1,
+        "supervised_issuer_day_case": 1,
+    }
+    assert inspection["record_type_counts_match_raw"] is True
+    assert inspection["raw_training_eligible_record_count"] == 2
+    assert inspection["training_eligible_count_matches_raw"] is True
+    assert inspection["raw_payload_hashes_match"] is True
+    assert inspection["raw_payload_hash_mismatch_record_ids"] == []
     assert inspection["hash_mismatch_count"] == 0
     assert inspection["missing_source_reference_count"] == 0
     assert inspection["inspection_status"] == "validation_passed"
@@ -368,8 +393,23 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["all_raw_only_record_count"] == 0
     assert report["staged_unknown_typed_payload_count"] == 0
     assert report["staged_raw_only_record_count"] == 0
-    assert (tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "original_bundle.md").exists()
+    import_report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert import_report["record_id_set_matches_raw"] is True
+    assert import_report["raw_payload_hashes_match"] is True
+    assert import_report["record_type_counts_match_raw"] is True
+    assert import_report["training_eligible_count_matches_raw"] is True
+    original_bundle = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "original_bundle.md"
+    )
+    assert original_bundle.exists()
     assert (tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl").exists()
+    assert import_versioned_bundle(original_bundle, root=tmp_path).record_count == 3
+    raw_bundle = next((tmp_path / "data" / "raw" / "research").glob("*.md"))
+    assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
 
 
 def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(

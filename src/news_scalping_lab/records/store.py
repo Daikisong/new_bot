@@ -100,8 +100,8 @@ class BrainRecordStore:
                 )
 
         episode_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, original_bundle)
-        shutil.copy2(source_path, self.raw_research_dir / f"{source_hash}.md")
+        _copy_if_not_same_file(source_path, original_bundle)
+        _copy_if_not_same_file(source_path, self.raw_research_dir / f"{source_hash}.md")
         raw_blocks_dir = episode_dir / "raw_blocks"
         if raw_blocks_dir.exists():
             shutil.rmtree(raw_blocks_dir)
@@ -1160,3 +1160,9 @@ def _record_id_index(records: list[BrainRecordEnvelope]) -> dict[str, dict[str, 
 
 def _safe_block_filename(name: str) -> str:
     return name.replace("/", "__").replace("\\", "__")
+
+
+def _copy_if_not_same_file(source: Path, target: Path) -> None:
+    if source.resolve() == target.resolve():
+        return
+    shutil.copy2(source, target)
