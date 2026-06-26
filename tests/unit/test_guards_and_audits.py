@@ -3681,6 +3681,50 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         f"{record_sweep_ref}#REC-sweep-future"
     ) in failed_future_record["findings"]
 
+    write_json(record_sweep_path, record_sweep_payload)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "brain_version": "brain-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "swept_episode_ids": ["EP-sweep-1", "EP-sweep-2"],
+            "memory_sweep_artifacts": [sweep_ref],
+            "memory_sweep_artifact_hashes": {sweep_ref: file_sha256(sweep_path)},
+            "memory_sweep_shard_count": 1,
+            "memory_sweep_cache_hits": 0,
+            "swept_record_ids": ["REC-sweep-1"],
+            "swept_record_count": 1,
+            "retrieved_record_ids": ["REC-sweep-future"],
+            "excluded_retrieved_record_ids": ["REC-sweep-future"],
+            "semantic_retrieval_record_ids": ["REC-sweep-future"],
+            "excluded_semantic_retrieval_record_ids": ["REC-sweep-future"],
+            "record_sweep_artifacts": [record_sweep_ref],
+            "record_sweep_artifact_hashes": {
+                record_sweep_ref: file_sha256(record_sweep_path),
+            },
+            "record_sweep_shard_count": 1,
+            "record_sweep_cache_hits": 0,
+        },
+    )
+
+    failed_future_manifest_ids = audit_provenance(tmp_path)
+
+    assert not failed_future_manifest_ids["passed"]
+    assert (
+        "2030-01-10.json: context manifest retrieved_record_ids exposes future "
+        "record: REC-sweep-future"
+    ) in failed_future_manifest_ids["findings"]
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_record_ids exposes "
+        "future record: REC-sweep-future"
+    ) in failed_future_manifest_ids["findings"]
+
 
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()

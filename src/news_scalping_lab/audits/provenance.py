@@ -168,6 +168,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
+            _check_manifest_record_id_availability(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_retrieval_miss_open_world_outputs(path, prediction, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
@@ -2904,6 +2905,45 @@ def _parse_context_cutoff_at(value: object) -> datetime | None:
         return parse_datetime(value)
     except ValueError:
         return None
+
+
+def _check_manifest_record_id_availability(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    cutoff_at = _parse_context_cutoff_at(manifest.get("cutoff_at"))
+    if cutoff_at is None:
+        return
+    records_by_id = {record.record_id: record for record in BrainRecordStore(root).list_records()}
+    for field in (
+        "swept_record_ids",
+        "retrieved_record_ids",
+        "counterexample_record_ids",
+        "semantic_retrieval_record_ids",
+    ):
+        if field not in manifest:
+            continue
+        value = manifest.get(field)
+        if not isinstance(value, list) or not all(
+            isinstance(record_id, str) for record_id in value
+        ):
+            findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
+            continue
+        for record_id in _unique_strings(value):
+            record = records_by_id.get(record_id)
+            if record is None:
+                findings.append(
+                    f"{prediction_path.name}: context manifest {field} references "
+                    f"unknown record: {record_id}"
+                )
+                continue
+            if not is_available_as_of(record.available_from, cutoff_at):
+                findings.append(
+                    f"{prediction_path.name}: context manifest {field} exposes future "
+                    f"record: {record_id}"
+                )
 
 
 def _memory_sweep_source_hashes(
