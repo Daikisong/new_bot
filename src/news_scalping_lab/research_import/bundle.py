@@ -11,8 +11,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.context.final_synthesis import (
-    FINAL_SYNTHESIS_REQUIRED_INPUTS,
     final_synthesis_input_summary,
+    final_synthesis_required_inputs_compatible,
 )
 from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
 from news_scalping_lab.utils import (
@@ -1179,7 +1179,7 @@ def _verify_final_synthesis_context_contract(json_blocks: dict[str, Any]) -> boo
         return False
     if context.get("required_inputs") != required_inputs:
         return False
-    if required_inputs != list(FINAL_SYNTHESIS_REQUIRED_INPUTS):
+    if not final_synthesis_required_inputs_compatible(required_inputs):
         return False
     if any(key not in payload for key in required_inputs):
         return False

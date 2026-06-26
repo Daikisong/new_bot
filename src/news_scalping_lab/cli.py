@@ -26,6 +26,7 @@ from news_scalping_lab.context.episode_scope import inspect_manifest_episode_sco
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
     final_synthesis_input_summary,
+    final_synthesis_required_inputs_compatible,
 )
 from news_scalping_lab.context.session_pack import (
     SessionPackBudgetExceededError,
@@ -608,7 +609,7 @@ def research_reject(episode_id: str) -> None:
 
 @brain_app.command("rebuild")
 def brain_rebuild(
-    mode: Annotated[str, typer.Option("--mode")] = "full",
+    mode: Annotated[str, typer.Option("--mode")] = "llm-full",
     allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
 ) -> None:
     if mode == "catalog" and not allow_catalog:
@@ -626,13 +627,20 @@ def brain_rebuild(
 
 
 @brain_app.command("update")
-def brain_update(episode: Annotated[str, typer.Option("--episode")]) -> None:
+def brain_update(
+    episode: Annotated[str, typer.Option("--episode")],
+    mode: Annotated[str, typer.Option("--mode")] = "full",
+    allow_catalog: Annotated[bool, typer.Option("--allow-catalog")] = False,
+) -> None:
+    if mode == "catalog" and not allow_catalog:
+        typer.echo("catalog update requires --allow-catalog", err=True)
+        raise typer.Exit(code=1)
     settings = load_settings()
     try:
         manifest = BrainCompiler(
             settings.project_root,
             shard_episode_count=settings.limits.shard_episode_count,
-        ).update(episode_id=episode)
+        ).update(episode_id=episode, mode=mode)
     except (FileNotFoundError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -2916,7 +2924,7 @@ def _inspect_final_synthesis_context_artifact(
         status["errors"].append("final_synthesis_context_required_inputs_mismatch")
     required_input_list = _string_list(required_inputs)
     status["required_input_set_verified"] = (
-        required_input_list == _final_synthesis_required_inputs()
+        final_synthesis_required_inputs_compatible(required_input_list)
     )
     if not status["required_input_set_verified"]:
         status["errors"].append("final_synthesis_context_required_input_set_mismatch")
@@ -5554,14 +5562,31 @@ def _final_synthesis_manifest_count_mismatches(
     )
     _add_expected_count(
         expected_counts,
+        "record_shard_contribution_count",
+        manifest.get("record_sweep_shard_count"),
+    )
+    _add_expected_count(
+        expected_counts,
         "retrieved_raw_episode_count",
         len(_string_list(manifest.get("retrieved_episode_ids"))),
     )
+    if "retrieved_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "retrieved_record_count",
+            len(_string_list(manifest.get("retrieved_record_ids"))),
+        )
     _add_expected_count(
         expected_counts,
         "counterexample_count",
         len(_string_list(manifest.get("counterexample_episode_ids"))),
     )
+    if "counterexample_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "counterexample_record_count",
+            len(_string_list(manifest.get("counterexample_record_ids"))),
+        )
     _add_expected_count(
         expected_counts, "web_source_count", len(_string_list(manifest.get("web_sources")))
     )

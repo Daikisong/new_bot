@@ -19,6 +19,11 @@ python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
 python -m news_scalping_lab.cli brain update --episode 2026-06-24
 ```
 
+This quick start uses the deterministic `--mode full` compatibility path so it
+works with the default mock provider. Production rebuilds omit `--mode` or pass
+`--mode llm-full`; mock providers are rejected instead of being promoted as a
+production brain.
+
 The same mock end-to-end flow is also available as one command:
 
 ```bash
@@ -67,6 +72,7 @@ nslab research import path/to/research_episode.json
 nslab research validate <episode_id>
 nslab research accept <episode_id>
 nslab brain update --episode <episode_id>
+nslab brain update --episode <episode_id> --mode llm-full
 nslab brain audit
 ```
 
@@ -125,11 +131,12 @@ kept as `UNKNOWN_TYPED_PAYLOAD`, forced to `training_eligible=false`, and report
 by `nslab memory audit --deep` rather than silently dropped.
 
 `brain update --episode` performs a safe incremental merge when the current brain
-already covers the prior accepted set exactly. If the current manifest is missing
-or drift is detected, it falls back to `brain rebuild --mode full`; full rebuilds
-remain reproducible from accepted source episodes. `brain audit` reports the
-current build mode while preserving the last full rebuild timestamp across
-incremental updates.
+already covers the prior accepted set exactly. `brain update --mode llm-full`
+rebuilds through the production compiler and fails without a real provider. If
+the current manifest is missing or drift is detected in compatibility mode, it
+falls back to `brain rebuild --mode full`; full rebuilds remain reproducible from
+accepted source episodes. `brain audit` reports the current build mode while
+preserving the last full rebuild timestamp across incremental updates.
 Brain shard summaries and daily memory-sweep shards both use
 `limits.shard_episode_count` from `configs/default.yaml`, so context budget changes
 are reflected in rebuilds and run manifests instead of being hidden in code.
@@ -145,12 +152,14 @@ out of sync.
 Production brain compilation is guarded:
 
 ```bash
+nslab brain rebuild
 nslab brain rebuild --mode llm-full
 nslab brain rebuild --mode catalog --allow-catalog
 nslab doctor --production
 ```
 
-`llm-full` requires a real non-mock LLM provider and normalized brain records.
+`brain rebuild` defaults to `llm-full`. `llm-full` requires a real non-mock LLM
+provider and normalized brain records.
 `catalog` preserves the deterministic compiler for tests, offline smoke, and
 legacy migration, but `doctor --production` rejects catalog/full/incremental brain
 manifests as production research brains.
@@ -173,12 +182,15 @@ nslab analyze \
   --web-search
 ```
 
-`exhaustive` mode is the default quality mode. It sweeps every accepted research episode and fails if coverage is incomplete. Retrieval misses are recorded but never used to block open-world candidate generation.
+`exhaustive` mode is the default quality mode. It sweeps every accepted research
+episode and every cutoff-available brain record, then fails if either coverage
+count is incomplete. Retrieval misses are recorded but never used to block
+open-world candidate generation.
 When `--mode` is omitted, `nslab analyze` uses `default_mode` from
 `configs/default.yaml`, whose initial value is `exhaustive`.
 `brain` mode also loads global brain files and shard brain summaries, and records
-memory sweep artifacts for every time-available accepted episode so those episodes
-still influence synthesis indirectly.
+memory sweep artifacts for every time-available accepted episode and record so
+those memories still influence synthesis indirectly.
 
 Without `--web-search`, the BLIND phase runs in `NEWS_ONLY_STRICT` mode and does
 not call web providers or price repositories. With `--web-search`, the BLIND phase

@@ -14,10 +14,13 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "global_brain",
     "all_shard_brains",
     "all_shard_contributions",
+    "record_level_shard_contributions",
     "retrieved_raw_episodes",
+    "retrieved_records",
     "positive_cases",
     "negative_cases",
     "counterexamples",
+    "counterexample_records",
     "candidate_research",
     "candidate_web_checks",
     "candidate_verification",
@@ -25,6 +28,16 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "d_minus_one_market_data",
     "company_memory",
     "market_memory",
+)
+RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS = {
+    "record_level_shard_contributions",
+    "retrieved_records",
+    "counterexample_records",
+}
+LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
+    item
+    for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+    if item not in RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS
 )
 
 
@@ -39,7 +52,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     candidate_verification = _dict_value(payload.get("candidate_verification"))
     red_team_output = _dict_value(payload.get("red_team_output"))
     d_minus_one = _dict_value(payload.get("d_minus_one_market_data"))
-    return {
+    summary = {
         "required_input_count": _list_len(payload.get("required_inputs")),
         "current_news_count": _list_len(payload.get("current_news")),
         "first_pass_mechanism_count": _first_pass_mechanism_count(
@@ -67,6 +80,24 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "d_minus_one_snapshot_count": _list_len(d_minus_one.get("snapshots")),
         "company_memory_count": _list_len(payload.get("company_memory")),
         "market_memory_count": _list_len(payload.get("market_memory")),
+    }
+    if "record_level_shard_contributions" in payload:
+        summary["record_shard_contribution_count"] = _list_len(
+            payload.get("record_level_shard_contributions")
+        )
+    if "retrieved_records" in payload:
+        summary["retrieved_record_count"] = _list_len(payload.get("retrieved_records"))
+    if "counterexample_records" in payload:
+        summary["counterexample_record_count"] = _list_len(
+            payload.get("counterexample_records")
+        )
+    return summary
+
+
+def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bool:
+    return tuple(required_inputs) in {
+        FINAL_SYNTHESIS_REQUIRED_INPUTS,
+        LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS,
     }
 
 

@@ -3,10 +3,16 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.records.models import (
+    BrainRecordEnvelope,
+    NormalizedEpisodeIndex,
+    ResearchBundleEnvelope,
+)
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import DeterministicHashEmbeddingProvider
 from news_scalping_lab.retrieval.store import LocalRetrievalStore, inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST
+from news_scalping_lab.utils import KST, canonical_json, sha256_text
 
 
 def _episode(
@@ -29,6 +35,116 @@ def _episode(
             open_world_mechanisms=[mechanism],
         ),
         available_from=available_at,
+    )
+
+
+def _store_retrieval_records(tmp_path) -> None:
+    records = [
+        _retrieval_record(
+            "BRAIN-REC-DIRECT",
+            record_type="supervised_direct_event_case",
+            ticker="000001",
+            theme_id="theme-direct",
+            response_class="positive_high10",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+        ),
+        _retrieval_record(
+            "BRAIN-REC-COUNTER",
+            record_type="counterexample",
+            ticker="000002",
+            theme_id="theme-counter",
+            response_class="negative_control",
+            available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+        ),
+    ]
+    raw_payload = "\n".join(record.model_dump_json() for record in records)
+    raw_sha = sha256_text(raw_payload)
+    source_path = tmp_path / "record_retrieval_bundle.md"
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id="NSLAB-20300110-RETRIEVAL",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"brain_delta.jsonl": raw_sha},
+            raw_block_counts={"brain_delta.jsonl": len(records)},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id="NSLAB-20300110-RETRIEVAL",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl"],
+            record_ids=[record.record_id for record in records],
+            record_count_by_type={
+                "supervised_direct_event_case": 1,
+                "counterexample": 1,
+            },
+            training_eligible_record_count=1,
+            source_ids=["SRC-RETRIEVAL"],
+        ),
+        records=records,
+        raw_blocks={"brain_delta.jsonl": raw_payload},
+        validation_report={"passed": True},
+    )
+
+
+def _retrieval_record(
+    record_id: str,
+    *,
+    record_type: str,
+    ticker: str,
+    theme_id: str,
+    response_class: str,
+    available_from: datetime,
+) -> BrainRecordEnvelope:
+    payload = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "episode_id": "NSLAB-20300110-RETRIEVAL",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "direct_event_response",
+        "evidence_phase": "BLIND_SAFE",
+        "ticker": ticker,
+        "company_name": f"{ticker} Test Co",
+        "theme_id": theme_id,
+        "path_type": "single_event",
+        "response_class": response_class,
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id="NSLAB-20300110-RETRIEVAL",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="direct_event_response",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=record_type != "counterexample",
+        eligibility_reason="unit test retrieval record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-RETRIEVAL"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
     )
 
 
@@ -91,6 +207,37 @@ def test_semantic_search_keeps_research_available_without_exact_keyword_gate(tmp
     assert LocalRetrievalStore(tmp_path, force_empty=True).search_semantic(
         "unseen wording with no shared tokens", limit=5
     ) == []
+
+
+def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    memory.rebuild_index()
+
+    assert memory.search_records(
+        "unseen wording",
+        record_type="supervised_direct_event_case",
+        ticker="000001",
+        theme_id="theme-direct",
+        path_type="single_event",
+        response_class="positive_high10",
+        evidence_phase="BLIND_SAFE",
+        confidence_label="low",
+        training_eligible=True,
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-DIRECT"]
+    assert memory.search_records(
+        "unseen wording",
+        record_type="counterexample",
+        training_eligible=False,
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == []
+    assert memory.search_records(
+        "unseen wording",
+        record_type="counterexample",
+        training_eligible=False,
+        available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-COUNTER"]
 
 
 def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:

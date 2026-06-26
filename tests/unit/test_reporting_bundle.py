@@ -260,10 +260,13 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         "global_brain": [],
         "all_shard_brains": [],
         "all_shard_contributions": [],
+        "record_level_shard_contributions": [],
         "retrieved_raw_episodes": [],
+        "retrieved_records": [],
         "positive_cases": [],
         "negative_cases": [],
         "counterexamples": [],
+        "counterexample_records": [],
         "candidate_research": {"candidates": []},
         "candidate_web_checks": [
             _candidate_web_context_row(candidate_web_check_payload)

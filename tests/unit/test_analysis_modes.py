@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -13,8 +14,14 @@ from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.records.models import (
+    BrainRecordEnvelope,
+    NormalizedEpisodeIndex,
+    ResearchBundleEnvelope,
+)
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
 
 
 class OrderAssertingRetrieval:
@@ -54,6 +61,101 @@ class FirstPassTrackingAnalyzer(DailyAnalyzer):
         mechanisms = super()._infer_first_pass_mechanisms(news_texts)
         self.first_pass_state["completed"] = True
         return mechanisms
+
+
+def _brain_record(
+    record_id: str,
+    *,
+    episode_id: str = "NSLAB-20300110-RECORDS",
+    record_type: str = "supervised_direct_event_case",
+    available_from: datetime,
+) -> BrainRecordEnvelope:
+    trade_day = date(2030, 1, 9)
+    payload = {
+        "record_id": record_id,
+        "record_type": record_type,
+        "episode_id": episode_id,
+        "trade_date": trade_day.isoformat(),
+        "available_from": available_from.isoformat(),
+        "training_target": "direct_event_response",
+        "evidence_phase": "BLIND_SAFE",
+        "ticker": "000001",
+        "company_name": "Record Sweep Co",
+        "path_type": "single_event",
+        "response_class": "positive_high10",
+        "training_eligible": record_type != "counterexample",
+        "provenance_source_ids": ["SRC-RECORD-SWEEP"],
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id=episode_id,
+        trade_date=trade_day,
+        available_from=available_from,
+        training_target="direct_event_response",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=record_type != "counterexample",
+        eligibility_reason="unit test record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-RECORD-SWEEP"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+
+
+def _store_brain_records(tmp_path: Path, records: list[BrainRecordEnvelope]) -> None:
+    episode_id = records[0].episode_id
+    source_path = tmp_path / "synthetic_record_bundle.md"
+    raw_payload = "\n".join(record.model_dump_json() for record in records)
+    raw_sha = sha256_text(raw_payload)
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"brain_delta.jsonl": raw_sha},
+            raw_block_counts={"brain_delta.jsonl": len(records)},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl"],
+            record_ids=[record.record_id for record in records],
+            record_count_by_type=dict.fromkeys(
+                [record.record_type for record in records],
+                1,
+            ),
+            training_eligible_record_count=sum(
+                1 for record in records if record.training_eligible
+            ),
+            source_ids=["SRC-RECORD-SWEEP"],
+        ),
+        records=records,
+        raw_blocks={"brain_delta.jsonl": raw_payload},
+        validation_report={"passed": True},
+    )
 
 
 def test_normalize_analysis_mode_accepts_only_supported_modes() -> None:
@@ -416,6 +518,63 @@ async def test_fast_mode_keeps_open_world_candidates_when_retrieval_misses(tmp_p
     assert beneficiary.memory_episode_ids == []
     assert "memory has no exact precedent" in beneficiary.novel_reasoning
     assert "UnseenFastCo" in {candidate.company_name for candidate in prediction.candidates}
+
+
+@pytest.mark.asyncio
+async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "record_sweep_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","RecordSweepCo, new catalyst",'
+        '"Exhaustive mode should sweep available brain records."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    assert manifest.accepted_record_count == 2
+    assert manifest.available_record_count == 1
+    assert manifest.swept_record_count == 1
+    assert manifest.swept_record_ids == ["BRAIN-AVAILABLE"]
+    assert manifest.retrieved_record_ids == ["BRAIN-AVAILABLE"]
+    assert manifest.excluded_retrieved_record_ids == ["BRAIN-FUTURE"]
+    assert manifest.record_sweep_artifacts
+    assert manifest.record_sweep_shard_count == 1
+    assert manifest.errors == []
+    record_sweep_payload = read_json(tmp_path / manifest.record_sweep_artifacts[0])
+    assert record_sweep_payload["record_ids"] == ["BRAIN-AVAILABLE"]
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
+    assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
+        "record_ids"
+    ] == ["BRAIN-AVAILABLE"]
 
 
 @pytest.mark.asyncio

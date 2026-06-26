@@ -66,6 +66,7 @@ from news_scalping_lab.prices.base import (
     PriceSource,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
@@ -223,6 +224,16 @@ class DailyAnalyzer:
             raw_retrieved_ids,
             cutoff_at=cutoff_at,
         )
+        raw_retrieved_record_ids = self._search_memory_records(
+            query=" ".join([*web_queries, *first_pass_mechanisms]),
+            limit=20,
+        )
+        retrieved_record_ids, excluded_retrieved_record_ids = (
+            self._filter_retrieved_record_ids_available_as_of(
+                raw_retrieved_record_ids,
+                cutoff_at=cutoff_at,
+            )
+        )
         manifest = ContextAssembler(
             self.root,
             shard_episode_count=self.settings.limits.shard_episode_count,
@@ -232,6 +243,7 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
             run_seed=run_seed,
             retrieved_episode_ids=retrieved_ids,
+            retrieved_record_ids=retrieved_record_ids,
             web_queries=web_queries,
         )
         manifest.news_file = relative_to_root(full_batch.path, self.root)
@@ -243,6 +255,7 @@ class DailyAnalyzer:
         manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
         manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
+        manifest.excluded_retrieved_record_ids = excluded_retrieved_record_ids
         self._write_open_world_first_analysis_artifact(
             analysis=open_world_first_analysis,
             manifest=manifest,
@@ -301,13 +314,27 @@ class DailyAnalyzer:
         manifest.accepted_episode_count = sweep.accepted_episode_count
         manifest.swept_episode_count = len(sweep.swept_episode_ids)
         manifest.swept_episode_ids = sweep.swept_episode_ids
+        manifest.accepted_record_count = sweep.accepted_record_count
+        manifest.available_record_count = sweep.available_record_count
+        manifest.training_eligible_available_record_count = (
+            sweep.training_eligible_available_record_count
+        )
+        manifest.swept_record_count = len(sweep.swept_record_ids)
+        manifest.swept_record_ids = sweep.swept_record_ids
         manifest.memory_sweep_artifacts = sweep.artifact_paths
+        manifest.record_sweep_artifacts = sweep.record_artifact_paths
         manifest.memory_sweep_artifact_hashes = {
             artifact_path: file_sha256(self.root / artifact_path)
             for artifact_path in sweep.artifact_paths
         }
+        manifest.record_sweep_artifact_hashes = {
+            artifact_path: file_sha256(self.root / artifact_path)
+            for artifact_path in sweep.record_artifact_paths
+        }
         manifest.memory_sweep_shard_count = sweep.shard_count
+        manifest.record_sweep_shard_count = sweep.record_shard_count
         manifest.memory_sweep_cache_hits = sweep.cache_hits
+        manifest.record_sweep_cache_hits = sweep.record_cache_hits
         manifest.token_counts.update(sweep.token_counts)
         manifest.token_counts["current_news"] = sum(len(text) for text in news_texts) // 4
         manifest.errors.extend(sweep.errors)
@@ -2591,6 +2618,40 @@ class DailyAnalyzer:
                 excluded.append(episode_id)
         return included, excluded
 
+    def _search_memory_records(self, *, query: str, limit: int) -> list[str]:
+        search_records = getattr(self.retrieval, "search_records", None)
+        if not callable(search_records):
+            return []
+        result = search_records(query, limit=limit)
+        if not isinstance(result, list):
+            return []
+        return [record_id for record_id in result if isinstance(record_id, str)]
+
+    def _filter_retrieved_record_ids_available_as_of(
+        self,
+        retrieved_ids: list[str],
+        *,
+        cutoff_at: datetime,
+    ) -> tuple[list[str], list[str]]:
+        store = BrainRecordStore(self.root)
+        included: list[str] = []
+        excluded: list[str] = []
+        seen: set[str] = set()
+        for record_id in retrieved_ids:
+            if record_id in seen:
+                continue
+            seen.add(record_id)
+            try:
+                record = store.get_record(record_id)
+            except FileNotFoundError:
+                excluded.append(record_id)
+                continue
+            if is_available_as_of(record.available_from, cutoff_at):
+                included.append(record_id)
+            else:
+                excluded.append(record_id)
+        return included, excluded
+
     async def _run_final_synthesis(
         self,
         *,
@@ -2679,10 +2740,13 @@ class DailyAnalyzer:
                 "global_brain",
                 "all_shard_brains",
                 "all_shard_contributions",
+                "record_level_shard_contributions",
                 "retrieved_raw_episodes",
+                "retrieved_records",
                 "positive_cases",
                 "negative_cases",
                 "counterexamples",
+                "counterexample_records",
                 "candidate_research",
                 "candidate_web_checks",
                 "candidate_verification",
@@ -2718,12 +2782,20 @@ class DailyAnalyzer:
             "all_shard_contributions": self._read_json_artifacts(
                 manifest.memory_sweep_artifacts
             ),
+            "record_level_shard_contributions": self._read_json_artifacts(
+                manifest.record_sweep_artifacts
+            ),
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
+            "retrieved_record_ids": manifest.retrieved_record_ids,
+            "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
             "retrieved_raw_episodes": self._read_retrieved_episode_context(manifest),
+            "retrieved_records": self._read_retrieved_record_context(manifest),
             "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),
             "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
             "counterexamples": self._read_counterexample_context(manifest),
+            "counterexample_record_ids": manifest.counterexample_record_ids,
+            "counterexample_records": self._read_counterexample_record_context(manifest),
             "candidate_research": prediction.model_dump(mode="json"),
             "candidate_web_checks": self._read_candidate_web_check_context(manifest),
             "candidate_verification": self._read_candidate_verification_context(
@@ -3175,6 +3247,33 @@ class DailyAnalyzer:
             )
         return contexts
 
+    def _read_retrieved_record_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        store = BrainRecordStore(self.root)
+        contexts: list[dict[str, Any]] = []
+        for record_id in manifest.retrieved_record_ids:
+            try:
+                record = store.get_record(record_id)
+            except FileNotFoundError:
+                contexts.append({"record_id": record_id, "missing": True})
+                continue
+            contexts.append(record.model_dump(mode="json"))
+        return contexts
+
+    def _read_counterexample_record_context(
+        self,
+        manifest: ContextManifest,
+    ) -> list[dict[str, Any]]:
+        store = BrainRecordStore(self.root)
+        contexts: list[dict[str, Any]] = []
+        for record_id in manifest.counterexample_record_ids:
+            try:
+                record = store.get_record(record_id)
+            except FileNotFoundError:
+                contexts.append({"record_id": record_id, "missing": True})
+                continue
+            contexts.append(record.model_dump(mode="json"))
+        return contexts
+
     def _read_json_artifacts(self, relative_paths: list[str]) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []
         for relative_path in relative_paths:
@@ -3354,11 +3453,19 @@ class DailyAnalyzer:
     def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
         if manifest.mode != "exhaustive":
             return
-        if manifest.accepted_episode_count == manifest.swept_episode_count and not manifest.errors:
+        if (
+            manifest.accepted_episode_count == manifest.swept_episode_count
+            and manifest.available_record_count == manifest.swept_record_count
+            and not manifest.errors
+        ):
             return
         if manifest.accepted_episode_count != manifest.swept_episode_count:
             manifest.errors.append(
                 "exhaustive mode requires swept_episode_count == accepted_episode_count"
+            )
+        if manifest.available_record_count != manifest.swept_record_count:
+            manifest.errors.append(
+                "exhaustive mode requires swept_record_count == available_record_count"
             )
         manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
         manifest_path = manifest_dir / f"{manifest.run_id}.json"

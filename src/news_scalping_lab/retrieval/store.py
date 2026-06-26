@@ -7,7 +7,7 @@ not block candidate generation.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,18 @@ class LocalRetrievalStore:
         *,
         limit: int = 10,
         record_type: str | None = None,
+        training_target: str | None = None,
+        trade_date_from: str | None = None,
+        trade_date_to: str | None = None,
+        available_from: datetime | None = None,
+        ticker: str | None = None,
+        company_name: str | None = None,
+        theme_id: str | None = None,
+        path_type: str | None = None,
+        response_class: str | None = None,
         training_eligible: bool | None = None,
+        evidence_phase: str | None = None,
+        confidence_label: str | None = None,
     ) -> list[str]:
         if self.force_empty:
             return []
@@ -100,8 +111,37 @@ class LocalRetrievalStore:
             for record in records
             if (record_type is None or record.get("record_type") == record_type)
             and (
+                training_target is None
+                or record.get("training_target") == training_target
+            )
+            and _date_in_range(
+                str(record.get("trade_date", "")),
+                trade_date_from=trade_date_from,
+                trade_date_to=trade_date_to,
+            )
+            and (
+                available_from is None
+                or _datetime_leq(str(record.get("available_from", "")), available_from)
+            )
+            and (ticker is None or record.get("ticker") == ticker)
+            and (company_name is None or record.get("company_name") == company_name)
+            and (theme_id is None or record.get("theme_id") == theme_id)
+            and (path_type is None or record.get("path_type") == path_type)
+            and (
+                response_class is None
+                or record.get("response_class") == response_class
+            )
+            and (
                 training_eligible is None
                 or record.get("training_eligible") is training_eligible
+            )
+            and (
+                evidence_phase is None
+                or record.get("evidence_phase") == evidence_phase
+            )
+            and (
+                confidence_label is None
+                or record.get("confidence_label") == confidence_label
             )
         ]
         query_terms = text_terms(query)
@@ -155,24 +195,32 @@ class LocalRetrievalStore:
         record_vectors = self.embedding_provider.embed_texts(record_texts)
         indexed_brain_records: list[dict[str, object]] = []
         for record, text, vector in zip(brain_records, record_texts, record_vectors, strict=True):
+            payload = record.payload
             indexed_brain_records.append(
                 {
                     "record_id": record.record_id,
                     "episode_id": record.episode_id,
                     "record_type": record.record_type,
                     "training_target": record.training_target,
+                    "evidence_phase": record.evidence_phase,
+                    "confidence_label": record.confidence_label,
                     "trade_date": record.trade_date.isoformat(),
                     "available_from": record.available_from.isoformat(),
                     "training_eligible": record.training_eligible,
+                    "ticker": payload.get("ticker"),
+                    "company_name": payload.get("company_name"),
+                    "theme_id": payload.get("theme_id"),
+                    "path_type": payload.get("path_type"),
+                    "response_class": payload.get("response_class"),
                     "text_sha256": sha256_text(text),
                     "terms": sorted(text_terms(text)),
                     "embedding": vector,
                 }
             )
-        payload = "".join(
+        episode_index_payload = "".join(
             json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records
         )
-        self.records_path.write_text(payload, encoding="utf-8")
+        self.records_path.write_text(episode_index_payload, encoding="utf-8")
         brain_record_payload = "".join(
             json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
             for record in indexed_brain_records
@@ -192,7 +240,7 @@ class LocalRetrievalStore:
             "accepted_hashes": accepted_hashes,
             "brain_record_hashes": brain_record_hashes,
             "records_file": VECTOR_INDEX_RECORDS,
-            "records_sha256": sha256_text(payload),
+            "records_sha256": sha256_text(episode_index_payload),
             "brain_records_file": VECTOR_INDEX_BRAIN_RECORDS,
             "brain_records_sha256": sha256_text(brain_record_payload),
         }
@@ -395,6 +443,43 @@ def _is_brain_index_record(value: object) -> bool:
         and len(embedding) == VECTOR_DIMENSIONS
         and all(isinstance(item, int | float) for item in embedding)
     )
+
+
+def _date_in_range(
+    raw_value: str,
+    *,
+    trade_date_from: str | None,
+    trade_date_to: str | None,
+) -> bool:
+    if trade_date_from is None and trade_date_to is None:
+        return True
+    try:
+        value = date.fromisoformat(raw_value)
+    except ValueError:
+        return False
+    if trade_date_from is not None:
+        try:
+            lower = date.fromisoformat(trade_date_from)
+        except ValueError:
+            return False
+        if value < lower:
+            return False
+    if trade_date_to is not None:
+        try:
+            upper = date.fromisoformat(trade_date_to)
+        except ValueError:
+            return False
+        if value > upper:
+            return False
+    return True
+
+
+def _datetime_leq(raw_value: str, upper: datetime) -> bool:
+    try:
+        value = datetime.fromisoformat(raw_value)
+    except ValueError:
+        return False
+    return value <= upper
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:

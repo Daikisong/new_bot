@@ -17,6 +17,8 @@ from typing import Any
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
@@ -34,9 +36,16 @@ MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v1"
 class SweepResult:
     accepted_episode_count: int
     swept_episode_ids: list[str]
+    accepted_record_count: int
+    available_record_count: int
+    training_eligible_available_record_count: int
+    swept_record_ids: list[str]
     artifact_paths: list[str]
+    record_artifact_paths: list[str]
     shard_count: int
+    record_shard_count: int
     cache_hits: int
+    record_cache_hits: int
     token_counts: dict[str, int]
     errors: list[str]
 
@@ -67,26 +76,45 @@ class MemorySweeper:
         cache_model_config = model_config or {}
         model_config_hash = sha256_text(canonical_json(cache_model_config))
         accepted = self._available_episodes(cutoff_at)
+        all_records = BrainRecordStore(self.root).list_records()
+        available_records = [
+            record
+            for record in all_records
+            if is_available_as_of(record.available_from, cutoff_at)
+        ]
         if mode == "fast":
             return SweepResult(
                 accepted_episode_count=len(accepted),
                 swept_episode_ids=[],
+                accepted_record_count=len(all_records),
+                available_record_count=len(available_records),
+                training_eligible_available_record_count=sum(
+                    1 for record in available_records if record.training_eligible
+                ),
+                swept_record_ids=[],
                 artifact_paths=[],
+                record_artifact_paths=[],
                 shard_count=0,
+                record_shard_count=0,
                 cache_hits=0,
-                token_counts={"memory_sweep": 0},
+                record_cache_hits=0,
+                token_counts={"memory_sweep": 0, "record_memory_sweep": 0},
                 errors=[],
             )
 
         artifacts: list[str] = []
+        record_artifacts: list[str] = []
         swept_ids: list[str] = []
+        swept_record_ids: list[str] = []
         cache_hits = 0
+        record_cache_hits = 0
         run_dir = self.checkpoint_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         brain_version = current_brain_version(self.root) or "none"
         news_hash = sha256_text("\n---NEWS---\n".join(current_news_texts))
         accepted_hashes = self.store.accepted_hashes()
         shards = list(self._shards(accepted))
+        record_shards = list(self._record_shards(available_records))
 
         for shard_index, shard in enumerate(shards, start=1):
             episode_ids = [episode.episode_id for episode in shard]
@@ -144,6 +172,61 @@ class MemorySweeper:
             artifacts.append(run_path.relative_to(self.root).as_posix())
             swept_ids.extend(episode_ids)
 
+        for shard_index, record_shard in enumerate(record_shards, start=1):
+            record_ids = [record.record_id for record in record_shard]
+            record_source_hashes = _record_source_hashes(record_shard)
+            shard_hash = _record_shard_hash(record_source_hashes)
+            cache_key = stable_id(
+                "RECSWEEP",
+                brain_version,
+                news_hash,
+                shard_hash,
+                mode,
+                cutoff_at.isoformat(),
+                prompt_version,
+                model_config_hash,
+                length=16,
+            )
+            cache_path = self.cache_dir / f"{cache_key}.json"
+            cached_record_payload = self._read_cached_record_contribution(
+                cache_path=cache_path,
+                cache_key=cache_key,
+                mode=mode,
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                brain_version=brain_version,
+                news_hash=news_hash,
+                shard_hash=shard_hash,
+                record_ids=record_ids,
+                record_source_hashes=record_source_hashes,
+                prompt_version=prompt_version,
+                model_config_hash=model_config_hash,
+            )
+            if cached_record_payload is not None:
+                record_payload = cached_record_payload
+                record_cache_hits += 1
+            else:
+                record_payload = self._build_record_contribution(
+                    cache_key=cache_key,
+                    mode=mode,
+                    trade_date=trade_date,
+                    cutoff_at=cutoff_at,
+                    brain_version=brain_version,
+                    news_hash=news_hash,
+                    shard_hash=shard_hash,
+                    shard_index=shard_index,
+                    records=record_shard,
+                    record_source_hashes=record_source_hashes,
+                    first_pass_mechanisms=first_pass_mechanisms,
+                    prompt_version=prompt_version,
+                    model_config_hash=model_config_hash,
+                )
+                write_json(cache_path, record_payload)
+            run_path = run_dir / f"record_shard_{shard_index:04d}.json"
+            write_json(run_path, record_payload)
+            record_artifacts.append(run_path.relative_to(self.root).as_posix())
+            swept_record_ids.extend(record_ids)
+
         errors: list[str] = []
         if mode == "exhaustive":
             expected_ids = [episode.episode_id for episode in accepted]
@@ -168,13 +251,54 @@ class MemorySweeper:
                 errors.append(
                     "memory sweep included unavailable episodes: " + ", ".join(unexpected_ids)
                 )
+            expected_record_ids = [record.record_id for record in available_records]
+            expected_record_counts = Counter(expected_record_ids)
+            swept_record_counts = Counter(swept_record_ids)
+            missing_record_ids = sorted(
+                (expected_record_counts - swept_record_counts).elements()
+            )
+            duplicate_record_ids = sorted(
+                record_id
+                for record_id, count in swept_record_counts.items()
+                if count > expected_record_counts.get(record_id, 0)
+            )
+            unexpected_record_ids = sorted(
+                set(swept_record_counts) - set(expected_record_counts)
+            )
+            if missing_record_ids:
+                errors.append(
+                    "record memory sweep missing available records: "
+                    + ", ".join(missing_record_ids)
+                )
+            if duplicate_record_ids:
+                errors.append(
+                    "record memory sweep duplicated available records: "
+                    + ", ".join(duplicate_record_ids)
+                )
+            if unexpected_record_ids:
+                errors.append(
+                    "record memory sweep included unavailable records: "
+                    + ", ".join(unexpected_record_ids)
+                )
         return SweepResult(
             accepted_episode_count=len(accepted),
             swept_episode_ids=swept_ids,
+            accepted_record_count=len(all_records),
+            available_record_count=len(available_records),
+            training_eligible_available_record_count=sum(
+                1 for record in available_records if record.training_eligible
+            ),
+            swept_record_ids=swept_record_ids,
             artifact_paths=artifacts,
+            record_artifact_paths=record_artifacts,
             shard_count=len(shards),
+            record_shard_count=len(record_shards),
             cache_hits=cache_hits,
-            token_counts={"memory_sweep": self._estimate_tokens(artifacts)},
+            record_cache_hits=record_cache_hits,
+            token_counts={
+                "memory_sweep": self._estimate_tokens(artifacts),
+                "record_memory_sweep": self._estimate_tokens(record_artifacts),
+            },
             errors=errors,
         )
 
@@ -189,6 +313,15 @@ class MemorySweeper:
         return [
             episodes[index : index + self.shard_episode_count]
             for index in range(0, len(episodes), self.shard_episode_count)
+        ]
+
+    def _record_shards(
+        self,
+        records: list[BrainRecordEnvelope],
+    ) -> list[list[BrainRecordEnvelope]]:
+        return [
+            records[index : index + self.shard_episode_count]
+            for index in range(0, len(records), self.shard_episode_count)
         ]
 
     def _read_cached_contribution(
@@ -234,6 +367,49 @@ class MemorySweeper:
         cached["from_cache"] = True
         return cached
 
+    def _read_cached_record_contribution(
+        self,
+        *,
+        cache_path: Path,
+        cache_key: str,
+        mode: str,
+        trade_date: date,
+        cutoff_at: datetime,
+        brain_version: str,
+        news_hash: str,
+        shard_hash: str,
+        record_ids: list[str],
+        record_source_hashes: dict[str, str],
+        prompt_version: str,
+        model_config_hash: str,
+    ) -> dict[str, object] | None:
+        if not cache_path.exists():
+            return None
+        try:
+            payload = read_json(cache_path)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        if not self._record_cache_matches(
+            payload,
+            cache_key=cache_key,
+            mode=mode,
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            brain_version=brain_version,
+            news_hash=news_hash,
+            shard_hash=shard_hash,
+            record_ids=record_ids,
+            record_source_hashes=record_source_hashes,
+            prompt_version=prompt_version,
+            model_config_hash=model_config_hash,
+        ):
+            return None
+        cached = {str(key): value for key, value in payload.items()}
+        cached["from_cache"] = True
+        return cached
+
     def _cache_matches(
         self,
         payload: dict[Any, Any],
@@ -261,6 +437,37 @@ class MemorySweeper:
             and payload.get("episode_shard_sha256") == shard_hash
             and payload.get("episode_ids") == episode_ids
             and payload.get("episode_shard_source_hashes") == episode_source_hashes
+            and payload.get("prompt_version") == prompt_version
+            and payload.get("model_config_sha256") == model_config_hash
+        )
+
+    def _record_cache_matches(
+        self,
+        payload: dict[Any, Any],
+        *,
+        cache_key: str,
+        mode: str,
+        trade_date: date,
+        cutoff_at: datetime,
+        brain_version: str,
+        news_hash: str,
+        shard_hash: str,
+        record_ids: list[str],
+        record_source_hashes: dict[str, str],
+        prompt_version: str,
+        model_config_hash: str,
+    ) -> bool:
+        return (
+            payload.get("schema_version") == "nslab.record_memory_sweep_contribution.v1"
+            and payload.get("cache_key") == cache_key
+            and payload.get("mode") == mode
+            and payload.get("trade_date") == trade_date.isoformat()
+            and payload.get("cutoff_at") == cutoff_at.isoformat()
+            and payload.get("brain_version") == brain_version
+            and payload.get("current_news_sha256") == news_hash
+            and payload.get("record_shard_sha256") == shard_hash
+            and payload.get("record_ids") == record_ids
+            and payload.get("record_shard_source_hashes") == record_source_hashes
             and payload.get("prompt_version") == prompt_version
             and payload.get("model_config_sha256") == model_config_hash
         )
@@ -325,6 +532,74 @@ class MemorySweeper:
             "from_cache": False,
         }
 
+    def _build_record_contribution(
+        self,
+        *,
+        cache_key: str,
+        mode: str,
+        trade_date: date,
+        cutoff_at: datetime,
+        brain_version: str,
+        news_hash: str,
+        shard_hash: str,
+        shard_index: int,
+        records: list[BrainRecordEnvelope],
+        record_source_hashes: dict[str, str],
+        first_pass_mechanisms: list[str],
+        prompt_version: str,
+        model_config_hash: str,
+    ) -> dict[str, object]:
+        return {
+            "schema_version": "nslab.record_memory_sweep_contribution.v1",
+            "cache_key": cache_key,
+            "mode": mode,
+            "trade_date": trade_date.isoformat(),
+            "cutoff_at": cutoff_at.isoformat(),
+            "brain_version": brain_version,
+            "prompt_version": prompt_version,
+            "model_config_sha256": model_config_hash,
+            "current_news_sha256": news_hash,
+            "record_shard_sha256": shard_hash,
+            "record_shard_source_hashes": record_source_hashes,
+            "shard_index": shard_index,
+            "record_count": len(records),
+            "record_ids": [record.record_id for record in records],
+            "record_types": dict(Counter(record.record_type for record in records)),
+            "training_targets": dict(
+                Counter(record.training_target or "UNKNOWN" for record in records)
+            ),
+            "positive_analogs": [
+                _record_summary(record)
+                for record in records
+                if record.record_type
+                in {
+                    "supervised_issuer_day_case",
+                    "supervised_direct_event_case",
+                    "supervised_theme_formation_case",
+                    "beneficiary_discovery_case",
+                    "memory_claim",
+                    "mechanism_memory",
+                }
+            ],
+            "negative_analogs": [
+                _record_summary(record)
+                for record in records
+                if "error_case" in record.record_type
+                or record.record_type in {"counterexample"}
+            ],
+            "leader_selection_pairs": [
+                _record_summary(record)
+                for record in records
+                if record.record_type == "blind_leader_preference_pair"
+            ],
+            "supporting_points": first_pass_mechanisms,
+            "objections": [
+                "Do not treat record retrieval misses as candidate blockers.",
+                "Respect every record.available_from cutoff before applying memory.",
+            ],
+            "from_cache": False,
+        }
+
     def _estimate_tokens(self, artifact_paths: list[str]) -> int:
         char_count = 0
         for relative_path in artifact_paths:
@@ -354,3 +629,39 @@ def _episode_shard_hash(episode_source_hashes: dict[str, str]) -> str:
             ]
         )
     )
+
+
+def _record_source_hashes(records: list[BrainRecordEnvelope]) -> dict[str, str]:
+    return {
+        record.record_id: record.normalized_payload_sha256
+        for record in records
+    }
+
+
+def _record_shard_hash(record_source_hashes: dict[str, str]) -> str:
+    return sha256_text(
+        canonical_json(
+            [
+                {"record_id": record_id, "source_sha256": source_hash}
+                for record_id, source_hash in sorted(record_source_hashes.items())
+            ]
+        )
+    )
+
+
+def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
+    payload = record.payload
+    return {
+        "record_id": record.record_id,
+        "episode_id": record.episode_id,
+        "record_type": record.record_type,
+        "training_target": record.training_target,
+        "evidence_phase": record.evidence_phase,
+        "training_eligible": record.training_eligible,
+        "available_from": record.available_from.isoformat(),
+        "response_class": payload.get("response_class"),
+        "ticker": payload.get("ticker"),
+        "theme_id": payload.get("theme_id"),
+        "path_type": payload.get("path_type"),
+        "confidence_label": record.confidence_label,
+    }

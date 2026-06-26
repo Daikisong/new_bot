@@ -23,6 +23,8 @@ from news_scalping_lab.contracts.models import (
     PriceSnapshot,
     ResearchEpisode,
 )
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
@@ -62,10 +64,12 @@ class ContextAssembler:
         cutoff_at: datetime,
         run_seed: str,
         retrieved_episode_ids: list[str] | None = None,
+        retrieved_record_ids: list[str] | None = None,
         web_queries: list[str] | None = None,
     ) -> ContextManifest:
         mode = normalize_analysis_mode(mode)
         raw_retrieved_ids = retrieved_episode_ids or []
+        raw_retrieved_record_ids = retrieved_record_ids or []
         web_query_list = web_queries or []
         all_accepted = self.store.list_accepted()
         accepted = [
@@ -81,10 +85,33 @@ class ContextAssembler:
         accepted_ids = [episode.episode_id for episode in accepted]
         all_accepted_ids = [episode.episode_id for episode in all_accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
+        all_records = BrainRecordStore(self.root).list_records()
+        available_records = [
+            record
+            for record in all_records
+            if is_available_as_of(record.available_from, cutoff_at)
+        ]
+        unavailable_records = [
+            record
+            for record in all_records
+            if not is_available_as_of(record.available_from, cutoff_at)
+        ]
+        available_record_ids = [record.record_id for record in available_records]
+        available_record_hashes = {
+            record.record_id: record.normalized_payload_sha256
+            for record in available_records
+        }
         retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
             accepted=accepted,
             unavailable=unavailable,
+        )
+        retrieved_record_ids, excluded_retrieved_record_ids = (
+            _filter_retrieved_record_ids_available_as_of(
+                raw_retrieved_record_ids,
+                available_records=available_records,
+                unavailable_records=unavailable_records,
+            )
         )
         accepted_hashes = self._accepted_hashes_for(accepted_ids)
         run_id = stable_id(
@@ -93,10 +120,14 @@ class ContextAssembler:
                 {
                     "accepted_episode_hashes": accepted_hashes,
                     "accepted_episode_ids": accepted_ids,
+                    "available_record_hashes": available_record_hashes,
+                    "available_record_ids": available_record_ids,
                     "cutoff_at": cutoff_at.isoformat(),
                     "excluded_retrieved_episode_ids": excluded_retrieved_ids,
+                    "excluded_retrieved_record_ids": excluded_retrieved_record_ids,
                     "mode": mode,
                     "retrieved_episode_ids": retrieved_ids,
+                    "retrieved_record_ids": retrieved_record_ids,
                     "run_seed": run_seed,
                     "trade_date": trade_date.isoformat(),
                     "web_queries": web_query_list,
@@ -106,10 +137,18 @@ class ContextAssembler:
         counterexample_ids = [
             episode.episode_id for episode in accepted if episode.counterexamples
         ]
+        counterexample_record_ids = [
+            record.record_id
+            for record in available_records
+            if record.record_type == "counterexample"
+        ]
         swept_ids = accepted_ids if mode in {"exhaustive", "brain"} else []
+        swept_record_ids = available_record_ids if mode in {"exhaustive", "brain"} else []
         errors: list[str] = []
         if mode == "exhaustive" and len(swept_ids) != len(accepted_ids):
             errors.append("exhaustive coverage mismatch")
+        if mode == "exhaustive" and len(swept_record_ids) != len(available_record_ids):
+            errors.append("exhaustive record coverage mismatch")
         brain_context = self._brain_context_files(
             run_id=run_id,
             cutoff_at=cutoff_at,
@@ -140,6 +179,16 @@ class ContextAssembler:
             retrieved_episode_ids=retrieved_ids,
             excluded_retrieved_episode_ids=excluded_retrieved_ids,
             counterexample_episode_ids=counterexample_ids,
+            accepted_record_count=len(all_records),
+            available_record_count=len(available_records),
+            training_eligible_available_record_count=sum(
+                1 for record in available_records if record.training_eligible
+            ),
+            swept_record_count=len(swept_record_ids),
+            swept_record_ids=swept_record_ids,
+            retrieved_record_ids=retrieved_record_ids,
+            excluded_retrieved_record_ids=excluded_retrieved_record_ids,
+            counterexample_record_ids=counterexample_record_ids,
             token_counts={},
             truncations=[],
             web_queries=web_query_list,
@@ -155,6 +204,8 @@ class ContextAssembler:
         )
         if mode == "exhaustive" and manifest.swept_episode_count != manifest.accepted_episode_count:
             manifest.errors.append("swept_episode_count must equal accepted_episode_count")
+        if mode == "exhaustive" and manifest.swept_record_count != manifest.available_record_count:
+            manifest.errors.append("swept_record_count must equal available_record_count")
         return manifest
 
     def _accepted_hashes_for(self, accepted_ids: list[str]) -> dict[str, str]:
@@ -458,4 +509,26 @@ def _filter_retrieved_ids_available_as_of(
             included.append(episode_id)
         elif episode_id in unavailable_ids or episode_id:
             excluded.append(episode_id)
+    return included, excluded
+
+
+def _filter_retrieved_record_ids_available_as_of(
+    retrieved_ids: list[str],
+    *,
+    available_records: list[BrainRecordEnvelope],
+    unavailable_records: list[BrainRecordEnvelope],
+) -> tuple[list[str], list[str]]:
+    available_ids = {record.record_id for record in available_records}
+    unavailable_ids = {record.record_id for record in unavailable_records}
+    included: list[str] = []
+    excluded: list[str] = []
+    seen: set[str] = set()
+    for record_id in retrieved_ids:
+        if record_id in seen:
+            continue
+        seen.add(record_id)
+        if record_id in available_ids:
+            included.append(record_id)
+        elif record_id in unavailable_ids or record_id:
+            excluded.append(record_id)
     return included, excluded

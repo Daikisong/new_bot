@@ -362,10 +362,17 @@ class BrokenMemorySweeper:
         return SweepResult(
             accepted_episode_count=1,
             swept_episode_ids=[],
+            accepted_record_count=0,
+            available_record_count=0,
+            training_eligible_available_record_count=0,
+            swept_record_ids=[],
             artifact_paths=[],
+            record_artifact_paths=[],
             shard_count=0,
+            record_shard_count=0,
             cache_hits=0,
-            token_counts={"memory_sweep": 0},
+            record_cache_hits=0,
+            token_counts={"memory_sweep": 0, "record_memory_sweep": 0},
             errors=["memory sweep missing accepted episodes: EP-missing"],
         )
 

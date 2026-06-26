@@ -66,6 +66,11 @@
       "title": "Accepted Episode Count",
       "type": "integer"
     },
+    "accepted_record_count": {
+      "default": 0,
+      "title": "Accepted Record Count",
+      "type": "integer"
+    },
     "as_of": {
       "format": "date-time",
       "title": "As Of",
@@ -74,6 +79,11 @@
     "available_episode_count": {
       "default": 0,
       "title": "Available Episode Count",
+      "type": "integer"
+    },
+    "available_record_count": {
+      "default": 0,
+      "title": "Available Record Count",
       "type": "integer"
     },
     "blind_artifact_sha256": {
@@ -279,6 +289,13 @@
       "title": "Counterexample Episode Ids",
       "type": "array"
     },
+    "counterexample_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Counterexample Record Ids",
+      "type": "array"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -376,6 +393,13 @@
         "type": "string"
       },
       "title": "Excluded Retrieved Episode Ids",
+      "type": "array"
+    },
+    "excluded_retrieved_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Excluded Retrieved Record Ids",
       "type": "array"
     },
     "excluded_semantic_retrieval_episode_ids": {
@@ -703,6 +727,30 @@
       "title": "Prompt Hashes",
       "type": "object"
     },
+    "record_sweep_artifact_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Record Sweep Artifact Hashes",
+      "type": "object"
+    },
+    "record_sweep_artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Record Sweep Artifacts",
+      "type": "array"
+    },
+    "record_sweep_cache_hits": {
+      "default": 0,
+      "title": "Record Sweep Cache Hits",
+      "type": "integer"
+    },
+    "record_sweep_shard_count": {
+      "default": 0,
+      "title": "Record Sweep Shard Count",
+      "type": "integer"
+    },
     "red_team_artifacts": {
       "items": {
         "type": "string"
@@ -744,6 +792,13 @@
         "type": "string"
       },
       "title": "Retrieved Episode Ids",
+      "type": "array"
+    },
+    "retrieved_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retrieved Record Ids",
       "type": "array"
     },
     "row_disposition_artifact": {
@@ -913,6 +968,18 @@
       "title": "Swept Episode Ids",
       "type": "array"
     },
+    "swept_record_count": {
+      "default": 0,
+      "title": "Swept Record Count",
+      "type": "integer"
+    },
+    "swept_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Swept Record Ids",
+      "type": "array"
+    },
     "token_counts": {
       "additionalProperties": {
         "type": "integer"
@@ -936,6 +1003,11 @@
       "format": "date",
       "title": "Trade Date",
       "type": "string"
+    },
+    "training_eligible_available_record_count": {
+      "default": 0,
+      "title": "Training Eligible Available Record Count",
+      "type": "integer"
     },
     "truncations": {
       "items": {
