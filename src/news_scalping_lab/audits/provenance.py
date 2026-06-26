@@ -2784,6 +2784,7 @@ def _check_manifest_record_sweep_artifacts(
     expected_mode = manifest.get("mode")
     expected_trade_date = manifest.get("trade_date")
     expected_cutoff_at = manifest.get("cutoff_at")
+    parsed_cutoff_at = _parse_context_cutoff_at(expected_cutoff_at)
     expected_brain_version = manifest.get("brain_version")
     observed_record_ids: list[str] = []
     observed_cache_hits = 0
@@ -2866,6 +2867,15 @@ def _check_manifest_record_sweep_artifacts(
                         f"{prediction_path.name}: record sweep artifact source hash "
                         f"mismatch: {artifact_ref}#{record_id}"
                     )
+                if (
+                    record is not None
+                    and parsed_cutoff_at is not None
+                    and not is_available_as_of(record.available_from, parsed_cutoff_at)
+                ):
+                    findings.append(
+                        f"{prediction_path.name}: record sweep artifact exposes future "
+                        f"record: {artifact_ref}#{record_id}"
+                    )
         if payload.get("from_cache") is True:
             observed_cache_hits += 1
 
@@ -2885,6 +2895,15 @@ def _check_manifest_record_sweep_artifacts(
             )
     else:
         findings.append(f"{prediction_path.name}: context manifest swept_record_ids is invalid")
+
+
+def _parse_context_cutoff_at(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _memory_sweep_source_hashes(

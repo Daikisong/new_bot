@@ -3424,7 +3424,12 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         episode_id="NSLAB-20300109-RECORD-SWEEP",
         available_from=datetime(2030, 1, 9, 0, 0, 0, tzinfo=KST),
     )
-    _store_brain_records_for_sweep_audit(tmp_path, [record])
+    future_record = _brain_record_for_sweep_audit(
+        "REC-sweep-future",
+        episode_id="NSLAB-20300109-RECORD-SWEEP",
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    _store_brain_records_for_sweep_audit(tmp_path, [record, future_record])
     sweep_path = (
         tmp_path
         / "runs"
@@ -3630,6 +3635,51 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "2030-01-10.json: record sweep artifact source hash mismatch: "
         f"{record_sweep_ref}#REC-sweep-1"
     ) in record_hash_findings
+
+    future_record_source_hashes = {
+        "REC-sweep-future": future_record.normalized_payload_sha256,
+    }
+    future_record_sweep = {
+        **record_sweep_payload,
+        "record_shard_sha256": _record_sweep_shard_hash(future_record_source_hashes),
+        "record_shard_source_hashes": future_record_source_hashes,
+        "record_ids": ["REC-sweep-future"],
+    }
+    write_json(record_sweep_path, future_record_sweep)
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "brain_version": "brain-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "swept_episode_ids": ["EP-sweep-1", "EP-sweep-2"],
+            "memory_sweep_artifacts": [sweep_ref],
+            "memory_sweep_artifact_hashes": {sweep_ref: file_sha256(sweep_path)},
+            "memory_sweep_shard_count": 1,
+            "memory_sweep_cache_hits": 0,
+            "swept_record_ids": ["REC-sweep-future"],
+            "swept_record_count": 1,
+            "record_sweep_artifacts": [record_sweep_ref],
+            "record_sweep_artifact_hashes": {
+                record_sweep_ref: file_sha256(record_sweep_path),
+            },
+            "record_sweep_shard_count": 1,
+            "record_sweep_cache_hits": 0,
+        },
+    )
+
+    failed_future_record = audit_provenance(tmp_path)
+
+    assert not failed_future_record["passed"]
+    assert (
+        "2030-01-10.json: record sweep artifact exposes future record: "
+        f"{record_sweep_ref}#REC-sweep-future"
+    ) in failed_future_record["findings"]
 
 
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
