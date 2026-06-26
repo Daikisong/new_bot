@@ -27,6 +27,8 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
             "--trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 "
             "--mode exhaustive"
         ),
+        "python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24",
+        "python -m news_scalping_lab.cli brain update --episode 2026-06-24",
     ]
 
 
@@ -230,6 +232,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     postmortem_path = tmp_path / evaluation_payload["postmortem"]
     episode_id = evaluation_payload["research_episode_id"]
     assert postmortem_path.exists()
+    assert postmortem_path == tmp_path / "reports" / "2026-06-24_postmortem.json"
     assert (tmp_path / evaluation_payload["research_episode_path"]).exists()
 
     updated = RUNNER.invoke(
@@ -240,6 +243,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     update_manifest = json.loads(updated.output)
     assert update_manifest["coverage_complete"] is True
     assert episode_id in update_manifest["covered_episode_ids"]
+    assert (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
     assert read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")[
         "coverage_complete"
     ] is True
