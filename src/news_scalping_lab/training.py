@@ -70,6 +70,13 @@ RECORD_SFT_TRAINING_CATEGORIES = [
     "direct_event_supervised_records",
 ]
 
+ERROR_CORRECTION_RECORD_TYPES = {
+    "candidate_generation_error_case",
+    "candidate_ranking_error_case",
+    "row_disposition_error_case",
+    "entity_resolution_error_case",
+}
+
 
 @dataclass(frozen=True)
 class TrainingExportResult:
@@ -591,14 +598,13 @@ def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
         "supervised_direct_event_case",
         "supervised_theme_formation_case",
         "beneficiary_discovery_case",
-        "candidate_generation_error_case",
-        "candidate_ranking_error_case",
-        "row_disposition_error_case",
-        "entity_resolution_error_case",
+        *ERROR_CORRECTION_RECORD_TYPES,
     }
 
 
 def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
+    if record.record_type in ERROR_CORRECTION_RECORD_TYPES:
+        return _record_error_correction_sft_row(record)
     task = _record_sft_task(record)
     return _training_record_row(
         task=task,
@@ -618,6 +624,51 @@ def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
             "outcome": record.payload.get("D_outcome"),
             "sample_weight": record.payload.get("sample_weight"),
             "attribution_status": record.payload.get("attribution_status"),
+            "eligibility_reason": record.eligibility_reason,
+        },
+        hindsight_safe=False,
+    )
+
+
+def _record_error_correction_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
+    payload = record.payload
+    return _training_record_row(
+        task="record_error_correction",
+        record=record,
+        split="sft_records",
+        input_payload={
+            "record_type": record.record_type,
+            "training_target": record.training_target,
+            "evidence_phase": record.evidence_phase,
+            "safe_D1_features": payload.get("safe_D1_features"),
+            "blind_fact_ids": payload.get("blind_fact_ids", []),
+            "blind_inference_ids": payload.get("blind_inference_ids", []),
+            "event_ids": payload.get("event_ids", []),
+            "original_decision": payload.get("original_decision")
+            or _payload_subset(
+                payload,
+                (
+                    "original_candidate_ids",
+                    "original_ticker",
+                    "original_company_name",
+                    "observed_error",
+                    "failure_context",
+                ),
+            ),
+            "payload": payload,
+        },
+        output_payload={
+            "error_id": payload.get("error_id"),
+            "error_type": payload.get("error_type"),
+            "correction_mode": payload.get("correction_mode"),
+            "correction_rationale": payload.get("correction_rationale")
+            or payload.get("rationale"),
+            "corrected_decision": payload.get("corrected_decision"),
+            "corrected_candidate_ids": payload.get("corrected_candidate_ids", []),
+            "corrected_ticker": payload.get("corrected_ticker"),
+            "corrected_company_name": payload.get("corrected_company_name"),
+            "missed_ticker": payload.get("missed_ticker"),
+            "missed_company_name": payload.get("missed_company_name"),
             "eligibility_reason": record.eligibility_reason,
         },
         hindsight_safe=False,
@@ -671,6 +722,10 @@ def _record_eval_row(record: BrainRecordEnvelope) -> dict[str, Any]:
         },
         hindsight_safe=False,
     )
+
+
+def _payload_subset(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    return {key: payload[key] for key in keys if key in payload}
 
 
 def _record_sft_task(record: BrainRecordEnvelope) -> str:

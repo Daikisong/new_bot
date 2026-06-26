@@ -39,6 +39,7 @@ def _synthetic_v11_bundle(
     issuer_sample_weight: float = 1.0,
     direct_event_sample_weights: list[float] | None = None,
     include_event_edge: bool = False,
+    include_error_correction: bool = False,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -131,6 +132,35 @@ def _synthetic_v11_bundle(
                 "directly_mentioned": True,
                 "training_eligible": False,
                 "eligibility_reason": "edge relation memory is audit-only",
+                "provenance_source_ids": ["SRC-SYNTH-1"],
+            }
+        )
+    if include_error_correction:
+        records.append(
+            {
+                "record_id": "BRAIN-SYNTH-ERROR",
+                "record_type": "candidate_generation_error_case",
+                "episode_id": episode_id,
+                "trade_date": trade_day.isoformat(),
+                "available_from": available_from,
+                "training_target": "candidate_generation_correction",
+                "error_id": "ERR-SYNTH-1",
+                "error_type": "missed_direct_candidate",
+                "correction_mode": "add_candidate",
+                "original_decision": {
+                    "candidate_ids": ["CAND-B"],
+                    "reason": "Blind pass underweighted direct evidence.",
+                },
+                "corrected_decision": {
+                    "candidate_ids": ["CAND-A"],
+                    "reason": "Postmortem correction promotes direct issuer.",
+                },
+                "corrected_candidate_ids": ["CAND-A"],
+                "missed_ticker": "000001",
+                "missed_company_name": "Synthetic Issuer",
+                "correction_rationale": "Direct issuer evidence should seed candidate generation.",
+                "training_eligible": True,
+                "eligibility_reason": "synthetic explicit correction label",
                 "provenance_source_ids": ["SRC-SYNTH-1"],
             }
         )
@@ -563,6 +593,58 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     ).fetchone()
     assert leader_pair_row == ("000001", "000002", "000001")
     assert _read_json(sft.manifest_path)["source_mode"] == "brain_records"
+
+
+def test_training_export_uses_explicit_error_correction_records(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(include_unknown=False, include_error_correction=True),
+        encoding="utf-8",
+    )
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    rows = _jsonl(sft.path)
+    correction_row = next(row for row in rows if row["record_id"] == "BRAIN-SYNTH-ERROR")
+    assert correction_row["task"] == "record_error_correction"
+    assert correction_row["training_category"] == "failure_correction_examples"
+    assert correction_row["source_phase"] == "POSTMORTEM"
+    assert correction_row["hindsight_safe_for_blind_sft"] is False
+    assert correction_row["eligibility_basis"]["satisfied"] is True
+    assert correction_row["input"]["original_decision"] == {
+        "candidate_ids": ["CAND-B"],
+        "reason": "Blind pass underweighted direct evidence.",
+    }
+    assert correction_row["output"] == {
+        "corrected_candidate_ids": ["CAND-A"],
+        "corrected_company_name": None,
+        "corrected_decision": {
+            "candidate_ids": ["CAND-A"],
+            "reason": "Postmortem correction promotes direct issuer.",
+        },
+        "corrected_ticker": None,
+        "correction_mode": "add_candidate",
+        "correction_rationale": "Direct issuer evidence should seed candidate generation.",
+        "eligibility_reason": "synthetic explicit correction label",
+        "error_id": "ERR-SYNTH-1",
+        "error_type": "missed_direct_candidate",
+        "missed_company_name": "Synthetic Issuer",
+        "missed_ticker": "000001",
+    }
+    assert "response_class" not in correction_row["output"]
+    manifest = _read_json(sft.manifest_path)
+    assert manifest["eligible_record_count"] == 2
+    assert manifest["exported_record_count"] == 2
+    assert manifest["task_counts"]["record_error_correction"] == 1
+    assert manifest["category_counts"]["failure_correction_examples"] == 1
+    assert audit_training_exports(tmp_path)["passed"] is True
 
 
 def test_event_ticker_edge_records_project_to_warehouse_and_coverage(
