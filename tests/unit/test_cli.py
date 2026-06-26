@@ -998,6 +998,8 @@ def test_warehouse_query_records_cli_filters_record_level_table(
             "supervised_issuer_day_case",
             "--ticker",
             "000001",
+            "--available-from-as-of",
+            "2030-01-11T00:00:00+09:00",
             "--training-eligible-only",
             "--limit",
             "5",
@@ -1021,6 +1023,7 @@ def test_warehouse_query_records_cli_filters_record_level_table(
             "confidence_label": None,
             "trade_date_from": None,
             "trade_date_to": None,
+            "available_from_as_of": "2030-01-11T00:00:00+09:00",
             "training_eligible": True,
             "limit": 5,
         }

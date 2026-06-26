@@ -564,6 +564,7 @@ class WarehouseStore:
         confidence_label: str | None = None,
         trade_date_from: str | None = None,
         trade_date_to: str | None = None,
+        available_from_as_of: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         if limit < 1:
@@ -607,6 +608,9 @@ class WarehouseStore:
         if trade_date_to is not None:
             where.append("trade_date <= ?")
             params.append(trade_date_to)
+        if available_from_as_of is not None:
+            where.append("cast(available_from as TIMESTAMPTZ) <= cast(? as TIMESTAMPTZ)")
+            params.append(available_from_as_of)
         params.append(limit)
         query = f"""
             select

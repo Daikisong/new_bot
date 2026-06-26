@@ -6353,6 +6353,10 @@ def warehouse_query_records(
     confidence_label: Annotated[str | None, typer.Option("--confidence-label")] = None,
     trade_date_from: Annotated[str | None, typer.Option("--trade-date-from")] = None,
     trade_date_to: Annotated[str | None, typer.Option("--trade-date-to")] = None,
+    available_from_as_of: Annotated[
+        str | None,
+        typer.Option("--available-from-as-of"),
+    ] = None,
     training_eligible_only: Annotated[
         bool,
         typer.Option("--training-eligible-only"),
@@ -6382,6 +6386,7 @@ def warehouse_query_records(
         "confidence_label": confidence_label,
         "trade_date_from": trade_date_from,
         "trade_date_to": trade_date_to,
+        "available_from_as_of": available_from_as_of,
         "training_eligible": training_eligible,
         "limit": limit,
     }
@@ -6398,6 +6403,7 @@ def warehouse_query_records(
             confidence_label=confidence_label,
             trade_date_from=trade_date_from,
             trade_date_to=trade_date_to,
+            available_from_as_of=available_from_as_of,
             training_eligible=training_eligible,
             limit=limit,
         )

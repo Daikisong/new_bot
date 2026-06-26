@@ -615,10 +615,18 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
         f"from read_parquet('{(tmp_path / 'warehouse' / 'leader_pairs.parquet').as_posix()}')"
     ).fetchone()
     assert leader_pair_row == ("000001", "000002", "000001")
+    future_filtered_rows = WarehouseStore(tmp_path).query_brain_records(
+        record_type="supervised_issuer_day_case",
+        ticker="000001",
+        training_eligible=True,
+        available_from_as_of="2030-01-10T23:59:59+09:00",
+    )
+    assert future_filtered_rows == []
     queried_rows = WarehouseStore(tmp_path).query_brain_records(
         record_type="supervised_issuer_day_case",
         ticker="000001",
         training_eligible=True,
+        available_from_as_of="2030-01-11T00:00:00+09:00",
     )
     assert len(queried_rows) == 1
     assert queried_rows[0]["record_id"] == "BRAIN-SYNTH-ISSUER"
