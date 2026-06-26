@@ -34,6 +34,7 @@ EXPECTED_SCHEMA_FILES = {
     "red_team_artifact.schema.json",
     "research_episode.schema.json",
     "semantic_retrieval_plan.schema.json",
+    "semantic_research_draft.schema.json",
 }
 
 

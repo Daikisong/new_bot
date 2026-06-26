@@ -25,6 +25,7 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
     SemanticRetrievalPlan,
 )
+from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import write_json
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
@@ -45,6 +46,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "red_team_artifact.schema.json": RedTeamArtifact,
     "news_novelty_review.schema.json": NewsNoveltyReview,
     "semantic_retrieval_plan.schema.json": SemanticRetrievalPlan,
+    "semantic_research_draft.schema.json": SemanticResearchDraft,
 }
 
 
