@@ -1376,6 +1376,13 @@ def test_real_bundle_smoke_passes_only_for_production_source_bundle(
     assert report["selected"]["source"] == "data_inbox"
     assert report["selected"]["inspection"]["raw_record_count"] == 327
     assert report["selected"]["inspection"]["missing_payload_reference_count"] == 0
+    assert report["selected"]["inspection"]["record_id_set_matches_raw"] is True
+    assert report["selected"]["inspection"]["record_type_counts_match_raw"] is True
+    assert (
+        report["selected"]["inspection"]["training_eligible_count_matches_raw"]
+        is True
+    )
+    assert report["selected"]["inspection"]["raw_payload_hashes_match"] is True
 
 
 def test_real_bundle_smoke_keeps_fixture_success_synthetic_only(
@@ -1508,6 +1515,36 @@ def test_real_bundle_smoke_rejects_missing_payload_references(
     assert report["first_production_status"] == "failed"
     assert report["production_failed_inspection_count"] == 1
     assert report["inspections"][0]["inspection"]["missing_payload_reference_count"] == 1
+
+
+def test_real_bundle_smoke_rejects_import_loss_parity_gap(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        inspection = _valid_v11_bundle_inspection(path)
+        inspection["record_id_set_matches_raw"] = False
+        inspection["missing_normalized_record_ids"] = ["BRAIN-missing"]
+        return inspection
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "failed"
+    assert report["passed"] is False
+    assert report["first_production_status"] == "failed"
+    assert report["production_failed_inspection_count"] == 1
+    assert report["inspections"][0]["inspection"]["record_id_set_matches_raw"] is False
+    assert report["inspections"][0]["inspection"]["missing_normalized_record_ids"] == [
+        "BRAIN-missing"
+    ]
 
 
 def test_real_bundle_smoke_does_not_skip_failed_earlier_production_candidate(
@@ -1654,6 +1691,8 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert production["real_bundle_import"]["record_manifest_exists"] is True
     assert production["real_bundle_import"]["record_file_exists"] is True
     assert production["real_bundle_import"]["observed_record_count"] == 327
+    assert production["real_bundle_import"]["expected_record_id_count"] == 327
+    assert production["real_bundle_import"]["expected_record_ids"] == record_ids
     assert production["real_bundle_import"][
         "observed_training_eligible_record_count"
     ] == 325
@@ -2027,6 +2066,15 @@ def _real_smoke_record_ids(inspection: dict[str, object]) -> list[str]:
 
 
 def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
+    record_counts_by_type = {
+        "supervised_issuer_day_case": 150,
+        "supervised_direct_event_case": 171,
+        "supervised_theme_formation_case": 3,
+        "blind_leader_preference_pair": 3,
+    }
+    record_ids: list[str] = []
+    for record_type, count in sorted(record_counts_by_type.items()):
+        record_ids.extend(f"{record_type}-{index}" for index in range(count))
     return {
         "path": path.as_posix(),
         "raw_bundle_sha256": file_sha256(path),
@@ -2042,12 +2090,20 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "training_eligible_record_count": 325,
         "dropped_record_count": 0,
         "quarantined_record_count": 0,
-        "record_counts_by_type": {
-            "supervised_issuer_day_case": 150,
-            "supervised_direct_event_case": 171,
-            "supervised_theme_formation_case": 3,
-            "blind_leader_preference_pair": 3,
-        },
+        "record_counts_by_type": record_counts_by_type,
+        "raw_record_ids": record_ids,
+        "normalized_record_ids": record_ids,
+        "raw_record_without_id_count": 0,
+        "record_id_set_comparable": True,
+        "record_id_set_matches_raw": True,
+        "missing_normalized_record_ids": [],
+        "extra_normalized_record_ids": [],
+        "raw_record_counts_by_type": record_counts_by_type,
+        "record_type_counts_match_raw": True,
+        "raw_training_eligible_record_count": 325,
+        "training_eligible_count_matches_raw": True,
+        "raw_payload_hashes_match": True,
+        "raw_payload_hash_mismatch_record_ids": [],
         "validation_passed": True,
         "record_count_matches_manifest": True,
         "training_eligible_count_matches_manifest": True,

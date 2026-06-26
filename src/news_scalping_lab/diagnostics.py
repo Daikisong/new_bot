@@ -655,6 +655,11 @@ def _real_bundle_import_status(
     expected_record_counts_by_type = (
         inspection.get("record_counts_by_type") if inspection is not None else None
     )
+    expected_record_ids = (
+        _string_list(inspection.get("normalized_record_ids"))
+        if inspection is not None
+        else []
+    )
     base = {
         "schema_version": "nslab.real_bundle_import_status.v1",
         "applicable": real_bundle_smoke.get("status") == "passed",
@@ -668,6 +673,10 @@ def _real_bundle_import_status(
         "expected_record_counts_by_type": expected_record_counts_by_type
         if isinstance(expected_record_counts_by_type, dict)
         else None,
+        "expected_record_id_count": len(expected_record_ids)
+        if expected_record_ids
+        else None,
+        "expected_record_ids": expected_record_ids or None,
     }
     if real_bundle_smoke.get("status") != "passed":
         return {
@@ -738,6 +747,11 @@ def _real_bundle_import_status(
             != expected_record_count
         ):
             findings.append("normalized episode index count does not match real smoke")
+        if expected_record_ids and (
+            sorted(_string_list(normalized_index.get("record_ids")))
+            != sorted(expected_record_ids)
+        ):
+            findings.append("normalized episode index IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
             and normalized_index.get("training_eligible_record_count")
@@ -763,6 +777,11 @@ def _real_bundle_import_status(
             and record_manifest.get("record_count") != expected_record_count
         ):
             findings.append("record manifest count does not match real smoke")
+        if expected_record_ids and (
+            sorted(_string_list(record_manifest.get("record_ids")))
+            != sorted(expected_record_ids)
+        ):
+            findings.append("record manifest IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
             and record_manifest.get("training_eligible_record_count")
@@ -795,6 +814,11 @@ def _real_bundle_import_status(
             and record_file_stats["record_count"] != expected_record_count
         ):
             findings.append("record JSONL count does not match real smoke")
+        if expected_record_ids and (
+            sorted(_string_list(record_file_stats["record_ids"]))
+            != sorted(expected_record_ids)
+        ):
+            findings.append("record JSONL IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
             and record_file_stats["training_eligible_record_count"]
@@ -1129,6 +1153,12 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("hash_expectation_conflict_count") == 0
         and inspection.get("missing_source_reference_count") == 0
         and inspection.get("missing_payload_reference_count") == 0
+        and inspection.get("raw_record_without_id_count") == 0
+        and inspection.get("record_id_set_comparable") is True
+        and inspection.get("record_id_set_matches_raw") is True
+        and inspection.get("record_type_counts_match_raw") is True
+        and inspection.get("training_eligible_count_matches_raw") is True
+        and inspection.get("raw_payload_hashes_match") is True
     )
     return {
         "status": "passed" if smoke_passed else "failed",
@@ -1145,6 +1175,29 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "normalized_record_count": inspection.get("normalized_record_count"),
         "training_eligible_record_count": inspection.get(
             "training_eligible_record_count"
+        ),
+        "raw_record_ids": inspection.get("raw_record_ids"),
+        "normalized_record_ids": inspection.get("normalized_record_ids"),
+        "raw_record_without_id_count": inspection.get("raw_record_without_id_count"),
+        "record_id_set_comparable": inspection.get("record_id_set_comparable"),
+        "record_id_set_matches_raw": inspection.get("record_id_set_matches_raw"),
+        "missing_normalized_record_ids": inspection.get(
+            "missing_normalized_record_ids"
+        ),
+        "extra_normalized_record_ids": inspection.get("extra_normalized_record_ids"),
+        "raw_record_counts_by_type": inspection.get("raw_record_counts_by_type"),
+        "record_type_counts_match_raw": inspection.get(
+            "record_type_counts_match_raw"
+        ),
+        "raw_training_eligible_record_count": inspection.get(
+            "raw_training_eligible_record_count"
+        ),
+        "training_eligible_count_matches_raw": inspection.get(
+            "training_eligible_count_matches_raw"
+        ),
+        "raw_payload_hashes_match": inspection.get("raw_payload_hashes_match"),
+        "raw_payload_hash_mismatch_record_ids": inspection.get(
+            "raw_payload_hash_mismatch_record_ids"
         ),
         "dropped_record_count": inspection.get("dropped_record_count"),
         "quarantined_record_count": inspection.get("quarantined_record_count"),
