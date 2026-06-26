@@ -117,8 +117,23 @@ class SupervisedIssuerDayCase(FlexiblePayloadModel):
     record_type: Literal["supervised_issuer_day_case"]
     issuer_day_case_id: str | None = None
     ticker: str | None = None
+    company_name: str | None = None
+    theme_id: str | None = None
+    path_type: str | None = None
     event_ids: list[str] = Field(default_factory=list)
+    observation_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    inference_ids: list[str] = Field(default_factory=list)
+    safe_D1_features: dict[str, Any] = Field(default_factory=dict)
+    D_outcome: dict[str, Any] = Field(default_factory=dict)
+    outcome: dict[str, Any] = Field(default_factory=dict)
+    response_class: str | None = None
     sample_weight: float | None = None
+    event_level_weights: dict[str, float] = Field(default_factory=dict)
+    label_quality: str | None = None
+    attribution_status: str | None = None
+    fact_entailment_verified: bool | None = None
+    cross_event_leak_verified: bool | None = None
 
 
 class SupervisedDirectEventCase(FlexiblePayloadModel):
@@ -126,18 +141,64 @@ class SupervisedDirectEventCase(FlexiblePayloadModel):
     case_id: str | None = None
     issuer_day_case_id: str | None = None
     ticker: str | None = None
+    company_name: str | None = None
+    theme_id: str | None = None
+    path_type: str | None = None
     event_id: str | None = None
+    observation_id: str | None = None
+    screening_id: str | None = None
+    candidate_decision: str | None = None
+    blind_candidate_ids: list[str] = Field(default_factory=list)
+    blind_rank: int | None = None
+    blind_fact_ids: list[str] = Field(default_factory=list)
+    blind_inference_ids: list[str] = Field(default_factory=list)
+    safe_D1_features: dict[str, Any] = Field(default_factory=dict)
+    D_outcome: dict[str, Any] = Field(default_factory=dict)
+    outcome: dict[str, Any] = Field(default_factory=dict)
+    response_class: str | None = None
     sample_weight: float | None = None
+    label_quality: str | None = None
+    attribution_status: str | None = None
+    fact_entailment_verified: bool | None = None
+    cross_event_leak_verified: bool | None = None
 
 
 class SupervisedThemeFormationCase(FlexiblePayloadModel):
     record_type: Literal["supervised_theme_formation_case"]
     theme_id: str | None = None
+    theme_name: str | None = None
+    event_ids: list[str] = Field(default_factory=list)
+    observation_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    inference_ids: list[str] = Field(default_factory=list)
+    peer_universe: list[str] = Field(default_factory=list)
+    chosen_leader_ticker: str | None = None
+    chosen_leader_company_name: str | None = None
+    rejected_candidate_tickers: list[str] = Field(default_factory=list)
+    safe_D1_features: dict[str, Any] = Field(default_factory=dict)
+    D_outcome: dict[str, Any] = Field(default_factory=dict)
+    outcome: dict[str, Any] = Field(default_factory=dict)
+    response_class: str | None = None
+    sample_weight: float | None = None
+    label_quality: str | None = None
+    attribution_status: str | None = None
 
 
 class BeneficiaryDiscoveryCase(FlexiblePayloadModel):
     record_type: Literal["beneficiary_discovery_case"]
     case_id: str | None = None
+    event_id: str | None = None
+    theme_id: str | None = None
+    candidate_ticker: str | None = None
+    candidate_company_name: str | None = None
+    candidate_path_type: str | None = None
+    beneficiary_relation: str | None = None
+    beneficiary_relation_evidence: list[str] = Field(default_factory=list)
+    blind_candidate_ids: list[str] = Field(default_factory=list)
+    outcome_ticker: str | None = None
+    outcome_company_name: str | None = None
+    correction_mode: str | None = None
+    sample_weight: float | None = None
 
 
 class BlindLeaderPreferencePair(FlexiblePayloadModel):
@@ -147,44 +208,97 @@ class BlindLeaderPreferencePair(FlexiblePayloadModel):
     blind_rejected_candidate_id: str | None = None
     outcome_preferred_candidate_id: str | None = None
     blind_preferred_ticker: str | None = None
+    blind_preferred_company_name: str | None = None
     blind_rejected_ticker: str | None = None
+    blind_rejected_company_name: str | None = None
     outcome_winner_ticker: str | None = None
+    outcome_winner_company_name: str | None = None
     blind_preference_correct: bool | None = None
+    training_mode: str | None = None
+    correction_mode: str | None = None
 
 
 class CandidateGenerationErrorCase(FlexiblePayloadModel):
     record_type: Literal["candidate_generation_error_case"]
     error_id: str | None = None
+    error_type: str | None = None
+    correction_mode: str | None = None
+    missed_ticker: str | None = None
+    missed_company_name: str | None = None
+    missed_theme_id: str | None = None
+    missed_path_type: str | None = None
+    source_candidate_ids: list[str] = Field(default_factory=list)
+    correction_record_ids: list[str] = Field(default_factory=list)
 
 
 class CandidateRankingErrorCase(FlexiblePayloadModel):
     record_type: Literal["candidate_ranking_error_case"]
     error_id: str | None = None
+    error_type: str | None = None
+    correction_mode: str | None = None
+    blind_preferred_ticker: str | None = None
+    blind_rejected_ticker: str | None = None
+    outcome_winner_ticker: str | None = None
+    corrected_ticker: str | None = None
+    corrected_company_name: str | None = None
+    correction_record_ids: list[str] = Field(default_factory=list)
 
 
 class RowDispositionErrorCase(FlexiblePayloadModel):
     record_type: Literal["row_disposition_error_case"]
     error_id: str | None = None
+    row_id: str | None = None
+    original_disposition: str | None = None
+    corrected_disposition: str | None = None
+    candidate_ticker: str | None = None
+    candidate_company_name: str | None = None
+    correction_mode: str | None = None
 
 
 class EntityResolutionErrorCase(FlexiblePayloadModel):
     record_type: Literal["entity_resolution_error_case"]
     error_id: str | None = None
+    unresolved_entity: str | None = None
+    original_ticker: str | None = None
+    original_company_name: str | None = None
+    corrected_ticker: str | None = None
+    corrected_company_name: str | None = None
+    correction_mode: str | None = None
 
 
 class MemoryClaimRecord(FlexiblePayloadModel):
     record_type: Literal["memory_claim"]
     claim_id: str | None = None
+    statement: str | None = None
+    mechanism: str | None = None
+    scope: str | None = None
+    conditions: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    failure_modes: list[str] = Field(default_factory=list)
+    supporting_record_ids: list[str] = Field(default_factory=list)
+    contradicting_record_ids: list[str] = Field(default_factory=list)
 
 
 class MechanismMemoryRecord(FlexiblePayloadModel):
     record_type: Literal["mechanism_memory"]
     mechanism_id: str | None = None
+    mechanism: str | None = None
+    scope: str | None = None
+    conditions: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    supporting_record_ids: list[str] = Field(default_factory=list)
+    contradicting_record_ids: list[str] = Field(default_factory=list)
 
 
 class CounterexampleRecord(FlexiblePayloadModel):
     record_type: Literal["counterexample"]
     counterexample_id: str | None = None
+    statement: str | None = None
+    mechanism: str | None = None
+    contradicted_claim_ids: list[str] = Field(default_factory=list)
+    supporting_record_ids: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    response_class: str | None = None
 
 
 class EventTickerEdgeRecord(FlexiblePayloadModel):
@@ -196,6 +310,9 @@ class EventTickerEdgeRecord(FlexiblePayloadModel):
     relation_class: str | None = None
     relation_explanation: str | None = None
     directly_mentioned: bool | None = None
+    path_type: str | None = None
+    known_at: datetime | None = None
+    source_kind: str | None = None
 
 
 class CompanyMemoryDeltaRecord(FlexiblePayloadModel):
@@ -216,6 +333,11 @@ class CompanyMemoryDeltaRecord(FlexiblePayloadModel):
 class ResearchQuestionRecord(FlexiblePayloadModel):
     record_type: Literal["research_question"]
     question_id: str | None = None
+    question: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    answerable_after: datetime | None = None
+    related_record_ids: list[str] = Field(default_factory=list)
 
 
 KNOWN_RECORD_PAYLOAD_MODELS: dict[str, type[FlexiblePayloadModel]] = {

@@ -10,6 +10,15 @@ import pytest
 
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.records.models import (
+    BeneficiaryDiscoveryCase,
+    BlindLeaderPreferencePair,
+    CandidateGenerationErrorCase,
+    CounterexampleRecord,
+    SupervisedDirectEventCase,
+    SupervisedIssuerDayCase,
+    SupervisedThemeFormationCase,
+)
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -27,6 +36,108 @@ from news_scalping_lab.warehouse import WarehouseStore
 
 def _payload_block(payload: str, fence: str) -> str:
     return f"```{fence}\n{payload}\n```"
+
+
+def test_known_payload_models_expose_v11_contract_fields() -> None:
+    issuer = SupervisedIssuerDayCase.model_validate(
+        {
+            "record_type": "supervised_issuer_day_case",
+            "issuer_day_case_id": "20300110:000001",
+            "ticker": "000001",
+            "company_name": "Issuer Co",
+            "event_ids": ["EVT-1"],
+            "observation_ids": ["OBS-1"],
+            "fact_ids": ["FACT-1"],
+            "inference_ids": ["INF-1"],
+            "safe_D1_features": {"P_amount_rank": 11},
+            "D_outcome": {"response_class": "positive_high10"},
+            "response_class": "positive_high10",
+            "sample_weight": 1.0,
+            "event_level_weights": {"EVT-1": 1.0},
+            "label_quality": "verified",
+            "attribution_status": "direct",
+        }
+    )
+    direct = SupervisedDirectEventCase.model_validate(
+        {
+            "record_type": "supervised_direct_event_case",
+            "case_id": "CASE-1",
+            "issuer_day_case_id": "20300110:000001",
+            "ticker": "000001",
+            "event_id": "EVT-1",
+            "observation_id": "OBS-1",
+            "screening_id": "SCR-1",
+            "candidate_decision": "WATCH",
+            "blind_candidate_ids": ["CAND-1"],
+            "blind_fact_ids": ["FACT-1"],
+            "blind_inference_ids": ["INF-1"],
+            "safe_D1_features": {"P_turnover_rank": 7},
+            "D_outcome": {"response_class": "neutral"},
+            "response_class": "neutral",
+        }
+    )
+    theme = SupervisedThemeFormationCase.model_validate(
+        {
+            "record_type": "supervised_theme_formation_case",
+            "theme_id": "THEME-1",
+            "peer_universe": ["000001", "000002"],
+            "chosen_leader_ticker": "000001",
+            "rejected_candidate_tickers": ["000002"],
+        }
+    )
+    beneficiary = BeneficiaryDiscoveryCase.model_validate(
+        {
+            "record_type": "beneficiary_discovery_case",
+            "candidate_ticker": "000003",
+            "candidate_company_name": "Beneficiary Co",
+            "candidate_path_type": "INFERRED_NEW",
+            "beneficiary_relation_evidence": ["FACT-2"],
+            "correction_mode": "postmortem",
+        }
+    )
+    pair = BlindLeaderPreferencePair.model_validate(
+        {
+            "record_type": "blind_leader_preference_pair",
+            "blind_preferred_ticker": "000001",
+            "blind_preferred_company_name": "Preferred Co",
+            "blind_rejected_ticker": "000002",
+            "blind_rejected_company_name": "Rejected Co",
+            "outcome_winner_ticker": "000001",
+            "outcome_winner_company_name": "Preferred Co",
+            "blind_preference_correct": True,
+            "training_mode": "positive_preference",
+        }
+    )
+    error = CandidateGenerationErrorCase.model_validate(
+        {
+            "record_type": "candidate_generation_error_case",
+            "error_id": "ERR-1",
+            "error_type": "missed_beneficiary",
+            "correction_mode": "postmortem",
+            "missed_ticker": "000004",
+            "missed_company_name": "Missed Co",
+            "correction_record_ids": ["BRAIN-1"],
+        }
+    )
+    counterexample = CounterexampleRecord.model_validate(
+        {
+            "record_type": "counterexample",
+            "counterexample_id": "CE-1",
+            "statement": "Mechanism failed under boundary condition.",
+            "contradicted_claim_ids": ["CL-1"],
+            "supporting_record_ids": ["BRAIN-2"],
+            "boundary_conditions": ["already priced in"],
+        }
+    )
+
+    assert issuer.safe_D1_features == {"P_amount_rank": 11}
+    assert issuer.event_level_weights == {"EVT-1": 1.0}
+    assert direct.blind_fact_ids == ["FACT-1"]
+    assert theme.peer_universe == ["000001", "000002"]
+    assert beneficiary.candidate_path_type == "INFERRED_NEW"
+    assert pair.training_mode == "positive_preference"
+    assert error.missed_company_name == "Missed Co"
+    assert counterexample.contradicted_claim_ids == ["CL-1"]
 
 
 def _synthetic_v11_bundle(
