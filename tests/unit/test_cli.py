@@ -856,6 +856,8 @@ def test_memory_audit_cli_writes_diagnostic_report(
     }
     assert report["schema_version"] == "nslab.brain_record_store_report.v1"
     assert report["audit_passed"] is True
+    assert report["record_counts_by_evidence_phase"] == {}
+    assert report["record_counts_by_training_target"] == {}
     assert report["record_store_audit"]["passed"] is True
     assert report["record_store_audit"]["deep"] is True
     assert report["record_count"] == 0

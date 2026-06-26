@@ -398,6 +398,14 @@ def record_store_report_payload(
             0,
         ),
         "record_counts_by_type": stats.get("record_counts_by_type", {}),
+        "record_counts_by_evidence_phase": stats.get(
+            "record_counts_by_evidence_phase",
+            {},
+        ),
+        "record_counts_by_training_target": stats.get(
+            "record_counts_by_training_target",
+            {},
+        ),
         "record_counts_by_typed_payload_status": stats.get(
             "record_counts_by_typed_payload_status",
             {},

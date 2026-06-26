@@ -836,6 +836,15 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     store_report = _read_json(tmp_path / "diagnostics" / "brain_record_store_report.json")
     assert store_report["schema_version"] == "nslab.brain_record_store_report.v1"
     assert store_report["record_count"] == 2
+    assert store_report["record_counts_by_type"] == {
+        "blind_leader_preference_pair": 1,
+        "supervised_issuer_day_case": 1,
+    }
+    assert store_report["record_counts_by_evidence_phase"] == {"POSTMORTEM": 2}
+    assert store_report["record_counts_by_training_target"] == {
+        "issuer_day_price_response": 1,
+        "outcome_preferred_candidate": 1,
+    }
     assert store_report["dropped_record_count"] == 0
     assert store_report["quarantined_record_count"] == 0
     assert store_report["audit_passed"] is True
