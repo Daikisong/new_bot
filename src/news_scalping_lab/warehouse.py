@@ -549,6 +549,102 @@ class WarehouseStore:
                 result[path.name] = f"ERROR: {exc}"
         return result
 
+    def query_brain_records(
+        self,
+        *,
+        record_type: str | None = None,
+        training_target: str | None = None,
+        evidence_phase: str | None = None,
+        ticker: str | None = None,
+        company_name: str | None = None,
+        theme_id: str | None = None,
+        path_type: str | None = None,
+        response_class: str | None = None,
+        training_eligible: bool | None = None,
+        confidence_label: str | None = None,
+        trade_date_from: str | None = None,
+        trade_date_to: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        parquet_path = self.dir / "brain_records.parquet"
+        if not parquet_path.exists():
+            raise FileNotFoundError(
+                "warehouse brain_records.parquet not found; run warehouse rebuild"
+            )
+        sql_path = parquet_path.as_posix().replace("'", "''")
+        where = ["1 = 1"]
+        params: list[Any] = []
+
+        def add_string_filter(column: str, value: str | None) -> None:
+            if value is None:
+                return
+            where.append(f"{column} = ?")
+            params.append(value)
+
+        def add_payload_filter(key: str, value: str | None) -> None:
+            if value is None:
+                return
+            where.append(f"json_extract_string(payload_json, '$.{key}') = ?")
+            params.append(value)
+
+        add_string_filter("record_type", record_type)
+        add_string_filter("training_target", training_target)
+        add_string_filter("evidence_phase", evidence_phase)
+        add_string_filter("confidence_label", confidence_label)
+        add_payload_filter("ticker", ticker)
+        add_payload_filter("company_name", company_name)
+        add_payload_filter("theme_id", theme_id)
+        add_payload_filter("path_type", path_type)
+        add_payload_filter("response_class", response_class)
+        if training_eligible is not None:
+            where.append("training_eligible = ?")
+            params.append(training_eligible)
+        if trade_date_from is not None:
+            where.append("trade_date >= ?")
+            params.append(trade_date_from)
+        if trade_date_to is not None:
+            where.append("trade_date <= ?")
+            params.append(trade_date_to)
+        params.append(limit)
+        query = f"""
+            select
+                record_id,
+                record_type,
+                episode_id,
+                trade_date,
+                available_from,
+                training_target,
+                evidence_phase,
+                training_eligible,
+                status,
+                confidence_label,
+                json_extract_string(payload_json, '$.ticker') as ticker,
+                json_extract_string(payload_json, '$.company_name') as company_name,
+                json_extract_string(payload_json, '$.theme_id') as theme_id,
+                json_extract_string(payload_json, '$.path_type') as path_type,
+                json_extract_string(payload_json, '$.response_class') as response_class,
+                payload_json
+            from read_parquet('{sql_path}')
+            where {' and '.join(where)}
+            order by trade_date, record_id
+            limit ?
+        """
+        try:
+            with duckdb.connect(database=":memory:") as connection:
+                rows = connection.execute(query, params).fetchall()
+                columns = [description[0] for description in connection.description]
+        except duckdb.Error as exc:
+            raise ValueError(f"warehouse brain record query failed: {exc}") from exc
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            result = dict(zip(columns, row, strict=True))
+            payload_json = result.pop("payload_json", "{}")
+            result["payload"] = _loads_json_object(payload_json)
+            results.append(result)
+        return results
+
     def _append_or_replace_by_key(self, filename: str, rows: list[dict[str, Any]], key: str) -> None:
         path = self.dir / filename
         existing = _read_rows(path) if path.exists() else []
@@ -578,6 +674,16 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
     if set(rows[0]) == {"_empty"}:
         return []
     return rows
+
+
+def _loads_json_object(value: object) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _json(value: Any) -> str:

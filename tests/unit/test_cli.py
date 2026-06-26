@@ -961,3 +961,82 @@ def test_warehouse_inspect_cli_includes_counts_and_status(
     assert payload["status"]["identity_mismatches"] == {}
     assert payload["status"]["duplicate_identities"] == {}
     assert payload["status"]["weight_mismatches"] == {}
+
+
+def test_warehouse_query_records_cli_filters_record_level_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    seen: list[dict[str, object]] = []
+
+    class QueryWarehouseStore:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def query_brain_records(self, **filters: object) -> list[dict[str, object]]:
+            seen.append(filters)
+            return [
+                {
+                    "record_id": "BRAIN-query",
+                    "record_type": filters["record_type"],
+                    "ticker": filters["ticker"],
+                    "training_eligible": filters["training_eligible"],
+                    "payload": {"ticker": filters["ticker"]},
+                }
+            ]
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "WarehouseStore", QueryWarehouseStore)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "warehouse",
+            "query-records",
+            "--record-type",
+            "supervised_issuer_day_case",
+            "--ticker",
+            "000001",
+            "--training-eligible-only",
+            "--limit",
+            "5",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["row_count"] == 1
+    assert payload["rows"][0]["record_id"] == "BRAIN-query"
+    assert seen == [
+        {
+            "record_type": "supervised_issuer_day_case",
+            "training_target": None,
+            "evidence_phase": None,
+            "ticker": "000001",
+            "company_name": None,
+            "theme_id": None,
+            "path_type": None,
+            "response_class": None,
+            "confidence_label": None,
+            "trade_date_from": None,
+            "trade_date_to": None,
+            "training_eligible": True,
+            "limit": 5,
+        }
+    ]
+
+
+def test_warehouse_query_records_cli_rejects_conflicting_eligibility_flags() -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "warehouse",
+            "query-records",
+            "--training-eligible-only",
+            "--ineligible-only",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "cannot be combined" in result.output

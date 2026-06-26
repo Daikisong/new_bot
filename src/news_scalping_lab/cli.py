@@ -6340,6 +6340,78 @@ def warehouse_verify() -> None:
         raise typer.Exit(code=1)
 
 
+@warehouse_app.command("query-records")
+def warehouse_query_records(
+    record_type: Annotated[str | None, typer.Option("--record-type")] = None,
+    training_target: Annotated[str | None, typer.Option("--training-target")] = None,
+    evidence_phase: Annotated[str | None, typer.Option("--evidence-phase")] = None,
+    ticker: Annotated[str | None, typer.Option("--ticker")] = None,
+    company_name: Annotated[str | None, typer.Option("--company-name")] = None,
+    theme_id: Annotated[str | None, typer.Option("--theme-id")] = None,
+    path_type: Annotated[str | None, typer.Option("--path-type")] = None,
+    response_class: Annotated[str | None, typer.Option("--response-class")] = None,
+    confidence_label: Annotated[str | None, typer.Option("--confidence-label")] = None,
+    trade_date_from: Annotated[str | None, typer.Option("--trade-date-from")] = None,
+    trade_date_to: Annotated[str | None, typer.Option("--trade-date-to")] = None,
+    training_eligible_only: Annotated[
+        bool,
+        typer.Option("--training-eligible-only"),
+    ] = False,
+    ineligible_only: Annotated[bool, typer.Option("--ineligible-only")] = False,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+) -> None:
+    if training_eligible_only and ineligible_only:
+        typer.echo(
+            "--training-eligible-only and --ineligible-only cannot be combined",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    training_eligible = (
+        True if training_eligible_only else False if ineligible_only else None
+    )
+    settings = load_settings()
+    filters = {
+        "record_type": record_type,
+        "training_target": training_target,
+        "evidence_phase": evidence_phase,
+        "ticker": ticker,
+        "company_name": company_name,
+        "theme_id": theme_id,
+        "path_type": path_type,
+        "response_class": response_class,
+        "confidence_label": confidence_label,
+        "trade_date_from": trade_date_from,
+        "trade_date_to": trade_date_to,
+        "training_eligible": training_eligible,
+        "limit": limit,
+    }
+    try:
+        rows = WarehouseStore(settings.project_root).query_brain_records(
+            record_type=record_type,
+            training_target=training_target,
+            evidence_phase=evidence_phase,
+            ticker=ticker,
+            company_name=company_name,
+            theme_id=theme_id,
+            path_type=path_type,
+            response_class=response_class,
+            confidence_label=confidence_label,
+            trade_date_from=trade_date_from,
+            trade_date_to=trade_date_to,
+            training_eligible=training_eligible,
+            limit=limit,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "row_count": len(rows),
+            "filters": {key: value for key, value in filters.items() if value is not None},
+            "rows": rows,
+        }
+    )
+
+
 @memory_app.command("inspect")
 def memory_inspect(
     episode: Annotated[str, typer.Option("--episode")],
