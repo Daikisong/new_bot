@@ -1429,14 +1429,30 @@ class DailyAnalyzer:
         rows: list[dict[str, Any]] = []
         included_episode_ids: list[str] = []
         excluded_episode_ids: list[str] = []
+        included_record_ids: list[str] = []
+        excluded_record_ids: list[str] = []
         for query_index, query in enumerate(plan.queries, start=1):
             raw_episode_ids = self.retrieval.search_semantic(query.query, limit=5)
             available_ids, unavailable_ids = self._filter_retrieved_ids_available_as_of(
                 raw_episode_ids,
                 cutoff_at=cutoff_at,
             )
+            record_filters = _semantic_record_filters(query.category)
+            raw_record_ids = self._search_memory_records(
+                query=query.query,
+                limit=5,
+                filters=record_filters,
+            )
+            available_record_ids, unavailable_record_ids = (
+                self._filter_retrieved_record_ids_available_as_of(
+                    raw_record_ids,
+                    cutoff_at=cutoff_at,
+                )
+            )
             included_episode_ids.extend(available_ids)
             excluded_episode_ids.extend(unavailable_ids)
+            included_record_ids.extend(available_record_ids)
+            excluded_record_ids.extend(unavailable_record_ids)
             rows.append(
                 {
                     "schema_version": "nslab.semantic_retrieval_result.v1",
@@ -1449,13 +1465,21 @@ class DailyAnalyzer:
                     "raw_episode_ids": raw_episode_ids,
                     "included_episode_ids": available_ids,
                     "excluded_episode_ids": unavailable_ids,
+                    "raw_record_ids": raw_record_ids,
+                    "included_record_ids": available_record_ids,
+                    "excluded_record_ids": unavailable_record_ids,
+                    "record_retrieval_filters": record_filters,
                     "result_count": len(available_ids),
+                    "record_result_count": len(available_record_ids),
                     "excluded_count": len(unavailable_ids),
+                    "excluded_record_count": len(unavailable_record_ids),
                     "cutoff_at": cutoff_at.isoformat(),
                 }
             )
         included_episode_ids = _unique_preserving_order(included_episode_ids)
         excluded_episode_ids = _unique_preserving_order(excluded_episode_ids)
+        included_record_ids = _unique_preserving_order(included_record_ids)
+        excluded_record_ids = _unique_preserving_order(excluded_record_ids)
         artifact_relative = (
             Path("runs")
             / "checkpoints"
@@ -1481,6 +1505,9 @@ class DailyAnalyzer:
             "query_count": len(rows),
             "included_episode_count": len(included_episode_ids),
             "excluded_episode_count": len(excluded_episode_ids),
+            "included_record_count": len(included_record_ids),
+            "excluded_record_count": len(excluded_record_ids),
+            "record_retrieval_zero_is_valid": True,
             "retrieval_zero_is_valid": True,
         }
 
@@ -2626,11 +2653,17 @@ class DailyAnalyzer:
                 excluded.append(episode_id)
         return included, excluded
 
-    def _search_memory_records(self, *, query: str, limit: int) -> list[str]:
+    def _search_memory_records(
+        self,
+        *,
+        query: str,
+        limit: int,
+        filters: dict[str, Any] | None = None,
+    ) -> list[str]:
         search_records = getattr(self.retrieval, "search_records", None)
         if not callable(search_records):
             return []
-        result = search_records(query, limit=limit)
+        result = search_records(query, limit=limit, **(filters or {}))
         if not isinstance(result, list):
             return []
         return [record_id for record_id in result if isinstance(record_id, str)]
@@ -4031,6 +4064,20 @@ def _normalize_semantic_retrieval_category(value: str) -> str | None:
         "theme_formation_failures": "theme_formation_failures",
     }
     return aliases.get(normalized)
+
+
+def _semantic_record_filters(category: str) -> dict[str, Any]:
+    if category == "positive_analogs":
+        return {"training_eligible": True}
+    if category in {"negative_analogs", "near_misses"}:
+        return {"training_eligible": False}
+    if category == "counterexamples":
+        return {"record_type": "counterexample"}
+    if category == "leader_selection_cases":
+        return {"record_type": "blind_leader_preference_pair"}
+    if category == "theme_formation_failures":
+        return {"record_type": "supervised_theme_formation_case"}
+    return {}
 
 
 def _append_unique_provenance(

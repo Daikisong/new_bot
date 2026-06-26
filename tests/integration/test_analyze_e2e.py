@@ -744,6 +744,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "query_count": 6,
         "included_episode_count": 0,
         "excluded_episode_count": 0,
+        "included_record_count": 0,
+        "excluded_record_count": 0,
+        "record_retrieval_zero_is_valid": True,
         "retrieval_zero_is_valid": True,
     }
     semantic_plan_path = tmp_path / saved_manifest["semantic_retrieval_plan_artifact"]
@@ -763,6 +766,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert len(semantic_rows) == 6
     assert all(row["schema_version"] == "nslab.semantic_retrieval_result.v1" for row in semantic_rows)
     assert all(row["included_episode_ids"] == [] for row in semantic_rows)
+    assert all(row["included_record_ids"] == [] for row in semantic_rows)
+    assert all("record_retrieval_filters" in row for row in semantic_rows)
     assert saved_manifest["candidate_expansion_artifact"]
     assert saved_manifest["candidate_expansion_count"] == 4
     assert saved_manifest["candidate_expansion_summary"] == {

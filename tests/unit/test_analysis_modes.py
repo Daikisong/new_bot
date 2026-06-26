@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
@@ -575,6 +576,22 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
         "record_ids"
     ] == ["BRAIN-AVAILABLE"]
+    semantic_rows = [
+        json.loads(line)
+        for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    positive_row = next(
+        row for row in semantic_rows if row["category"] == "positive_analogs"
+    )
+    assert positive_row["record_retrieval_filters"] == {"training_eligible": True}
+    assert positive_row["included_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert positive_row["excluded_record_ids"] == ["BRAIN-FUTURE"]
+    assert manifest.semantic_retrieval_summary["included_record_count"] == 1
+    assert manifest.semantic_retrieval_summary["excluded_record_count"] == 1
+    assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True
 
 
 @pytest.mark.asyncio

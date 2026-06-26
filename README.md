@@ -247,8 +247,10 @@ customer/period/economic attribution fields, and dilution or financing risks; co
 validates schema, source IDs, hashes, and cutoff timing.
 After the exhaustive memory sweep, the LLM writes `semantic_retrieval_plan.json`
 with the required positive/negative/near-miss/counterexample/leader/theme-failure
-query categories. The engine executes those queries against accepted episodes,
-filters unavailable future episodes, and persists `semantic_retrieval.jsonl`.
+query categories. The engine executes those queries against accepted episodes and
+brain records, filters unavailable future evidence, and persists
+`semantic_retrieval.jsonl` with category-level episode IDs, record IDs, and the
+structural record filters used for each query.
 The open-world candidate expansion pass then writes `candidate_expansion.json`
 with single-event, theme-formation, beneficiary-discovery, and continuation
 routes. Continuation routes are explicitly limited to D-1 market data so the
