@@ -77,6 +77,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         BRAIN_FILES
     )
     compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
+    compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
     compiled_claims = [
         json.loads(line)
@@ -92,6 +93,19 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
     assert compile_manifest["compiled_claim_count"] == 2
+    assert compile_report["schema_version"] == "nslab.brain_compile_diagnostics.v1"
+    assert compile_report["compiler_mode"] == "llm-full"
+    assert compile_report["compiler_provider"] == "openai"
+    assert compile_report["compiler_model"] == "test-brain-model"
+    assert compile_report["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
+    assert compile_report["compiled_claim_count"] == 2
+    assert compile_report["llm_compile_present"] is True
+    assert compile_report["category_claim_counts"]["single_event"] == 1
+    assert compile_report["category_claim_counts"]["counterexamples"] == 1
+    assert compile_report["category_source_record_counts"]["single_event"] == 1
+    assert compile_report["record_coverage"]["accepted_record_count"] == 2
+    assert compile_report["record_coverage"]["swept_record_count"] == 2
+    assert compile_report["record_coverage"]["coverage_complete"] is True
     assert len(compiled_claims) == 2
     assert compiled_claims_by_record["BRAIN-DIRECT"]["category"] == "single_event"
     assert compiled_claims_by_record["BRAIN-DIRECT"]["status"] == "supported"

@@ -1153,6 +1153,17 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert "llm compile manifest references unknown compiled claim IDs" in audit[
         "llm_compile_findings"
     ]
+    compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest_audit = compile_report["latest_brain_audit"]
+    assert latest_audit["passed"] is False
+    assert latest_audit["deep"] is False
+    assert latest_audit["llm_compile_manifest_present"] is True
+    assert latest_audit["compiled_claim_file_present"] is True
+    assert any(
+        finding
+        == "llm_compile_findings: llm compile manifest references unknown compiled claim IDs"
+        for finding in latest_audit["findings"]
+    )
 
 
 def _compiled_claim_test_record(record_id: str, episode_id: str) -> BrainRecordEnvelope:

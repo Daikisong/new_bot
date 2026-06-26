@@ -1,10 +1,31 @@
 # Brain Compile Report
 
-- brain_version: `brain-8cd4d47576`
-- compiler_mode: `full`
 - accepted_episode_count: `2`
-- covered_episode_count: `2`
-- claim_count: `7`
+- brain_version: `brain-8cd4d47576`
+## category_claim_counts
+
+- beneficiary_discovery: `2`
+- continuation: `0`
+- counterexamples: `2`
+- failure_modes: `2`
+- leader_selection: `2`
+- market_memory: `2`
+- single_event: `3`
+- theme_formation: `0`
+- world_model: `7`
+
+## category_claim_ids
+
+- beneficiary_discovery: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- continuation: `[]`
+- counterexamples: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- failure_modes: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- leader_selection: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- market_memory: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- single_event: `['CL-e716e9229021', 'CL-5b5b51911d46', 'CL-0f7bde611467']`
+- theme_formation: `[]`
+- world_model: `['CL-e716e9229021', 'CL-81e4515f90eb', 'CL-c348d7fdd941', 'CL-5b5b51911d46', 'CL-0f7bde611467', 'CL-7816a26d3aad', 'CL-c6377253f530']`
+
 - category_file_count: `9`
 ## category_files
 
@@ -18,4 +39,46 @@
 - `07_counterexamples.md`
 - `08_market_memory.md`
 
+## category_source_record_counts
+
+
+- claim_count: `7`
+- compiled_claim_count: `0`
+- compiled_claims_file_present: `False`
+- compiler_mode: `full`
+- compiler_model: `nslab.brain.catalog.compiler.v3`
+- compiler_provider: `deterministic_catalog`
+- compiler_version: `nslab.brain.catalog.compiler.v3`
+- covered_episode_count: `2`
+## latest_brain_audit
+
+- deep: `True`
+- passed: `True`
+- brain_version: `brain-8cd4d47576`
+- brain_build_mode: `full`
+- coverage_complete: `True`
+- record_coverage_complete: `True`
+- deterministic_rebuild_verified: `True`
+- llm_compile_manifest_present: `False`
+- compiled_claim_file_present: `False`
+- finding_count: `0`
+- findings: `[]`
+
 - llm_compile: `None`
+- llm_compile_present: `False`
+## record_coverage
+
+- accepted_record_count: `4`
+- audit_only_record_count: `2`
+- available_record_count: `4`
+- compiled_record_count: `4`
+- coverage_complete: `True`
+- ineligible_record_count: `2`
+- record_counts_by_evidence_phase: `{'AUDIT': 2, 'POSTMORTEM': 2}`
+- record_counts_by_training_target: `{'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}`
+- record_counts_by_type: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
+- swept_record_count: `4`
+- training_eligible_available_record_count: `2`
+- unswept_record_ids: `[]`
+
+- schema_version: `nslab.brain_compile_diagnostics.v1`

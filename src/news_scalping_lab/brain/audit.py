@@ -15,6 +15,7 @@ from news_scalping_lab.brain.compiler import (
     expected_brain_version,
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
+from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
@@ -65,7 +66,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *compiled_claim_audit["compiled_claim_findings"],
     ]
     coverage_complete = not missing and not extra and len(covered) == len(accepted)
-    return {
+    result = {
         "accepted_episode_count": len(accepted),
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,
@@ -86,6 +87,70 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "last_full_rebuild": (brain_manifest or coverage_manifest).get("last_full_rebuild_at")
         or (brain_manifest or coverage_manifest).get("created_at"),
     }
+    _write_latest_brain_audit_summary(root, result, deep=deep)
+    return result
+
+
+def _write_latest_brain_audit_summary(
+    root: Path,
+    result: dict[str, object],
+    *,
+    deep: bool,
+) -> None:
+    report_path = root / "diagnostics" / "brain_compile_report.json"
+    report: dict[str, Any] = {}
+    if report_path.exists():
+        payload = read_json(report_path)
+        if isinstance(payload, dict):
+            report = payload
+    report.setdefault("schema_version", "nslab.brain_compile_diagnostics.v1")
+    report["latest_brain_audit"] = {
+        "deep": deep,
+        "passed": result.get("passed"),
+        "brain_version": result.get("brain_version"),
+        "brain_build_mode": result.get("brain_build_mode"),
+        "coverage_complete": result.get("coverage_complete"),
+        "record_coverage_complete": result.get("record_coverage_complete"),
+        "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
+        "llm_compile_manifest_present": result.get("llm_compile_manifest_present"),
+        "compiled_claim_file_present": result.get("compiled_claim_file_present"),
+        "finding_count": len(_brain_audit_findings(result)),
+        "findings": _brain_audit_findings(result),
+    }
+    write_diagnostic_report(root, "brain_compile_report", report)
+
+
+def _brain_audit_findings(result: dict[str, object]) -> list[str]:
+    finding_keys = (
+        "missing_episode_ids",
+        "extra_episode_ids",
+        "invalid_claim_lines",
+        "claims_without_support",
+        "claims_with_unknown_support",
+        "claim_temporal_leaks",
+        "claims_without_provenance",
+        "validated_single_support_claims",
+        "invalid_mechanism_lines",
+        "mechanisms_without_cases",
+        "mechanisms_with_unknown_success_cases",
+        "mechanisms_without_provenance",
+        "determinism_findings",
+        "record_coverage_findings",
+        "brain_diversity_findings",
+        "llm_compile_findings",
+        "compiled_claim_findings",
+    )
+    findings: list[str] = []
+    for key in finding_keys:
+        value = result.get(key)
+        if isinstance(value, list):
+            findings.extend(f"{key}: {item}" for item in value)
+    record_store_audit = result.get("record_store_audit")
+    if isinstance(record_store_audit, dict):
+        record_findings = record_store_audit.get("findings")
+        if isinstance(record_findings, list):
+            findings.extend(f"record_store: {item}" for item in record_findings)
+    return findings
 
 
 def _audit_brain_diversity(root: Path) -> dict[str, Any]:

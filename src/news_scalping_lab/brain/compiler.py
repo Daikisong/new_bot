@@ -547,18 +547,13 @@ class BrainCompiler:
         write_diagnostic_report(
             self.root,
             "brain_compile_report",
-            {
-                "brain_version": manifest.brain_version,
-                "compiler_mode": manifest.build_mode,
-                "accepted_episode_count": manifest.accepted_episode_count,
-                "covered_episode_count": manifest.covered_episode_count,
-                "claim_count": len(claims),
-                "compiled_claim_count": len(compiled_claims or []),
-                "compiled_claims_file_present": compiled_claims is not None,
-                "category_file_count": len(BRAIN_FILES),
-                "category_files": BRAIN_FILES,
-                "llm_compile": llm_compile_metadata,
-            },
+            _brain_compile_diagnostic_report(
+                manifest=manifest,
+                claims=claims,
+                compiled_claims=compiled_claims,
+                record_coverage=record_coverage,
+                llm_compile_metadata=llm_compile_metadata,
+            ),
         )
         write_diagnostic_report(self.root, "record_coverage_report", record_coverage)
 
@@ -1157,6 +1152,125 @@ def _record_claim_statement(record: BrainRecordEnvelope) -> str:
             f"observed response_class={response_class}."
         )
     return f"{record.record_type} supports studying {target} with preserved provenance."
+
+
+def _brain_compile_diagnostic_report(
+    *,
+    manifest: BrainManifest,
+    claims: list[MemoryClaim],
+    compiled_claims: list[CompiledBrainClaim] | None,
+    record_coverage: dict[str, object],
+    llm_compile_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    llm_compile: dict[str, Any] = (
+        llm_compile_metadata if isinstance(llm_compile_metadata, dict) else {}
+    )
+    llm_compile_present = bool(llm_compile)
+    compiler_provider = _string_from_mapping(
+        llm_compile,
+        "provider",
+        default="deterministic_catalog",
+    )
+    compiler_model = _string_from_mapping(
+        llm_compile,
+        "model",
+        default=CATALOG_COMPILER_VERSION,
+    )
+    compiler_version = _string_from_mapping(
+        llm_compile,
+        "compiler_version",
+        default=CATALOG_COMPILER_VERSION,
+    )
+    category_claim_ids = _category_claim_ids(
+        claims=claims,
+        compiled_claims=compiled_claims,
+    )
+    category_source_record_counts = _category_source_record_counts(llm_compile)
+    return {
+        "schema_version": "nslab.brain_compile_diagnostics.v1",
+        "brain_version": manifest.brain_version,
+        "compiler_mode": manifest.build_mode,
+        "compiler_provider": compiler_provider,
+        "compiler_model": compiler_model,
+        "compiler_version": compiler_version,
+        "accepted_episode_count": manifest.accepted_episode_count,
+        "covered_episode_count": manifest.covered_episode_count,
+        "claim_count": len(claims),
+        "compiled_claim_count": len(compiled_claims or []),
+        "compiled_claims_file_present": compiled_claims is not None,
+        "category_file_count": len(BRAIN_FILES),
+        "category_files": BRAIN_FILES,
+        "category_claim_counts": {
+            category: len(claim_ids)
+            for category, claim_ids in sorted(category_claim_ids.items())
+        },
+        "category_claim_ids": category_claim_ids,
+        "category_source_record_counts": category_source_record_counts,
+        "record_coverage": _record_coverage_summary(record_coverage),
+        "llm_compile_present": llm_compile_present,
+        "llm_compile": llm_compile_metadata,
+    }
+
+
+def _category_claim_ids(
+    *,
+    claims: list[MemoryClaim],
+    compiled_claims: list[CompiledBrainClaim] | None,
+) -> dict[str, list[str]]:
+    ids: dict[str, list[str]] = {}
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        if compiled_claims is not None:
+            category_ids = _compiled_claim_ids_for_category(compiled_claims, category)
+        else:
+            category_ids = [
+                claim.claim_id for claim in _claims_for_category(claims, category)
+            ]
+        ids[category] = category_ids
+    return dict(sorted(ids.items()))
+
+
+def _category_source_record_counts(llm_compile: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    categories = llm_compile.get("categories")
+    if not isinstance(categories, list):
+        return counts
+    for category in categories:
+        if not isinstance(category, dict):
+            continue
+        category_name = category.get("category")
+        count = category.get("source_record_count")
+        if isinstance(category_name, str) and isinstance(count, int):
+            counts[category_name] = count
+    return dict(sorted(counts.items()))
+
+
+def _record_coverage_summary(record_coverage: dict[str, object]) -> dict[str, object]:
+    keys = (
+        "accepted_record_count",
+        "available_record_count",
+        "training_eligible_available_record_count",
+        "compiled_record_count",
+        "swept_record_count",
+        "unswept_record_ids",
+        "record_counts_by_type",
+        "record_counts_by_evidence_phase",
+        "record_counts_by_training_target",
+        "ineligible_record_count",
+        "audit_only_record_count",
+        "coverage_complete",
+    )
+    return {key: record_coverage.get(key) for key in keys if key in record_coverage}
+
+
+def _string_from_mapping(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    default: str,
+) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) and value else default
 
 
 def _compiled_claims_from_records(
