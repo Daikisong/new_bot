@@ -58,13 +58,17 @@ def production_readiness_report(
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
     brain = report.get("brain")
     if isinstance(brain, dict):
+        brain_audit = _nested_dict(brain, "audit")
+        if brain_audit and brain_audit.get("passed") is not True:
+            findings.append("brain: latest brain audit failed")
         coverage = brain.get("coverage")
         if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
             findings.append("brain: accepted episodes are not fully covered")
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
-    if build_mode in {"catalog", "catalog_only", "full", "incremental"}:
-        findings.append("brain: current manifest is catalog_only, not llm-full")
+    if build_mode != "llm-full":
+        observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
+        findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
     record_coverage = _read_optional_json(
         settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
     )
@@ -174,6 +178,7 @@ def build_doctor_report(settings: Settings) -> dict[str, Any]:
             "head": current_brain_version(settings.project_root),
             "accepted_episode_count": accepted_episode_count,
             "coverage": _brain_coverage_status(settings.project_root, accepted_episode_count),
+            "audit": _brain_audit_status(coverage_audit),
         },
         "vector_index": inspect_vector_index(settings.project_root),
         "schemas": {
@@ -263,6 +268,20 @@ def _doctor_readiness(
     return {
         "passed": not findings,
         "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+    }
+
+
+def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
+    findings = _string_list(coverage_audit.get("brain_audit_findings"))
+    return {
+        "passed": coverage_audit.get("brain_audit_passed") is True,
+        "brain_build_mode": coverage_audit.get("brain_build_mode"),
+        "record_coverage_complete": coverage_audit.get("record_coverage_complete"),
+        "deterministic_rebuild_verified": coverage_audit.get(
+            "deterministic_rebuild_verified"
+        ),
         "finding_count": len(findings),
         "findings": findings,
     }

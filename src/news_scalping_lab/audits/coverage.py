@@ -19,6 +19,8 @@ from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 def audit_coverage(root: Path) -> dict[str, object]:
     brain = audit_brain(root)
+    brain_audit_passed = bool(brain.get("passed"))
+    brain_audit_findings = _brain_audit_findings(brain)
     accepted_episode_count = _int_value(brain.get("accepted_episode_count"))
     accepted_episodes = ResearchStore(root).list_accepted()
     records = BrainRecordStore(root).list_records()
@@ -59,24 +61,7 @@ def audit_coverage(root: Path) -> dict[str, object]:
     warehouse_required_files_present = (
         not missing_warehouse_files and not unreadable_warehouse_files
     )
-    findings = [
-        f"brain: {finding}"
-        for field in (
-            "missing_episode_ids",
-            "extra_episode_ids",
-            "claims_without_support",
-            "claims_with_unknown_support",
-            "claims_without_provenance",
-            "claim_temporal_leaks",
-            "mechanisms_without_cases",
-            "mechanisms_with_unknown_success_cases",
-            "mechanisms_without_provenance",
-            "invalid_claim_lines",
-            "invalid_mechanism_lines",
-            "determinism_findings",
-        )
-        for finding in _string_items(brain.get(field))
-    ]
+    findings = [f"brain: {finding}" for finding in brain_audit_findings]
     if not vector_index_current:
         findings.append(f"vector_index: status is {vector_index.get('status')}")
     if not warehouse_synced:
@@ -106,13 +91,15 @@ def audit_coverage(root: Path) -> dict[str, object]:
     return {
         **brain,
         "passed": (
-            bool(brain.get("passed"))
+            brain_audit_passed
             and vector_index_current
             and warehouse_synced
             and warehouse_projection_synced
             and warehouse_required_files_present
         ),
         "findings": findings,
+        "brain_audit_passed": brain_audit_passed,
+        "brain_audit_findings": brain_audit_findings,
         "vector_index": vector_index,
         "vector_index_current": vector_index_current,
         "warehouse_counts": warehouse_counts,
@@ -127,6 +114,31 @@ def audit_coverage(root: Path) -> dict[str, object]:
         "warehouse_unreadable_files": unreadable_warehouse_files,
         "warehouse_required_files_present": warehouse_required_files_present,
     }
+
+
+def _brain_audit_findings(brain: dict[str, object]) -> list[str]:
+    findings: list[str] = []
+    for field in (
+        "missing_episode_ids",
+        "extra_episode_ids",
+        "claims_without_support",
+        "claims_with_unknown_support",
+        "claims_without_provenance",
+        "claim_temporal_leaks",
+        "mechanisms_without_cases",
+        "mechanisms_with_unknown_success_cases",
+        "mechanisms_without_provenance",
+        "invalid_claim_lines",
+        "invalid_mechanism_lines",
+        "determinism_findings",
+        "record_coverage_findings",
+        "brain_diversity_findings",
+    ):
+        findings.extend(_string_items(brain.get(field)))
+    record_store_audit = brain.get("record_store_audit")
+    if isinstance(record_store_audit, dict):
+        findings.extend(_string_items(record_store_audit.get("findings")))
+    return findings
 
 
 def _int_value(value: object) -> int:

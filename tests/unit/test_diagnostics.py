@@ -212,6 +212,60 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
         "missing_episode_ids": [],
         "status": "complete",
     }
+    assert report["brain"]["audit"]["brain_build_mode"] == "full"
+    assert isinstance(report["brain"]["audit"]["finding_count"], int)
+
+
+def test_production_readiness_rejects_failed_latest_brain_audit(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics._openai_sdk_status",
+        lambda: {
+            "available": True,
+            "version": "fake-openai",
+            "async_client_available": True,
+            "error": None,
+        },
+    )
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-brain-audit",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor production readiness must inspect brain audit status.",
+            open_world_mechanisms=["brain audit failure -> production readiness failure"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    brain_file = tmp_path / "brain" / "current" / "00_world_model.md"
+    brain_file.write_text(
+        brain_file.read_text(encoding="utf-8") + "\nTampered production audit fixture.\n",
+        encoding="utf-8",
+    )
+
+    report = build_doctor_report(settings)
+    production = production_readiness_report(report, settings)
+
+    assert report["brain"]["audit"]["passed"] is False
+    assert "brain immutable snapshot does not match current brain files" in report[
+        "brain"
+    ]["audit"]["findings"]
+    assert production["passed"] is False
+    assert "brain: latest brain audit failed" in production["findings"]
 
 
 def test_doctor_report_readiness_flags_unsynced_warehouse(tmp_path) -> None:
