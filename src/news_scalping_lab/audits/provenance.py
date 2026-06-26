@@ -5071,6 +5071,12 @@ def _check_manifest_final_synthesis_context_artifact(
             f"{prediction_path.name}: context manifest final_synthesis_context_summary "
             "mismatch"
         )
+    _check_final_synthesis_manifest_record_ids(
+        prediction_path,
+        manifest,
+        context_payload,
+        findings,
+    )
     _check_final_synthesis_record_id_availability(
         root,
         prediction_path,
@@ -5085,6 +5091,58 @@ def _check_manifest_final_synthesis_context_artifact(
         context_payload,
         findings,
     )
+
+
+def _check_final_synthesis_manifest_record_ids(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    findings: list[str],
+) -> None:
+    for field in (
+        "retrieved_record_ids",
+        "excluded_retrieved_record_ids",
+        "semantic_retrieval_record_ids",
+        "excluded_semantic_retrieval_record_ids",
+        "counterexample_record_ids",
+    ):
+        if field not in manifest and field not in context_payload:
+            continue
+        manifest_ids = _final_synthesis_string_list(
+            manifest.get(field),
+            prediction_path=prediction_path,
+            source="context manifest",
+            field=field,
+            findings=findings,
+        )
+        payload_ids = _final_synthesis_string_list(
+            context_payload.get(field),
+            prediction_path=prediction_path,
+            source="final_synthesis_context",
+            field=field,
+            findings=findings,
+        )
+        if manifest_ids is None or payload_ids is None:
+            continue
+        if manifest_ids != payload_ids:
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context {field} "
+                "does not match context manifest"
+            )
+
+
+def _final_synthesis_string_list(
+    value: object,
+    *,
+    prediction_path: Path,
+    source: str,
+    field: str,
+    findings: list[str],
+) -> list[str] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        findings.append(f"{prediction_path.name}: {source} {field} is invalid")
+        return None
+    return value
 
 
 def _check_final_synthesis_record_id_availability(
