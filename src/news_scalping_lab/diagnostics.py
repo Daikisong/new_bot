@@ -54,6 +54,14 @@ REAL_BUNDLE_SEARCH_DIRS = (
 )
 REAL_BUNDLE_PRODUCTION_SOURCES = {"cli", "env", "data_inbox"}
 REAL_BUNDLE_SEARCH_ORDER = ["data_inbox", "tests_fixture", "env", "cli"]
+PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS = (
+    "web_source_artifact",
+    "excluded_web_source_artifact",
+    "candidate_web_check_artifact",
+    "excluded_candidate_web_check_artifact",
+    "source_ledger_artifact",
+    "final_synthesis_context_artifact",
+)
 
 
 def production_readiness_report(
@@ -94,6 +102,12 @@ def production_readiness_report(
     elif brave_status != "configured_not_called":
         findings.append(
             "brave_search: production web research requires configured Brave Search API key"
+        )
+    web_evidence = _production_web_evidence_status(settings.project_root)
+    if web_evidence["passed"] is not True:
+        findings.extend(
+            f"web_evidence: {finding}"
+            for finding in web_evidence["findings"]
         )
     brain = report.get("brain")
     if isinstance(brain, dict):
@@ -168,6 +182,7 @@ def production_readiness_report(
         "record_store": record_store,
         "warehouse": warehouse,
         "semantic_index": semantic_index,
+        "web_evidence": web_evidence,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
@@ -542,6 +557,136 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} doctor --production",
         ],
     }
+
+
+def _production_web_evidence_status(root: Path) -> dict[str, Any]:
+    manifest_dir = root / "runs" / "manifests"
+    manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
+    artifact_paths: set[Path] = set()
+    unreadable_manifests: list[str] = []
+    for manifest_path in manifest_paths:
+        try:
+            manifest = _read_json_object(manifest_path)
+        except ValueError:
+            unreadable_manifests.append(relative_to_root(manifest_path, root))
+            continue
+        for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS:
+            artifact_path = _project_relative_artifact_path(root, manifest.get(field))
+            if artifact_path is not None and artifact_path.exists() and artifact_path.is_file():
+                artifact_paths.add(artifact_path)
+
+    mock_artifacts: list[dict[str, Any]] = []
+    unreadable_artifacts: list[str] = []
+    for artifact_path in sorted(artifact_paths):
+        try:
+            mock_url_count, sample_values = _mock_url_evidence(artifact_path)
+        except OSError:
+            unreadable_artifacts.append(relative_to_root(artifact_path, root))
+            continue
+        if mock_url_count:
+            mock_artifacts.append(
+                {
+                    "path": relative_to_root(artifact_path, root),
+                    "mock_url_count": mock_url_count,
+                    "sample_values": sample_values[:5],
+                }
+            )
+
+    findings: list[str] = []
+    for path in unreadable_manifests:
+        findings.append(f"context manifest is unreadable: {path}")
+    for path in unreadable_artifacts:
+        findings.append(f"web evidence artifact is unreadable: {path}")
+    for artifact in mock_artifacts:
+        findings.append(
+            f"mock web source URLs present in {artifact['path']} "
+            f"({artifact['mock_url_count']})"
+        )
+
+    return {
+        "schema_version": "nslab.production_web_evidence.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "checked_manifest_count": len(manifest_paths),
+        "checked_artifact_count": len(artifact_paths),
+        "unreadable_manifest_count": len(unreadable_manifests),
+        "unreadable_manifests": unreadable_manifests,
+        "unreadable_artifact_count": len(unreadable_artifacts),
+        "unreadable_artifacts": unreadable_artifacts,
+        "mock_web_artifact_count": len(mock_artifacts),
+        "mock_web_url_count": sum(
+            int(artifact["mock_url_count"]) for artifact in mock_artifacts
+        ),
+        "mock_web_artifacts": mock_artifacts,
+    }
+
+
+def _project_relative_artifact_path(root: Path, value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return resolved
+
+
+def _mock_url_evidence(path: Path) -> tuple[int, list[str]]:
+    if path.suffix == ".jsonl":
+        count = 0
+        samples: list[str] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payload: object = json.loads(line)
+            except json.JSONDecodeError:
+                payload = line
+            values = _mock_url_values(payload)
+            count += len(values)
+            samples.extend(values)
+        return count, _unique_preserving_order(samples)
+    if path.suffix == ".json":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError:
+            payload = path.read_text(encoding="utf-8")
+        values = _mock_url_values(payload)
+        return len(values), _unique_preserving_order(values)
+    text = path.read_text(encoding="utf-8")
+    values = [value for value in text.split() if "mock://" in value]
+    return len(values), _unique_preserving_order(values)
+
+
+def _mock_url_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if "mock://" in value else []
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(_mock_url_values(item))
+        return values
+    if isinstance(value, dict):
+        values = []
+        for item in value.values():
+            values.extend(_mock_url_values(item))
+        return values
+    return []
+
+
+def _unique_preserving_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def _production_record_coverage_status(record_coverage: object) -> dict[str, Any]:

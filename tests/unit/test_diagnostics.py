@@ -1052,6 +1052,122 @@ def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
     assert production["required_environment"]["BRAVE_SEARCH_API_KEY"] == "<required>"
 
 
+def test_production_readiness_rejects_mock_web_evidence_artifacts(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "source_id": "WEB-mock",
+                "url": "mock://web/WEB-mock",
+                "source_url": "mock://web/WEB-mock",
+                "title": "mock web evidence",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-mock"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["mock_web_artifact_count"] == 1
+    assert production["web_evidence"]["mock_web_url_count"] == 2
+    assert production["web_evidence"]["mock_web_artifacts"] == [
+        {
+            "path": "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl",
+            "mock_url_count": 2,
+            "sample_values": ["mock://web/WEB-mock"],
+        }
+    ]
+    assert (
+        "web_evidence: mock web source URLs present in "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl (2)"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_live_web_evidence_artifacts(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "source_id": "WEB-live",
+                "url": "https://example.test/news",
+                "source_url": "https://example.test/news",
+                "title": "live web evidence",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-live"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is True
+    assert production["web_evidence"]["checked_manifest_count"] == 1
+    assert production["web_evidence"]["checked_artifact_count"] == 1
+    assert production["web_evidence"]["mock_web_artifact_count"] == 0
+    assert not any(
+        finding.startswith("web_evidence:") for finding in production["findings"]
+    )
+
+
 def test_production_readiness_requires_brave_api_key_for_live_web(tmp_path) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
     settings.llm.provider = "openai"
