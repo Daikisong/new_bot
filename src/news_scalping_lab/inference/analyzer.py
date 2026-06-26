@@ -392,7 +392,15 @@ class DailyAnalyzer:
                 "retrieved_record_ids": manifest.retrieved_record_ids,
                 "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
                 "counterexample_record_ids": manifest.counterexample_record_ids,
+                "accepted_record_count": manifest.accepted_record_count,
+                "available_record_count": manifest.available_record_count,
+                "swept_record_count": manifest.swept_record_count,
+                "swept_record_ids": manifest.swept_record_ids,
                 "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
+                "record_sweep_artifacts": manifest.record_sweep_artifacts,
+                "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
+                "record_sweep_shard_count": manifest.record_sweep_shard_count,
+                "record_sweep_cache_hits": manifest.record_sweep_cache_hits,
                 "event_cluster_artifact": manifest.event_cluster_artifact,
                 "event_cluster_summary": manifest.event_cluster_summary,
                 "open_world_first_analysis_artifact": (
@@ -2855,9 +2863,14 @@ class DailyAnalyzer:
             "all_shard_contributions": self._read_json_artifacts(
                 manifest.memory_sweep_artifacts
             ),
+            "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
             "record_level_shard_contributions": self._read_json_artifacts(
                 manifest.record_sweep_artifacts
             ),
+            "record_sweep_artifacts": manifest.record_sweep_artifacts,
+            "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
+            "record_sweep_shard_count": manifest.record_sweep_shard_count,
+            "record_sweep_cache_hits": manifest.record_sweep_cache_hits,
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
             "retrieved_record_ids": manifest.retrieved_record_ids,

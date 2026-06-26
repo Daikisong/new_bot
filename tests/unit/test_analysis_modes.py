@@ -612,6 +612,13 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
         "record_ids"
     ] == ["BRAIN-AVAILABLE"]
+    assert synthesis_payload["record_sweep_artifacts"] == manifest.record_sweep_artifacts
+    assert (
+        synthesis_payload["record_sweep_artifact_hashes"]
+        == manifest.record_sweep_artifact_hashes
+    )
+    assert synthesis_payload["record_sweep_shard_count"] == 1
+    assert synthesis_payload["record_sweep_cache_hits"] == 0
     semantic_rows = [
         json.loads(line)
         for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
