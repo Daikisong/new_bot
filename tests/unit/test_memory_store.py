@@ -310,6 +310,93 @@ def _store_single_edge_record(tmp_path, *, path_type: str) -> None:
     )
 
 
+def _store_single_company_memory_delta_record(
+    tmp_path,
+    *,
+    available_from: datetime,
+    known_at: str,
+) -> None:
+    payload = {
+        "record_id": "BRAIN-COMPANY",
+        "record_type": "company_memory_delta",
+        "episode_id": "NSLAB-20300110-COMPANY",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "company_memory",
+        "evidence_phase": "BLIND_SAFE",
+        "ticker": "000001",
+        "company_name": "Company Memory Co",
+        "known_at": known_at,
+        "business_descriptions": ["Verified business line"],
+        "training_eligible": False,
+        "eligibility_reason": "company memory delta is audit memory",
+    }
+    raw_payload_hash = sha256_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    )
+    normalized_payload_hash = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-COMPANY",
+        record_type="company_memory_delta",
+        episode_id="NSLAB-20300110-COMPANY",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="company_memory",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=False,
+        eligibility_reason="company memory delta is audit memory",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=[],
+        raw_payload_sha256=raw_payload_hash,
+        normalized_payload_sha256=normalized_payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+    raw_payload = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    raw_sha = sha256_text(raw_payload)
+    source_path = tmp_path / "company_memory_delta_bundle.md"
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id="NSLAB-20300110-COMPANY",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"brain_delta.jsonl": raw_sha},
+            raw_block_counts={"brain_delta.jsonl": 1},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id="NSLAB-20300110-COMPANY",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl"],
+            record_ids=["BRAIN-COMPANY"],
+            record_count_by_type={"company_memory_delta": 1},
+            training_eligible_record_count=0,
+            source_ids=[],
+        ),
+        records=[record],
+        raw_blocks={"brain_delta.jsonl": raw_payload},
+        validation_report={"passed": True},
+    )
+
+
 def test_record_store_audit_rejects_invalid_event_ticker_edge_path_type(tmp_path) -> None:
     _store_single_edge_record(tmp_path, path_type="OUTCOME_ONLY")
 
@@ -327,6 +414,61 @@ def test_record_store_audit_accepts_documented_event_ticker_edge_path_types(tmp_
 
     assert audit["passed"] is True
     assert audit["invalid_event_ticker_edge_path_type_record_ids"] == []
+
+
+def test_record_store_audit_rejects_backdated_company_memory_delta_known_at(
+    tmp_path,
+) -> None:
+    _store_single_company_memory_delta_record(
+        tmp_path,
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+        known_at="2030-01-10T08:00:00+09:00",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["backdated_company_memory_delta_known_at_record_ids"] == [
+        "BRAIN-COMPANY"
+    ]
+    assert (
+        "company_memory_delta known_at values precede record available_from"
+        in audit["findings"]
+    )
+
+
+def test_record_store_audit_rejects_naive_company_memory_delta_known_at(
+    tmp_path,
+) -> None:
+    _store_single_company_memory_delta_record(
+        tmp_path,
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        known_at="2030-01-10T08:30:00",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["invalid_company_memory_delta_known_at_record_ids"] == [
+        "BRAIN-COMPANY"
+    ]
+    assert "company_memory_delta known_at values are invalid" in audit["findings"]
+
+
+def test_record_store_audit_accepts_temporal_company_memory_delta_known_at(
+    tmp_path,
+) -> None:
+    _store_single_company_memory_delta_record(
+        tmp_path,
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        known_at="2030-01-10T08:30:00+09:00",
+    )
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is True
+    assert audit["invalid_company_memory_delta_known_at_record_ids"] == []
+    assert audit["backdated_company_memory_delta_known_at_record_ids"] == []
 
 
 def test_local_memory_store_adds_and_lists_accepted_episode(tmp_path) -> None:

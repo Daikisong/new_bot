@@ -20,7 +20,14 @@ from news_scalping_lab.records.reference_integrity import (
     known_reference_ids_from_blocks,
     payload_reference_audit,
 )
-from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text, write_json
+from news_scalping_lab.utils import (
+    as_kst,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    write_json,
+)
 
 ALLOWED_EVENT_TICKER_EDGE_PATH_TYPES = {
     "CONTINUATION",
@@ -564,6 +571,8 @@ def _audit_deep_record_store(
         "missing_payload_references": [],
         "records_with_naive_available_from": [],
         "invalid_event_ticker_edge_path_type_record_ids": [],
+        "invalid_company_memory_delta_known_at_record_ids": [],
+        "backdated_company_memory_delta_known_at_record_ids": [],
         "findings": [],
     }
     for episode_id, episode_records in sorted(records_by_episode.items()):
@@ -660,6 +669,7 @@ def _audit_deep_record_store(
             result=result,
         )
         _audit_event_ticker_edge_path_types(records=episode_records, result=result)
+        _audit_company_memory_delta_known_at(records=episode_records, result=result)
     _append_deep_findings(result)
     return result
 
@@ -1037,6 +1047,40 @@ def _audit_event_ticker_edge_path_types(
             )
 
 
+def _audit_company_memory_delta_known_at(
+    *,
+    records: list[BrainRecordEnvelope],
+    result: dict[str, Any],
+) -> None:
+    for record in records:
+        if record.record_type != "company_memory_delta":
+            continue
+        raw_known_at = record.payload.get("known_at")
+        if raw_known_at in (None, ""):
+            continue
+        known_at = _payload_datetime(raw_known_at)
+        if known_at is None or known_at.tzinfo is None:
+            result["invalid_company_memory_delta_known_at_record_ids"].append(
+                record.record_id
+            )
+            continue
+        if as_kst(known_at) < as_kst(record.available_from):
+            result["backdated_company_memory_delta_known_at_record_ids"].append(
+                record.record_id
+            )
+
+
+def _payload_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _append_deep_findings(result: dict[str, Any]) -> None:
     finding_labels = {
         "missing_record_manifest_episode_ids": "record manifest is missing",
@@ -1087,6 +1131,12 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         "records_with_naive_available_from": "record available_from values are timezone-naive",
         "invalid_event_ticker_edge_path_type_record_ids": (
             "event_ticker_edge path_type values are invalid"
+        ),
+        "invalid_company_memory_delta_known_at_record_ids": (
+            "company_memory_delta known_at values are invalid"
+        ),
+        "backdated_company_memory_delta_known_at_record_ids": (
+            "company_memory_delta known_at values precede record available_from"
         ),
     }
     findings = result["findings"]

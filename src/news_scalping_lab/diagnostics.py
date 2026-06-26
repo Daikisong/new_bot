@@ -872,6 +872,8 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "records_with_raw_payload_hash_mismatch": [],
             "raw_block_hash_mismatch_episode_ids": [],
             "invalid_event_ticker_edge_path_type_record_ids": [],
+            "invalid_company_memory_delta_known_at_record_ids": [],
+            "backdated_company_memory_delta_known_at_record_ids": [],
         }
     findings = _string_list(audit.get("findings"))
     if audit.get("deep") is not True:
@@ -930,6 +932,14 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         ),
         "invalid_event_ticker_edge_path_type_record_ids": audit.get(
             "invalid_event_ticker_edge_path_type_record_ids",
+            [],
+        ),
+        "invalid_company_memory_delta_known_at_record_ids": audit.get(
+            "invalid_company_memory_delta_known_at_record_ids",
+            [],
+        ),
+        "backdated_company_memory_delta_known_at_record_ids": audit.get(
+            "backdated_company_memory_delta_known_at_record_ids",
             [],
         ),
     }
