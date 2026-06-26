@@ -1,7 +1,7 @@
 # Brain Compile Report
 
 - accepted_episode_count: `2`
-- brain_version: `brain-6d0d407597`
+- brain_version: `brain-bbeaee24f6`
 - catalog_only: `True`
 ## category_claim_counts
 
@@ -76,7 +76,7 @@
 
 - deep: `True`
 - passed: `True`
-- brain_version: `brain-6d0d407597`
+- brain_version: `brain-bbeaee24f6`
 - brain_build_mode: `catalog`
 - catalog_only: `True`
 - coverage_complete: `True`

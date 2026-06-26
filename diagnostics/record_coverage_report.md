@@ -5,7 +5,7 @@
 - audit_only_record_count: `2`
 - available_record_count: `4`
 - available_record_count_as_of: `2`
-- brain_version: `brain-6d0d407597`
+- brain_version: `brain-bbeaee24f6`
 - build_mode: `catalog`
 - catalog_only: `True`
 - compiled_record_count: `4`

@@ -871,11 +871,50 @@ def _audit_record_preference_rows(
     findings: list[str],
 ) -> None:
     for row in rows:
+        row_id = _row_identifier(row)
         if row.get("record_type") != "blind_leader_preference_pair":
             findings.append(
                 f"{kind}: brain record preference row is not a sealed leader pair "
-                f"{_row_identifier(row)}"
+                f"{row_id}"
             )
+            continue
+        input_payload = row.get("input")
+        output_payload = row.get("output")
+        if not isinstance(input_payload, dict):
+            findings.append(f"{kind}: preference row input is invalid {row_id}")
+            continue
+        if not isinstance(output_payload, dict):
+            findings.append(f"{kind}: preference row output is invalid {row_id}")
+            continue
+        for field in ("blind_preferred_ticker", "blind_rejected_ticker"):
+            if not _non_empty_string(input_payload.get(field)):
+                findings.append(
+                    f"{kind}: preference row {field} is missing {row_id}"
+                )
+        if not _non_empty_string(output_payload.get("outcome_winner_ticker")):
+            findings.append(
+                f"{kind}: preference row outcome_winner_ticker is missing {row_id}"
+            )
+        preference_correct = output_payload.get("blind_preference_correct")
+        training_mode = output_payload.get("training_mode")
+        if not isinstance(preference_correct, bool):
+            findings.append(
+                f"{kind}: preference row blind_preference_correct is invalid {row_id}"
+            )
+        if training_mode not in {"positive_preference", "correction"}:
+            findings.append(f"{kind}: preference row training_mode is invalid {row_id}")
+        elif isinstance(preference_correct, bool) and (
+            (preference_correct and training_mode != "positive_preference")
+            or (not preference_correct and training_mode != "correction")
+        ):
+            findings.append(
+                f"{kind}: preference row training_mode does not match "
+                f"blind_preference_correct {row_id}"
+            )
+
+
+def _non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _audit_phase_outputs(

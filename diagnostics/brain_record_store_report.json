@@ -5,7 +5,7 @@
   "audit_passed": true,
   "dropped_record_count": 0,
   "ineligible_record_count": 2,
-  "quarantined_record_count": 0,
+  "quarantined_record_count": 1,
   "raw_only_record_count": 0,
   "record_count": 4,
   "record_counts_by_evidence_phase": {

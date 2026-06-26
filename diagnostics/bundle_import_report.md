@@ -1,10 +1,10 @@
 # Bundle Import Report
 
-- status: `imported`
+- status: `EPISODE_HASH_CONFLICT`
 - adapter: `v11`
 - bundle_version: `nslab.research_bundle.v11`
 - episode_id: `NSLAB-20300110-SYNTH`
-- raw_bundle_sha256: `49c89d2ad788f2d6e75fd3c43021951e2d0196db23c63348d59005ac8fb273fa`
+- raw_bundle_sha256: `6447a84d227e995fe20de109a1b3dffd4fa48252f50ee700943e20ac2222a20e`
 - accepted: `True`
 - acceptance_status: `accepted`
 - raw_record_count: `2`
@@ -46,7 +46,10 @@
 
 - import_loss_audit_passed: `True`
 - dropped_record_count: `0`
-- quarantined_record_count: `0`
+- quarantined_record_count: `1`
+- quarantine: `C:/Users/eorb9/projects/news_bot/data/quarantine/research_bundles/NSLAB-20300110-SYNTH-6447a84d227e`
+- conflict_reason: `EPISODE_HASH_CONFLICT`
+- conflict_message: `episode already exists with different bundle hash; quarantined at C:/Users/eorb9/projects/news_bot/data/quarantine/research_bundles/NSLAB-20300110-SYNTH-6447a84d227e`
 ## record_counts_by_type
 
 - blind_leader_preference_pair: `1`
@@ -64,10 +67,10 @@
 - expected_training_eligible_record_count: `2`
 - record_count_matches_manifest: `True`
 - training_eligible_count_matches_manifest: `True`
-- block_hashes: `{'brain_delta.jsonl': 'afcddb7772b0690da47b11ba180bf07d3f46fc3a7e457c2835bf75b5fa9fb331', 'bundle_manifest.json': 'bda9ac4af39f3989f8e86161cc5a2697961eb213a106683174513fa829682389', 'research_episode.json': 'e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06', 'source_ledger.jsonl': 'b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af', 'validation_report.json': '659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505'}`
+- block_hashes: `{'brain_delta.jsonl': '4cf242893146554e825f5af4eb5444c76aee5c5d0145d8bdd2c9889c48d508ee', 'bundle_manifest.json': '3e30f315347a7c4bfaa11e48ae04096906dae07dd2ae63a7d01023b417853fda', 'research_episode.json': 'e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06', 'source_ledger.jsonl': 'b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af', 'validation_report.json': '659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505'}`
 - hash_mismatches: `{}`
 - self_referential_hashes: `{}`
-- hash_expectation_sources: `{'brain_delta.jsonl': [{'expected': 'afcddb7772b0690da47b11ba180bf07d3f46fc3a7e457c2835bf75b5fa9fb331', 'source': 'bundle_manifest.embedded_blocks'}], 'research_episode.json': [{'expected': 'e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06', 'source': 'bundle_manifest.embedded_blocks'}], 'source_ledger.jsonl': [{'expected': 'b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af', 'source': 'bundle_manifest.embedded_blocks'}], 'validation_report.json': [{'expected': '659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505', 'source': 'bundle_manifest.embedded_blocks'}]}`
+- hash_expectation_sources: `{'brain_delta.jsonl': [{'expected': '4cf242893146554e825f5af4eb5444c76aee5c5d0145d8bdd2c9889c48d508ee', 'source': 'bundle_manifest.embedded_blocks'}], 'research_episode.json': [{'expected': 'e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06', 'source': 'bundle_manifest.embedded_blocks'}], 'source_ledger.jsonl': [{'expected': 'b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af', 'source': 'bundle_manifest.embedded_blocks'}], 'validation_report.json': [{'expected': '659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505', 'source': 'bundle_manifest.embedded_blocks'}]}`
 - hash_expectation_conflicts: `{}`
 - source_reference_count: `2`
 - missing_source_references: `[]`

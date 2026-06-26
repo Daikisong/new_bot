@@ -804,6 +804,57 @@ def test_training_audit_rejects_non_sealed_preference_record_rows(tmp_path) -> N
     )
 
 
+def test_training_audit_rejects_malformed_sealed_preference_fields(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-PAIR",
+            "blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            training_eligible=True,
+            payload={
+                "blind_pair_id": "PAIR-1",
+                "blind_preferred_ticker": "111111",
+                "blind_rejected_ticker": "222222",
+                "outcome_winner_ticker": "111111",
+                "blind_preference_correct": True,
+            },
+        )
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    rows = _jsonl(preference.path)
+    rows[0]["input"]["blind_preferred_ticker"] = ""
+    rows[0]["output"]["outcome_winner_ticker"] = None
+    rows[0]["output"]["blind_preference_correct"] = "yes"
+    rows[0]["output"]["training_mode"] = "cross_product"
+    row_id = rows[0]["example_id"]
+    _write_jsonl(preference.path, rows)
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert f"preference: preference row blind_preferred_ticker is missing {row_id}" in audit[
+        "findings"
+    ]
+    assert f"preference: preference row outcome_winner_ticker is missing {row_id}" in audit[
+        "findings"
+    ]
+    assert (
+        f"preference: preference row blind_preference_correct is invalid {row_id}"
+        in audit["findings"]
+    )
+    assert f"preference: preference row training_mode is invalid {row_id}" in audit[
+        "findings"
+    ]
+
+
 def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
     store = ResearchStore(tmp_path)
     episode = _accepted_episode().model_copy(

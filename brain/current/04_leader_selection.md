@@ -1,6 +1,6 @@
 # 04 Leader Selection
 
-Brain version: `brain-6d0d407597`
+Brain version: `brain-bbeaee24f6`
 Accepted episodes covered: 2/2
 Build mode: `catalog`
 Catalog only: `True`
