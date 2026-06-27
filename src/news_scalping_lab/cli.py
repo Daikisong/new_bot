@@ -6629,10 +6629,25 @@ def memory_inspect(
 ) -> None:
     settings = load_settings()
     records = BrainRecordStore(settings.project_root).read_episode_records(episode)
+    normalized_record_count = len(records)
+    raw_record_count = _memory_inspect_raw_record_count(settings.project_root, episode)
+    if raw_record_count is None:
+        raw_normalized_record_count_matches = None
+        dropped_record_count = None
+        extra_normalized_record_count = None
+    else:
+        raw_normalized_record_count_matches = raw_record_count == normalized_record_count
+        dropped_record_count = max(0, raw_record_count - normalized_record_count)
+        extra_normalized_record_count = max(0, normalized_record_count - raw_record_count)
     _echo(
         {
             "episode_id": episode,
-            "record_count": len(records),
+            "record_count": normalized_record_count,
+            "raw_record_count": raw_record_count,
+            "normalized_record_count": normalized_record_count,
+            "raw_normalized_record_count_matches": raw_normalized_record_count_matches,
+            "dropped_record_count": dropped_record_count,
+            "extra_normalized_record_count": extra_normalized_record_count,
             "training_eligible_record_count": sum(
                 1 for record in records if record.training_eligible
             ),
@@ -6665,6 +6680,30 @@ def memory_inspect(
             ),
         }
     )
+
+
+def _memory_inspect_raw_record_count(root: Path, episode_id: str) -> int | None:
+    envelope_path = root / "research" / "episodes" / episode_id / "bundle_envelope.json"
+    if not envelope_path.exists():
+        return None
+    try:
+        envelope = read_json(envelope_path)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    raw_block_counts = envelope.get("raw_block_counts")
+    if not isinstance(raw_block_counts, dict):
+        return None
+    counts: dict[str, int] = {}
+    for key, value in raw_block_counts.items():
+        if isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool):
+            counts[key] = value
+    if "brain_delta.jsonl" in counts:
+        return counts["brain_delta.jsonl"]
+    if counts:
+        return sum(counts.values())
+    return None
 
 
 @memory_app.command("inspect-record")

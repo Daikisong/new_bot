@@ -940,6 +940,12 @@ def test_memory_inspect_cli_reports_record_level_counts(
     records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
     records_path.parent.mkdir(parents=True, exist_ok=True)
     records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    episode_dir = tmp_path / "research" / "episodes" / "EP-cli"
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {"episode_id": "EP-cli", "raw_block_counts": {"brain_delta.jsonl": 2}},
+    )
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
 
     result = CliRunner().invoke(app, ["memory", "inspect", "--episode", "EP-cli"])
@@ -948,6 +954,11 @@ def test_memory_inspect_cli_reports_record_level_counts(
     payload = json.loads(result.output)
     assert payload["episode_id"] == "EP-cli"
     assert payload["record_count"] == 1
+    assert payload["raw_record_count"] == 2
+    assert payload["normalized_record_count"] == 1
+    assert payload["raw_normalized_record_count_matches"] is False
+    assert payload["dropped_record_count"] == 1
+    assert payload["extra_normalized_record_count"] == 0
     assert payload["training_eligible_record_count"] == 0
     assert payload["ineligible_record_count"] == 1
     assert payload["record_ids"] == ["BRAIN-CLI"]
