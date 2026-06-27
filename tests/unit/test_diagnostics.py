@@ -279,6 +279,18 @@ def test_production_readiness_rejects_missing_latest_brain_diversity_summary(
     )
 
 
+def test_production_readiness_rejects_missing_latest_brain_audit(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    report = _production_base_report()
+    report["brain"] = {"coverage": {"status": "complete"}}
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert "brain: latest brain audit is missing" in production["findings"]
+
+
 def test_production_readiness_rejects_failed_latest_brain_audit(
     tmp_path,
     monkeypatch,

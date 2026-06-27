@@ -149,7 +149,9 @@ def production_readiness_report(
     brain = report.get("brain")
     if isinstance(brain, dict):
         brain_audit = _nested_dict(brain, "audit")
-        if brain_audit and brain_audit.get("passed") is not True:
+        if not brain_audit:
+            findings.append("brain: latest brain audit is missing")
+        elif brain_audit.get("passed") is not True:
             findings.append("brain: latest brain audit failed")
         if brain_audit and brain_audit.get("deep") is not True:
             findings.append("brain: latest brain audit was not run with --deep")
@@ -164,6 +166,8 @@ def production_readiness_report(
         coverage = brain.get("coverage")
         if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
             findings.append("brain: accepted episodes are not fully covered")
+    else:
+        findings.append("brain: latest brain audit is missing")
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
     catalog_only = _brain_manifest_catalog_only(brain_manifest)
