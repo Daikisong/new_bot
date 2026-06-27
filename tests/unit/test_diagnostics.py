@@ -2345,6 +2345,7 @@ def test_production_readiness_rejects_stale_record_coverage_brain_metadata(
         current / "brain_manifest.json",
         {
             "brain_version": "brain-current",
+            "created_at": "2030-01-03T00:00:00+09:00",
             "build_mode": "llm-full",
             "catalog_only": False,
         },
@@ -2377,12 +2378,24 @@ def test_production_readiness_rejects_stale_record_coverage_brain_metadata(
     )
 
     assert production["record_coverage"]["passed"] is False
+    assert (
+        production["record_coverage"]["record_coverage_as_of"]
+        == "2030-01-02T00:00:00+09:00"
+    )
+    assert (
+        production["record_coverage"]["expected_record_coverage_as_of"]
+        == "2030-01-03T00:00:00+09:00"
+    )
     assert production["record_coverage"]["record_coverage_brain_version"] == "brain-stale"
     assert production["record_coverage"]["expected_brain_version"] == "brain-current"
     assert production["record_coverage"]["record_coverage_build_mode"] == "catalog"
     assert production["record_coverage"]["expected_build_mode"] == "llm-full"
     assert production["record_coverage"]["record_coverage_catalog_only"] is True
     assert production["record_coverage"]["expected_catalog_only"] is False
+    assert (
+        "records: record coverage manifest record_coverage_as_of does not match current brain manifest"
+        in production["findings"]
+    )
     assert (
         "records: record coverage manifest brain_version does not match current brain manifest"
         in production["findings"]

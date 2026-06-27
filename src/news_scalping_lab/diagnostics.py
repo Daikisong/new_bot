@@ -2761,6 +2761,19 @@ def _production_record_coverage_status(
         if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("catalog_only"), bool)
         else None
     )
+    expected_record_coverage_as_of_raw = (
+        brain_manifest.get("created_at")
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("created_at"), str)
+        else None
+    )
+    expected_record_coverage_as_of = None
+    if expected_record_coverage_as_of_raw is not None:
+        try:
+            expected_record_coverage_as_of = parse_datetime(
+                expected_record_coverage_as_of_raw
+            )
+        except ValueError:
+            expected_record_coverage_as_of = None
     accepted_episode_store_readable = True
     accepted_episode_store_error = None
     try:
@@ -2778,6 +2791,7 @@ def _production_record_coverage_status(
             "finding_count": 1,
             "findings": ["record coverage manifest is missing"],
             "record_coverage_as_of": None,
+            "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
             "record_coverage_brain_version": None,
             "expected_brain_version": expected_brain_version,
             "record_coverage_build_mode": None,
@@ -2847,6 +2861,18 @@ def _production_record_coverage_status(
     store_training_eligible_as_of_count: int | None = None
     if not isinstance(raw_coverage_as_of, str) or coverage_as_of is None:
         findings.append("record coverage manifest record_coverage_as_of is missing or invalid")
+    elif (
+        expected_record_coverage_as_of is not None
+        and coverage_as_of != expected_record_coverage_as_of
+    ):
+        findings.append(
+            "record coverage manifest record_coverage_as_of does not match current brain manifest"
+        )
+    if (
+        expected_record_coverage_as_of_raw is not None
+        and expected_record_coverage_as_of is None
+    ):
+        findings.append("current brain manifest created_at is invalid")
     if coverage_as_of is not None:
         available_as_of = [
             record
@@ -3158,6 +3184,7 @@ def _production_record_coverage_status(
         "record_coverage_as_of": raw_coverage_as_of
         if isinstance(raw_coverage_as_of, str)
         else None,
+        "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
         "record_coverage_brain_version": raw_brain_version
         if isinstance(raw_brain_version, str)
         else None,

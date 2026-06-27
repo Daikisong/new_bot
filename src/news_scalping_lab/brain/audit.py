@@ -198,6 +198,8 @@ def _write_latest_record_coverage_audit_summary(
             report = payload
     report.setdefault("schema_version", "nslab.record_coverage_manifest.v1")
     for key in (
+        "record_coverage_as_of",
+        "expected_record_coverage_as_of",
         "record_coverage_brain_version",
         "expected_brain_version",
         "record_coverage_build_mode",
@@ -237,6 +239,8 @@ def _write_latest_record_coverage_audit_summary(
     report["latest_record_coverage_audit"] = {
         "passed": record_coverage_complete is True,
         "record_coverage_complete": record_coverage_complete,
+        "record_coverage_as_of": result.get("record_coverage_as_of"),
+        "expected_record_coverage_as_of": result.get("expected_record_coverage_as_of"),
         "record_coverage_brain_version": result.get("record_coverage_brain_version"),
         "expected_brain_version": result.get("expected_brain_version"),
         "record_coverage_build_mode": result.get("record_coverage_build_mode"),
@@ -908,6 +912,20 @@ def _audit_record_coverage(
         and isinstance(current_manifest.get("catalog_only"), bool)
         else None
     )
+    expected_record_coverage_as_of_raw = (
+        current_manifest.get("created_at")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("created_at"), str)
+        else None
+    )
+    expected_record_coverage_as_of = None
+    if expected_record_coverage_as_of_raw is not None:
+        try:
+            expected_record_coverage_as_of = parse_datetime(
+                expected_record_coverage_as_of_raw
+            )
+        except ValueError:
+            expected_record_coverage_as_of = None
     expected_accepted_episode_count = len(ResearchStore(root).list_accepted())
     record_ids = {record.record_id for record in records}
     training_eligible_count = sum(1 for record in records if record.training_eligible)
@@ -924,6 +942,8 @@ def _audit_record_coverage(
     audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
     if not records:
         return {
+            "record_coverage_as_of": None,
+            "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
             "record_coverage_brain_version": None,
             "expected_brain_version": expected_brain_version,
             "record_coverage_build_mode": None,
@@ -961,6 +981,8 @@ def _audit_record_coverage(
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
         return {
+            "record_coverage_as_of": None,
+            "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
             "record_coverage_brain_version": None,
             "expected_brain_version": expected_brain_version,
             "record_coverage_build_mode": None,
@@ -998,6 +1020,8 @@ def _audit_record_coverage(
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
         return {
+            "record_coverage_as_of": None,
+            "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
             "record_coverage_brain_version": None,
             "expected_brain_version": expected_brain_version,
             "record_coverage_build_mode": None,
@@ -1038,6 +1062,7 @@ def _audit_record_coverage(
     manifest_brain_version = manifest.get("brain_version")
     manifest_build_mode = manifest.get("build_mode")
     manifest_catalog_only = manifest.get("catalog_only")
+    manifest_record_coverage_as_of = manifest.get("record_coverage_as_of")
     manifest_accepted_episode_count = _int_value(manifest.get("accepted_episode_count"))
     coverage_as_of = _record_coverage_as_of(manifest, findings)
     available_records_as_of = (
@@ -1072,6 +1097,19 @@ def _audit_record_coverage(
     )
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+    if (
+        coverage_as_of is not None
+        and expected_record_coverage_as_of is not None
+        and coverage_as_of != expected_record_coverage_as_of
+    ):
+        findings.append(
+            "record coverage manifest record_coverage_as_of does not match current brain manifest"
+        )
+    if (
+        expected_record_coverage_as_of_raw is not None
+        and expected_record_coverage_as_of is None
+    ):
+        findings.append("current brain manifest created_at is invalid")
     if expected_brain_version is not None:
         if not isinstance(manifest_brain_version, str) or not manifest_brain_version:
             findings.append("record coverage manifest brain_version is missing")
@@ -1168,6 +1206,10 @@ def _audit_record_coverage(
     elif has_audit_findings:
         findings.append("record coverage manifest is marked complete despite audit findings")
     return {
+        "record_coverage_as_of": manifest_record_coverage_as_of
+        if isinstance(manifest_record_coverage_as_of, str)
+        else None,
+        "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
         "record_coverage_brain_version": manifest_brain_version
         if isinstance(manifest_brain_version, str)
         else None,

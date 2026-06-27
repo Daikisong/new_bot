@@ -1621,6 +1621,8 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert coverage["available_record_count_as_of"] == 1
     assert coverage["training_eligible_available_record_count"] == 2
     assert coverage["training_eligible_record_count_as_of"] == 1
+    assert audit["record_coverage_as_of"] == manifest.created_at.isoformat()
+    assert audit["expected_record_coverage_as_of"] == manifest.created_at.isoformat()
     assert audit["record_coverage_brain_version"] == manifest.brain_version
     assert audit["expected_brain_version"] == manifest.brain_version
     assert audit["record_coverage_build_mode"] == "full"
@@ -1710,6 +1712,9 @@ def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
     manifest = read_json(coverage_path)
     manifest.update(
         {
+            "record_coverage_as_of": brain_manifest.created_at.replace(
+                year=brain_manifest.created_at.year + 1
+            ).isoformat(),
             "brain_version": "brain-stale",
             "build_mode": "llm-full",
             "catalog_only": False,
@@ -1720,12 +1725,18 @@ def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
     audit = audit_brain(tmp_path)
 
     assert audit["passed"] is False
+    assert audit["record_coverage_as_of"] == manifest["record_coverage_as_of"]
+    assert audit["expected_record_coverage_as_of"] == brain_manifest.created_at.isoformat()
     assert audit["record_coverage_brain_version"] == "brain-stale"
     assert audit["expected_brain_version"] == brain_manifest.brain_version
     assert audit["record_coverage_build_mode"] == "llm-full"
     assert audit["expected_build_mode"] == "full"
     assert audit["record_coverage_catalog_only"] is False
     assert audit["expected_catalog_only"] is True
+    assert (
+        "record coverage manifest record_coverage_as_of does not match current brain manifest"
+        in audit["record_coverage_findings"]
+    )
     assert (
         "record coverage manifest brain_version does not match current brain manifest"
         in audit["record_coverage_findings"]
@@ -1743,6 +1754,15 @@ def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
     )
     assert record_coverage_report["record_coverage_brain_version"] == "brain-stale"
     assert record_coverage_report["expected_brain_version"] == brain_manifest.brain_version
+    assert record_coverage_report["record_coverage_as_of"] == manifest[
+        "record_coverage_as_of"
+    ]
+    assert (
+        record_coverage_report["latest_record_coverage_audit"][
+            "expected_record_coverage_as_of"
+        ]
+        == brain_manifest.created_at.isoformat()
+    )
     assert (
         record_coverage_report["latest_record_coverage_audit"][
             "record_coverage_build_mode"
