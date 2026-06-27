@@ -181,11 +181,14 @@ Production brain compilation is guarded:
 nslab brain rebuild
 nslab brain rebuild --mode llm-full
 nslab brain rebuild --mode catalog --allow-catalog
+nslab memory rebuild-index --production
 nslab doctor --production
 ```
 
 `brain rebuild` defaults to `llm-full`. `llm-full` requires a real non-mock LLM
-provider and normalized brain records.
+provider and normalized brain records. `memory rebuild-index --production` is
+the standalone production semantic-index rebuild path; it rejects mock providers
+and requires `OPENAI_API_KEY` for OpenAI-compatible embedding providers.
 `catalog` preserves the deterministic compiler for tests, offline smoke, and
 legacy migration, but `doctor --production` rejects catalog/full/incremental brain
 manifests as production research brains. Production readiness also rejects mock
@@ -217,6 +220,7 @@ set BRAVE_SEARCH_API_KEY=...
 set NSLAB_REAL_BUNDLE_PATH=path\to\real_bundle.md
 python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid
 python -m news_scalping_lab.cli brain rebuild --mode llm-full
+python -m news_scalping_lab.cli memory rebuild-index --production
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli brain audit --deep
 python -m news_scalping_lab.cli doctor --production
