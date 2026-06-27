@@ -213,6 +213,8 @@ def _full_check_steps() -> tuple[tuple[str, list[str]], ...]:
                 "2026-06-24",
             ],
         ),
+        ("warehouse rebuild", [python, "-m", "news_scalping_lab.cli", "warehouse", "rebuild"]),
+        ("warehouse verify", [python, "-m", "news_scalping_lab.cli", "warehouse", "verify"]),
         ("audit coverage", [python, "-m", "news_scalping_lab.cli", "audit", "coverage"]),
         ("training export-sft", [python, "-m", "news_scalping_lab.cli", "training", "export-sft"]),
         (
@@ -6507,7 +6509,13 @@ def warehouse_verify() -> None:
     result = {
         "passed": not warehouse_findings
         and coverage.get("warehouse_required_files_present") is True
+        and coverage.get("warehouse_synced") is True
         and coverage.get("warehouse_projection_synced") is True,
+        "warehouse_synced": coverage.get("warehouse_synced"),
+        "warehouse_projection_synced": coverage.get("warehouse_projection_synced"),
+        "warehouse_required_files_present": coverage.get(
+            "warehouse_required_files_present"
+        ),
         "warehouse_counts": coverage.get("warehouse_counts", {}),
         "warehouse_duplicate_identities": coverage.get(
             "warehouse_duplicate_identities",

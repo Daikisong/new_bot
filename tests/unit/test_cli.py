@@ -1139,6 +1139,9 @@ def test_warehouse_verify_cli_passes_synced_projection(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["passed"] is True
+    assert payload["warehouse_synced"] is True
+    assert payload["warehouse_projection_synced"] is True
+    assert payload["warehouse_required_files_present"] is True
     assert sorted(payload["required_files"]) == sorted(EXPECTED_WAREHOUSE_FILES)
     assert payload["warehouse_findings"] == []
     assert payload["warehouse_duplicate_identities"] == {}
@@ -1153,6 +1156,7 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
         return {
             "findings": ["warehouse: brain_records.parquet count 1 != expected 2"],
             "warehouse_required_files_present": True,
+            "warehouse_synced": True,
             "warehouse_projection_synced": False,
             "warehouse_counts": {"brain_records.parquet": 1},
             "warehouse_duplicate_identities": {},
@@ -1171,6 +1175,35 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
     assert payload["warehouse_findings"] == [
         "warehouse: brain_records.parquet count 1 != expected 2"
     ]
+
+
+def test_warehouse_verify_cli_exits_nonzero_when_research_episode_count_stale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stale_coverage(root: Path) -> dict[str, object]:
+        return {
+            "findings": [],
+            "warehouse_required_files_present": True,
+            "warehouse_synced": False,
+            "warehouse_projection_synced": True,
+            "warehouse_counts": {"research_episodes.parquet": 1},
+            "warehouse_duplicate_identities": {},
+            "warehouse_weight_mismatches": {},
+            "warehouse_required_files": ["research_episodes.parquet"],
+        }
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: Settings(project_root=tmp_path))
+    monkeypatch.setattr(cli_module, "audit_coverage", stale_coverage)
+
+    result = CliRunner().invoke(app, ["warehouse", "verify"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert payload["warehouse_synced"] is False
+    assert payload["warehouse_projection_synced"] is True
+    assert payload["warehouse_findings"] == []
 
 
 def test_full_check_cli_runs_configured_steps(
@@ -1232,12 +1265,20 @@ def test_full_check_steps_export_training_before_training_audit() -> None:
     assert "training export-preference" in step_names
     assert "training export-evals" in step_names
     assert "training audit" in step_names
+    assert "warehouse rebuild" in step_names
+    assert "warehouse verify" in step_names
+    assert "audit coverage" in step_names
     assert "memory audit deep" in step_names
     assert "brain audit deep" in step_names
+    assert step_names.index("warehouse rebuild") < step_names.index("warehouse verify")
+    assert step_names.index("warehouse verify") < step_names.index("audit coverage")
+    assert step_names.index("warehouse verify") < step_names.index("training export-sft")
     assert step_names.index("training export-sft") < step_names.index("training audit")
     assert step_names.index("training export-preference") < step_names.index("training audit")
     assert step_names.index("training export-evals") < step_names.index("training audit")
     assert step_names.index("memory audit deep") < step_names.index("brain audit deep")
+    assert step_commands["warehouse rebuild"][-2:] == ["warehouse", "rebuild"]
+    assert step_commands["warehouse verify"][-2:] == ["warehouse", "verify"]
     assert step_commands["memory audit deep"][-2:] == ["audit", "--deep"]
     assert step_commands["brain audit deep"][-2:] == ["audit", "--deep"]
 
