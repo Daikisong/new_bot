@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
@@ -2430,6 +2430,80 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
 
 
+def test_production_readiness_rejects_missing_llm_full_category_files(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "brain_version": "brain-production",
+            "provider": "openai",
+            "model": "gpt-production",
+            "source_record_count": 1,
+            "compiled_claim_count": 1,
+            "record_shard_count": 1,
+            "category_count": 9,
+            "llm_generation_count": 19,
+        },
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path, write_category_files=False)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["brain_category_existing_file_count"] == 0
+    assert production["llm_full_brain"]["brain_category_missing_files"] == BRAIN_FILES
+    assert (
+        "brain: llm-full brain category files are missing"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_invalid_compiled_claim_rows(
     tmp_path,
 ) -> None:
@@ -2481,6 +2555,7 @@ def test_production_readiness_rejects_invalid_compiled_claim_rows(
             },
         },
     )
+    _write_brain_category_file_fixture(tmp_path)
     (current / "compiled_claims.jsonl").write_text(
         json.dumps({"claim_id": "CC-production"}) + "\n",
         encoding="utf-8",
@@ -4643,9 +4718,12 @@ def _write_compiled_claim_fixture(
     root: Path,
     *,
     claim_id: str = "CC-production",
+    write_category_files: bool = True,
 ) -> None:
     current = root / "brain" / "current"
     current.mkdir(parents=True, exist_ok=True)
+    if write_category_files:
+        _write_brain_category_file_fixture(root)
     claim = CompiledBrainClaim(
         claim_id=claim_id,
         category="world_model",
@@ -4664,6 +4742,17 @@ def _write_compiled_claim_fixture(
         claim.model_dump_json() + "\n",
         encoding="utf-8",
     )
+
+
+def _write_brain_category_file_fixture(root: Path) -> None:
+    current = root / "brain" / "current"
+    current.mkdir(parents=True, exist_ok=True)
+    for file_name in BRAIN_FILES:
+        title = file_name.removesuffix(".md").replace("_", " ").title()
+        (current / file_name).write_text(
+            f"# {title}\n\nProduction llm-full category fixture for {file_name}.\n",
+            encoding="utf-8",
+        )
 
 
 def _write_training_record_store(root: Path) -> None:

@@ -2826,6 +2826,7 @@ def _llm_full_brain_status(
     )
     compile_run = compile_run if isinstance(compile_run, dict) else None
     compiled_claim_stats = _compiled_claim_file_stats(compiled_claims_path)
+    category_file_stats = _brain_category_file_stats(current_dir)
     compiled_claim_count = compiled_claim_stats["line_count"]
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
@@ -2854,6 +2855,11 @@ def _llm_full_brain_status(
             "invalid_line_count"
         ],
         "duplicate_compiled_claim_ids": compiled_claim_stats["duplicate_claim_ids"],
+        "brain_category_expected_file_count": len(BRAIN_FILES),
+        "brain_category_existing_file_count": category_file_stats["existing_count"],
+        "brain_category_missing_files": category_file_stats["missing_files"],
+        "brain_category_empty_files": category_file_stats["empty_files"],
+        "brain_category_unreadable_files": category_file_stats["unreadable_files"],
         "compile_report_path": relative_to_root(
             compile_report_path,
             settings.project_root,
@@ -2945,6 +2951,12 @@ def _llm_full_brain_status(
         category_count = status["category_count"]
         if category_count != len(BRAIN_FILES):
             findings.append("llm-full category count does not match brain category files")
+        if category_file_stats["missing_files"]:
+            findings.append("llm-full brain category files are missing")
+        if category_file_stats["empty_files"]:
+            findings.append("llm-full brain category files are empty")
+        if category_file_stats["unreadable_files"]:
+            findings.append("llm-full brain category files are unreadable")
         manifest_generation_count = status["llm_generation_count"]
         if not isinstance(manifest_generation_count, int) or manifest_generation_count <= 0:
             findings.append("llm-full LLM generation accounting is missing")
@@ -3709,6 +3721,33 @@ def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
         "invalid_line_count": invalid_line_count,
         "claim_ids": claim_ids,
         "duplicate_claim_ids": _duplicate_strings(claim_ids),
+    }
+
+
+def _brain_category_file_stats(current_dir: Path) -> dict[str, Any]:
+    missing_files: list[str] = []
+    empty_files: list[str] = []
+    unreadable_files: list[str] = []
+    file_hashes: dict[str, str] = {}
+    for file_name in BRAIN_FILES:
+        path = current_dir / file_name
+        if not path.exists():
+            missing_files.append(file_name)
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            unreadable_files.append(file_name)
+            continue
+        if not text.strip():
+            empty_files.append(file_name)
+        file_hashes[file_name] = file_sha256(path)
+    return {
+        "existing_count": len(file_hashes),
+        "missing_files": missing_files,
+        "empty_files": empty_files,
+        "unreadable_files": unreadable_files,
+        "file_hashes": file_hashes,
     }
 
 
