@@ -345,6 +345,59 @@ def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
     )
 
 
+def test_coverage_audit_surfaces_stale_episode_coverage_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Coverage audit should expose stale episode coverage metadata.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    WarehouseStore(tmp_path).rebuild_all()
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_manifest = read_json(coverage_path)
+    coverage_manifest.update(
+        {
+            "brain_version": "brain-stale",
+            "created_at": manifest.created_at.replace(
+                year=manifest.created_at.year + 1
+            ).isoformat(),
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        }
+    )
+    write_json(coverage_path, coverage_manifest)
+
+    coverage = audit_coverage(tmp_path)
+
+    assert coverage["passed"] is False
+    assert (
+        "coverage manifest brain_version does not match current brain manifest"
+        in coverage["brain_audit_findings"]
+    )
+    assert (
+        "brain: coverage manifest brain_version does not match current brain manifest"
+        in coverage["findings"]
+    )
+    assert (
+        "brain: coverage manifest created_at does not match current brain manifest"
+        in coverage["findings"]
+    )
+    assert (
+        "brain: coverage manifest build_mode does not match current brain manifest"
+        in coverage["findings"]
+    )
+    assert (
+        "brain: coverage manifest catalog_only does not match current brain manifest"
+        in coverage["findings"]
+    )
+
+
 def test_brain_rebuild_uses_configurable_shard_episode_count(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

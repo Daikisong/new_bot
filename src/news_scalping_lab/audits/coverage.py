@@ -185,6 +185,7 @@ def _brain_audit_findings(brain: dict[str, object]) -> list[str]:
         "invalid_claim_lines",
         "invalid_mechanism_lines",
         "determinism_findings",
+        "episode_coverage_findings",
         "record_coverage_findings",
         "brain_diversity_findings",
         "llm_compile_findings",
