@@ -491,10 +491,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     target_dir = root / "training_exports" / kind
     target_dir.mkdir(parents=True, exist_ok=True)
     store = ResearchStore(root)
-    episodes = store.list_accepted()
     source_hashes = store.accepted_hashes()
     records = BrainRecordStore(root).list_records()
     source_mode = "brain_records" if records else "legacy_research_episodes"
+    episodes = [] if records else store.list_accepted()
     rows = (
         _record_rows_for_kind(kind, records)
         if records

@@ -20,7 +20,14 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
-from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, stable_id
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    stable_id,
+)
 
 
 def _accepted_episode() -> ResearchEpisode:
@@ -500,6 +507,33 @@ def test_training_export_uses_explicit_brain_records(tmp_path) -> None:
         "BRAIN-ISSUER"
     }
     assert all(row["episode_id"] == "EP-record-training" for row in rows)
+
+
+def test_record_backed_training_export_ignores_unreadable_legacy_episode(
+    tmp_path,
+) -> None:
+    _write_record_training_fixture(tmp_path)
+    store = ResearchStore(tmp_path)
+    accepted_path = store.accepted_dir / "EP-record-training.json"
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    sft = export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    evals = export_training(tmp_path, kind="evals")
+
+    sft_manifest = read_json(sft.manifest_path)
+    preference_manifest = read_json(preference.manifest_path)
+    evals_manifest = read_json(evals.manifest_path)
+    for manifest in (sft_manifest, preference_manifest, evals_manifest):
+        assert manifest["source_mode"] == "brain_records"
+        assert manifest["source_episode_count"] == 1
+        assert manifest["episode_ids"] == ["EP-record-training"]
+        assert manifest["source_hashes"] == {
+            "EP-record-training": file_sha256(accepted_path)
+        }
+    assert sft.row_count == 1
+    assert preference.row_count == 1
+    assert evals.row_count == 1
 
 
 def test_preference_export_uses_sealed_pairs_only(tmp_path) -> None:
