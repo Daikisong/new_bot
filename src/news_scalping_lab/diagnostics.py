@@ -143,6 +143,12 @@ def production_readiness_report(
             findings.append("brain: latest brain audit was not run with --deep")
         if brain_audit and not _brain_audit_diversity_summary_present(brain_audit):
             findings.append("brain: latest brain audit diversity summary is missing")
+        if brain_audit and _string_list(
+            brain_audit.get("llm_compile_category_schema_mismatches")
+        ):
+            findings.append(
+                "brain: latest brain audit llm compile category schema mismatches"
+            )
         coverage = brain.get("coverage")
         if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
             findings.append("brain: accepted episodes are not fully covered")
@@ -3361,6 +3367,9 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
         "deterministic_rebuild_verified": coverage_audit.get(
             "deterministic_rebuild_verified"
         ),
+        "llm_compile_category_schema_mismatches": coverage_audit.get(
+            "llm_compile_category_schema_mismatches"
+        ),
         "brain_category_file_count": coverage_audit.get("brain_category_file_count"),
         "brain_category_missing_files": coverage_audit.get(
             "brain_category_missing_files"
@@ -3388,6 +3397,10 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
 def _brain_audit_diversity_summary_present(brain_audit: dict[str, Any]) -> bool:
     return (
         isinstance(brain_audit.get("brain_category_source_record_types"), dict)
+        and isinstance(
+            brain_audit.get("llm_compile_category_schema_mismatches"),
+            list,
+        )
         and isinstance(
             brain_audit.get("brain_category_source_population_mismatches"),
             list,
