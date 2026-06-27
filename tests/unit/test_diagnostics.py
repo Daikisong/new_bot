@@ -824,6 +824,59 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
     )
 
 
+def test_production_readiness_rejects_on_disk_mock_embedding_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index_dir = tmp_path / "memory" / "vector_index"
+    vector_index_dir.mkdir(parents=True)
+    write_json(
+        vector_index_dir / "manifest.json",
+        {
+            "schema_version": "nslab.local_vector_index.v1",
+            "embedding_method": "deterministic_hashing_v1",
+            "brain_record_count": 2,
+            "brain_record_hashes": {"BRAIN-1": "hash-1", "BRAIN-2": "hash-2"},
+        },
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": {
+            "status": "current",
+            "manifest_exists": True,
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["checked"] is True
+    assert production["semantic_index"]["manifest"]["passed"] is False
+    assert (
+        "embedding: on-disk deterministic mock vector index cannot be production semantic index"
+        in production["findings"]
+    )
+    assert (
+        "embedding: semantic index report does not match on-disk embedding method"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai")
     settings.llm.provider = "openai"
@@ -857,6 +910,57 @@ def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -
     assert (
         production["semantic_index"]["configured_embedding_model"]
         == "text-embedding-3-small"
+    )
+    assert not any(
+        finding.startswith("embedding:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_matching_on_disk_semantic_index_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index_dir = tmp_path / "memory" / "vector_index"
+    vector_index_dir.mkdir(parents=True)
+    write_json(
+        vector_index_dir / "manifest.json",
+        {
+            "schema_version": "nslab.local_vector_index.v1",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_record_count": 2,
+            "brain_record_hashes": {"BRAIN-1": "hash-1", "BRAIN-2": "hash-2"},
+        },
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": {
+            "status": "current",
+            "manifest_exists": True,
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["checked"] is True
+    assert production["semantic_index"]["manifest"]["passed"] is True
+    assert production["semantic_index"]["manifest"]["embedding_model"] == (
+        "text-embedding-3-small"
     )
     assert not any(
         finding.startswith("embedding:") for finding in production["findings"]

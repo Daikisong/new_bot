@@ -960,6 +960,13 @@ def _production_semantic_index_status(
         else None
     )
     findings: list[str] = []
+    manifest_status = _production_semantic_index_manifest_status(
+        settings.project_root,
+        vector_index=vector_index,
+        expected_source_record_count=expected_source_record_count,
+        configured_provider=settings.llm_provider,
+        configured_embedding_model=settings.llm.embedding_model,
+    )
     if not isinstance(vector_index, dict):
         findings.append("vector index status is missing")
     else:
@@ -990,6 +997,7 @@ def _production_semantic_index_status(
             and indexed_brain_record_count != expected_source_record_count
         ):
             findings.append("semantic index record count does not match coverage")
+    findings.extend(manifest_status["findings"])
     return {
         "schema_version": "nslab.production_semantic_index.v1",
         "status": "ready" if not findings else "attention",
@@ -1003,6 +1011,112 @@ def _production_semantic_index_status(
         "expected_source_record_count": expected_source_record_count,
         "source_brain_record_count": source_brain_record_count,
         "indexed_brain_record_count": indexed_brain_record_count,
+        "manifest": manifest_status,
+    }
+
+
+def _production_semantic_index_manifest_status(
+    root: Path,
+    *,
+    vector_index: object,
+    expected_source_record_count: int | None,
+    configured_provider: str,
+    configured_embedding_model: str | None,
+) -> dict[str, Any]:
+    manifest_path = root / "memory" / "vector_index" / "manifest.json"
+    report_manifest_exists = (
+        vector_index.get("manifest_exists") if isinstance(vector_index, dict) else None
+    )
+    report_embedding_method = (
+        vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
+    )
+    findings: list[str] = []
+    if not manifest_path.exists():
+        if report_manifest_exists is True:
+            findings.append("semantic index manifest is missing on disk")
+        return {
+            "schema_version": "nslab.production_semantic_index_manifest.v1",
+            "path": relative_to_root(manifest_path, root),
+            "exists": False,
+            "checked": False,
+            "passed": not findings,
+            "finding_count": len(findings),
+            "findings": findings,
+            "embedding_method": None,
+            "embedding_model": None,
+            "brain_record_count": None,
+            "brain_record_hash_count": None,
+        }
+    try:
+        manifest = _read_json_object(manifest_path)
+    except ValueError:
+        findings.append("semantic index manifest is unreadable")
+        return {
+            "schema_version": "nslab.production_semantic_index_manifest.v1",
+            "path": relative_to_root(manifest_path, root),
+            "exists": True,
+            "checked": False,
+            "passed": False,
+            "finding_count": len(findings),
+            "findings": findings,
+            "embedding_method": None,
+            "embedding_model": None,
+            "brain_record_count": None,
+            "brain_record_hash_count": None,
+        }
+
+    embedding_method = manifest.get("embedding_method")
+    embedding_model = (
+        _llm_embedding_model_from_method(embedding_method)
+        if isinstance(embedding_method, str)
+        else None
+    )
+    brain_record_count = _int_from_mapping(manifest, "brain_record_count")
+    brain_record_hashes = manifest.get("brain_record_hashes")
+    brain_record_hash_count = (
+        len(brain_record_hashes) if isinstance(brain_record_hashes, dict) else None
+    )
+    if manifest.get("schema_version") != "nslab.local_vector_index.v1":
+        findings.append("semantic index manifest schema version is invalid")
+    if not isinstance(embedding_method, str) or not embedding_method:
+        findings.append("semantic index manifest embedding method is missing")
+    elif embedding_method == VECTOR_EMBEDDING_METHOD:
+        findings.append("on-disk deterministic mock vector index cannot be production semantic index")
+    else:
+        expected_prefix = f"llm_embedding:{configured_provider.strip().lower()}:"
+        if not embedding_method.strip().lower().startswith(expected_prefix):
+            findings.append("semantic index manifest provider does not match configured LLM provider")
+        if not isinstance(embedding_model, str) or not embedding_model:
+            findings.append("semantic index manifest embedding model is missing")
+        elif (
+            configured_embedding_model
+            and embedding_model.strip() != configured_embedding_model.strip()
+        ):
+            findings.append("semantic index manifest embedding model does not match configured model")
+    if isinstance(report_embedding_method, str) and embedding_method != report_embedding_method:
+        findings.append("semantic index report does not match on-disk embedding method")
+    if (
+        isinstance(expected_source_record_count, int)
+        and brain_record_count != expected_source_record_count
+    ):
+        findings.append("semantic index manifest record count does not match coverage")
+    if (
+        isinstance(expected_source_record_count, int)
+        and brain_record_hash_count != expected_source_record_count
+    ):
+        findings.append("semantic index manifest record hash count does not match coverage")
+    return {
+        "schema_version": "nslab.production_semantic_index_manifest.v1",
+        "path": relative_to_root(manifest_path, root),
+        "exists": True,
+        "checked": True,
+        "passed": not findings,
+        "finding_count": len(findings),
+        "findings": findings,
+        "embedding_method": embedding_method,
+        "embedding_model": embedding_model,
+        "brain_record_count": brain_record_count,
+        "brain_record_hash_count": brain_record_hash_count,
     }
 
 
