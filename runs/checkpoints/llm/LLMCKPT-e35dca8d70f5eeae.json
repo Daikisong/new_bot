@@ -149,5 +149,9 @@
   "retries": 0,
   "schema_version": "nslab.llm_checkpoint.v1",
   "status": "ok",
+  "token_usage": {
+    "completion_tokens_estimate": 805,
+    "prompt_tokens_estimate": 243916
+  },
   "updated_at": "2026-06-25T21:05:47.382530+09:00"
 }

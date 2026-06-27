@@ -107,6 +107,31 @@ PRODUCTION_WEB_EVIDENCE_ARTIFACT_SOURCE_FIELDS = {
     "candidate_web_check_artifact": "candidate_web_source_ids",
     "excluded_candidate_web_check_artifact": "excluded_candidate_web_source_ids",
 }
+PRODUCTION_LLM_PROMPT_PURPOSE_ALIASES = {
+    "blind_analysis": "daily_blind_analysis",
+}
+LLM_TRACE_CORE_FIELDS = {
+    "schema_version",
+    "trace_id",
+    "operation",
+    "purpose",
+    "status",
+    "provider",
+    "model_config",
+    "metadata",
+    "input",
+    "input_sha256",
+    "output",
+    "output_sha256",
+    "checkpoint_id",
+    "tool_calls",
+    "retries",
+    "retry_errors",
+    "token_usage",
+    "started_at",
+    "finished_at",
+    "error",
+}
 PLACEHOLDER_WEB_EVIDENCE_HOSTS = {
     "0.0.0.0",
     "127.0.0.1",
@@ -1567,7 +1592,7 @@ def _production_llm_trace_evidence_status(
             continue
         matched_prompt_hashes.add(prompt_hash)
         checked_traces.append(trace_path)
-        expected_purposes = (
+        expected_purposes = _expected_llm_trace_purposes(
             manifest_prompt_hash_fields.get(prompt_hash, set())
             if manifest_prompt_hash_fields is not None
             else set()
@@ -1618,6 +1643,7 @@ def _production_llm_trace_evidence_status(
                     "provider": trace.get("provider"),
                     "model_config": trace.get("model_config"),
                     "metadata": trace.get("metadata"),
+                    "top_level_metadata": _trace_top_level_metadata(trace),
                     "input": trace.get("input"),
                     "input_sha256": trace.get("input_sha256"),
                     "output": trace.get("output"),
@@ -1705,9 +1731,7 @@ def _production_llm_trace_evidence_status(
                 "retry_errors",
                 "error",
             ):
-                trace_value = _expected_checkpoint_trace_value(trace_ref, field)
-                checkpoint_value = checkpoint.get(field)
-                if checkpoint_value == trace_value:
+                if _checkpoint_trace_field_compatible(checkpoint, trace_ref, field):
                     continue
                 checkpoint_trace_mismatches.append(
                     {
@@ -1716,8 +1740,10 @@ def _production_llm_trace_evidence_status(
                         "trace": trace_ref["path"],
                         "trace_id": trace_ref.get("trace_id"),
                         "field": field,
-                        "trace_value": trace_value,
-                        "checkpoint_value": checkpoint_value,
+                        "trace_value": _expected_checkpoint_trace_value(
+                            trace_ref, field
+                        ),
+                        "checkpoint_value": checkpoint.get(field),
                     }
                 )
         mock_values = _mock_llm_artifact_values(checkpoint)
@@ -1857,6 +1883,61 @@ def _expected_checkpoint_trace_value(trace_ref: dict[str, Any], field: str) -> A
     if field == "status" and value == "checkpoint_hit":
         return "ok"
     return value
+
+
+def _expected_llm_trace_purposes(fields: set[str]) -> set[str]:
+    expected: set[str] = set()
+    for field in fields:
+        expected.add(field)
+        alias = PRODUCTION_LLM_PROMPT_PURPOSE_ALIASES.get(field)
+        if alias:
+            expected.add(alias)
+    return expected
+
+
+def _trace_top_level_metadata(trace: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in trace.items()
+        if key not in LLM_TRACE_CORE_FIELDS
+    }
+
+
+def _checkpoint_trace_field_compatible(
+    checkpoint: dict[str, Any],
+    trace_ref: dict[str, Any],
+    field: str,
+) -> bool:
+    trace_status = trace_ref.get("status")
+    if field == "metadata":
+        return _checkpoint_metadata_compatible(checkpoint, trace_ref)
+    if trace_status == "checkpoint_hit" and field in {
+        "token_usage",
+        "retries",
+        "retry_errors",
+    }:
+        return True
+    matches = checkpoint.get(field) == _expected_checkpoint_trace_value(trace_ref, field)
+    return bool(matches)
+
+
+def _checkpoint_metadata_compatible(
+    checkpoint: dict[str, Any],
+    trace_ref: dict[str, Any],
+) -> bool:
+    checkpoint_metadata = checkpoint.get("metadata")
+    trace_metadata = trace_ref.get("metadata")
+    if isinstance(trace_metadata, dict):
+        return checkpoint_metadata == trace_metadata
+    if not isinstance(checkpoint_metadata, dict):
+        return checkpoint_metadata in (None, {})
+    top_level_metadata = trace_ref.get("top_level_metadata")
+    if not isinstance(top_level_metadata, dict):
+        return False
+    return all(
+        top_level_metadata.get(key) == value
+        for key, value in checkpoint_metadata.items()
+    )
 
 
 def _trace_prompt_hash(trace: dict[str, Any]) -> str | None:
