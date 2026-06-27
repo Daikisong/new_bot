@@ -2775,10 +2775,28 @@ def _real_bundle_import_status(
     validation_report = _read_optional_json(validation_report_path)
     record_manifest = _read_optional_json(record_manifest_path)
     record_path = settings.project_root / "memory" / "records" / f"{episode_id}.jsonl"
+    record_manifest_records_file: object = None
+    record_manifest_records_file_resolved: str | None = None
     if isinstance(record_manifest, dict):
         records_file = record_manifest.get("records_file")
+        record_manifest_records_file = records_file
         if isinstance(records_file, str) and records_file:
-            record_path = settings.path(Path(records_file))
+            if Path(records_file).is_absolute():
+                findings.append("record manifest records_file must be project-relative")
+            resolved_record_path = _project_relative_artifact_path(
+                settings.project_root,
+                records_file,
+            )
+            if resolved_record_path is None:
+                findings.append("record manifest records_file escapes project root")
+            else:
+                record_path = resolved_record_path
+                record_manifest_records_file_resolved = relative_to_root(
+                    resolved_record_path,
+                    settings.project_root,
+                )
+        else:
+            findings.append("record manifest records_file is missing")
     record_file_stats = _record_file_stats(record_path)
     validation_raw_record_ids: list[str] = []
     validation_normalized_record_ids: list[str] = []
@@ -3107,6 +3125,8 @@ def _real_bundle_import_status(
             settings.project_root,
         ),
         "record_manifest_exists": record_manifest is not None,
+        "record_manifest_records_file": record_manifest_records_file,
+        "record_manifest_records_file_resolved": record_manifest_records_file_resolved,
         "record_path": relative_to_root(record_path, settings.project_root),
         "record_file_exists": record_file_stats["exists"],
         "record_file_sha256": record_file_stats["sha256"],
