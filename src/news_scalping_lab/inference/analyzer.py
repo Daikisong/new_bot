@@ -3285,6 +3285,7 @@ class DailyAnalyzer:
         payload: dict[str, Any] = {
             "status": "NEWS_ONLY_STRICT_NO_PRICE_ACCESS",
             "source_name": manifest.price_snapshot.source_name,
+            "source_ref": manifest.price_snapshot.source_ref,
             "allowed_through": allowed_through.isoformat() if allowed_through else None,
             "blind_context_mode": manifest.blind_context_mode,
             "blind_price_repository_access_count": manifest.blind_price_repository_access_count,

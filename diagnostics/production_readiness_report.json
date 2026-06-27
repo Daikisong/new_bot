@@ -200,8 +200,8 @@
     "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
     "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
     "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
-    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
-    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (103)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (103)",
     "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
     "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
     "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
@@ -376,8 +376,8 @@
       "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
       "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
       "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
-      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
-      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (103)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (103)",
       "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
       "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
       "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
@@ -1775,6 +1775,8 @@
     "final_context_mock_price_data_count": 2,
     "final_context_source_mismatch_count": 0,
     "final_context_source_mismatches": [],
+    "final_context_source_ref_mismatch_count": 0,
+    "final_context_source_ref_mismatches": [],
     "finding_count": 10,
     "findings": [
       "mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-116b51828c12.json: source_ref=mock://prices/news-only",
@@ -2643,9 +2645,9 @@
       {
         "artifact": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
         "artifact_field": "final_synthesis_context_artifact",
-        "expected_sha256": "0f4e8d33bac93eed28798489aa61683beae1f8c6d33f60ed8feb24dd0a7419b4",
+        "expected_sha256": "c0e10bf951e2a42dbf75f69564e6785a96f682b01fd4c5d3c53222d00e6aad2a",
         "manifest": "runs/manifests/RUN-116b51828c12.json",
-        "observed_sha256": "5487db30834038f5df38997767eb4cd5d619ea6f81f38ba58b4f6d2b8cc7ca91",
+        "observed_sha256": "dd86149ac2fe3b5c9e9949961269f799739fa83f483160417c3eab956324c7b4",
         "sha_field": "final_synthesis_context_sha256"
       },
       {
@@ -2675,9 +2677,9 @@
       {
         "artifact": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
         "artifact_field": "final_synthesis_context_artifact",
-        "expected_sha256": "60903a33a56309bd2223036cf3e719a218a57f7b8fcd7512af324000c0a5e4fd",
+        "expected_sha256": "0ad530b73ac0a5b66718643122f9931260c26bc59f1c9061aa0579a7f5389fc3",
         "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
-        "observed_sha256": "a7a11586918f1b487d36f758f04d8caa7af8c89d61b1e98f99a2f158d14d15e4",
+        "observed_sha256": "677649e0dfc73333612f39d4d3d6e8d2c3d337831d38c7539120a600c2d193ce",
         "sha_field": "final_synthesis_context_sha256"
       }
     ],
@@ -2710,8 +2712,8 @@
       "web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
       "mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
       "mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
-      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
-      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (103)",
+      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (103)",
       "mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
       "mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
       "mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
@@ -2757,7 +2759,7 @@
       },
       {
         "mock_metadata_count": 0,
-        "mock_url_count": 102,
+        "mock_url_count": 103,
         "path": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
         "sample_values": [
           "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-26T12:28:22.248563+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
@@ -2769,7 +2771,7 @@
       },
       {
         "mock_metadata_count": 0,
-        "mock_url_count": 102,
+        "mock_url_count": 103,
         "path": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
         "sample_values": [
           "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-25T21:05:47.403880+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
@@ -2852,9 +2854,9 @@
         ]
       }
     ],
-    "mock_web_evidence_count": 874,
+    "mock_web_evidence_count": 876,
     "mock_web_metadata_count": 0,
-    "mock_web_url_count": 874,
+    "mock_web_url_count": 876,
     "passed": false,
     "placeholder_web_artifact_count": 0,
     "placeholder_web_artifacts": [],

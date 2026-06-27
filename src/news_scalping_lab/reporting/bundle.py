@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.config import Settings
+from news_scalping_lab.context.final_synthesis import (
+    final_synthesis_context_contract_verified,
+)
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
     EligibilityMatrix,
@@ -86,11 +89,20 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         observed=sha256_text(report),
         path=report_path,
     )
+    bundle_prediction = _prediction_with_bundle_blind_hash(prediction)
+    blind_seal_receipt = _bundle_blind_seal_receipt_text(
+        blind_seal_receipt,
+        blind_hash=bundle_prediction.blind_artifact_sha256,
+    )
     phase_state = _read_manifest_artifact(settings, manifest, "phase_state_artifact")
+    phase_state = _bundle_phase_state_text(
+        phase_state,
+        blind_seal_receipt_sha256=sha256_text(blind_seal_receipt),
+    )
     brain_delta = _brain_delta_jsonl(run_id=run_id, reason="postmortem_not_run")
     research_episode = _build_research_episode(
         run_id=run_id,
-        prediction=prediction,
+        prediction=bundle_prediction,
         manifest=manifest,
         prediction_path=prediction_path,
         blind_seal_receipt=blind_seal_receipt,
@@ -98,7 +110,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
     bundle_manifest = _build_bundle_manifest(
         run_id=run_id,
         manifest=manifest,
-        prediction=prediction,
+        prediction=bundle_prediction,
         prediction_path=prediction_path,
         report_path=report_path,
         row_disposition=row_disposition,
@@ -121,7 +133,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             run_id=run_id,
             trade_date=trade_date,
             report=report,
-            prediction=prediction,
+            prediction=bundle_prediction,
             research_episode=research_episode,
             row_disposition=row_disposition,
             brain_delta=brain_delta,
@@ -136,6 +148,40 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         encoding="utf-8",
     )
     return output_path
+
+
+def _prediction_with_bundle_blind_hash(prediction: BlindPrediction) -> BlindPrediction:
+    payload = prediction.model_dump(mode="json")
+    payload["blind_artifact_sha256"] = None
+    blind_hash = sha256_text(canonical_json(payload))
+    return prediction.model_copy(update={"blind_artifact_sha256": blind_hash})
+
+
+def _bundle_blind_seal_receipt_text(
+    blind_seal_receipt: str,
+    *,
+    blind_hash: str | None,
+) -> str:
+    receipt = _json_object(blind_seal_receipt)
+    if receipt is None:
+        return blind_seal_receipt
+    receipt["blind_artifact_sha256"] = blind_hash
+    validation = receipt.get("validation")
+    if isinstance(validation, dict):
+        validation["canonical_blind_hash_verified"] = True
+    return _json_text(receipt)
+
+
+def _bundle_phase_state_text(
+    phase_state: str,
+    *,
+    blind_seal_receipt_sha256: str,
+) -> str:
+    payload = _json_object(phase_state)
+    if payload is None:
+        return phase_state
+    payload["blind_seal_receipt_sha256"] = blind_seal_receipt_sha256
+    return _json_text(payload)
 
 
 def _read_dict(path: Path) -> dict[str, Any]:
@@ -403,9 +449,10 @@ def _build_bundle_manifest(
         ),
         "blind_current_price_access_count": manifest.get("blind_current_price_access_count", 0),
         "no_d_outcome_exposed": manifest.get("no_d_outcome_exposed"),
+        "price_snapshot": manifest.get("price_snapshot", {}),
         "blind_artifact_sha256": observed_blind_hash or blind_hash,
         "blind_hash_recomputed": blind_hash,
-        "prediction_sha256": file_sha256(prediction_path),
+        "prediction_sha256": sha256_text(_prediction_json_text(prediction)),
         "research_report_sha256": file_sha256(report_path),
         "research_episode_sha256": sha256_text(
             canonical_json(research_episode.model_dump(mode="json"))
@@ -448,7 +495,9 @@ def _build_bundle_manifest(
             {},
         )
         validation["final_synthesis_context_hash_verified"] = True
-        validation["final_synthesis_context_contract_verified"] = True
+        validation["final_synthesis_context_contract_verified"] = (
+            _verify_final_synthesis_context_contract(manifest, final_synthesis_context)
+        )
         validation["final_synthesis_context_candidate_web_checks_verified"] = (
             _verify_final_synthesis_candidate_web_checks_context(
                 final_synthesis_context,
@@ -472,6 +521,16 @@ def _build_bundle_manifest(
         validation["excluded_candidate_web_check_hash_verified"] = True
         validation["excluded_candidate_web_check_count_verified"] = True
     return payload
+
+
+def _verify_final_synthesis_context_contract(
+    manifest: dict[str, Any],
+    final_synthesis_context: str,
+) -> bool:
+    context = _json_object(final_synthesis_context)
+    if context is None:
+        return False
+    return final_synthesis_context_contract_verified(manifest, context)
 
 
 def _verify_final_synthesis_candidate_web_checks_context(
@@ -517,6 +576,19 @@ def _json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _json_text(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _prediction_json_text(prediction: BlindPrediction) -> str:
+    return json.dumps(
+        prediction.model_dump(mode="json"),
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
 
 
 def _candidate_web_check_context_rows(
@@ -621,12 +693,7 @@ def _render_bundle(
     phase_state: str,
     bundle_manifest: dict[str, Any],
 ) -> str:
-    blind_json = json.dumps(
-        prediction.model_dump(mode="json"),
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
-    )
+    blind_json = _prediction_json_text(prediction)
     episode_json = research_episode.model_dump_json(indent=2)
     manifest_json = json.dumps(
         bundle_manifest,

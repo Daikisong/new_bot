@@ -283,7 +283,12 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         ],
         "candidate_verification": candidate_verification_payload,
         "red_team_output": {"candidate_findings": []},
-        "d_minus_one_market_data": {"snapshots": []},
+        "d_minus_one_market_data": {
+            "source_name": "mock",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+            "snapshots": [],
+        },
         "company_memory": [],
         "market_memory": [],
     }
@@ -375,7 +380,11 @@ def test_export_analysis_bundle_writes_single_markdown_bundle(tmp_path) -> None:
         ),
         "phase_state_artifact": phase_path.relative_to(tmp_path).as_posix(),
         "phase_state_sha256": sha256_text(phase_path.read_text(encoding="utf-8")),
-        "price_snapshot": {"source_name": "mock", "allowed_through": "2030-01-09"},
+        "price_snapshot": {
+            "source_name": "mock",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+        },
         "row_disposition_artifact": row_path.relative_to(tmp_path).as_posix(),
         "row_disposition_sha256": sha256_text(row_disposition),
         "row_disposition_coverage_ratio": 1.0,

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from datetime import date, datetime
+from typing import Any, cast
+
+from news_scalping_lab.utils import canonical_json, sha256_text
 
 FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "current_news",
@@ -155,6 +159,89 @@ def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bo
     }
 
 
+def final_synthesis_context_contract_verified(
+    manifest: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> bool:
+    if context.get("schema_version") != "nslab.final_synthesis_context.v1":
+        return False
+    manifest_run_id = manifest.get("run_id")
+    if isinstance(manifest_run_id, str) and context.get("run_id") != manifest_run_id:
+        return False
+    payload = context.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    if context.get("payload_sha256") != sha256_text(canonical_json(payload)):
+        return False
+    required_inputs = payload.get("required_inputs")
+    if not isinstance(required_inputs, list) or not all(
+        isinstance(item, str) for item in required_inputs
+    ):
+        return False
+    required_input_strings = cast(list[str], required_inputs)
+    if context.get("required_inputs") != required_input_strings:
+        return False
+    if not final_synthesis_required_inputs_compatible(required_input_strings):
+        return False
+    if any(key not in payload for key in required_input_strings):
+        return False
+    expected_summary = final_synthesis_input_summary(payload)
+    if context.get("input_summary") != expected_summary:
+        return False
+    manifest_summary = manifest.get("final_synthesis_context_summary")
+    if manifest_summary is not None and manifest_summary != expected_summary:
+        return False
+    return final_synthesis_price_context_compatible(manifest, payload)
+
+
+def final_synthesis_price_context_compatible(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> bool:
+    price_snapshot = manifest.get("price_snapshot")
+    market_data = payload.get("d_minus_one_market_data")
+    if not isinstance(price_snapshot, Mapping) or not isinstance(market_data, Mapping):
+        return False
+
+    manifest_source_name = price_snapshot.get("source_name")
+    if (
+        not isinstance(manifest_source_name, str)
+        or not manifest_source_name.strip()
+        or market_data.get("source_name") != manifest_source_name
+    ):
+        return False
+
+    manifest_source_ref = price_snapshot.get("source_ref")
+    if (
+        not isinstance(manifest_source_ref, str)
+        or not manifest_source_ref.strip()
+        or market_data.get("source_ref") != manifest_source_ref
+    ):
+        return False
+
+    allowed_through = _date_value(price_snapshot.get("allowed_through"))
+    if allowed_through is None:
+        return False
+    if market_data.get("allowed_through") != allowed_through.isoformat():
+        return False
+
+    trade_date = _date_value(manifest.get("trade_date"))
+    snapshots = market_data.get("snapshots")
+    if not isinstance(snapshots, list):
+        return False
+    for row in snapshots:
+        if not isinstance(row, Mapping):
+            return False
+        row_trade_date = _date_value(row.get("trade_date"))
+        if row_trade_date is None:
+            return False
+        if row_trade_date > allowed_through:
+            return False
+        if trade_date is not None and row_trade_date >= trade_date:
+            return False
+    return True
+
+
 def string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -167,6 +254,22 @@ def _list_len(value: Any) -> int:
 
 def _dict_value(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(value).date()
+        except ValueError:
+            return None
 
 
 def _first_pass_mechanism_count(value: Any, first_pass: dict[str, Any]) -> int:

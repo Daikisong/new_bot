@@ -11,8 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.context.final_synthesis import (
-    final_synthesis_input_summary,
-    final_synthesis_required_inputs_compatible,
+    final_synthesis_context_contract_verified,
 )
 from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
 from news_scalping_lab.utils import (
@@ -1162,32 +1161,7 @@ def _verify_final_synthesis_context_contract(json_blocks: dict[str, Any]) -> boo
     context = json_blocks.get("final_synthesis_context.json")
     if not isinstance(manifest, dict) or not isinstance(context, dict):
         return False
-    if context.get("schema_version") != "nslab.final_synthesis_context.v1":
-        return False
-    manifest_run_id = manifest.get("run_id")
-    if isinstance(manifest_run_id, str) and context.get("run_id") != manifest_run_id:
-        return False
-    payload = context.get("payload")
-    if not isinstance(payload, dict):
-        return False
-    if context.get("payload_sha256") != sha256_text(canonical_json(payload)):
-        return False
-    required_inputs = payload.get("required_inputs")
-    if not isinstance(required_inputs, list) or not all(
-        isinstance(item, str) for item in required_inputs
-    ):
-        return False
-    if context.get("required_inputs") != required_inputs:
-        return False
-    if not final_synthesis_required_inputs_compatible(required_inputs):
-        return False
-    if any(key not in payload for key in required_inputs):
-        return False
-    expected_summary = final_synthesis_input_summary(payload)
-    if context.get("input_summary") != expected_summary:
-        return False
-    manifest_summary = manifest.get("final_synthesis_context_summary")
-    return manifest_summary is None or manifest_summary == expected_summary
+    return final_synthesis_context_contract_verified(manifest, context)
 
 
 def _verify_final_synthesis_candidate_web_checks_context(

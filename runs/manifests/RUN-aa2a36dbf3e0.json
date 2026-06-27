@@ -1,12 +1,7 @@
 {
   "accepted_episode_count": 0,
-  "total_accepted_episode_count": 1,
-  "available_episode_count": 0,
-  "unavailable_episode_count": 1,
-  "unavailable_episode_ids": [
-    "EP-f56c790fe2fc"
-  ],
   "as_of": "2026-06-24T08:59:59+09:00",
+  "available_episode_count": 0,
   "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
   "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
   "blind_current_price_access_count": 0,
@@ -161,7 +156,7 @@
   "excluded_web_source_ids": [],
   "excluded_web_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "final_synthesis_context_artifact": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
-  "final_synthesis_context_sha256": "60903a33a56309bd2223036cf3e719a218a57f7b8fcd7512af324000c0a5e4fd",
+  "final_synthesis_context_sha256": "0ad530b73ac0a5b66718643122f9931260c26bc59f1c9061aa0579a7f5389fc3",
   "final_synthesis_context_summary": {
     "candidate_count": 7,
     "candidate_expansion_finding_count": 4,
@@ -344,8 +339,13 @@
     "red_team_prompt": 10625,
     "semantic_retrieval_plan_prompt": 242743
   },
+  "total_accepted_episode_count": 1,
   "trade_date": "2026-06-24",
   "truncations": [],
+  "unavailable_episode_count": 1,
+  "unavailable_episode_ids": [
+    "EP-f56c790fe2fc"
+  ],
   "web_queries": [
     "verify listing ticker novelty direct relation 넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"",
     "beneficiary supply chain infrastructure relationship 넥스턴앤롤코리아, 자산 매각 마무리…\"반도체 신사업 속도\"",

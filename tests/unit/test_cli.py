@@ -136,6 +136,7 @@ def test_final_synthesis_price_context_rejects_after_allowed_snapshot() -> None:
     context_payload = {
         "d_minus_one_market_data": {
             "source_name": "stock-web",
+            "source_ref": "stock-web://atlas",
             "allowed_through": "2030-01-08",
             "snapshots": [
                 {
@@ -160,6 +161,7 @@ def test_final_synthesis_price_context_rejects_after_allowed_snapshot() -> None:
     )
     price_status = status["d_minus_one_price_context"]
     assert price_status["source_name_verified"] is True
+    assert price_status["source_ref_verified"] is True
     assert price_status["allowed_through_verified"] is True
     assert price_status["snapshot_rows_valid"] is True
     assert price_status["snapshot_rows_cutoff_safe"] is False

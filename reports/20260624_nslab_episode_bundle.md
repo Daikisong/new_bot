@@ -3,7 +3,7 @@ schema_version: nslab.research_bundle.v1
 artifact_type: research_episode_bundle
 run_id: RUN-aa2a36dbf3e0
 trade_date: 2026-06-24
-blind_artifact_sha256: 622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5
+blind_artifact_sha256: cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75
 ---
 
 <!-- NSLAB:BEGIN research_report.md -->
@@ -545,7 +545,7 @@ Excluded after-cutoff web source ids:
     ],
     "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data."
   },
-  "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+  "blind_artifact_sha256": "cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75",
   "candidates": [
     {
       "causal_chain": [
@@ -579,10 +579,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "path_type": "SINGLE_EVENT",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -641,10 +644,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "path_type": "SINGLE_EVENT",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -703,10 +709,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "path_type": "SINGLE_EVENT",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -765,10 +774,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "path_type": "SINGLE_EVENT",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -827,10 +839,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "path_type": "SINGLE_EVENT",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -889,10 +904,13 @@ Excluded after-cutoff web source ids:
       ],
       "market_memory_evidence": [],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "A new beneficiary can be investigated even when memory has no exact precedent.",
       "path_type": "THEME_BENEFICIARY",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -950,10 +968,13 @@ Excluded after-cutoff web source ids:
         "D-day prices are blocked during blind analysis"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "novel_reasoning": "",
       "path_type": "CONTINUATION",
       "prior_negative_cases": [],
+      "prior_negative_record_ids": [],
       "prior_positive_cases": [],
+      "prior_positive_record_ids": [],
       "provenance": [
         {
           "content_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
@@ -987,6 +1008,7 @@ Excluded after-cutoff web source ids:
   "dominant_sectors": [
     {
       "contradicting_cases": [],
+      "contradicting_record_ids": [],
       "direct_beneficiaries": [
         "넥스턴앤롤코리아",
         "꼭승리한다홍명보호",
@@ -1028,6 +1050,7 @@ Excluded after-cutoff web source ids:
         }
       ],
       "supporting_cases": [],
+      "supporting_record_ids": [],
       "triggering_events": [
         "EVT-2120a5a8de37",
         "EVT-7f6b254c941c",
@@ -1090,9 +1113,9 @@ Excluded after-cutoff web source ids:
     "blind_current_price_access_count": 0,
     "no_d_outcome_exposed": true
   },
-  "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+  "blind_artifact_sha256": "cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75",
   "blind_seal_receipt": {
-    "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+    "blind_artifact_sha256": "cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75",
     "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
     "blind_prediction_path": "runs/checkpoints/output_artifacts/RUN-aa2a36dbf3e0/blind_prediction.json",
     "cutoff_at": "2026-06-24T08:59:59+09:00",
@@ -1118,7 +1141,7 @@ Excluded after-cutoff web source ids:
     "as_of": "2026-06-24T08:59:59+09:00",
     "notes": [],
     "source_name": "mock-price",
-    "source_ref": null
+    "source_ref": "mock://prices/news-only"
   },
   "blind_analysis": {
     "summary": "Mock final synthesis reviewed current news, memory sweep, web context, red-team output, and blind-safe D-1 market data.",
@@ -1178,6 +1201,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "counterarguments": [
         "listing status may be unverified",
@@ -1197,6 +1222,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-b53cb215474e",
@@ -1240,6 +1266,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "counterarguments": [
         "listing status may be unverified",
@@ -1259,6 +1287,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-a944562557f3",
@@ -1302,6 +1331,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "counterarguments": [
         "listing status may be unverified",
@@ -1321,6 +1352,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-537f35b7e80d",
@@ -1364,6 +1396,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "counterarguments": [
         "listing status may be unverified",
@@ -1383,6 +1417,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-7428d07c5626",
@@ -1426,6 +1461,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "Candidate was generated from current evidence, not from a static list.",
       "counterarguments": [
         "listing status may be unverified",
@@ -1445,6 +1482,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-737ef23376c0",
@@ -1489,6 +1527,8 @@ Excluded after-cutoff web source ids:
       "market_memory_evidence": [],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "A new beneficiary can be investigated even when memory has no exact precedent.",
       "counterarguments": [
         "theme breadth may fail",
@@ -1507,6 +1547,7 @@ Excluded after-cutoff web source ids:
         "news://EVT-2120a5a8de37"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-92a08fc40377",
@@ -1550,6 +1591,8 @@ Excluded after-cutoff web source ids:
       ],
       "prior_positive_cases": [],
       "prior_negative_cases": [],
+      "prior_positive_record_ids": [],
+      "prior_negative_record_ids": [],
       "novel_reasoning": "",
       "counterarguments": [
         "already exhausted",
@@ -1568,6 +1611,7 @@ Excluded after-cutoff web source ids:
         "price://blind-safe-d-minus-one"
       ],
       "memory_episode_ids": [],
+      "memory_record_ids": [],
       "provenance": [
         {
           "source_id": "SRC-887013a64ba2",
@@ -6579,6 +6623,7 @@ Excluded after-cutoff web source ids:
       ],
       "snapshots": [],
       "source_name": "mock-price",
+      "source_ref": "mock://prices/news-only",
       "status": "NEWS_ONLY_STRICT_NO_PRICE_ACCESS"
     },
     "event_clusters": [
@@ -76656,7 +76701,7 @@ Excluded after-cutoff web source ids:
       ]
     }
   },
-  "payload_sha256": "90d2cf2eb0484822215a51b6d98503e4baffbbbf251d15a9a985a65ad379dcba",
+  "payload_sha256": "99caa2c576ddeddbf06030e8c27671b7addb8d24ca65ef17eb8dbf5021f86e75",
   "prompt_version": "synthesis.final.v1",
   "required_inputs": [
     "current_news",
@@ -76695,7 +76740,7 @@ Excluded after-cutoff web source ids:
 <!-- NSLAB:BEGIN phase_state.json -->
 ```json
 {
-  "blind_seal_receipt_sha256": "eeee496495f34376f89f935f3882a325397c693c760368b4bcc6ec857a2f7c9a",
+  "blind_seal_receipt_sha256": "40beb329af5acb052fc3c8cd223c7f75930ba9c36266845a98d80876f381b067",
   "completed_phases": [
     "PHASE_A_CUTOFF_SAFE_WEB_BLIND"
   ],
@@ -76712,12 +76757,12 @@ Excluded after-cutoff web source ids:
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 ```json
 {
-  "blind_artifact_sha256": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+  "blind_artifact_sha256": "cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75",
   "blind_context_mode": "CUTOFF_SAFE_WEB_BLIND",
   "blind_current_price_access_count": 0,
-  "blind_hash_recomputed": "622dc208cfce3adc90fada82f0702d98be9c51d5b720e309997c23fd0c08eec5",
+  "blind_hash_recomputed": "cd8d0abe9e310e4cf0cb39f8719a9df46df07e1a1f9438def8b5770b85df9f75",
   "blind_price_repository_access_count": 0,
-  "blind_seal_receipt_sha256": "eeee496495f34376f89f935f3882a325397c693c760368b4bcc6ec857a2f7c9a",
+  "blind_seal_receipt_sha256": "40beb329af5acb052fc3c8cd223c7f75930ba9c36266845a98d80876f381b067",
   "blind_web_search_call_count": 51,
   "brain_delta_sha256": "c6e07f015d7c404008f2811beaa49419f5f47bb4d0c7075287f2ddfc3f63dbc1",
   "bundle_incomplete": true,
@@ -76740,7 +76785,7 @@ Excluded after-cutoff web source ids:
   "excluded_candidate_web_check_count": 0,
   "excluded_candidate_web_check_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "execution_protocol_version": "nslab.research_prompt.v5",
-  "final_synthesis_context_sha256": "60903a33a56309bd2223036cf3e719a218a57f7b8fcd7512af324000c0a5e4fd",
+  "final_synthesis_context_sha256": "0ad530b73ac0a5b66718643122f9931260c26bc59f1c9061aa0579a7f5389fc3",
   "final_synthesis_context_summary": {
     "candidate_count": 7,
     "candidate_expansion_finding_count": 4,
@@ -76775,9 +76820,16 @@ Excluded after-cutoff web source ids:
   },
   "outcome_coverage_status": "NOT_RUN",
   "outcome_slice_sha256": null,
-  "phase_state_sha256": "1caf2f22e9d0b9270d835d63b789d6cd3f8f5700ddc20addd3f86724a29173e0",
-  "prediction_sha256": "583aa48409d125d65d1c4ba24590d70954cebee1129976c33a24fd73dd03ac8d",
-  "research_episode_sha256": "80d07bd4226091a977d5e15ce56a764ccc07c2e38e4a0db77e095936b1c7f6ec",
+  "phase_state_sha256": "b6d56c555c801c975498714c35bb55ef756c263ab140caceb82784bf8e45de05",
+  "prediction_sha256": "44afa458547de976a208b883d466cb87bb4d1cedfdb0b890239fc955cb358a71",
+  "price_snapshot": {
+    "allowed_through": "2026-06-23",
+    "as_of": "2026-06-24T08:59:59+09:00",
+    "notes": [],
+    "source_name": "mock-price",
+    "source_ref": "mock://prices/news-only"
+  },
+  "research_episode_sha256": "5e7be71c700faefe38be849eb8c76227fac188668dd7fb1cbc88fdcab14c48df",
   "research_report_sha256": "5a4e99c93e193f431589265cf10ae36981299c6f64dd89d454705cf597a0492c",
   "row_disposition_coverage_ratio": 1.0,
   "row_disposition_sha256": "5383b681391c911bc841d1d2ffb52ba5328b1decb1801b3e0429d87f62fbb6d3",
@@ -76799,8 +76851,11 @@ Excluded after-cutoff web source ids:
     "candidate_web_check_hash_verified": true,
     "excluded_candidate_web_check_count_verified": true,
     "excluded_candidate_web_check_hash_verified": true,
+    "final_synthesis_context_candidate_verification_verified": true,
+    "final_synthesis_context_candidate_web_checks_verified": true,
     "final_synthesis_context_contract_verified": true,
     "final_synthesis_context_hash_verified": true,
+    "front_matter_identity_verified": true,
     "id_reference_integrity_verified": true,
     "json_valid": true,
     "jsonl_valid": true,
@@ -76810,7 +76865,9 @@ Excluded after-cutoff web source ids:
     "phase_state_hash_verified": true,
     "phase_state_receipt_link_verified": true,
     "phase_state_recorded": true,
+    "prediction_file_hash_verified": true,
     "research_episode_hash_verified": true,
+    "research_report_hash_verified": true,
     "row_disposition_coverage_verified": true,
     "row_disposition_hash_verified": true,
     "source_ledger_entry_count_verified": true,

@@ -2447,6 +2447,7 @@
       ],
       "snapshots": [],
       "source_name": "mock-price",
+      "source_ref": "mock://prices/news-only",
       "status": "NEWS_ONLY_STRICT_NO_PRICE_ACCESS"
     },
     "event_clusters": [
@@ -72524,7 +72525,7 @@
       ]
     }
   },
-  "payload_sha256": "90d2cf2eb0484822215a51b6d98503e4baffbbbf251d15a9a985a65ad379dcba",
+  "payload_sha256": "99caa2c576ddeddbf06030e8c27671b7addb8d24ca65ef17eb8dbf5021f86e75",
   "prompt_version": "synthesis.final.v1",
   "required_inputs": [
     "current_news",

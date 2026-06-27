@@ -428,6 +428,7 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
     missing_final_context_price_data: list[dict[str, Any]] = []
     final_context_mock_price_data: list[dict[str, Any]] = []
     final_context_source_mismatches: list[dict[str, Any]] = []
+    final_context_source_ref_mismatches: list[dict[str, Any]] = []
     final_context_allowed_mismatches: list[dict[str, Any]] = []
     invalid_final_context_price_rows: list[dict[str, Any]] = []
     unsafe_final_context_price_rows: list[dict[str, Any]] = []
@@ -601,6 +602,20 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                         "context_source_name": context_source_name,
                     }
                 )
+            context_source_ref = price_context.get("source_ref")
+            if (
+                isinstance(source_ref, str)
+                and source_ref.strip()
+                and context_source_ref != source_ref
+            ):
+                final_context_source_ref_mismatches.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                        "manifest_source_ref": source_ref,
+                        "context_source_ref": context_source_ref,
+                    }
+                )
             context_allowed_through = price_context.get("allowed_through")
             if (
                 isinstance(raw_allowed_through, str)
@@ -771,6 +786,12 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
             f"{mismatch['artifact']}: {mismatch['context_source_name']} != "
             f"{mismatch['manifest_source_name']}"
         )
+    for mismatch in final_context_source_ref_mismatches:
+        findings.append(
+            f"final synthesis price source_ref does not match manifest in "
+            f"{mismatch['artifact']}: {mismatch['context_source_ref']} != "
+            f"{mismatch['manifest_source_ref']}"
+        )
     for mismatch in final_context_allowed_mismatches:
         findings.append(
             f"final synthesis price allowed_through does not match manifest in "
@@ -835,6 +856,10 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         "final_context_mock_price_data": final_context_mock_price_data,
         "final_context_source_mismatch_count": len(final_context_source_mismatches),
         "final_context_source_mismatches": final_context_source_mismatches,
+        "final_context_source_ref_mismatch_count": len(
+            final_context_source_ref_mismatches
+        ),
+        "final_context_source_ref_mismatches": final_context_source_ref_mismatches,
         "final_context_allowed_mismatch_count": len(final_context_allowed_mismatches),
         "final_context_allowed_mismatches": final_context_allowed_mismatches,
         "invalid_final_context_price_row_count": len(invalid_final_context_price_rows),

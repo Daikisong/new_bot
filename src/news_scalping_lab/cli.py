@@ -3414,6 +3414,7 @@ def _inspect_final_synthesis_price_context(
 ) -> None:
     price_status: dict[str, Any] = {
         "source_name_verified": False,
+        "source_ref_verified": False,
         "allowed_through_verified": False,
         "snapshot_rows_valid": False,
         "snapshot_rows_cutoff_safe": False,
@@ -3445,6 +3446,16 @@ def _inspect_final_synthesis_price_context(
     )
     if not price_status["source_name_verified"]:
         status["errors"].append("final_synthesis_context_price_source_name_mismatch")
+
+    manifest_source_ref = price_snapshot.get("source_ref")
+    context_source_ref = price_context.get("source_ref")
+    price_status["source_ref_verified"] = (
+        isinstance(manifest_source_ref, str)
+        and bool(manifest_source_ref.strip())
+        and context_source_ref == manifest_source_ref
+    )
+    if not price_status["source_ref_verified"]:
+        status["errors"].append("final_synthesis_context_price_source_ref_mismatch")
 
     manifest_allowed = price_snapshot.get("allowed_through")
     context_allowed = price_context.get("allowed_through")
@@ -3515,6 +3526,7 @@ def _inspect_final_synthesis_price_context(
         )
     status["d_minus_one_price_context_verified"] = bool(
         price_status["source_name_verified"]
+        and price_status["source_ref_verified"]
         and price_status["allowed_through_verified"]
         and price_status["snapshot_rows_valid"]
         and price_status["snapshot_rows_cutoff_safe"]

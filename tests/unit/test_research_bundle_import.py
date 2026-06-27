@@ -43,7 +43,11 @@ def _episode() -> ResearchEpisode:
             "blind_artifact_sha256": "bundle-test-hash",
             "no_d_outcome_exposed": True,
         },
-        price_source_snapshot={"source": "mock", "allowed_through": "2030-01-09"},
+        price_source_snapshot={
+            "source_name": "mock",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+        },
         blind_analysis=BlindAnalysis(
             summary="Open-world blind analysis before D-day prices.",
             open_world_mechanisms=["current event -> possible beneficiary path"],
@@ -85,7 +89,12 @@ def _final_synthesis_payload() -> dict[str, object]:
         "candidate_web_checks": [],
         "candidate_verification": {},
         "red_team_output": {"candidate_findings": []},
-        "d_minus_one_market_data": {"snapshots": []},
+        "d_minus_one_market_data": {
+            "source_name": "mock",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+            "snapshots": [],
+        },
         "company_memory": [],
         "market_memory": [],
     }
@@ -137,6 +146,7 @@ def _bundle_text(
     tamper_candidate_verification_contract: bool = False,
     include_final_synthesis_context: bool = False,
     tamper_final_synthesis_context_contract: bool = False,
+    tamper_final_synthesis_price_context: bool = False,
     tamper_final_synthesis_candidate_web_checks_context: bool = False,
     tamper_final_synthesis_candidate_verification_context: bool = False,
     phase_state_payload: dict[str, object] | None = None,
@@ -312,6 +322,11 @@ def _bundle_text(
             else receipt_sha
         ),
         "phase_state_sha256": "0" * 64 if tamper_phase_hash else sha256_text(phase_state_json),
+        "price_snapshot": {
+            "source_name": "mock",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+        },
         "validation": manifest_validation,
     }
     candidate_blocks = ""
@@ -467,6 +482,11 @@ def _bundle_text(
                 if tamper_final_synthesis_candidate_verification_context
                 else candidate_verification_payload
             )
+        if tamper_final_synthesis_price_context:
+            final_context_payload["d_minus_one_market_data"] = {
+                **final_context_payload["d_minus_one_market_data"],
+                "allowed_through": "2030-01-10",
+            }
         final_context_summary = final_synthesis_input_summary(final_context_payload)
         final_context = {
             "schema_version": "nslab.final_synthesis_context.v1",
@@ -625,6 +645,27 @@ def test_bundle_import_rejects_final_synthesis_context_contract_mismatch(
             _episode(),
             include_final_synthesis_context=True,
             tamper_final_synthesis_context_contract=True,
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = parse_bundle(source)
+
+    assert parsed.validation["final_synthesis_context_hash_verified"]
+    assert not parsed.validation["final_synthesis_context_contract_verified"]
+    with pytest.raises(BundleImportError, match="final_synthesis_context.json content"):
+        ResearchImporter(tmp_path).import_path(source, mode="bundle")
+
+
+def test_bundle_import_rejects_final_synthesis_price_context_mismatch(
+    tmp_path,
+) -> None:
+    source = tmp_path / "bad_final_context_price_bundle.md"
+    source.write_text(
+        _bundle_text(
+            _episode(),
+            include_final_synthesis_context=True,
+            tamper_final_synthesis_price_context=True,
         ),
         encoding="utf-8",
     )
