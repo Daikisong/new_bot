@@ -953,6 +953,61 @@ def test_context_assembler_preserves_record_context_when_accepted_store_unreadab
 
 
 @pytest.mark.asyncio
+async def test_daily_analyzer_preserves_record_sweep_when_accepted_store_unreadable(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-ANALYZE-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-ANALYZE-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    accepted_path = (
+        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
+    )
+    accepted_path.parent.mkdir(parents=True, exist_ok=True)
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+    news_csv = tmp_path / "record_backed_corrupt_accepted_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","RecordBackedCo, new catalyst",'
+        '"Analysis should preserve record sweep evidence when accepted JSON is corrupt."\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExhaustiveCoverageError):
+        await DailyAnalyzer(settings).analyze(
+            news_csv=news_csv,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=cutoff_at,
+            mode="exhaustive",
+            web_search=False,
+        )
+
+    manifest_paths = list((tmp_path / "runs" / "manifests").glob("*.json"))
+    assert len(manifest_paths) == 1
+    manifest = read_json(manifest_paths[0])
+    assert manifest["errors"] == ["accepted episode store is unreadable"]
+    assert manifest["accepted_record_count"] == 2
+    assert manifest["available_record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
+    assert manifest["swept_record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
+    assert manifest["excluded_retrieved_record_ids"] == ["BRAIN-ANALYZE-FUTURE"]
+    assert manifest["record_sweep_artifacts"]
+    record_sweep = read_json(tmp_path / manifest["record_sweep_artifacts"][0])
+    assert record_sweep["record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
+
+
+@pytest.mark.asyncio
 async def test_exhaustive_record_coverage_100_percent(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

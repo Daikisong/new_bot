@@ -10,6 +10,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.final_synthesis import (
@@ -362,7 +364,9 @@ class DailyAnalyzer:
         manifest.record_sweep_cache_hits = sweep.record_cache_hits
         manifest.token_counts.update(sweep.token_counts)
         manifest.token_counts["current_news"] = sum(len(text) for text in news_texts) // 4
-        manifest.errors.extend(sweep.errors)
+        for error in sweep.errors:
+            if error not in manifest.errors:
+                manifest.errors.append(error)
         self._fail_if_exhaustive_coverage_incomplete(manifest)
         _semantic_plan, semantic_prompt_hash, semantic_prompt_tokens = (
             await self._run_semantic_retrieval_plan(
@@ -3604,11 +3608,14 @@ class DailyAnalyzer:
         cutoff_at: datetime,
         manifest: ContextManifest,
     ) -> None:
-        future_episode_ids = [
-            episode.episode_id
-            for episode in ResearchStore(self.root).list_accepted()
-            if not is_available_as_of(episode.available_from, cutoff_at)
-        ]
+        future_episode_ids = _future_unavailable_episode_ids_for_brain_context_check(
+            self.root,
+            cutoff_at=cutoff_at,
+        )
+        if future_episode_ids is None:
+            if "accepted episode store is unreadable" not in manifest.errors:
+                manifest.errors.append("accepted episode store is unreadable")
+            return
         leaked_ids = [
             episode_id
             for episode_id in future_episode_ids
@@ -4329,6 +4336,29 @@ def _semantic_record_filters(category: str) -> dict[str, Any]:
     if category == "candidate_generation_errors":
         return {"record_type": sorted(CANDIDATE_ERROR_RECORD_TYPES)}
     return {}
+
+
+def _future_unavailable_episode_ids_for_brain_context_check(
+    root: Path,
+    *,
+    cutoff_at: datetime,
+) -> list[str] | None:
+    try:
+        accepted = ResearchStore(root).list_accepted()
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+    return [
+        episode.episode_id
+        for episode in accepted
+        if not is_available_as_of(episode.available_from, cutoff_at)
+    ]
 
 
 def _append_unique_provenance(
