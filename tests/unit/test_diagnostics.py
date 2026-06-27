@@ -2647,6 +2647,26 @@ def test_production_readiness_rejects_stale_episode_coverage_brain_metadata(
     )
 
 
+def test_production_readiness_reports_unreadable_episode_coverage_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    (current / "coverage_manifest.json").mkdir()
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["episode_coverage"]["passed"] is False
+    assert production["episode_coverage"]["status"] == "invalid"
+    assert production["episode_coverage"]["findings"] == [
+        "coverage manifest is unreadable"
+    ]
+    assert "unreadable JSON:" in production["episode_coverage"]["error"]
+    assert "brain: coverage manifest is unreadable" in production["findings"]
+
+
 def test_production_readiness_reports_unreadable_brain_manifest(
     tmp_path,
 ) -> None:

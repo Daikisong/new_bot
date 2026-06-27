@@ -7910,6 +7910,8 @@ def _file_count(path: Path, *, suffix: str | None = None) -> int:
 def _read_json_object(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except OSError as exc:
+        raise ValueError(f"unreadable JSON: {path.as_posix()}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"invalid JSON: {path.as_posix()}") from exc
     if not isinstance(payload, dict):
