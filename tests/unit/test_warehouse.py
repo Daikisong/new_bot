@@ -202,6 +202,72 @@ def test_specialized_record_tables_preserve_theme_and_beneficiary_fields(
     )
 
 
+def test_brain_record_query_filters_rich_record_alias_fields(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    records = [
+        _warehouse_payload_record(
+            "BRAIN-THEME-RICH",
+            record_type="supervised_theme_formation_case",
+            training_target="theme_formation_response",
+            payload={
+                "record_id": "BRAIN-THEME-RICH",
+                "record_type": "supervised_theme_formation_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "theme_id": "THEME-supply",
+                "peer_universe": ["000001", "000002"],
+                "chosen_leader_ticker": "000001",
+                "chosen_leader_company_name": "Leader Co",
+                "rejected_candidate_tickers": ["000002"],
+                "response_class": "positive_high10",
+            },
+        ),
+        _warehouse_payload_record(
+            "BRAIN-BENEFICIARY-RICH",
+            record_type="beneficiary_discovery_case",
+            training_target="beneficiary_discovery_response",
+            payload={
+                "record_id": "BRAIN-BENEFICIARY-RICH",
+                "record_type": "beneficiary_discovery_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "theme_id": "THEME-supply",
+                "candidate_ticker": "000003",
+                "candidate_company_name": "Beneficiary Co",
+                "outcome_ticker": "000004",
+                "outcome_company_name": "Outcome Co",
+                "candidate_path_type": "INFERRED_NEW",
+            },
+        ),
+    ]
+    warehouse = WarehouseStore(tmp_path)
+    warehouse.write_brain_records(records)
+
+    theme_rows = warehouse.query_brain_records(
+        record_type="supervised_theme_formation_case",
+        ticker="000002",
+        company_name="Leader Co",
+        theme_id="THEME-supply",
+        response_class="positive_high10",
+    )
+    beneficiary_rows = warehouse.query_brain_records(
+        record_type="beneficiary_discovery_case",
+        ticker="000004",
+        company_name="Outcome Co",
+        path_type="INFERRED_NEW",
+    )
+
+    assert [row["record_id"] for row in theme_rows] == ["BRAIN-THEME-RICH"]
+    assert theme_rows[0]["ticker"] == "000001"
+    assert theme_rows[0]["payload"]["rejected_candidate_tickers"] == ["000002"]
+    assert [row["record_id"] for row in beneficiary_rows] == [
+        "BRAIN-BENEFICIARY-RICH"
+    ]
+    assert beneficiary_rows[0]["ticker"] == "000003"
+    assert beneficiary_rows[0]["payload"]["outcome_ticker"] == "000004"
+
+
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

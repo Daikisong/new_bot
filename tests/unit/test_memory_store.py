@@ -110,6 +110,42 @@ def _store_retrieval_records(tmp_path) -> None:
                 },
             },
         ),
+        _retrieval_record(
+            "BRAIN-REC-THEME-RICH",
+            record_type="supervised_theme_formation_case",
+            ticker="",
+            theme_id="",
+            response_class="",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+            payload_updates={
+                "company_name": None,
+                "path_type": None,
+                "theme_id": "theme-rich",
+                "peer_universe": ["000009", "000010"],
+                "chosen_leader_ticker": "000009",
+                "chosen_leader_company_name": "Rich Leader Co",
+                "rejected_candidate_tickers": ["000010"],
+                "response_class": "positive_high10",
+            },
+        ),
+        _retrieval_record(
+            "BRAIN-REC-BENEFICIARY-RICH",
+            record_type="beneficiary_discovery_case",
+            ticker="",
+            theme_id="",
+            response_class="",
+            available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
+            payload_updates={
+                "company_name": None,
+                "path_type": None,
+                "theme_id": "theme-rich",
+                "candidate_ticker": "000011",
+                "candidate_company_name": "Rich Beneficiary Co",
+                "outcome_ticker": "000012",
+                "outcome_company_name": "Rich Outcome Co",
+                "candidate_path_type": "INFERRED_NEW",
+            },
+        ),
     ]
     raw_payload = "\n".join(record.model_dump_json() for record in records)
     raw_sha = sha256_text(raw_payload)
@@ -151,8 +187,10 @@ def _store_retrieval_records(tmp_path) -> None:
                 "row_disposition_error_case": 1,
                 "entity_resolution_error_case": 1,
                 "blind_leader_preference_pair": 1,
+                "supervised_theme_formation_case": 1,
+                "beneficiary_discovery_case": 1,
             },
-            training_eligible_record_count=6,
+            training_eligible_record_count=8,
             source_ids=["SRC-RETRIEVAL"],
         ),
         records=records,
@@ -935,6 +973,24 @@ def test_record_retrieval_filters_alias_and_nested_payload_fields(tmp_path) -> N
         response_class="positive_high10",
         available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
     ) == ["BRAIN-REC-LEADER-PAIR"]
+    assert memory.search_records(
+        "unseen wording",
+        record_type="supervised_theme_formation_case",
+        ticker="000010",
+        company_name="Rich Leader Co",
+        theme_id="theme-rich",
+        response_class="positive_high10",
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-THEME-RICH"]
+    assert memory.search_records(
+        "unseen wording",
+        record_type="beneficiary_discovery_case",
+        ticker="000012",
+        company_name="Rich Outcome Co",
+        theme_id="theme-rich",
+        path_type="INFERRED_NEW",
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    ) == ["BRAIN-REC-BENEFICIARY-RICH"]
 
 
 def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(tmp_path) -> None:

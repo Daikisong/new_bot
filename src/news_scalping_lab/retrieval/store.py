@@ -41,6 +41,10 @@ _PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     "ticker": (
         "ticker",
         "candidate_ticker",
+        "outcome_ticker",
+        "chosen_leader_ticker",
+        "rejected_candidate_tickers",
+        "peer_universe",
         "blind_preferred_ticker",
         "blind_rejected_ticker",
         "outcome_winner_ticker",
@@ -51,6 +55,11 @@ _PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     "company_name": (
         "company_name",
         "candidate_company_name",
+        "outcome_company_name",
+        "chosen_leader_company_name",
+        "blind_preferred_company_name",
+        "blind_rejected_company_name",
+        "outcome_winner_company_name",
         "missed_company_name",
         "corrected_company_name",
         "company_name_on_D",
@@ -60,7 +69,9 @@ _PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
         "theme_id",
         "theme_ids",
         "candidate_theme_id",
+        "missed_theme_ids",
         "missed_theme_id",
+        "corrected_theme_ids",
         "corrected_theme_id",
     ),
     "path_type": (
