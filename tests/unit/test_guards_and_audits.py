@@ -5860,6 +5860,50 @@ def test_provenance_audit_flags_prompt_hash_without_matching_trace(tmp_path: Pat
     ) in result["findings"]
 
 
+def test_provenance_audit_flags_duplicate_context_prompt_hashes(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {
+                "blind_analysis": "shared-prompt-hash",
+                "news_novelty_review": "shared-prompt-hash",
+            },
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    trace_payload = _trace_payload(prompt_sha256="shared-prompt-hash")
+    write_json(tmp_path / "runs" / "traces" / "TRACE-daily.json", trace_payload)
+    _write_trace_checkpoint(tmp_path, trace_payload)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: context manifest prompt_hashes duplicate hash "
+        "shared-prompt-hash: blind_analysis, news_novelty_review"
+    ) in result["findings"]
+
+
 def test_provenance_audit_flags_current_manifest_missing_pre_analysis_trace(
     tmp_path: Path,
 ) -> None:

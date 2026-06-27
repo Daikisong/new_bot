@@ -2263,6 +2263,7 @@ def _check_manifest_basics(
     if not isinstance(prompt_hashes, dict):
         findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
         prompt_hashes = {}
+    _check_manifest_prompt_hash_duplicates(prediction_path, prompt_hashes, findings)
     _check_current_manifest_required_contract(
         prediction_path,
         prediction,
@@ -2289,6 +2290,25 @@ def _check_manifest_basics(
     if final_synthesis_was_run and not prompt_hashes.get("final_synthesis"):
         findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
     return prompt_hashes
+
+
+def _check_manifest_prompt_hash_duplicates(
+    prediction_path: Path,
+    prompt_hashes: dict[str, Any],
+    findings: list[str],
+) -> None:
+    fields_by_hash: dict[str, list[str]] = {}
+    for field, prompt_hash in prompt_hashes.items():
+        if not isinstance(prompt_hash, str) or not prompt_hash:
+            continue
+        fields_by_hash.setdefault(prompt_hash, []).append(str(field))
+    for prompt_hash, fields in sorted(fields_by_hash.items()):
+        if len(fields) <= 1:
+            continue
+        findings.append(
+            f"{prediction_path.name}: context manifest prompt_hashes duplicate hash "
+            f"{prompt_hash}: {', '.join(sorted(fields))}"
+        )
 
 
 def _check_current_manifest_required_contract(
