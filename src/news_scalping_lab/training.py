@@ -117,6 +117,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             findings,
         )
         _audit_weight_validation_contract(kind, manifest, findings)
+        _audit_skipped_record_manifest_entries(kind, manifest, findings)
         source_record_ids.update(_source_record_ids_from_manifest(manifest))
         training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
         output_file = manifest.get("output_file")
@@ -354,6 +355,32 @@ def _audit_weight_validation_contract(
     for field, expected_value in expected_fields.items():
         if manifest.get(field) != expected_value:
             findings.append(f"{kind}: {field} does not match weight_validation")
+
+
+def _audit_skipped_record_manifest_entries(
+    kind: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    if "skipped_records" not in manifest:
+        return
+    skipped_records = manifest.get("skipped_records")
+    if not isinstance(skipped_records, list):
+        findings.append(f"{kind}: skipped_records is invalid")
+        return
+    for index, item in enumerate(skipped_records, start=1):
+        if not isinstance(item, dict):
+            findings.append(f"{kind}: skipped_records:{index} is invalid")
+            continue
+        record_id = item.get("record_id")
+        if not isinstance(record_id, str) or not record_id:
+            findings.append(f"{kind}: skipped_records:{index} record_id is invalid")
+        reason = item.get("reason")
+        if not isinstance(reason, str) or not reason:
+            findings.append(f"{kind}: skipped_records:{index} reason is missing")
+        skip_reasons = item.get("skip_reasons")
+        if skip_reasons is not None and not _string_list_field_valid(skip_reasons):
+            findings.append(f"{kind}: skipped_records:{index} skip_reasons is invalid")
 
 
 def _source_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
@@ -806,6 +833,12 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_field_valid(value: object) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, str) and bool(item) for item in value
+    )
 
 
 def _weight_validation_manifest_fields(
