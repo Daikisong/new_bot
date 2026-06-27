@@ -2941,8 +2941,10 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
     assert production["record_store"]["deep"] is True
     assert production["record_store"]["raw_record_count"] == 0
     assert production["record_store"]["normalized_record_count"] == 2
+    assert production["record_store"]["raw_normalized_record_count_matches"] is False
     assert production["record_store"]["raw_record_counts_by_episode"] == {}
     assert production["record_store"]["dropped_record_count"] == 0
+    assert production["record_store"]["extra_normalized_record_count"] == 2
     assert production["record_store"]["quarantined_record_count"] == 0
     assert production["record_store"]["brain_delta_record_id_mismatch_episode_ids"] == [
         "EP-import-loss"
@@ -2956,6 +2958,10 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
     )
     assert (
         "records: record raw payload hashes do not match source lines"
+        in production["findings"]
+    )
+    assert (
+        "records: extra_normalized_record_count=2 expected 0"
         in production["findings"]
     )
 
@@ -3011,11 +3017,15 @@ def test_production_readiness_rejects_record_store_raw_normalized_count_mismatch
     assert production["record_store"]["passed"] is False
     assert production["record_store"]["raw_record_count"] == 3
     assert production["record_store"]["normalized_record_count"] == 2
+    assert production["record_store"]["raw_normalized_record_count_matches"] is False
+    assert production["record_store"]["dropped_record_count"] == 1
+    assert production["record_store"]["extra_normalized_record_count"] == 0
     assert (
         "records: raw/normalized record count mismatch: "
         "raw_record_count=3 normalized_record_count=2"
         in production["findings"]
     )
+    assert "records: dropped_record_count=1 expected 0" in production["findings"]
 
 
 def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
@@ -3052,7 +3062,9 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
             "raw_record_count": 2,
             "normalized_record_count": 2,
             "raw_record_counts_by_episode": {"EP-loss": 2},
+            "raw_normalized_record_count_matches": True,
             "dropped_record_count": 1,
+            "extra_normalized_record_count": 0,
             "quarantined_record_count": 1,
         }
 
@@ -3079,6 +3091,7 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
 
     assert production["record_store"]["passed"] is False
     assert production["record_store"]["dropped_record_count"] == 1
+    assert production["record_store"]["extra_normalized_record_count"] == 0
     assert production["record_store"]["quarantined_record_count"] == 1
     assert "records: dropped_record_count=1 expected 0" in production["findings"]
     assert "records: quarantined_record_count=1 expected 0" in production["findings"]

@@ -585,9 +585,12 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["ineligible_record_count"] == 1
     assert report["raw_record_count"] == 3
     assert report["normalized_record_count"] == 3
+    assert report["raw_normalized_record_count_matches"] is True
     assert report["raw_record_counts_by_episode"] == {
         "NSLAB-20300110-SYNTH": 3
     }
+    assert report["dropped_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 0
     assert report["all_unknown_typed_payload_count"] == 1
     assert report["all_raw_only_record_count"] == 0
     assert report["staged_unknown_typed_payload_count"] == 0
@@ -638,8 +641,29 @@ def test_record_store_report_counts_dropped_raw_records(tmp_path: Path) -> None:
 
     assert report["raw_record_count"] == 3
     assert report["normalized_record_count"] == 2
+    assert report["raw_normalized_record_count_matches"] is False
     assert report["raw_record_counts_by_episode"] == {"EP-loss": 3}
     assert report["dropped_record_count"] == 1
+    assert report["extra_normalized_record_count"] == 0
+
+
+def test_record_store_report_counts_extra_normalized_records(tmp_path: Path) -> None:
+    report = record_store_report_payload(
+        tmp_path,
+        {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": True,
+            "record_count": 2,
+            "stats": {},
+        },
+    )
+
+    assert report["raw_record_count"] == 0
+    assert report["normalized_record_count"] == 2
+    assert report["raw_normalized_record_count_matches"] is False
+    assert report["raw_record_counts_by_episode"] == {}
+    assert report["dropped_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 2
 
 
 def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(

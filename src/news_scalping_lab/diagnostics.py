@@ -1216,8 +1216,10 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "record_count": None,
             "raw_record_count": None,
             "normalized_record_count": None,
+            "raw_normalized_record_count_matches": None,
             "raw_record_counts_by_episode": {},
             "dropped_record_count": None,
+            "extra_normalized_record_count": None,
             "quarantined_record_count": None,
             "all_record_count": None,
             "staged_record_count": None,
@@ -1263,11 +1265,17 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         "record_count": audit.get("record_count"),
         "raw_record_count": report_payload.get("raw_record_count"),
         "normalized_record_count": report_payload.get("normalized_record_count"),
+        "raw_normalized_record_count_matches": report_payload.get(
+            "raw_normalized_record_count_matches",
+        ),
         "raw_record_counts_by_episode": report_payload.get(
             "raw_record_counts_by_episode",
             {},
         ),
         "dropped_record_count": report_payload.get("dropped_record_count"),
+        "extra_normalized_record_count": report_payload.get(
+            "extra_normalized_record_count",
+        ),
         "quarantined_record_count": report_payload.get("quarantined_record_count"),
         "all_record_count": audit.get("all_record_count"),
         "staged_record_count": audit.get("staged_record_count"),
@@ -1359,6 +1367,18 @@ def _production_record_store_report_findings(
     dropped_record_count = _int_from_mapping(report_payload, "dropped_record_count")
     if dropped_record_count is not None and dropped_record_count != 0:
         findings.append(f"dropped_record_count={dropped_record_count} expected 0")
+    extra_normalized_record_count = _int_from_mapping(
+        report_payload,
+        "extra_normalized_record_count",
+    )
+    if (
+        extra_normalized_record_count is not None
+        and extra_normalized_record_count != 0
+    ):
+        findings.append(
+            "extra_normalized_record_count="
+            f"{extra_normalized_record_count} expected 0"
+        )
     quarantined_record_count = _int_from_mapping(
         report_payload,
         "quarantined_record_count",

@@ -4,6 +4,7 @@
 - record_count: `4`
 - raw_record_count: `4`
 - normalized_record_count: `4`
+- raw_normalized_record_count_matches: `True`
 ## raw_record_counts_by_episode
 
 - EP-2991eb145f59: `1`
@@ -67,6 +68,7 @@
 - theme_formation_cases: `0`
 
 - dropped_record_count: `0`
+- extra_normalized_record_count: `0`
 - quarantined_record_count: `0`
 - audit_passed: `True`
 ## record_store_audit
