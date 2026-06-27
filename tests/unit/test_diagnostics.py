@@ -161,7 +161,18 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
         "manifest_exists": False,
         "coverage_complete": False,
         "covered_episode_count": 0,
+        "covered_episode_ids": [],
+        "expected_covered_episode_ids": [],
+        "missing_covered_episode_ids": [],
+        "unexpected_covered_episode_ids": [],
+        "duplicate_covered_episode_ids": [],
         "missing_episode_ids": [],
+        "expected_missing_episode_ids": [],
+        "unknown_missing_episode_ids": [],
+        "missing_missing_episode_ids": [],
+        "unexpected_missing_episode_ids": [],
+        "accepted_episode_store_readable": True,
+        "accepted_episode_store_error": None,
         "status": "missing",
     }
     assert report["vector_index"]["exists"] is True
@@ -237,7 +248,19 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
         "expected_catalog_only": True,
         "coverage_complete": True,
         "covered_episode_count": 1,
+        "manifest_covered_episode_count": 1,
+        "covered_episode_ids": ["EP-doctor-coverage"],
+        "expected_covered_episode_ids": ["EP-doctor-coverage"],
+        "missing_covered_episode_ids": [],
+        "unexpected_covered_episode_ids": [],
+        "duplicate_covered_episode_ids": [],
         "missing_episode_ids": [],
+        "expected_missing_episode_ids": [],
+        "unknown_missing_episode_ids": [],
+        "missing_missing_episode_ids": [],
+        "unexpected_missing_episode_ids": [],
+        "accepted_episode_store_readable": True,
+        "accepted_episode_store_error": None,
         "finding_count": 0,
         "findings": [],
         "status": "complete",
@@ -311,6 +334,69 @@ def test_doctor_report_rejects_stale_brain_coverage_manifest(tmp_path) -> None:
     assert (
         "coverage manifest catalog_only does not match current brain manifest"
         in report["brain"]["coverage"]["findings"]
+    )
+    assert "brain: accepted episodes are not fully covered" in report["readiness"][
+        "findings"
+    ]
+
+
+def test_doctor_report_rejects_wrong_brain_coverage_episode_ids(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-coverage-id",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor coverage ID status lesson.",
+            open_world_mechanisms=["accepted episode -> tampered coverage IDs"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_manifest = read_json(coverage_path)
+    coverage_manifest.update(
+        {
+            "covered_episode_ids": ["EP-unknown-covered"],
+            "missing_episode_ids": [],
+            "covered_episode_count": 1,
+            "coverage_complete": True,
+        }
+    )
+    write_json(coverage_path, coverage_manifest)
+
+    report = build_doctor_report(settings)
+
+    assert report["readiness"]["passed"] is False
+    coverage = report["brain"]["coverage"]
+    assert coverage["coverage_complete"] is False
+    assert coverage["status"] == "incomplete"
+    assert coverage["covered_episode_ids"] == ["EP-unknown-covered"]
+    assert coverage["expected_covered_episode_ids"] == ["EP-doctor-coverage-id"]
+    assert coverage["missing_covered_episode_ids"] == ["EP-doctor-coverage-id"]
+    assert coverage["unexpected_covered_episode_ids"] == ["EP-unknown-covered"]
+    assert coverage["expected_missing_episode_ids"] == ["EP-doctor-coverage-id"]
+    assert coverage["missing_missing_episode_ids"] == ["EP-doctor-coverage-id"]
+    assert coverage["unexpected_missing_episode_ids"] == []
+    assert (
+        "coverage manifest includes unknown covered episodes"
+        in coverage["findings"]
+    )
+    assert (
+        "coverage manifest does not cover accepted episodes"
+        in coverage["findings"]
+    )
+    assert (
+        "coverage manifest missing IDs do not match accepted episodes"
+        in coverage["findings"]
     )
     assert "brain: accepted episodes are not fully covered" in report["readiness"][
         "findings"
