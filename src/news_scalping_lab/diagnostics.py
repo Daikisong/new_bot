@@ -90,6 +90,12 @@ PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS = {
     field: field.removesuffix("_artifact") + "_sha256"
     for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS
 }
+PRODUCTION_WEB_EVIDENCE_ARTIFACT_SOURCE_FIELDS = {
+    "web_source_artifact": "web_sources",
+    "excluded_web_source_artifact": "excluded_web_source_ids",
+    "candidate_web_check_artifact": "candidate_web_source_ids",
+    "excluded_candidate_web_check_artifact": "excluded_candidate_web_source_ids",
+}
 
 
 def production_readiness_report(
@@ -1050,6 +1056,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     missing_artifacts: list[dict[str, Any]] = []
     missing_artifact_hashes: list[dict[str, Any]] = []
     artifact_hash_mismatches: list[dict[str, Any]] = []
+    artifact_source_id_mismatches: list[dict[str, Any]] = []
     checked_artifact_refs = 0
     for manifest_path in manifest_paths:
         manifest_relative_path = relative_to_root(manifest_path, root)
@@ -1091,6 +1098,30 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                     }
                 )
                 continue
+            source_field = PRODUCTION_WEB_EVIDENCE_ARTIFACT_SOURCE_FIELDS.get(field)
+            if source_field is not None:
+                expected_source_ids = _string_list(manifest.get(source_field))
+                try:
+                    observed_source_ids = _web_evidence_artifact_source_ids(
+                        artifact_path
+                    )
+                except OSError:
+                    observed_source_ids = []
+                if (
+                    set(observed_source_ids) != set(expected_source_ids)
+                    or len(observed_source_ids) != len(set(observed_source_ids))
+                    or len(expected_source_ids) != len(set(expected_source_ids))
+                ):
+                    artifact_source_id_mismatches.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "source_field": source_field,
+                            "artifact": relative_artifact_path,
+                            "expected_source_ids": expected_source_ids,
+                            "observed_source_ids": observed_source_ids,
+                        }
+                    )
             artifact_paths.add(artifact_path)
             sha_field = PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS[field]
             expected_sha = manifest.get(sha_field)
@@ -1175,6 +1206,12 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             f"web evidence artifact sha256 mismatch: {artifact['manifest']} "
             f"{artifact['sha_field']} for {artifact['artifact']}"
         )
+    for artifact in artifact_source_id_mismatches:
+        findings.append(
+            f"web evidence artifact source IDs do not match manifest: "
+            f"{artifact['manifest']} {artifact['artifact_field']} -> "
+            f"{artifact['source_field']}"
+        )
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for path in empty_artifacts:
@@ -1214,6 +1251,8 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "missing_artifact_hashes": missing_artifact_hashes,
         "artifact_sha256_mismatch_count": len(artifact_hash_mismatches),
         "artifact_sha256_mismatches": artifact_hash_mismatches,
+        "artifact_source_id_mismatch_count": len(artifact_source_id_mismatches),
+        "artifact_source_id_mismatches": artifact_source_id_mismatches,
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
         "empty_artifact_count": len(empty_artifacts),
@@ -1289,6 +1328,47 @@ def _web_evidence_artifact_counts(path: Path) -> tuple[int, int, int, list[str]]
     values = [value for value in text.split() if "mock://" in value]
     row_count = 1 if text.strip() else 0
     return row_count, len(values), 0, _unique_preserving_order(values)
+
+
+def _web_evidence_artifact_source_ids(path: Path) -> list[str]:
+    if path.suffix == ".jsonl":
+        source_ids: list[str] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payload: object = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                source_id = payload.get("source_id")
+                if isinstance(source_id, str) and source_id:
+                    source_ids.append(source_id)
+        return source_ids
+    if path.suffix == ".json":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError:
+            return []
+        return _source_ids_from_payload(payload)
+    return []
+
+
+def _source_ids_from_payload(value: object) -> list[str]:
+    if isinstance(value, dict):
+        source_ids: list[str] = []
+        source_id = value.get("source_id")
+        if isinstance(source_id, str) and source_id:
+            source_ids.append(source_id)
+        for item in value.values():
+            source_ids.extend(_source_ids_from_payload(item))
+        return _unique_preserving_order(source_ids)
+    if isinstance(value, list):
+        list_source_ids: list[str] = []
+        for item in value:
+            list_source_ids.extend(_source_ids_from_payload(item))
+        return _unique_preserving_order(list_source_ids)
+    return []
 
 
 def _mock_url_values(value: object) -> list[str]:

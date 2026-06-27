@@ -2944,6 +2944,73 @@ def test_production_readiness_rejects_empty_web_evidence_artifact(
     )
 
 
+def test_production_readiness_rejects_web_evidence_source_id_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "nslab.web_source.v1",
+                "source_id": "WEB-other",
+                "url": "https://example.test/news",
+                "source_url": "https://example.test/news",
+                "title": "live web evidence with wrong id",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-live"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 1
+    assert production["web_evidence"]["artifact_source_id_mismatches"] == [
+        {
+            "manifest": "runs/manifests/RUN-web.json",
+            "artifact_field": "web_source_artifact",
+            "source_field": "web_sources",
+            "artifact": "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl",
+            "expected_source_ids": ["WEB-live"],
+            "observed_source_ids": ["WEB-other"],
+        }
+    ]
+    assert (
+        "web_evidence: web evidence artifact source IDs do not match manifest: "
+        "runs/manifests/RUN-web.json web_source_artifact -> web_sources"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_mock_web_evidence_artifacts(
     tmp_path,
 ) -> None:
@@ -3146,6 +3213,7 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     assert production["web_evidence"]["checked_artifact_count"] == 1
     assert production["web_evidence"]["checked_artifact_record_count"] == 1
     assert production["web_evidence"]["empty_artifact_count"] == 0
+    assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 0
     assert production["web_evidence"]["missing_artifact_hash_count"] == 0
     assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 0
     assert production["web_evidence"]["mock_web_artifact_count"] == 0
