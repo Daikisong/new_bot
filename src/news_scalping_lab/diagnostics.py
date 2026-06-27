@@ -1045,6 +1045,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
     artifact_paths: set[Path] = set()
     unreadable_manifests: list[str] = []
+    invalid_manifest_schemas: list[dict[str, Any]] = []
     invalid_artifact_refs: list[dict[str, Any]] = []
     missing_artifacts: list[dict[str, Any]] = []
     missing_artifact_hashes: list[dict[str, Any]] = []
@@ -1057,6 +1058,14 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         except ValueError:
             unreadable_manifests.append(manifest_relative_path)
             continue
+        if manifest.get("schema_version") != "nslab.context_manifest.v1":
+            invalid_manifest_schemas.append(
+                {
+                    "path": manifest_relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "schema_version": manifest.get("schema_version"),
+                }
+            )
         for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS:
             artifact_ref = manifest.get(field)
             if not isinstance(artifact_ref, str) or not artifact_ref:
@@ -1135,6 +1144,11 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         findings.append("production web evidence artifact reference is missing")
     for path in unreadable_manifests:
         findings.append(f"context manifest is unreadable: {path}")
+    for manifest in invalid_manifest_schemas:
+        findings.append(
+            f"context manifest schema_version is invalid in {manifest['path']}: "
+            f"{manifest['schema_version']}"
+        )
     for ref in invalid_artifact_refs:
         findings.append(
             "web evidence artifact reference is invalid: "
@@ -1182,6 +1196,8 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "checked_artifact_count": len(artifact_paths),
         "unreadable_manifest_count": len(unreadable_manifests),
         "unreadable_manifests": unreadable_manifests,
+        "invalid_manifest_schema_count": len(invalid_manifest_schemas),
+        "invalid_manifest_schemas": invalid_manifest_schemas,
         "invalid_artifact_ref_count": len(invalid_artifact_refs),
         "invalid_artifact_refs": invalid_artifact_refs,
         "missing_artifact_count": len(missing_artifacts),
