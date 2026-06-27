@@ -9662,6 +9662,21 @@ def test_lookahead_audit_checks_session_pack_record_scope_and_files(
     assert clean["passed"], clean["findings"]
 
     (pack_dir / "record_memory_cases.md").write_text(
+        "## REC-session-pack-available\n"
+        "- Available from: 2030-01-10T09:30:00+09:00\n",
+        encoding="utf-8",
+    )
+    write_json(pack_dir / "manifest.json", {**clean_manifest, **pack_manifest_fields()})
+
+    failed_timestamp = audit_lookahead(tmp_path)
+
+    assert not failed_timestamp["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: record_memory_cases.md contains "
+        "future available_from for REC-session-pack-available"
+    ) in failed_timestamp["findings"]
+
+    (pack_dir / "record_memory_cases.md").write_text(
         "REC-session-pack-available\nREC-session-pack-future\n",
         encoding="utf-8",
     )

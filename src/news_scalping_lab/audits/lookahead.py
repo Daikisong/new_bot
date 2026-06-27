@@ -126,6 +126,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             accepted_record_metadata,
             findings,
         )
+        _check_session_pack_record_memory_available_from(
+            root,
+            path,
+            manifest_name,
+            manifest_cutoff_at,
+            findings,
+        )
         _check_session_pack_temporal_memory_refs(
             root,
             manifest_name,
@@ -863,6 +870,43 @@ def _check_session_pack_files_for_future_record_ids(
                     f"{manifest_name}: session pack file contains future record "
                     f"{record_id}: {file_name}"
                 )
+
+
+def _check_session_pack_record_memory_available_from(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest_cutoff_at: datetime | None,
+    findings: list[str],
+) -> None:
+    if manifest_path.parent.parent != root / "session_packs" or manifest_cutoff_at is None:
+        return
+    path = manifest_path.parent / "record_memory_cases.md"
+    if not path.is_file():
+        return
+    current_record_id: str | None = None
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current_record_id = stripped.removeprefix("## ").strip() or None
+            continue
+        if not stripped.startswith("- Available from:"):
+            continue
+        raw_value = stripped.removeprefix("- Available from:").strip()
+        label = current_record_id or f"line {line_number}"
+        try:
+            available_from = parse_datetime(raw_value)
+        except ValueError:
+            findings.append(
+                f"{manifest_name}: record_memory_cases.md invalid available_from "
+                f"for {label}"
+            )
+            continue
+        if not is_available_as_of(available_from, manifest_cutoff_at):
+            findings.append(
+                f"{manifest_name}: record_memory_cases.md contains future "
+                f"available_from for {label}"
+            )
 
 
 def _check_session_pack_temporal_memory_refs(
