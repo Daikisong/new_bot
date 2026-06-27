@@ -568,6 +568,13 @@ def research_inspect_bundle(path: Path) -> None:
                 "import_loss_audit_passed"
             ),
             "dropped_record_count": inspection.get("dropped_record_count"),
+            "quarantined_bundle_count": inspection.get("quarantined_bundle_count"),
+            "quarantined_raw_record_count": inspection.get(
+                "quarantined_raw_record_count"
+            ),
+            "normalization_skipped_reason": inspection.get(
+                "normalization_skipped_reason"
+            ),
             "quarantined_record_count": inspection.get("quarantined_record_count"),
             "record_counts_by_type": inspection.get("record_counts_by_type"),
             "validation_passed": inspection.get("validation_passed"),

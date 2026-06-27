@@ -512,6 +512,14 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     validation = effective_adapter.validate(parsed) if effective_adapter is not None else {}
     raw_record_count = len(parsed.jsonl_blocks.get("brain_delta.jsonl", []))
     normalized_record_count = len(records)
+    record_count_payload = (
+        _unsupported_bundle_record_payload(parsed)
+        if effective_adapter is None
+        else _record_count_parity_payload(
+            raw_record_count=raw_record_count,
+            normalized_record_count=normalized_record_count,
+        )
+    )
     import_loss_summary = _import_loss_summary(parsed, records)
     hash_mismatches = validation.get("hash_mismatches")
     hash_conflicts = validation.get("hash_expectation_conflicts")
@@ -536,16 +544,11 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "block_count": len(parsed.blocks),
         "blocks": sorted(parsed.blocks),
         "record_count": len(records),
-        "raw_record_count": raw_record_count,
-        "normalized_record_count": normalized_record_count,
-        "raw_normalized_record_count_matches": (
-            raw_record_count == normalized_record_count
-        ),
+        **record_count_payload,
         "training_eligible_record_count": sum(
             1 for record in records if record.training_eligible
         ),
         **import_loss_summary,
-        "dropped_record_count": max(0, raw_record_count - normalized_record_count),
         "quarantined_record_count": 0,
         "record_counts_by_type": dict(
             sorted(Counter(record.record_type for record in records).items())
@@ -585,7 +588,13 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             else 0
         ),
         "inspection_status": (
-            "validation_passed" if validation.get("passed") is True else "validation_failed"
+            "unsupported_bundle_version"
+            if effective_adapter is None
+            else (
+                "validation_passed"
+                if validation.get("passed") is True
+                else "validation_failed"
+            )
         ),
         "validation": validation,
     }

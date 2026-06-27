@@ -263,6 +263,9 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
         "raw_normalized_record_count_matches": True,
         "training_eligible_record_count": 325,
         "dropped_record_count": 0,
+        "quarantined_bundle_count": 0,
+        "quarantined_raw_record_count": 0,
+        "normalization_skipped_reason": None,
         "missing_normalized_record_count": 0,
         "extra_normalized_record_count": 0,
         "quarantined_record_count": 0,
@@ -304,6 +307,9 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert report["normalized_record_count"] == 327
     assert report["raw_normalized_record_count_matches"] is True
     assert report["dropped_record_count"] == 0
+    assert report["quarantined_bundle_count"] == 0
+    assert report["quarantined_raw_record_count"] == 0
+    assert report["normalization_skipped_reason"] is None
     assert report["missing_normalized_record_count"] == 0
     assert report["extra_normalized_record_count"] == 0
     assert report["hash_mismatch_count"] == 16

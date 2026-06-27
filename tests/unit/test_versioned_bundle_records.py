@@ -2198,6 +2198,7 @@ def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
 
     assert inspection["supported"] is False
     assert inspection["forward_compatible_raw_only"] is False
+    assert inspection["inspection_status"] == "unsupported_bundle_version"
     assert result.status == "UNSUPPORTED_BUNDLE_VERSION"
     assert result.record_count == 0
     assert result.training_eligible_record_count == 0
@@ -2234,6 +2235,14 @@ def test_opaque_unknown_bundle_with_raw_records_reports_quarantined_records(
 
     assert inspection["supported"] is False
     assert inspection["forward_compatible_raw_only"] is False
+    assert inspection["inspection_status"] == "unsupported_bundle_version"
+    assert inspection["raw_record_count"] == 1
+    assert inspection["normalized_record_count"] == 0
+    assert inspection["raw_normalized_record_count_matches"] is False
+    assert inspection["dropped_record_count"] == 0
+    assert inspection["quarantined_bundle_count"] == 1
+    assert inspection["quarantined_raw_record_count"] == 1
+    assert inspection["normalization_skipped_reason"] == "UNSUPPORTED_BUNDLE_VERSION"
     assert result.status == "UNSUPPORTED_BUNDLE_VERSION"
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "UNSUPPORTED_BUNDLE_VERSION"
