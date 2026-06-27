@@ -1475,6 +1475,9 @@ def _real_bundle_import_status(
     record_file_stats = _record_file_stats(record_path)
     validation_raw_record_ids: list[str] = []
     validation_normalized_record_ids: list[str] = []
+    validation_raw_normalized_record_count_matches: object = None
+    validation_missing_normalized_record_count: int | None = None
+    validation_extra_normalized_record_count: int | None = None
     validation_missing_normalized_record_ids: list[str] = []
     validation_extra_normalized_record_ids: list[str] = []
     validation_raw_payload_hash_mismatch_record_ids: list[str] = []
@@ -1534,12 +1537,37 @@ def _real_bundle_import_status(
         validation_normalized_record_ids = _string_list(
             validation_report.get("normalized_record_ids")
         )
+        validation_raw_normalized_record_count_matches = validation_report.get(
+            "raw_normalized_record_count_matches"
+        )
         validation_missing_normalized_record_ids = _string_list(
             validation_report.get("missing_normalized_record_ids")
         )
+        validation_missing_normalized_record_count = _int_from_mapping(
+            validation_report,
+            "missing_normalized_record_count",
+        )
+        if (
+            validation_missing_normalized_record_count is None
+            and validation_missing_normalized_record_ids
+        ):
+            validation_missing_normalized_record_count = len(
+                validation_missing_normalized_record_ids
+            )
         validation_extra_normalized_record_ids = _string_list(
             validation_report.get("extra_normalized_record_ids")
         )
+        validation_extra_normalized_record_count = _int_from_mapping(
+            validation_report,
+            "extra_normalized_record_count",
+        )
+        if (
+            validation_extra_normalized_record_count is None
+            and validation_extra_normalized_record_ids
+        ):
+            validation_extra_normalized_record_count = len(
+                validation_extra_normalized_record_ids
+            )
         validation_raw_payload_hash_mismatch_record_ids = _string_list(
             validation_report.get("raw_payload_hash_mismatch_record_ids")
         )
@@ -1557,6 +1585,13 @@ def _real_bundle_import_status(
             )
         if validation_report.get("record_id_set_matches_raw") is not True:
             findings.append("validation report raw record ID parity failed")
+        if (
+            validation_raw_normalized_record_count_matches is not None
+            and validation_raw_normalized_record_count_matches is not True
+        ):
+            findings.append(
+                "validation report raw/normalized record count parity failed"
+            )
         if validation_report.get("record_type_counts_match_raw") is not True:
             findings.append("validation report raw record type parity failed")
         if validation_report.get("training_eligible_count_matches_raw") is not True:
@@ -1579,9 +1614,15 @@ def _real_bundle_import_status(
             findings.append(
                 "validation report normalized record IDs do not match real smoke"
             )
-        if validation_missing_normalized_record_ids:
+        if validation_missing_normalized_record_ids or (
+            validation_missing_normalized_record_count is not None
+            and validation_missing_normalized_record_count != 0
+        ):
             findings.append("validation report has missing normalized record IDs")
-        if validation_extra_normalized_record_ids:
+        if validation_extra_normalized_record_ids or (
+            validation_extra_normalized_record_count is not None
+            and validation_extra_normalized_record_count != 0
+        ):
             findings.append("validation report has extra normalized record IDs")
         if validation_raw_payload_hash_mismatch_record_ids:
             findings.append("validation report has raw payload hash mismatches")
@@ -1716,6 +1757,15 @@ def _real_bundle_import_status(
         )
         if validation_normalized_record_ids
         else None,
+        "validation_report_raw_normalized_record_count_matches": (
+            validation_raw_normalized_record_count_matches
+        ),
+        "validation_report_missing_normalized_record_count": (
+            validation_missing_normalized_record_count
+        ),
+        "validation_report_extra_normalized_record_count": (
+            validation_extra_normalized_record_count
+        ),
         "validation_report_missing_normalized_record_ids": (
             validation_missing_normalized_record_ids or None
         ),

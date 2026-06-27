@@ -2400,6 +2400,24 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert production["real_bundle_import"]["observed_record_count"] == 327
     assert production["real_bundle_import"]["expected_record_id_count"] == 327
     assert production["real_bundle_import"]["expected_record_ids"] == record_ids
+    assert (
+        production["real_bundle_import"][
+            "validation_report_raw_normalized_record_count_matches"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"][
+            "validation_report_missing_normalized_record_count"
+        ]
+        == 0
+    )
+    assert (
+        production["real_bundle_import"][
+            "validation_report_extra_normalized_record_count"
+        ]
+        == 0
+    )
     assert production["real_bundle_import"][
         "observed_training_eligible_record_count"
     ] == 325
@@ -2459,6 +2477,7 @@ def test_production_readiness_rejects_failed_real_import_validation_report(
             "passed": False,
             "import_loss_audit_passed": False,
             "record_id_set_matches_raw": False,
+            "raw_normalized_record_count_matches": False,
         },
     )
     write_json(
@@ -2495,11 +2514,21 @@ def test_production_readiness_rejects_failed_real_import_validation_report(
         is False
     )
     assert (
+        production["real_bundle_import"][
+            "validation_report_raw_normalized_record_count_matches"
+        ]
+        is False
+    )
+    assert (
         "real_bundle_import: validation report import loss audit did not pass"
         in production["findings"]
     )
     assert (
         "real_bundle_import: validation report raw record ID parity failed"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: validation report raw/normalized record count parity failed"
         in production["findings"]
     )
 
@@ -2555,7 +2584,9 @@ def test_production_readiness_rejects_real_import_validation_report_id_gap(
         overrides={
             "normalized_record_ids": [*record_ids[:-1], wrong_record_id],
             "missing_normalized_record_ids": [missing_record_id],
+            "missing_normalized_record_count": 1,
             "extra_normalized_record_ids": [wrong_record_id],
+            "extra_normalized_record_count": 1,
             "raw_payload_hash_mismatch_record_ids": [record_ids[0]],
         },
     )
@@ -2590,6 +2621,18 @@ def test_production_readiness_rejects_real_import_validation_report_id_gap(
     assert (
         production["real_bundle_import"]["validation_report_normalized_record_id_count"]
         == 327
+    )
+    assert (
+        production["real_bundle_import"][
+            "validation_report_missing_normalized_record_count"
+        ]
+        == 1
+    )
+    assert (
+        production["real_bundle_import"][
+            "validation_report_extra_normalized_record_count"
+        ]
+        == 1
     )
     assert production["real_bundle_import"][
         "validation_report_missing_normalized_record_ids"
@@ -3321,11 +3364,14 @@ def _write_real_smoke_validation_report(
         "record_type_counts_match_raw": True,
         "training_eligible_count_matches_raw": True,
         "raw_payload_hashes_match": True,
+        "raw_normalized_record_count_matches": True,
         "raw_record_counts_by_type": inspection["record_counts_by_type"],
         "raw_record_ids": record_ids,
         "normalized_record_ids": record_ids,
         "missing_normalized_record_ids": [],
+        "missing_normalized_record_count": 0,
         "extra_normalized_record_ids": [],
+        "extra_normalized_record_count": 0,
         "raw_payload_hash_mismatch_record_ids": [],
     }
     if overrides:
@@ -3403,8 +3449,11 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "trade_date": "2026-06-22",
         "raw_record_count": 327,
         "normalized_record_count": 327,
+        "raw_normalized_record_count_matches": True,
         "training_eligible_record_count": 325,
         "dropped_record_count": 0,
+        "missing_normalized_record_count": 0,
+        "extra_normalized_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": record_counts_by_type,
         "raw_record_ids": record_ids,
