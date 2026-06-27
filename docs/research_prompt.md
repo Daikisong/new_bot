@@ -271,6 +271,75 @@ material_reviewed_count
 material_review_unreviewed_count == 0
 ```
 
+`material_reviewed`는 queue membership을 그대로 복사한 boolean이 아니다. 각 material row는 실제 검토 record를 가져야 한다.
+
+필수 per-row 증거:
+
+```text
+review_decision
+exact_quote
+quote_found_in_source_row
+issuer_binding 또는 rejection_reason
+local_predicate_owner 또는 why_no_local_predicate_owner
+```
+
+필수 anti-fake equality:
+
+```text
+material_review_auto_boolean_count == 0
+material_review_missing_decision_count == 0
+material_review_missing_quote_count == 0
+material_review_missing_binding_or_rejection_count == 0
+```
+
+### 5.4 provisional_hypothesis.jsonl — BLIND 중간 가설 흡수
+
+CSV를 전수로 읽는 동안 특정 종목, 테마, continuation 가능성이 떠오르는 것은 정상이다. 다만 그 생각은 final 후보나 rank가 아니라 `provisional_hypothesis.jsonl`에만 기록한다.
+
+목적:
+
+```text
+읽으면서 생긴 BLIND intuition을 버리지 않는다.
+하지만 intuition이 row population, material review, candidate_screening을 대체하지 못하게 한다.
+```
+
+최소 필드:
+
+```json
+{
+  "hypothesis_id": "HYP-...",
+  "created_after_source_rows_seen_count": 0,
+  "trigger_source_ids": [],
+  "trigger_material_review_ids": [],
+  "hypothesis_type": "DIRECT_ISSUER | THEME | CONTINUATION | MARKET_STATE | ARCHETYPE",
+  "candidate_company_or_archetype": "",
+  "ticker_or_null": null,
+  "reasoning_blind_only": "",
+  "allowed_use": "NAVIGATION_AND_COMPARISON_ONLY",
+  "promotion_status": "UNRESOLVED | PROMOTED_TO_SCREENING | REJECTED_AFTER_REVIEW",
+  "promoted_screening_id_or_null": null,
+  "rejected_reason_or_null": null,
+  "source_phase": "BLIND"
+}
+```
+
+금지:
+
+```text
+provisional_hypothesis에 rank, final_rank, proposed_final_rank, score, final_order, selected_order 필드 넣기
+provisional_hypothesis를 final_watchlist 또는 candidate_screening의 정렬키로 사용
+가설에 나온 회사·ticker만 남기고 나머지 material row 검토를 생략
+P snapshot high_return/amount/turnover만으로 hypothesis를 final 후보처럼 승격
+```
+
+필수 equality:
+
+```text
+provisional_hypothesis_with_rank_field_count == 0
+provisional_hypothesis_used_as_final_count == 0
+hypothesis_driven_row_filter_count == 0
+```
+
 ---
 
 ## 6. PHASE 2 — BLIND 뉴스 연구 작업대
@@ -388,6 +457,49 @@ unscreened_material_observation_count == 0
 candidate_screening_final_only_mode == false
 ```
 
+`candidate_screening.jsonl`은 final rank를 숨겨 둔 seed table이 아니다. 여기에는 observation의 승격·강등·보류 사유만 기록한다.
+
+금지 필드:
+
+```text
+rank
+final_rank
+proposed_final_rank
+watchlist_rank
+final_order
+selected_order
+preseed_rank
+```
+
+금지 패턴:
+
+```text
+curated = [...] 또는 selected_codes = [...] 같은 predeclared final list를 먼저 만들고 candidate_screening을 채우기
+final_codes_order를 BLIND 산출물에 저장하기
+candidate_screening을 다시 열었다는 이유만으로 preseed rank를 정렬키로 쓰기
+keyword hit list, P snapshot leader list, manually selected ticker list를 candidate universe로 사용하기
+```
+
+provisional_hypothesis에서 승격되는 경우에도 반드시 다음을 만족해야 한다.
+
+```text
+promotion_from_hypothesis_id가 존재
+source_observation_ids가 존재
+source_fact_ids 또는 no_fact_rejection_reason이 존재
+candidate_screening row가 material_review record와 연결
+승격되지 않은 가설은 REJECTED_AFTER_REVIEW 또는 UNRESOLVED로 남김
+```
+
+필수 anti-reward-hack equality:
+
+```text
+predeclared_final_candidate_list_count == 0
+candidate_screening_rank_field_count == 0
+candidate_screening_preseed_rank_count == 0
+candidate_screening_unlinked_to_material_review_count == 0
+provisional_hypothesis_promoted_without_screening_count == 0
+```
+
 후보를 지우지 않는다. 틀릴 가능성이 큰 후보도 `WATCH_SECONDARY`, `EXCLUDE`, `AUDIT_ONLY`, `negative_control_source`로 남긴다.
 
 ---
@@ -396,6 +508,40 @@ candidate_screening_final_only_mode == false
 
 final_watchlist는 candidate population이 닫힌 뒤에만 만든다.
 
+final_watchlist는 저장된 `candidate_screening.jsonl`을 다시 열어 parse한 뒤 새로 작성한다. 단, `candidate_screening` 내부의 preseed rank나 hidden order를 사용하면 무효다.
+
+필수 ranking 산출물:
+
+```text
+candidate_ranking_audit.jsonl
+```
+
+각 ranking audit row는 다음을 기록한다.
+
+```text
+candidate_id
+source_screening_id
+included_in_final
+rank_if_final_or_null
+ranking_inputs
+primary_fact_strength
+novelty_assessment
+issuer_binding_quality
+safe_D1_context_used
+pairwise_comparison_refs
+rank_reason
+why_not_final_if_excluded
+```
+
+금지:
+
+```text
+final_codes_order 필드 작성
+candidate_screening.proposed_final_rank 정렬
+curated/manual/preselected ticker list 순서 유지
+P snapshot high_return/amount/turnover rank만으로 final 승격
+```
+
 필수:
 
 ```text
@@ -403,6 +549,9 @@ final_watchlist_count <= 20
 rank == 1..N continuous
 duplicate_ticker_count == 0 unless preferred share/common share explicitly separated
 filler_candidate_count == 0
+final_watchlist_from_preseed_rank_count == 0
+final_codes_order_present == false
+final_watchlist_from_reparsed_candidate_screening_without_preseed == true
 ```
 
 각 final item은 다음을 가져야 한다.
@@ -800,8 +949,23 @@ jsonl_parse_error_count == 0
 source_ledger_news_row_count == csv_row_count
 row_disposition_count == csv_row_count
 material_review_unreviewed_count == 0
+material_review_auto_boolean_count == 0
+material_review_missing_decision_count == 0
+material_review_missing_quote_count == 0
+material_review_missing_binding_or_rejection_count == 0
 candidate_screening_material_coverage_count >= material_observation_count
+predeclared_final_candidate_list_count == 0
+candidate_screening_rank_field_count == 0
+candidate_screening_preseed_rank_count == 0
+candidate_screening_unlinked_to_material_review_count == 0
+provisional_hypothesis_with_rank_field_count == 0
+provisional_hypothesis_used_as_final_count == 0
+provisional_hypothesis_promoted_without_screening_count == 0
+hypothesis_driven_row_filter_count == 0
 final_watchlist_count <= 20
+final_watchlist_from_preseed_rank_count == 0
+final_codes_order_present == false
+final_watchlist_from_reparsed_candidate_screening_without_preseed == true
 final_evidence_witness_row_count == final_watchlist_count
 preseal_outcome_access_all_zero == true
 outcome_access_after_blind_seal == true
@@ -841,7 +1005,14 @@ accept_full_allowed = (
     and source_ledger_news_row_count == csv_row_count
     and row_disposition_count == csv_row_count
     and material_review_unreviewed_count == 0
+    and material_review_auto_boolean_count == 0
     and candidate_population_closed_before_final
+    and predeclared_final_candidate_list_count == 0
+    and candidate_screening_rank_field_count == 0
+    and candidate_screening_preseed_rank_count == 0
+    and final_watchlist_from_preseed_rank_count == 0
+    and final_codes_order_present == false
+    and final_watchlist_from_reparsed_candidate_screening_without_preseed
     and final_semantic_witness_all_passed
     and blind_packet_sealed_before_outcome
     and preseal_outcome_access_count == 0
@@ -875,11 +1046,15 @@ attempt_history.jsonl
 repair_log.jsonl
 source_ledger.jsonl
 row_disposition.jsonl
+material_review_queue.jsonl
+material_review.jsonl
+provisional_hypothesis.jsonl
 entity_resolution.jsonl
 entity_ledger_blind.jsonl
 fact_ledger_blind.jsonl
 inference_ledger_blind.jsonl
 candidate_screening.jsonl
+candidate_ranking_audit.jsonl
 candidate_semantic_witness.jsonl
 blind_prediction.json
 final_evidence_witness.jsonl
@@ -901,6 +1076,7 @@ validation_report.json
 phase_audit_report.json
 direct_ingest_contract.json
 bundle_manifest.json
+anti_reward_hack_audit.json
 ```
 
 marker 형식:
@@ -926,6 +1102,27 @@ Python parse는 row/source/outcome population을 만들기 위한 도구다. 이
 ### 19.3 “candidate 20개만 빨리 작성” 차단
 
 final_watchlist가 candidate_screening보다 먼저 생성되면 무효다. candidate_screening은 accepted와 rejected를 모두 포함해야 한다.
+
+다음은 final_watchlist가 뒤에 생성된 것처럼 보여도 무효다.
+
+```text
+curated = [...] 에 rank/code/company/source_id를 미리 넣고 candidate_screening을 생성
+selected_codes, top_codes, final_codes_order, manual_ticker_list를 먼저 만든 뒤 evidence를 붙임
+candidate_screening.proposed_final_rank를 저장한 뒤 그 순서로 final_watchlist 작성
+P snapshot high_return/amount leaders를 먼저 뽑고 관련 뉴스만 찾아 final 후보화
+keyword 검색 결과만 material universe로 축소
+material_reviewed = material_review_queue_member 같은 자동 boolean으로 전수 검토를 가장
+```
+
+정상 패턴:
+
+```text
+읽다가 떠오른 생각은 provisional_hypothesis.jsonl에 기록
+모든 material row review가 닫힌 뒤 candidate_screening 생성
+candidate_screening에는 final rank를 저장하지 않음
+final_watchlist는 candidate_ranking_audit.jsonl을 통해 새로 산출
+validator는 anti_reward_hack_audit.json에서 위 금지 패턴 count가 모두 0인지 final Markdown reparse로 확인
+```
 
 ### 19.4 “outcome_to_news에 scorecard 섞기” 차단
 
