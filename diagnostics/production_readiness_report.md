@@ -275,6 +275,9 @@
 - schema_version: `nslab.production_llm_full_brain.v1`
 - build_mode: `catalog`
 - catalog_only: `True`
+- catalog_mode_reason: `explicit_catalog_mode`
+- deprecated_mode_alias: `False`
+- production_eligible: `False`
 - current_brain_version: `brain-364486c68b`
 - expected_source_record_count: `169`
 - applicable: `False`

@@ -2,10 +2,8 @@
 
 - accepted_episode_count: `2`
 - brain_version: `brain-364486c68b`
-- catalog_only: `True`
 - catalog_mode_reason: `explicit_catalog_mode`
-- deprecated_mode_alias: `False`
-- production_eligible: `False`
+- catalog_only: `True`
 ## category_claim_counts
 
 - beneficiary_discovery: `0`
@@ -75,6 +73,7 @@
 - compiler_provider: `deterministic_catalog`
 - compiler_version: `nslab.brain.catalog.compiler.v5`
 - covered_episode_count: `2`
+- deprecated_mode_alias: `False`
 ## latest_brain_audit
 
 - deep: `True`
@@ -104,6 +103,7 @@
 - llm_compile_present: `False`
 - llm_compile_run: `None`
 - llm_compile_run_present: `False`
+- production_eligible: `False`
 ## record_coverage
 
 - accepted_record_count: `169`

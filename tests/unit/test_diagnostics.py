@@ -5638,6 +5638,67 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
 
 
+def test_production_readiness_rejects_llm_full_manifest_not_production_eligible(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {
+            "brain_version": "brain-production",
+            "build_mode": "llm-full",
+            "catalog_only": False,
+            "production_eligible": False,
+        },
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(current / "llm_compile_manifest.json", _llm_compile_manifest_v4_fixture())
+    compile_run = _llm_compile_run_v4_fixture()
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": compile_run,
+        },
+    )
+    _write_llm_compile_trace_evidence_fixture(tmp_path, compile_run)
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["passed"] is False
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["production_eligible"] is False
+    assert "current manifest is not production_eligible" in production["llm_full_brain"][
+        "findings"
+    ]
+    assert "brain: current manifest is not production_eligible" in production["findings"]
+
+
 def test_production_readiness_accepts_llm_full_v4_trace_evidence(
     tmp_path,
 ) -> None:

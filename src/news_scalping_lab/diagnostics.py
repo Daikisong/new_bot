@@ -5599,6 +5599,8 @@ def _llm_full_brain_status(
             "finding_count": len(findings),
             "findings": findings,
         }
+    if production_eligible is False:
+        findings.append("current manifest is not production_eligible")
     if compile_manifest is None:
         findings.append("llm-full compile manifest is missing")
     else:
