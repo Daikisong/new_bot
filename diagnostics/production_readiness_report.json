@@ -2101,6 +2101,16 @@
     "per_export_exported_record_count": 3,
     "per_export_skipped_record_count": 9,
     "record_store_source_record_count": 4,
+    "record_store_source_record_ids": [
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR",
+      "EP-2991eb145f59:legacy_catalog_record",
+      "EP-f56c790fe2fc:legacy_catalog_record"
+    ],
+    "record_store_training_eligible_record_ids": [
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR"
+    ],
     "schema_version": "nslab.production_training_exports.v1",
     "source_phase_counts": {
       "POSTMORTEM": 3
@@ -2119,7 +2129,17 @@
       "EP-f56c790fe2fc:legacy_catalog_record"
     ],
     "unique_source_record_count": 4,
+    "unique_source_record_ids": [
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR",
+      "EP-2991eb145f59:legacy_catalog_record",
+      "EP-f56c790fe2fc:legacy_catalog_record"
+    ],
     "unique_training_eligible_record_count": 2,
+    "unique_training_eligible_record_ids": [
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR"
+    ],
     "weight_validation_statuses": {
       "evals": "passed",
       "preference": "passed",

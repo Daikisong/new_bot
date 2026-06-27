@@ -2754,7 +2754,7 @@ def _valid_semantic_index_vector_payload(
 def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     root = settings.project_root
     try:
-        source_record_count = len(BrainRecordStore(root).list_records())
+        source_records = BrainRecordStore(root).list_records()
     except (OSError, ValueError) as exc:
         finding = (
             "training export source record store is unreadable: "
@@ -2774,6 +2774,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_count": None,
             "unique_exported_record_count": None,
             "unique_skipped_record_count": None,
+            "record_store_source_record_ids": [],
+            "record_store_training_eligible_record_ids": [],
+            "unique_source_record_ids": [],
+            "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
             "blind_safe_row_count": None,
@@ -2784,6 +2788,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
         }
+    source_record_ids = sorted(record.record_id for record in source_records)
+    training_eligible_record_ids = sorted(
+        record.record_id for record in source_records if record.training_eligible
+    )
+    source_record_count = len(source_record_ids)
     if source_record_count == 0:
         return {
             "schema_version": "nslab.production_training_exports.v1",
@@ -2799,6 +2808,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_count": 0,
             "unique_exported_record_count": 0,
             "unique_skipped_record_count": 0,
+            "record_store_source_record_ids": [],
+            "record_store_training_eligible_record_ids": [],
+            "unique_source_record_ids": [],
+            "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
             "blind_safe_row_count": 0,
@@ -2872,6 +2885,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "unique_skipped_record_count",
     )
+    unique_source_ids = _string_list(
+        diagnostics.get("unique_source_record_ids")
+    )
+    unique_training_eligible_ids = _string_list(
+        diagnostics.get("unique_training_eligible_record_ids")
+    )
     unique_exported_ids = _string_list(
         diagnostics.get("unique_exported_record_ids")
     )
@@ -2894,6 +2913,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(
             "training export unique source record count does not match current records"
         )
+    if set(unique_source_ids) != set(source_record_ids):
+        findings.append(
+            "training export unique source record IDs do not match current records"
+        )
+    if set(unique_training_eligible_ids) != set(training_eligible_record_ids):
+        findings.append(
+            "training export unique training-eligible record IDs do not match "
+            "current records"
+        )
     if source_record_hash_count != source_record_count:
         findings.append(
             "training export source record hash count does not match current records"
@@ -2911,6 +2939,23 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             findings.append(
                 "training export unique source IDs do not match exported and skipped IDs"
             )
+    if (
+        unique_source_record_count is not None
+        and unique_source_record_count != len(unique_source_ids)
+    ):
+        findings.append("training export unique source record ID count mismatch")
+    if (
+        unique_training_eligible_count is not None
+        and unique_training_eligible_count != len(unique_training_eligible_ids)
+    ):
+        findings.append(
+            "training export unique training-eligible record ID count mismatch"
+        )
+    if set(unique_training_eligible_ids) - set(unique_source_ids):
+        findings.append(
+            "training export training-eligible record IDs are not a subset of "
+            "source record IDs"
+        )
     if unique_exported_count is not None and unique_exported_count != len(unique_exported_ids):
         findings.append("training export unique exported record ID count mismatch")
     if unique_skipped_count is not None and unique_skipped_count != len(unique_skipped_ids):
@@ -2985,6 +3030,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_count": unique_training_eligible_count,
         "unique_exported_record_count": unique_exported_count,
         "unique_skipped_record_count": unique_skipped_count,
+        "record_store_source_record_ids": source_record_ids,
+        "record_store_training_eligible_record_ids": training_eligible_record_ids,
+        "unique_source_record_ids": unique_source_ids,
+        "unique_training_eligible_record_ids": unique_training_eligible_ids,
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
         "source_record_hash_count": source_record_hash_count,

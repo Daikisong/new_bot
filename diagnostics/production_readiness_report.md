@@ -517,6 +517,10 @@
 - unique_training_eligible_record_count: `2`
 - unique_exported_record_count: `2`
 - unique_skipped_record_count: `2`
+- record_store_source_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR', 'EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
+- record_store_training_eligible_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
+- unique_source_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR', 'EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
+- unique_training_eligible_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
 - unique_exported_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
 - unique_skipped_record_ids: `['EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
 - source_record_hash_count: `4`

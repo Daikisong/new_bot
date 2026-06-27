@@ -1877,6 +1877,24 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["unique_training_eligible_record_count"] == 2
     assert production["training_exports"]["unique_exported_record_count"] == 2
     assert production["training_exports"]["unique_skipped_record_count"] == 0
+    assert production["training_exports"]["record_store_source_record_ids"] == [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-PAIR",
+    ]
+    assert production["training_exports"][
+        "record_store_training_eligible_record_ids"
+    ] == [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-PAIR",
+    ]
+    assert production["training_exports"]["unique_source_record_ids"] == [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-PAIR",
+    ]
+    assert production["training_exports"]["unique_training_eligible_record_ids"] == [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-PAIR",
+    ]
     assert production["training_exports"]["unique_exported_record_ids"] == [
         "BRAIN-TRAIN-ISSUER",
         "BRAIN-TRAIN-PAIR",
@@ -1916,6 +1934,54 @@ def test_production_readiness_accepts_record_backed_training_exports(
     }
     assert not any(
         finding.startswith("training:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_training_export_unique_record_id_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["unique_source_record_ids"] = [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-BOGUS",
+    ]
+    tampered_report["unique_training_eligible_record_ids"] = [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-BOGUS",
+    ]
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert (
+        "training export unique source record IDs do not match current records"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export unique training-eligible record IDs do not match current records"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export unique source record IDs do not match current records"
+        in production["findings"]
     )
 
 
