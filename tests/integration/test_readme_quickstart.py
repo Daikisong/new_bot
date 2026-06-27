@@ -23,6 +23,7 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
         "python -m news_scalping_lab.cli brain rebuild --mode catalog --allow-catalog",
         "python -m news_scalping_lab.cli brain audit",
         "python -m news_scalping_lab.cli warehouse rebuild",
+        "python -m news_scalping_lab.cli warehouse verify",
         (
             "python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv "
             "--trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 "
@@ -65,6 +66,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     )
     brain_audit = RUNNER.invoke(app, ["brain", "audit"])
     warehouse = RUNNER.invoke(app, ["warehouse", "rebuild"])
+    warehouse_verify = RUNNER.invoke(app, ["warehouse", "verify"])
     analyzed = RUNNER.invoke(
         app,
         [
@@ -87,6 +89,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert rebuilt.exit_code == 0, rebuilt.output
     assert brain_audit.exit_code == 0, brain_audit.output
     assert warehouse.exit_code == 0, warehouse.output
+    assert warehouse_verify.exit_code == 0, warehouse_verify.output
     assert analyzed.exit_code == 0, analyzed.output
 
     doctor_payload = json.loads(doctor.output)
@@ -110,6 +113,10 @@ def test_readme_quick_start_commands_produce_demo_outputs(
 
     warehouse_counts = json.loads(warehouse.output)
     assert "research_episodes" in warehouse_counts
+    warehouse_verify_payload = json.loads(warehouse_verify.output)
+    assert warehouse_verify_payload["passed"] is True
+    assert warehouse_verify_payload["warehouse_synced"] is True
+    assert warehouse_verify_payload["warehouse_projection_synced"] is True
     analysis = json.loads(analyzed.output)
     run_id = analysis["run_id"]
 
