@@ -4,9 +4,499 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v26_import_shape_marker_phase_receipt_lock
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행과 importer가 읽을 수 있는 gold-shape 구조다. v26은 v25의 acquisition fast path와 v24 outcome air-gap을 유지하면서, 20241101류 구조 회귀를 막기 위해 research_report.md/postmortem_report.md marker block, blind_seal_receipt.json 독립 block, final phase_state, marker inventory, validation_report object checks, direct_ingest_contract structural gates를 ACCEPT_FULL 필수 조건으로 추가한다. 예측 성과가 낮은 것은 실패가 아니며 brain_delta 학습 레코드로 남긴다. 그러나 required marker block 누락, phase_state가 PHASE_2에 머무는 상태, seal receipt 없는 postseal outcome access, validator의 구조 누락 미검출은 예측 성과와 무관하게 ACCEPT_FULL 금지다. 20260622와 20241204는 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v26은 v25, v24, v23, v22, v21의 기존 오염방지·ledger parity·outcome→news audit·brain_delta density·market_state override를 모두 유지한다.```
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v27_brain_delta_numeric_validator_lock
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행과 importer가 읽을 수 있는 gold-shape 구조다. v27은 v26의 marker·seal receipt·phase finalization, v25 acquisition fast path, v24 outcome air-gap, v23 zero contamination, v22 ledger parity/outcome→news audit, v21 brain_delta density/market_state override를 모두 유지한다. 추가로 20241028류 회귀를 막기 위해 brain_delta 밀도·record type parity·training eligible count를 boolean 선언이 아니라 final Markdown brain_delta.jsonl block 재파싱 기반의 숫자 actual/expected 비교로 검증한다. count gate에서 actual=true expected=true 같은 boolean proxy는 검증 실패이며, actual_brain_delta_record_count < expected_brain_delta_min이면 예측 성과와 무관하게 ACCEPT_FULL 금지다. 예측 성과가 낮은 것은 실패가 아니지만, brain_delta population 부족과 validator의 count 미검출은 direct brain import를 금지한다.```
 
+
+
+
+────────────────────────────────────────
+V27 BRAIN-DELTA NUMERIC VALIDATOR LOCK — count gate를 boolean으로 통과시키는 회귀 금지
+────────────────────────────────────────
+
+이 섹션은 `V26 IMPORT-SHAPE REGRESSION LOCK`, `V25 ACQUISITION FAST-PATH LOCK`, `V24 OUTCOME AIR-GAP LOCK`, `V23 ZERO-CONTAMINATION LOCK`, `V22 REGRESSION LOCK`, `V21 REGRESSION LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
+
+v27의 목적은 새 연구 규칙을 더 많이 만드는 것이 아니라, 이미 있는 brain_delta 밀도 규칙이 validator에서 `true/true` 같은 boolean proxy로 통과되는 구멍을 닫는 것이다. 예측 적중률은 hard gate가 아니다. 그러나 `ACCEPT_FULL + direct_brain_ingest_ready=true`를 선언하려면, brain_delta가 실제 record-level 모집단으로 충분히 생성되었고 그 수량을 validator가 최종 Markdown artifact에서 다시 계산했음을 숫자로 증명해야 한다.
+
+20241028류 회귀의 형태는 다음과 같다.
+
+```text
+phase 오염 없음
+required marker block 있음
+blind_seal_receipt 있음
+renderer/validator 분리처럼 보임
+validation_report에 brain_delta_density_verified: true가 있음
+하지만 실제 brain_delta_record_count가 expected_brain_delta_min보다 작음
+또는 validation_report가 숫자 비교 없이 boolean true만 적어 ACCEPT_FULL을 통과시킴
+```
+
+이런 산출물은 분석 내용이 좋아도 자동 import-ready가 아니다. 반드시 brain_delta population을 실제로 보강해 수리하거나, 수리 실패 시 `QUARANTINE_BRAIN_DELTA_UNDERFILLED`로 둔다.
+
+## V27.0 이 회귀의 정확한 문제
+
+문제는 `brain_delta`가 45개냐 100개냐 같은 임의 숫자 자체가 아니다. 문제는 validator가 아래 두 일을 하지 않은 것이다.
+
+```text
+1. expected_brain_delta_min을 canonical_graph / ledger_population_audit / outcome_to_news_audit에서 다시 계산하지 않음
+2. final Markdown 안의 brain_delta.jsonl block을 다시 parse해서 actual_brain_delta_record_count를 세지 않음
+```
+
+따라서 다음은 모두 금지다.
+
+```text
+"brain_delta_density_verified": true
+"brain_delta_expected_min_verified": true
+"brain_delta_type_count_parity_verified": true
+```
+
+위처럼 boolean만 있는 check는 검증이 아니다. count gate는 반드시 숫자 actual과 숫자 expected가 있어야 한다.
+
+## V27.1 count gate에서 boolean actual/expected 금지
+
+`validation_report.json`에서 다음 check_id는 **count-gate critical check**다.
+
+```text
+brain_delta_density_verified
+brain_delta_expected_min_verified
+brain_delta_type_count_parity_verified
+brain_delta_training_eligible_density_verified
+brain_delta_record_type_allowed_verified
+brain_delta_block_line_count_verified
+brain_delta_payload_hash_verified
+record_import_manifest_brain_delta_parity_verified
+direct_ingest_contract_brain_delta_mirror_verified
+```
+
+위 check들은 다음 형식을 반드시 따른다.
+
+```json
+{
+  "check_id": "brain_delta_density_verified",
+  "passed": true,
+  "actual": {
+    "brain_delta_record_count_from_final_block": 165,
+    "training_eligible_record_count_from_final_block": 148,
+    "counts_by_record_type_from_final_block": {
+      "supervised_issuer_day_case": 28,
+      "supervised_direct_event_case": 28,
+      "theme_formation_case": 7,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 8,
+      "ranking_error_case": 1,
+      "newsless_or_unexplained_case": 43,
+      "negative_control_case": 13
+    }
+  },
+  "expected": {
+    "expected_brain_delta_min": 165,
+    "expected_training_eligible_min": 1,
+    "expected_counts_by_record_type_min": {
+      "supervised_issuer_day_case": 28,
+      "supervised_direct_event_case": 28,
+      "theme_formation_case": 7,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 8,
+      "ranking_error_case": 1,
+      "newsless_or_unexplained_case": 43,
+      "negative_control_case": 13
+    }
+  },
+  "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR",
+  "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+  "severity": "critical",
+  "error_ids": []
+}
+```
+
+금지 형식:
+
+```json
+{"check_id":"brain_delta_density_verified","actual":true,"expected":true,"passed":true}
+{"check_id":"brain_delta_density_verified","actual":"ok","expected":"ok","passed":true}
+{"check_id":"brain_delta_density_verified","passed":true}
+{"check_id":"brain_delta_density_verified","actual":{"value":true},"expected":{"value":true},"passed":true}
+```
+
+다음 중 하나라도 있으면 `ACCEPT_FULL` 금지다.
+
+```text
+count-gate critical check의 actual이 boolean
+count-gate critical check의 expected가 boolean
+count-gate critical check의 actual.value가 boolean
+count-gate critical check의 expected.value가 boolean
+count-gate critical check의 actual이 문자열 ok/pass/verified
+count-gate critical check의 expected가 문자열 ok/pass/verified
+count-gate critical check에 expected_source가 없음
+count-gate critical check에 actual_source가 없음
+actual_source != FINAL_MARKDOWN_BLOCK_REPARSE
+expected_source가 GENERATED_OUTPUT 또는 SELF_DECLARED_MANIFEST
+```
+
+위반 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_BOOLEAN_PROXY
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+validator_exit_code = 2
+```
+
+## V27.2 validator는 brain_delta actual을 final Markdown에서 다시 세야 한다
+
+validator는 internal canonical_graph 변수나 renderer가 넘겨준 메모리를 actual로 쓰지 않는다. 반드시 최종 Markdown 파일을 다시 열어 marker block을 자른 뒤 `brain_delta.jsonl`을 parse한다.
+
+검증 절차:
+
+```text
+1. final bundle Markdown 파일을 byte로 다시 읽는다.
+2. <!-- NSLAB:BEGIN brain_delta.jsonl --> ... <!-- NSLAB:END brain_delta.jsonl --> block을 정확히 1회 찾는다.
+3. code fence가 있으면 제거하고 JSONL non-empty line만 추출한다.
+4. 각 line을 json.loads 한다.
+5. line count를 actual_brain_delta_record_count로 계산한다.
+6. training_eligible == true인 line count를 actual_training_eligible_record_count로 계산한다.
+7. record_type별 count를 actual_counts_by_record_type으로 계산한다.
+8. record_id 중복, record_type 누락, episode_id/trade_date 누락, provenance_source_ids 누락을 계산한다.
+9. 이 actual 값만 validation_report와 direct_ingest_contract에 쓴다.
+```
+
+다음은 invalid다.
+
+```text
+actual_brain_delta_record_count = canonical_graph["brain_delta_count"]
+actual_brain_delta_record_count = research_episode["brain_delta_record_count"]
+actual_brain_delta_record_count = direct_ingest_contract.record_import_manifest.brain_delta_record_count
+actual_brain_delta_record_count = 이미 렌더링할 때 계산한 local variable
+actual_brain_delta_record_count = validation_report 안에 이미 쓰인 값
+```
+
+`actual_*`는 반드시 final Markdown block reparse에서만 온다.
+
+## V27.3 expected_brain_delta_min 계산식 고정
+
+정상 거래일이고 `outcome_ledger_count > 0`이면 expected는 다음 두 값 중 더 큰 값이다.
+
+```text
+expected_brain_delta_min_full = max(
+    100,
+    issuer_day_case_count
+  + supervised_direct_event_case_count
+  + theme_formation_case_count
+  + blind_leader_pair_count
+)
+  + candidate_generation_error_case_count
+  + ranking_error_case_count
+  + newsless_or_unexplained_case_count
+  + negative_control_case_count
+
+expected_brain_delta_min_conservative = max(
+    100,
+    issuer_day_case_count
+  + direct_event_case_count
+  + theme_formation_case_count
+  + blind_leader_pair_count
+)
+
+expected_brain_delta_min = max(
+    expected_brain_delta_min_full,
+    expected_brain_delta_min_conservative
+)
+```
+
+각 count의 source는 다음으로 제한한다.
+
+```text
+issuer_day_case_count:
+  ledger_population_audit.json 또는 canonical_graph postseal issuer-day population에서 validator가 재계산
+
+supervised_direct_event_case_count / direct_event_case_count:
+  candidate_screening.jsonl + entity_ledger_blind.jsonl + fact_ledger_blind.jsonl을 validator가 재계산
+
+theme_formation_case_count:
+  sealed theme universe + postseal outcome join에서 validator가 재계산
+
+blind_leader_pair_count:
+  blind_prediction.json의 sealed pair list에서 validator가 재계산
+
+candidate_generation_error_case_count:
+  outcome_to_news_audit.jsonl에서 classification == CANDIDATE_GENERATION_MISS인 record count
+
+ranking_error_case_count:
+  outcome_to_news_audit.jsonl에서 classification == RANKING_MISS 또는 SCREENED_OUT_BUT_WINNER인 record count
+
+newsless_or_unexplained_case_count:
+  outcome_to_news_audit.jsonl에서 classification == NEWSLESS_OR_UNEXPLAINED인 record count
+
+negative_control_case_count:
+  candidate_screening.jsonl 또는 brain_delta에서 negative_control_case로 기록된 count. 단, expected에 넣는 경우 source artifact가 별도로 존재해야 한다.
+```
+
+금지:
+
+```text
+expected_brain_delta_min = actual_brain_delta_record_count
+expected_brain_delta_min = len(brain_delta.jsonl)
+expected_brain_delta_min = validation_report 안에 이미 적힌 숫자
+expected_brain_delta_min = direct_ingest_contract 안에 이미 적힌 숫자
+expected_brain_delta_min = 7
+expected_brain_delta_min = 32
+expected_brain_delta_min = 45
+```
+
+## V27.4 actual < expected이면 수리 또는 quarantine
+
+아래 조건은 절대 warning이 아니다.
+
+```text
+actual_brain_delta_record_count < expected_brain_delta_min
+```
+
+처리:
+
+```text
+1. ACCEPT_FULL 금지
+2. direct_brain_ingest_ready=false
+3. brain_eligible=false
+4. validator_exit_code=2
+5. critical_error_count += 1
+6. bundle_status = QUARANTINE_BRAIN_DELTA_UNDERFILLED
+```
+
+단, 이 오류는 대부분 recoverable이다. 즉시 최종 quarantine으로 끝내지 말고 먼저 아래 수리를 시도한다.
+
+```text
+canonical_graph의 issuer_day/direct_event/theme/pair/error population에서 누락된 brain_delta record를 생성한다.
+brain_delta.jsonl을 record-level로 보강한다.
+record_id를 재배정한다.
+id_registry.json에 모든 brain_delta id를 추가한다.
+bundle_manifest.json에 brain_delta block sha256/byte_size/line_count를 갱신한다.
+validation_report.json을 final Markdown reparse 기반으로 갱신한다.
+direct_ingest_contract.json record_import_manifest를 갱신한다.
+final bundle을 재렌더링한다.
+validator를 재실행한다.
+```
+
+수리 후에도 `actual < expected`이면 그때만 `QUARANTINE_BRAIN_DELTA_UNDERFILLED`로 종료한다.
+
+## V27.5 brain_delta type parity는 equality가 아니라 minimum coverage다
+
+모든 날짜가 모든 record_type을 갖지는 않는다. 따라서 특정 type이 0일 수 있다. 하지만 expected에 포함된 type은 실제 count가 expected 이상이어야 한다.
+
+필수 schema:
+
+```json
+{
+  "check_id": "brain_delta_type_count_parity_verified",
+  "passed": true,
+  "actual": {
+    "counts_by_record_type_from_final_block": {
+      "supervised_issuer_day_case": 28,
+      "supervised_direct_event_case": 28,
+      "theme_formation_case": 7,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 8,
+      "ranking_error_case": 1,
+      "newsless_or_unexplained_case": 43,
+      "negative_control_case": 13
+    }
+  },
+  "expected": {
+    "minimum_counts_by_record_type": {
+      "supervised_issuer_day_case": 28,
+      "supervised_direct_event_case": 28,
+      "theme_formation_case": 7,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 8,
+      "ranking_error_case": 1,
+      "newsless_or_unexplained_case": 43,
+      "negative_control_case": 13
+    }
+  },
+  "expected_source": "LEDGER_POPULATION_AUDIT_AND_OUTCOME_TO_NEWS_AUDIT_RECOMPUTED",
+  "actual_source": "FINAL_MARKDOWN_BRAIN_DELTA_JSONL_REPARSE",
+  "severity": "critical",
+  "error_ids": []
+}
+```
+
+다음은 실패다.
+
+```text
+expected type count가 28인데 actual이 0
+expected type count가 28인데 actual이 12
+actual counts_by_record_type가 없음
+expected minimum_counts_by_record_type가 없음
+record_type이 없는 brain_delta line 존재
+record_type이 허용 목록 밖임
+```
+
+## V27.6 direct_ingest_contract brain_delta mirror 필수
+
+`direct_ingest_contract.json.record_import_manifest`에는 다음 필드가 반드시 있어야 한다.
+
+```json
+{
+  "expected_brain_delta_min": 0,
+  "actual_brain_delta_record_count": 0,
+  "actual_training_eligible_record_count": 0,
+  "brain_delta_block_line_count": 0,
+  "brain_delta_jsonl_sha256": "",
+  "brain_delta_counts_by_record_type_actual": {},
+  "brain_delta_counts_by_record_type_expected_min": {},
+  "brain_delta_density_verified": true,
+  "brain_delta_type_count_parity_verified": true,
+  "brain_delta_actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+  "brain_delta_expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR"
+}
+```
+
+`direct_brain_ingest_ready=true`이면 다음도 true여야 한다.
+
+```text
+record_import_manifest.actual_brain_delta_record_count >= record_import_manifest.expected_brain_delta_min
+record_import_manifest.actual_brain_delta_record_count == brain_delta block non-empty jsonl line count
+record_import_manifest.brain_delta_jsonl_sha256 == bundle_manifest.block_hashes["brain_delta.jsonl"].sha256
+record_import_manifest.brain_delta_density_verified == validation_report.checks["brain_delta_density_verified"].passed
+record_import_manifest.brain_delta_actual_source == FINAL_MARKDOWN_BLOCK_REPARSE
+```
+
+위반 시:
+
+```text
+bundle_status = QUARANTINE_DIRECT_INGEST_CONTRACT_MISMATCH
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V27.7 `brain_eligible`의 정의를 count > 0에서 import-ready로 교체
+
+아래 정의는 더 이상 허용되지 않는다.
+
+```text
+training_eligible brain_delta record_count > 0 이면 brain_eligible=true
+```
+
+새 정의:
+
+```text
+brain_eligible=true iff
+  direct_brain_ingest_ready == true
+  and actual_brain_delta_record_count >= expected_brain_delta_min
+  and actual_training_eligible_record_count > 0
+  and all critical validation checks passed
+  and fatal_blockers == []
+```
+
+`brain_delta_record_count > 0`만으로는 brain_eligible이 아니다.
+
+## V27.8 bundle_status ACCEPT_FULL 최종 결정 순서 고정
+
+`bundle_status: ACCEPT_FULL`은 맨 마지막에만 쓴다. 다음 순서를 지킨다.
+
+```text
+1. canonical_graph 생성
+2. artifacts 렌더링
+3. final Markdown assemble
+4. validator가 final Markdown을 다시 parse
+5. validation_report 생성
+6. direct_ingest_contract 생성
+7. bundle_manifest 생성
+8. final Markdown 재assemble
+9. validator second-pass 재실행
+10. second-pass 결과가 모두 통과할 때만 front matter bundle_status=ACCEPT_FULL, brain_eligible=true, direct_brain_ingest_ready=true를 쓴다
+```
+
+금지:
+
+```text
+front matter에 ACCEPT_FULL을 먼저 쓰고 validator를 맞추기
+validation_report의 passed boolean을 먼저 쓰고 count를 나중에 채우기
+direct_ingest_contract를 먼저 ready=true로 쓰고 fatal_blockers를 나중에 지우기
+```
+
+## V27.9 V27 필수 check_id
+
+`validation_report.json`에는 아래 check_id가 반드시 존재해야 한다. 모두 critical이다.
+
+```text
+brain_delta_density_verified
+brain_delta_expected_min_numeric_verified
+brain_delta_actual_count_from_final_block_verified
+brain_delta_expected_source_not_generated_output_verified
+brain_delta_actual_source_final_markdown_block_reparse_verified
+brain_delta_type_count_parity_verified
+brain_delta_training_eligible_density_verified
+brain_delta_record_type_allowed_verified
+brain_delta_block_line_count_verified
+brain_delta_payload_hash_verified
+record_import_manifest_brain_delta_parity_verified
+direct_ingest_contract_brain_delta_mirror_verified
+front_matter_accept_full_written_after_second_pass_verified
+```
+
+하나라도 누락되면:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_VALIDATOR_MISSING_V27_CHECKS
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V27.10 20241028류 산출물에 대한 판정 fixture
+
+아래 조건을 가진 bundle은 반드시 `ACCEPT_FULL` 금지다.
+
+```text
+bundle_status == ACCEPT_FULL
+brain_eligible == true
+direct_brain_ingest_ready == true
+phase/preseal outcome checks pass
+required marker blocks pass
+but actual_brain_delta_record_count < expected_brain_delta_min
+```
+
+또는:
+
+```text
+brain_delta_density_verified actual == true expected == true
+brain_delta_expected_min_verified actual == true expected == true
+brain_delta_type_count_parity_verified actual == true expected == true
+```
+
+이 fixture를 validator regression test에 포함한다.
+
+기대 판정:
+
+```text
+bundle_status = QUARANTINE_BRAIN_DELTA_UNDERFILLED
+brain_eligible = false
+direct_brain_ingest_ready = false
+validator_exit_code = 2
+fatal_blockers contains BRAIN_DELTA_UNDERFILLED or VALIDATOR_BOOLEAN_PROXY
+```
+
+## V27.11 좋은 기준 fixture
+
+20241204형 성공 샘플처럼 다음 형태는 허용된다.
+
+```text
+brain_delta_density_verified:
+  actual = 165
+  expected = >=165
+  passed = true
+
+brain_delta_expected_source = CANONICAL_GRAPH_PRESEAL_OR_POSTSEAL_COUNTS
+expected_brain_delta_min = 165
+brain_delta_record_count = 165
+brain_delta_count_by_type = { ... integer counts ... }
+outcome_to_news_audit_stats = { ... integer counts ... }
+```
+
+중요한 것은 숫자 165 자체가 아니라, actual과 expected가 숫자이고 expected_source와 actual_source가 분리되어 있으며 final Markdown block을 다시 parse해 actual을 얻는 구조다.
 
 
 ────────────────────────────────────────
