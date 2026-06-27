@@ -3892,6 +3892,39 @@ def _check_semantic_retrieval_artifact_summary(
             f"{prediction_path.name}: context manifest semantic_retrieval "
             "excluded_episode_ids mismatch"
         )
+    included_record_ids = _unique_strings(
+        record_id
+        for row in rows
+        for record_id in _string_list(row.get("included_record_ids"))
+    )
+    excluded_record_ids = _unique_strings(
+        record_id
+        for row in rows
+        for record_id in _string_list(row.get("excluded_record_ids"))
+    )
+    record_contract_required = _semantic_retrieval_record_contract_required(
+        manifest,
+        summary,
+        rows,
+    )
+    if (
+        record_contract_required
+        and included_record_ids
+        != _string_list(manifest.get("semantic_retrieval_record_ids"))
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "included_record_ids mismatch"
+        )
+    if (
+        record_contract_required
+        and excluded_record_ids
+        != _string_list(manifest.get("excluded_semantic_retrieval_record_ids"))
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "excluded_record_ids mismatch"
+        )
     _check_summary_int(
         prediction_path,
         summary,
@@ -3916,10 +3949,35 @@ def _check_semantic_retrieval_artifact_summary(
         label="semantic_retrieval",
         findings=findings,
     )
+    if record_contract_required:
+        _check_summary_int(
+            prediction_path,
+            summary,
+            "included_record_count",
+            len(included_record_ids),
+            label="semantic_retrieval",
+            findings=findings,
+        )
+        _check_summary_int(
+            prediction_path,
+            summary,
+            "excluded_record_count",
+            len(excluded_record_ids),
+            label="semantic_retrieval",
+            findings=findings,
+        )
     if summary.get("retrieval_zero_is_valid") is not True:
         findings.append(
             f"{prediction_path.name}: context manifest semantic_retrieval "
             "zero_policy missing"
+        )
+    if (
+        record_contract_required
+        and summary.get("record_retrieval_zero_is_valid") is not True
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval "
+            "record_zero_policy missing"
         )
     expected_categories = _semantic_retrieval_required_categories(manifest)
     if expected_categories and set(category_counts) != set(expected_categories):
@@ -5340,6 +5398,7 @@ def _check_final_synthesis_embedded_artifacts(
     )
     if semantic_retrieval_rows is not None:
         _check_final_synthesis_semantic_retrieval_context(
+            root,
             prediction_path,
             manifest,
             context_payload,
@@ -5467,7 +5526,52 @@ def _read_optional_manifest_jsonl_rows(
     return rows
 
 
+def _semantic_retrieval_record_context(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    store = BrainRecordStore(root)
+    records: list[dict[str, Any]] = []
+    for record_id in _string_list(manifest.get("semantic_retrieval_record_ids")):
+        try:
+            record = store.get_record(record_id)
+        except FileNotFoundError:
+            records.append({"record_id": record_id, "missing": True})
+            continue
+        records.append(record.model_dump(mode="json"))
+    return records
+
+
+def _semantic_retrieval_record_contract_required(
+    manifest: dict[str, Any],
+    summary: object,
+    rows: list[dict[str, Any]],
+) -> bool:
+    if (
+        "semantic_retrieval_record_ids" in manifest
+        or "excluded_semantic_retrieval_record_ids" in manifest
+    ):
+        return True
+    if isinstance(summary, dict) and any(
+        key in summary
+        for key in (
+            "included_record_count",
+            "excluded_record_count",
+            "record_retrieval_zero_is_valid",
+        )
+    ):
+        return True
+    return any(
+        "included_record_ids" in row
+        or "excluded_record_ids" in row
+        or "record_result_count" in row
+        or "excluded_record_count" in row
+        for row in rows
+    )
+
+
 def _check_final_synthesis_semantic_retrieval_context(
+    root: Path,
     prediction_path: Path,
     manifest: dict[str, Any],
     context_payload: dict[str, Any],
@@ -5488,6 +5592,21 @@ def _check_final_synthesis_semantic_retrieval_context(
         "rows": semantic_retrieval_rows,
         "excluded_episode_ids": manifest.get("excluded_semantic_retrieval_episode_ids"),
     }
+    if _semantic_retrieval_record_contract_required(
+        manifest,
+        manifest.get("semantic_retrieval_summary"),
+        semantic_retrieval_rows,
+    ):
+        expected_fields.update(
+            {
+                "included_episode_ids": manifest.get("semantic_retrieval_episode_ids"),
+                "included_record_ids": manifest.get("semantic_retrieval_record_ids"),
+                "records": _semantic_retrieval_record_context(root, manifest),
+                "excluded_record_ids": manifest.get(
+                    "excluded_semantic_retrieval_record_ids"
+                ),
+            }
+        )
     if any(context.get(field) != expected for field, expected in expected_fields.items()):
         findings.append(
             f"{prediction_path.name}: final_synthesis_context "

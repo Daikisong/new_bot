@@ -284,8 +284,11 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["semantic_retrieval"]["category_counts_verified"] is True
     assert supporting["semantic_retrieval"]["included_episode_ids_verified"] is True
     assert supporting["semantic_retrieval"]["excluded_episode_ids_verified"] is True
+    assert supporting["semantic_retrieval"]["included_record_ids_verified"] is True
+    assert supporting["semantic_retrieval"]["excluded_record_ids_verified"] is True
     assert supporting["semantic_retrieval"]["summary_verified"] is True
     assert supporting["semantic_retrieval"]["retrieval_zero_is_valid"] is True
+    assert supporting["semantic_retrieval"]["record_retrieval_zero_is_valid"] is True
     assert supporting["candidate_expansion"]["hash_verified"] is True
     assert supporting["candidate_expansion"]["schema_version_verified"] is True
     assert supporting["candidate_expansion"]["run_id_verified"] is True
@@ -431,8 +434,30 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     assert (
         supporting["final_synthesis_context"][
+            "semantic_retrieval_included_ids_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
             "semantic_retrieval_excluded_ids_verified"
         ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
+            "semantic_retrieval_included_record_ids_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"][
+            "semantic_retrieval_excluded_record_ids_verified"
+        ]
+        is True
+    )
+    assert (
+        supporting["final_synthesis_context"]["semantic_retrieval_records_verified"]
         is True
     )
     assert (

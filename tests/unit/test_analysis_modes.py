@@ -676,6 +676,12 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == [
         "BRAIN-FUTURE"
     ]
+    semantic_context = synthesis_payload["additional_semantic_retrieval"]
+    assert semantic_context["included_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert semantic_context["excluded_record_ids"] == ["BRAIN-FUTURE"]
+    assert [record["record_id"] for record in semantic_context["records"]] == [
+        "BRAIN-AVAILABLE"
+    ]
     assert synthesis_payload["brain_compiler"] == {
         "mode": "asof_context",
         "provider": "deterministic_catalog",

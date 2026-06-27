@@ -3004,13 +3004,26 @@ class DailyAnalyzer:
                 episodes.append({"episode_id": episode_id, "missing": True})
                 continue
             episodes.append(episode.model_dump(mode="json"))
+        records: list[dict[str, Any]] = []
+        record_store = BrainRecordStore(self.root)
+        for record_id in manifest.semantic_retrieval_record_ids:
+            try:
+                record = record_store.get_record(record_id)
+            except FileNotFoundError:
+                records.append({"record_id": record_id, "missing": True})
+                continue
+            records.append(record.model_dump(mode="json"))
         return {
             "plan_artifact": manifest.semantic_retrieval_plan_artifact,
             "artifact": manifest.semantic_retrieval_artifact,
             "summary": manifest.semantic_retrieval_summary,
             "rows": rows,
+            "included_episode_ids": manifest.semantic_retrieval_episode_ids,
             "episodes": episodes,
             "excluded_episode_ids": manifest.excluded_semantic_retrieval_episode_ids,
+            "included_record_ids": manifest.semantic_retrieval_record_ids,
+            "records": records,
+            "excluded_record_ids": manifest.excluded_semantic_retrieval_record_ids,
         }
 
     def _read_candidate_expansion_context(self, manifest: ContextManifest) -> dict[str, Any]:

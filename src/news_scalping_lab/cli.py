@@ -1992,8 +1992,11 @@ def _inspect_semantic_retrieval_artifact(
             "category_counts_verified": None,
             "included_episode_ids_verified": None,
             "excluded_episode_ids_verified": None,
+            "included_record_ids_verified": None,
+            "excluded_record_ids_verified": None,
             "summary_verified": None,
             "retrieval_zero_is_valid": None,
+            "record_retrieval_zero_is_valid": None,
         }
     )
     artifact_ref = manifest.get("semantic_retrieval_artifact")
@@ -2067,16 +2070,56 @@ def _inspect_semantic_retrieval_artifact(
     )
     if not status["excluded_episode_ids_verified"]:
         status["errors"].append("semantic_retrieval_excluded_episode_ids_mismatch")
+    included_record_ids = _unique_strings(
+        record_id
+        for row in rows
+        for record_id in _string_list(row.get("included_record_ids"))
+    )
+    excluded_record_ids = _unique_strings(
+        record_id
+        for row in rows
+        for record_id in _string_list(row.get("excluded_record_ids"))
+    )
+    record_contract_required = _semantic_retrieval_record_contract_required(
+        manifest,
+        summary,
+        rows,
+    )
+    status["included_record_ids_verified"] = (
+        not record_contract_required
+        or included_record_ids == _string_list(manifest.get("semantic_retrieval_record_ids"))
+    )
+    if not status["included_record_ids_verified"]:
+        status["errors"].append("semantic_retrieval_included_record_ids_mismatch")
+    status["excluded_record_ids_verified"] = (
+        not record_contract_required
+        or excluded_record_ids
+        == _string_list(manifest.get("excluded_semantic_retrieval_record_ids"))
+    )
+    if not status["excluded_record_ids_verified"]:
+        status["errors"].append("semantic_retrieval_excluded_record_ids_mismatch")
     status["retrieval_zero_is_valid"] = (
         isinstance(summary, dict) and summary.get("retrieval_zero_is_valid") is True
     )
     if not status["retrieval_zero_is_valid"]:
         status["errors"].append("semantic_retrieval_zero_policy_missing")
+    status["record_retrieval_zero_is_valid"] = (
+        not record_contract_required
+        or (
+            isinstance(summary, dict)
+            and summary.get("record_retrieval_zero_is_valid") is True
+        )
+    )
+    if not status["record_retrieval_zero_is_valid"]:
+        status["errors"].append("semantic_retrieval_record_zero_policy_missing")
     status["summary_verified"] = _semantic_retrieval_summary_verified(
         summary,
         query_count=len(rows),
         included_episode_count=len(included_ids),
         excluded_episode_count=len(excluded_ids),
+        included_record_count=len(included_record_ids),
+        excluded_record_count=len(excluded_record_ids),
+        record_contract_required=record_contract_required,
     )
     if not status["summary_verified"]:
         status["errors"].append("semantic_retrieval_summary_mismatch")
@@ -3191,7 +3234,11 @@ def _inspect_final_synthesis_context_artifact(
             "semantic_retrieval_artifact_verified": None,
             "semantic_retrieval_summary_verified": None,
             "semantic_retrieval_rows_verified": None,
+            "semantic_retrieval_included_ids_verified": None,
             "semantic_retrieval_excluded_ids_verified": None,
+            "semantic_retrieval_included_record_ids_verified": None,
+            "semantic_retrieval_excluded_record_ids_verified": None,
+            "semantic_retrieval_records_verified": None,
             "semantic_retrieval_context_verified": None,
             "web_research_queries_verified": None,
             "web_research_source_ids_verified": None,
@@ -3369,6 +3416,11 @@ def _inspect_final_synthesis_semantic_retrieval_context(
         status,
         label="semantic_retrieval",
     )
+    record_contract_required = _semantic_retrieval_record_contract_required(
+        manifest,
+        manifest.get("semantic_retrieval_summary"),
+        semantic_rows,
+    )
     checks = {
         "semantic_retrieval_plan_artifact_verified": (
             context.get("plan_artifact")
@@ -3381,9 +3433,28 @@ def _inspect_final_synthesis_semantic_retrieval_context(
             context.get("summary") == manifest.get("semantic_retrieval_summary")
         ),
         "semantic_retrieval_rows_verified": context.get("rows") == semantic_rows,
+        "semantic_retrieval_included_ids_verified": (
+            not record_contract_required
+            or context.get("included_episode_ids")
+            == manifest.get("semantic_retrieval_episode_ids")
+        ),
         "semantic_retrieval_excluded_ids_verified": (
             context.get("excluded_episode_ids")
             == manifest.get("excluded_semantic_retrieval_episode_ids")
+        ),
+        "semantic_retrieval_included_record_ids_verified": (
+            not record_contract_required
+            or context.get("included_record_ids")
+            == manifest.get("semantic_retrieval_record_ids")
+        ),
+        "semantic_retrieval_excluded_record_ids_verified": (
+            not record_contract_required
+            or context.get("excluded_record_ids")
+            == manifest.get("excluded_semantic_retrieval_record_ids")
+        ),
+        "semantic_retrieval_records_verified": (
+            not record_contract_required
+            or context.get("records") == _semantic_retrieval_record_context(root, manifest)
         ),
     }
     status.update(checks)
@@ -3400,8 +3471,20 @@ def _inspect_final_synthesis_semantic_retrieval_context(
         "semantic_retrieval_rows_verified": (
             "final_synthesis_context_semantic_retrieval_rows_mismatch"
         ),
+        "semantic_retrieval_included_ids_verified": (
+            "final_synthesis_context_semantic_retrieval_included_ids_mismatch"
+        ),
         "semantic_retrieval_excluded_ids_verified": (
             "final_synthesis_context_semantic_retrieval_excluded_ids_mismatch"
+        ),
+        "semantic_retrieval_included_record_ids_verified": (
+            "final_synthesis_context_semantic_retrieval_included_record_ids_mismatch"
+        ),
+        "semantic_retrieval_excluded_record_ids_verified": (
+            "final_synthesis_context_semantic_retrieval_excluded_record_ids_mismatch"
+        ),
+        "semantic_retrieval_records_verified": (
+            "final_synthesis_context_semantic_retrieval_records_mismatch"
         ),
     }
     for field, error in error_by_field.items():
@@ -3611,6 +3694,50 @@ def _read_final_synthesis_jsonl_context_rows(
         status["errors"].append(f"final_synthesis_context_{label}_rows_unavailable")
         return []
     return rows
+
+
+def _semantic_retrieval_record_context(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    store = BrainRecordStore(root)
+    records: list[dict[str, Any]] = []
+    for record_id in _string_list(manifest.get("semantic_retrieval_record_ids")):
+        try:
+            record = store.get_record(record_id)
+        except FileNotFoundError:
+            records.append({"record_id": record_id, "missing": True})
+            continue
+        records.append(record.model_dump(mode="json"))
+    return records
+
+
+def _semantic_retrieval_record_contract_required(
+    manifest: dict[str, Any],
+    summary: object,
+    rows: list[dict[str, Any]],
+) -> bool:
+    if (
+        "semantic_retrieval_record_ids" in manifest
+        or "excluded_semantic_retrieval_record_ids" in manifest
+    ):
+        return True
+    if isinstance(summary, dict) and any(
+        key in summary
+        for key in (
+            "included_record_count",
+            "excluded_record_count",
+            "record_retrieval_zero_is_valid",
+        )
+    ):
+        return True
+    return any(
+        "included_record_ids" in row
+        or "excluded_record_ids" in row
+        or "record_result_count" in row
+        or "excluded_record_count" in row
+        for row in rows
+    )
 
 
 def _read_candidate_web_check_context_rows(
@@ -5597,8 +5724,11 @@ def _semantic_retrieval_status_passed(status: dict[str, Any]) -> bool:
         and status.get("category_counts_verified")
         and status.get("included_episode_ids_verified")
         and status.get("excluded_episode_ids_verified")
+        and status.get("included_record_ids_verified")
+        and status.get("excluded_record_ids_verified")
         and status.get("summary_verified")
         and status.get("retrieval_zero_is_valid")
+        and status.get("record_retrieval_zero_is_valid")
     )
 
 
@@ -6276,16 +6406,28 @@ def _semantic_retrieval_summary_verified(
     query_count: int,
     included_episode_count: int,
     excluded_episode_count: int,
+    included_record_count: int,
+    excluded_record_count: int,
+    record_contract_required: bool,
 ) -> bool:
     if not isinstance(summary, dict):
         return False
-    return (
+    episode_summary_verified = (
         summary.get("query_count") == query_count
         and summary.get("included_episode_count") == included_episode_count
         and summary.get("excluded_episode_count") == excluded_episode_count
         and summary.get("retrieval_zero_is_valid") is True
         and isinstance(summary.get("category_query_counts"), dict)
         and bool(summary.get("required_categories"))
+    )
+    if not episode_summary_verified:
+        return False
+    if not record_contract_required:
+        return True
+    return (
+        summary.get("included_record_count") == included_record_count
+        and summary.get("excluded_record_count") == excluded_record_count
+        and summary.get("record_retrieval_zero_is_valid") is True
     )
 
 

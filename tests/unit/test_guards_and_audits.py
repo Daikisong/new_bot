@@ -1561,8 +1561,12 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
             "query_sha256": sha256_text("positive structural analog"),
             "included_episode_ids": ["EP-1"],
             "excluded_episode_ids": [],
+            "included_record_ids": [],
+            "excluded_record_ids": [],
             "result_count": 1,
             "excluded_count": 0,
+            "record_result_count": 0,
+            "excluded_record_count": 0,
         },
         {
             "schema_version": "nslab.semantic_retrieval_result.v1",
@@ -1573,8 +1577,12 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
             "query_sha256": sha256_text("negative control structural analog"),
             "included_episode_ids": [],
             "excluded_episode_ids": ["EP-2"],
+            "included_record_ids": [],
+            "excluded_record_ids": [],
             "result_count": 0,
             "excluded_count": 1,
+            "record_result_count": 0,
+            "excluded_record_count": 0,
         },
     ]
     result_text = "".join(canonical_json(row) + "\n" for row in result_rows)
@@ -1608,6 +1616,9 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
                 "query_count": 2,
                 "included_episode_count": 1,
                 "excluded_episode_count": 1,
+                "included_record_count": 0,
+                "excluded_record_count": 0,
+                "record_retrieval_zero_is_valid": True,
                 "retrieval_zero_is_valid": True,
             },
         },
@@ -2696,6 +2707,11 @@ def test_final_synthesis_summary_counts_record_id_context() -> None:
             "excluded_retrieved_record_ids": ["REC-future"],
             "semantic_retrieval_record_ids": ["REC-positive"],
             "excluded_semantic_retrieval_record_ids": ["REC-future"],
+            "additional_semantic_retrieval": {
+                "included_record_ids": ["REC-positive"],
+                "records": [{"record_id": "REC-positive"}],
+                "excluded_record_ids": ["REC-future"],
+            },
             "positive_record_ids": ["REC-positive"],
             "negative_record_ids": ["REC-negative"],
             "counterexample_record_ids": ["REC-counter"],
@@ -2708,6 +2724,9 @@ def test_final_synthesis_summary_counts_record_id_context() -> None:
     assert summary["excluded_retrieved_record_id_count"] == 1
     assert summary["semantic_retrieval_record_id_count"] == 1
     assert summary["excluded_semantic_retrieval_record_id_count"] == 1
+    assert summary["semantic_retrieval_record_count"] == 1
+    assert summary["semantic_retrieval_included_record_id_count"] == 1
+    assert summary["semantic_retrieval_excluded_record_id_count"] == 1
     assert summary["positive_record_id_count"] == 1
     assert summary["negative_record_id_count"] == 1
     assert summary["counterexample_record_id_count"] == 1
@@ -3055,8 +3074,12 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "query_sha256": sha256_text("positive structural analog"),
         "included_episode_ids": [],
         "excluded_episode_ids": [],
+        "included_record_ids": [],
+        "excluded_record_ids": [],
         "result_count": 0,
         "excluded_count": 0,
+        "record_result_count": 0,
+        "excluded_record_count": 0,
     }
     semantic_summary = {
         "required_categories": ["positive_analogs"],
@@ -3064,6 +3087,9 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         "query_count": 1,
         "included_episode_count": 0,
         "excluded_episode_count": 0,
+        "included_record_count": 0,
+        "excluded_record_count": 0,
+        "record_retrieval_zero_is_valid": True,
         "retrieval_zero_is_valid": True,
     }
     semantic_dir = (
@@ -3277,9 +3303,15 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "artifact": semantic_path.relative_to(tmp_path).as_posix(),
             "summary": semantic_summary,
             "rows": [semantic_row],
+            "included_episode_ids": [],
             "episodes": [],
             "excluded_episode_ids": [],
+            "included_record_ids": [],
+            "records": [],
+            "excluded_record_ids": [],
         },
+        "semantic_retrieval_record_ids": [],
+        "excluded_semantic_retrieval_record_ids": [],
         "candidate_research": {"candidates": prediction["candidates"]},
         "news_novelty_review": news_novelty_review,
         "open_world_candidate_expansion": candidate_expansion,
@@ -3364,6 +3396,8 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "semantic_retrieval_query_count": 1,
             "semantic_retrieval_episode_ids": [],
             "excluded_semantic_retrieval_episode_ids": [],
+            "semantic_retrieval_record_ids": [],
+            "excluded_semantic_retrieval_record_ids": [],
             "semantic_retrieval_summary": semantic_summary,
             "candidate_web_check_artifact": candidate_web_path.relative_to(
                 tmp_path

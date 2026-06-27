@@ -116,6 +116,18 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         summary["excluded_semantic_retrieval_record_id_count"] = _list_len(
             payload.get("excluded_semantic_retrieval_record_ids")
         )
+    if "records" in semantic:
+        summary["semantic_retrieval_record_count"] = _list_len(
+            semantic.get("records")
+        )
+    if "included_record_ids" in semantic:
+        summary["semantic_retrieval_included_record_id_count"] = _list_len(
+            semantic.get("included_record_ids")
+        )
+    if "excluded_record_ids" in semantic:
+        summary["semantic_retrieval_excluded_record_id_count"] = _list_len(
+            semantic.get("excluded_record_ids")
+        )
     if "positive_record_ids" in payload:
         summary["positive_record_id_count"] = _list_len(
             payload.get("positive_record_ids")
