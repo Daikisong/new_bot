@@ -29,6 +29,7 @@ from news_scalping_lab.records.models import (
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
+from news_scalping_lab.warehouse import WarehouseStore
 
 
 class OrderAssertingRetrieval:
@@ -609,6 +610,44 @@ async def test_fast_mode_keeps_open_world_candidates_when_retrieval_misses(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_retrieval_miss_does_not_block_open_world_candidates(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "open_world_retrieval_miss_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","NovelOpenWorldCo, new catalyst",'
+        '"No record-level retrieval hit should be required before candidate generation."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    prediction = analysis.blind_prediction
+    assert manifest.retrieved_episode_ids == []
+    assert manifest.retrieved_record_ids == []
+    assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True
+    assert prediction.candidates
+    assert prediction.dominant_sectors
+    assert "NovelOpenWorldCo" in {
+        candidate.company_name for candidate in prediction.candidates
+    }
+    assert any(
+        candidate.path_type == PathType.THEME_BENEFICIARY
+        and candidate.company_name == "BENEFICIARY_DISCOVERY_REQUIRED"
+        for candidate in prediction.candidates
+    )
+
+
+@pytest.mark.asyncio
 async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -751,6 +790,210 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert record_sweep["cache_hits_verified"] is True
     assert record_sweep["swept_record_ids_verified"] is True
     assert record_sweep["observed_record_ids"] == ["BRAIN-AVAILABLE"]
+
+
+@pytest.mark.asyncio
+async def test_exhaustive_record_coverage_100_percent(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-COVERED-DIRECT",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-COVERED-COUNTER",
+                record_type="counterexample",
+                response_class="negative_control",
+                available_from=datetime(2030, 1, 10, 8, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "coverage_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","CoverageCo, new catalyst",'
+        '"Every available brain record must be swept exactly once."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    expected_ids = ["BRAIN-COVERED-COUNTER", "BRAIN-COVERED-DIRECT"]
+    assert manifest.accepted_record_count == 2
+    assert manifest.available_record_count == 2
+    assert manifest.swept_record_count == manifest.available_record_count
+    assert manifest.available_record_ids == expected_ids
+    assert manifest.swept_record_ids == expected_ids
+    assert set(manifest.available_record_ids) - set(manifest.swept_record_ids) == set()
+    assert manifest.errors == []
+
+
+def test_record_level_available_from_filter(tmp_path) -> None:
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-ASOF-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-ASOF-FUTURE",
+                record_type="counterexample",
+                response_class="negative_control",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    WarehouseStore(tmp_path).rebuild_all()
+
+    rows = WarehouseStore(tmp_path).query_brain_records(
+        available_from_as_of=cutoff_at.isoformat(),
+        limit=10,
+    )
+
+    assert [row["record_id"] for row in rows] == ["BRAIN-ASOF-AVAILABLE"]
+    assert rows[0]["available_from"] == "2030-01-10T08:00:00+09:00"
+
+
+@pytest.mark.asyncio
+async def test_no_future_record_in_historical_context(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-HISTORICAL-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-HISTORICAL-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "historical_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","HistoricalCo, new catalyst",'
+        '"Future available_from records must not enter historical context."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert manifest.available_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
+    assert manifest.retrieved_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
+    assert manifest.excluded_retrieved_record_ids == ["BRAIN-HISTORICAL-FUTURE"]
+    assert synthesis_payload["available_record_ids"] == ["BRAIN-HISTORICAL-AVAILABLE"]
+    assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-HISTORICAL-AVAILABLE"]
+    assert synthesis_payload["excluded_retrieved_record_ids"] == [
+        "BRAIN-HISTORICAL-FUTURE"
+    ]
+    assert "BRAIN-HISTORICAL-FUTURE" not in json.dumps(
+        synthesis_payload["record_level_shard_contributions"],
+        ensure_ascii=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_negative_and_counterexample_retrieval(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-NEG-POSITIVE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-NEG-COUNTER",
+                record_type="counterexample",
+                response_class="negative_control",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-NEG-ERROR",
+                record_type="candidate_generation_error_case",
+                response_class="missed_direct_candidate",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "negative_counterexample_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","NegativeCounterCo, new catalyst",'
+        '"Semantic retrieval must include positive, error, and counterexample records."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(settings).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="exhaustive",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    semantic_rows = [
+        json.loads(line)
+        for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    counterexample_row = next(
+        row for row in semantic_rows if row["category"] == "counterexamples"
+    )
+    error_row = next(
+        row for row in semantic_rows if row["category"] == "candidate_generation_errors"
+    )
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+
+    assert manifest.counterexample_record_ids == ["BRAIN-NEG-COUNTER"]
+    assert counterexample_row["included_record_ids"] == ["BRAIN-NEG-COUNTER"]
+    assert error_row["included_record_ids"] == ["BRAIN-NEG-ERROR"]
+    assert synthesis_payload["negative_record_ids"] == ["BRAIN-NEG-COUNTER"]
+    assert synthesis_payload["counterexample_record_ids"] == ["BRAIN-NEG-COUNTER"]
+    assert [record["record_id"] for record in synthesis_payload["counterexample_records"]] == [
+        "BRAIN-NEG-COUNTER"
+    ]
+    assert all(
+        candidate.prior_negative_record_ids == ["BRAIN-NEG-COUNTER"]
+        for candidate in analysis.blind_prediction.candidates
+    )
 
 
 @pytest.mark.asyncio

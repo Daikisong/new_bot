@@ -1079,6 +1079,43 @@ def test_legacy_v1_bundle_adapter_preserves_records_without_schema_loss(
     assert envelope["episode_schema_version"] == "nslab.research_episode.v1"
 
 
+def test_legacy_v1_episode_still_supported(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(
+        tmp_path,
+        text=_synthetic_v11_bundle(
+            schema_version="nslab.research_bundle.v1",
+            manifest_schema_version="nslab.bundle_manifest.v1",
+            episode_schema_version="nslab.research_episode.v1",
+        ),
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    records = BrainRecordStore(tmp_path).list_records()
+    index = _read_json(
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "normalized_episode_index.json"
+    )
+
+    assert inspection["adapter"] == "legacy-v1"
+    assert inspection["supported"] is True
+    assert result.status == "imported"
+    assert result.adapter_name == "legacy-v1"
+    assert [record.record_id for record in records] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert index["record_count_by_type"] == {
+        "blind_leader_preference_pair": 1,
+        "future_record_type": 1,
+        "supervised_issuer_day_case": 1,
+    }
+
+
 def test_record_store_deep_audit_validates_import_parity(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -1603,6 +1640,51 @@ def test_training_export_uses_explicit_error_correction_records(
     assert manifest["task_counts"]["record_error_correction"] == 1
     assert manifest["category_counts"]["failure_correction_examples"] == 1
     assert audit_training_exports(tmp_path)["passed"] is True
+
+
+def test_record_provenance_closure(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(
+        tmp_path,
+        text=_synthetic_v11_bundle(include_unknown=False),
+    )
+
+    result = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    records = BrainRecordStore(tmp_path).list_records()
+    counts = WarehouseStore(tmp_path).rebuild_all()
+    audit = audit_record_store(tmp_path, deep=True)
+    envelope = _read_json(result.envelope_path)
+    index = _read_json(
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "normalized_episode_index.json"
+    )
+    provenance_rows = duckdb.sql(
+        "select record_id, episode_id, record_type, source_id "
+        f"from read_parquet('{(tmp_path / 'warehouse' / 'record_provenance.parquet').as_posix()}') "
+        "order by record_id, source_id"
+    ).fetchall()
+
+    assert envelope["provenance_closure_status"] == "closed"
+    assert index["source_ids"] == ["SRC-SYNTH-1"]
+    assert counts["record_provenance"] == len(records)
+    assert audit["passed"] is True
+    assert audit["eligible_records_with_unknown_provenance_sources"] == []
+    assert provenance_rows == [
+        (
+            "BRAIN-SYNTH-ISSUER",
+            "NSLAB-20300110-SYNTH",
+            "supervised_issuer_day_case",
+            "SRC-SYNTH-1",
+        ),
+        (
+            "BRAIN-SYNTH-PAIR",
+            "NSLAB-20300110-SYNTH",
+            "blind_leader_preference_pair",
+            "SRC-SYNTH-1",
+        ),
+    ]
 
 
 def test_event_ticker_edge_records_project_to_warehouse_and_coverage(

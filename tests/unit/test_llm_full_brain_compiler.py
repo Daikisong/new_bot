@@ -452,6 +452,97 @@ def test_compiled_claims_reference_existing_records(
         assert contradicting_ids <= record_ids
 
 
+def test_single_episode_cannot_validate_rule(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _rebuild_llm_full_fixture(
+        tmp_path,
+        monkeypatch,
+        [
+            _record(
+                "BRAIN-SOLO-DIRECT",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={"path_type": "SINGLE_EVENT"},
+            ),
+        ],
+    )
+
+    compiled_claims = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+
+    assert len(compiled_claims) == 1
+    claim = compiled_claims[0]
+    assert claim["supporting_record_ids"] == ["BRAIN-SOLO-DIRECT"]
+    assert claim["supporting_episode_ids"] == ["EP-llm-full"]
+    assert claim["positive_case_count"] == 1
+    assert claim["status"] != "validated"
+    assert "do not promote one record to a validated rule without broader evidence" in (
+        claim["boundary_conditions"]
+    )
+
+
+def test_full_rebuild_from_raw_is_reproducible_with_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    llm, first_manifest = _rebuild_llm_full_fixture(
+        tmp_path,
+        monkeypatch,
+        [
+            _record(
+                "BRAIN-REPRO-DIRECT",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={"path_type": "SINGLE_EVENT"},
+            ),
+            _record(
+                "BRAIN-REPRO-COUNTER",
+                record_type="counterexample",
+                training_target="counterexample",
+                response_class="negative_control",
+            ),
+        ],
+    )
+    first_compile_manifest = read_json(
+        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
+    )
+    first_claims = (
+        tmp_path / "brain" / "current" / "compiled_claims.jsonl"
+    ).read_text(encoding="utf-8")
+    cache_files = sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json"))
+
+    llm.calls.clear()
+    llm.embed_calls.clear()
+    second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+    second_compile_manifest = read_json(
+        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
+    )
+    second_compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    second_claims = (
+        tmp_path / "brain" / "current" / "compiled_claims.jsonl"
+    ).read_text(encoding="utf-8")
+
+    assert second_manifest.brain_version == first_manifest.brain_version
+    assert second_compile_manifest == first_compile_manifest
+    assert second_claims == first_claims
+    assert sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json")) == (
+        cache_files
+    )
+    assert llm.calls == []
+    assert llm.embed_calls
+    assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
+    assert second_compile_report["llm_compile_run"]["all_outputs_from_cache"] is True
+
+
 def test_llm_full_requires_real_provider(
     tmp_path: Path,
     monkeypatch,
