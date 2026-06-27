@@ -3654,6 +3654,10 @@ class DailyAnalyzer:
         record_id_coverage_complete = Counter(manifest.available_record_ids) == Counter(
             manifest.swept_record_ids
         )
+        record_coverage_delta = self._exhaustive_record_coverage_delta(manifest)
+        manifest.missing_swept_record_ids = record_coverage_delta["missing"]
+        manifest.unexpected_swept_record_ids = record_coverage_delta["unexpected"]
+        manifest.duplicate_swept_record_ids = record_coverage_delta["duplicate"]
         if (
             manifest.accepted_episode_count == manifest.swept_episode_count
             and episode_id_coverage_complete
@@ -3685,6 +3689,25 @@ class DailyAnalyzer:
             "exhaustive memory coverage failed; see "
             f"{manifest_path.relative_to(self.root).as_posix()}"
         )
+
+    @staticmethod
+    def _exhaustive_record_coverage_delta(
+        manifest: ContextManifest,
+    ) -> dict[str, list[str]]:
+        expected_counts = Counter(manifest.available_record_ids)
+        swept_counts = Counter(manifest.swept_record_ids)
+        missing = sorted((expected_counts - swept_counts).elements())
+        unexpected = sorted((swept_counts - expected_counts).elements())
+        duplicate = sorted(
+            record_id
+            for record_id, count in swept_counts.items()
+            if count > 1
+        )
+        return {
+            "missing": missing,
+            "unexpected": unexpected,
+            "duplicate": duplicate,
+        }
 
     @staticmethod
     def _exhaustive_episode_id_coverage_complete(manifest: ContextManifest) -> bool:

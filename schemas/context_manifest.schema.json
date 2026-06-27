@@ -361,6 +361,13 @@
       "title": "Cutoff At",
       "type": "string"
     },
+    "duplicate_swept_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Duplicate Swept Record Ids",
+      "type": "array"
+    },
     "errors": {
       "items": {
         "type": "string"
@@ -578,6 +585,13 @@
       "default": 0,
       "title": "Memory Sweep Shard Count",
       "type": "integer"
+    },
+    "missing_swept_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Swept Record Ids",
+      "type": "array"
     },
     "mode": {
       "title": "Mode",
@@ -1102,6 +1116,13 @@
         "type": "string"
       },
       "title": "Unavailable Episode Ids",
+      "type": "array"
+    },
+    "unexpected_swept_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unexpected Swept Record Ids",
       "type": "array"
     },
     "web_queries": {

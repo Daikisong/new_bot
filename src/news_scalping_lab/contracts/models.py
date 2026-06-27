@@ -624,6 +624,9 @@ class ContextManifest(StrictModel):
     training_eligible_available_record_ids: list[str] = Field(default_factory=list)
     swept_record_count: int = 0
     swept_record_ids: list[str] = Field(default_factory=list)
+    missing_swept_record_ids: list[str] = Field(default_factory=list)
+    unexpected_swept_record_ids: list[str] = Field(default_factory=list)
+    duplicate_swept_record_ids: list[str] = Field(default_factory=list)
     retrieved_record_ids: list[str] = Field(default_factory=list)
     excluded_retrieved_record_ids: list[str] = Field(default_factory=list)
     counterexample_record_ids: list[str] = Field(default_factory=list)

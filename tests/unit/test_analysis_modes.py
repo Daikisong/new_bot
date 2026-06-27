@@ -1083,12 +1083,54 @@ def test_exhaustive_coverage_rejects_record_id_mismatch(tmp_path) -> None:
     assert manifest.errors == [
         "exhaustive mode requires swept_record_ids to match available_record_ids"
     ]
+    assert manifest.missing_swept_record_ids == ["BRAIN-AVAILABLE"]
+    assert manifest.unexpected_swept_record_ids == ["BRAIN-SWEPT"]
+    assert manifest.duplicate_swept_record_ids == []
     saved_manifest = read_json(
         tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-ID-MISMATCH.json"
     )
     assert saved_manifest["available_record_ids"] == ["BRAIN-AVAILABLE"]
     assert saved_manifest["swept_record_ids"] == ["BRAIN-SWEPT"]
+    assert saved_manifest["missing_swept_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert saved_manifest["unexpected_swept_record_ids"] == ["BRAIN-SWEPT"]
+    assert saved_manifest["duplicate_swept_record_ids"] == []
     assert saved_manifest["errors"] == manifest.errors
+
+
+def test_exhaustive_coverage_records_duplicate_swept_record_ids(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    manifest = ContextManifest(
+        run_id="RUN-EXHAUSTIVE-RECORD-DUPLICATE",
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        as_of=cutoff_at,
+        accepted_episode_count=1,
+        swept_episode_count=1,
+        available_record_count=2,
+        available_record_ids=["BRAIN-A", "BRAIN-B"],
+        swept_record_count=2,
+        swept_record_ids=["BRAIN-A", "BRAIN-A"],
+        price_snapshot=PriceSnapshot(
+            source_name="test",
+            allowed_through=date(2030, 1, 9),
+        ),
+    )
+
+    with pytest.raises(ExhaustiveCoverageError):
+        DailyAnalyzer(settings)._fail_if_exhaustive_coverage_incomplete(manifest)
+
+    assert manifest.missing_swept_record_ids == ["BRAIN-B"]
+    assert manifest.unexpected_swept_record_ids == ["BRAIN-A"]
+    assert manifest.duplicate_swept_record_ids == ["BRAIN-A"]
+    saved_manifest = read_json(
+        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-RECORD-DUPLICATE.json"
+    )
+    assert saved_manifest["missing_swept_record_ids"] == ["BRAIN-B"]
+    assert saved_manifest["unexpected_swept_record_ids"] == ["BRAIN-A"]
+    assert saved_manifest["duplicate_swept_record_ids"] == ["BRAIN-A"]
 
 
 def test_exhaustive_coverage_rejects_episode_id_mismatch(tmp_path) -> None:
