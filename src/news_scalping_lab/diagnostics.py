@@ -667,6 +667,10 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "checked_trace_count": trace_evidence["checked_trace_count"],
         "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
         "unreadable_traces": trace_evidence["unreadable_traces"],
+        "missing_trace_prompt_hash_count": trace_evidence[
+            "missing_trace_prompt_hash_count"
+        ],
+        "missing_trace_prompt_hashes": trace_evidence["missing_trace_prompt_hashes"],
         "mock_trace_count": trace_evidence["mock_trace_count"],
         "mock_traces": trace_evidence["mock_traces"],
         "checked_checkpoint_count": trace_evidence["checked_checkpoint_count"],
@@ -708,6 +712,8 @@ def _production_llm_trace_evidence_status(
             "checked_trace_count": 0,
             "unreadable_trace_count": 0,
             "unreadable_traces": [],
+            "missing_trace_prompt_hash_count": 0,
+            "missing_trace_prompt_hashes": [],
             "mock_trace_count": 0,
             "mock_traces": [],
             "checked_checkpoint_count": 0,
@@ -721,6 +727,7 @@ def _production_llm_trace_evidence_status(
     trace_paths = sorted(trace_dir.glob("*.json")) if trace_dir.exists() else []
     checked_traces: list[Path] = []
     unreadable_traces: list[str] = []
+    matched_prompt_hashes: set[str] = set()
     mock_traces: list[dict[str, Any]] = []
     checkpoint_ids: set[str] = set()
     for trace_path in trace_paths:
@@ -732,6 +739,7 @@ def _production_llm_trace_evidence_status(
         prompt_hash = _trace_prompt_hash(trace)
         if prompt_hash not in manifest_prompt_hashes:
             continue
+        matched_prompt_hashes.add(prompt_hash)
         checked_traces.append(trace_path)
         checkpoint_id = trace.get("checkpoint_id")
         if isinstance(checkpoint_id, str) and checkpoint_id:
@@ -748,6 +756,7 @@ def _production_llm_trace_evidence_status(
                 }
             )
 
+    missing_trace_prompt_hashes = sorted(manifest_prompt_hashes - matched_prompt_hashes)
     checkpoint_root = root / "runs" / "checkpoints" / "llm"
     checked_checkpoints: list[Path] = []
     unreadable_checkpoints: list[str] = []
@@ -780,6 +789,8 @@ def _production_llm_trace_evidence_status(
     findings: list[str] = []
     for path in unreadable_traces:
         findings.append(f"referenced LLM trace is unreadable: {path}")
+    for prompt_hash in missing_trace_prompt_hashes:
+        findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
     for trace in mock_traces:
         findings.append(
             f"mock LLM trace present in {trace['path']}: "
@@ -798,6 +809,8 @@ def _production_llm_trace_evidence_status(
         "checked_trace_count": len(checked_traces),
         "unreadable_trace_count": len(unreadable_traces),
         "unreadable_traces": unreadable_traces,
+        "missing_trace_prompt_hash_count": len(missing_trace_prompt_hashes),
+        "missing_trace_prompt_hashes": missing_trace_prompt_hashes,
         "mock_trace_count": len(mock_traces),
         "mock_traces": mock_traces,
         "checked_checkpoint_count": len(checked_checkpoints),
