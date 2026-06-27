@@ -583,6 +583,11 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["unknown_typed_payload_count"] == 1
     assert report["raw_only_record_count"] == 0
     assert report["ineligible_record_count"] == 1
+    assert report["raw_record_count"] == 3
+    assert report["normalized_record_count"] == 3
+    assert report["raw_record_counts_by_episode"] == {
+        "NSLAB-20300110-SYNTH": 3
+    }
     assert report["all_unknown_typed_payload_count"] == 1
     assert report["all_raw_only_record_count"] == 0
     assert report["staged_unknown_typed_payload_count"] == 0

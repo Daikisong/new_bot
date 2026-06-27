@@ -5,8 +5,15 @@
   "audit_passed": true,
   "dropped_record_count": 0,
   "ineligible_record_count": 2,
+  "normalized_record_count": 4,
   "quarantined_record_count": 0,
   "raw_only_record_count": 0,
+  "raw_record_count": 4,
+  "raw_record_counts_by_episode": {
+    "EP-2991eb145f59": 1,
+    "EP-f56c790fe2fc": 1,
+    "NSLAB-20300110-SYNTH": 2
+  },
   "record_count": 4,
   "record_counts_by_evidence_phase": {
     "AUDIT": 2,

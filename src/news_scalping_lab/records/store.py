@@ -452,12 +452,17 @@ def record_store_report_payload(
         if warehouse_counts is not None
         else _existing_report_warehouse_counts(root)
     )
+    normalized_record_count = audit_result.get("record_count", 0)
+    raw_record_counts_by_episode = _stored_raw_record_counts_by_episode(root)
     return {
         "schema_version": "nslab.brain_record_store_report.v1",
-        "record_count": audit_result.get("record_count", 0),
+        "record_count": normalized_record_count,
+        "raw_record_count": sum(raw_record_counts_by_episode.values()),
+        "normalized_record_count": normalized_record_count,
+        "raw_record_counts_by_episode": raw_record_counts_by_episode,
         "all_record_count": audit_result.get(
             "all_record_count",
-            audit_result.get("record_count", 0),
+            normalized_record_count,
         ),
         "staged_record_count": audit_result.get("staged_record_count", 0),
         "training_eligible_record_count": audit_result.get(
@@ -513,6 +518,26 @@ def quarantined_bundle_count(root: Path) -> int:
     if not quarantine_dir.exists():
         return 0
     return sum(1 for path in quarantine_dir.iterdir() if path.is_dir())
+
+
+def _stored_raw_record_counts_by_episode(root: Path) -> dict[str, int]:
+    episodes_dir = root / "research" / "episodes"
+    if not episodes_dir.exists():
+        return {}
+    counts: dict[str, int] = {}
+    for envelope_path in sorted(episodes_dir.glob("*/bundle_envelope.json")):
+        envelope = _read_json_dict(envelope_path)
+        if envelope is None:
+            continue
+        episode_id = envelope.get("episode_id")
+        if not isinstance(episode_id, str) or not episode_id:
+            episode_id = envelope_path.parent.name
+        raw_block_counts = _int_dict(envelope.get("raw_block_counts"))
+        raw_count = raw_block_counts.get("brain_delta.jsonl")
+        if raw_count is None:
+            raw_count = sum(raw_block_counts.values())
+        counts[episode_id] = raw_count
+    return counts
 
 
 def _existing_report_warehouse_counts(root: Path) -> dict[str, int]:

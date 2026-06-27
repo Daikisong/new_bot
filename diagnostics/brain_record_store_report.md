@@ -2,6 +2,14 @@
 
 - schema_version: `nslab.brain_record_store_report.v1`
 - record_count: `4`
+- raw_record_count: `4`
+- normalized_record_count: `4`
+## raw_record_counts_by_episode
+
+- EP-2991eb145f59: `1`
+- EP-f56c790fe2fc: `1`
+- NSLAB-20300110-SYNTH: `2`
+
 - all_record_count: `4`
 - staged_record_count: `0`
 - training_eligible_record_count: `2`

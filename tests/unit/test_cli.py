@@ -923,6 +923,9 @@ def test_memory_audit_cli_writes_diagnostic_report(
     assert report["record_store_audit"]["passed"] is True
     assert report["record_store_audit"]["deep"] is True
     assert report["record_count"] == 0
+    assert report["raw_record_count"] == 0
+    assert report["normalized_record_count"] == 0
+    assert report["raw_record_counts_by_episode"] == {}
     assert report["warehouse_counts"] == {"brain_records": 7}
     assert markdown_path.exists()
 
