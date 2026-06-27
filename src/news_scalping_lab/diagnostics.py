@@ -2832,11 +2832,17 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "duplicate_issuer_day_count",
     )
+    duplicate_issuer_day_keys = _string_list(
+        diagnostics.get("duplicate_issuer_day_keys")
+    )
     if duplicate_issuer_day_count is not None and duplicate_issuer_day_count != 0:
         findings.append("training export has duplicate issuer-day samples")
     issuer_weight_mismatch_count = _int_from_mapping(
         diagnostics,
         "issuer_day_weight_sum_mismatch_count",
+    )
+    issuer_weight_mismatches = _numeric_map(
+        diagnostics.get("issuer_day_weight_sum_mismatches")
     )
     if (
         issuer_weight_mismatch_count is not None
@@ -2846,6 +2852,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     direct_weight_mismatch_count = _int_from_mapping(
         diagnostics,
         "direct_event_weight_sum_mismatch_count",
+    )
+    direct_weight_mismatches = _numeric_map(
+        diagnostics.get("direct_event_weight_sum_mismatches")
     )
     if direct_weight_mismatch_count is not None and direct_weight_mismatch_count != 0:
         findings.append("training export has direct-event weight sum mismatches")
@@ -2870,8 +2879,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if isinstance(weight_statuses, dict)
         else {},
         "duplicate_issuer_day_count": duplicate_issuer_day_count,
+        "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
         "issuer_day_weight_sum_mismatch_count": issuer_weight_mismatch_count,
+        "issuer_day_weight_sum_mismatches": issuer_weight_mismatches,
         "direct_event_weight_sum_mismatch_count": direct_weight_mismatch_count,
+        "direct_event_weight_sum_mismatches": direct_weight_mismatches,
         "audit_passed": audit.get("passed") is True,
     }
 
@@ -5720,6 +5732,16 @@ def _int_dict(value: object) -> dict[str, int]:
         key: item
         for key, item in value.items()
         if isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool)
+    }
+
+
+def _numeric_map(value: object) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: float(item)
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, int | float) and not isinstance(item, bool)
     }
 
 

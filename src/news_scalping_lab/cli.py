@@ -6871,6 +6871,7 @@ def memory_inspect(
                 for record in records
                 if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
             ),
+            "raw_only_record_count": sum(1 for record in records if _is_raw_only_record(record)),
         }
     )
 
@@ -6897,6 +6898,13 @@ def _memory_inspect_raw_record_count(root: Path, episode_id: str) -> int | None:
     if counts:
         return sum(counts.values())
     return None
+
+
+def _is_raw_only_record(record: BrainRecordEnvelope) -> bool:
+    if record.status == "raw_only":
+        return True
+    reason = record.eligibility_reason or ""
+    return "forward-compatible raw-only record" in reason
 
 
 @memory_app.command("inspect-record")
@@ -6932,9 +6940,21 @@ def memory_stats() -> None:
                 "raw_record_counts_by_episode",
                 {},
             ),
+            "all_record_count": report.get("all_record_count"),
+            "staged_record_count": report.get("staged_record_count"),
             "dropped_record_count": report.get("dropped_record_count"),
             "extra_normalized_record_count": report.get(
                 "extra_normalized_record_count",
+            ),
+            "all_unknown_typed_payload_count": report.get(
+                "all_unknown_typed_payload_count",
+            ),
+            "all_raw_only_record_count": report.get("all_raw_only_record_count"),
+            "staged_unknown_typed_payload_count": report.get(
+                "staged_unknown_typed_payload_count",
+            ),
+            "staged_raw_only_record_count": report.get(
+                "staged_raw_only_record_count",
             ),
             "quarantined_bundle_count": report.get("quarantined_bundle_count"),
             "quarantined_raw_record_count": report.get(

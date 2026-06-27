@@ -85,6 +85,61 @@ def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
     )
 
 
+def _write_staged_raw_only_cli_record(root: Path) -> None:
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    reason = "unsupported bundle version preserved as forward-compatible raw-only record"
+    payload = {
+        "record_id": "BRAIN-STAGED-RAW",
+        "record_type": "future_record",
+        "episode_id": "EP-staged",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_eligible": False,
+        "eligibility_reason": reason,
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-STAGED-RAW",
+        record_type="future_record",
+        episode_id="EP-staged",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target=None,
+        evidence_phase="POSTMORTEM",
+        training_eligible=False,
+        eligibility_reason=reason,
+        status="raw_only",
+        confidence_label="low",
+        provenance_source_ids=[],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="UNKNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-staged.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    manifest_dir = root / "memory" / "record_manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        manifest_dir / "EP-staged.json",
+        {
+            "schema_version": "nslab.record_manifest.v1",
+            "episode_id": "EP-staged",
+            "accepted": False,
+            "acceptance_status": "staged",
+            "record_count": 1,
+            "training_eligible_record_count": 0,
+            "record_counts_by_type": {"future_record": 1},
+        },
+    )
+
+
 def test_analyze_cli_uses_configured_default_mode_when_mode_is_omitted(
     tmp_path: Path,
     monkeypatch,
@@ -1055,6 +1110,32 @@ def test_memory_inspect_cli_reports_record_level_counts(
         "KNOWN_TYPED_PAYLOAD": 1
     }
     assert payload["unknown_typed_payload_count"] == 0
+    assert payload["raw_only_record_count"] == 0
+
+
+def test_memory_inspect_cli_reports_raw_only_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    _write_staged_raw_only_cli_record(tmp_path)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "inspect", "--episode", "EP-staged"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["episode_id"] == "EP-staged"
+    assert payload["record_count"] == 1
+    assert payload["raw_record_count"] is None
+    assert payload["raw_normalized_record_count_matches"] is None
+    assert payload["record_counts_by_type"] == {"future_record": 1}
+    assert payload["record_counts_by_typed_payload_status"] == {
+        "UNKNOWN_TYPED_PAYLOAD": 1
+    }
+    assert payload["unknown_typed_payload_count"] == 1
+    assert payload["raw_only_record_count"] == 1
 
 
 def test_memory_stats_cli_reports_record_store_loss_counts(
@@ -1067,6 +1148,7 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
     records_path.parent.mkdir(parents=True, exist_ok=True)
     records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    _write_staged_raw_only_cli_record(tmp_path)
     episode_dir = tmp_path / "research" / "episodes" / "EP-cli"
     episode_dir.mkdir(parents=True)
     write_json(
@@ -1089,8 +1171,19 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["record_count"] == 1
+    assert payload["all_record_count"] == 2
+    assert payload["staged_record_count"] == 1
     assert payload["training_eligible_record_count"] == 0
     assert payload["record_counts_by_type"] == {"memory_claim": 1}
+    assert payload["record_counts_by_typed_payload_status"] == {
+        "KNOWN_TYPED_PAYLOAD": 1
+    }
+    assert payload["unknown_typed_payload_count"] == 0
+    assert payload["raw_only_record_count"] == 0
+    assert payload["all_unknown_typed_payload_count"] == 1
+    assert payload["all_raw_only_record_count"] == 1
+    assert payload["staged_unknown_typed_payload_count"] == 1
+    assert payload["staged_raw_only_record_count"] == 1
     assert payload["raw_record_count"] == 2
     assert payload["normalized_record_count"] == 1
     assert payload["raw_normalized_record_count_matches"] is False

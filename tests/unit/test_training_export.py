@@ -603,6 +603,88 @@ def test_training_manifest_surfaces_duplicate_issuer_day_weight_validation(
     assert training_report["direct_event_weight_sum_mismatch_count"] == 0
 
 
+def test_training_manifest_surfaces_direct_event_weight_validation(tmp_path) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-DIRECT-A",
+            "supervised_direct_event_case",
+            training_target="direct_event_response",
+            training_eligible=True,
+            payload={
+                "case_id": "DIRECT-A",
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "event_id": "EVT-A",
+                "sample_weight": 0.4,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+        _brain_record(
+            "BRAIN-DIRECT-B",
+            "supervised_direct_event_case",
+            training_target="direct_event_response",
+            training_eligible=True,
+            payload={
+                "case_id": "DIRECT-B",
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "event_id": "EVT-B",
+                "sample_weight": 0.4,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+            },
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+
+    assert manifest["weight_validation_status"] == "failed"
+    assert manifest["duplicate_issuer_day_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatches"] == {}
+    assert manifest["direct_event_weight_sum_mismatch_count"] == 1
+    assert manifest["direct_event_weight_sum_mismatches"] == {"ISSUER-1": 0.8}
+    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {
+        "ISSUER-1": 0.8
+    }
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert "sft: record weight validation failed" in audit["findings"]
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+    assert training_report["weight_validation_statuses"] == {
+        "evals": "failed",
+        "preference": "failed",
+        "sft": "failed",
+    }
+    assert training_report["direct_event_weight_sum_mismatch_count"] == 1
+    assert training_report["direct_event_weight_sum_mismatches"] == {"ISSUER-1": 0.8}
+
+
 def test_training_audit_requires_brain_record_source_hashes(tmp_path) -> None:
     records = [
         _brain_record(

@@ -1874,6 +1874,74 @@ def test_production_readiness_accepts_record_backed_training_exports(
     )
 
 
+def test_production_readiness_rejects_direct_event_weight_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(
+        tmp_path,
+        include_direct_event_weight_mismatch=True,
+    )
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["status"] == "attention"
+    assert production["training_exports"]["weight_validation_statuses"] == {
+        "evals": "failed",
+        "preference": "failed",
+        "sft": "failed",
+    }
+    assert production["training_exports"]["direct_event_weight_sum_mismatch_count"] == 1
+    assert production["training_exports"]["direct_event_weight_sum_mismatches"] == {
+        "ISSUER-1": 0.8
+    }
+    assert (
+        "training export has direct-event weight sum mismatches"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export has direct-event weight sum mismatches"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_reports_duplicate_issuer_day_keys(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(
+        tmp_path,
+        include_duplicate_issuer_day=True,
+    )
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["duplicate_issuer_day_count"] == 1
+    assert production["training_exports"]["duplicate_issuer_day_keys"] == [
+        "2030-01-10|TRAIN"
+    ]
+    assert production["training_exports"]["issuer_day_weight_sum_mismatch_count"] == 0
+    assert production["training_exports"]["issuer_day_weight_sum_mismatches"] == {}
+    assert (
+        "training export has duplicate issuer-day samples"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export has duplicate issuer-day samples"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_semantic_index_model_mismatch(
     tmp_path,
 ) -> None:
@@ -8347,7 +8415,12 @@ def _write_brain_category_file_fixture(root: Path) -> None:
         )
 
 
-def _write_training_record_store(root: Path) -> None:
+def _write_training_record_store(
+    root: Path,
+    *,
+    include_direct_event_weight_mismatch: bool = False,
+    include_duplicate_issuer_day: bool = False,
+) -> None:
     episode_id = "EP-training-production"
     records = [
         _training_record(
@@ -8392,6 +8465,71 @@ def _write_training_record_store(root: Path) -> None:
             },
         ),
     ]
+    if include_duplicate_issuer_day:
+        records.append(
+            _training_record(
+                record_id="BRAIN-TRAIN-ISSUER-DUP",
+                record_type="supervised_issuer_day_case",
+                training_target="issuer_day_price_response",
+                payload={
+                    "record_id": "BRAIN-TRAIN-ISSUER-DUP",
+                    "record_type": "supervised_issuer_day_case",
+                    "episode_id": episode_id,
+                    "trade_date": "2030-01-10",
+                    "issuer_day_case_id": "ISSUER-DUP",
+                    "ticker": "TRAIN",
+                    "safe_D1_features": {"market_cap": "known before cutoff"},
+                    "blind_fact_ids": ["FACT-TRAIN-DUP"],
+                    "blind_inference_ids": ["INF-TRAIN-DUP"],
+                    "event_ids": ["EVT-TRAIN-DUP"],
+                    "response_class": "winner",
+                    "D_outcome": {"label_quality": "verified"},
+                    "sample_weight": 0.0,
+                    "attribution_status": "attributed",
+                },
+            )
+        )
+    if include_direct_event_weight_mismatch:
+        records.extend(
+            [
+                _training_record(
+                    record_id="BRAIN-TRAIN-DIRECT-A",
+                    record_type="supervised_direct_event_case",
+                    training_target="direct_event_response",
+                    payload={
+                        "record_id": "BRAIN-TRAIN-DIRECT-A",
+                        "record_type": "supervised_direct_event_case",
+                        "episode_id": episode_id,
+                        "trade_date": "2030-01-10",
+                        "case_id": "DIRECT-A",
+                        "issuer_day_case_id": "ISSUER-1",
+                        "ticker": "TRAIN",
+                        "event_id": "EVT-A",
+                        "response_class": "winner",
+                        "D_outcome": {"label_quality": "verified"},
+                        "sample_weight": 0.4,
+                    },
+                ),
+                _training_record(
+                    record_id="BRAIN-TRAIN-DIRECT-B",
+                    record_type="supervised_direct_event_case",
+                    training_target="direct_event_response",
+                    payload={
+                        "record_id": "BRAIN-TRAIN-DIRECT-B",
+                        "record_type": "supervised_direct_event_case",
+                        "episode_id": episode_id,
+                        "trade_date": "2030-01-10",
+                        "case_id": "DIRECT-B",
+                        "issuer_day_case_id": "ISSUER-1",
+                        "ticker": "TRAIN",
+                        "event_id": "EVT-B",
+                        "response_class": "winner",
+                        "D_outcome": {"label_quality": "verified"},
+                        "sample_weight": 0.4,
+                    },
+                ),
+            ]
+        )
     records_dir = root / "memory" / "records"
     records_dir.mkdir(parents=True, exist_ok=True)
     (records_dir / f"{episode_id}.jsonl").write_text(
@@ -8409,12 +8547,18 @@ def _write_training_record_store(root: Path) -> None:
             "acceptance_status": "accepted",
             "record_count": len(records),
             "training_eligible_record_count": len(records),
-            "record_counts_by_type": {
-                "blind_leader_preference_pair": 1,
-                "supervised_issuer_day_case": 1,
-            },
+            "record_counts_by_type": _training_record_type_counts(records),
         },
     )
+
+
+def _training_record_type_counts(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.record_type] = counts.get(record.record_type, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _training_record(
