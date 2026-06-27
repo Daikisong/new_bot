@@ -2753,6 +2753,101 @@ def test_production_readiness_rejects_invalid_compiled_claim_rows(
     )
 
 
+def test_production_readiness_rejects_compiled_claim_unknown_record_refs(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_brain_category_file_fixture(tmp_path)
+    _write_production_brain_record_fixture(tmp_path)
+    claim = CompiledBrainClaim(
+        claim_id="CC-production",
+        category="world_model",
+        statement="Production claim must close over record IDs.",
+        mechanism="production readiness fixture",
+        scope="diagnostic fixture",
+        supporting_record_ids=["BRAIN-missing"],
+        contradicting_record_ids=["BRAIN-missing-contra"],
+        supporting_episode_ids=["EP-production"],
+        positive_case_count=1,
+        confidence_label="medium",
+        status="supported",
+        available_from=datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST),
+        provenance={"fixture": "production_readiness"},
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["record_store_readable_for_compiled_claims"] is True
+    assert production["llm_full_brain"]["record_store_record_count_for_compiled_claims"] == 1
+    assert production["llm_full_brain"]["compiled_claim_supporting_record_id_count"] == 1
+    assert production["llm_full_brain"][
+        "compiled_claims_with_unknown_supporting_records"
+    ] == ["CC-production: BRAIN-missing"]
+    assert production["llm_full_brain"][
+        "compiled_claims_with_unknown_contradicting_records"
+    ] == ["CC-production: BRAIN-missing-contra"]
+    assert (
+        "brain: compiled claims reference unknown supporting record IDs"
+        in production["findings"]
+    )
+    assert (
+        "brain: compiled claims reference unknown contradicting record IDs"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_all_cached_llm_full_compile(
     tmp_path,
 ) -> None:
@@ -4845,11 +4940,14 @@ def _write_compiled_claim_fixture(
     *,
     claim_id: str = "CC-production",
     write_category_files: bool = True,
+    write_support_record: bool = True,
 ) -> None:
     current = root / "brain" / "current"
     current.mkdir(parents=True, exist_ok=True)
     if write_category_files:
         _write_brain_category_file_fixture(root)
+    if write_support_record:
+        _write_production_brain_record_fixture(root)
     claim = CompiledBrainClaim(
         claim_id=claim_id,
         category="world_model",
@@ -4866,6 +4964,46 @@ def _write_compiled_claim_fixture(
     )
     (current / "compiled_claims.jsonl").write_text(
         claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_production_brain_record_fixture(root: Path) -> None:
+    available_from = datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": "BRAIN-production",
+        "record_type": "memory_claim",
+        "episode_id": "EP-production",
+        "trade_date": "2030-01-01",
+        "available_from": available_from.isoformat(),
+        "training_target": "production_readiness_fixture",
+        "training_eligible": True,
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-production",
+        record_type="memory_claim",
+        episode_id="EP-production",
+        trade_date=date(2030, 1, 1),
+        available_from=available_from,
+        training_target="production_readiness_fixture",
+        evidence_phase="POSTMORTEM",
+        training_eligible=True,
+        eligibility_reason="production readiness fixture",
+        status="supported",
+        confidence_label="medium",
+        provenance_source_ids=["SRC-production"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-production.jsonl").write_text(
+        record.model_dump_json() + "\n",
         encoding="utf-8",
     )
 

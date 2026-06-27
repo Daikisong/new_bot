@@ -2835,7 +2835,16 @@ def _llm_full_brain_status(
         else None
     )
     compile_run = compile_run if isinstance(compile_run, dict) else None
-    compiled_claim_stats = _compiled_claim_file_stats(compiled_claims_path)
+    record_id_stats = _brain_record_store_id_stats(settings.project_root)
+    known_record_ids = (
+        record_id_stats["record_ids"]
+        if record_id_stats["readable"] is True
+        else None
+    )
+    compiled_claim_stats = _compiled_claim_file_stats(
+        compiled_claims_path,
+        known_record_ids=known_record_ids,
+    )
     category_file_stats = _brain_category_file_stats(current_dir)
     category_manifest_stats = _llm_compile_category_manifest_stats(
         compile_manifest,
@@ -2872,6 +2881,27 @@ def _llm_full_brain_status(
             "invalid_line_count"
         ],
         "duplicate_compiled_claim_ids": compiled_claim_stats["duplicate_claim_ids"],
+        "compiled_claim_invalid_categories": compiled_claim_stats[
+            "invalid_categories"
+        ],
+        "compiled_claims_without_supporting_records": compiled_claim_stats[
+            "claims_without_supporting_records"
+        ],
+        "compiled_claims_with_unknown_supporting_records": compiled_claim_stats[
+            "claims_with_unknown_supporting_records"
+        ],
+        "compiled_claims_with_unknown_contradicting_records": compiled_claim_stats[
+            "claims_with_unknown_contradicting_records"
+        ],
+        "compiled_claim_supporting_record_id_count": compiled_claim_stats[
+            "supporting_record_id_count"
+        ],
+        "compiled_claim_contradicting_record_id_count": compiled_claim_stats[
+            "contradicting_record_id_count"
+        ],
+        "record_store_readable_for_compiled_claims": record_id_stats["readable"],
+        "record_store_record_count_for_compiled_claims": record_id_stats["record_count"],
+        "record_store_error_for_compiled_claims": record_id_stats["error"],
         "brain_category_expected_file_count": len(BRAIN_FILES),
         "brain_category_existing_file_count": category_file_stats["existing_count"],
         "brain_category_missing_files": category_file_stats["missing_files"],
@@ -3080,6 +3110,16 @@ def _llm_full_brain_status(
         findings.append("compiled claims JSONL has invalid compiled claim rows")
     elif compiled_claim_stats["duplicate_claim_ids"]:
         findings.append("compiled claims JSONL has duplicate claim IDs")
+    if record_id_stats["readable"] is not True:
+        findings.append("compiled claim support record store is unreadable")
+    if compiled_claim_stats["invalid_categories"]:
+        findings.append("compiled claims use unknown categories")
+    if compiled_claim_stats["claims_without_supporting_records"]:
+        findings.append("compiled claims are missing supporting_record_ids")
+    if compiled_claim_stats["claims_with_unknown_supporting_records"]:
+        findings.append("compiled claims reference unknown supporting record IDs")
+    if compiled_claim_stats["claims_with_unknown_contradicting_records"]:
+        findings.append("compiled claims reference unknown contradicting record IDs")
     return {
         **status,
         "passed": not findings,
@@ -3767,7 +3807,11 @@ def _jsonl_line_count(path: Path) -> int:
         return 0
 
 
-def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
+def _compiled_claim_file_stats(
+    path: Path,
+    *,
+    known_record_ids: set[str] | None = None,
+) -> dict[str, Any]:
     if not path.exists():
         return {
             "exists": False,
@@ -3776,10 +3820,23 @@ def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
             "invalid_line_count": 0,
             "claim_ids": [],
             "duplicate_claim_ids": [],
+            "invalid_categories": [],
+            "claims_without_supporting_records": [],
+            "claims_with_unknown_supporting_records": [],
+            "claims_with_unknown_contradicting_records": [],
+            "supporting_record_id_count": 0,
+            "contradicting_record_id_count": 0,
         }
     line_count = 0
     invalid_line_count = 0
     claim_ids: list[str] = []
+    invalid_categories: list[str] = []
+    claims_without_supporting_records: list[str] = []
+    claims_with_unknown_supporting_records: list[str] = []
+    claims_with_unknown_contradicting_records: list[str] = []
+    supporting_record_ids: list[str] = []
+    contradicting_record_ids: list[str] = []
+    valid_categories = {_brain_category(file_name) for file_name in BRAIN_FILES}
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -3796,6 +3853,25 @@ def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
             invalid_line_count += 1
             continue
         claim_ids.append(claim.claim_id)
+        if claim.category not in valid_categories:
+            invalid_categories.append(f"{claim.claim_id}: {claim.category}")
+        if not claim.supporting_record_ids:
+            claims_without_supporting_records.append(claim.claim_id)
+        supporting_record_ids.extend(claim.supporting_record_ids)
+        contradicting_record_ids.extend(claim.contradicting_record_ids)
+        if known_record_ids is not None:
+            unknown_supporting = sorted(set(claim.supporting_record_ids) - known_record_ids)
+            if unknown_supporting:
+                claims_with_unknown_supporting_records.append(
+                    f"{claim.claim_id}: {', '.join(unknown_supporting)}"
+                )
+            unknown_contradicting = sorted(
+                set(claim.contradicting_record_ids) - known_record_ids
+            )
+            if unknown_contradicting:
+                claims_with_unknown_contradicting_records.append(
+                    f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
+                )
     return {
         "exists": True,
         "line_count": line_count,
@@ -3803,6 +3879,37 @@ def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
         "invalid_line_count": invalid_line_count,
         "claim_ids": claim_ids,
         "duplicate_claim_ids": _duplicate_strings(claim_ids),
+        "invalid_categories": sorted(invalid_categories),
+        "claims_without_supporting_records": sorted(
+            claims_without_supporting_records
+        ),
+        "claims_with_unknown_supporting_records": sorted(
+            claims_with_unknown_supporting_records
+        ),
+        "claims_with_unknown_contradicting_records": sorted(
+            claims_with_unknown_contradicting_records
+        ),
+        "supporting_record_id_count": len(supporting_record_ids),
+        "contradicting_record_id_count": len(contradicting_record_ids),
+    }
+
+
+def _brain_record_store_id_stats(root: Path) -> dict[str, Any]:
+    try:
+        records = BrainRecordStore(root).list_records()
+    except Exception as exc:
+        return {
+            "readable": False,
+            "record_ids": None,
+            "record_count": None,
+            "error": type(exc).__name__,
+        }
+    record_ids = {record.record_id for record in records}
+    return {
+        "readable": True,
+        "record_ids": record_ids,
+        "record_count": len(record_ids),
+        "error": None,
     }
 
 
