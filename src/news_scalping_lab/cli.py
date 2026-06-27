@@ -6495,14 +6495,75 @@ def _final_synthesis_manifest_count_mismatches(
     )
     _add_expected_count(
         expected_counts,
+        "accepted_record_count",
+        manifest.get("accepted_record_count"),
+    )
+    _add_expected_count(
+        expected_counts,
+        "available_record_count",
+        manifest.get("available_record_count"),
+    )
+    if "available_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "available_record_id_count",
+            len(_string_list(manifest.get("available_record_ids"))),
+        )
+    _add_expected_count(
+        expected_counts,
+        "training_eligible_available_record_count",
+        manifest.get("training_eligible_available_record_count"),
+    )
+    if "training_eligible_available_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "training_eligible_available_record_id_count",
+            len(_string_list(manifest.get("training_eligible_available_record_ids"))),
+        )
+    _add_expected_count(
+        expected_counts,
+        "swept_record_count",
+        manifest.get("swept_record_count"),
+    )
+    if "swept_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "swept_record_id_count",
+            len(_string_list(manifest.get("swept_record_ids"))),
+        )
+    _add_expected_count(
+        expected_counts,
         "retrieved_raw_episode_count",
         len(_string_list(manifest.get("retrieved_episode_ids"))),
     )
     if "retrieved_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
+            "retrieved_record_id_count",
+            len(_string_list(manifest.get("retrieved_record_ids"))),
+        )
+        _add_expected_count(
+            expected_counts,
             "retrieved_record_count",
             len(_string_list(manifest.get("retrieved_record_ids"))),
+        )
+    if "excluded_retrieved_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "excluded_retrieved_record_id_count",
+            len(_string_list(manifest.get("excluded_retrieved_record_ids"))),
+        )
+    if "semantic_retrieval_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "semantic_retrieval_record_id_count",
+            len(_string_list(manifest.get("semantic_retrieval_record_ids"))),
+        )
+    if "excluded_semantic_retrieval_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "excluded_semantic_retrieval_record_id_count",
+            len(_string_list(manifest.get("excluded_semantic_retrieval_record_ids"))),
         )
     _add_expected_count(
         expected_counts,
@@ -6510,6 +6571,11 @@ def _final_synthesis_manifest_count_mismatches(
         len(_string_list(manifest.get("counterexample_episode_ids"))),
     )
     if "counterexample_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "counterexample_record_id_count",
+            len(_string_list(manifest.get("counterexample_record_ids"))),
+        )
         _add_expected_count(
             expected_counts,
             "counterexample_record_count",

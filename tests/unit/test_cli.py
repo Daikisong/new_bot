@@ -850,6 +850,55 @@ def test_context_inspect_cli_outputs_manifest_inspection_and_strict_failure(
     assert strict_result.exit_code == 1
 
 
+def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> None:
+    manifest = {
+        "accepted_record_count": 4,
+        "available_record_count": 3,
+        "available_record_ids": ["REC-1", "REC-2", "REC-3"],
+        "training_eligible_available_record_count": 2,
+        "training_eligible_available_record_ids": ["REC-1", "REC-2"],
+        "swept_record_count": 3,
+        "swept_record_ids": ["REC-1", "REC-2", "REC-3"],
+        "retrieved_record_ids": ["REC-1"],
+        "excluded_retrieved_record_ids": ["REC-4"],
+        "semantic_retrieval_record_ids": ["REC-2"],
+        "excluded_semantic_retrieval_record_ids": ["REC-5"],
+        "counterexample_record_ids": ["REC-3"],
+    }
+    summary = {
+        "accepted_record_count": 4,
+        "available_record_count": 2,
+        "available_record_id_count": 3,
+        "training_eligible_available_record_count": 1,
+        "training_eligible_available_record_id_count": 2,
+        "swept_record_count": 3,
+        "swept_record_id_count": 2,
+        "retrieved_record_id_count": 0,
+        "excluded_retrieved_record_id_count": 1,
+        "semantic_retrieval_record_id_count": 1,
+        "excluded_semantic_retrieval_record_id_count": 0,
+        "counterexample_record_id_count": 1,
+    }
+
+    mismatches = cli_module._final_synthesis_manifest_count_mismatches(
+        manifest,
+        summary,
+    )
+
+    assert mismatches["available_record_count"] == {"expected": 3, "observed": 2}
+    assert mismatches["training_eligible_available_record_count"] == {
+        "expected": 2,
+        "observed": 1,
+    }
+    assert mismatches["swept_record_id_count"] == {"expected": 3, "observed": 2}
+    assert mismatches["retrieved_record_id_count"] == {"expected": 1, "observed": 0}
+    assert mismatches["excluded_semantic_retrieval_record_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert "accepted_record_count" not in mismatches
+
+
 def test_context_export_session_pack_cli_reports_invalid_cutoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
