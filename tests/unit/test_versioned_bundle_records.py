@@ -2926,6 +2926,10 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert inspection["training_eligible_count_matches_raw"] is True
     assert inspection["import_loss_audit_passed"] is True
     assert inspection["final_semantic_audit_fail_count"] == 0
+    assert inspection["direct_ingest_record_count_hash_parity_ready"] is True
+    assert inspection["direct_ingest_schema_contract_verified"] is True
+    assert inspection["direct_ingest_validator_exit_code"] == 0
+    assert inspection["direct_ingest_critical_error_count"] == 0
     assert inspection["validation"]["sample_weight_validation_status"] == "passed"
     assert inspection["validation"]["sample_weight_validation"][
         "duplicate_issuer_day_count"
@@ -3028,6 +3032,10 @@ def test_v23_direct_ingest_hard_gates_block_acceptance(
     assert inspection["inspection_status"] == "validation_failed"
     assert inspection["validation_passed"] is False
     assert inspection["validation"][expected_gate] is False
+    if "contract_validator_exit_code" in bundle_kwargs:
+        assert inspection["direct_ingest_validator_exit_code"] == 1
+    if "contract_critical_error_count" in bundle_kwargs:
+        assert inspection["direct_ingest_critical_error_count"] == 1
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"

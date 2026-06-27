@@ -751,6 +751,26 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             if isinstance(direct_ingest_hard_gates, dict)
             else None
         ),
+        "direct_ingest_record_count_hash_parity_ready": (
+            direct_ingest_hard_gates.get("record_count_hash_parity_ready")
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
+        "direct_ingest_schema_contract_verified": (
+            direct_ingest_hard_gates.get("schema_contract_verified")
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
+        "direct_ingest_validator_exit_code": (
+            _nested_int(direct_ingest_hard_gates, "validator_exit_code")
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
+        "direct_ingest_critical_error_count": (
+            _nested_int(direct_ingest_hard_gates, "critical_error_count")
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
         "final_semantic_audit_present": final_semantic_audit_rows is not None,
         "final_semantic_audit_count": (
             len(final_semantic_audit_rows)
