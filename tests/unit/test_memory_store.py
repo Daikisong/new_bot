@@ -213,6 +213,95 @@ def _retrieval_record(
     )
 
 
+def test_catalog_only_record_store_audit_checks_raw_block_hash(tmp_path) -> None:
+    available_from = datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST)
+    payload = {
+        "record_id": "BRAIN-CATALOG-ONLY",
+        "record_type": "memory_claim",
+        "episode_id": "EP-catalog-only",
+        "trade_date": "2030-01-10",
+        "available_from": available_from.isoformat(),
+        "training_target": "legacy_catalog_only",
+        "evidence_phase": "AUDIT",
+        "summary": "Catalog-only legacy memory.",
+    }
+    payload_sha = sha256_text(canonical_json(payload))
+    record = BrainRecordEnvelope(
+        record_id="BRAIN-CATALOG-ONLY",
+        record_type="memory_claim",
+        episode_id="EP-catalog-only",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target="legacy_catalog_only",
+        evidence_phase="AUDIT",
+        training_eligible=False,
+        eligibility_reason="catalog-only unit test",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["EP-catalog-only:accepted_episode"],
+        raw_payload_sha256=payload_sha,
+        normalized_payload_sha256=payload_sha,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="legacy_research_episode.json",
+        source_line=None,
+        payload=payload,
+    )
+    raw_payload = canonical_json(payload)
+    raw_sha = sha256_text(raw_payload)
+    source_path = tmp_path / "legacy_episode.json"
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.legacy_research_episode.v1",
+            manifest_schema_version=None,
+            episode_schema_version="nslab.research_episode.v1",
+            episode_id="EP-catalog-only",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="LEGACY_ACCEPTED",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"legacy_research_episode.json": raw_sha},
+            raw_block_counts={"legacy_research_episode.json": 1},
+            provenance_closure_status="legacy_catalog_only",
+            adapter_name="legacy-migration",
+            import_status="catalog_only",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id="EP-catalog-only",
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            available_from=available_from,
+            bundle_status="LEGACY_ACCEPTED",
+            blind_valid=True,
+            raw_block_names=["legacy_research_episode.json"],
+            record_ids=[record.record_id],
+            record_count_by_type={"memory_claim": 1},
+            training_eligible_record_count=0,
+            source_ids=["EP-catalog-only:accepted_episode"],
+        ),
+        records=[record],
+        raw_blocks={"legacy_research_episode.json": raw_payload},
+        validation_report={"passed": True, "catalog_only": True},
+    )
+    raw_block_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "EP-catalog-only"
+        / "raw_blocks"
+        / "legacy_research_episode.json"
+    )
+    raw_block_path.write_text('{"tampered": true}', encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["raw_block_hash_mismatch_episode_ids"] == ["EP-catalog-only"]
+
+
 def _store_single_edge_record(
     tmp_path,
     *,

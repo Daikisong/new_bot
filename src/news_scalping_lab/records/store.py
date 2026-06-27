@@ -630,7 +630,6 @@ def _audit_deep_record_store(
                 episode_id,
                 envelope,
                 result,
-                skip_catalog_only=allow_block_only_trace,
             )
             _audit_brain_delta_count(
                 root=root,
@@ -865,11 +864,7 @@ def _audit_raw_block_hashes(
     episode_id: str,
     envelope: dict[str, Any],
     result: dict[str, Any],
-    *,
-    skip_catalog_only: bool,
 ) -> None:
-    if skip_catalog_only:
-        return
     raw_block_paths = _string_dict(envelope.get("raw_block_paths"))
     raw_block_hashes = _string_dict(envelope.get("raw_block_hashes"))
     for block_name, expected_hash in raw_block_hashes.items():
