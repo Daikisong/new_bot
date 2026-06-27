@@ -210,7 +210,8 @@ compile evidence must match the current brain manifest version. The compile
 source record count must also match current record coverage. The production
 semantic index must be current, LLM-embedded with the configured provider and
 embedding model, include brain-record vectors, and match the same record coverage
-count.
+count. If `NSLAB_OPENAI_EMBEDDING_MODEL` is unset, production readiness verifies
+against the OpenAI provider default `text-embedding-3-small`.
 
 ```bash
 set NSLAB_LLM_PROVIDER=openai

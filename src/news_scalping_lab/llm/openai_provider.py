@@ -15,6 +15,8 @@ from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
 
+DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+
 
 class OpenAIResponsesProvider:
     def __init__(
@@ -27,7 +29,7 @@ class OpenAIResponsesProvider:
     ) -> None:
         self.model = model or os.getenv("NSLAB_OPENAI_MODEL", "gpt-5-mini")
         self.embedding_model = embedding_model or os.getenv(
-            "NSLAB_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+            "NSLAB_OPENAI_EMBEDDING_MODEL", DEFAULT_OPENAI_EMBEDDING_MODEL
         )
         self.reasoning_effort = reasoning_effort
         self.max_output_tokens = max_output_tokens

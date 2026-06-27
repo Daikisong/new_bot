@@ -12,6 +12,7 @@ from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import BRAIN_FILES, current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
+from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.store import audit_record_store
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
@@ -976,13 +977,14 @@ def _production_semantic_index_status(
         if isinstance(embedding_method, str)
         else None
     )
+    configured_embedding_model = _production_configured_embedding_model(settings)
     findings: list[str] = []
     manifest_status = _production_semantic_index_manifest_status(
         settings.project_root,
         vector_index=vector_index,
         expected_source_record_count=expected_source_record_count,
         configured_provider=settings.llm_provider,
-        configured_embedding_model=settings.llm.embedding_model,
+        configured_embedding_model=configured_embedding_model,
     )
     if not isinstance(vector_index, dict):
         findings.append("vector index status is missing")
@@ -999,7 +1001,7 @@ def _production_semantic_index_status(
             expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
             if not embedding_method.strip().lower().startswith(expected_prefix):
                 findings.append("semantic index provider does not match configured LLM provider")
-            expected_model = settings.llm.embedding_model
+            expected_model = configured_embedding_model
             if not isinstance(embedding_model, str) or not embedding_model:
                 findings.append("semantic index embedding model is missing")
             elif expected_model and embedding_model.strip() != expected_model.strip():
@@ -1024,12 +1026,20 @@ def _production_semantic_index_status(
         "vector_index_status": status,
         "embedding_method": embedding_method,
         "embedding_model": embedding_model,
-        "configured_embedding_model": settings.llm.embedding_model,
+        "configured_embedding_model": configured_embedding_model,
         "expected_source_record_count": expected_source_record_count,
         "source_brain_record_count": source_brain_record_count,
         "indexed_brain_record_count": indexed_brain_record_count,
         "manifest": manifest_status,
     }
+
+
+def _production_configured_embedding_model(settings: Settings) -> str | None:
+    if settings.llm.embedding_model and settings.llm.embedding_model.strip():
+        return settings.llm.embedding_model.strip()
+    if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES:
+        return DEFAULT_OPENAI_EMBEDDING_MODEL
+    return None
 
 
 def _production_semantic_index_manifest_status(
