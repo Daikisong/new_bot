@@ -3011,6 +3011,66 @@ def test_production_readiness_rejects_web_evidence_source_id_mismatch(
     )
 
 
+def test_production_readiness_rejects_invalid_web_evidence_json_artifact(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-web"
+        / "context.json"
+    )
+    manifest_dir.mkdir(parents=True)
+    context_path.parent.mkdir(parents=True)
+    context_path.write_text('{"broken": ', encoding="utf-8")
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-web",
+            "final_synthesis_context_artifact": context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": file_sha256(context_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["checked_artifact_count"] == 1
+    assert production["web_evidence"]["checked_artifact_record_count"] == 1
+    assert production["web_evidence"]["invalid_artifact_json_count"] == 1
+    assert production["web_evidence"]["invalid_artifact_json_artifacts"] == [
+        {
+            "path": (
+                "runs/checkpoints/final_synthesis_context/RUN-web/context.json"
+            ),
+            "invalid_json_count": 1,
+        }
+    ]
+    assert (
+        "web_evidence: web evidence artifact contains invalid JSON: "
+        "runs/checkpoints/final_synthesis_context/RUN-web/context.json (1)"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_mock_web_evidence_artifacts(
     tmp_path,
 ) -> None:
@@ -3213,6 +3273,7 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     assert production["web_evidence"]["checked_artifact_count"] == 1
     assert production["web_evidence"]["checked_artifact_record_count"] == 1
     assert production["web_evidence"]["empty_artifact_count"] == 0
+    assert production["web_evidence"]["invalid_artifact_json_count"] == 0
     assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 0
     assert production["web_evidence"]["missing_artifact_hash_count"] == 0
     assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 0

@@ -1150,12 +1150,19 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
 
     mock_artifacts: list[dict[str, Any]] = []
     empty_artifacts: list[str] = []
+    invalid_json_artifacts: list[dict[str, Any]] = []
     unreadable_artifacts: list[str] = []
     artifact_record_counts: dict[str, int] = {}
     for artifact_path in sorted(artifact_paths):
         relative_artifact_path = relative_to_root(artifact_path, root)
         try:
-            row_count, mock_url_count, mock_metadata_count, sample_values = (
+            (
+                row_count,
+                invalid_json_count,
+                mock_url_count,
+                mock_metadata_count,
+                sample_values,
+            ) = (
                 _web_evidence_artifact_counts(artifact_path)
             )
         except OSError:
@@ -1164,6 +1171,13 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         artifact_record_counts[relative_artifact_path] = row_count
         if row_count == 0:
             empty_artifacts.append(relative_artifact_path)
+        if invalid_json_count:
+            invalid_json_artifacts.append(
+                {
+                    "path": relative_artifact_path,
+                    "invalid_json_count": invalid_json_count,
+                }
+            )
         if mock_url_count or mock_metadata_count:
             mock_artifacts.append(
                 {
@@ -1214,6 +1228,11 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         )
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
+    for artifact in invalid_json_artifacts:
+        findings.append(
+            f"web evidence artifact contains invalid JSON: {artifact['path']} "
+            f"({artifact['invalid_json_count']})"
+        )
     for path in empty_artifacts:
         findings.append(f"web evidence artifact has no evidence rows: {path}")
     for artifact in mock_artifacts:
@@ -1255,6 +1274,10 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "artifact_source_id_mismatches": artifact_source_id_mismatches,
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
+        "invalid_artifact_json_count": sum(
+            int(artifact["invalid_json_count"]) for artifact in invalid_json_artifacts
+        ),
+        "invalid_artifact_json_artifacts": invalid_json_artifacts,
         "empty_artifact_count": len(empty_artifacts),
         "empty_artifacts": empty_artifacts,
         "checked_artifact_record_count": sum(artifact_record_counts.values()),
@@ -1288,9 +1311,12 @@ def _project_relative_artifact_path(root: Path, value: object) -> Path | None:
     return resolved
 
 
-def _web_evidence_artifact_counts(path: Path) -> tuple[int, int, int, list[str]]:
+def _web_evidence_artifact_counts(
+    path: Path,
+) -> tuple[int, int, int, int, list[str]]:
     if path.suffix == ".jsonl":
         row_count = 0
+        invalid_json_count = 0
         url_count = 0
         metadata_count = 0
         samples: list[str] = []
@@ -1301,6 +1327,7 @@ def _web_evidence_artifact_counts(path: Path) -> tuple[int, int, int, list[str]]
             try:
                 payload: object = json.loads(line)
             except json.JSONDecodeError:
+                invalid_json_count += 1
                 payload = line
             url_values = _mock_url_values(payload)
             metadata_values = _mock_provider_metadata_values(payload)
@@ -1308,18 +1335,27 @@ def _web_evidence_artifact_counts(path: Path) -> tuple[int, int, int, list[str]]
             metadata_count += len(metadata_values)
             samples.extend(url_values)
             samples.extend(metadata_values)
-        return row_count, url_count, metadata_count, _unique_preserving_order(samples)
+        return (
+            row_count,
+            invalid_json_count,
+            url_count,
+            metadata_count,
+            _unique_preserving_order(samples),
+        )
     if path.suffix == ".json":
         text = path.read_text(encoding="utf-8-sig")
         row_count = 1 if text.strip() else 0
+        invalid_json_count = 0
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:
+            invalid_json_count = 1 if text.strip() else 0
             payload = text
         url_values = _mock_url_values(payload)
         metadata_values = _mock_provider_metadata_values(payload)
         return (
             row_count,
+            invalid_json_count,
             len(url_values),
             len(metadata_values),
             _unique_preserving_order([*url_values, *metadata_values]),
@@ -1327,7 +1363,7 @@ def _web_evidence_artifact_counts(path: Path) -> tuple[int, int, int, list[str]]
     text = path.read_text(encoding="utf-8")
     values = [value for value in text.split() if "mock://" in value]
     row_count = 1 if text.strip() else 0
-    return row_count, len(values), 0, _unique_preserving_order(values)
+    return row_count, 0, len(values), 0, _unique_preserving_order(values)
 
 
 def _web_evidence_artifact_source_ids(path: Path) -> list[str]:
