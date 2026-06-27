@@ -630,6 +630,7 @@
 ## remediation_commands
 
 - `python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid`
+- `python -m news_scalping_lab.cli research import-bundle %NSLAB_REAL_BUNDLE_PATH% --validate --accept`
 - `python -m news_scalping_lab.cli brain rebuild --mode llm-full`
 - `python -m news_scalping_lab.cli memory rebuild-index --production`
 - `python -m news_scalping_lab.cli warehouse rebuild`

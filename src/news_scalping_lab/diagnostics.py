@@ -1300,6 +1300,7 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
         "required_environment": required_environment,
         "commands": [
             f"{python_command} research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
+            f"{python_command} research import-bundle %NSLAB_REAL_BUNDLE_PATH% --validate --accept",
             f"{python_command} brain rebuild --mode llm-full",
             f"{python_command} memory rebuild-index --production",
             f"{python_command} warehouse rebuild",
