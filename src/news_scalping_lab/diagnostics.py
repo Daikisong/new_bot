@@ -1240,12 +1240,18 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "issuer_day_event_level_weight_mismatch_record_ids": [],
         }
     findings = _string_list(audit.get("findings"))
+    report_payload = record_store_report_payload(settings.project_root, audit)
+    report_findings = _production_record_store_report_findings(report_payload)
+    findings.extend(report_findings)
     if audit.get("deep") is not True:
         findings.append("deep record-store audit was not run")
-    passed = audit.get("passed") is True and audit.get("deep") is True
+    passed = (
+        audit.get("passed") is True
+        and audit.get("deep") is True
+        and not report_findings
+    )
     if not passed and not findings:
         findings.append("deep record-store audit failed")
-    report_payload = record_store_report_payload(settings.project_root, audit)
     return {
         "schema_version": "nslab.production_record_store.v1",
         "passed": passed,
@@ -1328,6 +1334,39 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             [],
         ),
     }
+
+
+def _production_record_store_report_findings(
+    report_payload: dict[str, Any],
+) -> list[str]:
+    findings: list[str] = []
+    raw_record_count = _int_from_mapping(report_payload, "raw_record_count")
+    normalized_record_count = _int_from_mapping(
+        report_payload,
+        "normalized_record_count",
+    )
+    if (
+        raw_record_count is not None
+        and normalized_record_count is not None
+        and raw_record_count != normalized_record_count
+    ):
+        findings.append(
+            "raw/normalized record count mismatch: "
+            f"raw_record_count={raw_record_count} "
+            f"normalized_record_count={normalized_record_count}"
+        )
+    dropped_record_count = _int_from_mapping(report_payload, "dropped_record_count")
+    if dropped_record_count is not None and dropped_record_count != 0:
+        findings.append(f"dropped_record_count={dropped_record_count} expected 0")
+    quarantined_record_count = _int_from_mapping(
+        report_payload,
+        "quarantined_record_count",
+    )
+    if quarantined_record_count is not None and quarantined_record_count != 0:
+        findings.append(
+            f"quarantined_record_count={quarantined_record_count} expected 0"
+        )
+    return findings
 
 
 def _real_bundle_import_status(

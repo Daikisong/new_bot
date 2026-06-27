@@ -2959,6 +2959,130 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
     )
 
 
+def test_production_readiness_rejects_record_store_raw_normalized_count_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    episode_dir = tmp_path / "research" / "episodes" / "EP-import-loss"
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "episode_id": "EP-import-loss",
+            "raw_block_counts": {"brain_delta.jsonl": 3},
+        },
+    )
+
+    def passed_record_store_audit(root: Path, *, deep: bool = False) -> dict[str, object]:
+        assert root == tmp_path
+        assert deep is True
+        return {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": True,
+            "deep": True,
+            "record_count": 2,
+            "all_record_count": 2,
+            "staged_record_count": 0,
+            "episode_count": 1,
+            "training_eligible_record_count": 2,
+            "findings": [],
+        }
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_record_store",
+        passed_record_store_audit,
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_store"]["passed"] is False
+    assert production["record_store"]["raw_record_count"] == 3
+    assert production["record_store"]["normalized_record_count"] == 2
+    assert (
+        "records: raw/normalized record count mismatch: "
+        "raw_record_count=3 normalized_record_count=2"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+
+    def passed_record_store_audit(root: Path, *, deep: bool = False) -> dict[str, object]:
+        assert root == tmp_path
+        assert deep is True
+        return {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": True,
+            "deep": True,
+            "record_count": 2,
+            "all_record_count": 2,
+            "staged_record_count": 0,
+            "episode_count": 1,
+            "training_eligible_record_count": 2,
+            "findings": [],
+        }
+
+    def lossy_record_store_report(
+        root: Path,
+        audit_result: dict[str, object],
+    ) -> dict[str, object]:
+        assert root == tmp_path
+        assert audit_result["passed"] is True
+        return {
+            "schema_version": "nslab.brain_record_store_report.v1",
+            "record_count": 2,
+            "raw_record_count": 2,
+            "normalized_record_count": 2,
+            "raw_record_counts_by_episode": {"EP-loss": 2},
+            "dropped_record_count": 1,
+            "quarantined_record_count": 1,
+        }
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_record_store",
+        passed_record_store_audit,
+    )
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.record_store_report_payload",
+        lossy_record_store_report,
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_store"]["passed"] is False
+    assert production["record_store"]["dropped_record_count"] == 1
+    assert production["record_store"]["quarantined_record_count"] == 1
+    assert "records: dropped_record_count=1 expected 0" in production["findings"]
+    assert "records: quarantined_record_count=1 expected 0" in production["findings"]
+
+
 def test_production_readiness_requires_deep_record_store_audit(
     tmp_path,
     monkeypatch,
