@@ -1334,8 +1334,9 @@ def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
     )
     step_names = [name for name, command in steps]
 
-    assert step_names[-7:] == [
+    assert step_names[-8:] == [
         "warehouse rebuild after update",
+        "warehouse verify after update",
         "training export-sft",
         "training export-preference",
         "training export-evals",
@@ -1343,7 +1344,15 @@ def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
         "memory audit deep after update",
         "brain audit deep after update",
     ]
+    assert step_names.index("warehouse rebuild") < step_names.index("warehouse verify")
+    assert step_names.index("warehouse verify") < step_names.index("analyze")
     assert step_names.index("brain update") < step_names.index("training export-sft")
+    assert step_names.index("warehouse rebuild after update") < step_names.index(
+        "warehouse verify after update"
+    )
+    assert step_names.index("warehouse verify after update") < step_names.index(
+        "training export-sft"
+    )
     assert step_names.index("memory audit deep after update") < step_names.index(
         "brain audit deep after update"
     )

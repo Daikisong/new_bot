@@ -278,6 +278,7 @@ def _demo_steps(
         ),
         ("brain audit", [python, "-m", "news_scalping_lab.cli", "brain", "audit"]),
         ("warehouse rebuild", [python, "-m", "news_scalping_lab.cli", "warehouse", "rebuild"]),
+        ("warehouse verify", [python, "-m", "news_scalping_lab.cli", "warehouse", "verify"]),
         ("analyze", analyze_command),
         (
             "evaluate",
@@ -299,6 +300,7 @@ def _demo_steps(
             ],
         ),
         ("warehouse rebuild after update", [python, "-m", "news_scalping_lab.cli", "warehouse", "rebuild"]),
+        ("warehouse verify after update", [python, "-m", "news_scalping_lab.cli", "warehouse", "verify"]),
         ("training export-sft", [python, "-m", "news_scalping_lab.cli", "training", "export-sft"]),
         (
             "training export-preference",
