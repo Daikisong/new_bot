@@ -3676,6 +3676,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_count": None,
             "unique_exported_record_count": None,
             "unique_skipped_record_count": None,
+            "expected_unique_record_ids": {},
+            "unique_record_id_mismatches": [],
             "record_store_source_record_ids": [],
             "record_store_training_eligible_record_ids": [],
             "unique_source_record_ids": [],
@@ -3766,6 +3768,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_count": 0,
             "unique_exported_record_count": 0,
             "unique_skipped_record_count": 0,
+            "expected_unique_record_ids": {},
+            "unique_record_id_mismatches": [],
             "record_store_source_record_ids": [],
             "record_store_training_eligible_record_ids": [],
             "unique_source_record_ids": [],
@@ -4042,18 +4046,35 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unique_skipped_ids = _string_list(
         diagnostics.get("unique_skipped_record_ids")
     )
+    unique_record_id_values = {
+        "unique_source_record_ids": unique_source_ids,
+        "unique_training_eligible_record_ids": unique_training_eligible_ids,
+        "unique_exported_record_ids": unique_exported_ids,
+        "unique_skipped_record_ids": unique_skipped_ids,
+    }
     invalid_record_id_fields = [
         field
         for field in (
-            "unique_source_record_ids",
-            "unique_training_eligible_record_ids",
-            "unique_exported_record_ids",
-            "unique_skipped_record_ids",
+            *unique_record_id_values,
         )
         if field in diagnostics and not _string_list_field_valid(diagnostics.get(field))
     ]
     for field in invalid_record_id_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    expected_unique_record_ids = _expected_training_export_unique_record_ids_from_manifests(
+        audit.get("manifests")
+    )
+    unique_record_id_mismatches = [
+        field
+        for field, expected_ids in expected_unique_record_ids.items()
+        if (
+            diagnostics
+            and field not in invalid_record_id_fields
+            and sorted(unique_record_id_values[field]) != expected_ids
+        )
+    ]
+    for field in unique_record_id_mismatches:
+        findings.append(f"training export diagnostics {field} does not match manifests")
     skipped_record_reasons_by_record_id = _string_list_dict(
         diagnostics.get("skipped_record_reasons_by_record_id")
     )
@@ -4504,6 +4525,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_count": unique_training_eligible_count,
         "unique_exported_record_count": unique_exported_count,
         "unique_skipped_record_count": unique_skipped_count,
+        "expected_unique_record_ids": expected_unique_record_ids,
+        "unique_record_id_mismatches": unique_record_id_mismatches,
         "record_store_source_record_ids": source_record_ids,
         "record_store_training_eligible_record_ids": training_eligible_record_ids,
         "unique_source_record_ids": unique_source_ids,
@@ -7744,6 +7767,30 @@ def _expected_training_export_counts_from_manifests(
         if complete:
             expected[output_field] = total
     return expected
+
+
+def _expected_training_export_unique_record_ids_from_manifests(
+    manifests: object,
+) -> dict[str, list[str]]:
+    if not isinstance(manifests, dict):
+        return {}
+    source_ids: set[str] = set()
+    training_eligible_ids: set[str] = set()
+    exported_ids: set[str] = set()
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            return {}
+        source_ids.update(_string_list(manifest.get("source_record_ids")))
+        training_eligible_ids.update(_string_list(manifest.get("eligible_record_ids")))
+        exported_ids.update(_string_list(manifest.get("exported_record_ids")))
+    skipped_ids = source_ids - exported_ids
+    return {
+        "unique_source_record_ids": sorted(source_ids),
+        "unique_training_eligible_record_ids": sorted(training_eligible_ids),
+        "unique_exported_record_ids": sorted(exported_ids),
+        "unique_skipped_record_ids": sorted(skipped_ids),
+    }
 
 
 def _expected_training_export_weight_statuses_from_manifests(
