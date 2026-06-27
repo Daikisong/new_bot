@@ -4,11 +4,186 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v24_outcome_airgap_preventive_lock
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행이다. v24는 outcome snapshot을 PHASE_2 전에는 다운로드하지 않는 수준을 넘어, outcome raw URL·local filename·download manifest·blind/outcome pair loop 자체를 preseal 실행 컨텍스트에서 제거한다. access JSON의 outcome expected sha256/row_count/bytes/date만 locked metadata로 보존하고, outcome path는 PHASE_3 seal receipt 검증 후에만 unlock한다. pre-seal byte touch가 발생한 실행은 label/content 노출 여부와 무관하게 brain import 금지다. 단, wrapper가 실행 전에 outcome download 계획을 차단한 것은 오염이 아니며 계속 진행한다. 실제 outcome 파일이 다운로드·stat·byte_size·sha/header/row_count/parse 중 하나라도 실행되면 같은 ChatGPT 실행에서는 ACCEPT_FULL로 복구하지 않고 최소 QUARANTINE 감사 bundle만 남긴다. 20260622 gold example은 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v24는 v23의 zero-contamination 조건, v22의 ledger parity와 outcome→news audit, v21의 brain_delta 밀도와 market_state override를 유지한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v25_acquisition_fastpath_outcome_airgap_lock
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행이다. v25는 v24의 outcome air-gap을 유지하면서, GitHub 확보 초반에는 curl/urllib 반복을 금지하고 web/browser + download tool + JSON canonical save fallback을 우선하는 acquisition fast path를 추가한다. access JSON의 outcome expected sha256/row_count/bytes/date만 locked metadata로 보존하고, outcome path는 PHASE_3 seal receipt 검증 후에만 unlock한다. pre-seal byte touch가 발생한 실행은 label/content 노출 여부와 무관하게 brain import 금지다. 단, wrapper가 실행 전에 outcome download 계획을 차단한 것은 오염이 아니며 계속 진행한다. 실제 outcome 파일이 다운로드·stat·byte_size·sha/header/row_count/parse 중 하나라도 실행되면 같은 ChatGPT 실행에서는 ACCEPT_FULL로 복구하지 않고 최소 QUARANTINE 감사 bundle만 남긴다. 20260622 gold example은 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v24는 v23의 zero-contamination 조건, v22의 ledger parity와 outcome→news audit, v21의 brain_delta 밀도와 market_state override를 유지한다.
 ```
 
 
+
+────────────────────────────────────────
+V25 ACQUISITION FAST-PATH LOCK — curl 루프 금지와 web/download 우선 확보
+────────────────────────────────────────
+
+이 섹션은 `V24 OUTCOME AIR-GAP LOCK`보다 먼저 적용되는 입력 확보 전용 규칙이다. 단, 이 섹션은 파일 확보 방식만 정하며, PHASE_2 전 outcome snapshot byte 접근 금지와 outcome path materialization 금지는 절대 완화하지 않는다.
+
+핵심 원칙:
+
+```text
+curl/urllib/requests는 선택적 진단 도구일 뿐, GitHub 파일 확보의 필수 경로가 아니다.
+ChatGPT 세션에서 container DNS가 실패하면 즉시 web/browser + download tool 경로로 전환한다.
+같은 URL에 대해 curl/urllib/requests 실패를 반복하지 않는다.
+```
+
+## V25.0 첫 행동
+
+MAIN PROMPT, 선택 news CSV, research_daily manifest/schema/calendar/access JSON, blind snapshot을 확보할 때 첫 판단은 다음 순서로 한다.
+
+```text
+1. web/browser 계층으로 GitHub blob 또는 raw page를 연다.
+2. 파일명, 경로, Raw/View raw 존재, 날짜 일치를 확인한다.
+3. download tool 또는 파일 분석 도구로 로컬 저장을 시도한다.
+4. 로컬 저장 후 sha256, byte_size, header, full parse를 검증한다.
+5. shell/curl/urllib/requests는 0~1회 진단으로만 사용한다.
+6. shell/curl/urllib/requests DNS 실패가 나오면 즉시 acquisition_warnings에 기록하고 web/download fallback으로 진행한다.
+```
+
+다음 오류는 파일 부재가 아니다.
+
+```text
+curl: Could not resolve host
+urllib.request.URLError Temporary failure in name resolution
+socket.gaierror
+NETWORK=caas_packages_only
+```
+
+위 오류만으로 다음 상태를 선언하지 않는다.
+
+```text
+MAIN_PROMPT_ACQUIRE_FAILED
+CSV_ACQUIRE_FAILED
+ACCESS_JSON_ACQUIRE_FAILED
+PRICE_SOURCE_MISSING
+INPUT_UNPARSED
+```
+
+## V25.1 curl 반복 금지
+
+같은 파일에 대해 아래처럼 반복하지 않는다.
+
+```text
+curl raw.githubusercontent 실패
+→ urllib raw.githubusercontent 실패
+→ requests raw.githubusercontent 실패
+→ curl github.com/raw 실패
+→ 다시 raw.githubusercontent 검색
+```
+
+이 패턴은 시간만 쓰고 파일 부재를 증명하지 못한다. 한 번 실패하면 다음으로 전환한다.
+
+```text
+web_open_blob_or_raw
+→ download_tool_save
+→ if JSON content-type blocked: web_open text capture 후 canonical local JSON 저장
+→ if CSV download blocked: GitHub raw endpoint, raw.githubusercontent endpoint, Contents API raw media type, codeload ZIP 순서로 fallback
+```
+
+## V25.2 MAIN PROMPT 확보 규칙
+
+`docs/research_prompt.md`는 긴 파일이므로 web.open line preview를 사람이 여러 번 스크롤해 전체 프롬프트로 삼지 않는다.
+
+성공 조건은 다음뿐이다.
+
+```text
+/mnt/data/.../research_prompt.md 존재
+byte_size > 0
+sha256 계산 완료
+utf-8 decode 성공
+첫 줄/상단 revision_goal 확인
+```
+
+web/browser preview는 존재 확인용이다. 전체 실행 프롬프트는 반드시 로컬 저장 파일을 기준으로 읽는다.
+
+## V25.3 CSV 확보 규칙
+
+선택된 `news_YYYYMMDD.csv`는 HTML preview를 연구 입력으로 쓰지 않는다.
+
+성공 조건:
+
+```text
+local basename == selected_input_file
+byte_size > 0
+sha256 계산 완료
+columns == page,row,date,time,title,body
+CSV full parse 성공
+row_count > 0
+min/max published_at 계산 성공
+time_unverified_rows 계산 완료
+tab/LF/CR 제외 control char count == 0
+```
+
+GitHub 화면이 `too large to display`를 보여도 파일 부재가 아니다. Raw/download fallback을 계속한다.
+
+## V25.4 JSON 확보 규칙
+
+`manifest.json`, `schema.json`, `access/YYYY/MM/YYYYMMDD.json`은 download tool이 `application/json` 또는 content-type 문제로 거부할 수 있다.
+
+이 경우 실패로 보지 않고 다음을 수행한다.
+
+```text
+1. web/browser로 JSON raw text를 연다.
+2. 표시된 JSON object를 로컬 파일로 저장한다.
+3. 저장한 local JSON을 json.loads로 parse한다.
+4. parse 성공 후 canonical JSON string을 재직렬화해 sha256을 계산한다.
+5. acquisition_warnings에 JSON_DOWNLOAD_TOOL_CONTENT_TYPE_BLOCK을 기록한다.
+```
+
+단, access JSON에서 outcome 관련 값은 다음 locked metadata로만 보존한다.
+
+```text
+outcome_snapshot_date
+outcome_snapshot_sha256_expected
+outcome_snapshot_row_count_expected
+outcome_snapshot_bytes_expected
+outcome_snapshot_path_locked = LOCKED_UNTIL_PHASE_3
+```
+
+PHASE_2 전에는 access JSON의 outcome path를 raw URL, blob URL, local filename, download_manifest, files_to_fetch, snapshot_paths, price_paths로 materialize하지 않는다.
+
+## V25.5 stock-web 가격 계층 확보 fast path
+
+research_daily 가격 계층은 다음 순서로 확보한다.
+
+```text
+1. trading_calendar.csv
+2. manifest.json
+3. schema.json
+4. access/YYYY/MM/YYYYMMDD.json
+5. access.blind_snapshot_path만 다운로드·parse
+6. BLIND packet seal receipt 검증
+7. 그 뒤 access.outcome_snapshot_path unlock·download·parse
+```
+
+PHASE_0/1/2의 download manifest에는 `blind_snapshot`만 들어갈 수 있고 `outcome_snapshot` logical_role은 등장하면 안 된다.
+
+## V25.6 acquisition_warnings는 실패가 아니다
+
+다음은 warning일 뿐이다.
+
+```text
+CONTAINER_CURL_DNS_FAILURE
+JSON_DOWNLOAD_TOOL_CONTENT_TYPE_BLOCK
+GITHUB_LARGE_FILE_PREVIEW_UNAVAILABLE
+OUTCOME_BLOB_EXISTENCE_PAGE_OPENED_WITHOUT_RAW_CONTENT
+```
+
+warning이 있어도 로컬 저장·검증·full parse가 성공하면 ACCEPT_FULL 가능성을 유지한다.
+
+## V25.7 fallback을 다 쓴 뒤에만 ACQUIRE_FAILED
+
+다음 모든 경로가 실패한 경우에만 ACQUIRE_FAILED를 선언한다.
+
+```text
+web/browser blob 확인 실패
+web/browser raw 확인 실패
+download tool 저장 실패
+파일 분석 도구 저장 실패
+GitHub raw endpoint 실패
+raw.githubusercontent endpoint 실패
+Contents API raw media type 실패
+codeload ZIP fallback 실패
+```
+
+그 전에는 다른 날짜 CSV, 샌드박스 잔존 파일, 최신 CSV, 예시 파일로 대체하지 않는다.
 
 ────────────────────────────────────────
 V24 OUTCOME AIR-GAP LOCK — outcome 경로·URL·다운로드 계획 자체를 PHASE_2 전에는 만들지 않는다
