@@ -606,6 +606,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     unreadable_manifests: list[str] = []
     missing_model_config: list[str] = []
     mock_manifests: list[dict[str, Any]] = []
+    manifest_prompt_hashes: set[str] = set()
     for manifest_path in manifest_paths:
         relative_path = relative_to_root(manifest_path, root)
         try:
@@ -626,6 +627,12 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
                     "mock_values": mock_values,
                 }
             )
+        manifest_prompt_hashes.update(_manifest_prompt_hash_values(manifest))
+
+    trace_evidence = _production_llm_trace_evidence_status(
+        root,
+        manifest_prompt_hashes=manifest_prompt_hashes,
+    )
 
     findings: list[str] = []
     for path in unreadable_manifests:
@@ -637,6 +644,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             f"mock LLM model_config present in {manifest['path']}: "
             f"{', '.join(manifest['mock_values'])}"
         )
+    findings.extend(trace_evidence["findings"])
 
     return {
         "schema_version": "nslab.production_llm_evidence.v1",
@@ -651,6 +659,17 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "missing_model_config_manifests": missing_model_config,
         "mock_model_config_manifest_count": len(mock_manifests),
         "mock_model_config_manifests": mock_manifests,
+        "referenced_prompt_hash_count": len(manifest_prompt_hashes),
+        "checked_trace_count": trace_evidence["checked_trace_count"],
+        "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
+        "unreadable_traces": trace_evidence["unreadable_traces"],
+        "mock_trace_count": trace_evidence["mock_trace_count"],
+        "mock_traces": trace_evidence["mock_traces"],
+        "checked_checkpoint_count": trace_evidence["checked_checkpoint_count"],
+        "unreadable_checkpoint_count": trace_evidence["unreadable_checkpoint_count"],
+        "unreadable_checkpoints": trace_evidence["unreadable_checkpoints"],
+        "mock_checkpoint_count": trace_evidence["mock_checkpoint_count"],
+        "mock_checkpoints": trace_evidence["mock_checkpoints"],
     }
 
 
@@ -661,6 +680,147 @@ def _mock_model_config_values(model_config: dict[str, Any]) -> list[str]:
         if isinstance(value, str) and "mock" in value.strip().lower():
             values.append(f"{key}={value}")
     return values
+
+
+def _manifest_prompt_hash_values(manifest: dict[str, Any]) -> set[str]:
+    prompt_hashes = manifest.get("prompt_hashes")
+    if not isinstance(prompt_hashes, dict):
+        return set()
+    return {
+        value
+        for value in prompt_hashes.values()
+        if isinstance(value, str) and value
+    }
+
+
+def _production_llm_trace_evidence_status(
+    root: Path,
+    *,
+    manifest_prompt_hashes: set[str],
+) -> dict[str, Any]:
+    if not manifest_prompt_hashes:
+        return {
+            "findings": [],
+            "checked_trace_count": 0,
+            "unreadable_trace_count": 0,
+            "unreadable_traces": [],
+            "mock_trace_count": 0,
+            "mock_traces": [],
+            "checked_checkpoint_count": 0,
+            "unreadable_checkpoint_count": 0,
+            "unreadable_checkpoints": [],
+            "mock_checkpoint_count": 0,
+            "mock_checkpoints": [],
+        }
+
+    trace_dir = root / "runs" / "traces"
+    trace_paths = sorted(trace_dir.glob("*.json")) if trace_dir.exists() else []
+    checked_traces: list[Path] = []
+    unreadable_traces: list[str] = []
+    mock_traces: list[dict[str, Any]] = []
+    checkpoint_ids: set[str] = set()
+    for trace_path in trace_paths:
+        try:
+            trace = _read_json_object(trace_path)
+        except ValueError:
+            unreadable_traces.append(relative_to_root(trace_path, root))
+            continue
+        prompt_hash = _trace_prompt_hash(trace)
+        if prompt_hash not in manifest_prompt_hashes:
+            continue
+        checked_traces.append(trace_path)
+        checkpoint_id = trace.get("checkpoint_id")
+        if isinstance(checkpoint_id, str) and checkpoint_id:
+            checkpoint_ids.add(checkpoint_id)
+        mock_values = _mock_llm_artifact_values(trace)
+        if mock_values:
+            mock_traces.append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "purpose": trace.get("purpose"),
+                    "prompt_sha256": prompt_hash,
+                    "mock_values": mock_values,
+                }
+            )
+
+    checkpoint_root = root / "runs" / "checkpoints" / "llm"
+    checked_checkpoints: list[Path] = []
+    unreadable_checkpoints: list[str] = []
+    mock_checkpoints: list[dict[str, Any]] = []
+    for checkpoint_id in sorted(checkpoint_ids):
+        if checkpoint_id != Path(checkpoint_id).name:
+            unreadable_checkpoints.append(checkpoint_id)
+            continue
+        checkpoint_path = checkpoint_root / f"{checkpoint_id}.json"
+        if not checkpoint_path.exists():
+            unreadable_checkpoints.append(relative_to_root(checkpoint_path, root))
+            continue
+        try:
+            checkpoint = _read_json_object(checkpoint_path)
+        except ValueError:
+            unreadable_checkpoints.append(relative_to_root(checkpoint_path, root))
+            continue
+        checked_checkpoints.append(checkpoint_path)
+        mock_values = _mock_llm_artifact_values(checkpoint)
+        if mock_values:
+            mock_checkpoints.append(
+                {
+                    "path": relative_to_root(checkpoint_path, root),
+                    "checkpoint_id": checkpoint.get("checkpoint_id"),
+                    "purpose": checkpoint.get("purpose"),
+                    "mock_values": mock_values,
+                }
+            )
+
+    findings: list[str] = []
+    for path in unreadable_traces:
+        findings.append(f"referenced LLM trace is unreadable: {path}")
+    for trace in mock_traces:
+        findings.append(
+            f"mock LLM trace present in {trace['path']}: "
+            f"{', '.join(trace['mock_values'])}"
+        )
+    for path in unreadable_checkpoints:
+        findings.append(f"referenced LLM checkpoint is unreadable: {path}")
+    for checkpoint in mock_checkpoints:
+        findings.append(
+            f"mock LLM checkpoint present in {checkpoint['path']}: "
+            f"{', '.join(checkpoint['mock_values'])}"
+        )
+
+    return {
+        "findings": findings,
+        "checked_trace_count": len(checked_traces),
+        "unreadable_trace_count": len(unreadable_traces),
+        "unreadable_traces": unreadable_traces,
+        "mock_trace_count": len(mock_traces),
+        "mock_traces": mock_traces,
+        "checked_checkpoint_count": len(checked_checkpoints),
+        "unreadable_checkpoint_count": len(unreadable_checkpoints),
+        "unreadable_checkpoints": unreadable_checkpoints,
+        "mock_checkpoint_count": len(mock_checkpoints),
+        "mock_checkpoints": mock_checkpoints,
+    }
+
+
+def _trace_prompt_hash(trace: dict[str, Any]) -> str | None:
+    trace_input = trace.get("input")
+    if not isinstance(trace_input, dict):
+        return None
+    prompt_hash = trace_input.get("prompt_sha256")
+    return prompt_hash if isinstance(prompt_hash, str) and prompt_hash else None
+
+
+def _mock_llm_artifact_values(payload: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    provider = payload.get("provider")
+    if isinstance(provider, str) and "mock" in provider.strip().lower():
+        values.append(f"provider={provider}")
+    model_config = payload.get("model_config")
+    if isinstance(model_config, dict):
+        values.extend(_mock_model_config_values(model_config))
+    return _unique_preserving_order(values)
 
 
 def _production_web_evidence_status(root: Path) -> dict[str, Any]:
