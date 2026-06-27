@@ -574,6 +574,7 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
         "commands": [
             f"{python_command} research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
             f"{python_command} brain rebuild --mode llm-full",
+            f"{python_command} memory rebuild-index --production",
             f"{python_command} warehouse rebuild",
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",

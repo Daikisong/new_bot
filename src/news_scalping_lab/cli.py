@@ -44,6 +44,7 @@ from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.records.models import (
     BrainRecordEnvelope,
@@ -69,6 +70,8 @@ from news_scalping_lab.research_import.versioned_bundle import (
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
+from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
+from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.ui.launcher import (
@@ -6600,6 +6603,66 @@ def memory_inspect_record(record_id: str) -> None:
 def memory_stats() -> None:
     settings = load_settings()
     _echo(BrainRecordStore(settings.project_root).stats())
+
+
+@memory_app.command("rebuild-index")
+def memory_rebuild_index(
+    production: Annotated[
+        bool,
+        typer.Option(
+            "--production",
+            help="Use the configured real LLM embedding provider instead of the deterministic local index.",
+        ),
+    ] = False,
+) -> None:
+    settings = load_settings()
+    mode = "deterministic"
+    embedding_provider = None
+    try:
+        if production:
+            if settings.llm_provider.strip().lower() == "mock":
+                raise ValueError("production vector index rebuild requires a real LLM provider")
+            if settings.llm.provider.strip().lower() == "mock":
+                raise ValueError("production vector index rebuild requires a non-mock model profile")
+            if not BrainRecordStore(settings.project_root).list_records():
+                raise ValueError("production vector index rebuild requires normalized brain records")
+            provider = create_llm_provider(settings)
+            if isinstance(provider, DeterministicMockLLMProvider):
+                raise ValueError("production vector index rebuild cannot use the mock LLM provider")
+            embedding_model = (
+                getattr(provider, "embedding_model", None)
+                or settings.llm.embedding_model
+                or "configured"
+            )
+            embedding_provider = AsyncEmbeddingProviderAdapter(
+                provider,
+                embedding_method=(
+                    f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"
+                ),
+            )
+            mode = "production"
+        store = (
+            LocalRetrievalStore(settings.project_root, embedding_provider=embedding_provider)
+            if embedding_provider is not None
+            else LocalRetrievalStore(settings.project_root)
+        )
+        manifest = store.rebuild_index()
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "mode": mode,
+            "production": production,
+            "index_path": relative_to_root(
+                settings.project_root / "memory" / "vector_index",
+                settings.project_root,
+            ),
+            "embedding_method": manifest.get("embedding_method"),
+            "accepted_episode_count": manifest.get("accepted_episode_count"),
+            "brain_record_count": manifest.get("brain_record_count"),
+            "manifest": manifest,
+        }
+    )
 
 
 @memory_app.command("apply-company-deltas")

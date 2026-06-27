@@ -965,6 +965,50 @@ def test_memory_inspect_record_cli_reports_missing_record(
     assert "record not found: BRAIN-missing" in result.output
 
 
+def test_memory_rebuild_index_cli_writes_deterministic_record_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "rebuild-index"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["mode"] == "deterministic"
+    assert payload["production"] is False
+    assert payload["index_path"] == "memory/vector_index"
+    assert payload["embedding_method"] == "deterministic_hashing_v1"
+    assert payload["brain_record_count"] == 1
+    assert payload["manifest"]["brain_record_hashes"] == {
+        "BRAIN-CLI": record.normalized_payload_sha256
+    }
+
+
+def test_memory_rebuild_index_production_rejects_mock_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+
+    assert result.exit_code == 1
+    assert "production vector index rebuild requires a real LLM provider" in result.output
+
+
 def test_warehouse_inspect_cli_reports_audit_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
