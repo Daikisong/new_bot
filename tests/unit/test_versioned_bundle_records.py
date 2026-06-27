@@ -1169,6 +1169,8 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
         "outcome_preferred_candidate": 1,
     }
     assert store_report["dropped_record_count"] == 0
+    assert store_report["quarantined_bundle_count"] == 0
+    assert store_report["quarantined_raw_record_count"] == 0
     assert store_report["quarantined_record_count"] == 0
     assert store_report["audit_passed"] is True
     assert store_report["record_store_audit"]["deep"] is True
@@ -2255,6 +2257,19 @@ def test_opaque_unknown_bundle_with_raw_records_reports_quarantined_records(
     assert report["quarantined_record_count"] == 1
     assert report["normalization_skipped_reason"] == "UNSUPPORTED_BUNDLE_VERSION"
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+    quarantine_payload = _read_json(Path(report["quarantine"]) / "quarantine.json")
+    assert quarantine_payload["metadata"]["quarantined_raw_record_count"] == 1
+    assert (
+        quarantine_payload["metadata"]["normalization_skipped_reason"]
+        == "UNSUPPORTED_BUNDLE_VERSION"
+    )
+    store_report = record_store_report_payload(
+        tmp_path,
+        audit_record_store(tmp_path),
+    )
+    assert store_report["quarantined_bundle_count"] == 1
+    assert store_report["quarantined_raw_record_count"] == 1
+    assert store_report["quarantined_record_count"] == 1
 
 
 def _jsonl(path: Path) -> list[dict[str, object]]:

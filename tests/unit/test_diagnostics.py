@@ -3108,6 +3108,8 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
             "raw_normalized_record_count_matches": True,
             "dropped_record_count": 1,
             "extra_normalized_record_count": 0,
+            "quarantined_bundle_count": 1,
+            "quarantined_raw_record_count": 1,
             "quarantined_record_count": 1,
         }
 
@@ -3135,9 +3137,12 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
     assert production["record_store"]["passed"] is False
     assert production["record_store"]["dropped_record_count"] == 1
     assert production["record_store"]["extra_normalized_record_count"] == 0
+    assert production["record_store"]["quarantined_bundle_count"] == 1
+    assert production["record_store"]["quarantined_raw_record_count"] == 1
     assert production["record_store"]["quarantined_record_count"] == 1
     assert "records: dropped_record_count=1 expected 0" in production["findings"]
     assert "records: quarantined_record_count=1 expected 0" in production["findings"]
+    assert "records: quarantined_bundle_count=1 expected 0" in production["findings"]
 
 
 def test_production_readiness_requires_deep_record_store_audit(

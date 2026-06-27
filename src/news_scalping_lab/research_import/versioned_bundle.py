@@ -696,6 +696,11 @@ def import_versioned_bundle(
             metadata={
                 "bundle_schema_version": bundle_schema_version(parsed),
                 "manifest_schema_version": _optional_string(_manifest(parsed).get("schema_version")),
+                "quarantined_raw_record_count": len(
+                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+                ),
+                "quarantined_normalized_record_count": 0,
+                "normalization_skipped_reason": "UNSUPPORTED_BUNDLE_VERSION",
             },
         )
         write_diagnostic_report(
@@ -877,6 +882,10 @@ def _quarantine_validation_failure(
         metadata={
             "adapter": adapter_name,
             "bundle_schema_version": bundle_schema_version(parsed),
+            "quarantined_raw_record_count": len(
+                parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+            ),
+            "quarantined_normalized_record_count": len(records),
             "validation": validation,
         },
     )

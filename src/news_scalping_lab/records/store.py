@@ -115,6 +115,10 @@ class BrainRecordStore:
                     "existing_bundle_path": original_bundle.relative_to(
                         self.root
                     ).as_posix(),
+                    "quarantined_raw_record_count": _raw_record_count_from_raw_blocks(
+                        raw_blocks
+                    ),
+                    "quarantined_normalized_record_count": len(records),
                 },
             )
             raise BrainRecordStoreConflictError(
@@ -153,6 +157,10 @@ class BrainRecordStore:
                         "incoming_normalized_payload_sha256": (
                             record.normalized_payload_sha256
                         ),
+                        "quarantined_raw_record_count": _raw_record_count_from_raw_blocks(
+                            raw_blocks
+                        ),
+                        "quarantined_normalized_record_count": len(records),
                     },
                 )
                 raise BrainRecordStoreConflictError(
@@ -457,6 +465,7 @@ def record_store_report_payload(
     raw_record_count = sum(raw_record_counts_by_episode.values())
     dropped_record_count = max(0, raw_record_count - normalized_record_count)
     extra_normalized_record_count = max(0, normalized_record_count - raw_record_count)
+    quarantine_counts = quarantined_bundle_counts(root)
     return {
         "schema_version": "nslab.brain_record_store_report.v1",
         "record_count": normalized_record_count,
@@ -514,17 +523,43 @@ def record_store_report_payload(
         "warehouse_counts": effective_warehouse_counts,
         "dropped_record_count": dropped_record_count,
         "extra_normalized_record_count": extra_normalized_record_count,
-        "quarantined_record_count": quarantined_bundle_count(root),
+        "quarantined_bundle_count": quarantine_counts["bundle_count"],
+        "quarantined_raw_record_count": quarantine_counts["raw_record_count"],
+        "quarantined_record_count": quarantine_counts["raw_record_count"],
         "audit_passed": audit_result.get("passed") is True,
         "record_store_audit": audit_result,
     }
 
 
-def quarantined_bundle_count(root: Path) -> int:
+def quarantined_bundle_counts(root: Path) -> dict[str, int]:
     quarantine_dir = root / "data" / "quarantine" / "research_bundles"
     if not quarantine_dir.exists():
+        return {"bundle_count": 0, "raw_record_count": 0}
+    bundle_count = 0
+    raw_record_count = 0
+    for path in sorted(quarantine_dir.iterdir()):
+        if not path.is_dir():
+            continue
+        bundle_count += 1
+        payload = _read_json_dict(path / "quarantine.json") or {}
+        metadata = payload.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        raw_record_count += _int_value(
+            metadata.get("quarantined_raw_record_count"),
+            default=_int_value(metadata.get("raw_record_count"), default=0),
+        )
+    return {"bundle_count": bundle_count, "raw_record_count": raw_record_count}
+
+
+def quarantined_bundle_count(root: Path) -> int:
+    return quarantined_bundle_counts(root)["bundle_count"]
+
+
+def _raw_record_count_from_raw_blocks(raw_blocks: dict[str, str]) -> int:
+    payload = raw_blocks.get("brain_delta.jsonl")
+    if payload is None:
         return 0
-    return sum(1 for path in quarantine_dir.iterdir() if path.is_dir())
+    return sum(1 for line in payload.splitlines() if line.strip())
 
 
 def _stored_raw_record_counts_by_episode(root: Path) -> dict[str, int]:
