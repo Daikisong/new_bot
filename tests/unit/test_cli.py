@@ -85,6 +85,96 @@ def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
     )
 
 
+def test_context_price_snapshot_contract_requires_source_ref() -> None:
+    manifest = {
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "price_snapshot": {
+            "source_name": "stock-web",
+            "allowed_through": "2030-01-09",
+            "as_of": "2030-01-10T08:30:00+09:00",
+        },
+    }
+
+    status = cli_module._inspect_price_snapshot_contract(manifest)
+
+    assert status["passed"] is False
+    assert status["source_ref_valid"] is False
+    assert "price_snapshot_source_ref_missing_or_invalid" in status["errors"]
+
+
+def test_context_price_snapshot_contract_reports_mock_source_ref() -> None:
+    manifest = {
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "price_snapshot": {
+            "source_name": "mock-price",
+            "source_ref": "mock://prices/news-only",
+            "allowed_through": "2030-01-09",
+            "as_of": "2030-01-10T08:30:00+09:00",
+        },
+    }
+
+    status = cli_module._inspect_price_snapshot_contract(manifest)
+
+    assert status["passed"] is True
+    assert status["source_ref_valid"] is True
+    assert status["source_ref_mock_or_placeholder"] is True
+
+
+def test_final_synthesis_price_context_rejects_after_allowed_snapshot() -> None:
+    status: dict[str, object] = {"errors": []}
+    manifest = {
+        "trade_date": "2030-01-10",
+        "price_snapshot": {
+            "source_name": "stock-web",
+            "source_ref": "stock-web://atlas",
+            "allowed_through": "2030-01-08",
+            "as_of": "2030-01-10T08:30:00+09:00",
+        },
+    }
+    context_payload = {
+        "d_minus_one_market_data": {
+            "source_name": "stock-web",
+            "allowed_through": "2030-01-08",
+            "snapshots": [
+                {
+                    "ticker": "005930",
+                    "trade_date": "2030-01-09",
+                    "close": 100.0,
+                }
+            ],
+        }
+    }
+
+    cli_module._inspect_final_synthesis_price_context(
+        manifest,
+        context_payload,
+        status,
+    )
+
+    assert status["d_minus_one_price_context_verified"] is False
+    assert (
+        "final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe"
+        in status["errors"]
+    )
+    price_status = status["d_minus_one_price_context"]
+    assert price_status["source_name_verified"] is True
+    assert price_status["allowed_through_verified"] is True
+    assert price_status["snapshot_rows_valid"] is True
+    assert price_status["snapshot_rows_cutoff_safe"] is False
+    assert price_status["unsafe_snapshot_rows"] == [
+        {
+            "row_index": 0,
+            "ticker": "005930",
+            "trade_date": "2030-01-09",
+            "allowed_through": "2030-01-08",
+            "manifest_trade_date": "2030-01-10",
+            "reasons": ["after_allowed_through"],
+        }
+    ]
+
+
 def _write_staged_raw_only_cli_record(root: Path) -> None:
     available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
     reason = "unsupported bundle version preserved as forward-compatible raw-only record"

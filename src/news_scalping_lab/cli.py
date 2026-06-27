@@ -1199,6 +1199,9 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
     status: dict[str, Any] = {
         "configured": isinstance(raw_snapshot, dict),
         "source_name_valid": False,
+        "source_ref": None,
+        "source_ref_valid": False,
+        "source_ref_mock_or_placeholder": False,
         "allowed_through": None,
         "allowed_through_present": False,
         "allowed_through_valid": False,
@@ -1219,6 +1222,15 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
     )
     if not status["source_name_valid"]:
         status["errors"].append("price_snapshot_source_name_missing_or_invalid")
+
+    source_ref = raw_snapshot.get("source_ref")
+    if isinstance(source_ref, str):
+        status["source_ref"] = source_ref
+    status["source_ref_valid"] = isinstance(source_ref, str) and bool(source_ref.strip())
+    if isinstance(source_ref, str) and source_ref.strip():
+        status["source_ref_mock_or_placeholder"] = _is_mock_or_placeholder_ref(source_ref)
+    else:
+        status["errors"].append("price_snapshot_source_ref_missing_or_invalid")
 
     raw_allowed = raw_snapshot.get("allowed_through")
     if isinstance(raw_allowed, str):
@@ -1271,6 +1283,7 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
     status["passed"] = bool(
         status["configured"]
         and status["source_name_valid"]
+        and status["source_ref_valid"]
         and status["allowed_through_valid"]
         and status["allowed_through_before_trade_date"]
         and status["as_of_valid"]
@@ -1278,6 +1291,14 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
         and not status["errors"]
     )
     return status
+
+
+def _is_mock_or_placeholder_ref(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized.startswith(("mock://", "placeholder://")) or normalized in {
+        "mock",
+        "placeholder",
+    }
 
 
 def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -3232,6 +3253,7 @@ def _inspect_final_synthesis_context_artifact(
             "required_inputs_verified": None,
             "required_input_set_verified": None,
             "payload_keys_verified": None,
+            "d_minus_one_price_context_verified": None,
             "input_summary_verified": None,
             "manifest_summary_verified": None,
             "manifest_counts_verified": None,
@@ -3329,6 +3351,8 @@ def _inspect_final_synthesis_context_artifact(
     if not status["payload_keys_verified"]:
         status["errors"].append("final_synthesis_context_payload_keys_missing")
 
+    _inspect_final_synthesis_price_context(manifest, context_payload, status)
+
     expected_summary = final_synthesis_input_summary(context_payload)
     status["input_summary_verified"] = payload.get("input_summary") == expected_summary
     if not status["input_summary_verified"]:
@@ -3381,6 +3405,120 @@ def _inspect_final_synthesis_context_artifact(
 
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
+
+
+def _inspect_final_synthesis_price_context(
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    price_status: dict[str, Any] = {
+        "source_name_verified": False,
+        "allowed_through_verified": False,
+        "snapshot_rows_valid": False,
+        "snapshot_rows_cutoff_safe": False,
+        "invalid_snapshot_rows": [],
+        "unsafe_snapshot_rows": [],
+    }
+    status["d_minus_one_price_context"] = price_status
+    price_context = context_payload.get("d_minus_one_market_data")
+    if not isinstance(price_context, dict):
+        status["errors"].append(
+            "final_synthesis_context_d_minus_one_market_data_invalid"
+        )
+        status["d_minus_one_price_context_verified"] = False
+        return
+    price_snapshot = manifest.get("price_snapshot")
+    if not isinstance(price_snapshot, dict):
+        status["errors"].append(
+            "final_synthesis_context_manifest_price_snapshot_invalid"
+        )
+        status["d_minus_one_price_context_verified"] = False
+        return
+
+    manifest_source_name = price_snapshot.get("source_name")
+    context_source_name = price_context.get("source_name")
+    price_status["source_name_verified"] = (
+        isinstance(manifest_source_name, str)
+        and bool(manifest_source_name.strip())
+        and context_source_name == manifest_source_name
+    )
+    if not price_status["source_name_verified"]:
+        status["errors"].append("final_synthesis_context_price_source_name_mismatch")
+
+    manifest_allowed = price_snapshot.get("allowed_through")
+    context_allowed = price_context.get("allowed_through")
+    price_status["allowed_through_verified"] = (
+        isinstance(manifest_allowed, str)
+        and bool(manifest_allowed)
+        and context_allowed == manifest_allowed
+    )
+    if not price_status["allowed_through_verified"]:
+        status["errors"].append("final_synthesis_context_price_allowed_through_mismatch")
+
+    allowed_through = _manifest_date(manifest_allowed)
+    trade_date = _manifest_date(manifest.get("trade_date"))
+    snapshots = price_context.get("snapshots")
+    if not isinstance(snapshots, list):
+        price_status["invalid_snapshot_rows"] = [
+            {"row_index": None, "reason": "snapshots_not_list"}
+        ]
+        status["errors"].append("final_synthesis_context_price_snapshot_rows_invalid")
+        status["d_minus_one_price_context_verified"] = False
+        return
+
+    invalid_rows: list[dict[str, Any]] = []
+    unsafe_rows: list[dict[str, Any]] = []
+    for row_index, row in enumerate(snapshots):
+        if not isinstance(row, dict):
+            invalid_rows.append(
+                {"row_index": row_index, "reason": "snapshot_not_object"}
+            )
+            continue
+        raw_row_trade_date = row.get("trade_date")
+        row_trade_date = _manifest_date(raw_row_trade_date)
+        if row_trade_date is None:
+            invalid_rows.append(
+                {
+                    "row_index": row_index,
+                    "reason": "trade_date_missing_or_invalid",
+                    "trade_date": raw_row_trade_date,
+                }
+            )
+            continue
+        reasons: list[str] = []
+        if allowed_through is not None and row_trade_date > allowed_through:
+            reasons.append("after_allowed_through")
+        if trade_date is not None and row_trade_date >= trade_date:
+            reasons.append("not_before_trade_date")
+        if reasons:
+            unsafe_rows.append(
+                {
+                    "row_index": row_index,
+                    "ticker": row.get("ticker"),
+                    "trade_date": raw_row_trade_date,
+                    "allowed_through": manifest_allowed,
+                    "manifest_trade_date": manifest.get("trade_date"),
+                    "reasons": reasons,
+                }
+            )
+
+    price_status["invalid_snapshot_rows"] = invalid_rows
+    price_status["unsafe_snapshot_rows"] = unsafe_rows
+    price_status["snapshot_rows_valid"] = not invalid_rows
+    price_status["snapshot_rows_cutoff_safe"] = not unsafe_rows
+    if invalid_rows:
+        status["errors"].append("final_synthesis_context_price_snapshot_rows_invalid")
+    if unsafe_rows:
+        status["errors"].append(
+            "final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe"
+        )
+    status["d_minus_one_price_context_verified"] = bool(
+        price_status["source_name_verified"]
+        and price_status["allowed_through_verified"]
+        and price_status["snapshot_rows_valid"]
+        and price_status["snapshot_rows_cutoff_safe"]
+    )
 
 
 def _inspect_final_synthesis_event_cluster_context(
@@ -5886,6 +6024,7 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("required_inputs_verified")
         and status.get("required_input_set_verified")
         and status.get("payload_keys_verified")
+        and status.get("d_minus_one_price_context_verified")
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")

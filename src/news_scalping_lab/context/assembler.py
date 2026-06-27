@@ -222,6 +222,7 @@ class ContextAssembler:
             web_sources=[],
             price_snapshot=PriceSnapshot(
                 source_name="blind-guarded",
+                source_ref="provider://blind-guarded",
                 as_of=cutoff_at,
                 allowed_through=date.fromordinal(trade_date.toordinal() - 1),
             ),

@@ -1602,6 +1602,13 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert manifest_reproducibility["episode_scope_valid"] is True
     assert manifest_reproducibility["price_snapshot_valid"] is True
     assert manifest_reproducibility["price_snapshot"]["source_name_valid"] is True
+    assert manifest_reproducibility["price_snapshot"]["source_ref_valid"] is True
+    assert (
+        manifest_reproducibility["price_snapshot"][
+            "source_ref_mock_or_placeholder"
+        ]
+        is True
+    )
     assert (
         manifest_reproducibility["price_snapshot"][
             "allowed_through_before_trade_date"
@@ -1657,6 +1664,7 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
             **original_manifest_for_price_snapshot,
             "price_snapshot": {
                 **original_manifest_for_price_snapshot["price_snapshot"],
+                "source_ref": "",
                 "allowed_through": original_manifest_for_price_snapshot["trade_date"],
                 "as_of": "2030-01-12T09:00:00+09:00",
             },
@@ -1671,9 +1679,13 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert "price_snapshot_invalid" in tampered_price_status["errors"]
     tampered_price_snapshot = tampered_price_status["price_snapshot"]
     assert tampered_price_snapshot["allowed_through_valid"] is True
+    assert tampered_price_snapshot["source_ref_valid"] is False
     assert tampered_price_snapshot["allowed_through_before_trade_date"] is False
     assert tampered_price_snapshot["as_of_not_after_cutoff"] is False
     assert "price_snapshot_allowed_through_not_before_trade_date" in (
+        tampered_price_snapshot["errors"]
+    )
+    assert "price_snapshot_source_ref_missing_or_invalid" in (
         tampered_price_snapshot["errors"]
     )
     assert "price_snapshot_as_of_after_cutoff_at" in tampered_price_snapshot["errors"]

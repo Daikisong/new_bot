@@ -67,7 +67,7 @@
     "as_of": "2026-06-24T08:59:59+09:00",
     "notes": [],
     "source_name": "mock-price",
-    "source_ref": null
+    "source_ref": "mock://prices/news-only"
   },
   "prompt_hashes": {
     "blind_analysis": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",

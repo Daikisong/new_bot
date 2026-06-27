@@ -33,7 +33,7 @@
     {
       "category": "price_evidence",
       "finding_count": 10,
-      "first_finding": "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json"
+      "first_finding": "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-116b51828c12.json: source_ref=mock://prices/news-only"
     },
     {
       "category": "real_bundle",
@@ -176,10 +176,10 @@
     "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider",
     "web: mock provider cannot supply production evidence",
     "price: mock provider cannot supply production D-1 price evidence",
-    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
-    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
-    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
-    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
+    "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-116b51828c12.json: source_ref=mock://prices/news-only",
+    "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-1fca69ca7072.json: source_ref=mock://prices/news-only",
+    "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-a5840d2def32.json: source_ref=mock://prices/news-only",
+    "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-aa2a36dbf3e0.json: source_ref=mock://prices/news-only",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
@@ -344,10 +344,10 @@
       "price: mock provider cannot supply production D-1 price evidence"
     ],
     "price_evidence": [
-      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
-      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
-      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
-      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
+      "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-116b51828c12.json: source_ref=mock://prices/news-only",
+      "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-1fca69ca7072.json: source_ref=mock://prices/news-only",
+      "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-a5840d2def32.json: source_ref=mock://prices/news-only",
+      "price_evidence: mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-aa2a36dbf3e0.json: source_ref=mock://prices/news-only",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
@@ -1777,10 +1777,10 @@
     "final_context_source_mismatches": [],
     "finding_count": 10,
     "findings": [
-      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
-      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
-      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
-      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
+      "mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-116b51828c12.json: source_ref=mock://prices/news-only",
+      "mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-1fca69ca7072.json: source_ref=mock://prices/news-only",
+      "mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-a5840d2def32.json: source_ref=mock://prices/news-only",
+      "mock or placeholder price_snapshot source_ref present in runs/manifests/RUN-aa2a36dbf3e0.json: source_ref=mock://prices/news-only",
       "mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
       "mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
       "mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
@@ -1806,13 +1806,8 @@
     "missing_price_snapshot_manifests": [],
     "missing_source_name_count": 0,
     "missing_source_name_manifests": [],
-    "missing_source_ref_count": 4,
-    "missing_source_ref_manifests": [
-      "runs/manifests/RUN-116b51828c12.json",
-      "runs/manifests/RUN-1fca69ca7072.json",
-      "runs/manifests/RUN-a5840d2def32.json",
-      "runs/manifests/RUN-aa2a36dbf3e0.json"
-    ],
+    "missing_source_ref_count": 0,
+    "missing_source_ref_manifests": [],
     "mock_price_snapshot_count": 4,
     "mock_price_snapshots": [
       {
@@ -1836,8 +1831,29 @@
         "source_name": "mock-price"
       }
     ],
-    "mock_source_ref_count": 0,
-    "mock_source_refs": [],
+    "mock_source_ref_count": 4,
+    "mock_source_refs": [
+      {
+        "path": "runs/manifests/RUN-116b51828c12.json",
+        "run_id": "RUN-116b51828c12",
+        "source_ref": "mock://prices/news-only"
+      },
+      {
+        "path": "runs/manifests/RUN-1fca69ca7072.json",
+        "run_id": "RUN-1fca69ca7072",
+        "source_ref": "mock://prices/news-only"
+      },
+      {
+        "path": "runs/manifests/RUN-a5840d2def32.json",
+        "run_id": "RUN-a5840d2def32",
+        "source_ref": "mock://prices/news-only"
+      },
+      {
+        "path": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "run_id": "RUN-aa2a36dbf3e0",
+        "source_ref": "mock://prices/news-only"
+      }
+    ],
     "passed": false,
     "schema_version": "nslab.production_price_evidence.v1",
     "status": "attention",
