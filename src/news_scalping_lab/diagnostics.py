@@ -1170,7 +1170,9 @@ def _project_relative_artifact_path(root: Path, value: object) -> Path | None:
     if not isinstance(value, str) or not value:
         return None
     path = Path(value)
-    resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
+    if path.is_absolute():
+        return None
+    resolved = (root / path).resolve()
     try:
         resolved.relative_to(root.resolve())
     except ValueError:
@@ -3008,18 +3010,19 @@ def _real_bundle_import_status(
         if isinstance(records_file, str) and records_file:
             if Path(records_file).is_absolute():
                 findings.append("record manifest records_file must be project-relative")
-            resolved_record_path = _project_relative_artifact_path(
-                settings.project_root,
-                records_file,
-            )
-            if resolved_record_path is None:
-                findings.append("record manifest records_file escapes project root")
             else:
-                record_path = resolved_record_path
-                record_manifest_records_file_resolved = relative_to_root(
-                    resolved_record_path,
+                resolved_record_path = _project_relative_artifact_path(
                     settings.project_root,
+                    records_file,
                 )
+                if resolved_record_path is None:
+                    findings.append("record manifest records_file escapes project root")
+                else:
+                    record_path = resolved_record_path
+                    record_manifest_records_file_resolved = relative_to_root(
+                        resolved_record_path,
+                        settings.project_root,
+                    )
         else:
             findings.append("record manifest records_file is missing")
     record_file_stats = _record_file_stats(record_path)
