@@ -1145,9 +1145,7 @@ def _audit_brain_delta_population(
     source_records = [
         record for record in records if record.source_block == "brain_delta.jsonl"
     ]
-    raw_training_eligible_count = sum(
-        1 for payload in raw_payloads if payload.get("training_eligible") is True
-    )
+    raw_training_eligible_count = _effective_raw_training_eligible_count(raw_payloads)
     normalized_training_eligible_count = sum(
         1 for record in source_records if record.training_eligible
     )
@@ -1165,6 +1163,44 @@ def _audit_brain_delta_population(
     )
     if raw_type_counts != normalized_type_counts:
         result["brain_delta_type_count_mismatch_episode_ids"].append(episode_id)
+
+
+def _effective_raw_training_eligible_count(payloads: list[dict[str, Any]]) -> int:
+    return sum(1 for payload in payloads if _raw_payload_is_training_eligible(payload))
+
+
+def _raw_payload_is_training_eligible(payload: dict[str, Any]) -> bool:
+    if payload.get("training_eligible") is not True:
+        return False
+    flattened = _flatten_raw_record_payload(payload)
+    return not (
+        flattened.get("record_type") == "blind_leader_preference_pair"
+        and not _payload_has_sealed_preference_pair(flattened)
+    )
+
+
+def _flatten_raw_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    nested = payload.get("payload")
+    flattened = dict(payload)
+    if isinstance(nested, dict):
+        for key, value in nested.items():
+            flattened.setdefault(key, value)
+    return flattened
+
+
+def _payload_has_sealed_preference_pair(payload: dict[str, Any]) -> bool:
+    preferred = payload.get("blind_preferred_ticker") or payload.get(
+        "blind_preferred_candidate_id"
+    )
+    rejected = payload.get("blind_rejected_ticker") or payload.get(
+        "blind_rejected_candidate_id"
+    )
+    return (
+        isinstance(preferred, str)
+        and bool(preferred)
+        and isinstance(rejected, str)
+        and bool(rejected)
+    )
 
 
 def _audit_record_source_lines(

@@ -2956,6 +2956,9 @@ class DailyAnalyzer:
             ),
             "swept_record_count": manifest.swept_record_count,
             "swept_record_ids": manifest.swept_record_ids,
+            "missing_swept_record_ids": manifest.missing_swept_record_ids,
+            "unexpected_swept_record_ids": manifest.unexpected_swept_record_ids,
+            "duplicate_swept_record_ids": manifest.duplicate_swept_record_ids,
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
             "excluded_semantic_retrieval_record_ids": (
                 manifest.excluded_semantic_retrieval_record_ids

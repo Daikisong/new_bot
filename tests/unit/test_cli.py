@@ -859,6 +859,9 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
         "training_eligible_available_record_ids": ["REC-1", "REC-2"],
         "swept_record_count": 3,
         "swept_record_ids": ["REC-1", "REC-2", "REC-3"],
+        "missing_swept_record_ids": ["REC-MISSING"],
+        "unexpected_swept_record_ids": ["REC-X"],
+        "duplicate_swept_record_ids": ["REC-DUP"],
         "retrieved_record_ids": ["REC-1"],
         "excluded_retrieved_record_ids": ["REC-4"],
         "semantic_retrieval_record_ids": ["REC-2"],
@@ -873,6 +876,9 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
         "training_eligible_available_record_id_count": 2,
         "swept_record_count": 3,
         "swept_record_id_count": 2,
+        "missing_swept_record_id_count": 0,
+        "unexpected_swept_record_id_count": 0,
+        "duplicate_swept_record_id_count": 0,
         "retrieved_record_id_count": 0,
         "excluded_retrieved_record_id_count": 1,
         "semantic_retrieval_record_id_count": 1,
@@ -891,6 +897,18 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
         "observed": 1,
     }
     assert mismatches["swept_record_id_count"] == {"expected": 3, "observed": 2}
+    assert mismatches["missing_swept_record_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["unexpected_swept_record_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["duplicate_swept_record_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
     assert mismatches["retrieved_record_id_count"] == {"expected": 1, "observed": 0}
     assert mismatches["excluded_semantic_retrieval_record_id_count"] == {
         "expected": 1,
@@ -905,6 +923,9 @@ def test_final_synthesis_manifest_record_id_mismatches_detect_list_drift() -> No
         "available_record_ids": ["REC-1", "REC-2"],
         "training_eligible_available_record_ids": ["REC-1"],
         "swept_record_ids": ["REC-1", "REC-2"],
+        "missing_swept_record_ids": [],
+        "unexpected_swept_record_ids": [],
+        "duplicate_swept_record_ids": [],
         "retrieved_record_ids": ["REC-1"],
         "counterexample_record_ids": ["REC-2"],
     }
@@ -912,6 +933,9 @@ def test_final_synthesis_manifest_record_id_mismatches_detect_list_drift() -> No
         "available_record_ids": ["REC-1", "REC-X"],
         "training_eligible_available_record_ids": ["REC-X"],
         "swept_record_ids": ["REC-1", "REC-X"],
+        "missing_swept_record_ids": ["REC-2"],
+        "unexpected_swept_record_ids": ["REC-X"],
+        "duplicate_swept_record_ids": ["REC-X"],
         "retrieved_record_ids": ["REC-1"],
         "counterexample_record_ids": ["REC-2"],
     }
@@ -932,6 +956,18 @@ def test_final_synthesis_manifest_record_id_mismatches_detect_list_drift() -> No
     assert mismatches["swept_record_ids"] == {
         "expected": ["REC-1", "REC-2"],
         "observed": ["REC-1", "REC-X"],
+    }
+    assert mismatches["missing_swept_record_ids"] == {
+        "expected": [],
+        "observed": ["REC-2"],
+    }
+    assert mismatches["unexpected_swept_record_ids"] == {
+        "expected": [],
+        "observed": ["REC-X"],
+    }
+    assert mismatches["duplicate_swept_record_ids"] == {
+        "expected": [],
+        "observed": ["REC-X"],
     }
     assert "retrieved_record_ids" not in mismatches
     assert "counterexample_record_ids" not in mismatches

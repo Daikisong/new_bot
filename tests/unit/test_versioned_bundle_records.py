@@ -314,6 +314,7 @@ def _synthetic_v11_bundle(
     source_ledger_time_verified: bool = True,
     source_ledger_available_before_cutoff: bool = True,
     company_memory_delta_known_at: str | None = None,
+    unsealed_preference_pair: bool = False,
 ) -> str:
     episode_id = "NSLAB-20300110-SYNTH"
     trade_day = date(2030, 1, 10)
@@ -360,15 +361,21 @@ def _synthetic_v11_bundle(
             "training_target": "outcome_preferred_candidate",
             "blind_pair_id": "PAIR-SYNTH-1",
             "blind_preferred_candidate_id": "CAND-A",
-            "blind_rejected_candidate_id": "CAND-B",
             "outcome_preferred_candidate_id": "CAND-A",
             "blind_preferred_ticker": "000001",
-            "blind_rejected_ticker": "000002",
             "outcome_winner_ticker": "000001",
             "blind_preference_correct": True,
             "training_eligible": True,
             "eligibility_reason": "synthetic sealed pair",
             "provenance_source_ids": ["SRC-SYNTH-1"],
+            **(
+                {}
+                if unsealed_preference_pair
+                else {
+                    "blind_rejected_candidate_id": "CAND-B",
+                    "blind_rejected_ticker": "000002",
+                }
+            ),
         },
     ]
     if direct_event_sample_weights is not None:
@@ -746,6 +753,47 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_versioned_bundle(original_bundle, root=tmp_path).record_count == 3
     raw_bundle = next((tmp_path / "data" / "raw" / "research").glob("*.md"))
     assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
+
+
+def test_unsealed_preference_pair_is_preserved_but_training_ineligible(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_unsealed_pair_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(unsealed_preference_pair=True),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    pair = next(
+        record
+        for record in BrainRecordStore(tmp_path).read_episode_records(
+            "NSLAB-20300110-SYNTH"
+        )
+        if record.record_id == "BRAIN-SYNTH-PAIR"
+    )
+    assert inspection["record_count"] == 3
+    assert inspection["raw_training_eligible_record_count"] == 1
+    assert inspection["training_eligible_record_count"] == 1
+    assert inspection["training_eligible_count_matches_raw"] is True
+    assert inspection["training_eligible_count_matches_manifest"] is True
+    assert result.record_count == 3
+    assert result.training_eligible_record_count == 1
+    assert pair.training_eligible is False
+    assert pair.payload["training_eligible"] is False
+    assert pair.eligibility_reason == (
+        "synthetic sealed pair; sealed_preference_pair_missing"
+    )
+    assert pair.payload["eligibility_reason"] == (
+        "synthetic sealed pair; sealed_preference_pair_missing"
+    )
+    assert audit_record_store(tmp_path, deep=True)[
+        "brain_delta_training_eligible_mismatch_episode_ids"
+    ] == []
 
 
 def test_v11_bundle_imports_without_legacy_schema_failure(tmp_path: Path) -> None:

@@ -5524,6 +5524,9 @@ def _check_final_synthesis_manifest_record_coverage_metadata(
         "available_record_ids",
         "training_eligible_available_record_ids",
         "swept_record_ids",
+        "missing_swept_record_ids",
+        "unexpected_swept_record_ids",
+        "duplicate_swept_record_ids",
     ):
         if field not in manifest and field not in context_payload:
             continue

@@ -3070,6 +3070,9 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
         "training_eligible_available_record_ids": ["REC-final-payload"],
         "swept_record_count": 2,
         "swept_record_ids": ["REC-final-payload"],
+        "missing_swept_record_ids": ["REC-final-manifest"],
+        "unexpected_swept_record_ids": ["REC-final-payload"],
+        "duplicate_swept_record_ids": ["REC-final-payload"],
         "retrieved_record_ids": ["REC-final-payload"],
         "semantic_retrieval_record_ids": ["REC-final-payload"],
         "counterexample_record_ids": ["REC-final-payload"],
@@ -3114,6 +3117,9 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
             "training_eligible_available_record_ids": ["REC-final-manifest"],
             "swept_record_count": 1,
             "swept_record_ids": ["REC-final-manifest"],
+            "missing_swept_record_ids": [],
+            "unexpected_swept_record_ids": [],
+            "duplicate_swept_record_ids": [],
             "retrieved_record_ids": ["REC-final-manifest"],
             "semantic_retrieval_record_ids": ["REC-final-manifest"],
             "counterexample_record_ids": ["REC-final-manifest"],
@@ -3158,6 +3164,18 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
     ) in result["findings"]
     assert (
         "2030-01-10.json: final_synthesis_context swept_record_count "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context missing_swept_record_ids "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context unexpected_swept_record_ids "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context duplicate_swept_record_ids "
         "does not match context manifest"
     ) in result["findings"]
     assert (

@@ -14,7 +14,7 @@
 - quarantined_bundle_count: `0`
 - quarantined_raw_record_count: `0`
 - normalization_skipped_reason: `None`
-- training_eligible_record_count: `162`
+- training_eligible_record_count: `142`
 ## raw_record_ids
 
 - `BD-000001`
@@ -377,7 +377,7 @@
 - theme_formation_case: `7`
 
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `162`
+- raw_training_eligible_record_count: `142`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 ## raw_payload_hash_mismatch_record_ids
@@ -452,7 +452,7 @@
 - extra_normalized_record_count: `0`
 - raw_record_counts_by_type: `{'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 28, 'theme_formation_case': 7}`
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `162`
+- raw_training_eligible_record_count: `142`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 - raw_payload_hash_mismatch_record_ids: `[]`

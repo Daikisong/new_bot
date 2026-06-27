@@ -810,14 +810,19 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.errors == []
     record_sweep_payload = read_json(tmp_path / manifest.record_sweep_artifacts[0])
     assert record_sweep_payload["record_ids"] == ["BRAIN-AVAILABLE"]
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_context = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))
+    synthesis_payload = synthesis_context["payload"]
     assert synthesis_payload["accepted_record_count"] == 2
     assert synthesis_payload["available_record_count"] == 1
     assert synthesis_payload["training_eligible_available_record_count"] == 1
     assert synthesis_payload["swept_record_count"] == 1
     assert synthesis_payload["swept_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert synthesis_payload["missing_swept_record_ids"] == []
+    assert synthesis_payload["unexpected_swept_record_ids"] == []
+    assert synthesis_payload["duplicate_swept_record_ids"] == []
+    assert synthesis_context["input_summary"]["missing_swept_record_id_count"] == 0
+    assert synthesis_context["input_summary"]["unexpected_swept_record_id_count"] == 0
+    assert synthesis_context["input_summary"]["duplicate_swept_record_id_count"] == 0
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
     assert synthesis_payload["available_record_ids"] == ["BRAIN-AVAILABLE"]

@@ -4,12 +4,12 @@
   "audit_only_record_count": 2,
   "available_record_count": 169,
   "available_record_count_as_of": 167,
-  "brain_version": "brain-364486c68b",
+  "brain_version": "brain-6881c6ff22",
   "build_mode": "catalog",
   "catalog_only": true,
   "compiled_record_count": 169,
   "coverage_complete": true,
-  "ineligible_record_count": 5,
+  "ineligible_record_count": 25,
   "record_counts_by_evidence_phase": {
     "AUDIT": 2,
     "POSTMORTEM": 167
@@ -212,7 +212,7 @@
     "BRAIN-SYNTH-ISSUER",
     "BRAIN-SYNTH-PAIR"
   ],
-  "training_eligible_available_record_count": 164,
-  "training_eligible_record_count_as_of": 162,
+  "training_eligible_available_record_count": 144,
+  "training_eligible_record_count_as_of": 142,
   "unswept_record_ids": []
 }

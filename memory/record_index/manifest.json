@@ -29,7 +29,7 @@
     "supervised_issuer_day_case": 29,
     "theme_formation_case": 7
   },
-  "records_sha256": "9d5ca09d6e908afa5cb2996651ba9828984e370487f5f8b106a93142fbe5cc3e",
+  "records_sha256": "d2a05524e9741ec477954d4bf8ea28eb51652bfd6fa817c21599b7e5af6b3d07",
   "schema_version": "nslab.record_index_manifest.v1",
-  "training_eligible_record_count": 164
+  "training_eligible_record_count": 144
 }

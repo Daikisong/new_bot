@@ -1,6 +1,6 @@
 # 05 Continuation Patterns
 
-Brain version: `brain-364486c68b`
+Brain version: `brain-6881c6ff22`
 Accepted episodes covered: 2/2
 Build mode: `catalog`
 Catalog only: `True`

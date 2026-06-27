@@ -1823,7 +1823,7 @@
     "SRC-TRADING-CALENDAR"
   ],
   "trade_date": "2024-12-04",
-  "training_eligible_record_count": 162,
+  "training_eligible_record_count": 142,
   "window_start": "2024-12-03T15:30:00+09:00",
   "winner_census": {}
 }

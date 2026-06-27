@@ -506,162 +506,162 @@
   "BD-000064": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "e05d51b4a9dc32ab00f7ecb192d20378e0f9552829dc13225705faf458861eaf",
+    "normalized_payload_sha256": "3914cb387e10a406209f62fd398d98929937ead697401bf241558f59acc11354",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000065": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "7495071d7e6daffb675869972c7bb1ba064351355733c39bb9b2c02d1176e33e",
+    "normalized_payload_sha256": "387b403bd9c0a2197d74a775798f1a5c1304e815562208ffa6f3e482e37f96dd",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000066": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "cb3aeb3a03aa19f93bade006665673b2d98c8aa21ff0a507b59b45c75882db1c",
+    "normalized_payload_sha256": "5deb8cd38b6b81f99bb4f7affecf39cc5ec6333ddab2e1f16fcb4290c9af3a24",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000067": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "cc46af3a176d81cac5528501faf988662fda4057dc949d33b8887dfd4eb6feac",
+    "normalized_payload_sha256": "ec61636e553579d3db9f1c2dee0ab0c48dbab7ffd3a12a866d74c94882c76a98",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000068": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "599f00b63f659a64ccaf1599a574cd191d5323f366069c3c0514407033523ca7",
+    "normalized_payload_sha256": "4586aee0ee71f70abefb58ffd53dffc269cd7e55ba103e7ca3cf0f1858d86082",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000069": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "f288ccea231201d026e997c3e83c0c4178efc0ba9f54e29a96527599c49c51d4",
+    "normalized_payload_sha256": "6618d18ebd8aa1a56766308c45cf5a70f20f8861241d205269bc1773c7304cf6",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000070": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "3982485fe5ccf1aa728d876400e80a55007ced04016d7e27f588cfd31a3aff9e",
+    "normalized_payload_sha256": "411960cbe505ca7bc92d3691fb1f27a4161031aeeb46953ac6bdac9eb9235023",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000071": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "7479ec6cf6d39d4f6eaab2f69557ef8b54b7fc042ddb41eb5bc89f94d2d607ff",
+    "normalized_payload_sha256": "5fe11b4a0cfa08aea537d466fff67e842c284a92ef33391df6266ba04b8e3877",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000072": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "08b6a27dc6dbf38a3b8dec0cce019bf11073687a98e6632d436004d73519671e",
+    "normalized_payload_sha256": "91c4a4c47b4c4ac9d7a44c756f5f0620621ec0bf1e383b79562f479dd9e94168",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000073": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "370ebe57c90023ceb370a474fe5e5917778444af9ea4f7b1e7cf0028c300faa6",
+    "normalized_payload_sha256": "fc3aa69962f8a09d44a070b117b231d2ce28fa99c06d2a741c316a3505b7439a",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000074": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "c02b6e71d474614c3afe9e850953e12bc3ce33f2fec178f19d8fa55415f4ce06",
+    "normalized_payload_sha256": "425323e85ea41aadf69a59496406bc439f87f16839517769c5bc2f41d4582180",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000075": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "ec700efe62fc40abb11873e85f2d20c6c55cb6252ca8b128a6f767573cc1ec9b",
+    "normalized_payload_sha256": "c04091c707d21413b79f7b6d0786c261b85a0148b957ef7ca2f46ffaf8817245",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000076": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "f575701f5ba9932dc5aebc4c6312138599c4106115570cc648dd1a8ad1681350",
+    "normalized_payload_sha256": "af687c9a98775eb7f914d8444995a8c1647a50afe69d1a69380f9c9edc223309",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000077": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "6be4d17dbe01831dc6fdeba610582f805147f8bd54193e81d9420d1ab09737a9",
+    "normalized_payload_sha256": "6d93add6e87075556510b5bfb01f53555c217c1968e3368f6400075964fc3243",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000078": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "e413af9c957b8ea093478600c6ea9832c4973afac914ccb0b8928222463f772a",
+    "normalized_payload_sha256": "574ef16111a4724aaa1e4ffc31c25f6b665ca1db123cd6d11f5b3108c7a429c5",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000079": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "47deadf41de8f0d674c090a9fa2cadb8c030c009080b628c8837ebdfee6421de",
+    "normalized_payload_sha256": "86d9589d520cadc59ab5a5745ddedf26ca8c3633af5e448202fafed10c8bda79",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000080": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "23c3f28adfd307d0174ae332b54da5c7d9cf44aa3e90a0ab76dbe60582f5a913",
+    "normalized_payload_sha256": "d1dcb67e626abf31fec052d14b16ed5b12ccd48ca60359e4db9b53fef84e05ff",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000081": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "dfc3bd492d6577204593cdc3e02f0b99a6b1e5ea6b947523a774df1310faa0bb",
+    "normalized_payload_sha256": "a9d5cab85a46cedc1f343f1940f9a346ada4b0feef763252f86339239b5ce22b",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000082": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "bc626d0a54d0205d31264589754409ff1376d3edc922458866d45dbacff54460",
+    "normalized_payload_sha256": "b1608272002e14e001e877d59488ddf11a7501884e8a02a43fe8bf94beeb5e09",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000083": {
     "available_from": "2024-12-05T00:00:00+09:00",
     "episode_id": "NSLAB-20241204-06A72B21",
-    "normalized_payload_sha256": "8e5074a4e858c28719f936e85a393647762129646677991b89174156937b2195",
+    "normalized_payload_sha256": "c7428abf84f4caa187ebbd78b86ea079b3a8162804b046263dc01558f3c952a9",
     "record_type": "blind_leader_preference_pair",
     "trade_date": "2024-12-04",
-    "training_eligible": "true"
+    "training_eligible": "false"
   },
   "BD-000084": {
     "available_from": "2024-12-05T00:00:00+09:00",

@@ -6785,6 +6785,24 @@ def _final_synthesis_manifest_count_mismatches(
             "swept_record_id_count",
             len(_string_list(manifest.get("swept_record_ids"))),
         )
+    if "missing_swept_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "missing_swept_record_id_count",
+            len(_string_list(manifest.get("missing_swept_record_ids"))),
+        )
+    if "unexpected_swept_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "unexpected_swept_record_id_count",
+            len(_string_list(manifest.get("unexpected_swept_record_ids"))),
+        )
+    if "duplicate_swept_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "duplicate_swept_record_id_count",
+            len(_string_list(manifest.get("duplicate_swept_record_ids"))),
+        )
     _add_expected_count(
         expected_counts,
         "retrieved_raw_episode_count",
@@ -6876,6 +6894,9 @@ def _final_synthesis_manifest_record_id_mismatches(
         "available_record_ids",
         "training_eligible_available_record_ids",
         "swept_record_ids",
+        "missing_swept_record_ids",
+        "unexpected_swept_record_ids",
+        "duplicate_swept_record_ids",
         "retrieved_record_ids",
         "excluded_retrieved_record_ids",
         "semantic_retrieval_record_ids",

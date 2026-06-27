@@ -14,7 +14,7 @@
 
 - all_record_count: `169`
 - staged_record_count: `0`
-- training_eligible_record_count: `164`
+- training_eligible_record_count: `144`
 ## record_counts_by_type
 
 - blind_leader_preference_pair: `21`
@@ -52,7 +52,7 @@
 
 - unknown_typed_payload_count: `0`
 - raw_only_record_count: `0`
-- ineligible_record_count: `5`
+- ineligible_record_count: `25`
 - all_unknown_typed_payload_count: `0`
 - all_raw_only_record_count: `0`
 - staged_unknown_typed_payload_count: `0`
@@ -62,6 +62,10 @@
 - none
 
 ## raw_only_record_ids
+
+- none
+
+## brain_delta_duplicate_record_ids
 
 - none
 
@@ -128,7 +132,7 @@
 - all_record_count: `169`
 - staged_record_count: `0`
 - episode_count: `4`
-- training_eligible_record_count: `164`
+- training_eligible_record_count: `144`
 - duplicate_record_ids: `[]`
 - unknown_training_enabled_record_ids: `[]`
 - unknown_typed_payload_record_ids: `[]`
@@ -157,6 +161,7 @@
 - raw_block_hash_mismatch_episode_ids: `[]`
 - brain_delta_count_mismatch_episode_ids: `[]`
 - brain_delta_record_id_mismatch_episode_ids: `[]`
+- brain_delta_duplicate_record_ids: `[]`
 - brain_delta_training_eligible_mismatch_episode_ids: `[]`
 - brain_delta_type_count_mismatch_episode_ids: `[]`
 - records_missing_source_block: `[]`
@@ -175,6 +180,6 @@
 - backdated_company_memory_delta_known_at_record_ids: `[]`
 - issuer_day_event_level_weight_mismatch_record_ids: `[]`
 - findings: `[]`
-- stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 164, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 5}`
-- all_stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 164, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 5}`
+- stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 144, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 25}`
+- all_stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 144, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 25}`
 - staged_stats: `{'record_count': 0, 'episode_count': 0, 'training_eligible_record_count': 0, 'record_counts_by_type': {}, 'record_counts_by_typed_payload_status': {}, 'record_counts_by_evidence_phase': {}, 'record_counts_by_training_target': {}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 0}`

@@ -182,7 +182,7 @@
     "BD-000165"
   ],
   "records_file": "memory/records/NSLAB-20241204-06A72B21.jsonl",
-  "records_sha256": "759ef8569c53d243e599c3f1dd22915a7b761f870fe245cd1808200614424475",
+  "records_sha256": "d81ff4f9a71c4d47b8604c36e2350a5bcc3ce0e3669d33af21e850454f8e31ad",
   "schema_version": "nslab.record_manifest.v1",
-  "training_eligible_record_count": 162
+  "training_eligible_record_count": 142
 }

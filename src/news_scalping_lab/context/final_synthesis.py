@@ -130,6 +130,18 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         summary["swept_record_id_count"] = _list_len(
             payload.get("swept_record_ids")
         )
+    if "missing_swept_record_ids" in payload:
+        summary["missing_swept_record_id_count"] = _list_len(
+            payload.get("missing_swept_record_ids")
+        )
+    if "unexpected_swept_record_ids" in payload:
+        summary["unexpected_swept_record_id_count"] = _list_len(
+            payload.get("unexpected_swept_record_ids")
+        )
+    if "duplicate_swept_record_ids" in payload:
+        summary["duplicate_swept_record_id_count"] = _list_len(
+            payload.get("duplicate_swept_record_ids")
+        )
     if "retrieved_records" in payload:
         summary["retrieved_record_count"] = _list_len(payload.get("retrieved_records"))
     if "retrieved_record_ids" in payload:
@@ -219,7 +231,43 @@ def final_synthesis_context_contract_verified(
     manifest_summary = manifest.get("final_synthesis_context_summary")
     if manifest_summary is not None and manifest_summary != expected_summary:
         return False
-    return final_synthesis_price_context_compatible(manifest, payload)
+    return final_synthesis_price_context_compatible(
+        manifest, payload
+    ) and final_synthesis_manifest_record_metadata_compatible(manifest, payload)
+
+
+def final_synthesis_manifest_record_metadata_compatible(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> bool:
+    for field in (
+        "available_record_ids",
+        "training_eligible_available_record_ids",
+        "swept_record_ids",
+        "missing_swept_record_ids",
+        "unexpected_swept_record_ids",
+        "duplicate_swept_record_ids",
+        "retrieved_record_ids",
+        "excluded_retrieved_record_ids",
+        "semantic_retrieval_record_ids",
+        "excluded_semantic_retrieval_record_ids",
+        "counterexample_record_ids",
+    ):
+        if field not in manifest and field not in payload:
+            continue
+        if not _same_string_list_field(manifest, payload, field):
+            return False
+    for field in (
+        "accepted_record_count",
+        "available_record_count",
+        "training_eligible_available_record_count",
+        "swept_record_count",
+    ):
+        if field not in manifest and field not in payload:
+            continue
+        if not _same_nonnegative_int_field(manifest, payload, field):
+            return False
+    return True
 
 
 def final_synthesis_price_context_compatible(
@@ -274,6 +322,41 @@ def string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _same_string_list_field(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    field: str,
+) -> bool:
+    manifest_value = manifest.get(field)
+    payload_value = payload.get(field)
+    if (
+        not isinstance(manifest_value, list)
+        or not all(isinstance(item, str) for item in manifest_value)
+        or not isinstance(payload_value, list)
+        or not all(isinstance(item, str) for item in payload_value)
+    ):
+        return False
+    return manifest_value == payload_value
+
+
+def _same_nonnegative_int_field(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    field: str,
+) -> bool:
+    manifest_value = manifest.get(field)
+    payload_value = payload.get(field)
+    return (
+        isinstance(manifest_value, int)
+        and not isinstance(manifest_value, bool)
+        and manifest_value >= 0
+        and isinstance(payload_value, int)
+        and not isinstance(payload_value, bool)
+        and payload_value >= 0
+        and manifest_value == payload_value
+    )
 
 
 def _list_len(value: Any) -> int:

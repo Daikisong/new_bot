@@ -472,6 +472,27 @@ def _build_bundle_manifest(
         "bundle_incomplete": True,
         "incomplete_reasons": ["postmortem outcome evaluation has not been run"],
     }
+    _copy_manifest_fields(
+        payload,
+        manifest,
+        (
+            "accepted_record_count",
+            "available_record_count",
+            "available_record_ids",
+            "training_eligible_available_record_count",
+            "training_eligible_available_record_ids",
+            "swept_record_count",
+            "swept_record_ids",
+            "missing_swept_record_ids",
+            "unexpected_swept_record_ids",
+            "duplicate_swept_record_ids",
+            "retrieved_record_ids",
+            "excluded_retrieved_record_ids",
+            "semantic_retrieval_record_ids",
+            "excluded_semantic_retrieval_record_ids",
+            "counterexample_record_ids",
+        ),
+    )
     if candidate_web_checks is not None:
         payload["candidate_web_check_sha256"] = sha256_text(candidate_web_checks)
         payload["candidate_web_check_count"] = manifest.get("candidate_web_check_count", 0)
@@ -521,6 +542,16 @@ def _build_bundle_manifest(
         validation["excluded_candidate_web_check_hash_verified"] = True
         validation["excluded_candidate_web_check_count_verified"] = True
     return payload
+
+
+def _copy_manifest_fields(
+    payload: dict[str, Any],
+    manifest: dict[str, Any],
+    fields: tuple[str, ...],
+) -> None:
+    for field in fields:
+        if field in manifest:
+            payload[field] = manifest[field]
 
 
 def _verify_final_synthesis_context_contract(

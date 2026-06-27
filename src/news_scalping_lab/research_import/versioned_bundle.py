@@ -1152,9 +1152,7 @@ def _import_loss_summary(
     normalized_counts_by_type = dict(
         sorted(Counter(record.record_type for record in records).items())
     )
-    raw_training_eligible_count = sum(
-        1 for record in raw_records if record.get("training_eligible") is True
-    )
+    raw_training_eligible_count = _effective_raw_training_eligible_count(raw_records)
     raw_hashes = [
         sha256_text(json.dumps(record, ensure_ascii=False, sort_keys=True))
         for record in raw_records
@@ -1187,6 +1185,27 @@ def _import_loss_summary(
         and len(raw_hashes) == len(records),
         "raw_payload_hash_mismatch_record_ids": raw_payload_hash_mismatch_record_ids,
     }
+
+
+def _effective_raw_training_eligible_count(records: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for record in records
+        if record.get("training_eligible") is True
+        and not (
+            record.get("record_type") == "blind_leader_preference_pair"
+            and not _payload_has_sealed_preference_pair(_flatten_record_payload(record))
+        )
+    )
+
+
+def _flatten_record_payload(record: dict[str, Any]) -> dict[str, Any]:
+    nested = record.get("payload")
+    flattened = dict(record)
+    if isinstance(nested, dict):
+        for key, value in nested.items():
+            flattened.setdefault(key, value)
+    return flattened
 
 
 def _record_count_parity_payload(
@@ -1293,6 +1312,18 @@ def _record_envelope(
         )
         normalized_payload["training_eligible"] = False
         normalized_payload["eligibility_reason"] = eligibility_reason
+    if (
+        record_type == "blind_leader_preference_pair"
+        and training_eligible
+        and not _payload_has_sealed_preference_pair(normalized_payload)
+    ):
+        training_eligible = False
+        eligibility_reason = (
+            (eligibility_reason + "; " if eligibility_reason else "")
+            + "sealed_preference_pair_missing"
+        )
+        normalized_payload["training_eligible"] = False
+        normalized_payload["eligibility_reason"] = eligibility_reason
     raw_payload_source = payload if raw_payload is None else raw_payload
     raw_payload_sha = sha256_text(
         json.dumps(raw_payload_source, ensure_ascii=False, sort_keys=True)
@@ -1318,6 +1349,21 @@ def _record_envelope(
         typed_payload_status=typed_payload_status,
         source_line=source_line,
         payload=normalized_payload,
+    )
+
+
+def _payload_has_sealed_preference_pair(payload: dict[str, Any]) -> bool:
+    preferred = payload.get("blind_preferred_ticker") or payload.get(
+        "blind_preferred_candidate_id"
+    )
+    rejected = payload.get("blind_rejected_ticker") or payload.get(
+        "blind_rejected_candidate_id"
+    )
+    return (
+        isinstance(preferred, str)
+        and bool(preferred)
+        and isinstance(rejected, str)
+        and bool(rejected)
     )
 
 
