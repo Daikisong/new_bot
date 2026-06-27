@@ -2382,6 +2382,8 @@ def test_production_readiness_marks_training_exports_not_applicable_without_reco
     assert production["training_exports"]["skipped_record_reason_mismatches"] == []
     assert production["training_exports"]["expected_source_record_hashes"] == {}
     assert production["training_exports"]["source_record_hash_manifest_mismatch_ids"] == []
+    assert production["training_exports"]["expected_count_maps"] == {}
+    assert production["training_exports"]["count_map_mismatches"] == []
     assert production["training_exports"]["weight_diagnostic_count_mismatches"] == []
 
 
@@ -2577,6 +2579,18 @@ def test_production_readiness_accepts_record_backed_training_exports(
         "issuer_day_price_response": 1,
         "outcome_preferred_candidate": 1,
     }
+    assert production["training_exports"]["expected_count_maps"] == {
+        "counts_by_record_type": {
+            "blind_leader_preference_pair": 1,
+            "supervised_issuer_day_case": 1,
+        },
+        "counts_by_training_target": {
+            "issuer_day_price_response": 1,
+            "outcome_preferred_candidate": 1,
+        },
+        "source_phase_counts": training_report["source_phase_counts"],
+    }
+    assert production["training_exports"]["count_map_mismatches"] == []
     assert production["training_exports"]["weight_validation_statuses"] == {
         "evals": "passed",
         "preference": "passed",
@@ -3383,6 +3397,69 @@ def test_production_readiness_rejects_invalid_training_export_count_maps(
     )
     assert (
         "training: training export counts_by_record_type does not match current records"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_training_export_count_map_manifest_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    manifests = {
+        kind: json.loads(
+            (tmp_path / "training_exports" / kind / "manifest.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        for kind in ("sft", "preference", "evals")
+    }
+    manifests["sft"]["source_phase_counts"]["BLIND"] = (
+        manifests["sft"]["source_phase_counts"].get("BLIND", 0) + 1
+    )
+    manifests["sft"]["counts_by_record_type"]["supervised_issuer_day_case"] = 2
+    manifests["sft"]["counts_by_training_target"]["issuer_day_price_response"] = 2
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    existing_report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", existing_report)
+        return {"passed": True, "findings": [], "manifests": manifests}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["count_map_mismatches"] == [
+        "source_phase_counts",
+        "counts_by_record_type",
+        "counts_by_training_target",
+    ]
+    assert (
+        "training export diagnostics source_phase_counts does not match manifests"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics counts_by_record_type does not match manifests"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics counts_by_training_target does not match manifests"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics counts_by_training_target does not match manifests"
         in production["findings"]
     )
 

@@ -3704,6 +3704,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_source_phase_labels": [],
             "counts_by_record_type": {},
             "counts_by_training_target": {},
+            "expected_count_maps": {},
+            "count_map_mismatches": [],
             "record_store_counts_by_record_type": {},
             "record_store_counts_by_training_target": {},
             "missing_count_fields": [],
@@ -3800,6 +3802,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_source_phase_labels": [],
             "counts_by_record_type": {},
             "counts_by_training_target": {},
+            "expected_count_maps": {},
+            "count_map_mismatches": [],
             "record_store_counts_by_record_type": {},
             "record_store_counts_by_training_target": {},
             "missing_count_fields": [],
@@ -4191,6 +4195,26 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_count_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    count_map_values = {
+        "source_phase_counts": source_phase_counts,
+        "counts_by_record_type": counts_by_record_type,
+        "counts_by_training_target": counts_by_training_target,
+    }
+    expected_count_maps = _expected_training_export_count_maps_from_manifests(
+        audit.get("manifests")
+    )
+    count_map_mismatches = [
+        field
+        for field, expected_value in expected_count_maps.items()
+        if (
+            diagnostics
+            and field not in missing_count_fields
+            and field not in invalid_count_fields
+            and count_map_values[field] != expected_value
+        )
+    ]
+    for field in count_map_mismatches:
+        findings.append(f"training export diagnostics {field} does not match manifests")
     invalid_source_phase_labels = (
         sorted(set(source_phase_counts) - {"BLIND", "POSTMORTEM"})
         if "source_phase_counts" not in invalid_count_fields
@@ -4612,6 +4636,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "invalid_source_phase_labels": invalid_source_phase_labels,
         "counts_by_record_type": counts_by_record_type,
         "counts_by_training_target": counts_by_training_target,
+        "expected_count_maps": expected_count_maps,
+        "count_map_mismatches": count_map_mismatches,
         "record_store_counts_by_record_type": record_store_counts_by_record_type,
         "record_store_counts_by_training_target": (
             record_store_counts_by_training_target
@@ -7877,6 +7903,43 @@ def _hash_mapping_mismatch_ids(
         for record_id in set(observed) | set(expected)
         if observed.get(record_id) != expected.get(record_id)
     )
+
+
+def _expected_training_export_count_maps_from_manifests(
+    manifests: object,
+) -> dict[str, dict[str, int]]:
+    if not isinstance(manifests, dict):
+        return {}
+    source_phase_counts: Counter[str] = Counter()
+    counts_by_record_type: dict[str, int] = {}
+    counts_by_training_target: dict[str, int] = {}
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            return {}
+        phase_counts = manifest.get("source_phase_counts")
+        record_type_counts = manifest.get("counts_by_record_type")
+        training_target_counts = manifest.get("counts_by_training_target")
+        if (
+            not isinstance(phase_counts, dict)
+            or not isinstance(record_type_counts, dict)
+            or not isinstance(training_target_counts, dict)
+        ):
+            return {}
+        for key, value in _int_dict(phase_counts).items():
+            source_phase_counts[key] += value
+        for key, value in _int_dict(record_type_counts).items():
+            counts_by_record_type[key] = max(counts_by_record_type.get(key, 0), value)
+        for key, value in _int_dict(training_target_counts).items():
+            counts_by_training_target[key] = max(
+                counts_by_training_target.get(key, 0),
+                value,
+            )
+    return {
+        "source_phase_counts": dict(sorted(source_phase_counts.items())),
+        "counts_by_record_type": dict(sorted(counts_by_record_type.items())),
+        "counts_by_training_target": dict(sorted(counts_by_training_target.items())),
+    }
 
 
 def _expected_training_export_skipped_reason_fields_from_manifests(
