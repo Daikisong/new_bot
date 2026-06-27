@@ -369,6 +369,160 @@ def test_llm_full_category_routing_does_not_fallback_to_unrelated_records() -> N
     ]
 
 
+def test_catalog_brain_marked_catalog_only(tmp_path: Path) -> None:
+    manifest = BrainCompiler(tmp_path).rebuild(mode="catalog")
+    brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
+    compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+
+    assert manifest.build_mode == "catalog"
+    assert manifest.catalog_only is True
+    assert brain_manifest["build_mode"] == "catalog"
+    assert brain_manifest["catalog_only"] is True
+    assert compile_report["compiler_mode"] == "catalog"
+    assert compile_report["catalog_only"] is True
+
+
+def test_brain_category_files_are_not_identical(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _rebuild_llm_full_fixture(
+        tmp_path,
+        monkeypatch,
+        [
+            _record(
+                "BRAIN-DIRECT",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={"path_type": "SINGLE_EVENT"},
+            ),
+            _record(
+                "BRAIN-COUNTER",
+                record_type="counterexample",
+                training_target="counterexample",
+                response_class="negative_control",
+            ),
+        ],
+    )
+
+    category_texts = [
+        (tmp_path / "brain" / "current" / file_name).read_text(encoding="utf-8")
+        for file_name in BRAIN_FILES
+    ]
+
+    assert len(set(category_texts)) == len(BRAIN_FILES)
+
+
+def test_compiled_claims_reference_existing_records(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    records = [
+        _record(
+            "BRAIN-DIRECT",
+            record_type="supervised_direct_event_case",
+            training_target="direct_event_response",
+            response_class="positive_high10",
+            payload_extra={"path_type": "SINGLE_EVENT"},
+        ),
+        _record(
+            "BRAIN-COUNTER",
+            record_type="counterexample",
+            training_target="counterexample",
+            response_class="negative_control",
+        ),
+    ]
+    _rebuild_llm_full_fixture(tmp_path, monkeypatch, records)
+    record_ids = {record.record_id for record in records}
+    compiled_claims = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+
+    assert compiled_claims
+    for claim in compiled_claims:
+        supporting_ids = set(claim["supporting_record_ids"])
+        contradicting_ids = set(claim["contradicting_record_ids"])
+        assert supporting_ids
+        assert supporting_ids <= record_ids
+        assert contradicting_ids <= record_ids
+
+
+def test_llm_full_requires_real_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    mock_provider_root = tmp_path / "mock-provider"
+    _write_llm_config(mock_provider_root, llm_provider="mock")
+    _write_records(
+        mock_provider_root,
+        [
+            _record(
+                "BRAIN-MOCK-PROVIDER",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            ),
+        ],
+    )
+    monkeypatch.delenv("NSLAB_LLM_PROVIDER", raising=False)
+
+    with pytest.raises(ValueError, match="requires a real LLM provider"):
+        BrainCompiler(mock_provider_root).rebuild(mode="llm-full")
+
+    mock_profile_root = tmp_path / "mock-profile"
+    _write_llm_config(
+        mock_profile_root,
+        llm_provider="openai",
+        model_provider="mock",
+    )
+    _write_records(
+        mock_profile_root,
+        [
+            _record(
+                "BRAIN-MOCK-PROFILE",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="requires a non-mock model profile"):
+        BrainCompiler(mock_profile_root).rebuild(mode="llm-full")
+
+    mock_factory_root = tmp_path / "mock-factory"
+    _write_openai_config(mock_factory_root)
+    _write_records(
+        mock_factory_root,
+        [
+            _record(
+                "BRAIN-MOCK-FACTORY",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            ),
+        ],
+    )
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        compiler_module,
+        "create_llm_provider",
+        lambda settings: DeterministicMockLLMProvider(model="deterministic-mock"),
+    )
+
+    with pytest.raises(ValueError, match="cannot use the mock LLM provider"):
+        BrainCompiler(mock_factory_root).rebuild(mode="llm-full")
+
+    for root in (mock_provider_root, mock_profile_root, mock_factory_root):
+        assert not (root / "brain" / "current" / "brain_manifest.json").exists()
+        assert not (root / "brain" / "current" / "llm_compile_manifest.json").exists()
+
+
 def test_llm_full_brain_compile_rejects_mock_provider_object(
     tmp_path: Path,
     monkeypatch,
@@ -412,14 +566,26 @@ def _compile_run_prompt_hashes(compile_run: dict[str, object]) -> set[str]:
 
 
 def _write_openai_config(root: Path) -> None:
+    _write_llm_config(root, llm_provider="openai")
+
+
+def _write_llm_config(
+    root: Path,
+    *,
+    llm_provider: str,
+    model_provider: str | None = None,
+) -> None:
     configs = root / "configs"
     configs.mkdir(parents=True, exist_ok=True)
-    (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
+    (configs / "default.yaml").write_text(
+        f"llm_provider: {llm_provider}\n",
+        encoding="utf-8",
+    )
     (configs / "models.yaml").write_text(
         "\n".join(
             [
                 "openai:",
-                "  provider: openai",
+                f"  provider: {model_provider or 'openai'}",
                 "  model: test-brain-model",
                 "  max_retries: 0",
             ]
@@ -427,6 +593,20 @@ def _write_openai_config(root: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _rebuild_llm_full_fixture(
+    root: Path,
+    monkeypatch,
+    records: list[BrainRecordEnvelope],
+) -> tuple[RecordingBrainLLM, object]:
+    _write_openai_config(root)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    llm = RecordingBrainLLM()
+    monkeypatch.setattr(compiler_module, "create_llm_provider", lambda settings: llm)
+    _write_records(root, records)
+    manifest = BrainCompiler(root).rebuild(mode="llm-full")
+    return llm, manifest
 
 
 def _write_records(root: Path, records: list[BrainRecordEnvelope]) -> None:
