@@ -1693,6 +1693,10 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "dimensions": None,
             "record_count": None,
+            "accepted_episode_count": None,
+            "accepted_hash_count": None,
+            "expected_accepted_hash_count": None,
+            "accepted_hashes_match": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
             "records_file": None,
@@ -1734,6 +1738,10 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "dimensions": None,
             "record_count": None,
+            "accepted_episode_count": None,
+            "accepted_hash_count": None,
+            "expected_accepted_hash_count": None,
+            "accepted_hashes_match": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
             "records_file": None,
@@ -1769,6 +1777,19 @@ def _production_semantic_index_manifest_status(
     dimensions = _int_from_mapping(manifest, "dimensions")
     dimensions = dimensions if isinstance(dimensions, int) and dimensions > 0 else None
     record_count = _int_from_mapping(manifest, "record_count")
+    accepted_episode_count = _int_from_mapping(manifest, "accepted_episode_count")
+    expected_accepted_hashes = ResearchStore(root).accepted_hashes()
+    accepted_hashes = manifest.get("accepted_hashes")
+    accepted_hashes_valid = {
+        key: value
+        for key, value in accepted_hashes.items()
+        if isinstance(key, str) and isinstance(value, str)
+    } if isinstance(accepted_hashes, dict) else None
+    accepted_hash_count = (
+        len(accepted_hashes_valid) if accepted_hashes_valid is not None else None
+    )
+    expected_accepted_hash_count = len(expected_accepted_hashes)
+    accepted_hashes_match = accepted_hashes_valid == expected_accepted_hashes
     brain_record_count = _int_from_mapping(manifest, "brain_record_count")
     brain_record_hashes = manifest.get("brain_record_hashes")
     brain_record_hash_count = (
@@ -1945,6 +1966,12 @@ def _production_semantic_index_manifest_status(
             findings.append("semantic index manifest embedding model does not match configured model")
     if isinstance(report_embedding_method, str) and embedding_method != report_embedding_method:
         findings.append("semantic index report does not match on-disk embedding method")
+    if accepted_episode_count != expected_accepted_hash_count:
+        findings.append(
+            "semantic index accepted episode count does not match accepted episodes"
+        )
+    if accepted_hashes_match is not True:
+        findings.append("semantic index accepted_hashes do not match accepted episodes")
     if (
         isinstance(expected_source_record_count, int)
         and brain_record_count != expected_source_record_count
@@ -2011,6 +2038,10 @@ def _production_semantic_index_manifest_status(
         "embedding_model": embedding_model,
         "dimensions": dimensions,
         "record_count": record_count,
+        "accepted_episode_count": accepted_episode_count,
+        "accepted_hash_count": accepted_hash_count,
+        "expected_accepted_hash_count": expected_accepted_hash_count,
+        "accepted_hashes_match": accepted_hashes_match,
         "brain_record_count": brain_record_count,
         "brain_record_hash_count": brain_record_hash_count,
         "records_file": relative_to_root(records_path, root),

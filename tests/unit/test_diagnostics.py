@@ -1091,8 +1091,66 @@ def test_production_readiness_accepts_matching_on_disk_semantic_index_manifest(
     assert production["semantic_index"]["manifest"]["embedding_model"] == (
         "text-embedding-3-small"
     )
+    assert production["semantic_index"]["manifest"]["accepted_hashes_match"] is True
     assert not any(
         finding.startswith("embedding:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_stale_semantic_index_accepted_hashes(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        accepted_dir / "EP-semantic-index.json",
+        {
+            "episode_id": "EP-semantic-index",
+            "trade_date": "2030-01-01",
+            "fixture": "accepted hash mismatch",
+        },
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["passed"] is False
+    assert (
+        production["semantic_index"]["manifest"]["accepted_episode_count"] == 0
+    )
+    assert (
+        production["semantic_index"]["manifest"]["expected_accepted_hash_count"] == 1
+    )
+    assert (
+        production["semantic_index"]["manifest"]["accepted_hashes_match"] is False
+    )
+    assert (
+        "embedding: semantic index accepted episode count does not match accepted episodes"
+        in production["findings"]
+    )
+    assert (
+        "embedding: semantic index accepted_hashes do not match accepted episodes"
+        in production["findings"]
     )
 
 
@@ -6006,6 +6064,8 @@ def _write_semantic_index_fixture(
             "embedding_method": embedding_method,
             "dimensions": 2,
             "record_count": len(record_ids),
+            "accepted_episode_count": 0,
+            "accepted_hashes": {},
             "brain_record_count": len(record_ids),
             "brain_record_hashes": {
                 record_id: f"hash-{index}"
