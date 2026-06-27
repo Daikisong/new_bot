@@ -10677,9 +10677,11 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
             "episode_count": 1,
             "training_eligible_record_count": 2,
             "brain_delta_record_id_mismatch_episode_ids": ["EP-import-loss"],
+            "brain_delta_duplicate_record_ids": ["BRAIN-import-loss-1"],
             "records_with_raw_payload_hash_mismatch": ["BRAIN-import-loss-1"],
             "findings": [
                 "brain_delta raw record IDs do not match normalized records",
+                "brain_delta raw record IDs are duplicated",
                 "record raw payload hashes do not match source lines",
             ],
         }
@@ -10713,11 +10715,18 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
     assert production["record_store"]["brain_delta_record_id_mismatch_episode_ids"] == [
         "EP-import-loss"
     ]
+    assert production["record_store"]["brain_delta_duplicate_record_ids"] == [
+        "BRAIN-import-loss-1"
+    ]
     assert production["record_store"]["records_with_raw_payload_hash_mismatch"] == [
         "BRAIN-import-loss-1"
     ]
     assert (
         "records: brain_delta raw record IDs do not match normalized records"
+        in production["findings"]
+    )
+    assert (
+        "records: brain_delta raw record IDs are duplicated"
         in production["findings"]
     )
     assert (

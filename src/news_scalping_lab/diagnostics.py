@@ -5463,6 +5463,7 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "eligible_records_without_provenance": [],
             "brain_delta_count_mismatch_episode_ids": [],
             "brain_delta_record_id_mismatch_episode_ids": [],
+            "brain_delta_duplicate_record_ids": [],
             "brain_delta_training_eligible_mismatch_episode_ids": [],
             "brain_delta_type_count_mismatch_episode_ids": [],
             "records_with_raw_payload_hash_mismatch": [],
@@ -5579,6 +5580,10 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         ),
         "brain_delta_record_id_mismatch_episode_ids": audit.get(
             "brain_delta_record_id_mismatch_episode_ids",
+            [],
+        ),
+        "brain_delta_duplicate_record_ids": report_payload.get(
+            "brain_delta_duplicate_record_ids",
             [],
         ),
         "brain_delta_training_eligible_mismatch_episode_ids": audit.get(
