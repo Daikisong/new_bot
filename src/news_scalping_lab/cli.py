@@ -525,6 +525,9 @@ def research_inspect_bundle(path: Path) -> None:
             "trade_date": inspection.get("trade_date"),
             "raw_record_count": inspection.get("raw_record_count"),
             "normalized_record_count": inspection.get("normalized_record_count"),
+            "raw_normalized_record_count_matches": inspection.get(
+                "raw_normalized_record_count_matches"
+            ),
             "training_eligible_record_count": inspection.get(
                 "training_eligible_record_count"
             ),
@@ -538,8 +541,14 @@ def research_inspect_bundle(path: Path) -> None:
             "missing_normalized_record_ids": inspection.get(
                 "missing_normalized_record_ids"
             ),
+            "missing_normalized_record_count": inspection.get(
+                "missing_normalized_record_count"
+            ),
             "extra_normalized_record_ids": inspection.get(
                 "extra_normalized_record_ids"
+            ),
+            "extra_normalized_record_count": inspection.get(
+                "extra_normalized_record_count"
             ),
             "raw_record_counts_by_type": inspection.get("raw_record_counts_by_type"),
             "record_type_counts_match_raw": inspection.get(

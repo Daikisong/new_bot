@@ -521,6 +521,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert inspection["record_count"] == 3
     assert inspection["raw_record_count"] == 3
     assert inspection["normalized_record_count"] == 3
+    assert inspection["raw_normalized_record_count_matches"] is True
     assert inspection["dropped_record_count"] == 0
     assert inspection["quarantined_record_count"] == 0
     assert inspection["training_eligible_record_count"] == 2
@@ -532,7 +533,9 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert inspection["record_id_set_matches_raw"] is True
     assert inspection["raw_record_without_id_count"] == 0
     assert inspection["missing_normalized_record_ids"] == []
+    assert inspection["missing_normalized_record_count"] == 0
     assert inspection["extra_normalized_record_ids"] == []
+    assert inspection["extra_normalized_record_count"] == 0
     assert inspection["raw_record_ids"] == [
         "BRAIN-SYNTH-ISSUER",
         "BRAIN-SYNTH-PAIR",
@@ -683,7 +686,10 @@ def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
     assert inspection["import_loss_audit_passed"] is False
     assert inspection["raw_record_count"] == 3
     assert inspection["normalized_record_count"] == 3
+    assert inspection["raw_normalized_record_count_matches"] is True
     assert inspection["dropped_record_count"] == 0
+    assert inspection["missing_normalized_record_count"] == 0
+    assert inspection["extra_normalized_record_count"] == 0
     assert inspection["raw_training_eligible_record_count"] == 3
     assert inspection["training_eligible_record_count"] == 2
     assert inspection["training_eligible_count_matches_manifest"] is True

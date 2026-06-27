@@ -538,6 +538,9 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "record_count": len(records),
         "raw_record_count": raw_record_count,
         "normalized_record_count": normalized_record_count,
+        "raw_normalized_record_count_matches": (
+            raw_record_count == normalized_record_count
+        ),
         "training_eligible_record_count": sum(
             1 for record in records if record.training_eligible
         ),
@@ -947,7 +950,9 @@ def _import_loss_summary(
             else None
         ),
         "missing_normalized_record_ids": missing_normalized_record_ids,
+        "missing_normalized_record_count": len(missing_normalized_record_ids),
         "extra_normalized_record_ids": extra_normalized_record_ids,
+        "extra_normalized_record_count": len(extra_normalized_record_ids),
         "raw_record_counts_by_type": raw_counts_by_type,
         "record_type_counts_match_raw": raw_counts_by_type == normalized_counts_by_type,
         "raw_training_eligible_record_count": raw_training_eligible_count,

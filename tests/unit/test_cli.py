@@ -260,8 +260,11 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
         "trade_date": "2030-01-10",
         "raw_record_count": 327,
         "normalized_record_count": 327,
+        "raw_normalized_record_count_matches": True,
         "training_eligible_record_count": 325,
         "dropped_record_count": 0,
+        "missing_normalized_record_count": 0,
+        "extra_normalized_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": {"supervised_issuer_day_case": 150},
         "validation_passed": False,
@@ -299,7 +302,10 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert report["bundle_version"] == "nslab.research_bundle.v11"
     assert report["raw_record_count"] == 327
     assert report["normalized_record_count"] == 327
+    assert report["raw_normalized_record_count_matches"] is True
     assert report["dropped_record_count"] == 0
+    assert report["missing_normalized_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 0
     assert report["hash_mismatch_count"] == 16
     assert report["missing_payload_reference_count"] == 2
     assert report["available_from_valid"] is True
