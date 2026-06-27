@@ -68,6 +68,7 @@ ENV_KEYS = [
 ]
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
+BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION = "nslab.brain_compile_diagnostics.v1"
 LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
 LLM_FULL_COMPILE_RUN_SCHEMA_VERSION = "nslab.llm_full_brain_compile_run.v1"
 REAL_BUNDLE_ENV_KEY = "NSLAB_REAL_BUNDLE_PATH"
@@ -3667,6 +3668,12 @@ def _llm_full_brain_status(
             settings.project_root,
         ),
         "compile_report_exists": compile_report is not None,
+        "compile_report_schema_version": compile_report.get("schema_version")
+        if isinstance(compile_report, dict)
+        else None,
+        "expected_compile_report_schema_version": (
+            BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION
+        ),
         "compile_run_present": compile_run is not None,
         "compile_run_schema_version": compile_run.get("schema_version")
         if isinstance(compile_run, dict)
@@ -3859,6 +3866,17 @@ def _llm_full_brain_status(
         if compile_run is None:
             findings.append("llm-full compile run diagnostics are missing")
         else:
+            report_schema_version = status["compile_report_schema_version"]
+            if report_schema_version != BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION:
+                observed_schema = (
+                    report_schema_version
+                    if isinstance(report_schema_version, str) and report_schema_version
+                    else "missing"
+                )
+                findings.append(
+                    "llm-full compile report schema_version is "
+                    f"{observed_schema}, not {BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION}"
+                )
             run_schema_version = status["compile_run_schema_version"]
             if run_schema_version != LLM_FULL_COMPILE_RUN_SCHEMA_VERSION:
                 observed_schema = (
