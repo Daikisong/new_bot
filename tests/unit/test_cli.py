@@ -899,6 +899,54 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
     assert "accepted_record_count" not in mismatches
 
 
+def test_final_synthesis_manifest_record_id_mismatches_detect_list_drift() -> None:
+    manifest = {
+        "mode": "exhaustive",
+        "available_record_ids": ["REC-1", "REC-2"],
+        "training_eligible_available_record_ids": ["REC-1"],
+        "swept_record_ids": ["REC-1", "REC-2"],
+        "retrieved_record_ids": ["REC-1"],
+        "counterexample_record_ids": ["REC-2"],
+    }
+    payload = {
+        "available_record_ids": ["REC-1", "REC-X"],
+        "training_eligible_available_record_ids": ["REC-X"],
+        "swept_record_ids": ["REC-1", "REC-X"],
+        "retrieved_record_ids": ["REC-1"],
+        "counterexample_record_ids": ["REC-2"],
+    }
+
+    mismatches = cli_module._final_synthesis_manifest_record_id_mismatches(
+        manifest,
+        payload,
+    )
+
+    assert mismatches["available_record_ids"] == {
+        "expected": ["REC-1", "REC-2"],
+        "observed": ["REC-1", "REC-X"],
+    }
+    assert mismatches["training_eligible_available_record_ids"] == {
+        "expected": ["REC-1"],
+        "observed": ["REC-X"],
+    }
+    assert mismatches["swept_record_ids"] == {
+        "expected": ["REC-1", "REC-2"],
+        "observed": ["REC-1", "REC-X"],
+    }
+    assert "retrieved_record_ids" not in mismatches
+    assert "counterexample_record_ids" not in mismatches
+
+    coverage_drift = cli_module._final_synthesis_manifest_record_id_mismatches(
+        manifest,
+        manifest | {"swept_record_ids": ["REC-1", "REC-X"]},
+    )
+
+    assert coverage_drift["swept_record_ids_vs_available_record_ids"] == {
+        "expected": ["REC-1", "REC-2"],
+        "observed": ["REC-1", "REC-X"],
+    }
+
+
 def test_context_export_session_pack_cli_reports_invalid_cutoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

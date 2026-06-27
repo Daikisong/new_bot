@@ -3257,6 +3257,7 @@ def _inspect_final_synthesis_context_artifact(
             "input_summary_verified": None,
             "manifest_summary_verified": None,
             "manifest_counts_verified": None,
+            "manifest_record_ids_verified": None,
             "event_clusters_verified": None,
             "semantic_retrieval_plan_artifact_verified": None,
             "semantic_retrieval_artifact_verified": None,
@@ -3371,6 +3372,14 @@ def _inspect_final_synthesis_context_artifact(
     status["manifest_counts_verified"] = not manifest_count_mismatches
     if not status["manifest_counts_verified"]:
         status["errors"].append("final_synthesis_context_manifest_count_mismatches")
+    manifest_record_id_mismatches = _final_synthesis_manifest_record_id_mismatches(
+        manifest,
+        context_payload,
+    )
+    status["manifest_record_id_mismatches"] = manifest_record_id_mismatches
+    status["manifest_record_ids_verified"] = not manifest_record_id_mismatches
+    if not status["manifest_record_ids_verified"]:
+        status["errors"].append("final_synthesis_context_manifest_record_id_mismatches")
 
     _inspect_final_synthesis_event_cluster_context(
         root,
@@ -6040,6 +6049,7 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("input_summary_verified")
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")
+        and status.get("manifest_record_ids_verified")
         and status.get("event_clusters_verified")
         and status.get("semantic_retrieval_context_verified")
         and status.get("web_research_verified")
@@ -6610,6 +6620,53 @@ def _final_synthesis_manifest_count_mismatches(
         observed = summary.get(key)
         if observed != expected:
             mismatches[key] = {"expected": expected, "observed": observed}
+    return mismatches
+
+
+def _final_synthesis_manifest_record_id_mismatches(
+    manifest: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    mismatches: dict[str, dict[str, Any]] = {}
+    for field in (
+        "available_record_ids",
+        "training_eligible_available_record_ids",
+        "swept_record_ids",
+        "retrieved_record_ids",
+        "excluded_retrieved_record_ids",
+        "semantic_retrieval_record_ids",
+        "excluded_semantic_retrieval_record_ids",
+        "counterexample_record_ids",
+    ):
+        if field not in manifest and field not in payload:
+            continue
+        manifest_ids = manifest.get(field)
+        payload_ids = payload.get(field)
+        if not _string_list_field_valid(manifest_ids):
+            mismatches[field] = {
+                "expected": "list[str]",
+                "observed": "invalid_context_manifest_field",
+            }
+            continue
+        if not _string_list_field_valid(payload_ids):
+            mismatches[field] = {
+                "expected": manifest_ids,
+                "observed": "invalid_final_synthesis_context_field",
+            }
+            continue
+        if manifest_ids != payload_ids:
+            mismatches[field] = {"expected": manifest_ids, "observed": payload_ids}
+
+    if (
+        manifest.get("mode") == "exhaustive"
+        and _string_list_field_valid(payload.get("available_record_ids"))
+        and _string_list_field_valid(payload.get("swept_record_ids"))
+        and payload.get("available_record_ids") != payload.get("swept_record_ids")
+    ):
+        mismatches["swept_record_ids_vs_available_record_ids"] = {
+            "expected": payload.get("available_record_ids"),
+            "observed": payload.get("swept_record_ids"),
+        }
     return mismatches
 
 
