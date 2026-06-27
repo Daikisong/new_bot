@@ -12,7 +12,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
-from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
+from news_scalping_lab.context.final_synthesis import (
+    final_synthesis_input_summary,
+    final_synthesis_required_inputs_compatible,
+)
 from news_scalping_lab.contracts.models import (
     ClaimStatus,
     CompanyMemory,
@@ -5403,6 +5406,11 @@ def _check_manifest_final_synthesis_context_artifact(
             f"{prediction_path.name}: final_synthesis_context required_inputs mismatch"
         )
     else:
+        if not final_synthesis_required_inputs_compatible(required_inputs):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context "
+                "required_inputs incompatible"
+            )
         _check_final_synthesis_required_input_fields(
             prediction_path,
             context_payload,
