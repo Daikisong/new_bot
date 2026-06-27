@@ -685,6 +685,8 @@ def _record_block(record: BrainRecordEnvelope) -> str:
         f"- Status: {record.status or 'UNKNOWN'}",
         f"- Confidence: {record.confidence_label or 'UNKNOWN'}",
         f"- Provenance source IDs: {', '.join(record.provenance_source_ids) or 'none'}",
+        f"- Raw payload SHA256: {record.raw_payload_sha256}",
+        f"- Normalized payload SHA256: {record.normalized_payload_sha256}",
     ]
     if highlights:
         lines.extend(["", "Key payload fields:"])

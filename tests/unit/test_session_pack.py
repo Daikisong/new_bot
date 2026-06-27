@@ -394,18 +394,17 @@ def test_session_pack_exports_record_memory_cases_as_of_cutoff(tmp_path) -> None
         '"Session pack should include record-level memory."\n',
         encoding="utf-8",
     )
+    available_record = _record(
+        "REC-SESSION-AVAILABLE",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    future_record = _record(
+        "REC-SESSION-FUTURE",
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
     _store_records(
         tmp_path,
-        [
-            _record(
-                "REC-SESSION-AVAILABLE",
-                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
-            ),
-            _record(
-                "REC-SESSION-FUTURE",
-                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
-            ),
-        ],
+        [available_record, future_record],
     )
 
     output_dir = export_session_pack(
@@ -422,6 +421,8 @@ def test_session_pack_exports_record_memory_cases_as_of_cutoff(tmp_path) -> None
     assert "REC-SESSION-AVAILABLE" in record_memory
     assert "REC-SESSION-FUTURE" not in record_memory
     assert "SessionRecordCo" in record_memory
+    assert available_record.raw_payload_sha256 in record_memory
+    assert available_record.normalized_payload_sha256 in record_memory
     assert manifest["accepted_record_count"] == 2
     assert manifest["available_record_count"] == 1
     assert manifest["available_record_ids"] == ["REC-SESSION-AVAILABLE"]

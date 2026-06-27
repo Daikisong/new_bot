@@ -7191,7 +7191,7 @@ def _check_session_pack_record_scope(
             label,
             manifest_path,
             included_record_ids=included_ids,
-            known_record_ids=record_ids,
+            records_by_id=records_by_id,
             findings=findings,
         )
 
@@ -7220,14 +7220,16 @@ def _check_session_pack_record_memory_cases(
     manifest_path: Path,
     *,
     included_record_ids: list[str],
-    known_record_ids: set[str],
+    records_by_id: dict[str, Any],
     findings: list[str],
 ) -> None:
     path = manifest_path.parent / "record_memory_cases.md"
     if not path.is_file():
         findings.append(f"{label}: session pack record_memory_cases.md missing")
         return
-    record_ids = _record_memory_case_heading_ids(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    record_ids = _record_memory_case_heading_ids(text)
+    blocks = _record_memory_case_blocks(text)
     duplicates = _duplicate_strings(record_ids)
     if duplicates:
         findings.append(
@@ -7236,7 +7238,7 @@ def _check_session_pack_record_memory_cases(
         )
     observed = set(record_ids)
     expected = set(included_record_ids)
-    unknown = sorted(observed - known_record_ids)
+    unknown = sorted(observed - set(records_by_id))
     if unknown:
         findings.append(
             f"{label}: session pack record_memory_cases.md references unknown records: "
@@ -7254,18 +7256,47 @@ def _check_session_pack_record_memory_cases(
             f"{label}: session pack record_memory_cases.md includes unlisted records: "
             + ", ".join(extra)
         )
+    for record_id in sorted(expected & observed):
+        record = records_by_id.get(record_id)
+        if record is None:
+            continue
+        block = blocks.get(record_id, "")
+        if record.raw_payload_sha256 not in block:
+            findings.append(
+                f"{label}: session pack record_memory_cases.md raw payload hash "
+                f"missing: {record_id}"
+            )
+        if record.normalized_payload_sha256 not in block:
+            findings.append(
+                f"{label}: session pack record_memory_cases.md normalized payload "
+                f"hash missing: {record_id}"
+            )
 
 
 def _record_memory_case_heading_ids(text: str) -> list[str]:
     record_ids: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped.startswith("## "):
-            continue
-        record_id = stripped.removeprefix("## ").strip()
-        if record_id:
-            record_ids.append(record_id)
+        if stripped.startswith("## "):
+            record_id = stripped.removeprefix("## ").strip()
+            if record_id:
+                record_ids.append(record_id)
     return record_ids
+
+
+def _record_memory_case_blocks(text: str) -> dict[str, str]:
+    blocks: dict[str, list[str]] = {}
+    current_record_id: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current_record_id = stripped.removeprefix("## ").strip() or None
+            if current_record_id is not None:
+                blocks.setdefault(current_record_id, [line])
+            continue
+        if current_record_id is not None:
+            blocks[current_record_id].append(line)
+    return {record_id: "\n".join(lines) for record_id, lines in blocks.items()}
 
 
 def _session_pack_required_unique_ids(
