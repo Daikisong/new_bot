@@ -15,9 +15,16 @@ from news_scalping_lab.context.episode_scope import inspect_manifest_episode_sco
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.session_pack import export_session_pack
 from news_scalping_lab.context.sweep import MemorySweeper
-from news_scalping_lab.contracts.models import BlindAnalysis, PathType, ResearchEpisode
+from news_scalping_lab.contracts.models import (
+    BlindAnalysis,
+    ContextManifest,
+    PathType,
+    PriceSnapshot,
+    ResearchEpisode,
+)
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
+    ExhaustiveCoverageError,
     _normalize_semantic_retrieval_category,
     _semantic_record_filters,
 )
@@ -900,6 +907,42 @@ async def test_exhaustive_record_coverage_100_percent(tmp_path) -> None:
     assert manifest.swept_record_ids == expected_ids
     assert set(manifest.available_record_ids) - set(manifest.swept_record_ids) == set()
     assert manifest.errors == []
+
+
+def test_exhaustive_coverage_rejects_record_id_mismatch(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    manifest = ContextManifest(
+        run_id="RUN-EXHAUSTIVE-ID-MISMATCH",
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        as_of=cutoff_at,
+        accepted_episode_count=1,
+        swept_episode_count=1,
+        available_record_count=1,
+        available_record_ids=["BRAIN-AVAILABLE"],
+        swept_record_count=1,
+        swept_record_ids=["BRAIN-SWEPT"],
+        price_snapshot=PriceSnapshot(
+            source_name="test",
+            allowed_through=date(2030, 1, 9),
+        ),
+    )
+
+    with pytest.raises(ExhaustiveCoverageError):
+        DailyAnalyzer(settings)._fail_if_exhaustive_coverage_incomplete(manifest)
+
+    assert manifest.errors == [
+        "exhaustive mode requires swept_record_ids to match available_record_ids"
+    ]
+    saved_manifest = read_json(
+        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-ID-MISMATCH.json"
+    )
+    assert saved_manifest["available_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert saved_manifest["swept_record_ids"] == ["BRAIN-SWEPT"]
+    assert saved_manifest["errors"] == manifest.errors
 
 
 def test_record_level_available_from_filter(tmp_path) -> None:

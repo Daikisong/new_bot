@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -95,7 +96,7 @@ from news_scalping_lab.web.provider import (
 
 
 class ExhaustiveCoverageError(RuntimeError):
-    """Raised when exhaustive mode fails to sweep every accepted episode exactly once."""
+    """Raised when exhaustive mode fails to sweep every required context item."""
 
 
 class FutureContextLeakError(RuntimeError):
@@ -3640,9 +3641,13 @@ class DailyAnalyzer:
     def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
         if manifest.mode != "exhaustive":
             return
+        record_id_coverage_complete = Counter(manifest.available_record_ids) == Counter(
+            manifest.swept_record_ids
+        )
         if (
             manifest.accepted_episode_count == manifest.swept_episode_count
             and manifest.available_record_count == manifest.swept_record_count
+            and record_id_coverage_complete
             and not manifest.errors
         ):
             return
@@ -3653,6 +3658,10 @@ class DailyAnalyzer:
         if manifest.available_record_count != manifest.swept_record_count:
             manifest.errors.append(
                 "exhaustive mode requires swept_record_count == available_record_count"
+            )
+        if not record_id_coverage_complete:
+            manifest.errors.append(
+                "exhaustive mode requires swept_record_ids to match available_record_ids"
             )
         manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
