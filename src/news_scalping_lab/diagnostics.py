@@ -4367,7 +4367,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     )
     missing_weight_diagnostic_fields = [
         field
-        for field in (*weight_diagnostic_count_fields, *weight_diagnostic_map_fields)
+        for field in (
+            *weight_diagnostic_count_fields,
+            "duplicate_issuer_day_keys",
+            *weight_diagnostic_map_fields,
+        )
         if diagnostics and field not in diagnostics
     ]
     invalid_weight_diagnostic_fields = [
@@ -4376,6 +4380,13 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics
         and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
+    if (
+        "duplicate_issuer_day_keys" in diagnostics
+        and not _non_empty_string_list_field_valid(
+            diagnostics.get("duplicate_issuer_day_keys")
+        )
+    ):
+        invalid_weight_diagnostic_fields.append("duplicate_issuer_day_keys")
     if duplicate_issuer_day_count is not None and duplicate_issuer_day_count != 0:
         findings.append("training export has duplicate issuer-day samples")
     issuer_weight_mismatch_count = _int_from_mapping(
@@ -4394,6 +4405,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_weight_diagnostic_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    if (
+        duplicate_issuer_day_count is not None
+        and "duplicate_issuer_day_keys" not in missing_weight_diagnostic_fields
+        and "duplicate_issuer_day_keys" not in invalid_weight_diagnostic_fields
+        and duplicate_issuer_day_count != len(duplicate_issuer_day_keys)
+    ):
+        findings.append(
+            "training export duplicate issuer-day count does not match keys"
+        )
     if (
         issuer_weight_mismatch_count is not None
         and issuer_weight_mismatch_count != 0

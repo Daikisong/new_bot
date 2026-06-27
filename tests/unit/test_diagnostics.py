@@ -3356,6 +3356,7 @@ def test_production_readiness_rejects_invalid_training_export_weight_diagnostics
     report_path = tmp_path / "diagnostics" / "training_export_report.json"
     tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
     tampered_report["duplicate_issuer_day_count"] = True
+    tampered_report["duplicate_issuer_day_keys"] = ["2030-01-10|TRAIN", 7]
     tampered_report["issuer_day_weight_sum_mismatches"] = {"ISSUER-1": True}
     tampered_report.pop("direct_event_weight_sum_mismatch_count")
 
@@ -3376,6 +3377,7 @@ def test_production_readiness_rejects_invalid_training_export_weight_diagnostics
     ]
     assert production["training_exports"]["invalid_weight_diagnostic_fields"] == [
         "duplicate_issuer_day_count",
+        "duplicate_issuer_day_keys",
         "issuer_day_weight_sum_mismatches",
     ]
     assert (
@@ -3387,11 +3389,66 @@ def test_production_readiness_rejects_invalid_training_export_weight_diagnostics
         in production["training_exports"]["findings"]
     )
     assert (
+        "training export diagnostics duplicate_issuer_day_keys is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
         "training export diagnostics issuer_day_weight_sum_mismatches is invalid"
         in production["training_exports"]["findings"]
     )
     assert (
         "training: training export diagnostics duplicate_issuer_day_count is invalid"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_duplicate_issuer_day_count_key_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    manifests = {
+        kind: json.loads(
+            (tmp_path / "training_exports" / kind / "manifest.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        for kind in ("sft", "preference", "evals")
+    }
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["duplicate_issuer_day_count"] = 2
+    tampered_report["duplicate_issuer_day_keys"] = ["2030-01-10|TRAIN"]
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": manifests}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["duplicate_issuer_day_count"] == 2
+    assert production["training_exports"]["duplicate_issuer_day_keys"] == [
+        "2030-01-10|TRAIN",
+    ]
+    assert (
+        "training export duplicate issuer-day count does not match keys"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export duplicate issuer-day count does not match keys"
         in production["findings"]
     )
 
