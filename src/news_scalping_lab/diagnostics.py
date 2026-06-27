@@ -3630,6 +3630,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "skipped_record_reasons_by_record_id": {},
+            "unique_skipped_record_reasons_by_record_id": {},
+            "skipped_record_reason_counts": {},
             "blind_safe_row_count": None,
             "hindsight_row_count": None,
             "source_phase_counts": {},
@@ -3664,6 +3667,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "skipped_record_reasons_by_record_id": {},
+            "unique_skipped_record_reasons_by_record_id": {},
+            "skipped_record_reason_counts": {},
             "blind_safe_row_count": 0,
             "hindsight_row_count": 0,
             "source_phase_counts": {},
@@ -3747,6 +3753,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unique_skipped_ids = _string_list(
         diagnostics.get("unique_skipped_record_ids")
     )
+    skipped_record_reasons_by_record_id = _string_list_dict(
+        diagnostics.get("skipped_record_reasons_by_record_id")
+    )
+    unique_skipped_record_reasons_by_record_id = _string_list_dict(
+        diagnostics.get("unique_skipped_record_reasons_by_record_id")
+    )
+    skipped_record_reason_counts = _int_dict(
+        diagnostics.get("skipped_record_reason_counts")
+    )
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
@@ -3812,6 +3827,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append("training export unique skipped record ID count mismatch")
     if set(unique_exported_ids) & set(unique_skipped_ids):
         findings.append("training export exported and skipped record IDs overlap")
+    if unique_skipped_ids and (
+        set(unique_skipped_ids) - set(unique_skipped_record_reasons_by_record_id)
+    ):
+        findings.append("training export skipped record reasons are missing")
+    if per_export_skipped_count and not skipped_record_reason_counts:
+        findings.append("training export skipped record reason counts are missing")
     if (
         unique_exported_count is not None
         and unique_training_eligible_count is not None
@@ -3886,6 +3907,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_ids": unique_training_eligible_ids,
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
+        "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
+        "unique_skipped_record_reasons_by_record_id": (
+            unique_skipped_record_reasons_by_record_id
+        ),
+        "skipped_record_reason_counts": skipped_record_reason_counts,
         "source_record_hash_count": source_record_hash_count,
         "blind_safe_row_count": blind_safe_row_count,
         "hindsight_row_count": hindsight_row_count,
@@ -6920,6 +6946,16 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_dict(value: object) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        item_key: _string_list(item_value)
+        for item_key, item_value in sorted(value.items())
+        if isinstance(item_key, str)
+    }
 
 
 def _int_dict(value: object) -> dict[str, int]:

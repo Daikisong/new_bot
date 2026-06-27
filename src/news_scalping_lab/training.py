@@ -153,6 +153,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             _audit_record_preference_rows(kind, output_rows, findings)
         _audit_phase_outputs(kind, root, manifest, findings)
     unique_skipped_record_ids = sorted(source_record_ids - exported_record_ids)
+    skipped_records_by_export = _skipped_records_by_export(summaries)
     report = {
         "schema_version": "nslab.training_audit.v1",
         "passed": not findings,
@@ -197,6 +198,17 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "unique_training_eligible_record_ids": sorted(training_eligible_record_ids),
             "unique_exported_record_ids": sorted(exported_record_ids),
             "unique_skipped_record_ids": unique_skipped_record_ids,
+            "skipped_records_by_export": skipped_records_by_export,
+            "skipped_record_reasons_by_record_id": (
+                _skipped_record_reasons_by_record_id(summaries)
+            ),
+            "unique_skipped_record_reasons_by_record_id": (
+                _skipped_record_reasons_by_record_id(
+                    summaries,
+                    include_ids=set(unique_skipped_record_ids),
+                )
+            ),
+            "skipped_record_reason_counts": _skipped_record_reason_counts(summaries),
             "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
             "hindsight_row_count": _sum_int(summaries, "hindsight_row_count"),
             "source_phase_counts": _sum_counter(summaries, "source_phase_counts"),
@@ -385,6 +397,34 @@ def _skipped_record_ids_from_entries(manifest: dict[str, Any]) -> set[str]:
             if isinstance(record_id, str) and record_id:
                 skipped_ids.add(record_id)
     return skipped_ids
+
+
+def _skipped_record_entries_from_manifest(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    skipped_records = manifest.get("skipped_records")
+    if not isinstance(skipped_records, list):
+        return []
+    entries: list[dict[str, Any]] = []
+    for item in skipped_records:
+        if not isinstance(item, dict):
+            continue
+        record_id = item.get("record_id")
+        if not isinstance(record_id, str) or not record_id:
+            continue
+        skip_reasons = _string_list(item.get("skip_reasons"))
+        if not skip_reasons and isinstance(item.get("reason"), str):
+            skip_reasons = [str(item["reason"])]
+        entries.append(
+            {
+                "record_id": record_id,
+                "record_type": item.get("record_type"),
+                "episode_id": item.get("episode_id"),
+                "training_eligible": item.get("training_eligible"),
+                "eligibility_reason": item.get("eligibility_reason"),
+                "reason": skip_reasons[0] if skip_reasons else item.get("reason"),
+                "skip_reasons": skip_reasons,
+            }
+        )
+    return entries
 
 
 def _record_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
@@ -580,6 +620,7 @@ def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "row_count": manifest.get("row_count"),
         "skipped_record_count": manifest.get("skipped_record_count"),
         "skipped_record_ids": _string_list(manifest.get("skipped_record_ids")),
+        "skipped_records": _skipped_record_entries_from_manifest(manifest),
         "blind_safe_row_count": manifest.get("blind_safe_row_count"),
         "hindsight_row_count": manifest.get("hindsight_row_count"),
         "counts_by_record_type": manifest.get("counts_by_record_type", {}),
@@ -644,6 +685,63 @@ def _sum_counter(
             ):
                 counter[item_key] += item_value
     return dict(sorted(counter.items()))
+
+
+def _skipped_records_by_export(
+    summaries: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        kind: records
+        for kind, summary in sorted(summaries.items())
+        if isinstance(records := summary.get("skipped_records"), list)
+    }
+
+
+def _skipped_record_reasons_by_record_id(
+    summaries: dict[str, dict[str, Any]],
+    *,
+    include_ids: set[str] | None = None,
+) -> dict[str, list[str]]:
+    reasons_by_record: dict[str, set[str]] = {}
+    for summary in summaries.values():
+        skipped_records = summary.get("skipped_records")
+        if not isinstance(skipped_records, list):
+            continue
+        for item in skipped_records:
+            if not isinstance(item, dict):
+                continue
+            record_id = item.get("record_id")
+            if not isinstance(record_id, str) or not record_id:
+                continue
+            if include_ids is not None and record_id not in include_ids:
+                continue
+            reasons = _string_list(item.get("skip_reasons"))
+            if not reasons and isinstance(item.get("reason"), str):
+                reasons = [str(item["reason"])]
+            reasons_by_record.setdefault(record_id, set()).update(reasons)
+    return {
+        record_id: sorted(reasons)
+        for record_id, reasons in sorted(reasons_by_record.items())
+    }
+
+
+def _skipped_record_reason_counts(
+    summaries: dict[str, dict[str, Any]],
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for summary in summaries.values():
+        skipped_records = summary.get("skipped_records")
+        if not isinstance(skipped_records, list):
+            continue
+        for item in skipped_records:
+            if not isinstance(item, dict):
+                continue
+            reasons = _string_list(item.get("skip_reasons"))
+            if not reasons and isinstance(item.get("reason"), str):
+                reasons = [str(item["reason"])]
+            for reason in reasons:
+                counts[reason] += 1
+    return dict(sorted(counts.items()))
 
 
 def _string_map(value: Any) -> dict[str, str]:

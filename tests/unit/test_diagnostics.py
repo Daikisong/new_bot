@@ -2367,6 +2367,25 @@ def test_production_readiness_accepts_record_backed_training_exports(
         "BRAIN-TRAIN-PAIR",
     ]
     assert production["training_exports"]["unique_skipped_record_ids"] == []
+    assert training_report["skipped_record_reason_counts"] == {
+        "record_type_not_selected_for_export_kind": (
+            training_report["per_export_skipped_record_count"]
+        )
+    }
+    assert training_report["skipped_record_reasons_by_record_id"] == {
+        "BRAIN-TRAIN-ISSUER": ["record_type_not_selected_for_export_kind"],
+        "BRAIN-TRAIN-PAIR": ["record_type_not_selected_for_export_kind"],
+    }
+    assert training_report["unique_skipped_record_reasons_by_record_id"] == {}
+    assert production["training_exports"]["skipped_record_reason_counts"] == (
+        training_report["skipped_record_reason_counts"]
+    )
+    assert production["training_exports"]["skipped_record_reasons_by_record_id"] == (
+        training_report["skipped_record_reasons_by_record_id"]
+    )
+    assert production["training_exports"][
+        "unique_skipped_record_reasons_by_record_id"
+    ] == {}
     assert production["training_exports"]["per_export_eligible_record_count"] == (
         training_report["per_export_eligible_record_count"]
     )
