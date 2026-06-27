@@ -1064,6 +1064,7 @@ def test_production_readiness_rejects_mock_price_snapshot_evidence(
             "prompt_hashes": {"blind_analysis": "price-hash"},
             "price_snapshot": {
                 "source_name": "mock-price",
+                "source_ref": "mock://prices/news-only",
                 "allowed_through": "2030-01-09",
                 "as_of": "2030-01-10T08:30:00+09:00",
             },
@@ -1090,6 +1091,7 @@ def test_production_readiness_rejects_mock_price_snapshot_evidence(
 
     assert production["price_evidence"]["passed"] is False
     assert production["price_evidence"]["mock_price_snapshot_count"] == 1
+    assert production["price_evidence"]["mock_source_ref_count"] == 1
     assert production["price_evidence"]["mock_price_snapshots"] == [
         {
             "path": "runs/manifests/RUN-price.json",
@@ -1131,6 +1133,7 @@ def test_production_readiness_accepts_stock_web_price_snapshot_evidence(
             "prompt_hashes": {"blind_analysis": "price-hash"},
             "price_snapshot": {
                 "source_name": "stock-web",
+                "source_ref": "stock-web://atlas",
                 "allowed_through": "2030-01-09",
                 "as_of": "2030-01-10T08:30:00+09:00",
             },
@@ -1158,10 +1161,122 @@ def test_production_readiness_accepts_stock_web_price_snapshot_evidence(
     assert production["price_evidence"]["passed"] is True
     assert production["price_evidence"]["checked_manifest_count"] == 1
     assert production["price_evidence"]["mock_price_snapshot_count"] == 0
+    assert production["price_evidence"]["missing_source_ref_count"] == 0
+    assert production["price_evidence"]["mock_source_ref_count"] == 0
     assert production["price_evidence"]["unsafe_allowed_through_count"] == 0
     assert production["price_evidence"]["as_of_after_cutoff_count"] == 0
     assert not any(
         finding.startswith("price_evidence:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_final_context_price_after_allowed_through(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        web_provider="brave",
+        price_provider="stock-web",
+    )
+    settings.llm.provider = "openai"
+    context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-price"
+        / "final_synthesis_context.json"
+    )
+    write_json(
+        context_path,
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "payload": {
+                "d_minus_one_market_data": {
+                    "status": "D_MINUS_ONE_PRICE_SNAPSHOTS",
+                    "source_name": "stock-web",
+                    "allowed_through": "2030-01-08",
+                    "snapshots": [
+                        {
+                            "ticker": "005930",
+                            "trade_date": "2030-01-09",
+                            "close": 100.0,
+                        }
+                    ],
+                }
+            },
+        },
+    )
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-price.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-price",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+            "prompt_hashes": {"blind_analysis": "price-hash"},
+            "final_synthesis_context_artifact": context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "price_snapshot": {
+                "source_name": "stock-web",
+                "source_ref": "stock-web://atlas",
+                "allowed_through": "2030-01-08",
+                "as_of": "2030-01-10T08:30:00+09:00",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "stock_web": {
+            "effective_path": (tmp_path / "stock-web").as_posix(),
+            "effective_path_exists": True,
+            "schema": {"source_name": "stock-web-test"},
+            "schema_status": {"status": "ok"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["price_evidence"]["passed"] is False
+    assert production["price_evidence"]["checked_final_context_reference_count"] == 1
+    assert production["price_evidence"]["unsafe_final_context_price_row_count"] == 1
+    assert production["price_evidence"]["unsafe_final_context_price_rows"] == [
+        {
+            "manifest": "runs/manifests/RUN-price.json",
+            "artifact": (
+                "runs/checkpoints/final_synthesis_context/RUN-price/"
+                "final_synthesis_context.json"
+            ),
+            "row_index": 0,
+            "ticker": "005930",
+            "trade_date": "2030-01-09",
+            "allowed_through": "2030-01-08",
+            "manifest_trade_date": "2030-01-10",
+            "reasons": ["after_allowed_through"],
+        }
+    ]
+    assert (
+        "price_evidence: final synthesis price snapshot row violates D-1 "
+        "cutoff in runs/checkpoints/final_synthesis_context/RUN-price/"
+        "final_synthesis_context.json: row=0 trade_date=2030-01-09 "
+        "reasons=after_allowed_through"
+        in production["findings"]
     )
 
 

@@ -1750,6 +1750,7 @@ async def test_blind_analyze_does_not_request_d_day_outcomes(tmp_path) -> None:
     assert analysis.context_manifest.blind_current_price_access_count == 0
     assert analysis.context_manifest.no_d_outcome_exposed is True
     assert analysis.context_manifest.price_snapshot.source_name == "outcome-trap"
+    assert analysis.context_manifest.price_snapshot.source_ref == "provider://outcome-trap"
     assert analysis.context_manifest.price_snapshot.as_of == datetime(
         2030, 1, 10, 8, 59, 59, tzinfo=KST
     )
@@ -1832,6 +1833,7 @@ def test_daily_analyzer_uses_configured_stock_web_price_source(tmp_path) -> None
 
     assert analyzer.price_source is not None
     assert analyzer.price_source.source_name == "stock-web"
+    assert analyzer._blind_price_source_ref() == "stock-web"
 
 
 @pytest.mark.asyncio

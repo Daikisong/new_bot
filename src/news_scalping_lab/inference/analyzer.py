@@ -184,6 +184,22 @@ class DailyAnalyzer:
             return "mock-price"
         return f"{self.settings.price_provider}-deferred-news-only"
 
+    def _blind_price_source_ref(self) -> str | None:
+        if self.price_source is None:
+            if self.settings.price_provider == "mock":
+                return "mock://prices/news-only"
+            return None
+        source_root = getattr(self.price_source, "root", None)
+        if isinstance(source_root, Path):
+            try:
+                return relative_to_root(source_root, self.root)
+            except ValueError:
+                return source_root.as_posix()
+        source_name = getattr(self.price_source, "source_name", None)
+        if isinstance(source_name, str) and source_name.strip():
+            return f"provider://{source_name.strip()}"
+        return f"provider://{self.price_source.__class__.__name__}"
+
     async def analyze(
         self,
         *,
@@ -292,6 +308,7 @@ class DailyAnalyzer:
             )
 
         manifest.price_snapshot.source_name = self._blind_price_source_name()
+        manifest.price_snapshot.source_ref = self._blind_price_source_ref()
 
         _news_novelty_review, novelty_prompt_hash, novelty_prompt_tokens = (
             await self._run_news_novelty_review(

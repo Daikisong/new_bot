@@ -414,11 +414,23 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
     invalid_manifest_schemas: list[dict[str, Any]] = []
     missing_price_snapshots: list[str] = []
     missing_source_names: list[str] = []
+    missing_source_refs: list[str] = []
+    mock_source_refs: list[dict[str, Any]] = []
     mock_price_snapshots: list[dict[str, Any]] = []
     invalid_allowed_through: list[dict[str, Any]] = []
     unsafe_allowed_through: list[dict[str, Any]] = []
     invalid_as_of: list[dict[str, Any]] = []
     as_of_after_cutoff: list[dict[str, Any]] = []
+    checked_final_context_refs = 0
+    invalid_final_context_refs: list[dict[str, Any]] = []
+    missing_final_context_artifacts: list[dict[str, Any]] = []
+    unreadable_final_context_artifacts: list[dict[str, Any]] = []
+    missing_final_context_price_data: list[dict[str, Any]] = []
+    final_context_mock_price_data: list[dict[str, Any]] = []
+    final_context_source_mismatches: list[dict[str, Any]] = []
+    final_context_allowed_mismatches: list[dict[str, Any]] = []
+    invalid_final_context_price_rows: list[dict[str, Any]] = []
+    unsafe_final_context_price_rows: list[dict[str, Any]] = []
     for manifest_path in manifest_paths:
         relative_path = relative_to_root(manifest_path, root)
         try:
@@ -449,8 +461,20 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                     "source_name": source_name,
                 }
             )
+        source_ref = price_snapshot.get("source_ref")
+        if not isinstance(source_ref, str) or not source_ref.strip():
+            missing_source_refs.append(relative_path)
+        elif _is_mock_or_placeholder_price_ref(source_ref):
+            mock_source_refs.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "source_ref": source_ref,
+                }
+            )
         raw_allowed_through = price_snapshot.get("allowed_through")
         trade_date = _manifest_trade_date(manifest)
+        allowed_through: date | None = None
         if not isinstance(raw_allowed_through, str) or not raw_allowed_through:
             invalid_allowed_through.append(
                 {
@@ -505,6 +529,169 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                             "cutoff_at": raw_cutoff_at,
                         }
                     )
+        final_context_ref = manifest.get("final_synthesis_context_artifact")
+        if isinstance(final_context_ref, str) and final_context_ref:
+            checked_final_context_refs += 1
+            final_context_path = _project_relative_artifact_path(root, final_context_ref)
+            if final_context_path is None:
+                invalid_final_context_refs.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": final_context_ref,
+                    }
+                )
+                continue
+            relative_artifact_path = relative_to_root(final_context_path, root)
+            if not final_context_path.exists() or not final_context_path.is_file():
+                missing_final_context_artifacts.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                    }
+                )
+                continue
+            try:
+                final_context = _read_json_object(final_context_path)
+            except ValueError:
+                unreadable_final_context_artifacts.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                    }
+                )
+                continue
+            price_context = _final_context_price_data(final_context)
+            if price_context is None:
+                missing_final_context_price_data.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                    }
+                )
+                continue
+            context_source_name = price_context.get("source_name")
+            if isinstance(context_source_name, str):
+                if "mock" in context_source_name.strip().lower():
+                    final_context_mock_price_data.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "source_name": context_source_name,
+                        }
+                    )
+                if (
+                    isinstance(source_name, str)
+                    and source_name.strip()
+                    and context_source_name != source_name
+                ):
+                    final_context_source_mismatches.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "manifest_source_name": source_name,
+                            "context_source_name": context_source_name,
+                        }
+                    )
+            elif isinstance(source_name, str) and source_name.strip():
+                final_context_source_mismatches.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                        "manifest_source_name": source_name,
+                        "context_source_name": context_source_name,
+                    }
+                )
+            context_allowed_through = price_context.get("allowed_through")
+            if (
+                isinstance(raw_allowed_through, str)
+                and raw_allowed_through
+                and context_allowed_through != raw_allowed_through
+            ):
+                final_context_allowed_mismatches.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                        "manifest_allowed_through": raw_allowed_through,
+                        "context_allowed_through": context_allowed_through,
+                    }
+                )
+            snapshots = price_context.get("snapshots")
+            if snapshots is None:
+                continue
+            if not isinstance(snapshots, list):
+                invalid_final_context_price_rows.append(
+                    {
+                        "manifest": relative_path,
+                        "artifact": relative_artifact_path,
+                        "row_index": None,
+                        "reason": "snapshots_not_list",
+                        "trade_date": None,
+                    }
+                )
+                continue
+            for row_index, row in enumerate(snapshots):
+                if not isinstance(row, dict):
+                    invalid_final_context_price_rows.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "row_index": row_index,
+                            "reason": "snapshot_not_object",
+                            "trade_date": None,
+                        }
+                    )
+                    continue
+                raw_row_trade_date = row.get("trade_date")
+                if not isinstance(raw_row_trade_date, str):
+                    invalid_final_context_price_rows.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "row_index": row_index,
+                            "reason": "trade_date_missing_or_invalid",
+                            "trade_date": raw_row_trade_date,
+                        }
+                    )
+                    continue
+                try:
+                    row_trade_date = date.fromisoformat(raw_row_trade_date)
+                except ValueError:
+                    invalid_final_context_price_rows.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "row_index": row_index,
+                            "reason": "trade_date_invalid",
+                            "trade_date": raw_row_trade_date,
+                        }
+                    )
+                    continue
+                reasons: list[str] = []
+                if allowed_through is not None and row_trade_date > allowed_through:
+                    reasons.append("after_allowed_through")
+                if trade_date is not None and row_trade_date >= trade_date:
+                    reasons.append("not_before_trade_date")
+                if reasons:
+                    unsafe_final_context_price_rows.append(
+                        {
+                            "manifest": relative_path,
+                            "artifact": relative_artifact_path,
+                            "row_index": row_index,
+                            "ticker": row.get("ticker"),
+                            "trade_date": raw_row_trade_date,
+                            "allowed_through": (
+                                allowed_through.isoformat()
+                                if allowed_through is not None
+                                else raw_allowed_through
+                            ),
+                            "manifest_trade_date": (
+                                trade_date.isoformat()
+                                if trade_date is not None
+                                else manifest.get("trade_date")
+                            ),
+                            "reasons": reasons,
+                        }
+                    )
 
     findings: list[str] = []
     if not manifest_paths:
@@ -520,6 +707,13 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         findings.append(f"context manifest price_snapshot is missing: {path}")
     for path in missing_source_names:
         findings.append(f"context manifest price_snapshot source_name is missing: {path}")
+    for path in missing_source_refs:
+        findings.append(f"context manifest price_snapshot source_ref is missing: {path}")
+    for snapshot in mock_source_refs:
+        findings.append(
+            f"mock or placeholder price_snapshot source_ref present in "
+            f"{snapshot['path']}: source_ref={snapshot['source_ref']}"
+        )
     for snapshot in mock_price_snapshots:
         findings.append(
             f"mock price_snapshot present in {snapshot['path']}: "
@@ -545,6 +739,55 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
             f"context manifest price_snapshot as_of is after cutoff_at in "
             f"{snapshot['path']}: {snapshot['as_of']}"
         )
+    for artifact in invalid_final_context_refs:
+        findings.append(
+            "final synthesis price context artifact reference is invalid: "
+            f"{artifact['manifest']} final_synthesis_context_artifact="
+            f"{artifact['artifact']}"
+        )
+    for artifact in missing_final_context_artifacts:
+        findings.append(
+            f"final synthesis price context artifact is missing: "
+            f"{artifact['manifest']} {artifact['artifact']}"
+        )
+    for artifact in unreadable_final_context_artifacts:
+        findings.append(
+            f"final synthesis price context artifact is unreadable: "
+            f"{artifact['artifact']}"
+        )
+    for artifact in missing_final_context_price_data:
+        findings.append(
+            f"final synthesis context d_minus_one_market_data is missing: "
+            f"{artifact['artifact']}"
+        )
+    for artifact in final_context_mock_price_data:
+        findings.append(
+            f"mock final synthesis price data present in {artifact['artifact']}: "
+            f"source_name={artifact['source_name']}"
+        )
+    for mismatch in final_context_source_mismatches:
+        findings.append(
+            f"final synthesis price source_name does not match manifest in "
+            f"{mismatch['artifact']}: {mismatch['context_source_name']} != "
+            f"{mismatch['manifest_source_name']}"
+        )
+    for mismatch in final_context_allowed_mismatches:
+        findings.append(
+            f"final synthesis price allowed_through does not match manifest in "
+            f"{mismatch['artifact']}: {mismatch['context_allowed_through']} != "
+            f"{mismatch['manifest_allowed_through']}"
+        )
+    for row in invalid_final_context_price_rows:
+        findings.append(
+            f"final synthesis price snapshot row is invalid in {row['artifact']}: "
+            f"row={row['row_index']} reason={row['reason']}"
+        )
+    for row in unsafe_final_context_price_rows:
+        findings.append(
+            f"final synthesis price snapshot row violates D-1 cutoff in "
+            f"{row['artifact']}: row={row['row_index']} "
+            f"trade_date={row['trade_date']} reasons={','.join(row['reasons'])}"
+        )
 
     return {
         "schema_version": "nslab.production_price_evidence.v1",
@@ -561,6 +804,10 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         "missing_price_snapshot_manifests": missing_price_snapshots,
         "missing_source_name_count": len(missing_source_names),
         "missing_source_name_manifests": missing_source_names,
+        "missing_source_ref_count": len(missing_source_refs),
+        "missing_source_ref_manifests": missing_source_refs,
+        "mock_source_ref_count": len(mock_source_refs),
+        "mock_source_refs": mock_source_refs,
         "mock_price_snapshot_count": len(mock_price_snapshots),
         "mock_price_snapshots": mock_price_snapshots,
         "invalid_allowed_through_count": len(invalid_allowed_through),
@@ -571,6 +818,29 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         "invalid_as_of_manifests": invalid_as_of,
         "as_of_after_cutoff_count": len(as_of_after_cutoff),
         "as_of_after_cutoff_manifests": as_of_after_cutoff,
+        "checked_final_context_reference_count": checked_final_context_refs,
+        "invalid_final_context_ref_count": len(invalid_final_context_refs),
+        "invalid_final_context_refs": invalid_final_context_refs,
+        "missing_final_context_artifact_count": len(missing_final_context_artifacts),
+        "missing_final_context_artifacts": missing_final_context_artifacts,
+        "unreadable_final_context_artifact_count": len(
+            unreadable_final_context_artifacts
+        ),
+        "unreadable_final_context_artifacts": unreadable_final_context_artifacts,
+        "missing_final_context_price_data_count": len(
+            missing_final_context_price_data
+        ),
+        "missing_final_context_price_data": missing_final_context_price_data,
+        "final_context_mock_price_data_count": len(final_context_mock_price_data),
+        "final_context_mock_price_data": final_context_mock_price_data,
+        "final_context_source_mismatch_count": len(final_context_source_mismatches),
+        "final_context_source_mismatches": final_context_source_mismatches,
+        "final_context_allowed_mismatch_count": len(final_context_allowed_mismatches),
+        "final_context_allowed_mismatches": final_context_allowed_mismatches,
+        "invalid_final_context_price_row_count": len(invalid_final_context_price_rows),
+        "invalid_final_context_price_rows": invalid_final_context_price_rows,
+        "unsafe_final_context_price_row_count": len(unsafe_final_context_price_rows),
+        "unsafe_final_context_price_rows": unsafe_final_context_price_rows,
     }
 
 
@@ -582,6 +852,24 @@ def _manifest_trade_date(manifest: dict[str, Any]) -> date | None:
         return date.fromisoformat(raw_trade_date)
     except ValueError:
         return None
+
+
+def _is_mock_or_placeholder_price_ref(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized.startswith(("mock://", "placeholder://")) or normalized in {
+        "mock",
+        "placeholder",
+    }
+
+
+def _final_context_price_data(payload: dict[str, Any]) -> dict[str, Any] | None:
+    nested_payload = payload.get("payload")
+    if isinstance(nested_payload, dict):
+        market_data = nested_payload.get("d_minus_one_market_data")
+        if isinstance(market_data, dict):
+            return market_data
+    market_data = payload.get("d_minus_one_market_data")
+    return market_data if isinstance(market_data, dict) else None
 
 
 def real_bundle_smoke_report(

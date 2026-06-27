@@ -32,8 +32,8 @@
     },
     {
       "category": "price_evidence",
-      "finding_count": 4,
-      "first_finding": "price_evidence: mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price"
+      "finding_count": 10,
+      "first_finding": "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json"
     },
     {
       "category": "real_bundle",
@@ -51,7 +51,7 @@
       "first_finding": "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl"
     }
   ],
-  "finding_count": 143,
+  "finding_count": 149,
   "finding_counts_by_category": {
     "brain": 4,
     "embedding": 2,
@@ -59,7 +59,7 @@
     "llm_evidence": 106,
     "llm_model": 1,
     "price": 1,
-    "price_evidence": 4,
+    "price_evidence": 10,
     "real_bundle": 1,
     "web": 1,
     "web_evidence": 22
@@ -176,10 +176,16 @@
     "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider",
     "web: mock provider cannot supply production evidence",
     "price: mock provider cannot supply production D-1 price evidence",
+    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
+    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
+    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
+    "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price",
+    "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json: source_name=mock-price",
+    "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json: source_name=mock-price",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
@@ -338,10 +344,16 @@
       "price: mock provider cannot supply production D-1 price evidence"
     ],
     "price_evidence": [
+      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
+      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
+      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
+      "price_evidence: context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
       "price_evidence: mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
-      "price_evidence: mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price"
+      "price_evidence: mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price",
+      "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json: source_name=mock-price",
+      "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json: source_name=mock-price"
     ],
     "real_bundle": [
       "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending"
@@ -1744,24 +1756,63 @@
   "price_evidence": {
     "as_of_after_cutoff_count": 0,
     "as_of_after_cutoff_manifests": [],
+    "checked_final_context_reference_count": 2,
     "checked_manifest_count": 4,
-    "finding_count": 4,
+    "final_context_allowed_mismatch_count": 0,
+    "final_context_allowed_mismatches": [],
+    "final_context_mock_price_data": [
+      {
+        "artifact": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+        "manifest": "runs/manifests/RUN-116b51828c12.json",
+        "source_name": "mock-price"
+      },
+      {
+        "artifact": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "source_name": "mock-price"
+      }
+    ],
+    "final_context_mock_price_data_count": 2,
+    "final_context_source_mismatch_count": 0,
+    "final_context_source_mismatches": [],
+    "finding_count": 10,
     "findings": [
+      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-116b51828c12.json",
+      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-1fca69ca7072.json",
+      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-a5840d2def32.json",
+      "context manifest price_snapshot source_ref is missing: runs/manifests/RUN-aa2a36dbf3e0.json",
       "mock price_snapshot present in runs/manifests/RUN-116b51828c12.json: source_name=mock-price",
       "mock price_snapshot present in runs/manifests/RUN-1fca69ca7072.json: source_name=mock-price",
       "mock price_snapshot present in runs/manifests/RUN-a5840d2def32.json: source_name=mock-price",
-      "mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price"
+      "mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price",
+      "mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json: source_name=mock-price",
+      "mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json: source_name=mock-price"
     ],
     "invalid_allowed_through_count": 0,
     "invalid_allowed_through_manifests": [],
     "invalid_as_of_count": 0,
     "invalid_as_of_manifests": [],
+    "invalid_final_context_price_row_count": 0,
+    "invalid_final_context_price_rows": [],
+    "invalid_final_context_ref_count": 0,
+    "invalid_final_context_refs": [],
     "invalid_manifest_schema_count": 0,
     "invalid_manifest_schemas": [],
+    "missing_final_context_artifact_count": 0,
+    "missing_final_context_artifacts": [],
+    "missing_final_context_price_data": [],
+    "missing_final_context_price_data_count": 0,
     "missing_price_snapshot_count": 0,
     "missing_price_snapshot_manifests": [],
     "missing_source_name_count": 0,
     "missing_source_name_manifests": [],
+    "missing_source_ref_count": 4,
+    "missing_source_ref_manifests": [
+      "runs/manifests/RUN-116b51828c12.json",
+      "runs/manifests/RUN-1fca69ca7072.json",
+      "runs/manifests/RUN-a5840d2def32.json",
+      "runs/manifests/RUN-aa2a36dbf3e0.json"
+    ],
     "mock_price_snapshot_count": 4,
     "mock_price_snapshots": [
       {
@@ -1785,13 +1836,19 @@
         "source_name": "mock-price"
       }
     ],
+    "mock_source_ref_count": 0,
+    "mock_source_refs": [],
     "passed": false,
     "schema_version": "nslab.production_price_evidence.v1",
     "status": "attention",
+    "unreadable_final_context_artifact_count": 0,
+    "unreadable_final_context_artifacts": [],
     "unreadable_manifest_count": 0,
     "unreadable_manifests": [],
     "unsafe_allowed_through_count": 0,
-    "unsafe_allowed_through_manifests": []
+    "unsafe_allowed_through_manifests": [],
+    "unsafe_final_context_price_row_count": 0,
+    "unsafe_final_context_price_rows": []
   },
   "real_bundle_import": {
     "applicable": false,
