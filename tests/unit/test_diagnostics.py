@@ -5555,7 +5555,7 @@ def test_production_readiness_rejects_catalog_only_brain_manifest(
     production = production_readiness_report(report, settings)
 
     assert production["passed"] is False
-    assert production["llm_full_brain"]["status"] == "not_applicable"
+    assert production["llm_full_brain"]["status"] == "attention"
     assert production["llm_full_brain"]["catalog_only"] is True
     assert production["llm_full_brain"]["findings"] == [
         "current manifest is catalog_only",

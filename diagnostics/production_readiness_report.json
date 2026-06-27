@@ -944,7 +944,7 @@
     "run_llm_unique_prompt_hash_count": 0,
     "schema_version": "nslab.production_llm_full_brain.v1",
     "source_record_count": null,
-    "status": "not_applicable",
+    "status": "attention",
     "validated_compiled_claims_with_single_episode": [],
     "validated_compiled_claims_without_contradictions": []
   },

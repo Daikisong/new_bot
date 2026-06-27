@@ -359,7 +359,7 @@
 - run_llm_duplicate_prompt_hashes: `[]`
 - run_llm_trace_evidence: `{'findings': [], 'checked_trace_count': 0, 'unreadable_trace_count': 0, 'unreadable_traces': [], 'invalid_trace_schema_count': 0, 'invalid_trace_schemas': [], 'invalid_trace_payload_count': 0, 'invalid_trace_payloads': [], 'missing_trace_prompt_hash_count': 0, 'missing_trace_prompt_hashes': [], 'prompt_hash_purpose_mismatch_count': 0, 'prompt_hash_purpose_mismatches': [], 'missing_trace_checkpoint_id_count': 0, 'missing_trace_checkpoint_id_traces': [], 'mock_trace_count': 0, 'mock_traces': [], 'checked_checkpoint_count': 0, 'unreadable_checkpoint_count': 0, 'unreadable_checkpoints': [], 'invalid_checkpoint_schema_count': 0, 'invalid_checkpoint_schemas': [], 'checkpoint_id_mismatch_count': 0, 'checkpoint_id_mismatches': [], 'checkpoint_trace_mismatch_count': 0, 'checkpoint_trace_mismatches': [], 'mock_checkpoint_count': 0, 'mock_checkpoints': []}`
 - passed: `False`
-- status: `not_applicable`
+- status: `attention`
 - finding_count: `3`
 - findings: `['current manifest is catalog_only', 'current manifest build_mode is catalog, not llm-full', 'llm-full compile manifest is missing']`
 

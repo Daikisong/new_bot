@@ -5575,7 +5575,7 @@ def _llm_full_brain_status(
         return {
             **status,
             "passed": False,
-            "status": "not_applicable",
+            "status": "attention",
             "finding_count": len(findings),
             "findings": findings,
         }
