@@ -7183,7 +7183,7 @@ def test_provenance_audit_checks_session_pack_record_scope(tmp_path: Path) -> No
     for file_name in pack_files:
         (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
     (pack_dir / "record_memory_cases.md").write_text(
-        "REC-pack-provenance-available\n",
+        "## REC-pack-provenance-available\n\nRecord memory payload.\n",
         encoding="utf-8",
     )
     omission_report = pack_dir / "omission_report.md"
@@ -7251,6 +7251,31 @@ def test_provenance_audit_checks_session_pack_record_scope(tmp_path: Path) -> No
 
     assert clean["passed"], clean["findings"]
 
+    (pack_dir / "record_memory_cases.md").write_text(
+        "## REC-pack-provenance-available\n\n"
+        "## REC-pack-provenance-future\n\n"
+        "## REC-pack-provenance-unknown\n",
+        encoding="utf-8",
+    )
+    write_json(pack_dir / "manifest.json", {**manifest, **pack_manifest_fields()})
+
+    failed_record_memory = audit_provenance(tmp_path)
+    label = "session_packs/2030-01-10/manifest.json"
+
+    assert not failed_record_memory["passed"]
+    assert (
+        f"{label}: session pack record_memory_cases.md references unknown records: "
+        "REC-pack-provenance-unknown"
+    ) in failed_record_memory["findings"]
+    assert (
+        f"{label}: session pack record_memory_cases.md includes unlisted records: "
+        "REC-pack-provenance-future, REC-pack-provenance-unknown"
+    ) in failed_record_memory["findings"]
+
+    (pack_dir / "record_memory_cases.md").write_text(
+        "## REC-pack-provenance-available\n\nRecord memory payload.\n",
+        encoding="utf-8",
+    )
     write_json(
         pack_dir / "manifest.json",
         {
@@ -7267,7 +7292,6 @@ def test_provenance_audit_checks_session_pack_record_scope(tmp_path: Path) -> No
     )
 
     failed = audit_provenance(tmp_path)
-    label = "session_packs/2030-01-10/manifest.json"
 
     assert not failed["passed"]
     assert f"{label}: session pack accepted_record_count mismatch" in failed["findings"]

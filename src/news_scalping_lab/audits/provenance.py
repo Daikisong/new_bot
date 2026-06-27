@@ -6790,7 +6790,7 @@ def _check_session_pack_manifest(
         findings,
     )
     _check_session_pack_omission_report(root, label, manifest_path, manifest, findings)
-    _check_session_pack_record_scope(root, label, manifest, findings)
+    _check_session_pack_record_scope(root, label, manifest_path, manifest, findings)
     _check_session_pack_blocking_contract(
         label,
         manifest,
@@ -6980,6 +6980,7 @@ def _check_session_pack_omission_report(
 def _check_session_pack_record_scope(
     root: Path,
     label: str,
+    manifest_path: Path,
     manifest: dict[str, Any],
     findings: list[str],
 ) -> None:
@@ -7185,6 +7186,14 @@ def _check_session_pack_record_scope(
         expected_omitted = set(budget_omitted_ids) | unavailable_ids
         if set(omitted_record_ids) != expected_omitted:
             findings.append(f"{label}: session pack omitted_record_ids mismatch")
+    if included_ids is not None:
+        _check_session_pack_record_memory_cases(
+            label,
+            manifest_path,
+            included_record_ids=included_ids,
+            known_record_ids=record_ids,
+            findings=findings,
+        )
 
 
 def _check_session_pack_record_count(
@@ -7204,6 +7213,59 @@ def _check_session_pack_record_count(
         findings.append(f"{label}: session pack {count_field} mismatch")
     if ids is not None and value != len(ids):
         findings.append(f"{label}: session pack {count_field} does not match IDs")
+
+
+def _check_session_pack_record_memory_cases(
+    label: str,
+    manifest_path: Path,
+    *,
+    included_record_ids: list[str],
+    known_record_ids: set[str],
+    findings: list[str],
+) -> None:
+    path = manifest_path.parent / "record_memory_cases.md"
+    if not path.is_file():
+        findings.append(f"{label}: session pack record_memory_cases.md missing")
+        return
+    record_ids = _record_memory_case_heading_ids(path.read_text(encoding="utf-8"))
+    duplicates = _duplicate_strings(record_ids)
+    if duplicates:
+        findings.append(
+            f"{label}: session pack record_memory_cases.md duplicate records: "
+            + ", ".join(duplicates)
+        )
+    observed = set(record_ids)
+    expected = set(included_record_ids)
+    unknown = sorted(observed - known_record_ids)
+    if unknown:
+        findings.append(
+            f"{label}: session pack record_memory_cases.md references unknown records: "
+            + ", ".join(unknown)
+        )
+    missing = sorted(expected - observed)
+    extra = sorted(observed - expected)
+    if missing:
+        findings.append(
+            f"{label}: session pack record_memory_cases.md missing included records: "
+            + ", ".join(missing)
+        )
+    if extra:
+        findings.append(
+            f"{label}: session pack record_memory_cases.md includes unlisted records: "
+            + ", ".join(extra)
+        )
+
+
+def _record_memory_case_heading_ids(text: str) -> list[str]:
+    record_ids: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("## "):
+            continue
+        record_id = stripped.removeprefix("## ").strip()
+        if record_id:
+            record_ids.append(record_id)
+    return record_ids
 
 
 def _session_pack_required_unique_ids(
