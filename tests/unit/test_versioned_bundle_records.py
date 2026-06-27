@@ -14,8 +14,15 @@ from news_scalping_lab.records.models import (
     BeneficiaryDiscoveryCase,
     BlindLeaderPreferencePair,
     CandidateGenerationErrorCase,
+    CandidateRankingErrorCase,
+    CompanyMemoryDeltaRecord,
     CounterexampleRecord,
+    EntityResolutionErrorCase,
     EventTickerEdgeRecord,
+    MechanismMemoryRecord,
+    MemoryClaimRecord,
+    ResearchQuestionRecord,
+    RowDispositionErrorCase,
     SupervisedDirectEventCase,
     SupervisedIssuerDayCase,
     SupervisedThemeFormationCase,
@@ -154,6 +161,58 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "correction_record_ids": ["BRAIN-1"],
         }
     )
+    ranking_error = CandidateRankingErrorCase.model_validate(
+        {
+            "record_type": "candidate_ranking_error_case",
+            "error_id": "RANK-1",
+            "error_type": "wrong_leader",
+            "blind_preferred_ticker": "000002",
+            "blind_rejected_ticker": "000001",
+            "outcome_winner_ticker": "000001",
+            "corrected_ticker": "000001",
+            "corrected_company_name": "Correct Leader Co",
+        }
+    )
+    row_error = RowDispositionErrorCase.model_validate(
+        {
+            "record_type": "row_disposition_error_case",
+            "error_id": "ROW-1",
+            "row_id": "ROW-1",
+            "original_disposition": "excluded",
+            "corrected_disposition": "included",
+            "candidate_ticker": "000005",
+            "candidate_company_name": "Row Fix Co",
+        }
+    )
+    entity_error = EntityResolutionErrorCase.model_validate(
+        {
+            "record_type": "entity_resolution_error_case",
+            "error_id": "ENT-1",
+            "unresolved_entity": "Ambiguous Co",
+            "original_ticker": "000006",
+            "corrected_ticker": "000007",
+            "corrected_company_name": "Resolved Co",
+        }
+    )
+    memory_claim = MemoryClaimRecord.model_validate(
+        {
+            "record_type": "memory_claim",
+            "claim_id": "MEM-1",
+            "statement": "Direct catalysts can dominate the first pass.",
+            "mechanism": "direct evidence",
+            "supporting_record_ids": ["BRAIN-1"],
+            "contradicting_record_ids": ["BRAIN-2"],
+        }
+    )
+    mechanism_memory = MechanismMemoryRecord.model_validate(
+        {
+            "record_type": "mechanism_memory",
+            "mechanism_id": "MECH-1",
+            "mechanism": "supply chain propagation",
+            "scope": "postmortem memory",
+            "supporting_record_ids": ["BRAIN-1"],
+        }
+    )
     counterexample = CounterexampleRecord.model_validate(
         {
             "record_type": "counterexample",
@@ -175,6 +234,26 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "directly_mentioned": True,
         }
     )
+    company_memory = CompanyMemoryDeltaRecord.model_validate(
+        {
+            "record_type": "company_memory_delta",
+            "ticker": "000008",
+            "company_name": "Memory Co",
+            "known_at": "2030-01-11T00:00:00+09:00",
+            "business_descriptions": ["Produces memory-safe test parts."],
+            "contradictory_relations": ["Supplier relation unverified."],
+        }
+    )
+    question = ResearchQuestionRecord.model_validate(
+        {
+            "record_type": "research_question",
+            "question_id": "RQ-1",
+            "question": "Which evidence resolves the beneficiary relation?",
+            "status": "open",
+            "priority": "medium",
+            "related_record_ids": ["BRAIN-1"],
+        }
+    )
 
     assert issuer.safe_D1_features == {"P_amount_rank": 11}
     assert issuer.event_level_weights == {"EVT-1": 1.0}
@@ -183,8 +262,15 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
     assert beneficiary.candidate_path_type == "INFERRED_NEW"
     assert pair.training_mode == "positive_preference"
     assert error.missed_company_name == "Missed Co"
+    assert ranking_error.corrected_ticker == "000001"
+    assert row_error.corrected_disposition == "included"
+    assert entity_error.corrected_company_name == "Resolved Co"
+    assert memory_claim.supporting_record_ids == ["BRAIN-1"]
+    assert mechanism_memory.mechanism_id == "MECH-1"
     assert counterexample.contradicted_claim_ids == ["CL-1"]
     assert edge.relation_class == "DIRECT"
+    assert company_memory.known_at is not None
+    assert question.related_record_ids == ["BRAIN-1"]
     with pytest.raises(ValueError):
         EventTickerEdgeRecord.model_validate(
             {
