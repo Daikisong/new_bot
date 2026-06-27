@@ -3257,8 +3257,9 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        _llm_compile_manifest_fixture(),
+        _llm_compile_manifest_v4_fixture(),
     )
+    compile_run = _llm_compile_run_v4_fixture()
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
     write_json(
@@ -3266,16 +3267,10 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
         {
             "schema_version": "nslab.brain_compile_diagnostics.v1",
             "brain_version": "brain-production",
-            "llm_compile_run": {
-                "schema_version": "nslab.llm_full_brain_compile_run.v1",
-                "brain_version": "brain-production",
-                "llm_generation_count": 19,
-                "llm_live_call_count": 19,
-                "llm_cache_hit_count": 0,
-                "all_outputs_from_cache": False,
-            },
+            "llm_compile_run": compile_run,
         },
     )
+    _write_llm_compile_trace_evidence_fixture(tmp_path, compile_run)
     _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
@@ -3291,6 +3286,7 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     production = production_readiness_report(report, settings)
 
     assert production["llm_full_brain"]["passed"] is True
+    assert production["llm_full_brain"]["compiler_version"] == LLM_FULL_COMPILER_VERSION
     assert production["llm_full_brain"]["expected_source_record_count"] == 1
     assert production["llm_full_brain"]["run_llm_live_call_count"] == 19
     assert not any(
@@ -3359,6 +3355,70 @@ def test_production_readiness_accepts_llm_full_v4_trace_evidence(
     assert not any(
         finding.startswith("brain: llm-full compile run")
         for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_full_missing_compiler_version(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["compiler_version"] is None
+    assert (
+        "brain: llm-full compile compiler_version is missing, not "
+        f"{LLM_FULL_COMPILER_VERSION}"
+        in production["findings"]
     )
 
 

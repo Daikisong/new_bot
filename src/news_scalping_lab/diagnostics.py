@@ -3671,6 +3671,7 @@ def _llm_full_brain_status(
         "compiler_version": compile_manifest.get("compiler_version")
         if isinstance(compile_manifest, dict)
         else None,
+        "expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "configured_model": settings.llm.model,
         "brain_version": compile_manifest.get("brain_version")
         if isinstance(compile_manifest, dict)
@@ -3742,6 +3743,17 @@ def _llm_full_brain_status(
             findings.append("llm-full compile model is missing or mock")
         elif settings.llm.model and model.strip() != settings.llm.model.strip():
             findings.append("llm-full compile model does not match configured model")
+        compiler_version = status["compiler_version"]
+        if compiler_version != LLM_FULL_COMPILER_VERSION:
+            observed_version = (
+                compiler_version
+                if isinstance(compiler_version, str) and compiler_version
+                else "missing"
+            )
+            findings.append(
+                "llm-full compile compiler_version is "
+                f"{observed_version}, not {LLM_FULL_COMPILER_VERSION}"
+            )
         manifest_brain_version = status["brain_version"]
         if (
             isinstance(current_brain_version, str)
