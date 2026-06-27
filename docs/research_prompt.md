@@ -4,8 +4,472 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v25_acquisition_fastpath_outcome_airgap_lock
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행이다. v25는 v24의 outcome air-gap을 유지하면서, GitHub 확보 초반에는 curl/urllib 반복을 금지하고 web/browser + download tool + JSON canonical save fallback을 우선하는 acquisition fast path를 추가한다. access JSON의 outcome expected sha256/row_count/bytes/date만 locked metadata로 보존하고, outcome path는 PHASE_3 seal receipt 검증 후에만 unlock한다. pre-seal byte touch가 발생한 실행은 label/content 노출 여부와 무관하게 brain import 금지다. 단, wrapper가 실행 전에 outcome download 계획을 차단한 것은 오염이 아니며 계속 진행한다. 실제 outcome 파일이 다운로드·stat·byte_size·sha/header/row_count/parse 중 하나라도 실행되면 같은 ChatGPT 실행에서는 ACCEPT_FULL로 복구하지 않고 최소 QUARANTINE 감사 bundle만 남긴다. 20260622 gold example은 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v24는 v23의 zero-contamination 조건, v22의 ledger parity와 outcome→news audit, v21의 brain_delta 밀도와 market_state override를 유지한다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v26_import_shape_marker_phase_receipt_lock
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행과 importer가 읽을 수 있는 gold-shape 구조다. v26은 v25의 acquisition fast path와 v24 outcome air-gap을 유지하면서, 20241101류 구조 회귀를 막기 위해 research_report.md/postmortem_report.md marker block, blind_seal_receipt.json 독립 block, final phase_state, marker inventory, validation_report object checks, direct_ingest_contract structural gates를 ACCEPT_FULL 필수 조건으로 추가한다. 예측 성과가 낮은 것은 실패가 아니며 brain_delta 학습 레코드로 남긴다. 그러나 required marker block 누락, phase_state가 PHASE_2에 머무는 상태, seal receipt 없는 postseal outcome access, validator의 구조 누락 미검출은 예측 성과와 무관하게 ACCEPT_FULL 금지다. 20260622와 20241204는 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v26은 v25, v24, v23, v22, v21의 기존 오염방지·ledger parity·outcome→news audit·brain_delta density·market_state override를 모두 유지한다.```
+
+
+
+────────────────────────────────────────
+V26 IMPORT-SHAPE REGRESSION LOCK — marker·seal receipt·phase finalization 고정
+────────────────────────────────────────
+
+이 섹션은 `V25 ACQUISITION FAST-PATH LOCK`, `V24 OUTCOME AIR-GAP LOCK`, `V23 ZERO-CONTAMINATION LOCK`, `V22 REGRESSION LOCK`, `V21 REGRESSION LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
+
+v26의 목적은 예측 적중률을 높이는 것이 아니다. 예측은 틀릴 수 있고, 틀린 예측도 두뇌가 학습해야 할 중요한 반례다. 그러나 `ACCEPT_FULL + direct_brain_ingest_ready=true`를 선언하는 bundle은 repo importer가 사람 후검수 없이 읽을 수 있는 gold-shape 구조를 반드시 가져야 한다.
+
+20241101류 회귀의 형태는 다음과 같다.
+
+```text
+phase 오염은 없고 brain_delta 밀도도 충분하지만,
+research_report.md 또는 postmortem_report.md가 NSLAB marker block으로 존재하지 않거나,
+blind_seal_receipt.json 독립 block이 없거나,
+phase_state가 PHASE_2_BLIND_PACKET_SEALED에 머문 채 ACCEPT_FULL을 선언하거나,
+front matter / validation_report / direct_ingest_contract가 필수 구조 검증을 누락한다.
+```
+
+이런 산출물은 분석 내용이 좋아도 자동 import-ready `ACCEPT_FULL`이 아니다. 반드시 수리 후 `ACCEPT_FULL`로 만들거나, 수리 실패 시 `QUARANTINE_IMPORT_SHAPE_CONTRACT`로 둔다.
+
+## V26.0 예측 성과는 구조 hard gate가 아니다
+
+다음은 `ACCEPT_FULL` 실패 사유가 아니다.
+
+```text
+final_watchlist가 상한가를 못 맞힘
+final high_return >= 10% 개수가 적음
+직접뉴스 후보가 시장기억·우선주·수급성 winner를 놓침
+상한가 winner가 NEWSLESS_OR_UNEXPLAINED로 많이 남음
+ranking_error_case가 많음
+candidate_generation_error_case가 많음
+```
+
+이들은 `postmortem_report.md`, `outcome_to_news_audit.jsonl`, `brain_delta.jsonl`에 남길 학습 재료다.
+
+반대로 다음은 예측 성과와 무관하게 `ACCEPT_FULL` 금지다.
+
+```text
+필수 NSLAB marker block 누락
+필수 block이 marker 밖의 일반 본문으로만 존재
+phase_state가 최종 완료 phase가 아님
+blind_seal_receipt.json block 누락
+access_log상 blind seal receipt보다 outcome access가 먼저임
+renderer/validator 독립성 증명 누락
+validation_report가 actual/expected/expected_source object check가 아님
+bundle_manifest가 block별 sha256/byte_size를 재계산하지 않음
+direct_ingest_contract가 필수 구조 gate를 반영하지 않음
+```
+
+## V26.1 필수 NSLAB marker block exact contract
+
+`ACCEPT_FULL` bundle에는 아래 block이 **정확히 1회씩** 존재해야 한다.
+
+```text
+research_report.md
+blind_report.md
+postmortem_report.md
+phase_state.json
+access_log.jsonl
+acquisition_warnings.jsonl
+attempt_history.jsonl
+repair_log.jsonl
+blind_seal_receipt.json
+blind_packet_manifest.json
+blind_prediction.json
+row_disposition.jsonl
+entity_ledger_blind.jsonl
+fact_ledger_blind.jsonl
+inference_ledger_blind.jsonl
+candidate_screening.jsonl
+final_semantic_audit.jsonl
+market_state_override_audit.jsonl
+body_table_candidate_generation_audit.jsonl
+ledger_population_audit.json
+outcome_ledger.jsonl
+outcome_leader_census.jsonl
+outcome_to_news_audit.jsonl
+entity_resolution.jsonl
+research_episode.json
+brain_delta.jsonl
+source_ledger.jsonl
+id_registry.json
+validation_report.json
+phase_audit_report.json
+bundle_manifest.json
+direct_ingest_contract.json
+```
+
+각 block은 다음 literal marker를 사용한다.
+
+```text
+<!-- NSLAB:BEGIN <artifact_name> -->
+...
+<!-- NSLAB:END <artifact_name> -->
+```
+
+규칙:
+
+```text
+begin marker count == required_block_count
+end marker count == required_block_count
+each required artifact has exactly one BEGIN and exactly one END
+BEGIN/END nesting is invalid
+artifact name typo is invalid
+중복 marker는 invalid
+marker 밖의 일반 Markdown heading은 required block을 대체하지 못한다
+.json block은 json.loads 성공
+.jsonl block은 모든 non-empty line이 json.loads 성공
+.md block은 비어 있지 않음
+```
+
+예를 들어 문서 상단에 `# NSLAB Research Episode Bundle`, `# 연구 episode 개요`, `## Execution receipt`가 있어도 아래 marker가 없으면 `research_report.md`는 누락이다.
+
+```text
+<!-- NSLAB:BEGIN research_report.md -->
+...
+<!-- NSLAB:END research_report.md -->
+```
+
+마찬가지로 postmortem 요약이 일반 본문에 있어도 아래 marker가 없으면 `postmortem_report.md`는 누락이다.
+
+```text
+<!-- NSLAB:BEGIN postmortem_report.md -->
+...
+<!-- NSLAB:END postmortem_report.md -->
+```
+
+누락 또는 중복 시:
+
+```text
+critical_error_count += 1
+bundle_status = QUARANTINE_REQUIRED_MARKER_BLOCK_MISSING
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+validator_exit_code = 2
+```
+
+## V26.2 report block role contract
+
+세 report block은 역할이 다르다.
+
+```text
+research_report.md:
+  - 전체 episode를 사람이 읽는 통합 보고서
+  - BLIND 요약과 POSTMORTEM 요약을 모두 포함 가능
+  - 단, BLIND와 POSTMORTEM 경계를 명시해야 함
+
+blind_report.md:
+  - PHASE_2 이전에 봉인된 BLIND 전용 보고서
+  - outcome 숫자, high_return, upper_limit, outcome response, 적중/실패 표현 금지
+  - post-seal 결과를 포함하면 BLIND 오염 또는 report role violation
+
+postmortem_report.md:
+  - PHASE_3 이후 outcome 공개 뒤 생성된 사후 보고서
+  - outcome snapshot hash/row_count/winner census/final 결과를 포함해야 함
+  - 해당 block이 없으면 postmortem이 일반 본문에 있어도 ACCEPT_FULL 금지
+```
+
+validator는 다음을 계산한다.
+
+```text
+research_report_marker_present == true
+blind_report_marker_present == true
+postmortem_report_marker_present == true
+blind_report_outcome_terms_count == 0
+postmortem_report_outcome_summary_present == true
+report_block_role_contract_verified == true
+```
+
+## V26.3 blind_seal_receipt.json 독립 block 필수
+
+`blind_packet_manifest.json` 안에 seal 관련 필드가 있어도 충분하지 않다. `ACCEPT_FULL`에는 독립 block으로 `blind_seal_receipt.json`이 반드시 있어야 한다.
+
+최소 스키마:
+
+```json
+{
+  "schema_version": "nslab.blind_seal_receipt.v1",
+  "episode_id": "",
+  "trade_date": "",
+  "created_at": "",
+  "phase": "PHASE_2_BLIND_PACKET_SEALED",
+  "blind_namespace_readonly_after": true,
+  "blind_packet_manifest_sha256": "",
+  "sealed_blind_report_sha256": "",
+  "sealed_artifacts": [
+    {"name": "blind_prediction.json", "sha256": "", "byte_size": 0},
+    {"name": "blind_report.md", "sha256": "", "byte_size": 0},
+    {"name": "row_disposition.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "entity_ledger_blind.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "fact_ledger_blind.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "inference_ledger_blind.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "candidate_screening.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "final_semantic_audit.jsonl", "sha256": "", "byte_size": 0},
+    {"name": "blind_packet_manifest.json", "sha256": "", "byte_size": 0}
+  ],
+  "preseal_outcome_download_count": 0,
+  "preseal_outcome_stat_count": 0,
+  "preseal_outcome_sha256_count": 0,
+  "preseal_outcome_header_read_count": 0,
+  "preseal_outcome_row_count_count": 0,
+  "preseal_outcome_parse_count": 0,
+  "preseal_outcome_label_calculation_count": 0,
+  "preseal_outcome_winner_census_count": 0,
+  "outcome_unlock_allowed_after_receipt": true,
+  "receipt_written_before_any_outcome_access": true
+}
+```
+
+`access_log.jsonl`에는 다음 순서가 드러나야 한다.
+
+```text
+WRITE blind_prediction.json / blind_report.md / row_disposition.jsonl / ...
+HASH blind artifacts
+WRITE blind_packet_manifest.json
+WRITE blind_seal_receipt.json
+VERIFY blind_seal_receipt.json
+ONLY THEN DOWNLOAD/OPEN/PARSE outcome_snapshot
+```
+
+validator hard check:
+
+```text
+blind_seal_receipt_block_present == true
+blind_seal_receipt_schema_verified == true
+blind_seal_receipt_sha_matches_front_matter == true
+blind_seal_receipt_preseal_counters_zero == true
+access_log_receipt_before_outcome_access == true
+```
+
+## V26.4 phase_state finalization contract
+
+`ACCEPT_FULL`에서 `phase_state.json`은 PHASE_2에 멈춰 있으면 안 된다.
+
+허용 final state:
+
+```text
+current_phase == PHASE_5_FINAL_ACCEPT_OR_QUARANTINE
+또는
+phase == PHASE_4_BUNDLE_COMPLETE
+또는
+phase_state == FINAL_BUNDLE_ACCEPTED
+```
+
+금지 final state:
+
+```text
+PHASE_0_ACQUIRE_INPUT
+PHASE_1_BUILD_BLIND_ONLY
+PHASE_2_BLIND_PACKET_SEALED
+PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL
+```
+
+`phase_state.json` 최소 필드:
+
+```json
+{
+  "schema_version": "nslab.phase_state.v26",
+  "current_phase": "PHASE_5_FINAL_ACCEPT_OR_QUARANTINE",
+  "phase_history": [
+    "PHASE_0_ACQUIRE_INPUT",
+    "PHASE_1_BUILD_BLIND_ONLY",
+    "PHASE_2_BLIND_PACKET_SEALED",
+    "PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL",
+    "PHASE_4_RENDER_VALIDATE_REPAIR",
+    "PHASE_5_FINAL_ACCEPT_OR_QUARANTINE"
+  ],
+  "accepted_attempt_valid": true,
+  "blind_sealed": true,
+  "blind_seal_receipt_verified": true,
+  "outcome_access_allowed": true,
+  "outcome_opened_after_blind_seal_receipt": true,
+  "postseal_outcome_download_count": 1,
+  "postseal_outcome_parse_count": 1,
+  "bundle_rendered": true,
+  "validator_completed": true,
+  "validator_exit_code": 0,
+  "critical_error_count": 0,
+  "fatal_blockers": [],
+  "bundle_status": "ACCEPT_FULL",
+  "brain_eligible": true,
+  "direct_brain_ingest_ready": true
+}
+```
+
+validator hard check:
+
+```text
+phase_state_block_present == true
+phase_state_finalized_verified == true
+phase_history_complete_verified == true
+phase_state_not_left_at_phase_2 == true
+phase_state_matches_access_log_order == true
+```
+
+## V26.5 renderer/validator/front-matter proof contract
+
+`ACCEPT_FULL` front matter에는 다음 필드가 반드시 있어야 한다.
+
+```text
+renderer_version
+renderer_sha256
+validator_version
+validator_sha256
+validator_exit_code
+canonical_graph_sha256
+canonical_graph_object_counts
+bundle_manifest_sha256
+validation_report_sha256
+phase_audit_report_sha256
+blind_seal_receipt_sha256
+direct_ingest_contract_sha256
+```
+
+`renderer_sha256 == validator_sha256`이면 기본적으로 fatal이다. combined script 예외를 쓰려면 다음 필드가 모두 있어야 하며 서로 일관되어야 한다.
+
+```text
+combined_tool_sha256
+renderer_entrypoint_sha256
+validator_entrypoint_sha256
+renderer_entrypoint_sha256 != validator_entrypoint_sha256
+validator_does_not_import_renderer_state == true
+validator_recomputes_from_final_bundle_and_artifact_blocks == true
+validator_expected_source_not_generated_output == true
+```
+
+combined 예외 필드가 누락되면:
+
+```text
+bundle_status = QUARANTINE_VALIDATOR_NOT_INDEPENDENT
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V26.6 validation_report object check 필수
+
+`validation_report.json`은 문자열 리스트가 아니라 object 배열이어야 한다.
+
+각 critical check는 다음 필드를 가진다.
+
+```json
+{
+  "check_id": "required_marker_blocks_exactly_once_verified",
+  "passed": true,
+  "actual": {},
+  "expected": {},
+  "expected_source": "PROMPT_CONSTANT | INPUT_PARSE | ACCESS_JSON | CANONICAL_GRAPH_PRESEAL | POSTSEAL_OUTCOME_PARSE | FINAL_BUNDLE_REPARSE",
+  "severity": "critical",
+  "error_ids": []
+}
+```
+
+필수 check_id:
+
+```text
+required_marker_blocks_exactly_once_verified
+research_report_marker_present_verified
+postmortem_report_marker_present_verified
+report_block_role_contract_verified
+blind_seal_receipt_block_verified
+blind_seal_receipt_before_outcome_access_verified
+phase_state_finalized_verified
+phase_history_complete_verified
+phase_state_not_left_at_phase_2_verified
+access_log_phase_order_verified
+front_matter_gold_shape_verified
+renderer_validator_independence_verified
+bundle_manifest_block_hashes_verified
+direct_ingest_contract_mirrors_validation_verified
+prediction_performance_not_used_as_structural_gate_verified
+```
+
+금지:
+
+```text
+checks: ["ok", "passed", "all good"]
+check_id만 있고 actual/expected/expected_source가 없음
+expected_source == GENERATED_OUTPUT
+expected_source == SELF_DECLARED_MANIFEST
+```
+
+## V26.7 bundle_manifest block hash 재계산
+
+`bundle_manifest.json`은 final Markdown에서 marker block 내용을 다시 잘라내어 각 block의 `sha256`과 `byte_size`를 계산해야 한다.
+
+최소 필드:
+
+```json
+{
+  "schema_version": "nslab.bundle_manifest.v26",
+  "episode_id": "",
+  "required_block_count": 32,
+  "required_blocks_present_count": 32,
+  "missing_required_blocks": [],
+  "duplicate_blocks": [],
+  "block_hashes": {
+    "research_report.md": {"sha256": "", "byte_size": 0},
+    "postmortem_report.md": {"sha256": "", "byte_size": 0},
+    "blind_seal_receipt.json": {"sha256": "", "byte_size": 0},
+    "phase_state.json": {"sha256": "", "byte_size": 0}
+  },
+  "front_matter_hash_fields_match_blocks": true,
+  "bundle_sha256": ""
+}
+```
+
+## V26.8 direct_ingest_contract mirror gate
+
+`direct_ingest_contract.json`은 `validation_report.json`의 critical 결과를 mirror해야 한다.
+
+필수 hard_gate_summary:
+
+```json
+{
+  "required_marker_blocks_exactly_once_verified": true,
+  "research_report_marker_present_verified": true,
+  "postmortem_report_marker_present_verified": true,
+  "blind_seal_receipt_block_verified": true,
+  "phase_state_finalized_verified": true,
+  "phase_state_not_left_at_phase_2_verified": true,
+  "access_log_phase_order_verified": true,
+  "renderer_validator_independence_verified": true,
+  "bundle_manifest_block_hashes_verified": true,
+  "critical_error_count": 0,
+  "validator_exit_code": 0
+}
+```
+
+`direct_brain_ingest_ready=true`인데 위 값 중 하나라도 false면 오류다.
+
+```text
+bundle_status = QUARANTINE_DIRECT_INGEST_CONTRACT_MISMATCH
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+## V26.9 수리 우선, 실패 시 quarantine
+
+V26 위반은 대부분 recoverable render/validate 오류다. 즉시 연구를 버리지 말고 canonical_graph 또는 renderer를 고친 뒤 재렌더·재검증한다.
+
+수리 가능 예:
+
+```text
+research_report.md marker 누락
+postmortem_report.md marker 누락
+blind_seal_receipt.json block 누락
+phase_state가 PHASE_2에 머문 채 최종 렌더됨
+bundle_manifest가 marker hash를 빠뜨림
+validation_report check가 문자열 리스트로 렌더됨
+```
+
+수리 후에도 위반이 남으면:
+
+```text
+bundle_status = QUARANTINE_IMPORT_SHAPE_CONTRACT
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
 ```
 
 
