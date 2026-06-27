@@ -899,6 +899,55 @@ def test_record_store_deep_audit_validates_import_parity(tmp_path: Path) -> None
     assert audit["eligible_records_with_unknown_provenance_sources"] == []
 
 
+def test_record_store_deep_audit_rejects_absolute_manifest_records_file(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    manifest_path = tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json"
+    manifest = _read_json(manifest_path)
+    record_path = tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl"
+    manifest["records_file"] = record_path.resolve().as_posix()
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["manifest_records_file_absolute_episode_ids"] == [
+        "NSLAB-20300110-SYNTH"
+    ]
+    assert audit["manifest_records_file_escape_episode_ids"] == []
+    assert "record manifest records_file must be project-relative" in audit["findings"]
+
+
+def test_record_store_deep_audit_rejects_escaping_manifest_records_file(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    manifest_path = tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json"
+    manifest = _read_json(manifest_path)
+    manifest["records_file"] = "../outside-records.jsonl"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["manifest_records_file_absolute_episode_ids"] == []
+    assert audit["manifest_records_file_escape_episode_ids"] == [
+        "NSLAB-20300110-SYNTH"
+    ]
+    assert "record manifest records_file escapes project root" in audit["findings"]
+
+
 def test_record_store_deep_audit_rejects_brain_delta_record_id_gap(
     tmp_path: Path,
 ) -> None:

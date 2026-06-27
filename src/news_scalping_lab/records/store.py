@@ -626,6 +626,9 @@ def _audit_deep_record_store(
         "manifest_record_id_mismatch_episode_ids": [],
         "manifest_training_eligible_mismatch_episode_ids": [],
         "manifest_type_count_mismatch_episode_ids": [],
+        "manifest_records_file_missing_episode_ids": [],
+        "manifest_records_file_absolute_episode_ids": [],
+        "manifest_records_file_escape_episode_ids": [],
         "manifest_hash_mismatch_episode_ids": [],
         "missing_normalized_index_episode_ids": [],
         "index_record_id_mismatch_episode_ids": [],
@@ -784,7 +787,21 @@ def _audit_record_manifest(
     if _int_dict(manifest.get("record_counts_by_type")) != _type_counts(records):
         result["manifest_type_count_mismatch_episode_ids"].append(episode_id)
     records_file = manifest.get("records_file")
-    record_path = root / records_file if isinstance(records_file, str) else None
+    record_path: Path | None = None
+    if not isinstance(records_file, str) or not records_file:
+        result["manifest_records_file_missing_episode_ids"].append(episode_id)
+    else:
+        records_ref = Path(records_file)
+        if records_ref.is_absolute():
+            result["manifest_records_file_absolute_episode_ids"].append(episode_id)
+        else:
+            resolved_record_path = (root / records_ref).resolve()
+            try:
+                resolved_record_path.relative_to(root.resolve())
+            except ValueError:
+                result["manifest_records_file_escape_episode_ids"].append(episode_id)
+            else:
+                record_path = resolved_record_path
     expected_hash = manifest.get("records_sha256")
     if (
         not isinstance(expected_hash, str)
@@ -1304,6 +1321,15 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         ),
         "manifest_type_count_mismatch_episode_ids": (
             "record manifest type counts do not match records"
+        ),
+        "manifest_records_file_missing_episode_ids": (
+            "record manifest records_file is missing"
+        ),
+        "manifest_records_file_absolute_episode_ids": (
+            "record manifest records_file must be project-relative"
+        ),
+        "manifest_records_file_escape_episode_ids": (
+            "record manifest records_file escapes project root"
         ),
         "manifest_hash_mismatch_episode_ids": "record manifest records_sha256 mismatch",
         "missing_normalized_index_episode_ids": "normalized episode index is missing",
