@@ -2047,7 +2047,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                     }
                 )
                 continue
-            observed_sha = file_sha256(artifact_path)
+            observed_sha = _text_artifact_sha256(artifact_path)
             if observed_sha != expected_sha:
                 artifact_hash_mismatches.append(
                     {
@@ -2271,6 +2271,10 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         ),
         "placeholder_web_artifacts": placeholder_artifacts,
     }
+
+
+def _text_artifact_sha256(path: Path) -> str:
+    return sha256_text(path.read_text(encoding="utf-8", errors="replace"))
 
 
 def _project_relative_artifact_path(root: Path, value: object) -> Path | None:

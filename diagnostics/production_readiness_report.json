@@ -47,11 +47,11 @@
     },
     {
       "category": "web_evidence",
-      "finding_count": 22,
-      "first_finding": "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl"
+      "finding_count": 14,
+      "first_finding": "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl"
     }
   ],
-  "finding_count": 149,
+  "finding_count": 141,
   "finding_counts_by_category": {
     "brain": 4,
     "embedding": 2,
@@ -62,7 +62,7 @@
     "price_evidence": 10,
     "real_bundle": 1,
     "web": 1,
-    "web_evidence": 22
+    "web_evidence": 14
   },
   "findings": [
     "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending",
@@ -186,14 +186,6 @@
     "price_evidence: mock price_snapshot present in runs/manifests/RUN-aa2a36dbf3e0.json: source_name=mock-price",
     "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json: source_name=mock-price",
     "price_evidence: mock final synthesis price data present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json: source_name=mock-price",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
-    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
     "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
     "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
     "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
@@ -362,14 +354,6 @@
       "web: mock provider cannot supply production evidence"
     ],
     "web_evidence": [
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
-      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
       "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
       "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
       "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
@@ -2616,73 +2600,8 @@
       "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl": 0,
       "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl": 40
     },
-    "artifact_sha256_mismatch_count": 8,
-    "artifact_sha256_mismatches": [
-      {
-        "artifact": "runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
-        "artifact_field": "web_source_artifact",
-        "expected_sha256": "739902c357aaedfd6d8038ee367ee7c19f3b6a4fc327d088c0a399b9a3262a02",
-        "manifest": "runs/manifests/RUN-116b51828c12.json",
-        "observed_sha256": "c404335bec439699204c7d3b1c8ef1510f36fb9563991f4e59ab15783f51ebfb",
-        "sha_field": "web_source_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
-        "artifact_field": "candidate_web_check_artifact",
-        "expected_sha256": "8302550e55982426e7d54eb782ac8adcda5949a889e2aa4b079f5bb311db4e6f",
-        "manifest": "runs/manifests/RUN-116b51828c12.json",
-        "observed_sha256": "6c95d07a813dd90e8b890dc734b9c37d816b817b312a8b62469bd5a987fcb6d5",
-        "sha_field": "candidate_web_check_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
-        "artifact_field": "source_ledger_artifact",
-        "expected_sha256": "4ccc85f95f0758731b65482c1a7f4acd0c396f763d5d15a8023e73124a418185",
-        "manifest": "runs/manifests/RUN-116b51828c12.json",
-        "observed_sha256": "e85d20b5ba0e7967a18b0de41ee33c011be44467a8cfaac0bfb53845dd5715f1",
-        "sha_field": "source_ledger_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
-        "artifact_field": "final_synthesis_context_artifact",
-        "expected_sha256": "c0e10bf951e2a42dbf75f69564e6785a96f682b01fd4c5d3c53222d00e6aad2a",
-        "manifest": "runs/manifests/RUN-116b51828c12.json",
-        "observed_sha256": "dd86149ac2fe3b5c9e9949961269f799739fa83f483160417c3eab956324c7b4",
-        "sha_field": "final_synthesis_context_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
-        "artifact_field": "web_source_artifact",
-        "expected_sha256": "62650bc9058fbabbf7eeea08bc8780fe59c664d92dda5ad931edfd90578bf4a1",
-        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
-        "observed_sha256": "0947a0bd9bf72f6f497bd1b566815b8090d9ab5cd5e3bb50c29939c4c7bcb0e9",
-        "sha_field": "web_source_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
-        "artifact_field": "candidate_web_check_artifact",
-        "expected_sha256": "ea47eac0d56ba2022651028e556ad5245723a876bf27c2c722aefcbfd0287f71",
-        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
-        "observed_sha256": "09e31adba2d981eef2d603bd49b69968c468335bad53ab6a30d695c6956415f5",
-        "sha_field": "candidate_web_check_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
-        "artifact_field": "source_ledger_artifact",
-        "expected_sha256": "93c9b57061f94d626b0045c352fd243e912767ee4e4d8e1416657f4bdbf4ee64",
-        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
-        "observed_sha256": "304e9725c34c2cfea7ac21e2b0891246ecf424acc071626e3b9702671080b631",
-        "sha_field": "source_ledger_sha256"
-      },
-      {
-        "artifact": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
-        "artifact_field": "final_synthesis_context_artifact",
-        "expected_sha256": "0ad530b73ac0a5b66718643122f9931260c26bc59f1c9061aa0579a7f5389fc3",
-        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
-        "observed_sha256": "677649e0dfc73333612f39d4d3d6e8d2c3d337831d38c7539120a600c2d193ce",
-        "sha_field": "final_synthesis_context_sha256"
-      }
-    ],
+    "artifact_sha256_mismatch_count": 0,
+    "artifact_sha256_mismatches": [],
     "artifact_source_id_mismatch_count": 0,
     "artifact_source_id_mismatches": [],
     "checked_artifact_count": 15,
@@ -2696,16 +2615,8 @@
       "runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
       "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl"
     ],
-    "finding_count": 22,
+    "finding_count": 14,
     "findings": [
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
-      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
       "web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
       "web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
       "web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
