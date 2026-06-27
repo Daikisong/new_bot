@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
-from news_scalping_lab.config import load_settings
+from news_scalping_lab.config import Settings, load_settings
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ClaimStatus,
@@ -26,6 +26,7 @@ from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
@@ -77,7 +78,7 @@ CATEGORY_RECORD_TYPE_ROUTES = {
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v4"
-LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v3"
+LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v4"
 LLM_FULL_RECORD_SHARD_SIZE = 50
 LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
 LLM_PROMPT_MAX_LIST_ITEMS = 12
@@ -140,6 +141,59 @@ LLM_PROMPT_PAYLOAD_FIELDS = (
     "boundary_conditions",
     "failure_modes",
 )
+
+
+def _trace_brain_llm_provider(
+    settings: Settings,
+    provider: LLMProvider,
+) -> LLMProvider:
+    if isinstance(provider, TracingLLMProvider):
+        return provider
+    return TracingLLMProvider(
+        provider,
+        trace_dir=settings.path(settings.output_dirs.traces),
+        model_config=_brain_llm_model_config(settings, provider),
+        default_metadata={
+            "prompt_version": LLM_FULL_COMPILER_VERSION,
+            "compiler_version": LLM_FULL_COMPILER_VERSION,
+            "llm_full_brain": True,
+        },
+        resume_from_checkpoints=False,
+        max_retries=settings.llm.max_retries,
+    )
+
+
+def _brain_llm_model_config(
+    settings: Settings,
+    provider: LLMProvider,
+) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "configured_provider": settings.llm_provider,
+        "provider_class": type(provider).__name__,
+        "compiler_version": LLM_FULL_COMPILER_VERSION,
+    }
+    model = getattr(provider, "model", None) or settings.llm.model
+    if isinstance(model, str) and model:
+        config["model"] = model
+    embedding_model = _embedding_model_name(provider)
+    if embedding_model:
+        config["embedding_model"] = embedding_model
+    reasoning_effort = getattr(provider, "reasoning_effort", None)
+    if isinstance(reasoning_effort, str) and reasoning_effort:
+        config["reasoning_effort"] = reasoning_effort
+    max_output_tokens = getattr(provider, "max_output_tokens", None)
+    if isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool):
+        config["max_output_tokens"] = max_output_tokens
+    return config
+
+
+def _embedding_model_name(provider: LLMProvider) -> str | None:
+    if isinstance(provider, TracingLLMProvider):
+        provider = provider.provider
+    value = getattr(provider, "embedding_model", None)
+    return value if isinstance(value, str) and value else None
+
+
 LLM_PROMPT_PAYLOAD_DUPLICATE_FIELDS = {
     "schema_version",
     "record_id",
@@ -259,9 +313,10 @@ class BrainCompiler:
         records = BrainRecordStore(self.root).list_records()
         if not records:
             raise ValueError("llm-full brain rebuild requires normalized brain records")
-        provider = create_llm_provider(settings)
-        if isinstance(provider, DeterministicMockLLMProvider):
+        base_provider = create_llm_provider(settings)
+        if isinstance(base_provider, DeterministicMockLLMProvider):
             raise ValueError("llm-full brain rebuild cannot use the mock LLM provider")
+        provider = _trace_brain_llm_provider(settings, base_provider)
         previous_version = current_brain_version(self.root)
         accepted_episodes = self.store.list_accepted()
         covered_ids = sorted(
@@ -339,7 +394,7 @@ class BrainCompiler:
                 provider,
                 embedding_method=_llm_embedding_method(
                     provider_name=settings.llm_provider,
-                    model=getattr(provider, "embedding_model", None)
+                    model=_embedding_model_name(base_provider)
                     or settings.llm.embedding_model
                     or "configured",
                 ),
@@ -1720,7 +1775,7 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        output, cache_key, cache_hit = await _cached_generate_text(
+        output, cache_key, cache_hit, prompt_sha256 = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:shard:{shard_index:04d}",
@@ -1740,6 +1795,7 @@ async def _compile_llm_category_outputs(
                 "record_ids": [record.record_id for record in shard],
                 "record_count": len(shard),
                 "cache_hit": cache_hit,
+                "prompt_sha256": prompt_sha256,
                 "summary": output,
             }
         )
@@ -1760,7 +1816,12 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        synthesis, synthesis_cache_key, synthesis_cache_hit = await _cached_generate_text(
+        (
+            synthesis,
+            synthesis_cache_key,
+            synthesis_cache_hit,
+            synthesis_prompt_sha256,
+        ) = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:synthesis:{category}",
@@ -1782,7 +1843,12 @@ async def _compile_llm_category_outputs(
             provider_name=provider_name,
             model=model,
         )
-        review, review_cache_key, review_cache_hit = await _cached_generate_text(
+        (
+            review,
+            review_cache_key,
+            review_cache_hit,
+            review_prompt_sha256,
+        ) = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:review:{category}",
@@ -1821,8 +1887,10 @@ async def _compile_llm_category_outputs(
                 "compiled_claim_ids": category_compiled_claim_ids,
                 "synthesis_cache_key": synthesis_cache_key,
                 "synthesis_cache_hit": synthesis_cache_hit,
+                "synthesis_prompt_sha256": synthesis_prompt_sha256,
                 "review_cache_key": review_cache_key,
                 "review_cache_hit": review_cache_hit,
+                "review_prompt_sha256": review_prompt_sha256,
             }
         )
     llm_cache_hit_count = sum(
@@ -1878,6 +1946,7 @@ async def _compile_llm_category_outputs(
             {
                 "shard_index": shard["shard_index"],
                 "cache_key": shard["cache_key"],
+                "prompt_sha256": shard["prompt_sha256"],
                 "record_count": shard["record_count"],
                 "cache_hit": shard["cache_hit"],
             }
@@ -1889,8 +1958,10 @@ async def _compile_llm_category_outputs(
                 "file_name": category["file_name"],
                 "source_record_count": category["source_record_count"],
                 "synthesis_cache_key": category["synthesis_cache_key"],
+                "synthesis_prompt_sha256": category["synthesis_prompt_sha256"],
                 "synthesis_cache_hit": category["synthesis_cache_hit"],
                 "review_cache_key": category["review_cache_key"],
+                "review_prompt_sha256": category["review_prompt_sha256"],
                 "review_cache_hit": category["review_cache_hit"],
             }
             for category in categories
@@ -1942,7 +2013,7 @@ async def _cached_generate_text(
     record_hashes: dict[str, str],
     provider_name: str,
     model: str,
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, bool, str]:
     prompt_sha = sha256_text(prompt)
     cache_payload = {
         "compiler_version": LLM_FULL_COMPILER_VERSION,
@@ -1959,7 +2030,7 @@ async def _cached_generate_text(
         cached = read_json(cache_path)
         output = cached.get("output") if isinstance(cached, dict) else None
         if isinstance(output, str):
-            return output, cache_key, True
+            return output, cache_key, True, prompt_sha
     output = await provider.generate_text(prompt=prompt, purpose=purpose)
     write_json(
         cache_path,
@@ -1971,7 +2042,7 @@ async def _cached_generate_text(
             "output": output,
         },
     )
-    return output, cache_key, False
+    return output, cache_key, False, prompt_sha
 
 
 def _brain_record_shard_prompt(

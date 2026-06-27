@@ -169,6 +169,11 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
     assert compile_manifest["compiled_claim_count"] == 2
     assert compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
+    assert compile_manifest["record_shards"][0]["prompt_sha256"]
+    assert all(
+        category["synthesis_prompt_sha256"] and category["review_prompt_sha256"]
+        for category in compile_manifest["categories"]
+    )
     assert "llm_live_call_count" not in compile_manifest
     assert "cache_hit" not in compile_manifest["record_shards"][0]
     assert "synthesis_cache_hit" not in compile_manifest["categories"][0]
@@ -190,11 +195,62 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_report["llm_compile_run"]["llm_cache_hit_count"] == 0
     assert compile_report["llm_compile_run"]["all_outputs_from_cache"] is False
     assert compile_report["llm_compile_run"]["record_shards"][0]["cache_hit"] is False
+    assert (
+        compile_report["llm_compile_run"]["record_shards"][0]["prompt_sha256"]
+        == compile_manifest["record_shards"][0]["prompt_sha256"]
+    )
     assert all(
         category["synthesis_cache_hit"] is False
         and category["review_cache_hit"] is False
         for category in compile_report["llm_compile_run"]["categories"]
     )
+    assert [
+        (
+            category["synthesis_prompt_sha256"],
+            category["review_prompt_sha256"],
+        )
+        for category in compile_report["llm_compile_run"]["categories"]
+    ] == [
+        (
+            category["synthesis_prompt_sha256"],
+            category["review_prompt_sha256"],
+        )
+        for category in compile_manifest["categories"]
+    ]
+    trace_payloads = [
+        read_json(path) for path in sorted((tmp_path / "runs" / "traces").glob("*.json"))
+    ]
+    compile_traces = [
+        trace
+        for trace in trace_payloads
+        if trace.get("operation") == "generate_text"
+        and isinstance(trace.get("purpose"), str)
+        and trace["purpose"].startswith("brain_compile:")
+    ]
+    assert len(compile_traces) == compile_manifest["llm_generation_count"]
+    assert {
+        trace["input"]["prompt_sha256"] for trace in compile_traces
+    } == _compile_run_prompt_hashes(compile_report["llm_compile_run"])
+    assert all(trace["status"] == "ok" for trace in compile_traces)
+    assert all(
+        trace["model_config"]["configured_provider"] == "openai"
+        and trace["model_config"]["provider_class"] == "RecordingBrainLLM"
+        and trace["model_config"]["model"] == "test-brain-model"
+        and trace["model_config"]["embedding_model"] == "embed-brain-test"
+        and trace["model_config"]["compiler_version"]
+        == compiler_module.LLM_FULL_COMPILER_VERSION
+        for trace in compile_traces
+    )
+    for trace in compile_traces:
+        checkpoint_path = (
+            tmp_path / "runs" / "checkpoints" / "llm" / f"{trace['checkpoint_id']}.json"
+        )
+        checkpoint = read_json(checkpoint_path)
+        assert checkpoint["schema_version"] == "nslab.llm_checkpoint.v1"
+        assert checkpoint["operation"] == trace["operation"]
+        assert checkpoint["purpose"] == trace["purpose"]
+        assert checkpoint["input"] == trace["input"]
+        assert checkpoint["model_config"] == trace["model_config"]
     assert compile_report["category_claim_counts"]["single_event"] == 1
     assert compile_report["category_claim_counts"]["counterexamples"] == 1
     assert compile_report["category_source_record_counts"]["single_event"] == 1
@@ -341,6 +397,18 @@ def test_llm_full_brain_compile_rejects_mock_provider_object(
 
     assert not (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
     assert not (tmp_path / "brain" / "current" / "llm_compile_manifest.json").exists()
+
+
+def _compile_run_prompt_hashes(compile_run: dict[str, object]) -> set[str]:
+    prompt_hashes: set[str] = set()
+    for shard in compile_run["record_shards"]:
+        assert isinstance(shard, dict)
+        prompt_hashes.add(str(shard["prompt_sha256"]))
+    for category in compile_run["categories"]:
+        assert isinstance(category, dict)
+        prompt_hashes.add(str(category["synthesis_prompt_sha256"]))
+        prompt_hashes.add(str(category["review_prompt_sha256"]))
+    return prompt_hashes
 
 
 def _write_openai_config(root: Path) -> None:
