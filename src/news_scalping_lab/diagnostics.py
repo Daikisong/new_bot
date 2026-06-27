@@ -3675,12 +3675,24 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "source_phase_counts": {},
             "counts_by_record_type": {},
             "counts_by_training_target": {},
+            "record_store_counts_by_record_type": {},
+            "record_store_counts_by_training_target": {},
+            "missing_count_fields": [],
+            "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
         }
     source_record_ids = sorted(record.record_id for record in source_records)
     training_eligible_record_ids = sorted(
         record.record_id for record in source_records if record.training_eligible
+    )
+    record_store_counts_by_record_type = dict(
+        sorted(Counter(record.record_type for record in source_records).items())
+    )
+    record_store_counts_by_training_target = dict(
+        sorted(
+            Counter(record.training_target or "UNKNOWN" for record in source_records).items()
+        )
     )
     source_record_count = len(source_record_ids)
     if source_record_count == 0:
@@ -3712,6 +3724,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "source_phase_counts": {},
             "counts_by_record_type": {},
             "counts_by_training_target": {},
+            "record_store_counts_by_record_type": {},
+            "record_store_counts_by_training_target": {},
+            "missing_count_fields": [],
+            "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
         }
@@ -3834,6 +3850,23 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     counts_by_training_target = _int_dict(
         diagnostics.get("counts_by_training_target")
     )
+    count_map_fields = (
+        "source_phase_counts",
+        "counts_by_record_type",
+        "counts_by_training_target",
+    )
+    missing_count_fields = [
+        field for field in count_map_fields if diagnostics and field not in diagnostics
+    ]
+    invalid_count_fields = [
+        field
+        for field in count_map_fields
+        if field in diagnostics and not _int_dict_field_valid(diagnostics.get(field))
+    ]
+    for field in missing_count_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_count_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
 
     if record_store_source_count != source_record_count:
         findings.append(
@@ -3908,6 +3941,24 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         and unique_exported_count > unique_training_eligible_count
     ):
         findings.append("training export includes more records than eligible records")
+    if (
+        diagnostics
+        and "counts_by_record_type" not in missing_count_fields
+        and "counts_by_record_type" not in invalid_count_fields
+        and counts_by_record_type != record_store_counts_by_record_type
+    ):
+        findings.append(
+            "training export counts_by_record_type does not match current records"
+        )
+    if (
+        diagnostics
+        and "counts_by_training_target" not in missing_count_fields
+        and "counts_by_training_target" not in invalid_count_fields
+        and counts_by_training_target != record_store_counts_by_training_target
+    ):
+        findings.append(
+            "training export counts_by_training_target does not match current records"
+        )
 
     weight_statuses = diagnostics.get("weight_validation_statuses")
     if not isinstance(weight_statuses, dict):
@@ -3989,6 +4040,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "source_phase_counts": source_phase_counts,
         "counts_by_record_type": counts_by_record_type,
         "counts_by_training_target": counts_by_training_target,
+        "record_store_counts_by_record_type": record_store_counts_by_record_type,
+        "record_store_counts_by_training_target": (
+            record_store_counts_by_training_target
+        ),
+        "missing_count_fields": missing_count_fields,
+        "invalid_count_fields": invalid_count_fields,
         "available_manifest_kinds": _string_list(
             diagnostics.get("available_manifest_kinds")
         ),

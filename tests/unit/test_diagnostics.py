@@ -2620,6 +2620,69 @@ def test_production_readiness_rejects_invalid_training_export_skip_reasons(
     )
 
 
+def test_production_readiness_rejects_invalid_training_export_count_maps(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["source_phase_counts"] = {"BLIND": -1}
+    tampered_report["counts_by_record_type"] = {
+        "supervised_issuer_day_case": 2,
+    }
+    tampered_report["counts_by_training_target"] = {
+        "issuer_day_price_response": True,
+    }
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["record_store_counts_by_record_type"] == {
+        "blind_leader_preference_pair": 1,
+        "supervised_issuer_day_case": 1,
+    }
+    assert production["training_exports"]["record_store_counts_by_training_target"] == {
+        "issuer_day_price_response": 1,
+        "outcome_preferred_candidate": 1,
+    }
+    assert production["training_exports"]["invalid_count_fields"] == [
+        "source_phase_counts",
+        "counts_by_training_target",
+    ]
+    assert (
+        "training export diagnostics source_phase_counts is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics counts_by_training_target is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export counts_by_record_type does not match current records"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export counts_by_record_type does not match current records"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_direct_event_weight_mismatch(
     tmp_path,
 ) -> None:
