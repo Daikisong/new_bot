@@ -57,7 +57,10 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     record_audit = _audit_record_coverage(root)
     record_store_audit = audit_record_store(root, deep=deep)
     diversity_audit = _audit_brain_diversity(root)
-    llm_compile_audit = _audit_llm_compile_manifest(root)
+    llm_compile_audit = _audit_llm_compile_manifest(
+        root,
+        current_manifest=brain_manifest,
+    )
     compiled_claim_audit = _audit_compiled_claims(root, accepted_ids)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
@@ -415,7 +418,11 @@ def _declares_category_complete(text: str) -> bool:
     return any(marker in normalized for marker in complete_markers)
 
 
-def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
+def _audit_llm_compile_manifest(
+    root: Path,
+    *,
+    current_manifest: dict[str, Any],
+) -> dict[str, Any]:
     manifest = _read_llm_compile_manifest(root)
     findings: list[str] = []
     unknown_record_ids: list[str] = []
@@ -427,6 +434,8 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
     shard_record_ids: set[str] = set()
     record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
     if not manifest:
+        if _brain_build_mode(current_manifest) == "llm-full":
+            findings.append("llm-full compile manifest is missing")
         return {
             "llm_compile_manifest_present": False,
             "llm_compile_compiler_version": None,

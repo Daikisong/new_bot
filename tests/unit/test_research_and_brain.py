@@ -1311,6 +1311,38 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     assert latest_audit["brain_category_source_population_mismatches"] == []
 
 
+def test_brain_audit_rejects_llm_full_without_compile_manifest(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    episode = _batch_episode(
+        "EP-llm-full-missing-compile-manifest",
+        "LLM-full brain audit must require compile evidence.",
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    manifest_path = tmp_path / "brain" / "current" / "brain_manifest.json"
+    manifest = read_json(manifest_path)
+    manifest["build_mode"] = "llm-full"
+    manifest["catalog_only"] = False
+    write_json(manifest_path, manifest)
+
+    audit = audit_brain(tmp_path, deep=True)
+
+    assert audit["passed"] is False
+    assert audit["brain_build_mode"] == "llm-full"
+    assert audit["llm_compile_manifest_present"] is False
+    assert "llm-full compile manifest is missing" in audit["llm_compile_findings"]
+    latest_audit = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")[
+        "latest_brain_audit"
+    ]
+    assert any(
+        finding == "llm_compile_findings: llm-full compile manifest is missing"
+        for finding in latest_audit["findings"]
+    )
+
+
 def _compiled_claim_test_record(
     record_id: str,
     episode_id: str,
