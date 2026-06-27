@@ -37,6 +37,7 @@ from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports
 from news_scalping_lab.utils import (
+    canonical_json,
     file_sha256,
     is_available_as_of,
     relative_to_root,
@@ -833,6 +834,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "unreadable_traces": trace_evidence["unreadable_traces"],
         "invalid_trace_schema_count": trace_evidence["invalid_trace_schema_count"],
         "invalid_trace_schemas": trace_evidence["invalid_trace_schemas"],
+        "invalid_trace_payload_count": trace_evidence["invalid_trace_payload_count"],
+        "invalid_trace_payloads": trace_evidence["invalid_trace_payloads"],
         "missing_trace_prompt_hash_count": trace_evidence[
             "missing_trace_prompt_hash_count"
         ],
@@ -925,6 +928,8 @@ def _production_llm_trace_evidence_status(
             "unreadable_traces": [],
             "invalid_trace_schema_count": 0,
             "invalid_trace_schemas": [],
+            "invalid_trace_payload_count": 0,
+            "invalid_trace_payloads": [],
             "missing_trace_prompt_hash_count": 0,
             "missing_trace_prompt_hashes": [],
             "prompt_hash_purpose_mismatch_count": 0,
@@ -951,6 +956,7 @@ def _production_llm_trace_evidence_status(
     checked_traces: list[Path] = []
     unreadable_traces: list[str] = []
     invalid_trace_schemas: list[dict[str, Any]] = []
+    invalid_trace_payloads: list[dict[str, Any]] = []
     matched_prompt_hashes: set[str] = set()
     prompt_hash_purpose_mismatches: list[dict[str, Any]] = []
     missing_trace_checkpoint_id_traces: list[dict[str, Any]] = []
@@ -992,6 +998,17 @@ def _production_llm_trace_evidence_status(
                     "purpose": trace.get("purpose"),
                     "prompt_sha256": prompt_hash,
                     "schema_version": trace.get("schema_version"),
+                }
+            )
+        trace_payload_mismatches = _llm_trace_payload_hash_mismatches(trace)
+        if trace_payload_mismatches:
+            invalid_trace_payloads.append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "purpose": trace.get("purpose"),
+                    "prompt_sha256": prompt_hash,
+                    "mismatched_fields": trace_payload_mismatches,
                 }
             )
         checkpoint_id = trace.get("checkpoint_id")
@@ -1129,6 +1146,11 @@ def _production_llm_trace_evidence_status(
             f"referenced LLM trace schema_version is invalid in {trace['path']}: "
             f"{trace['schema_version']}"
         )
+    for trace in invalid_trace_payloads:
+        findings.append(
+            f"referenced LLM trace payload hash mismatch in {trace['path']}: "
+            f"{', '.join(trace['mismatched_fields'])}"
+        )
     for prompt_hash in missing_trace_prompt_hashes:
         findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
     for mismatch in prompt_hash_purpose_mismatches:
@@ -1174,6 +1196,8 @@ def _production_llm_trace_evidence_status(
         "unreadable_traces": unreadable_traces,
         "invalid_trace_schema_count": len(invalid_trace_schemas),
         "invalid_trace_schemas": invalid_trace_schemas,
+        "invalid_trace_payload_count": len(invalid_trace_payloads),
+        "invalid_trace_payloads": invalid_trace_payloads,
         "missing_trace_prompt_hash_count": len(missing_trace_prompt_hashes),
         "missing_trace_prompt_hashes": missing_trace_prompt_hashes,
         "prompt_hash_purpose_mismatch_count": len(prompt_hash_purpose_mismatches),
@@ -1194,6 +1218,25 @@ def _production_llm_trace_evidence_status(
         "mock_checkpoint_count": len(mock_checkpoints),
         "mock_checkpoints": mock_checkpoints,
     }
+
+
+def _llm_trace_payload_hash_mismatches(trace: dict[str, Any]) -> list[str]:
+    mismatches: list[str] = []
+    trace_input = trace.get("input")
+    if isinstance(trace_input, dict) and "input_sha256" in trace:
+        expected_input_hash = sha256_text(canonical_json(trace_input))
+        if trace.get("input_sha256") != expected_input_hash:
+            mismatches.append("input_sha256")
+    if "output_sha256" in trace:
+        trace_output = trace.get("output")
+        expected_output_hash = (
+            sha256_text(canonical_json(trace_output))
+            if trace_output is not None
+            else None
+        )
+        if trace.get("output_sha256") != expected_output_hash:
+            mismatches.append("output_sha256")
+    return mismatches
 
 
 def _expected_checkpoint_trace_value(trace_ref: dict[str, Any], field: str) -> Any:
