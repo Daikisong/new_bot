@@ -288,6 +288,14 @@ def _synthetic_v11_bundle(
     include_unknown: bool = True,
     unknown_training_eligible: bool = False,
     validation_checked_hashes: dict[str, str] | None = None,
+    front_matter_available_from: str | None = None,
+    manifest_available_from: str | None = None,
+    episode_available_from: str | None = None,
+    manifest_bundle_status: str = "ACCEPT_FULL",
+    manifest_blind_valid: bool = True,
+    manifest_validator_exit_code: int = 0,
+    manifest_critical_error_count: int = 0,
+    validation_critical_error_count: int = 0,
     issuer_available_from: str | None = None,
     issuer_label_quality: str | None = None,
     issuer_sample_weight: float = 1.0,
@@ -517,14 +525,14 @@ def _synthetic_v11_bundle(
             "episode_id": episode_id,
             "trade_date": trade_day.isoformat(),
             "cutoff_at": cutoff_at,
-            "available_from": available_from,
+            "available_from": episode_available_from or available_from,
         },
         ensure_ascii=False,
         sort_keys=True,
     )
     validation_payload = {
         "schema_version": "nslab.validation_report.v3",
-        "critical_error_count": 0,
+        "critical_error_count": validation_critical_error_count,
         "computed_counts": {
             "brain_delta_record_count": len(records),
             "training_eligible_record_count": sum(
@@ -545,13 +553,18 @@ def _synthetic_v11_bundle(
             "episode_id": episode_id,
             "trade_date": trade_day.isoformat(),
             "cutoff_at": cutoff_at,
-            "bundle_status": "ACCEPT_FULL",
-            "blind_valid": True,
-            "validator_exit_code": 0,
-            "critical_error_count": 0,
+            "bundle_status": manifest_bundle_status,
+            "blind_valid": manifest_blind_valid,
+            "validator_exit_code": manifest_validator_exit_code,
+            "critical_error_count": manifest_critical_error_count,
             "brain_delta_record_count": len(records),
             "training_eligible_record_count": sum(
                 1 for record in records if record.get("training_eligible") is True
+            ),
+            **(
+                {"available_from": manifest_available_from}
+                if manifest_available_from is not None
+                else {}
             ),
             "embedded_blocks": {
                 "brain_delta.jsonl": {"sha256": sha256_text(brain_delta)},
@@ -563,13 +576,19 @@ def _synthetic_v11_bundle(
         ensure_ascii=False,
         sort_keys=True,
     )
-    return f"""---
-schema_version: {schema_version}
-episode_id: {episode_id}
-trade_date: {trade_day.isoformat()}
-cutoff_at: {cutoff_at}
-bundle_status: ACCEPT_FULL
-blind_valid: true
+    front_matter_lines = [
+        "---",
+        f"schema_version: {schema_version}",
+        f"episode_id: {episode_id}",
+        f"trade_date: {trade_day.isoformat()}",
+        f"cutoff_at: {cutoff_at}",
+        "bundle_status: ACCEPT_FULL",
+        "blind_valid: true",
+    ]
+    if front_matter_available_from is not None:
+        front_matter_lines.append(f"available_from: {front_matter_available_from}")
+    front_matter = "\n".join(front_matter_lines)
+    return f"""{front_matter}
 ---
 <!-- NSLAB:BEGIN research_episode.json -->
 {_payload_block(research_episode, "json")}
@@ -2558,6 +2577,81 @@ def test_invalid_record_available_from_blocks_acceptance(tmp_path: Path) -> None
         "BRAIN-SYNTH-ISSUER"
     ]
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
+@pytest.mark.parametrize(
+    ("expected_field", "bundle_kwargs"),
+    [
+        ("front_matter.available_from", {"front_matter_available_from": "invalid"}),
+        ("bundle_manifest.json.available_from", {"manifest_available_from": "invalid"}),
+        ("research_episode.json.available_from", {"episode_available_from": "invalid"}),
+    ],
+)
+def test_invalid_bundle_available_from_fields_block_acceptance(
+    tmp_path: Path,
+    expected_field: str,
+    bundle_kwargs: dict[str, str],
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "invalid_bundle_available_from_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(include_unknown=False, **bundle_kwargs),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert inspection["validation_passed"] is False
+    assert inspection["available_from_valid"] is False
+    assert validation["available_from_valid"] is False
+    assert validation["invalid_available_from_fields"] == [expected_field]
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["validation"]["invalid_available_from_fields"] == [expected_field]
+
+
+@pytest.mark.parametrize(
+    ("expected_gate", "bundle_kwargs"),
+    [
+        ("bundle_status_accept_full", {"manifest_bundle_status": "REJECTED"}),
+        ("blind_valid", {"manifest_blind_valid": False}),
+        ("validator_exit_code_zero", {"manifest_validator_exit_code": 1}),
+        ("critical_error_count_zero", {"manifest_critical_error_count": 1}),
+    ],
+)
+def test_v11_hard_gates_block_acceptance(
+    tmp_path: Path,
+    expected_gate: str,
+    bundle_kwargs: dict[str, object],
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "hard_gate_failed_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle(include_unknown=False, **bundle_kwargs),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    validation = inspection["validation"]
+
+    assert inspection["adapter"] == "v11"
+    assert inspection["validation_passed"] is False
+    assert validation[expected_gate] is False
+    assert validation["passed"] is False
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["validation"][expected_gate] is False
 
 
 def test_invalid_outcome_label_quality_blocks_acceptance(tmp_path: Path) -> None:
