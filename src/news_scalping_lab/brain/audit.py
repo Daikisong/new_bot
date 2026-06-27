@@ -273,6 +273,7 @@ def _write_latest_record_coverage_audit_summary(
         "unexpected_unswept_record_ids",
         "unknown_swept_record_ids",
         "duplicate_swept_record_ids",
+        "duplicate_unswept_record_ids",
         "record_counts_by_type",
         "record_counts_by_evidence_phase",
         "record_counts_by_training_target",
@@ -322,6 +323,7 @@ def _write_latest_record_coverage_audit_summary(
         "unexpected_unswept_record_ids": result.get("unexpected_unswept_record_ids"),
         "unknown_swept_record_ids": result.get("unknown_swept_record_ids"),
         "duplicate_swept_record_ids": result.get("duplicate_swept_record_ids"),
+        "duplicate_unswept_record_ids": result.get("duplicate_unswept_record_ids"),
         "record_counts_by_type": result.get("record_counts_by_type"),
         "record_counts_by_evidence_phase": result.get(
             "record_counts_by_evidence_phase"
@@ -1282,6 +1284,9 @@ def _audit_record_coverage(
     duplicate_swept = sorted(
         record_id for record_id, count in Counter(swept_id_list).items() if count > 1
     )
+    duplicate_unswept = sorted(
+        record_id for record_id, count in Counter(unswept_id_list).items() if count > 1
+    )
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
     if (
@@ -1337,6 +1342,8 @@ def _audit_record_coverage(
         findings.append("record coverage manifest includes unknown swept records")
     if duplicate_swept:
         findings.append("record coverage manifest has duplicate swept records")
+    if duplicate_unswept:
+        findings.append("record coverage manifest has duplicate unswept records")
     if _string_list(raw_unswept_record_ids) != unswept:
         findings.append("record coverage manifest unswept ids do not match record store")
     if manifest.get("accepted_record_count") != len(records):
@@ -1432,6 +1439,7 @@ def _audit_record_coverage(
         "unexpected_unswept_record_ids": unexpected_unswept,
         "unknown_swept_record_ids": unexpected,
         "duplicate_swept_record_ids": duplicate_swept,
+        "duplicate_unswept_record_ids": duplicate_unswept,
         "record_counts_by_type": record_counts_by_type,
         "record_counts_by_evidence_phase": record_counts_by_phase,
         "record_counts_by_training_target": record_counts_by_target,
@@ -1489,6 +1497,7 @@ def _record_coverage_unavailable_result(
         "unexpected_unswept_record_ids": [],
         "unknown_swept_record_ids": [],
         "duplicate_swept_record_ids": [],
+        "duplicate_unswept_record_ids": [],
         "record_counts_by_type": record_counts_by_type,
         "record_counts_by_evidence_phase": record_counts_by_phase,
         "record_counts_by_training_target": record_counts_by_target,
