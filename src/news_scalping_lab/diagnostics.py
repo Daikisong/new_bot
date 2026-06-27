@@ -642,6 +642,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     invalid_manifest_schemas: list[dict[str, Any]] = []
     missing_model_config: list[str] = []
     mock_manifests: list[dict[str, Any]] = []
+    missing_prompt_hash_manifests: list[str] = []
     manifest_prompt_hashes: set[str] = set()
     for manifest_path in manifest_paths:
         relative_path = relative_to_root(manifest_path, root)
@@ -671,7 +672,11 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
                     "mock_values": mock_values,
                 }
             )
-        manifest_prompt_hashes.update(_manifest_prompt_hash_values(manifest))
+        prompt_hash_values = _manifest_prompt_hash_values(manifest)
+        if prompt_hash_values:
+            manifest_prompt_hashes.update(prompt_hash_values)
+        else:
+            missing_prompt_hash_manifests.append(relative_path)
 
     trace_evidence = _production_llm_trace_evidence_status(
         root,
@@ -693,6 +698,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             f"mock LLM model_config present in {manifest['path']}: "
             f"{', '.join(manifest['mock_values'])}"
         )
+    for path in missing_prompt_hash_manifests:
+        findings.append(f"context manifest prompt_hashes missing or empty: {path}")
     findings.extend(trace_evidence["findings"])
 
     return {
@@ -710,6 +717,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "missing_model_config_manifests": missing_model_config,
         "mock_model_config_manifest_count": len(mock_manifests),
         "mock_model_config_manifests": mock_manifests,
+        "missing_prompt_hash_manifest_count": len(missing_prompt_hash_manifests),
+        "missing_prompt_hash_manifests": missing_prompt_hash_manifests,
         "referenced_prompt_hash_count": len(manifest_prompt_hashes),
         "checked_trace_count": trace_evidence["checked_trace_count"],
         "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
