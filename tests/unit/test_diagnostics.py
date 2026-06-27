@@ -1462,12 +1462,21 @@ def test_production_readiness_rejects_catalog_only_brain_manifest(
     production = production_readiness_report(report, settings)
 
     assert production["passed"] is False
+    assert production["llm_full_brain"]["status"] == "not_applicable"
     assert production["llm_full_brain"]["catalog_only"] is True
+    assert production["llm_full_brain"]["findings"] == [
+        "current manifest is catalog_only",
+        "current manifest build_mode is catalog, not llm-full",
+        "llm-full compile manifest is missing",
+        "compiled claims JSONL is missing",
+    ]
     assert "brain: current manifest is catalog_only" in production["findings"]
     assert (
         "brain: current manifest build_mode is catalog, not llm-full"
         in production["findings"]
     )
+    assert "brain: llm-full compile manifest is missing" in production["findings"]
+    assert "brain: compiled claims JSONL is missing" in production["findings"]
 
 
 def test_production_readiness_accepts_llm_full_compile_evidence(

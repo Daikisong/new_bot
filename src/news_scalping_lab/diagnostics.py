@@ -159,8 +159,11 @@ def production_readiness_report(
     if build_mode != "llm-full":
         observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
-    elif llm_full_brain["passed"] is not True:
-        findings.extend(f"brain: {finding}" for finding in llm_full_brain["findings"])
+    if llm_full_brain["passed"] is not True:
+        for finding in llm_full_brain["findings"]:
+            formatted_finding = f"brain: {finding}"
+            if formatted_finding not in findings:
+                findings.append(formatted_finding)
     if record_coverage_status["passed"] is not True:
         findings.extend(
             f"records: {finding}" for finding in record_coverage_status["findings"]
@@ -1735,13 +1738,21 @@ def _llm_full_brain_status(
         if isinstance(compile_run, dict)
         else None,
     }
+    if catalog_only is True:
+        findings.append("current manifest is catalog_only")
     if build_mode != "llm-full":
+        observed_mode = build_mode if isinstance(build_mode, str) and build_mode else "missing"
+        findings.append(f"current manifest build_mode is {observed_mode}, not llm-full")
+        if compile_manifest is None:
+            findings.append("llm-full compile manifest is missing")
+        if not compiled_claims_path.exists():
+            findings.append("compiled claims JSONL is missing")
         return {
             **status,
             "passed": False,
             "status": "not_applicable",
-            "finding_count": 0,
-            "findings": [],
+            "finding_count": len(findings),
+            "findings": findings,
         }
     if compile_manifest is None:
         findings.append("llm-full compile manifest is missing")
