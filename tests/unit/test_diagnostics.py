@@ -2157,7 +2157,12 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
         "BRAIN-1",
         "BRAIN-2",
     ]
+    assert production["record_coverage"]["expected_swept_record_ids"] == [
+        "BRAIN-1",
+        "BRAIN-2",
+    ]
     assert production["record_coverage"]["duplicate_swept_record_ids"] == []
+    assert production["record_coverage"]["unexpected_swept_record_ids"] == []
     assert production["record_coverage"]["unswept_record_ids"] == []
     assert production["record_coverage"]["expected_unswept_record_ids"] == []
     assert production["record_coverage"]["unknown_unswept_record_ids"] == []
@@ -2213,6 +2218,13 @@ def test_production_readiness_rejects_record_coverage_store_mismatch(
     assert production["record_coverage"]["passed"] is False
     assert production["record_coverage"]["unknown_swept_record_ids"] == [
         "BRAIN-missing"
+    ]
+    assert production["record_coverage"]["unexpected_swept_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["record_coverage"]["expected_swept_record_ids"] == [
+        "BRAIN-1",
+        "BRAIN-2",
     ]
     assert production["record_coverage"]["duplicate_swept_record_ids"] == [
         "BRAIN-missing"

@@ -2757,7 +2757,9 @@ def _production_record_coverage_status(
             "compiled_record_count": None,
             "swept_record_count": None,
             "swept_record_ids": [],
+            "expected_swept_record_ids": [],
             "duplicate_swept_record_ids": [],
+            "unexpected_swept_record_ids": [],
             "unswept_record_ids": None,
             "expected_unswept_record_ids": [],
             "unknown_unswept_record_ids": [],
@@ -2855,6 +2857,8 @@ def _production_record_coverage_status(
         findings.append("record coverage manifest has unswept records")
     unknown_swept_record_ids = sorted(set(swept_record_ids) - store_record_id_set)
     missing_swept_record_ids = sorted(store_record_id_set - set(swept_record_ids))
+    expected_swept_record_ids = sorted(store_record_id_set)
+    unexpected_swept_record_ids = unknown_swept_record_ids
     expected_unswept_record_ids = missing_swept_record_ids
     unknown_unswept_record_ids = sorted(set(unswept_record_ids) - store_record_id_set)
     missing_unswept_record_ids = sorted(
@@ -3085,7 +3089,9 @@ def _production_record_coverage_status(
         "swept_record_count": swept_count,
         "swept_record_id_count": len(swept_record_ids),
         "swept_record_ids": swept_record_ids,
+        "expected_swept_record_ids": expected_swept_record_ids,
         "duplicate_swept_record_ids": _duplicate_strings(swept_record_ids),
+        "unexpected_swept_record_ids": unexpected_swept_record_ids,
         "unswept_record_ids": unswept_record_ids,
         "expected_unswept_record_ids": expected_unswept_record_ids,
         "unknown_unswept_record_ids": unknown_unswept_record_ids,
