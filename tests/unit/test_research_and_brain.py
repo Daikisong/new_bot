@@ -1629,6 +1629,16 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert audit["expected_catalog_only"] is True
     assert audit["record_coverage_accepted_episode_count"] == 1
     assert audit["expected_accepted_episode_count"] == 1
+    assert audit["expected_swept_record_ids"] == [
+        "BRAIN-ASOF-AVAILABLE",
+        "BRAIN-ASOF-FUTURE",
+    ]
+    assert audit["missing_swept_record_ids"] == []
+    assert audit["unexpected_swept_record_ids"] == []
+    assert audit["expected_unswept_record_ids"] == []
+    assert audit["unknown_unswept_record_ids"] == []
+    assert audit["missing_unswept_record_ids"] == []
+    assert audit["unexpected_unswept_record_ids"] == []
     assert audit["available_record_count_as_of"] == 1
     assert audit["training_eligible_record_count_as_of"] == 1
     assert audit["record_coverage_complete"] is True
@@ -1784,7 +1794,14 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     assert audit["passed"] is False
     assert audit["record_coverage_complete"] is False
     assert audit["swept_record_count"] == 0
+    assert audit["expected_swept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["missing_swept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["unexpected_swept_record_ids"] == ["BRAIN-UNKNOWN"]
     assert audit["unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["expected_unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["unknown_unswept_record_ids"] == []
+    assert audit["missing_unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert audit["unexpected_unswept_record_ids"] == []
     assert audit["record_coverage_findings"] == [
         "record coverage manifest has unswept records",
         "record coverage manifest includes unknown swept records",
@@ -1812,7 +1829,14 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     assert record_coverage_report["compiled_record_count"] == 1
     assert record_coverage_report["swept_record_count"] == 0
     assert record_coverage_report["swept_record_ids"] == []
+    assert record_coverage_report["expected_swept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["missing_swept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["unexpected_swept_record_ids"] == ["BRAIN-UNKNOWN"]
     assert record_coverage_report["unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["expected_unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["unknown_unswept_record_ids"] == []
+    assert record_coverage_report["missing_unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["unexpected_unswept_record_ids"] == []
     assert record_coverage_report["unknown_swept_record_ids"] == ["BRAIN-UNKNOWN"]
     assert record_coverage_report["duplicate_swept_record_ids"] == ["BRAIN-UNKNOWN"]
     assert record_coverage_report["record_counts_by_type"] == {"memory_claim": 1}
@@ -1826,6 +1850,12 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     assert record_coverage_report["latest_record_coverage_audit"][
         "unknown_swept_record_ids"
     ] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "missing_swept_record_ids"
+    ] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "missing_unswept_record_ids"
+    ] == ["BRAIN-COVERAGE"]
     assert record_coverage_report["latest_record_coverage_audit"][
         "duplicate_swept_record_ids"
     ] == ["BRAIN-UNKNOWN"]

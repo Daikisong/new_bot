@@ -214,7 +214,14 @@ def _write_latest_record_coverage_audit_summary(
         "compiled_record_count",
         "swept_record_count",
         "swept_record_ids",
+        "expected_swept_record_ids",
+        "missing_swept_record_ids",
+        "unexpected_swept_record_ids",
         "unswept_record_ids",
+        "expected_unswept_record_ids",
+        "unknown_unswept_record_ids",
+        "missing_unswept_record_ids",
+        "unexpected_unswept_record_ids",
         "unknown_swept_record_ids",
         "duplicate_swept_record_ids",
         "record_counts_by_type",
@@ -254,7 +261,14 @@ def _write_latest_record_coverage_audit_summary(
         "compiled_record_count": result.get("compiled_record_count"),
         "swept_record_count": result.get("swept_record_count"),
         "swept_record_ids": result.get("swept_record_ids"),
+        "expected_swept_record_ids": result.get("expected_swept_record_ids"),
+        "missing_swept_record_ids": result.get("missing_swept_record_ids"),
+        "unexpected_swept_record_ids": result.get("unexpected_swept_record_ids"),
         "unswept_record_ids": result.get("unswept_record_ids"),
+        "expected_unswept_record_ids": result.get("expected_unswept_record_ids"),
+        "unknown_unswept_record_ids": result.get("unknown_unswept_record_ids"),
+        "missing_unswept_record_ids": result.get("missing_unswept_record_ids"),
+        "unexpected_unswept_record_ids": result.get("unexpected_unswept_record_ids"),
         "unknown_swept_record_ids": result.get("unknown_swept_record_ids"),
         "duplicate_swept_record_ids": result.get("duplicate_swept_record_ids"),
         "record_counts_by_type": result.get("record_counts_by_type"),
@@ -926,7 +940,14 @@ def _audit_record_coverage(
             "compiled_record_count": 0,
             "swept_record_count": 0,
             "swept_record_ids": [],
+            "expected_swept_record_ids": [],
+            "missing_swept_record_ids": [],
+            "unexpected_swept_record_ids": [],
             "unswept_record_ids": [],
+            "expected_unswept_record_ids": [],
+            "unknown_unswept_record_ids": [],
+            "missing_unswept_record_ids": [],
+            "unexpected_unswept_record_ids": [],
             "unknown_swept_record_ids": [],
             "duplicate_swept_record_ids": [],
             "record_counts_by_type": {},
@@ -956,7 +977,14 @@ def _audit_record_coverage(
             "compiled_record_count": 0,
             "swept_record_count": 0,
             "swept_record_ids": [],
-            "unswept_record_ids": [record.record_id for record in records],
+            "expected_swept_record_ids": sorted(record_ids),
+            "missing_swept_record_ids": sorted(record_ids),
+            "unexpected_swept_record_ids": [],
+            "unswept_record_ids": sorted(record_ids),
+            "expected_unswept_record_ids": sorted(record_ids),
+            "unknown_unswept_record_ids": [],
+            "missing_unswept_record_ids": [],
+            "unexpected_unswept_record_ids": [],
             "unknown_swept_record_ids": [],
             "duplicate_swept_record_ids": [],
             "record_counts_by_type": record_counts_by_type,
@@ -986,7 +1014,14 @@ def _audit_record_coverage(
             "compiled_record_count": 0,
             "swept_record_count": 0,
             "swept_record_ids": [],
-            "unswept_record_ids": [record.record_id for record in records],
+            "expected_swept_record_ids": sorted(record_ids),
+            "missing_swept_record_ids": sorted(record_ids),
+            "unexpected_swept_record_ids": [],
+            "unswept_record_ids": sorted(record_ids),
+            "expected_unswept_record_ids": sorted(record_ids),
+            "unknown_unswept_record_ids": [],
+            "missing_unswept_record_ids": [],
+            "unexpected_unswept_record_ids": [],
             "unknown_swept_record_ids": [],
             "duplicate_swept_record_ids": [],
             "record_counts_by_type": record_counts_by_type,
@@ -1024,6 +1059,14 @@ def _audit_record_coverage(
     swept_ids = set(swept_id_list)
     unswept = sorted(record_ids - swept_ids)
     unexpected = sorted(swept_ids - record_ids)
+    expected_swept = sorted(record_ids)
+    missing_swept = unswept
+    unexpected_swept = unexpected
+    unswept_id_list = _string_list(raw_unswept_record_ids)
+    expected_unswept = missing_swept
+    unknown_unswept = sorted(set(unswept_id_list) - record_ids)
+    missing_unswept = sorted(set(expected_unswept) - set(unswept_id_list))
+    unexpected_unswept = sorted(set(unswept_id_list) - set(expected_unswept))
     duplicate_swept = sorted(
         record_id for record_id, count in Counter(swept_id_list).items() if count > 1
     )
@@ -1147,7 +1190,14 @@ def _audit_record_coverage(
         "compiled_record_count": len(records),
         "swept_record_count": len(swept_ids & record_ids),
         "swept_record_ids": sorted(swept_ids & record_ids),
+        "expected_swept_record_ids": expected_swept,
+        "missing_swept_record_ids": missing_swept,
+        "unexpected_swept_record_ids": unexpected_swept,
         "unswept_record_ids": unswept,
+        "expected_unswept_record_ids": expected_unswept,
+        "unknown_unswept_record_ids": unknown_unswept,
+        "missing_unswept_record_ids": missing_unswept,
+        "unexpected_unswept_record_ids": unexpected_unswept,
         "unknown_swept_record_ids": unexpected,
         "duplicate_swept_record_ids": duplicate_swept,
         "record_counts_by_type": record_counts_by_type,
