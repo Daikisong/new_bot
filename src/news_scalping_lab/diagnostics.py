@@ -282,7 +282,11 @@ def production_readiness_report(
             findings.append("brain: accepted episodes are not fully covered")
     else:
         findings.append("brain: latest brain audit is missing")
-    brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
+    brain_manifest, brain_manifest_read_findings = _read_optional_json_with_findings(
+        settings.project_root / "brain" / "current" / "brain_manifest.json",
+        label="brain manifest",
+    )
+    findings.extend(f"brain: {finding}" for finding in brain_manifest_read_findings)
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
     catalog_only = _brain_manifest_catalog_only(brain_manifest)
     catalog_mode_reason = _brain_manifest_catalog_mode_reason(brain_manifest)
@@ -378,6 +382,7 @@ def production_readiness_report(
         "blocker_summary": _production_blocker_summary(findings_by_category),
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
+        "brain_manifest_read_findings": brain_manifest_read_findings,
         "llm_evidence": llm_evidence,
         "llm_full_brain": llm_full_brain,
         "episode_coverage": episode_coverage_status,

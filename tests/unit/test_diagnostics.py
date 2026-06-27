@@ -2647,6 +2647,39 @@ def test_production_readiness_rejects_stale_episode_coverage_brain_metadata(
     )
 
 
+def test_production_readiness_reports_unreadable_brain_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    (current / "brain_manifest.json").write_text("{not valid json", encoding="utf-8")
+    write_json(
+        current / "coverage_manifest.json",
+        {
+            "brain_version": "brain-current",
+            "created_at": "2030-01-03T00:00:00+09:00",
+            "build_mode": "llm-full",
+            "catalog_only": False,
+            "accepted_episode_count": 0,
+            "covered_episode_count": 0,
+            "covered_episode_ids": [],
+            "missing_episode_ids": [],
+            "coverage_complete": True,
+        },
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["brain_manifest_read_findings"] == [
+        "brain manifest is unreadable"
+    ]
+    assert "brain: brain manifest is unreadable" in production["findings"]
+    assert production["episode_coverage"]["expected_brain_version"] is None
+    assert production["llm_full_brain"]["current_brain_version"] is None
+
+
 def test_production_readiness_rejects_stale_record_coverage_brain_metadata(
     tmp_path,
 ) -> None:
