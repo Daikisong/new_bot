@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
@@ -96,6 +98,35 @@ PRODUCTION_WEB_EVIDENCE_ARTIFACT_SOURCE_FIELDS = {
     "candidate_web_check_artifact": "candidate_web_source_ids",
     "excluded_candidate_web_check_artifact": "excluded_candidate_web_source_ids",
 }
+PLACEHOLDER_WEB_EVIDENCE_HOSTS = {
+    "0.0.0.0",
+    "127.0.0.1",
+    "::1",
+    "example.com",
+    "example.net",
+    "example.org",
+    "example.test",
+    "localhost",
+}
+PLACEHOLDER_WEB_EVIDENCE_HOST_SUFFIXES = (
+    ".example",
+    ".example.com",
+    ".example.net",
+    ".example.org",
+    ".localhost",
+    ".test",
+)
+
+
+@dataclass(frozen=True)
+class WebEvidenceArtifactCounts:
+    row_count: int
+    invalid_json_count: int
+    mock_url_count: int
+    mock_metadata_count: int
+    placeholder_url_count: int
+    mock_sample_values: list[str]
+    placeholder_sample_values: list[str]
 
 
 def production_readiness_report(
@@ -1149,6 +1180,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                 )
 
     mock_artifacts: list[dict[str, Any]] = []
+    placeholder_artifacts: list[dict[str, Any]] = []
     empty_artifacts: list[str] = []
     invalid_json_artifacts: list[dict[str, Any]] = []
     unreadable_artifacts: list[str] = []
@@ -1156,35 +1188,35 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     for artifact_path in sorted(artifact_paths):
         relative_artifact_path = relative_to_root(artifact_path, root)
         try:
-            (
-                row_count,
-                invalid_json_count,
-                mock_url_count,
-                mock_metadata_count,
-                sample_values,
-            ) = (
-                _web_evidence_artifact_counts(artifact_path)
-            )
+            counts = _web_evidence_artifact_counts(artifact_path)
         except OSError:
             unreadable_artifacts.append(relative_artifact_path)
             continue
-        artifact_record_counts[relative_artifact_path] = row_count
-        if row_count == 0:
+        artifact_record_counts[relative_artifact_path] = counts.row_count
+        if counts.row_count == 0:
             empty_artifacts.append(relative_artifact_path)
-        if invalid_json_count:
+        if counts.invalid_json_count:
             invalid_json_artifacts.append(
                 {
                     "path": relative_artifact_path,
-                    "invalid_json_count": invalid_json_count,
+                    "invalid_json_count": counts.invalid_json_count,
                 }
             )
-        if mock_url_count or mock_metadata_count:
+        if counts.mock_url_count or counts.mock_metadata_count:
             mock_artifacts.append(
                 {
                     "path": relative_artifact_path,
-                    "mock_url_count": mock_url_count,
-                    "mock_metadata_count": mock_metadata_count,
-                    "sample_values": sample_values[:5],
+                    "mock_url_count": counts.mock_url_count,
+                    "mock_metadata_count": counts.mock_metadata_count,
+                    "sample_values": counts.mock_sample_values[:5],
+                }
+            )
+        if counts.placeholder_url_count:
+            placeholder_artifacts.append(
+                {
+                    "path": relative_artifact_path,
+                    "placeholder_url_count": counts.placeholder_url_count,
+                    "sample_values": counts.placeholder_sample_values[:5],
                 }
             )
 
@@ -1248,6 +1280,12 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                 f"mock web provider metadata present in {artifact['path']} "
                 f"({mock_metadata_count})"
             )
+    for artifact in placeholder_artifacts:
+        placeholder_url_count = int(artifact["placeholder_url_count"])
+        findings.append(
+            f"placeholder web source URLs present in {artifact['path']} "
+            f"({placeholder_url_count})"
+        )
 
     return {
         "schema_version": "nslab.production_web_evidence.v1",
@@ -1294,6 +1332,12 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             for artifact in mock_artifacts
         ),
         "mock_web_artifacts": mock_artifacts,
+        "placeholder_web_artifact_count": len(placeholder_artifacts),
+        "placeholder_web_url_count": sum(
+            int(artifact["placeholder_url_count"])
+            for artifact in placeholder_artifacts
+        ),
+        "placeholder_web_artifacts": placeholder_artifacts,
     }
 
 
@@ -1313,13 +1357,15 @@ def _project_relative_artifact_path(root: Path, value: object) -> Path | None:
 
 def _web_evidence_artifact_counts(
     path: Path,
-) -> tuple[int, int, int, int, list[str]]:
+) -> WebEvidenceArtifactCounts:
     if path.suffix == ".jsonl":
         row_count = 0
         invalid_json_count = 0
-        url_count = 0
+        mock_url_count = 0
         metadata_count = 0
-        samples: list[str] = []
+        placeholder_url_count = 0
+        mock_samples: list[str] = []
+        placeholder_samples: list[str] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
@@ -1331,16 +1377,21 @@ def _web_evidence_artifact_counts(
                 payload = line
             url_values = _mock_url_values(payload)
             metadata_values = _mock_provider_metadata_values(payload)
-            url_count += len(url_values)
+            placeholder_values = _placeholder_web_url_values(payload)
+            mock_url_count += len(url_values)
             metadata_count += len(metadata_values)
-            samples.extend(url_values)
-            samples.extend(metadata_values)
-        return (
-            row_count,
-            invalid_json_count,
-            url_count,
-            metadata_count,
-            _unique_preserving_order(samples),
+            placeholder_url_count += len(placeholder_values)
+            mock_samples.extend(url_values)
+            mock_samples.extend(metadata_values)
+            placeholder_samples.extend(placeholder_values)
+        return WebEvidenceArtifactCounts(
+            row_count=row_count,
+            invalid_json_count=invalid_json_count,
+            mock_url_count=mock_url_count,
+            mock_metadata_count=metadata_count,
+            placeholder_url_count=placeholder_url_count,
+            mock_sample_values=_unique_preserving_order(mock_samples),
+            placeholder_sample_values=_unique_preserving_order(placeholder_samples),
         )
     if path.suffix == ".json":
         text = path.read_text(encoding="utf-8-sig")
@@ -1353,17 +1404,32 @@ def _web_evidence_artifact_counts(
             payload = text
         url_values = _mock_url_values(payload)
         metadata_values = _mock_provider_metadata_values(payload)
-        return (
-            row_count,
-            invalid_json_count,
-            len(url_values),
-            len(metadata_values),
-            _unique_preserving_order([*url_values, *metadata_values]),
+        placeholder_values = _placeholder_web_url_values(payload)
+        return WebEvidenceArtifactCounts(
+            row_count=row_count,
+            invalid_json_count=invalid_json_count,
+            mock_url_count=len(url_values),
+            mock_metadata_count=len(metadata_values),
+            placeholder_url_count=len(placeholder_values),
+            mock_sample_values=_unique_preserving_order([*url_values, *metadata_values]),
+            placeholder_sample_values=_unique_preserving_order(placeholder_values),
         )
     text = path.read_text(encoding="utf-8")
-    values = [value for value in text.split() if "mock://" in value]
+    values = text.split()
+    mock_values = [value for value in values if "mock://" in value]
+    placeholder_values = [
+        value for value in values if _is_placeholder_web_url(value)
+    ]
     row_count = 1 if text.strip() else 0
-    return row_count, 0, len(values), 0, _unique_preserving_order(values)
+    return WebEvidenceArtifactCounts(
+        row_count=row_count,
+        invalid_json_count=0,
+        mock_url_count=len(mock_values),
+        mock_metadata_count=0,
+        placeholder_url_count=len(placeholder_values),
+        mock_sample_values=_unique_preserving_order(mock_values),
+        placeholder_sample_values=_unique_preserving_order(placeholder_values),
+    )
 
 
 def _web_evidence_artifact_source_ids(path: Path) -> list[str]:
@@ -1421,6 +1487,38 @@ def _mock_url_values(value: object) -> list[str]:
             values.extend(_mock_url_values(item))
         return values
     return []
+
+
+def _placeholder_web_url_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if _is_placeholder_web_url(value) else []
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(_placeholder_web_url_values(item))
+        return values
+    if isinstance(value, dict):
+        values = []
+        for item in value.values():
+            values.extend(_placeholder_web_url_values(item))
+        return values
+    return []
+
+
+def _is_placeholder_web_url(value: str) -> bool:
+    parsed = urlparse(value.strip())
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    normalized_host = host.rstrip(".").lower()
+    if normalized_host in PLACEHOLDER_WEB_EVIDENCE_HOSTS:
+        return True
+    return any(
+        normalized_host.endswith(suffix)
+        for suffix in PLACEHOLDER_WEB_EVIDENCE_HOST_SUFFIXES
+    )
 
 
 def _mock_provider_metadata_values(value: object) -> list[str]:
