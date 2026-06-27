@@ -2463,7 +2463,7 @@ def test_production_readiness_rejects_training_export_unique_record_id_mismatch(
         in production["training_exports"]["findings"]
     )
     assert (
-        "training export unique training-eligible record IDs do not match current records"
+        "training export unique training-eligible record IDs include IDs not in current records"
         in production["training_exports"]["findings"]
     )
     assert (
@@ -7068,7 +7068,13 @@ def test_real_bundle_smoke_reports_pending_when_no_candidate_exists(tmp_path) ->
     assert report["passed"] is False
     assert report["real_smoke_pending"] is True
     assert report["candidate_count"] == 0
-    assert report["search_order"] == ["data_inbox", "tests_fixture", "env", "cli"]
+    assert report["search_order"] == [
+        "data_inbox",
+        "imported_episodes",
+        "tests_fixture",
+        "env",
+        "cli",
+    ]
 
 
 def test_real_bundle_smoke_passes_only_for_production_source_bundle(
@@ -7483,6 +7489,74 @@ def test_real_bundle_smoke_does_not_skip_failed_earlier_production_candidate(
     ] == ["data_inbox", "env"]
 
 
+def test_real_bundle_smoke_accepts_imported_v23_direct_ingest_original_bundle(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    episode_id = "NSLAB-20241204-REAL"
+    bundle = tmp_path / "research" / "episodes" / episode_id / "original_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("imported real v23 direct ingest bundle", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v23_direct_ingest_bundle_inspection(path, episode_id),
+    )
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "passed"
+    assert report["passed"] is True
+    assert report["first_production_source"] == "imported_episodes"
+    assert report["selected"]["path"] == (
+        "research/episodes/NSLAB-20241204-REAL/original_bundle.md"
+    )
+    inspection = report["selected"]["inspection"]
+    assert inspection["adapter"] == "v23-direct-ingest"
+    assert inspection["v11_accept_full_smoke_passed"] is True
+    assert inspection["direct_ingest_smoke_passed"] is True
+    assert inspection["blind_valid"] is None
+
+
+def test_real_bundle_smoke_accepts_later_valid_imported_episode(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    legacy_bundle = tmp_path / "research" / "episodes" / "EP-legacy" / "original_bundle.md"
+    valid_episode_id = "NSLAB-20241204-REAL"
+    valid_bundle = (
+        tmp_path / "research" / "episodes" / valid_episode_id / "original_bundle.md"
+    )
+    legacy_bundle.parent.mkdir(parents=True)
+    valid_bundle.parent.mkdir(parents=True)
+    legacy_bundle.write_text("legacy invalid imported bundle", encoding="utf-8")
+    valid_bundle.write_text("imported real v23 direct ingest bundle", encoding="utf-8")
+
+    def inspect(path: Path) -> dict[str, object]:
+        if path.resolve() == legacy_bundle.resolve():
+            return _invalid_v11_bundle_inspection(path)
+        return _valid_v23_direct_ingest_bundle_inspection(path, valid_episode_id)
+
+    monkeypatch.setattr("news_scalping_lab.diagnostics.inspect_versioned_bundle", inspect)
+
+    report = real_bundle_smoke_report(settings)
+
+    assert report["status"] == "passed"
+    assert report["passed"] is True
+    assert report["first_production_source"] == "imported_episodes"
+    assert report["first_production_status"] == "failed"
+    assert report["production_failed_inspection_count"] == 1
+    assert report["real_valid_smoke_count"] == 1
+    assert report["selected"]["path"] == (
+        "research/episodes/NSLAB-20241204-REAL/original_bundle.md"
+    )
+    assert report["selected"]["inspection"]["adapter"] == "v23-direct-ingest"
+
+
 def test_production_readiness_rejects_real_smoke_without_import(
     tmp_path,
     monkeypatch,
@@ -7571,7 +7645,7 @@ def test_production_readiness_accepts_real_smoke_import_link(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
     report = {
@@ -7744,7 +7818,7 @@ def test_production_readiness_rejects_real_import_record_manifest_path_escape(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": "../outside-records.jsonl",
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
 
@@ -7824,7 +7898,7 @@ def test_production_readiness_rejects_real_import_missing_direct_ingest_raw_bloc
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
 
@@ -7932,7 +8006,7 @@ def test_production_readiness_rejects_failed_real_import_validation_report(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
     report = {
@@ -8042,7 +8116,7 @@ def test_production_readiness_rejects_real_import_validation_report_id_gap(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
     report = {
@@ -8275,7 +8349,7 @@ def test_production_readiness_rejects_real_import_invalid_record_envelopes(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
 
@@ -8346,7 +8420,7 @@ def test_production_readiness_rejects_real_import_index_id_mismatch(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
     report = {
@@ -8434,7 +8508,7 @@ def test_production_readiness_rejects_real_import_duplicate_record_ids(
             "record_counts_by_type": inspection["record_counts_by_type"],
             "record_ids": duplicate_record_ids,
             "records_file": record_path.relative_to(tmp_path).as_posix(),
-            "records_sha256": file_sha256(record_path),
+            "records_sha256": sha256_text(record_path.read_text(encoding="utf-8")),
         },
     )
     report = {
@@ -9816,6 +9890,36 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
             "import_loss_audit_passed": True,
         },
     }
+
+
+def _valid_v23_direct_ingest_bundle_inspection(
+    path: Path,
+    episode_id: str,
+) -> dict[str, object]:
+    inspection = _valid_v11_bundle_inspection(path)
+    validation = dict(inspection["validation"])
+    validation.pop("blind_valid", None)
+    validation.update(
+        {
+            "adapter": "v23-direct-ingest",
+            "brain_eligible": True,
+            "direct_ingest_schema_contract_verified": True,
+            "direct_ingest_record_count_hash_parity_ready": True,
+        }
+    )
+    inspection.update(
+        {
+            "adapter": "v23-direct-ingest",
+            "manifest_schema_version": "nslab.bundle_manifest.v23",
+            "episode_schema_version": None,
+            "episode_id": episode_id,
+            "brain_eligible": None,
+            "direct_ingest_contract_validation_parity_verified": None,
+            "direct_ingest_contract_count_hash_parity_verified": None,
+            "validation": validation,
+        }
+    )
+    return inspection
 
 
 def _invalid_v11_bundle_inspection(path: Path) -> dict[str, object]:

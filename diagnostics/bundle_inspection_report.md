@@ -2,7 +2,7 @@
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
 - status: `validation_passed`
-- path: `docs/example2.md`
+- path: `research/episodes/NSLAB-20241204-06A72B21/original_bundle.md`
 - bundle_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
 - episode_schema_version: `None`

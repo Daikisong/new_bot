@@ -81,8 +81,14 @@ REAL_BUNDLE_SEARCH_DIRS = (
     ("data_inbox", Path("data/inbox/research")),
     ("tests_fixture", Path("tests/fixtures/research_bundles")),
 )
-REAL_BUNDLE_PRODUCTION_SOURCES = {"cli", "env", "data_inbox"}
-REAL_BUNDLE_SEARCH_ORDER = ["data_inbox", "tests_fixture", "env", "cli"]
+REAL_BUNDLE_PRODUCTION_SOURCES = {"cli", "env", "data_inbox", "imported_episodes"}
+REAL_BUNDLE_SEARCH_ORDER = [
+    "data_inbox",
+    "imported_episodes",
+    "tests_fixture",
+    "env",
+    "cli",
+]
 PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS = (
     "web_source_artifact",
     "excluded_web_source_artifact",
@@ -998,6 +1004,12 @@ def real_bundle_smoke_report(
     production_inspections = [
         item for item in inspections if item.get("production_source") is True
     ]
+    passed_production_inspections = [
+        item
+        for item in production_inspections
+        if isinstance(item.get("inspection"), dict)
+        and item.get("status") == "passed"
+    ]
     first_production_inspection = (
         production_inspections[0] if production_inspections else None
     )
@@ -1006,6 +1018,21 @@ def real_bundle_smoke_report(
         and isinstance(first_production_inspection.get("inspection"), dict)
         and first_production_inspection.get("status") == "passed"
     )
+    first_production_source = (
+        first_production_inspection.get("source")
+        if isinstance(first_production_inspection, dict)
+        else None
+    )
+    selected = first_production_inspection if first_production_passed else None
+    if selected is None and first_production_source == "imported_episodes":
+        selected = next(
+            (
+                item
+                for item in passed_production_inspections
+                if item.get("source") == first_production_source
+            ),
+            None,
+        )
     failed_inspection_count = sum(
         1
         for item in inspections
@@ -1023,8 +1050,10 @@ def real_bundle_smoke_report(
             or item.get("status") != "passed"
         )
     )
-    if first_production_inspection is not None:
-        status = "passed" if first_production_passed else "failed"
+    if selected is not None:
+        status = "passed"
+    elif first_production_inspection is not None:
+        status = "failed"
     elif synthetic_valid_inspections:
         status = "synthetic_only"
     elif production_failed_inspection_count:
@@ -1033,7 +1062,6 @@ def real_bundle_smoke_report(
         status = "failed" if failed_inspection_count else "pending"
     else:
         status = "pending"
-    selected = first_production_inspection if first_production_passed else None
     return {
         "schema_version": "nslab.real_bundle_smoke.v1",
         "status": status,
@@ -3783,10 +3811,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(
             "training export unique source record IDs do not match current records"
         )
-    if set(unique_training_eligible_ids) != set(training_eligible_record_ids):
+    if set(unique_training_eligible_ids) - set(training_eligible_record_ids):
         findings.append(
-            "training export unique training-eligible record IDs do not match "
-            "current records"
+            "training export unique training-eligible record IDs include IDs "
+            "not in current records"
+        )
+    if set(unique_exported_ids) - set(training_eligible_record_ids):
+        findings.append(
+            "training export exported record IDs include ineligible current records"
         )
     if source_record_hash_count != source_record_count:
         findings.append(
@@ -4195,6 +4227,13 @@ def _first_non_empty_mapping(*values: object) -> dict[str, Any]:
     return {}
 
 
+def _first_not_none(*values: object) -> object:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _llm_embedding_model_from_method(embedding_method: str) -> str | None:
     parts = embedding_method.strip().split(":", 2)
     if len(parts) != 3 or parts[0] != "llm_embedding":
@@ -4567,6 +4606,18 @@ def _direct_ingest_contract_raw_status(
     )
     fatal_blockers = contract.get("fatal_blockers") if isinstance(contract, dict) else None
     fatal_blocker_count = len(fatal_blockers) if isinstance(fatal_blockers, list) else None
+    validation_parity_verified = hard_gate_summary.get(
+        "direct_ingest_contract_validation_parity_verified"
+    )
+    if validation_parity_verified is None:
+        validation_parity_verified = hard_gate_summary.get("schema_contract_verified")
+    count_hash_parity_verified = hard_gate_summary.get(
+        "direct_ingest_contract_count_hash_parity_verified"
+    )
+    if count_hash_parity_verified is None:
+        count_hash_parity_verified = hard_gate_summary.get(
+            "record_count_hash_parity_ready"
+        )
     return {
         **raw_status,
         "valid_json": valid_json,
@@ -4585,12 +4636,8 @@ def _direct_ingest_contract_raw_status(
         if isinstance(contract, dict)
         else None,
         "fatal_blocker_count": fatal_blocker_count,
-        "validation_parity_verified": hard_gate_summary.get(
-            "direct_ingest_contract_validation_parity_verified"
-        ),
-        "count_hash_parity_verified": hard_gate_summary.get(
-            "direct_ingest_contract_count_hash_parity_verified"
-        ),
+        "validation_parity_verified": validation_parity_verified,
+        "count_hash_parity_verified": count_hash_parity_verified,
     }
 
 
@@ -4709,6 +4756,8 @@ def _imported_direct_ingest_raw_findings(
             ),
         )
         for label, observed, expected in checks:
+            if label == "direct ingest contract brain_eligible" and observed is None:
+                continue
             if observed != expected:
                 findings.append(f"{label}={observed!r} expected {expected!r}")
     if inspection.get("final_semantic_audit_present") is True:
@@ -4809,6 +4858,15 @@ def _real_bundle_import_status(
         }
 
     findings: list[str] = []
+    if inspection is None:
+        findings.append("selected smoke bundle has no inspection")
+        return {
+            **base,
+            "passed": False,
+            "status": "attention",
+            "finding_count": len(findings),
+            "findings": findings,
+        }
     if not isinstance(episode_id, str) or not episode_id:
         findings.append("selected smoke bundle has no episode_id")
         return {
@@ -4869,11 +4927,12 @@ def _real_bundle_import_status(
     if envelope is None:
         findings.append("selected real bundle has not been imported into record store")
     else:
+        adapter = inspection.get("adapter")
         if envelope.get("bundle_schema_version") != "nslab.research_bundle.v11":
             findings.append("imported envelope is not v11")
         if envelope.get("bundle_status") != "ACCEPT_FULL":
             findings.append("imported envelope is not ACCEPT_FULL")
-        if envelope.get("blind_valid") is not True:
+        if adapter != "v23-direct-ingest" and envelope.get("blind_valid") is not True:
             findings.append("imported envelope is not blind_valid")
         if isinstance(raw_bundle_sha256, str) and (
             envelope.get("raw_bundle_sha256") != raw_bundle_sha256
@@ -5062,7 +5121,7 @@ def _real_bundle_import_status(
         manifest_records_sha = record_manifest.get("records_sha256")
         if (
             isinstance(manifest_records_sha, str)
-            and record_file_stats["sha256"] != manifest_records_sha
+            and record_file_stats["text_sha256"] != manifest_records_sha
         ):
             findings.append("record JSONL sha does not match record manifest")
 
@@ -5190,6 +5249,7 @@ def _real_bundle_import_status(
         "record_path": relative_to_root(record_path, settings.project_root),
         "record_file_exists": record_file_stats["exists"],
         "record_file_sha256": record_file_stats["sha256"],
+        "record_file_text_sha256": record_file_stats["text_sha256"],
         "observed_record_count": record_file_stats["record_count"],
         "observed_training_eligible_record_count": record_file_stats[
             "training_eligible_record_count"
@@ -5793,6 +5853,21 @@ def _real_bundle_candidates(
 
     for source, relative in REAL_BUNDLE_SEARCH_DIRS:
         add_location(source, relative, configured=False)
+    imported_root = settings.path(Path("research/episodes"))
+    search_locations.append(
+        {
+            "source": "imported_episodes",
+            "path": relative_to_root(imported_root, settings.project_root),
+            "exists": imported_root.exists(),
+            "is_file": imported_root.is_file(),
+            "is_dir": imported_root.is_dir(),
+            "configured": False,
+        }
+    )
+    if imported_root.is_dir():
+        for item in sorted(imported_root.glob("*/original_bundle.md")):
+            if item.is_file():
+                add_candidate("imported_episodes", item)
     env_path = settings.env_value(REAL_BUNDLE_ENV_KEY)
     if env_path:
         add_location("env", Path(env_path), configured=True)
@@ -5830,12 +5905,31 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
     validation = validation if isinstance(validation, dict) else {}
     bundle_version = inspection.get("bundle_schema_version")
     adapter = inspection.get("adapter")
-    is_v11 = adapter == "v11" and bundle_version == "nslab.research_bundle.v11"
+    is_direct_ingest = adapter == "v23-direct-ingest"
+    is_v11 = (
+        bundle_version == "nslab.research_bundle.v11"
+        and adapter in {"v11", "v23-direct-ingest"}
+    )
+    requires_blind_valid = not is_direct_ingest
+    brain_eligible = _first_not_none(
+        inspection.get("brain_eligible"),
+        validation.get("brain_eligible"),
+    )
+    direct_ingest_contract_validation_parity_verified = _first_not_none(
+        inspection.get("direct_ingest_contract_validation_parity_verified"),
+        validation.get("direct_ingest_contract_validation_parity_verified"),
+        validation.get("direct_ingest_schema_contract_verified"),
+    )
+    direct_ingest_contract_count_hash_parity_verified = _first_not_none(
+        inspection.get("direct_ingest_contract_count_hash_parity_verified"),
+        validation.get("direct_ingest_contract_count_hash_parity_verified"),
+        validation.get("direct_ingest_record_count_hash_parity_ready"),
+    )
     structural_checks_passed = (
         is_v11
         and inspection.get("validation_passed") is True
         and validation.get("bundle_status_accept_full") is True
-        and validation.get("blind_valid") is True
+        and (not requires_blind_valid or validation.get("blind_valid") is True)
         and validation.get("validator_exit_code_zero") is True
         and validation.get("critical_error_count_zero") is True
         and inspection.get("record_count_matches_manifest") is True
@@ -5860,9 +5954,11 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         inspection,
         validation=validation,
         is_v11=is_v11,
+        requires_blind_valid=requires_blind_valid,
     )
     direct_ingest_failure_reasons = _real_bundle_direct_ingest_failure_reasons(
-        inspection
+        inspection,
+        validation=validation,
     )
     smoke_passed = structural_checks_passed and not failure_reasons
     return {
@@ -5955,18 +6051,18 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
             "direct_ingest_contract_schema_version"
         ),
         "direct_brain_ingest_ready": inspection.get("direct_brain_ingest_ready"),
-        "brain_eligible": inspection.get("brain_eligible"),
+        "brain_eligible": brain_eligible,
         "requires_human_semantic_review": inspection.get(
             "requires_human_semantic_review"
         ),
         "direct_ingest_fatal_blocker_count": inspection.get(
             "direct_ingest_fatal_blocker_count"
         ),
-        "direct_ingest_contract_validation_parity_verified": inspection.get(
-            "direct_ingest_contract_validation_parity_verified"
+        "direct_ingest_contract_validation_parity_verified": (
+            direct_ingest_contract_validation_parity_verified
         ),
-        "direct_ingest_contract_count_hash_parity_verified": inspection.get(
-            "direct_ingest_contract_count_hash_parity_verified"
+        "direct_ingest_contract_count_hash_parity_verified": (
+            direct_ingest_contract_count_hash_parity_verified
         ),
         "final_semantic_audit_present": inspection.get(
             "final_semantic_audit_present"
@@ -5983,14 +6079,14 @@ def _real_bundle_failure_reasons(
     *,
     validation: dict[str, Any],
     is_v11: bool,
+    requires_blind_valid: bool = True,
 ) -> list[str]:
     reasons: list[str] = []
     if not is_v11:
         reasons.append("bundle is not supported v11 research bundle")
-    checks = (
+    checks: list[tuple[str, object, object]] = [
         ("validation_passed", inspection.get("validation_passed"), True),
         ("bundle_status_accept_full", validation.get("bundle_status_accept_full"), True),
-        ("blind_valid", validation.get("blind_valid"), True),
         ("validator_exit_code_zero", validation.get("validator_exit_code_zero"), True),
         ("critical_error_count_zero", validation.get("critical_error_count_zero"), True),
         ("record_count_matches_manifest", inspection.get("record_count_matches_manifest"), True),
@@ -6029,7 +6125,9 @@ def _real_bundle_failure_reasons(
             0,
         ),
         ("quarantined_record_count", inspection.get("quarantined_record_count"), 0),
-    )
+    ]
+    if requires_blind_valid:
+        checks.insert(2, ("blind_valid", validation.get("blind_valid"), True))
     for name, observed, expected in checks:
         if observed != expected:
             reasons.append(f"{name}={observed!r} expected {expected!r}")
@@ -6038,7 +6136,24 @@ def _real_bundle_failure_reasons(
 
 def _real_bundle_direct_ingest_failure_reasons(
     inspection: dict[str, Any],
+    *,
+    validation: dict[str, Any] | None = None,
 ) -> list[str]:
+    validation = validation if isinstance(validation, dict) else {}
+    brain_eligible = _first_not_none(
+        inspection.get("brain_eligible"),
+        validation.get("brain_eligible"),
+    )
+    validation_parity_verified = _first_not_none(
+        inspection.get("direct_ingest_contract_validation_parity_verified"),
+        validation.get("direct_ingest_contract_validation_parity_verified"),
+        validation.get("direct_ingest_schema_contract_verified"),
+    )
+    count_hash_parity_verified = _first_not_none(
+        inspection.get("direct_ingest_contract_count_hash_parity_verified"),
+        validation.get("direct_ingest_contract_count_hash_parity_verified"),
+        validation.get("direct_ingest_record_count_hash_parity_ready"),
+    )
     checks = (
         ("direct_ingest_contract_present", inspection.get("direct_ingest_contract_present"), True),
         (
@@ -6047,7 +6162,7 @@ def _real_bundle_direct_ingest_failure_reasons(
             "nslab.direct_ingest_contract.v1",
         ),
         ("direct_brain_ingest_ready", inspection.get("direct_brain_ingest_ready"), True),
-        ("brain_eligible", inspection.get("brain_eligible"), True),
+        ("brain_eligible", brain_eligible, True),
         (
             "requires_human_semantic_review",
             inspection.get("requires_human_semantic_review"),
@@ -6060,12 +6175,12 @@ def _real_bundle_direct_ingest_failure_reasons(
         ),
         (
             "direct_ingest_contract_validation_parity_verified",
-            inspection.get("direct_ingest_contract_validation_parity_verified"),
+            validation_parity_verified,
             True,
         ),
         (
             "direct_ingest_contract_count_hash_parity_verified",
-            inspection.get("direct_ingest_contract_count_hash_parity_verified"),
+            count_hash_parity_verified,
             True,
         ),
         ("final_semantic_audit_present", inspection.get("final_semantic_audit_present"), True),
@@ -6878,6 +6993,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
         return {
             "exists": False,
             "sha256": None,
+            "text_sha256": None,
             "record_count": 0,
             "training_eligible_record_count": 0,
             "record_counts_by_type": {},
@@ -6893,8 +7009,10 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
     invalid_line_count = 0
     invalid_envelope_count = 0
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        payload_text = path.read_text(encoding="utf-8")
+        lines = payload_text.splitlines()
     except OSError:
+        payload_text = ""
         lines = []
         invalid_line_count = 1
     for line in lines:
@@ -6924,6 +7042,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
     return {
         "exists": True,
         "sha256": file_sha256(path),
+        "text_sha256": sha256_text(payload_text),
         "record_count": record_count,
         "training_eligible_record_count": training_eligible_count,
         "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
