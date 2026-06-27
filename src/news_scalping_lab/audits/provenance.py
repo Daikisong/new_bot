@@ -5523,6 +5523,12 @@ def _check_final_synthesis_record_id_availability(
         findings=findings,
         prediction_path=prediction_path,
     )
+    _check_final_synthesis_record_object_id_contract(
+        prediction_path=prediction_path,
+        context_payload=context_payload,
+        field_record_ids=field_record_ids,
+        findings=findings,
+    )
     for field, record_ids in field_record_ids.items():
         for record_id in record_ids:
             record = records_by_id.get(record_id)
@@ -5595,6 +5601,62 @@ def _collect_final_synthesis_record_object_ids(
             ids.extend(record_id for record_id in record_ids if isinstance(record_id, str))
     if ids:
         field_record_ids["record_level_shard_contributions"] = _unique_strings(ids)
+
+
+def _check_final_synthesis_record_object_id_contract(
+    *,
+    prediction_path: Path,
+    context_payload: dict[str, Any],
+    field_record_ids: dict[str, list[str]],
+    findings: list[str],
+) -> None:
+    if "retrieved_records" in context_payload:
+        expected_retrieved_ids = _unique_strings(
+            [
+                *field_record_ids.get("retrieved_record_ids", []),
+                *field_record_ids.get("semantic_retrieval_record_ids", []),
+            ]
+        )
+        observed_retrieved_ids = field_record_ids.get("retrieved_records", [])
+        _append_record_object_id_mismatches(
+            prediction_path=prediction_path,
+            field="retrieved_records",
+            expected_ids=expected_retrieved_ids,
+            observed_ids=observed_retrieved_ids,
+            findings=findings,
+        )
+    if "counterexample_records" in context_payload:
+        _append_record_object_id_mismatches(
+            prediction_path=prediction_path,
+            field="counterexample_records",
+            expected_ids=field_record_ids.get("counterexample_record_ids", []),
+            observed_ids=field_record_ids.get("counterexample_records", []),
+            findings=findings,
+        )
+
+
+def _append_record_object_id_mismatches(
+    *,
+    prediction_path: Path,
+    field: str,
+    expected_ids: list[str],
+    observed_ids: list[str],
+    findings: list[str],
+) -> None:
+    missing_ids = sorted(set(expected_ids) - set(observed_ids))
+    extra_ids = sorted(set(observed_ids) - set(expected_ids))
+    if missing_ids:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context {field} missing "
+            "record IDs: "
+            + ", ".join(missing_ids)
+        )
+    if extra_ids:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context {field} has "
+            "unexpected record IDs: "
+            + ", ".join(extra_ids)
+        )
 
 
 def _check_final_synthesis_embedded_artifacts(

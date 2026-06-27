@@ -2970,6 +2970,120 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
     ) in result["findings"]
 
 
+def test_provenance_audit_validates_final_synthesis_record_object_ids(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    report_text = _preopen_report_text()
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        report_text, encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(report_text, encoding="utf-8")
+    records = [
+        _brain_record_for_sweep_audit(
+            record_id,
+            episode_id="NSLAB-20300109-FINAL-OBJECTS",
+            available_from=datetime(2030, 1, 9, 8, 0, 0, tzinfo=KST),
+        )
+        for record_id in (
+            "REC-retrieved",
+            "REC-semantic",
+            "REC-counter",
+            "REC-extra",
+        )
+    ]
+    _store_brain_records_for_sweep_audit(tmp_path, records)
+    final_payload = {
+        "required_inputs": ["current_news"],
+        "current_news": ["pre-cutoff news"],
+        "retrieved_record_ids": ["REC-retrieved"],
+        "semantic_retrieval_record_ids": ["REC-semantic"],
+        "counterexample_record_ids": ["REC-counter"],
+        "retrieved_records": [
+            {"record_id": "REC-retrieved"},
+            {"record_id": "REC-extra"},
+        ],
+        "counterexample_records": [],
+    }
+    final_context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-linked"
+        / "final_synthesis_context.json"
+    )
+    write_json(
+        final_context_path,
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-linked",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": final_payload["required_inputs"],
+            "payload_sha256": sha256_text(canonical_json(final_payload)),
+            "input_summary": final_synthesis_input_summary(final_payload),
+            "payload": final_payload,
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "retrieved_record_ids": ["REC-retrieved"],
+            "semantic_retrieval_record_ids": ["REC-semantic"],
+            "counterexample_record_ids": ["REC-counter"],
+            "final_synthesis_context_artifact": final_context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": sha256_text(
+                final_context_path.read_text(encoding="utf-8")
+            ),
+            "final_synthesis_context_summary": final_synthesis_input_summary(
+                final_payload
+            ),
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: final_synthesis_context retrieved_records missing "
+        "record IDs: REC-semantic"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context retrieved_records has "
+        "unexpected record IDs: REC-extra"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context counterexample_records missing "
+        "record IDs: REC-counter"
+    ) in result["findings"]
+
+
 def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     tmp_path: Path,
 ) -> None:
