@@ -18,7 +18,7 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, write_json
 from news_scalping_lab.warehouse import (
     EXPECTED_WAREHOUSE_FILES,
     RECORD_COVERAGE_COLUMNS,
@@ -320,6 +320,50 @@ def test_brain_record_query_filters_multiple_record_types(tmp_path) -> None:
     )
 
     assert [row["record_id"] for row in rows] == ["BRAIN-DIRECT", "BRAIN-THEME"]
+
+
+def test_warehouse_rebuild_projects_records_when_accepted_episode_is_unreadable(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _warehouse_payload_record(
+        "BRAIN-WAREHOUSE-RECORD-FIRST",
+        record_type="supervised_direct_event_case",
+        training_target="direct_event_response",
+        payload={
+            "record_id": "BRAIN-WAREHOUSE-RECORD-FIRST",
+            "record_type": "supervised_direct_event_case",
+            "episode_id": "EP-rich",
+            "trade_date": "2030-01-10",
+            "ticker": "000001",
+            "company_name": "Record First Co",
+            "event_id": "EVT-record-first",
+        },
+    )
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-rich.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    accepted_dir = tmp_path / "research" / "accepted"
+    accepted_dir.mkdir(parents=True, exist_ok=True)
+    (accepted_dir / "EP-rich.json").write_text("{not valid json", encoding="utf-8")
+
+    counts = WarehouseStore(tmp_path).rebuild_all()
+
+    assert counts["research_episodes"] == 0
+    assert counts["brain_records"] == 1
+    assert counts["direct_event_cases"] == 1
+    rows = WarehouseStore(tmp_path).query_brain_records(
+        record_type="supervised_direct_event_case"
+    )
+    assert [row["record_id"] for row in rows] == ["BRAIN-WAREHOUSE-RECORD-FIRST"]
+    report = read_json(tmp_path / "diagnostics" / "brain_record_store_report.json")
+    assert report["warehouse_rebuild_findings"] == [
+        "accepted episode store is unreadable"
+    ]
 
 
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:

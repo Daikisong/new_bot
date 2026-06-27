@@ -15,6 +15,7 @@ from typing import Any, cast
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pydantic import ValidationError
 
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
@@ -168,8 +169,11 @@ class WarehouseStore:
 
     def rebuild_all(self) -> dict[str, int]:
         store = ResearchStore(self.root)
-        episodes = store.list_accepted()
         records = BrainRecordStore(self.root).list_records()
+        episodes, accepted_store_findings = _read_accepted_episodes_for_warehouse(
+            store,
+            records=records,
+        )
         company_delta_records = [
             record for record in records if record.record_type == "company_memory_delta"
         ]
@@ -208,14 +212,17 @@ class WarehouseStore:
             }
         )
         record_store_audit = audit_record_store(self.root, deep=True)
+        report_payload = record_store_report_payload(
+            self.root,
+            record_store_audit,
+            warehouse_counts=counts,
+        )
+        if accepted_store_findings:
+            report_payload["warehouse_rebuild_findings"] = accepted_store_findings
         write_diagnostic_report(
             self.root,
             "brain_record_store_report",
-            record_store_report_payload(
-                self.root,
-                record_store_audit,
-                warehouse_counts=counts,
-            ),
+            report_payload,
         )
         return counts
 
@@ -870,6 +877,26 @@ class WarehouseStore:
             names=list(columns),
         )
         pq.write_table(table, path)  # type: ignore[no-untyped-call]
+
+
+def _read_accepted_episodes_for_warehouse(
+    store: ResearchStore,
+    *,
+    records: list[BrainRecordEnvelope],
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return store.list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        if records:
+            return [], ["accepted episode store is unreadable"]
+        raise
 
 
 def _read_rows(path: Path) -> list[dict[str, Any]]:
