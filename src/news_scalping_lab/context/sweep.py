@@ -14,6 +14,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
@@ -81,8 +83,11 @@ class MemorySweeper:
         mode = normalize_analysis_mode(mode)
         cache_model_config = model_config or {}
         model_config_hash = sha256_text(canonical_json(cache_model_config))
-        accepted = self._available_episodes(cutoff_at)
         all_records = BrainRecordStore(self.root).list_records()
+        accepted, accepted_store_findings = self._available_episodes(
+            cutoff_at,
+            records=all_records,
+        )
         available_records = [
             record
             for record in all_records
@@ -113,7 +118,7 @@ class MemorySweeper:
                 cache_hits=0,
                 record_cache_hits=0,
                 token_counts={"memory_sweep": 0, "record_memory_sweep": 0},
-                errors=[],
+                errors=accepted_store_findings,
             )
 
         artifacts: list[str] = []
@@ -241,7 +246,7 @@ class MemorySweeper:
             record_artifacts.append(run_path.relative_to(self.root).as_posix())
             swept_record_ids.extend(record_ids)
 
-        errors: list[str] = []
+        errors: list[str] = list(accepted_store_findings)
         if mode == "exhaustive":
             expected_ids = [episode.episode_id for episode in accepted]
             expected_counts = Counter(expected_ids)
@@ -318,12 +323,30 @@ class MemorySweeper:
             errors=errors,
         )
 
-    def _available_episodes(self, cutoff_at: datetime) -> list[ResearchEpisode]:
-        return [
-            episode
-            for episode in self.store.list_accepted()
-            if is_available_as_of(episode.available_from, cutoff_at)
-        ]
+    def _available_episodes(
+        self,
+        cutoff_at: datetime,
+        *,
+        records: list[BrainRecordEnvelope],
+    ) -> tuple[list[ResearchEpisode], list[str]]:
+        try:
+            accepted = [
+                episode
+                for episode in self.store.list_accepted()
+                if is_available_as_of(episode.available_from, cutoff_at)
+            ]
+        except (
+            OSError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            ValidationError,
+            TypeError,
+            ValueError,
+        ):
+            if records:
+                return [], ["accepted episode store is unreadable"]
+            raise
+        return accepted, []
 
     def _shards(self, episodes: list[ResearchEpisode]) -> list[list[ResearchEpisode]]:
         return [

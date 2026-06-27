@@ -542,6 +542,51 @@ def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> Non
     ] == ["BRAIN-CANDIDATE-ERROR"]
 
 
+def test_record_memory_sweep_preserves_records_when_accepted_store_unreadable(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-SWEEP-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-SWEEP-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    accepted_path = (
+        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
+    )
+    accepted_path.parent.mkdir(parents=True, exist_ok=True)
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    sweep = MemorySweeper(tmp_path, shard_episode_count=10).sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_id="RUN-record-sweep-unreadable-accepted-store",
+        current_news_texts=["new catalyst"],
+        first_pass_mechanisms=["open-world first pass"],
+        brain_version="brain-test",
+    )
+
+    assert sweep.accepted_episode_count == 0
+    assert sweep.accepted_record_count == 2
+    assert sweep.available_record_count == 1
+    assert sweep.available_record_ids == ["BRAIN-SWEEP-AVAILABLE"]
+    assert sweep.swept_record_ids == ["BRAIN-SWEEP-AVAILABLE"]
+    assert sweep.record_artifact_paths
+    payload = read_json(tmp_path / sweep.record_artifact_paths[0])
+    assert payload["record_ids"] == ["BRAIN-SWEEP-AVAILABLE"]
+    assert sweep.errors == ["accepted episode store is unreadable"]
+
+
 @pytest.mark.asyncio
 async def test_daily_analyzer_rejects_unknown_analysis_mode_before_writing_outputs(
     tmp_path,
