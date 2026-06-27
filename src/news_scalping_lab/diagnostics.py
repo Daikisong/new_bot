@@ -1223,11 +1223,15 @@ def _production_llm_trace_evidence_status(
 def _llm_trace_payload_hash_mismatches(trace: dict[str, Any]) -> list[str]:
     mismatches: list[str] = []
     trace_input = trace.get("input")
-    if isinstance(trace_input, dict) and "input_sha256" in trace:
+    if isinstance(trace_input, dict) and "input_sha256" not in trace:
+        mismatches.append("input_sha256_missing")
+    elif isinstance(trace_input, dict):
         expected_input_hash = sha256_text(canonical_json(trace_input))
         if trace.get("input_sha256") != expected_input_hash:
             mismatches.append("input_sha256")
-    if "output_sha256" in trace:
+    if "output" in trace and "output_sha256" not in trace:
+        mismatches.append("output_sha256_missing")
+    elif "output_sha256" in trace:
         trace_output = trace.get("output")
         expected_output_hash = (
             sha256_text(canonical_json(trace_output))
