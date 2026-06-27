@@ -20,7 +20,7 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
-from news_scalping_lab.records.models import CompiledBrainClaim
+from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -2699,9 +2699,12 @@ def _real_bundle_import_status(
 
     if record_file_stats["exists"] is not True:
         findings.append("record JSONL for selected real bundle is missing")
-    elif record_file_stats["invalid_line_count"] != 0:
-        findings.append("record JSONL for selected real bundle has invalid rows")
     else:
+        if (
+            record_file_stats["invalid_line_count"] != 0
+            or record_file_stats["invalid_envelope_count"] != 0
+        ):
+            findings.append("record JSONL for selected real bundle has invalid rows")
         if record_file_stats["duplicate_record_ids"]:
             findings.append("record JSONL has duplicate record IDs")
         if (
@@ -2824,6 +2827,9 @@ def _real_bundle_import_status(
         "observed_record_ids": record_file_stats["record_ids"],
         "duplicate_record_ids": record_file_stats["duplicate_record_ids"],
         "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
+        "record_file_invalid_envelope_count": record_file_stats[
+            "invalid_envelope_count"
+        ],
         "direct_ingest_contract_raw_block_path": direct_contract_raw_status["path"],
         "direct_ingest_contract_raw_block_path_listed": direct_contract_raw_status[
             "path_listed"
@@ -4322,12 +4328,14 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
             "record_ids": [],
             "duplicate_record_ids": [],
             "invalid_line_count": 0,
+            "invalid_envelope_count": 0,
         }
     record_count = 0
     training_eligible_count = 0
     record_counts_by_type: dict[str, int] = {}
     record_ids: list[str] = []
     invalid_line_count = 0
+    invalid_envelope_count = 0
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -4345,6 +4353,10 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
         if not isinstance(payload, dict):
             invalid_line_count += 1
             continue
+        try:
+            BrainRecordEnvelope.model_validate(payload)
+        except ValidationError:
+            invalid_envelope_count += 1
         if payload.get("training_eligible") is True:
             training_eligible_count += 1
         record_id = payload.get("record_id")
@@ -4362,6 +4374,7 @@ def _record_file_stats(path: Path) -> dict[str, Any]:
         "record_ids": record_ids,
         "duplicate_record_ids": _duplicate_strings(record_ids),
         "invalid_line_count": invalid_line_count,
+        "invalid_envelope_count": invalid_envelope_count,
     }
 
 

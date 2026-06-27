@@ -4627,6 +4627,89 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
     )
 
 
+def test_production_readiness_rejects_real_import_invalid_record_envelopes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record_path = _write_real_smoke_records(tmp_path, episode_id, inspection)
+    rows = [
+        json.loads(line)
+        for line in record_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for row in rows:
+        row.pop("available_from", None)
+    record_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
+        },
+    )
+    _write_real_smoke_validation_report(tmp_path, episode_id, inspection)
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
+            "records_file": record_path.relative_to(tmp_path).as_posix(),
+            "records_sha256": file_sha256(record_path),
+        },
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["real_bundle_import"]["passed"] is False
+    assert production["real_bundle_import"]["record_file_invalid_line_count"] == 0
+    assert (
+        production["real_bundle_import"]["record_file_invalid_envelope_count"]
+        == inspection["normalized_record_count"]
+    )
+    assert (
+        "real_bundle_import: record JSONL for selected real bundle has invalid rows"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_real_import_index_id_mismatch(
     tmp_path,
     monkeypatch,
