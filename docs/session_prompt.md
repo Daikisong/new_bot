@@ -235,6 +235,48 @@ acquisition DONE 이후에는 다운로드 방법, 파일 접근 전략, 작업 
 
 ---
 
+[STOCK-WEB ACQUISITION FAST PATH — 가격 계층 전용]
+
+이 규칙은 stock-web `research_daily` manifest/schema/access JSON과 blind/outcome snapshot CSV 확보에만 적용한다. MAIN EXECUTION PROMPT와 news CSV 확보 규칙을 대체하지 않는다.
+
+stock-web manifest/schema/access JSON은 routing metadata 확인용이다. 실제 가격 provenance는 snapshot CSV Raw bytes로 닫는다.
+
+반드시 다음 순서를 따른다.
+
+```text
+1. stock-web manifest/schema/access JSON은 shell/curl/urllib/requests로 받으려 하지 않는다.
+2. web/browser로 Raw JSON을 열어 blind_snapshot_path, outcome_snapshot_path, row_count, sha256 metadata만 확인한다.
+3. JSON bytes를 정확히 저장하지 못했으면 sha256을 조작하거나 JSON을 복원하지 않는다.
+   access_sha256_status = WEB_VIEW_ONLY_UNHASHED
+   acquisition_warnings에 남긴다.
+4. access JSON의 역할은 blind_snapshot_path/outcome_snapshot_path 확인까지만이다.
+5. 실제 가격 provenance는 snapshot CSV Raw bytes로 닫는다.
+6. BLIND 전에는 blind_snapshot_path만 다운로드한다.
+7. outcome_snapshot_path는 blind_seal_receipt 생성/검증 후에만 다운로드한다.
+8. snapshot CSV는 반드시 temp file로 저장한 뒤 sha256, byte_size, header, row_count를 검증한다.
+9. JSON 다운로드 실패를 이유로 snapshot CSV 확보를 지연하지 않는다.
+10. JSON 내용을 사람이 복사해서 새 JSON 파일로 재구성하지 않는다.
+```
+
+stock-web JSON에서 DNS, content-type, download tool 제한이 발생하면 같은 URL에 대해 shell/curl/urllib 재시도를 반복하지 않는다. 해당 실패는 `acquisition_warnings`에 남기고, web/browser로 확인한 snapshot CSV Raw path 확보로 이동한다.
+
+BLIND 전 허용:
+
+```text
+research_daily manifest/schema/access JSON routing metadata 확인
+previous_trade_date 또는 blind_snapshot_path CSV Raw bytes 다운로드·검증
+```
+
+BLIND 전 금지:
+
+```text
+outcome_snapshot_path CSV bytes/header/hash/row 접근
+D-day high_return, amount_rank, winner, upper_limit 결과 접근
+access JSON을 손으로 복원해 sha256을 만든 척하기
+```
+
+---
+
 [CSV 순차 실행 설정]
 
 CSV 목록 위치:
@@ -261,7 +303,7 @@ news_YYYYMMDD.csv
 
 아래 commit-pinned GitHub Raw URL의 실행 프롬프트 전체를 열고 그대로 이행한다.
 
-https://raw.githubusercontent.com/Daikisong/new_bot/bdcfd325091e7206bf5cca3a31aed915e15ffd2b/docs/research_prompt.md
+https://raw.githubusercontent.com/Daikisong/new_bot/a2b60953de9a2a443d1dd0f24624099edab7fd21/docs/research_prompt.md
 
 이 URL은 commit-pinned Raw URL이다.
 
@@ -276,12 +318,12 @@ expected_title:
 
 expected_sha256:
 ```text
-b1da6052952cd52eab1d075f4bb139bb3d6ca8531d789c750a749da280f8a4d2
+b45eb9680c4b43b2d11161c5c931e9beac93c1b6f322547e58c90b75932e1291
 ```
 
 expected_byte_size:
 ```text
-391267
+398481
 ```
 
 필수 확인:
