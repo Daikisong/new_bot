@@ -3370,6 +3370,75 @@ def test_production_readiness_accepts_llm_full_v4_trace_evidence(
     )
 
 
+def test_production_readiness_rejects_llm_full_invalid_manifest_schema_version(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    compile_run = _llm_compile_run_v4_fixture()
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_v4_fixture(
+            schema_version="bad.llm_full_brain_compile_manifest.v1"
+        ),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": compile_run,
+        },
+    )
+    _write_llm_compile_trace_evidence_fixture(tmp_path, compile_run)
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert (
+        production["llm_full_brain"]["compile_manifest_schema_version"]
+        == "bad.llm_full_brain_compile_manifest.v1"
+    )
+    assert (
+        production["llm_full_brain"]["expected_compile_manifest_schema_version"]
+        == "nslab.llm_full_brain_compile_manifest.v1"
+    )
+    assert (
+        "brain: llm-full compile manifest schema_version is "
+        "bad.llm_full_brain_compile_manifest.v1, not "
+        "nslab.llm_full_brain_compile_manifest.v1"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_llm_full_missing_compiler_version(
     tmp_path,
 ) -> None:

@@ -68,6 +68,7 @@ ENV_KEYS = [
 ]
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
+LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
 REAL_BUNDLE_ENV_KEY = "NSLAB_REAL_BUNDLE_PATH"
 REAL_BUNDLE_SEARCH_DIRS = (
     ("data_inbox", Path("data/inbox/research")),
@@ -3672,6 +3673,12 @@ def _llm_full_brain_status(
         "model": compile_manifest.get("model")
         if isinstance(compile_manifest, dict)
         else None,
+        "compile_manifest_schema_version": compile_manifest.get("schema_version")
+        if isinstance(compile_manifest, dict)
+        else None,
+        "expected_compile_manifest_schema_version": (
+            LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
+        ),
         "compiler_version": compile_manifest.get("compiler_version")
         if isinstance(compile_manifest, dict)
         else None,
@@ -3737,6 +3744,17 @@ def _llm_full_brain_status(
     if compile_manifest is None:
         findings.append("llm-full compile manifest is missing")
     else:
+        manifest_schema_version = status["compile_manifest_schema_version"]
+        if manifest_schema_version != LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION:
+            observed_schema = (
+                manifest_schema_version
+                if isinstance(manifest_schema_version, str) and manifest_schema_version
+                else "missing"
+            )
+            findings.append(
+                "llm-full compile manifest schema_version is "
+                f"{observed_schema}, not {LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION}"
+            )
         provider = status["provider"]
         model = status["model"]
         if not isinstance(provider, str) or not provider or provider.lower() == "mock":

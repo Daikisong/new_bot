@@ -33,6 +33,8 @@ from news_scalping_lab.utils import (
     sha256_text,
 )
 
+LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
+
 
 def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     store = ResearchStore(root)
@@ -140,6 +142,12 @@ def _write_latest_brain_audit_summary(
         "record_coverage_complete": result.get("record_coverage_complete"),
         "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
         "llm_compile_manifest_present": result.get("llm_compile_manifest_present"),
+        "llm_compile_manifest_schema_version": result.get(
+            "llm_compile_manifest_schema_version"
+        ),
+        "llm_compile_expected_manifest_schema_version": result.get(
+            "llm_compile_expected_manifest_schema_version"
+        ),
         "llm_compile_category_schema_mismatches": result.get(
             "llm_compile_category_schema_mismatches"
         ),
@@ -438,6 +446,10 @@ def _audit_llm_compile_manifest(
             findings.append("llm-full compile manifest is missing")
         return {
             "llm_compile_manifest_present": False,
+            "llm_compile_manifest_schema_version": None,
+            "llm_compile_expected_manifest_schema_version": (
+                LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
+            ),
             "llm_compile_compiler_version": None,
             "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
             "llm_compile_findings": findings,
@@ -450,6 +462,13 @@ def _audit_llm_compile_manifest(
                 compiled_claim_count_mismatches
             ),
         }
+    schema_version = _string_value(manifest.get("schema_version"))
+    if schema_version != LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION:
+        observed_schema = schema_version or "missing"
+        findings.append(
+            "llm compile manifest schema_version is "
+            f"{observed_schema}, not {LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION}"
+        )
     compiler_version = _string_value(manifest.get("compiler_version"))
     if compiler_version != LLM_FULL_COMPILER_VERSION:
         observed_version = compiler_version or "missing"
@@ -507,6 +526,10 @@ def _audit_llm_compile_manifest(
         findings.append("llm compile manifest references unknown compiled claim IDs")
     return {
         "llm_compile_manifest_present": True,
+        "llm_compile_manifest_schema_version": schema_version,
+        "llm_compile_expected_manifest_schema_version": (
+            LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
+        ),
         "llm_compile_compiler_version": compiler_version,
         "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "llm_compile_findings": findings,
