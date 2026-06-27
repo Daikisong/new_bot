@@ -7387,6 +7387,7 @@ def _brave_search_status(settings: Settings, *, production: bool = False) -> str
 
 def _brain_coverage_status(root: Path, accepted_episode_count: int) -> dict[str, Any]:
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
+    brain_manifest = _read_optional_json(root / "brain" / "current" / "brain_manifest.json")
     if not coverage_path.exists():
         return {
             "manifest_exists": False,
@@ -7408,18 +7409,116 @@ def _brain_coverage_status(root: Path, accepted_episode_count: int) -> dict[str,
         }
     covered_ids = _string_list(manifest.get("covered_episode_ids"))
     missing_ids = _string_list(manifest.get("missing_episode_ids"))
+    metadata = _episode_coverage_metadata_status(
+        manifest,
+        brain_manifest=brain_manifest,
+    )
     coverage_complete = (
         manifest.get("coverage_complete") is True
         and len(covered_ids) == accepted_episode_count
         and not missing_ids
+        and not metadata["findings"]
     )
     return {
         "manifest_exists": True,
         "brain_version": manifest.get("brain_version"),
+        "expected_brain_version": metadata["expected_brain_version"],
+        "created_at": metadata["created_at"],
+        "expected_created_at": metadata["expected_created_at"],
+        "build_mode": metadata["build_mode"],
+        "expected_build_mode": metadata["expected_build_mode"],
+        "catalog_only": metadata["catalog_only"],
+        "expected_catalog_only": metadata["expected_catalog_only"],
         "coverage_complete": coverage_complete,
         "covered_episode_count": len(covered_ids),
         "missing_episode_ids": missing_ids,
+        "finding_count": len(metadata["findings"]),
+        "findings": metadata["findings"],
         "status": "complete" if coverage_complete else "incomplete",
+    }
+
+
+def _episode_coverage_metadata_status(
+    manifest: dict[str, Any],
+    *,
+    brain_manifest: object | None,
+) -> dict[str, Any]:
+    expected_brain_version = (
+        brain_manifest.get("brain_version")
+        if isinstance(brain_manifest, dict)
+        and isinstance(brain_manifest.get("brain_version"), str)
+        else None
+    )
+    expected_created_at = (
+        brain_manifest.get("created_at")
+        if isinstance(brain_manifest, dict)
+        and isinstance(brain_manifest.get("created_at"), str)
+        else None
+    )
+    expected_build_mode = (
+        brain_manifest.get("build_mode")
+        if isinstance(brain_manifest, dict)
+        and isinstance(brain_manifest.get("build_mode"), str)
+        else None
+    )
+    expected_catalog_only = (
+        brain_manifest.get("catalog_only")
+        if isinstance(brain_manifest, dict)
+        and isinstance(brain_manifest.get("catalog_only"), bool)
+        else None
+    )
+    brain_version = manifest.get("brain_version")
+    created_at = manifest.get("created_at")
+    build_mode = manifest.get("build_mode")
+    catalog_only = manifest.get("catalog_only")
+    findings: list[str] = []
+
+    if expected_brain_version is not None:
+        if not isinstance(brain_version, str) or not brain_version:
+            findings.append("coverage manifest brain_version is missing")
+        elif brain_version != expected_brain_version:
+            findings.append(
+                "coverage manifest brain_version does not match current brain manifest"
+            )
+
+    expected_created_at_value = _datetime_from_string(expected_created_at)
+    created_at_value = _datetime_from_string(created_at)
+    if expected_created_at is not None and expected_created_at_value is None:
+        findings.append("current brain manifest created_at is invalid")
+    elif expected_created_at_value is not None:
+        if created_at_value is None:
+            findings.append("coverage manifest created_at is missing or invalid")
+        elif created_at_value != expected_created_at_value:
+            findings.append(
+                "coverage manifest created_at does not match current brain manifest"
+            )
+
+    if expected_build_mode is not None:
+        if not isinstance(build_mode, str) or not build_mode:
+            findings.append("coverage manifest build_mode is missing")
+        elif build_mode != expected_build_mode:
+            findings.append(
+                "coverage manifest build_mode does not match current brain manifest"
+            )
+
+    if expected_catalog_only is not None:
+        if not isinstance(catalog_only, bool):
+            findings.append("coverage manifest catalog_only is missing")
+        elif catalog_only is not expected_catalog_only:
+            findings.append(
+                "coverage manifest catalog_only does not match current brain manifest"
+            )
+
+    return {
+        "brain_version": brain_version if isinstance(brain_version, str) else None,
+        "expected_brain_version": expected_brain_version,
+        "created_at": created_at if isinstance(created_at, str) else None,
+        "expected_created_at": expected_created_at,
+        "build_mode": build_mode if isinstance(build_mode, str) else None,
+        "expected_build_mode": expected_build_mode,
+        "catalog_only": catalog_only if isinstance(catalog_only, bool) else None,
+        "expected_catalog_only": expected_catalog_only,
+        "findings": findings,
     }
 
 
@@ -7976,6 +8075,15 @@ def _int_from_mapping(source: object, key: str) -> int | None:
         return None
     value = source.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _datetime_from_string(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _non_negative_int_field_valid(value: object) -> bool:

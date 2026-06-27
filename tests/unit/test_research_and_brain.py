@@ -231,6 +231,15 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert audit["brain_build_mode"] == "full"
     assert audit["catalog_only"] is True
     assert audit["last_full_rebuild"] == manifest.created_at.isoformat()
+    assert audit["episode_coverage_findings"] == []
+    assert audit["episode_coverage_brain_version"] == manifest.brain_version
+    assert audit["expected_episode_coverage_brain_version"] == manifest.brain_version
+    assert audit["episode_coverage_created_at"] == manifest.created_at.isoformat()
+    assert audit["expected_episode_coverage_created_at"] == manifest.created_at.isoformat()
+    assert audit["episode_coverage_build_mode"] == "full"
+    assert audit["expected_episode_coverage_build_mode"] == "full"
+    assert audit["episode_coverage_catalog_only"] is True
+    assert audit["expected_episode_coverage_catalog_only"] is True
     assert episode.episode_id in manifest.covered_episode_ids
     brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
     coverage_manifest = read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")
@@ -258,6 +267,7 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert brain_report["deprecated_mode_alias"] is True
     assert brain_report["production_eligible"] is False
     assert brain_report["latest_brain_audit"]["catalog_only"] is True
+    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == []
     assert "Catalog only: `True`" in brain_text
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
     assert shard_manifest["brain_version"] == manifest.brain_version
@@ -280,6 +290,59 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert mechanisms[0].provenance
     assert (tmp_path / "memory" / "mechanisms" / manifest.brain_version).exists()
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
+
+
+def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Coverage manifest metadata should match current brain.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_manifest = read_json(coverage_path)
+    coverage_manifest.update(
+        {
+            "brain_version": "brain-stale",
+            "created_at": manifest.created_at.replace(
+                year=manifest.created_at.year + 1
+            ).isoformat(),
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        }
+    )
+    write_json(coverage_path, coverage_manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["coverage_complete"] is False
+    assert audit["passed"] is False
+    assert audit["episode_coverage_brain_version"] == "brain-stale"
+    assert audit["expected_episode_coverage_brain_version"] == manifest.brain_version
+    assert audit["episode_coverage_created_at"] == coverage_manifest["created_at"]
+    assert audit["expected_episode_coverage_created_at"] == manifest.created_at.isoformat()
+    assert audit["episode_coverage_build_mode"] == "llm-full"
+    assert audit["expected_episode_coverage_build_mode"] == "full"
+    assert audit["episode_coverage_catalog_only"] is False
+    assert audit["expected_episode_coverage_catalog_only"] is True
+    assert audit["episode_coverage_findings"] == [
+        "coverage manifest brain_version does not match current brain manifest",
+        "coverage manifest created_at does not match current brain manifest",
+        "coverage manifest build_mode does not match current brain manifest",
+        "coverage manifest catalog_only does not match current brain manifest",
+    ]
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit[
+        "episode_coverage_findings"
+    ]
+    assert (
+        "episode_coverage_findings: coverage manifest brain_version does not match current brain manifest"
+        in brain_report["latest_brain_audit"]["findings"]
+    )
 
 
 def test_brain_rebuild_uses_configurable_shard_episode_count(tmp_path) -> None:

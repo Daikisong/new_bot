@@ -48,6 +48,10 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     source_hashes = store.accepted_hashes()
     missing = sorted(accepted_ids - covered)
     extra = sorted(covered - accepted_ids)
+    episode_coverage_audit = _audit_episode_coverage_manifest(
+        coverage_manifest,
+        current_manifest=brain_manifest,
+    )
     claim_audit = _audit_claims(root, accepted)
     mechanism_audit = _audit_mechanisms(root, accepted)
     determinism_audit = _audit_deterministic_brain_state(
@@ -75,6 +79,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *mechanism_audit["mechanisms_without_cases"],
         *mechanism_audit["mechanisms_with_unknown_success_cases"],
         *mechanism_audit["mechanisms_without_provenance"],
+        *episode_coverage_audit["episode_coverage_findings"],
         *determinism_audit["determinism_findings"],
         *record_audit["record_coverage_findings"],
         *record_store_audit["findings"],
@@ -82,13 +87,19 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *llm_compile_audit["llm_compile_findings"],
         *compiled_claim_audit["compiled_claim_findings"],
     ]
-    coverage_complete = not missing and not extra and len(covered) == len(accepted)
+    coverage_complete = (
+        not missing
+        and not extra
+        and len(covered) == len(accepted)
+        and not episode_coverage_audit["episode_coverage_findings"]
+    )
     result = {
         "deep": deep,
         "accepted_episode_count": len(accepted),
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,
         "extra_episode_ids": extra,
+        **episode_coverage_audit,
         **claim_audit,
         **mechanism_audit,
         **determinism_audit,
@@ -165,6 +176,23 @@ def _write_latest_brain_audit_summary(
         ),
         "brain_category_files_identical": result.get("brain_category_files_identical"),
         "brain_category_bodies_identical": result.get("brain_category_bodies_identical"),
+        "episode_coverage_findings": result.get("episode_coverage_findings"),
+        "episode_coverage_brain_version": result.get("episode_coverage_brain_version"),
+        "expected_episode_coverage_brain_version": result.get(
+            "expected_episode_coverage_brain_version"
+        ),
+        "episode_coverage_created_at": result.get("episode_coverage_created_at"),
+        "expected_episode_coverage_created_at": result.get(
+            "expected_episode_coverage_created_at"
+        ),
+        "episode_coverage_build_mode": result.get("episode_coverage_build_mode"),
+        "expected_episode_coverage_build_mode": result.get(
+            "expected_episode_coverage_build_mode"
+        ),
+        "episode_coverage_catalog_only": result.get("episode_coverage_catalog_only"),
+        "expected_episode_coverage_catalog_only": result.get(
+            "expected_episode_coverage_catalog_only"
+        ),
         "finding_count": len(_brain_audit_findings(result)),
         "findings": _brain_audit_findings(result),
     }
@@ -294,6 +322,7 @@ def _brain_audit_findings(result: dict[str, object]) -> list[str]:
     finding_keys = (
         "missing_episode_ids",
         "extra_episode_ids",
+        "episode_coverage_findings",
         "invalid_claim_lines",
         "claims_without_support",
         "claims_with_unknown_support",
@@ -321,6 +350,109 @@ def _brain_audit_findings(result: dict[str, object]) -> list[str]:
         if isinstance(record_findings, list):
             findings.extend(f"record_store: {item}" for item in record_findings)
     return findings
+
+
+def _audit_episode_coverage_manifest(
+    coverage_manifest: object,
+    *,
+    current_manifest: object,
+) -> dict[str, Any]:
+    expected_brain_version = (
+        current_manifest.get("brain_version")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("brain_version"), str)
+        else None
+    )
+    expected_created_at = (
+        current_manifest.get("created_at")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("created_at"), str)
+        else None
+    )
+    expected_build_mode = (
+        current_manifest.get("build_mode")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("build_mode"), str)
+        else None
+    )
+    expected_catalog_only = (
+        current_manifest.get("catalog_only")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("catalog_only"), bool)
+        else None
+    )
+    base: dict[str, Any] = {
+        "episode_coverage_findings": [],
+        "episode_coverage_brain_version": None,
+        "expected_episode_coverage_brain_version": expected_brain_version,
+        "episode_coverage_created_at": None,
+        "expected_episode_coverage_created_at": expected_created_at,
+        "episode_coverage_build_mode": None,
+        "expected_episode_coverage_build_mode": expected_build_mode,
+        "episode_coverage_catalog_only": None,
+        "expected_episode_coverage_catalog_only": expected_catalog_only,
+    }
+    if not isinstance(coverage_manifest, dict) or not coverage_manifest:
+        return base
+
+    findings: list[str] = []
+    brain_version = coverage_manifest.get("brain_version")
+    created_at = coverage_manifest.get("created_at")
+    build_mode = coverage_manifest.get("build_mode")
+    catalog_only = coverage_manifest.get("catalog_only")
+
+    if expected_brain_version is not None:
+        if not isinstance(brain_version, str) or not brain_version:
+            findings.append("coverage manifest brain_version is missing")
+        elif brain_version != expected_brain_version:
+            findings.append(
+                "coverage manifest brain_version does not match current brain manifest"
+            )
+
+    expected_created_at_value = _datetime_value(expected_created_at)
+    created_at_value = _datetime_value(created_at)
+    if expected_created_at is not None and expected_created_at_value is None:
+        findings.append("current brain manifest created_at is invalid")
+    elif expected_created_at_value is not None:
+        if created_at_value is None:
+            findings.append("coverage manifest created_at is missing or invalid")
+        elif created_at_value != expected_created_at_value:
+            findings.append(
+                "coverage manifest created_at does not match current brain manifest"
+            )
+
+    if expected_build_mode is not None:
+        if not isinstance(build_mode, str) or not build_mode:
+            findings.append("coverage manifest build_mode is missing")
+        elif build_mode != expected_build_mode:
+            findings.append(
+                "coverage manifest build_mode does not match current brain manifest"
+            )
+
+    if expected_catalog_only is not None:
+        if not isinstance(catalog_only, bool):
+            findings.append("coverage manifest catalog_only is missing")
+        elif catalog_only is not expected_catalog_only:
+            findings.append(
+                "coverage manifest catalog_only does not match current brain manifest"
+            )
+
+    return {
+        **base,
+        "episode_coverage_findings": findings,
+        "episode_coverage_brain_version": brain_version
+        if isinstance(brain_version, str)
+        else None,
+        "episode_coverage_created_at": created_at
+        if isinstance(created_at, str)
+        else None,
+        "episode_coverage_build_mode": build_mode
+        if isinstance(build_mode, str)
+        else None,
+        "episode_coverage_catalog_only": catalog_only
+        if isinstance(catalog_only, bool)
+        else None,
+    }
 
 
 def _audit_brain_diversity(root: Path) -> dict[str, Any]:
@@ -1410,6 +1542,15 @@ def _string_value(value: object) -> str | None:
 
 def _int_value(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _datetime_value(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
 
 
 def _string_dict(value: object) -> dict[str, str]:

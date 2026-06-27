@@ -29,6 +29,7 @@ from news_scalping_lab.utils import (
     KST,
     canonical_json,
     file_sha256,
+    read_json,
     sha256_text,
     write_json,
 )
@@ -227,9 +228,18 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
     assert report["brain"]["coverage"] == {
         "manifest_exists": True,
         "brain_version": manifest.brain_version,
+        "expected_brain_version": manifest.brain_version,
+        "created_at": manifest.created_at.isoformat(),
+        "expected_created_at": manifest.created_at.isoformat(),
+        "build_mode": "full",
+        "expected_build_mode": "full",
+        "catalog_only": True,
+        "expected_catalog_only": True,
         "coverage_complete": True,
         "covered_episode_count": 1,
         "missing_episode_ids": [],
+        "finding_count": 0,
+        "findings": [],
         "status": "complete",
     }
     assert report["brain"]["audit"]["brain_build_mode"] == "full"
@@ -242,6 +252,69 @@ def test_doctor_report_includes_brain_coverage_status(tmp_path) -> None:
     assert report["brain"]["audit"]["brain_category_source_population_mismatches"] == []
     assert report["brain"]["audit"]["brain_empty_category_complete_files"] == []
     assert isinstance(report["brain"]["audit"]["finding_count"], int)
+
+
+def test_doctor_report_rejects_stale_brain_coverage_manifest(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-stale-coverage",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor stale coverage status lesson.",
+            open_world_mechanisms=["accepted episode -> stale coverage manifest"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_manifest = read_json(coverage_path)
+    coverage_manifest.update(
+        {
+            "brain_version": "brain-stale",
+            "created_at": manifest.created_at.replace(
+                year=manifest.created_at.year + 1
+            ).isoformat(),
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        }
+    )
+    write_json(coverage_path, coverage_manifest)
+
+    report = build_doctor_report(settings)
+
+    assert report["readiness"]["passed"] is False
+    assert report["brain"]["coverage"]["coverage_complete"] is False
+    assert report["brain"]["coverage"]["status"] == "incomplete"
+    assert report["brain"]["coverage"]["brain_version"] == "brain-stale"
+    assert report["brain"]["coverage"]["expected_brain_version"] == manifest.brain_version
+    assert (
+        "coverage manifest brain_version does not match current brain manifest"
+        in report["brain"]["coverage"]["findings"]
+    )
+    assert (
+        "coverage manifest created_at does not match current brain manifest"
+        in report["brain"]["coverage"]["findings"]
+    )
+    assert (
+        "coverage manifest build_mode does not match current brain manifest"
+        in report["brain"]["coverage"]["findings"]
+    )
+    assert (
+        "coverage manifest catalog_only does not match current brain manifest"
+        in report["brain"]["coverage"]["findings"]
+    )
+    assert "brain: accepted episodes are not fully covered" in report["readiness"][
+        "findings"
+    ]
 
 
 def test_production_readiness_rejects_missing_latest_brain_diversity_summary(
