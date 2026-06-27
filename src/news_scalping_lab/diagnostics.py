@@ -671,11 +671,19 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             "missing_trace_prompt_hash_count"
         ],
         "missing_trace_prompt_hashes": trace_evidence["missing_trace_prompt_hashes"],
+        "missing_trace_checkpoint_id_count": trace_evidence[
+            "missing_trace_checkpoint_id_count"
+        ],
+        "missing_trace_checkpoint_id_traces": trace_evidence[
+            "missing_trace_checkpoint_id_traces"
+        ],
         "mock_trace_count": trace_evidence["mock_trace_count"],
         "mock_traces": trace_evidence["mock_traces"],
         "checked_checkpoint_count": trace_evidence["checked_checkpoint_count"],
         "unreadable_checkpoint_count": trace_evidence["unreadable_checkpoint_count"],
         "unreadable_checkpoints": trace_evidence["unreadable_checkpoints"],
+        "checkpoint_id_mismatch_count": trace_evidence["checkpoint_id_mismatch_count"],
+        "checkpoint_id_mismatches": trace_evidence["checkpoint_id_mismatches"],
         "mock_checkpoint_count": trace_evidence["mock_checkpoint_count"],
         "mock_checkpoints": trace_evidence["mock_checkpoints"],
     }
@@ -714,11 +722,15 @@ def _production_llm_trace_evidence_status(
             "unreadable_traces": [],
             "missing_trace_prompt_hash_count": 0,
             "missing_trace_prompt_hashes": [],
+            "missing_trace_checkpoint_id_count": 0,
+            "missing_trace_checkpoint_id_traces": [],
             "mock_trace_count": 0,
             "mock_traces": [],
             "checked_checkpoint_count": 0,
             "unreadable_checkpoint_count": 0,
             "unreadable_checkpoints": [],
+            "checkpoint_id_mismatch_count": 0,
+            "checkpoint_id_mismatches": [],
             "mock_checkpoint_count": 0,
             "mock_checkpoints": [],
         }
@@ -728,6 +740,7 @@ def _production_llm_trace_evidence_status(
     checked_traces: list[Path] = []
     unreadable_traces: list[str] = []
     matched_prompt_hashes: set[str] = set()
+    missing_trace_checkpoint_id_traces: list[dict[str, Any]] = []
     mock_traces: list[dict[str, Any]] = []
     checkpoint_ids: set[str] = set()
     for trace_path in trace_paths:
@@ -744,6 +757,15 @@ def _production_llm_trace_evidence_status(
         checkpoint_id = trace.get("checkpoint_id")
         if isinstance(checkpoint_id, str) and checkpoint_id:
             checkpoint_ids.add(checkpoint_id)
+        else:
+            missing_trace_checkpoint_id_traces.append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "purpose": trace.get("purpose"),
+                    "prompt_sha256": prompt_hash,
+                }
+            )
         mock_values = _mock_llm_artifact_values(trace)
         if mock_values:
             mock_traces.append(
@@ -760,6 +782,7 @@ def _production_llm_trace_evidence_status(
     checkpoint_root = root / "runs" / "checkpoints" / "llm"
     checked_checkpoints: list[Path] = []
     unreadable_checkpoints: list[str] = []
+    checkpoint_id_mismatches: list[dict[str, Any]] = []
     mock_checkpoints: list[dict[str, Any]] = []
     for checkpoint_id in sorted(checkpoint_ids):
         if checkpoint_id != Path(checkpoint_id).name:
@@ -775,6 +798,15 @@ def _production_llm_trace_evidence_status(
             unreadable_checkpoints.append(relative_to_root(checkpoint_path, root))
             continue
         checked_checkpoints.append(checkpoint_path)
+        observed_checkpoint_id = checkpoint.get("checkpoint_id")
+        if observed_checkpoint_id != checkpoint_id:
+            checkpoint_id_mismatches.append(
+                {
+                    "path": relative_to_root(checkpoint_path, root),
+                    "expected_checkpoint_id": checkpoint_id,
+                    "observed_checkpoint_id": observed_checkpoint_id,
+                }
+            )
         mock_values = _mock_llm_artifact_values(checkpoint)
         if mock_values:
             mock_checkpoints.append(
@@ -791,6 +823,8 @@ def _production_llm_trace_evidence_status(
         findings.append(f"referenced LLM trace is unreadable: {path}")
     for prompt_hash in missing_trace_prompt_hashes:
         findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
+    for trace in missing_trace_checkpoint_id_traces:
+        findings.append(f"referenced LLM trace missing checkpoint_id: {trace['path']}")
     for trace in mock_traces:
         findings.append(
             f"mock LLM trace present in {trace['path']}: "
@@ -798,6 +832,12 @@ def _production_llm_trace_evidence_status(
         )
     for path in unreadable_checkpoints:
         findings.append(f"referenced LLM checkpoint is unreadable: {path}")
+    for mismatch in checkpoint_id_mismatches:
+        findings.append(
+            f"referenced LLM checkpoint_id mismatch in {mismatch['path']}: "
+            f"expected {mismatch['expected_checkpoint_id']} observed "
+            f"{mismatch['observed_checkpoint_id']}"
+        )
     for checkpoint in mock_checkpoints:
         findings.append(
             f"mock LLM checkpoint present in {checkpoint['path']}: "
@@ -811,11 +851,15 @@ def _production_llm_trace_evidence_status(
         "unreadable_traces": unreadable_traces,
         "missing_trace_prompt_hash_count": len(missing_trace_prompt_hashes),
         "missing_trace_prompt_hashes": missing_trace_prompt_hashes,
+        "missing_trace_checkpoint_id_count": len(missing_trace_checkpoint_id_traces),
+        "missing_trace_checkpoint_id_traces": missing_trace_checkpoint_id_traces,
         "mock_trace_count": len(mock_traces),
         "mock_traces": mock_traces,
         "checked_checkpoint_count": len(checked_checkpoints),
         "unreadable_checkpoint_count": len(unreadable_checkpoints),
         "unreadable_checkpoints": unreadable_checkpoints,
+        "checkpoint_id_mismatch_count": len(checkpoint_id_mismatches),
+        "checkpoint_id_mismatches": checkpoint_id_mismatches,
         "mock_checkpoint_count": len(mock_checkpoints),
         "mock_checkpoints": mock_checkpoints,
     }
