@@ -3071,6 +3071,35 @@ def test_v23_direct_ingest_hard_gates_block_acceptance(
     assert report["validation"][expected_gate] is False
 
 
+def test_v23_direct_ingest_malformed_contract_block_is_not_raw_only(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_direct_ingest_malformed_contract.md"
+    bundle.write_text(
+        _v23_direct_ingest_bundle(contract_payload_override=["not", "an", "object"]),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    assert inspection["supported"] is True
+    assert inspection["adapter"] == "v23-direct-ingest"
+    assert inspection["forward_compatible_raw_only"] is False
+    assert inspection["inspection_status"] == "validation_failed"
+    assert inspection["direct_ingest_contract_present"] is False
+    assert inspection["validation"]["direct_ingest_contract_present"] is False
+    assert inspection["validation"]["direct_ingest_contract_supported"] is False
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["adapter"] == "v23-direct-ingest"
+    assert report["validation"]["direct_ingest_contract_present"] is False
+
+
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -3286,6 +3315,7 @@ def _v23_direct_ingest_bundle(
     contract_schema_contract_verified: bool = True,
     contract_validator_exit_code: int = 0,
     contract_critical_error_count: int = 0,
+    contract_payload_override: object | None = None,
 ) -> str:
     episode_id = "NSLAB-20300204-DIRECT"
     trade_day = "2030-02-04"
@@ -3392,26 +3422,27 @@ def _v23_direct_ingest_bundle(
         ensure_ascii=False,
         sort_keys=True,
     )
-    contract = json.dumps(
-        {
-            "schema_version": "nslab.direct_ingest_contract.v1",
-            "episode_id": episode_id,
-            "trade_date": trade_day,
-            "direct_brain_ingest_ready": contract_direct_brain_ingest_ready,
-            "automated_import_expected_to_pass": (
-                contract_automated_import_expected_to_pass
+    default_contract: object = {
+        "schema_version": "nslab.direct_ingest_contract.v1",
+        "episode_id": episode_id,
+        "trade_date": trade_day,
+        "direct_brain_ingest_ready": contract_direct_brain_ingest_ready,
+        "automated_import_expected_to_pass": (
+            contract_automated_import_expected_to_pass
+        ),
+        "requires_human_semantic_review": contract_requires_human_semantic_review,
+        "fatal_blockers": contract_fatal_blockers or [],
+        "hard_gate_summary": {
+            "record_count_hash_parity_ready": (
+                contract_record_count_hash_parity_ready
             ),
-            "requires_human_semantic_review": contract_requires_human_semantic_review,
-            "fatal_blockers": contract_fatal_blockers or [],
-            "hard_gate_summary": {
-                "record_count_hash_parity_ready": (
-                    contract_record_count_hash_parity_ready
-                ),
-                "schema_contract_verified": contract_schema_contract_verified,
-                "validator_exit_code": contract_validator_exit_code,
-                "critical_error_count": contract_critical_error_count,
-            },
+            "schema_contract_verified": contract_schema_contract_verified,
+            "validator_exit_code": contract_validator_exit_code,
+            "critical_error_count": contract_critical_error_count,
         },
+    }
+    contract = json.dumps(
+        default_contract if contract_payload_override is None else contract_payload_override,
         ensure_ascii=False,
         sort_keys=True,
     )

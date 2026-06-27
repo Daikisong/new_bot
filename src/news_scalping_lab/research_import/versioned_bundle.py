@@ -433,7 +433,7 @@ class V23DirectIngestAdapter(BaseBundleAdapter):
         return (
             bundle_schema_version(parsed) == "nslab.research_bundle.v11"
             and manifest_version == "nslab.bundle_manifest.v23"
-            and _v23_direct_ingest_contract_checks(parsed)["contract_present"] is True
+            and "direct_ingest_contract.json" in parsed.json_blocks
         )
 
     def validation_payloads(self, parsed: GenericParsedBundle) -> list[dict[str, Any]]:
