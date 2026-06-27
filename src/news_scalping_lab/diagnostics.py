@@ -1695,6 +1695,9 @@ def _production_semantic_index_manifest_status(
             "brain_record_hash_count": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
+            "brain_records_file_path_valid": None,
+            "brain_records_file_is_absolute": None,
+            "brain_records_file_escapes_index": None,
             "brain_records_sha256_matches": None,
             "brain_records_row_count": None,
             "brain_records_invalid_line_count": None,
@@ -1723,6 +1726,9 @@ def _production_semantic_index_manifest_status(
             "brain_record_hash_count": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
+            "brain_records_file_path_valid": None,
+            "brain_records_file_is_absolute": None,
+            "brain_records_file_escapes_index": None,
             "brain_records_sha256_matches": None,
             "brain_records_row_count": None,
             "brain_records_invalid_line_count": None,
@@ -1751,8 +1757,28 @@ def _production_semantic_index_manifest_status(
         if isinstance(brain_records_file, str) and brain_records_file
         else "brain_records.jsonl"
     )
-    brain_records_path = manifest_path.parent / brain_records_file
-    brain_records_exists = brain_records_path.exists()
+    brain_records_path = manifest_path.parent / "brain_records.jsonl"
+    brain_records_file_is_absolute = False
+    brain_records_file_escapes_index = False
+    brain_records_file_path_valid = True
+    brain_records_ref = Path(brain_records_file)
+    if brain_records_ref.is_absolute():
+        brain_records_file_is_absolute = True
+        brain_records_file_path_valid = False
+        brain_records_path = brain_records_ref
+    else:
+        resolved_brain_records_path = (manifest_path.parent / brain_records_ref).resolve()
+        try:
+            resolved_brain_records_path.relative_to(manifest_path.parent.resolve())
+        except ValueError:
+            brain_records_file_escapes_index = True
+            brain_records_file_path_valid = False
+            brain_records_path = resolved_brain_records_path
+        else:
+            brain_records_path = resolved_brain_records_path
+    brain_records_exists = (
+        brain_records_path.exists() if brain_records_file_path_valid else False
+    )
     brain_records_sha256_matches: bool | None = None
     brain_records_row_count: int | None = None
     brain_records_invalid_line_count: int | None = None
@@ -1851,6 +1877,10 @@ def _production_semantic_index_manifest_status(
         and brain_record_hash_count != expected_source_record_count
     ):
         findings.append("semantic index manifest record hash count does not match coverage")
+    if brain_records_file_is_absolute:
+        findings.append("semantic index brain_records_file must be vector-index relative")
+    if brain_records_file_escapes_index:
+        findings.append("semantic index brain_records_file escapes vector index directory")
     if not brain_records_exists:
         findings.append("semantic index brain record file is missing on disk")
     elif brain_records_invalid_line_count != 0:
@@ -1889,6 +1919,9 @@ def _production_semantic_index_manifest_status(
         "brain_record_hash_count": brain_record_hash_count,
         "brain_records_file": relative_to_root(brain_records_path, root),
         "brain_records_file_exists": brain_records_exists,
+        "brain_records_file_path_valid": brain_records_file_path_valid,
+        "brain_records_file_is_absolute": brain_records_file_is_absolute,
+        "brain_records_file_escapes_index": brain_records_file_escapes_index,
         "brain_records_sha256_matches": brain_records_sha256_matches,
         "brain_records_row_count": brain_records_row_count,
         "brain_records_invalid_line_count": brain_records_invalid_line_count,
