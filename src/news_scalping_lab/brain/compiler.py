@@ -1518,6 +1518,13 @@ def _brain_compile_diagnostic_report(
         "compiler_version",
         default=CATALOG_COMPILER_VERSION,
     )
+    catalog_mode_reason = _catalog_mode_reason(manifest)
+    deprecated_mode_alias = manifest.catalog_only and manifest.build_mode == "full"
+    production_eligible = (
+        manifest.build_mode == "llm-full"
+        and manifest.catalog_only is False
+        and llm_compile_present
+    )
     category_claim_ids = _category_claim_ids(
         claims=claims,
         compiled_claims=compiled_claims,
@@ -1535,6 +1542,9 @@ def _brain_compile_diagnostic_report(
         "brain_version": manifest.brain_version,
         "compiler_mode": manifest.build_mode,
         "catalog_only": manifest.catalog_only,
+        "catalog_mode_reason": catalog_mode_reason,
+        "deprecated_mode_alias": deprecated_mode_alias,
+        "production_eligible": production_eligible,
         "compiler_provider": compiler_provider,
         "compiler_model": compiler_model,
         "compiler_version": compiler_version,
@@ -1559,6 +1569,18 @@ def _brain_compile_diagnostic_report(
         and bool(llm_compile_run_metadata),
         "llm_compile_run": llm_compile_run_metadata,
     }
+
+
+def _catalog_mode_reason(manifest: BrainManifest) -> str | None:
+    if manifest.catalog_only is not True:
+        return None
+    if manifest.build_mode == "full":
+        return "deprecated_full_alias"
+    if manifest.build_mode == "catalog":
+        return "explicit_catalog_mode"
+    if manifest.build_mode == "incremental":
+        return "catalog_incremental_update"
+    return "catalog_only"
 
 
 def _category_claim_ids(

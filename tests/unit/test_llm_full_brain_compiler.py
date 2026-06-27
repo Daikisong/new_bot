@@ -180,6 +180,9 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_report["schema_version"] == "nslab.brain_compile_diagnostics.v1"
     assert compile_report["compiler_mode"] == "llm-full"
     assert compile_report["catalog_only"] is False
+    assert compile_report["catalog_mode_reason"] is None
+    assert compile_report["deprecated_mode_alias"] is False
+    assert compile_report["production_eligible"] is True
     assert compile_report["compiler_provider"] == "openai"
     assert compile_report["compiler_model"] == "test-brain-model"
     assert compile_report["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
@@ -380,6 +383,9 @@ def test_catalog_brain_marked_catalog_only(tmp_path: Path) -> None:
     assert brain_manifest["catalog_only"] is True
     assert compile_report["compiler_mode"] == "catalog"
     assert compile_report["catalog_only"] is True
+    assert compile_report["catalog_mode_reason"] == "explicit_catalog_mode"
+    assert compile_report["deprecated_mode_alias"] is False
+    assert compile_report["production_eligible"] is False
 
 
 def test_brain_category_files_are_not_identical(

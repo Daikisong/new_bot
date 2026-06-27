@@ -251,6 +251,9 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert record_coverage_manifest["training_eligible_record_count_as_of"] == (
         record_coverage_manifest["training_eligible_available_record_count"]
     )
+    assert brain_report["catalog_mode_reason"] == "deprecated_full_alias"
+    assert brain_report["deprecated_mode_alias"] is True
+    assert brain_report["production_eligible"] is False
     assert brain_report["latest_brain_audit"]["catalog_only"] is True
     assert "Catalog only: `True`" in brain_text
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
@@ -1505,6 +1508,9 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     audit = audit_brain(tmp_path)
     assert report["compiler_mode"] == "full"
     assert report["catalog_only"] is True
+    assert report["catalog_mode_reason"] == "deprecated_full_alias"
+    assert report["deprecated_mode_alias"] is True
+    assert report["production_eligible"] is False
     assert report["compiled_claims_file_present"] is True
     assert report["compiled_claim_count"] == 3
     assert {row["supporting_record_ids"][0] for row in compiled_claim_rows} == {

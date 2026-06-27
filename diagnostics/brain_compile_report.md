@@ -3,6 +3,9 @@
 - accepted_episode_count: `2`
 - brain_version: `brain-364486c68b`
 - catalog_only: `True`
+- catalog_mode_reason: `explicit_catalog_mode`
+- deprecated_mode_alias: `False`
+- production_eligible: `False`
 ## category_claim_counts
 
 - beneficiary_discovery: `0`
