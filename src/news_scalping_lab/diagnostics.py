@@ -3658,6 +3658,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "per_export_eligible_record_count": None,
             "per_export_exported_record_count": None,
             "per_export_skipped_record_count": None,
+            "expected_per_export_counts": {},
+            "missing_per_export_count_fields": [],
+            "invalid_per_export_count_fields": [],
             "unique_source_record_count": None,
             "unique_training_eligible_record_count": None,
             "unique_exported_record_count": None,
@@ -3726,6 +3729,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "per_export_eligible_record_count": 0,
             "per_export_exported_record_count": 0,
             "per_export_skipped_record_count": 0,
+            "expected_per_export_counts": {},
+            "missing_per_export_count_fields": [],
+            "invalid_per_export_count_fields": [],
             "unique_source_record_count": 0,
             "unique_training_eligible_record_count": 0,
             "unique_exported_record_count": 0,
@@ -3851,6 +3857,27 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     per_export_skipped_count = _int_from_mapping(
         diagnostics,
         "per_export_skipped_record_count",
+    )
+    per_export_count_fields = (
+        "per_export_eligible_record_count",
+        "per_export_exported_record_count",
+        "per_export_skipped_record_count",
+    )
+    missing_per_export_count_fields = [
+        field for field in per_export_count_fields if diagnostics and field not in diagnostics
+    ]
+    invalid_per_export_count_fields = [
+        field
+        for field in per_export_count_fields
+        if field in diagnostics
+        and not _non_negative_int_field_valid(diagnostics.get(field))
+    ]
+    for field in missing_per_export_count_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_per_export_count_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
+    expected_per_export_counts = _expected_training_export_counts_from_manifests(
+        audit.get("manifests"),
     )
     source_record_hash_count = _int_from_mapping(
         diagnostics,
@@ -4101,6 +4128,22 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         and unique_exported_count > unique_training_eligible_count
     ):
         findings.append("training export includes more records than eligible records")
+    per_export_count_values = {
+        "per_export_eligible_record_count": per_export_eligible_count,
+        "per_export_exported_record_count": per_export_exported_count,
+        "per_export_skipped_record_count": per_export_skipped_count,
+    }
+    for field, observed_count in per_export_count_values.items():
+        if (
+            diagnostics
+            and field not in missing_per_export_count_fields
+            and field not in invalid_per_export_count_fields
+            and field in expected_per_export_counts
+            and observed_count != expected_per_export_counts[field]
+        ):
+            findings.append(
+                f"training export diagnostics {field} does not match manifests"
+            )
     if (
         diagnostics
         and "counts_by_record_type" not in missing_count_fields
@@ -4215,6 +4258,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
         "per_export_skipped_record_count": per_export_skipped_count,
+        "expected_per_export_counts": expected_per_export_counts,
+        "missing_per_export_count_fields": missing_per_export_count_fields,
+        "invalid_per_export_count_fields": invalid_per_export_count_fields,
         "unique_source_record_count": unique_source_record_count,
         "unique_training_eligible_record_count": unique_training_eligible_count,
         "unique_exported_record_count": unique_exported_count,
@@ -7422,6 +7468,35 @@ def _int_from_mapping(source: object, key: str) -> int | None:
 
 def _non_negative_int_field_valid(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _expected_training_export_counts_from_manifests(
+    manifests: object,
+) -> dict[str, int]:
+    if not isinstance(manifests, dict):
+        return {}
+    expected_fields = {
+        "per_export_eligible_record_count": "eligible_record_count",
+        "per_export_exported_record_count": "exported_record_count",
+        "per_export_skipped_record_count": "skipped_record_count",
+    }
+    expected: dict[str, int] = {}
+    for output_field, manifest_field in expected_fields.items():
+        total = 0
+        complete = True
+        for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+            manifest = manifests.get(kind)
+            if not isinstance(manifest, dict):
+                complete = False
+                break
+            value = manifest.get(manifest_field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                complete = False
+                break
+            total += value
+        if complete:
+            expected[output_field] = total
+    return expected
 
 
 def _record_coverage_as_of(record_coverage: dict[str, Any]) -> datetime | None:
