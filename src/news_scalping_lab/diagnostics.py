@@ -73,6 +73,7 @@ ENV_KEYS = [
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
 PRODUCTION_PRICE_PROVIDER_ALIASES = {"stock-web", "stock_web", "stockweb"}
+REQUIRED_TRAINING_EXPORT_KINDS = ("evals", "preference", "sft")
 BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION = "nslab.brain_compile_diagnostics.v1"
 LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
 LLM_FULL_COMPILE_RUN_SCHEMA_VERSION = "nslab.llm_full_brain_compile_run.v1"
@@ -3689,6 +3690,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
+            "weight_validation_statuses": {},
+            "missing_weight_validation_kinds": [],
+            "unexpected_weight_validation_kinds": [],
+            "invalid_weight_validation_entries": [],
         }
     source_record_ids = sorted(record.record_id for record in source_records)
     training_eligible_record_ids = sorted(
@@ -3749,6 +3754,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
+            "weight_validation_statuses": {},
+            "missing_weight_validation_kinds": [],
+            "unexpected_weight_validation_kinds": [],
+            "invalid_weight_validation_entries": [],
         }
 
     findings: list[str] = []
@@ -4065,12 +4074,50 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "training export counts_by_training_target does not match current records"
         )
 
-    weight_statuses = diagnostics.get("weight_validation_statuses")
-    if not isinstance(weight_statuses, dict):
+    raw_weight_statuses = diagnostics.get("weight_validation_statuses")
+    missing_weight_validation_kinds: list[str] = []
+    unexpected_weight_validation_kinds: list[str] = []
+    invalid_weight_validation_entries: list[str] = []
+    if not isinstance(raw_weight_statuses, dict):
+        weight_statuses: dict[str, str] = {}
+        if diagnostics:
+            missing_weight_validation_kinds = list(REQUIRED_TRAINING_EXPORT_KINDS)
         findings.append("training export weight validation statuses are missing")
     else:
-        failed_weights = [
+        weight_statuses = _string_map(raw_weight_statuses)
+        invalid_weight_validation_entries = sorted(
             str(kind)
+            for kind, status in raw_weight_statuses.items()
+            if not isinstance(kind, str)
+            or not kind
+            or not isinstance(status, str)
+            or not status
+        )
+        observed_weight_kinds = set(weight_statuses)
+        required_weight_kinds = set(REQUIRED_TRAINING_EXPORT_KINDS)
+        missing_weight_validation_kinds = sorted(
+            required_weight_kinds - observed_weight_kinds
+        )
+        unexpected_weight_validation_kinds = sorted(
+            observed_weight_kinds - required_weight_kinds
+        )
+        if invalid_weight_validation_entries:
+            findings.append(
+                "training export weight validation statuses contain invalid entries: "
+                + ", ".join(invalid_weight_validation_entries)
+            )
+        if missing_weight_validation_kinds:
+            findings.append(
+                "training export weight validation statuses are missing kinds: "
+                + ", ".join(missing_weight_validation_kinds)
+            )
+        if unexpected_weight_validation_kinds:
+            findings.append(
+                "training export weight validation statuses include unexpected kinds: "
+                + ", ".join(unexpected_weight_validation_kinds)
+            )
+        failed_weights = [
+            kind
             for kind, status in sorted(weight_statuses.items())
             if status != "passed"
         ]
@@ -4163,9 +4210,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             diagnostics.get("available_manifest_kinds")
         ),
         "missing_manifest_kinds": missing_manifest_kinds,
-        "weight_validation_statuses": weight_statuses
-        if isinstance(weight_statuses, dict)
-        else {},
+        "weight_validation_statuses": weight_statuses,
+        "missing_weight_validation_kinds": missing_weight_validation_kinds,
+        "unexpected_weight_validation_kinds": unexpected_weight_validation_kinds,
+        "invalid_weight_validation_entries": invalid_weight_validation_entries,
         "duplicate_issuer_day_count": duplicate_issuer_day_count,
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
         "issuer_day_weight_sum_mismatch_count": issuer_weight_mismatch_count,

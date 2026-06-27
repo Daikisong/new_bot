@@ -2476,6 +2476,9 @@ def test_production_readiness_accepts_record_backed_training_exports(
         "preference": "passed",
         "sft": "passed",
     }
+    assert production["training_exports"]["missing_weight_validation_kinds"] == []
+    assert production["training_exports"]["unexpected_weight_validation_kinds"] == []
+    assert production["training_exports"]["invalid_weight_validation_entries"] == []
     assert not any(
         finding.startswith("training:") for finding in production["findings"]
     )
@@ -2856,6 +2859,70 @@ def test_production_readiness_rejects_missing_training_export_phase_row_counts(
     )
     assert (
         "training: training export diagnostics blind_safe_row_count is missing"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_incomplete_training_export_weight_statuses(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["weight_validation_statuses"] = {
+        "debug": "passed",
+        "evals": True,
+        "sft": "passed",
+    }
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["weight_validation_statuses"] == {
+        "debug": "passed",
+        "sft": "passed",
+    }
+    assert production["training_exports"]["invalid_weight_validation_entries"] == [
+        "evals",
+    ]
+    assert production["training_exports"]["missing_weight_validation_kinds"] == [
+        "evals",
+        "preference",
+    ]
+    assert production["training_exports"]["unexpected_weight_validation_kinds"] == [
+        "debug",
+    ]
+    assert (
+        "training export weight validation statuses contain invalid entries: evals"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export weight validation statuses are missing kinds: evals, preference"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export weight validation statuses include unexpected kinds: debug"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export weight validation statuses are missing kinds: "
+        "evals, preference"
         in production["findings"]
     )
 
