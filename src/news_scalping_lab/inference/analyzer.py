@@ -3411,7 +3411,7 @@ class DailyAnalyzer:
     def _read_retrieved_record_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
         store = BrainRecordStore(self.root)
         contexts: list[dict[str, Any]] = []
-        for record_id in manifest.retrieved_record_ids:
+        for record_id in self._prediction_retrieved_record_ids(manifest):
             try:
                 record = store.get_record(record_id)
             except FileNotFoundError:

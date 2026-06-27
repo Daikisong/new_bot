@@ -1284,6 +1284,9 @@ async def test_fast_mode_semantic_positive_records_reach_prediction_memory(
         "BRAIN-FAST-SEMANTIC-POSITIVE"
     ]
     assert synthesis_payload["negative_record_ids"] == []
+    assert [record["record_id"] for record in synthesis_payload["retrieved_records"]] == [
+        "BRAIN-FAST-SEMANTIC-POSITIVE"
+    ]
     assert [
         record["record_id"]
         for record in synthesis_payload["additional_semantic_retrieval"]["records"]
