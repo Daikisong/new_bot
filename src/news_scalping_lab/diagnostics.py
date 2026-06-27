@@ -141,6 +141,7 @@ class ManifestPromptHashStatus:
     values: set[str]
     invalid_fields: list[str]
     fields_by_hash: dict[str, set[str]]
+    duplicate_hashes: dict[str, list[str]]
 
 
 def production_readiness_report(
@@ -703,6 +704,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     mock_manifests: list[dict[str, Any]] = []
     missing_prompt_hash_manifests: list[str] = []
     invalid_prompt_hash_manifests: list[dict[str, Any]] = []
+    duplicate_prompt_hash_manifests: list[dict[str, Any]] = []
     manifest_prompt_hashes: set[str] = set()
     manifest_prompt_hash_fields: dict[str, set[str]] = {}
     for manifest_path in manifest_paths:
@@ -748,6 +750,14 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
                     "invalid_fields": prompt_hash_status.invalid_fields,
                 }
             )
+        if prompt_hash_status.duplicate_hashes:
+            duplicate_prompt_hash_manifests.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "duplicate_hashes": prompt_hash_status.duplicate_hashes,
+                }
+            )
 
     trace_evidence = _production_llm_trace_evidence_status(
         root,
@@ -779,6 +789,11 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             f"context manifest prompt_hashes contains invalid entries: "
             f"{manifest['path']} ({len(manifest['invalid_fields'])})"
         )
+    for manifest in duplicate_prompt_hash_manifests:
+        findings.append(
+            f"context manifest prompt_hashes contains duplicate hashes: "
+            f"{manifest['path']} ({len(manifest['duplicate_hashes'])})"
+        )
     findings.extend(trace_evidence["findings"])
 
     return {
@@ -804,6 +819,14 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             for manifest in invalid_prompt_hash_manifests
         ),
         "invalid_prompt_hash_manifests": invalid_prompt_hash_manifests,
+        "duplicate_prompt_hash_manifest_count": len(
+            duplicate_prompt_hash_manifests
+        ),
+        "duplicate_prompt_hash_count": sum(
+            len(manifest["duplicate_hashes"])
+            for manifest in duplicate_prompt_hash_manifests
+        ),
+        "duplicate_prompt_hash_manifests": duplicate_prompt_hash_manifests,
         "referenced_prompt_hash_count": len(manifest_prompt_hashes),
         "checked_trace_count": trace_evidence["checked_trace_count"],
         "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
@@ -864,6 +887,7 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
             values=set(),
             invalid_fields=[],
             fields_by_hash={},
+            duplicate_hashes={},
         )
     values: set[str] = set()
     invalid_fields: list[str] = []
@@ -879,6 +903,11 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
         values=values,
         invalid_fields=sorted(invalid_fields),
         fields_by_hash=fields_by_hash,
+        duplicate_hashes={
+            prompt_hash: sorted(fields)
+            for prompt_hash, fields in fields_by_hash.items()
+            if len(fields) > 1
+        },
     )
 
 
