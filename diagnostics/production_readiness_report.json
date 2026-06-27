@@ -2150,26 +2150,274 @@
     "applicable": true,
     "audit_error": null,
     "count_mismatches": {},
+    "counts": {
+      "beneficiary_cases.parquet": 0,
+      "brain_records.parquet": 4,
+      "company_memory.parquet": 5,
+      "daily_outcomes.parquet": 1,
+      "direct_event_cases.parquet": 0,
+      "error_cases.parquet": 0,
+      "event_sources.parquet": 0,
+      "event_ticker_edges.parquet": 0,
+      "events.parquet": 0,
+      "issuer_day_cases.parquet": 1,
+      "leader_pairs.parquet": 1,
+      "market_memory.parquet": 5,
+      "mechanism_memory.parquet": 6,
+      "memory_claims.parquet": 2,
+      "predictions.parquet": 1,
+      "record_coverage.parquet": 4,
+      "record_provenance.parquet": 4,
+      "research_episodes.parquet": 2,
+      "research_questions.parquet": 0,
+      "theme_formation_cases.parquet": 0
+    },
     "duplicate_identities": {},
+    "expected_source_counts": {
+      "beneficiary_cases.parquet": {
+        "expected": 0,
+        "source_label": "beneficiary discovery brain records"
+      },
+      "brain_records.parquet": {
+        "expected": 4,
+        "source_label": "normalized brain records"
+      },
+      "company_memory.parquet": {
+        "expected": 5,
+        "source_label": "source company memory files"
+      },
+      "daily_outcomes.parquet": {
+        "expected": 1,
+        "source_label": "source postmortem reports"
+      },
+      "direct_event_cases.parquet": {
+        "expected": 0,
+        "source_label": "direct event brain records"
+      },
+      "error_cases.parquet": {
+        "expected": 0,
+        "source_label": "brain error case records"
+      },
+      "event_sources.parquet": {
+        "expected": 0,
+        "source_label": "accepted event sources"
+      },
+      "event_ticker_edges.parquet": {
+        "expected": 0,
+        "source_label": "accepted event ticker edges plus brain record edge records"
+      },
+      "events.parquet": {
+        "expected": 0,
+        "source_label": "accepted observed events"
+      },
+      "issuer_day_cases.parquet": {
+        "expected": 1,
+        "source_label": "issuer-day brain records"
+      },
+      "leader_pairs.parquet": {
+        "expected": 1,
+        "source_label": "sealed leader preference pair records"
+      },
+      "market_memory.parquet": {
+        "expected": 5,
+        "source_label": "accepted market memory claims"
+      },
+      "mechanism_memory.parquet": {
+        "expected": 6,
+        "source_label": "source mechanism memory records"
+      },
+      "memory_claims.parquet": {
+        "expected": 2,
+        "source_label": "brain memory claim records"
+      },
+      "predictions.parquet": {
+        "expected": 1,
+        "source_label": "source predictions"
+      },
+      "record_coverage.parquet": {
+        "expected": 4,
+        "source_label": "episode/type record coverage groups"
+      },
+      "record_provenance.parquet": {
+        "expected": 4,
+        "source_label": "record provenance links"
+      },
+      "research_questions.parquet": {
+        "expected": 0,
+        "source_label": "research question records"
+      },
+      "theme_formation_cases.parquet": {
+        "expected": 0,
+        "source_label": "theme formation brain records"
+      }
+    },
     "finding_count": 0,
     "findings": [],
     "identity_mismatches": {},
     "missing_columns": {},
+    "missing_files": [],
     "passed": true,
     "projection_synced": true,
     "report_count_mismatches": {},
+    "report_counts": {
+      "beneficiary_cases.parquet": 0,
+      "brain_records.parquet": 4,
+      "company_memory.parquet": 5,
+      "daily_outcomes.parquet": 1,
+      "direct_event_cases.parquet": 0,
+      "error_cases.parquet": 0,
+      "event_sources.parquet": 0,
+      "event_ticker_edges.parquet": 0,
+      "events.parquet": 0,
+      "issuer_day_cases.parquet": 1,
+      "leader_pairs.parquet": 1,
+      "market_memory.parquet": 5,
+      "mechanism_memory.parquet": 6,
+      "memory_claims.parquet": 2,
+      "predictions.parquet": 1,
+      "record_coverage.parquet": 4,
+      "record_provenance.parquet": 4,
+      "research_episodes.parquet": 2,
+      "research_questions.parquet": 0,
+      "theme_formation_cases.parquet": 0
+    },
     "report_duplicate_identities": {},
+    "report_expected_source_counts": {
+      "beneficiary_cases.parquet": {
+        "expected": 0,
+        "source_label": "beneficiary discovery brain records"
+      },
+      "brain_records.parquet": {
+        "expected": 4,
+        "source_label": "normalized brain records"
+      },
+      "company_memory.parquet": {
+        "expected": 5,
+        "source_label": "source company memory files"
+      },
+      "daily_outcomes.parquet": {
+        "expected": 1,
+        "source_label": "source postmortem reports"
+      },
+      "direct_event_cases.parquet": {
+        "expected": 0,
+        "source_label": "direct event brain records"
+      },
+      "error_cases.parquet": {
+        "expected": 0,
+        "source_label": "brain error case records"
+      },
+      "event_sources.parquet": {
+        "expected": 0,
+        "source_label": "accepted event sources"
+      },
+      "event_ticker_edges.parquet": {
+        "expected": 0,
+        "source_label": "accepted event ticker edges plus brain record edge records"
+      },
+      "events.parquet": {
+        "expected": 0,
+        "source_label": "accepted observed events"
+      },
+      "issuer_day_cases.parquet": {
+        "expected": 1,
+        "source_label": "issuer-day brain records"
+      },
+      "leader_pairs.parquet": {
+        "expected": 1,
+        "source_label": "sealed leader preference pair records"
+      },
+      "market_memory.parquet": {
+        "expected": 5,
+        "source_label": "accepted market memory claims"
+      },
+      "mechanism_memory.parquet": {
+        "expected": 6,
+        "source_label": "source mechanism memory records"
+      },
+      "memory_claims.parquet": {
+        "expected": 2,
+        "source_label": "brain memory claim records"
+      },
+      "predictions.parquet": {
+        "expected": 1,
+        "source_label": "source predictions"
+      },
+      "record_coverage.parquet": {
+        "expected": 4,
+        "source_label": "episode/type record coverage groups"
+      },
+      "record_provenance.parquet": {
+        "expected": 4,
+        "source_label": "record provenance links"
+      },
+      "research_questions.parquet": {
+        "expected": 0,
+        "source_label": "research question records"
+      },
+      "theme_formation_cases.parquet": {
+        "expected": 0,
+        "source_label": "theme formation brain records"
+      }
+    },
     "report_identity_mismatches": {},
     "report_missing_columns": {},
+    "report_missing_files": [],
     "report_present": true,
     "report_projection_synced": true,
+    "report_required_files": [
+      "events.parquet",
+      "event_sources.parquet",
+      "event_ticker_edges.parquet",
+      "research_episodes.parquet",
+      "daily_outcomes.parquet",
+      "predictions.parquet",
+      "market_memory.parquet",
+      "mechanism_memory.parquet",
+      "company_memory.parquet",
+      "brain_records.parquet",
+      "issuer_day_cases.parquet",
+      "direct_event_cases.parquet",
+      "theme_formation_cases.parquet",
+      "beneficiary_cases.parquet",
+      "leader_pairs.parquet",
+      "error_cases.parquet",
+      "memory_claims.parquet",
+      "research_questions.parquet",
+      "record_provenance.parquet",
+      "record_coverage.parquet"
+    ],
     "report_required_files_present": true,
     "report_synced": true,
+    "report_unreadable_files": [],
     "report_weight_mismatches": {},
+    "required_files": [
+      "events.parquet",
+      "event_sources.parquet",
+      "event_ticker_edges.parquet",
+      "research_episodes.parquet",
+      "daily_outcomes.parquet",
+      "predictions.parquet",
+      "market_memory.parquet",
+      "mechanism_memory.parquet",
+      "company_memory.parquet",
+      "brain_records.parquet",
+      "issuer_day_cases.parquet",
+      "direct_event_cases.parquet",
+      "theme_formation_cases.parquet",
+      "beneficiary_cases.parquet",
+      "leader_pairs.parquet",
+      "error_cases.parquet",
+      "memory_claims.parquet",
+      "research_questions.parquet",
+      "record_provenance.parquet",
+      "record_coverage.parquet"
+    ],
     "required_files_present": true,
     "schema_version": "nslab.production_warehouse.v1",
     "status": "ready",
     "synced": true,
+    "unreadable_files": [],
     "weight_mismatches": {}
   },
   "web_evidence": {

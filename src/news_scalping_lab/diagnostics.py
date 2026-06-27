@@ -3072,6 +3072,24 @@ def _production_warehouse_status(
     if actual_warehouse["applicable"] is True or report_warehouse is not None:
         findings.extend(_warehouse_readiness_findings(actual_warehouse))
     findings = _unique_preserving_order(findings)
+    actual_first = actual_warehouse["applicable"] is True
+
+    def merged_mapping(actual: object, reported: object) -> dict[str, Any]:
+        first, second = (actual, reported) if actual_first else (reported, actual)
+        if isinstance(first, dict):
+            return first
+        if isinstance(second, dict):
+            return second
+        return {}
+
+    def merged_list(actual: object, reported: object) -> list[Any]:
+        first, second = (actual, reported) if actual_first else (reported, actual)
+        if isinstance(first, list):
+            return first
+        if isinstance(second, list):
+            return second
+        return []
+
     count_mismatches = _first_non_empty_mapping(
         actual_warehouse.get("count_mismatches"),
         report_warehouse.get("count_mismatches") if report_warehouse is not None else None,
@@ -3092,6 +3110,34 @@ def _production_warehouse_status(
         actual_warehouse.get("missing_columns"),
         report_warehouse.get("missing_columns") if report_warehouse is not None else None,
     )
+    counts = merged_mapping(
+        actual_warehouse.get("counts"),
+        report_warehouse.get("counts") if report_warehouse is not None else None,
+    )
+    expected_source_counts = merged_mapping(
+        actual_warehouse.get("expected_source_counts"),
+        (
+            report_warehouse.get("expected_source_counts")
+            if report_warehouse is not None
+            else None
+        ),
+    )
+    required_files = merged_list(
+        actual_warehouse.get("required_files"),
+        report_warehouse.get("required_files") if report_warehouse is not None else None,
+    )
+    missing_files = merged_list(
+        actual_warehouse.get("missing_files"),
+        report_warehouse.get("missing_files") if report_warehouse is not None else None,
+    )
+    unreadable_files = merged_list(
+        actual_warehouse.get("unreadable_files"),
+        (
+            report_warehouse.get("unreadable_files")
+            if report_warehouse is not None
+            else None
+        ),
+    )
     return {
         "schema_version": "nslab.production_warehouse.v1",
         "applicable": actual_warehouse["applicable"] or report_warehouse is not None,
@@ -3109,6 +3155,11 @@ def _production_warehouse_status(
         "duplicate_identities": duplicate_identities,
         "weight_mismatches": weight_mismatches,
         "missing_columns": missing_columns,
+        "counts": counts,
+        "expected_source_counts": expected_source_counts,
+        "required_files": required_files,
+        "missing_files": missing_files,
+        "unreadable_files": unreadable_files,
         "report_required_files_present": (
             report_warehouse.get("required_files_present")
             if report_warehouse is not None
@@ -3147,6 +3198,29 @@ def _production_warehouse_status(
             if report_warehouse is not None
             else {}
         ),
+        "report_counts": (
+            report_warehouse.get("counts", {}) if report_warehouse is not None else {}
+        ),
+        "report_expected_source_counts": (
+            report_warehouse.get("expected_source_counts", {})
+            if report_warehouse is not None
+            else {}
+        ),
+        "report_required_files": (
+            report_warehouse.get("required_files", [])
+            if report_warehouse is not None
+            else []
+        ),
+        "report_missing_files": (
+            report_warehouse.get("missing_files", [])
+            if report_warehouse is not None
+            else []
+        ),
+        "report_unreadable_files": (
+            report_warehouse.get("unreadable_files", [])
+            if report_warehouse is not None
+            else []
+        ),
     }
 
 
@@ -3169,6 +3243,10 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
             ),
             "synced": coverage_audit.get("warehouse_synced"),
             "projection_synced": coverage_audit.get("warehouse_projection_synced"),
+            "counts": coverage_audit.get("warehouse_counts", {}),
+            "required_files": coverage_audit.get("warehouse_required_files", []),
+            "missing_files": coverage_audit.get("warehouse_missing_files", []),
+            "unreadable_files": coverage_audit.get("warehouse_unreadable_files", []),
             "count_mismatches": coverage_audit.get("warehouse_count_mismatches", {}),
             "identity_mismatches": coverage_audit.get(
                 "warehouse_identity_mismatches",
@@ -3180,6 +3258,10 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
             ),
             "weight_mismatches": coverage_audit.get("warehouse_weight_mismatches", {}),
             "missing_columns": coverage_audit.get("warehouse_missing_columns", {}),
+            "expected_source_counts": coverage_audit.get(
+                "warehouse_expected_source_counts",
+                {},
+            ),
             "audit_error": None,
         }
     except Exception as exc:
@@ -3189,11 +3271,16 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
             "required_files_present": False,
             "synced": False,
             "projection_synced": False,
+            "counts": {},
+            "required_files": [],
+            "missing_files": [],
+            "unreadable_files": [],
             "count_mismatches": {},
             "identity_mismatches": {},
             "duplicate_identities": {},
             "weight_mismatches": {},
             "missing_columns": {},
+            "expected_source_counts": {},
             "audit_error": type(exc).__name__,
         }
 

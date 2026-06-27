@@ -205,6 +205,11 @@ For `llm-full` brains it also reports `llm_full_brain`, which verifies the
 compile manifest, compiled claims JSONL, configured provider/model match,
 category counts, and the latest compile run cache/live-call accounting from
 `diagnostics/brain_compile_report.json`.
+The production warehouse gate includes projection `counts`,
+`expected_source_counts`, required/missing/unreadable file lists, and
+record-level count, identity, duplicate, weight, and column mismatches so the
+readiness artifact is enough to audit table parity without rerunning
+`warehouse verify`.
 It also reports `record_store`, a deep record-store audit summary that gates
 production on brain_delta raw/normalized ID parity, training-eligible/type-count
 parity, raw payload hash traceability, provenance closure, and record counts.

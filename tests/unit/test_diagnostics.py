@@ -466,6 +466,10 @@ def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> 
         },
         "warehouse": {
             "status": "attention",
+            "counts": {"issuer_day_cases.parquet": 2},
+            "required_files": ["issuer_day_cases.parquet"],
+            "missing_files": [],
+            "unreadable_files": [],
             "required_files_present": True,
             "synced": True,
             "projection_synced": False,
@@ -476,6 +480,12 @@ def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> 
             },
             "weight_mismatches": {
                 "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+            },
+            "expected_source_counts": {
+                "issuer_day_cases.parquet": {
+                    "expected": 1,
+                    "source_label": "issuer-day brain records",
+                }
             },
         },
         "vector_index": {
@@ -492,6 +502,25 @@ def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> 
     }
     assert production["warehouse"]["weight_mismatches"] == {
         "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5}
+    }
+    assert production["warehouse"]["counts"] == {"issuer_day_cases.parquet": 2}
+    assert production["warehouse"]["expected_source_counts"] == {
+        "issuer_day_cases.parquet": {
+            "expected": 1,
+            "source_label": "issuer-day brain records",
+        }
+    }
+    assert production["warehouse"]["required_files"] == ["issuer_day_cases.parquet"]
+    assert production["warehouse"]["missing_files"] == []
+    assert production["warehouse"]["unreadable_files"] == []
+    assert production["warehouse"]["report_counts"] == {
+        "issuer_day_cases.parquet": 2
+    }
+    assert production["warehouse"]["report_expected_source_counts"] == {
+        "issuer_day_cases.parquet": {
+            "expected": 1,
+            "source_label": "issuer-day brain records",
+        }
     }
     assert "warehouse: warehouse status is not ok" in production["findings"]
     assert "warehouse: record-level projections are not synced" in production["findings"]
@@ -517,6 +546,15 @@ def test_production_readiness_audits_current_warehouse_when_report_missing(
     assert production["warehouse"]["passed"] is False
     assert production["warehouse"]["report_present"] is False
     assert production["warehouse"]["required_files_present"] is False
+    assert "brain_records.parquet" in production["warehouse"]["required_files"]
+    assert "brain_records.parquet" in production["warehouse"]["missing_files"]
+    assert production["warehouse"]["counts"] == {}
+    assert production["warehouse"]["expected_source_counts"][
+        "brain_records.parquet"
+    ] == {
+        "expected": 2,
+        "source_label": "normalized brain records",
+    }
     assert (
         "warehouse: required warehouse projections are missing or unreadable"
         in production["findings"]
