@@ -287,6 +287,32 @@ def test_llm_full_category_routing_uses_continuation_records() -> None:
     assert continuation_ids == ["BRAIN-EDGE", "BRAIN-MEMORY"]
 
 
+def test_llm_full_category_routing_does_not_fallback_to_unrelated_records() -> None:
+    records = [
+        _record(
+            "BRAIN-DIRECT",
+            record_type="supervised_direct_event_case",
+            training_target="direct_event_response",
+            response_class="positive_high10",
+        ),
+        _record(
+            "BRAIN-COUNTER",
+            record_type="counterexample",
+            training_target="counterexample",
+            response_class="negative_control",
+        ),
+    ]
+
+    theme_records = compiler_module._records_for_category(records, "theme_formation")
+    world_model_records = compiler_module._records_for_category(records, "world_model")
+
+    assert theme_records == []
+    assert [record.record_id for record in world_model_records] == [
+        "BRAIN-DIRECT",
+        "BRAIN-COUNTER",
+    ]
+
+
 def test_llm_full_brain_compile_rejects_mock_provider_object(
     tmp_path: Path,
     monkeypatch,

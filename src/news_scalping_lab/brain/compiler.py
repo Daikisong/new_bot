@@ -1919,8 +1919,7 @@ def _records_for_category(
     if category == "world_model":
         return records
     allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
-    selected = [record for record in records if record.record_type in allowed]
-    return selected or records[: min(20, len(records))]
+    return [record for record in records if record.record_type in allowed]
 
 
 def _record_shards(
