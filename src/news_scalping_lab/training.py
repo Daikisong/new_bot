@@ -120,7 +120,12 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
         training_eligible_record_ids.update(_eligible_record_ids_from_manifest(manifest))
         output_file = manifest.get("output_file")
         output_rows: list[dict[str, Any]] = []
-        output_path = _artifact_path(root, output_file)
+        output_path = _artifact_path(
+            root,
+            output_file,
+            findings=findings,
+            label=f"{kind}: output_file",
+        )
         if output_path is None or not output_path.exists():
             findings.append(f"{kind}: output_file is missing")
         else:
@@ -783,11 +788,28 @@ def _audit_only_rows(
     return rows
 
 
-def _artifact_path(root: Path, value: object) -> Path | None:
+def _artifact_path(
+    root: Path,
+    value: object,
+    *,
+    findings: list[str] | None = None,
+    label: str | None = None,
+) -> Path | None:
     if not isinstance(value, str) or not value:
         return None
     path = Path(value)
-    return path if path.is_absolute() else root / path
+    if path.is_absolute():
+        if findings is not None and label is not None:
+            findings.append(f"{label} must be project-relative")
+        return None
+    resolved = (root / path).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError:
+        if findings is not None and label is not None:
+            findings.append(f"{label} escapes project root")
+        return None
+    return resolved
 
 
 def _read_training_rows(
@@ -976,7 +998,12 @@ def _audit_phase_outputs(
         if not isinstance(metadata, dict):
             findings.append(f"{kind}: phase_outputs.{phase} is missing")
             continue
-        path = _artifact_path(root, metadata.get("output_file"))
+        path = _artifact_path(
+            root,
+            metadata.get("output_file"),
+            findings=findings,
+            label=f"{kind}: phase_outputs.{phase} output_file",
+        )
         if path is None or not path.exists():
             findings.append(f"{kind}: phase_outputs.{phase} output_file is missing")
             continue
@@ -1006,7 +1033,12 @@ def _audit_phase_outputs(
     if not isinstance(metadata, dict):
         findings.append(f"{kind}: phase_outputs.AUDIT_ONLY is missing")
         return
-    path = _artifact_path(root, metadata.get("output_file"))
+    path = _artifact_path(
+        root,
+        metadata.get("output_file"),
+        findings=findings,
+        label=f"{kind}: phase_outputs.AUDIT_ONLY output_file",
+    )
     if path is None or not path.exists():
         findings.append(f"{kind}: phase_outputs.AUDIT_ONLY output_file is missing")
         return

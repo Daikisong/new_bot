@@ -838,6 +838,56 @@ def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> Non
     assert training_report["findings"] == audit["findings"]
 
 
+def test_training_audit_rejects_absolute_output_file(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    manifest["output_file"] = sft.path.resolve().as_posix()
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert "sft: output_file must be project-relative" in audit["findings"]
+
+
+def test_training_audit_rejects_escaping_phase_output_file(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    blind_meta = manifest["phase_outputs"]["BLIND"]
+    blind_path = tmp_path / blind_meta["output_file"]
+    outside_path = tmp_path.parent / f"{tmp_path.name}_outside_blind_sft.jsonl"
+    outside_path.write_text(blind_path.read_text(encoding="utf-8"), encoding="utf-8")
+    blind_meta["output_file"] = f"../{outside_path.name}"
+    blind_meta["output_sha256"] = sha256_text(outside_path.read_text(encoding="utf-8"))
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert (
+        "sft: phase_outputs.BLIND output_file escapes project root"
+        in audit["findings"]
+    )
+
+
 def test_training_audit_rejects_tampered_audit_only_phase_output(tmp_path) -> None:
     records = [
         _brain_record(
