@@ -612,6 +612,36 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
 
 
+def test_record_store_report_counts_dropped_raw_records(tmp_path: Path) -> None:
+    episode_dir = tmp_path / "research" / "episodes" / "EP-loss"
+    episode_dir.mkdir(parents=True)
+    (episode_dir / "bundle_envelope.json").write_text(
+        json.dumps(
+            {
+                "episode_id": "EP-loss",
+                "raw_block_counts": {"brain_delta.jsonl": 3},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = record_store_report_payload(
+        tmp_path,
+        {
+            "schema_version": "nslab.record_store_audit.v1",
+            "passed": True,
+            "record_count": 2,
+            "stats": {},
+        },
+    )
+
+    assert report["raw_record_count"] == 3
+    assert report["normalized_record_count"] == 2
+    assert report["raw_record_counts_by_episode"] == {"EP-loss": 3}
+    assert report["dropped_record_count"] == 1
+
+
 def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
     tmp_path: Path,
 ) -> None:

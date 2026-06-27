@@ -452,12 +452,14 @@ def record_store_report_payload(
         if warehouse_counts is not None
         else _existing_report_warehouse_counts(root)
     )
-    normalized_record_count = audit_result.get("record_count", 0)
+    normalized_record_count = _int_value(audit_result.get("record_count"), default=0)
     raw_record_counts_by_episode = _stored_raw_record_counts_by_episode(root)
+    raw_record_count = sum(raw_record_counts_by_episode.values())
+    dropped_record_count = max(0, raw_record_count - normalized_record_count)
     return {
         "schema_version": "nslab.brain_record_store_report.v1",
         "record_count": normalized_record_count,
-        "raw_record_count": sum(raw_record_counts_by_episode.values()),
+        "raw_record_count": raw_record_count,
         "normalized_record_count": normalized_record_count,
         "raw_record_counts_by_episode": raw_record_counts_by_episode,
         "all_record_count": audit_result.get(
@@ -506,7 +508,7 @@ def record_store_report_payload(
             "raw_only_record_count",
         ),
         "warehouse_counts": effective_warehouse_counts,
-        "dropped_record_count": 0,
+        "dropped_record_count": dropped_record_count,
         "quarantined_record_count": quarantined_bundle_count(root),
         "audit_passed": audit_result.get("passed") is True,
         "record_store_audit": audit_result,
@@ -567,6 +569,10 @@ def _nested_int(source: dict[str, Any], *keys: str) -> int:
             return 0
         current = current.get(key)
     return current if isinstance(current, int) and not isinstance(current, bool) else 0
+
+
+def _int_value(value: object, *, default: int) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else default
 
 
 def _audit_deep_record_store(
