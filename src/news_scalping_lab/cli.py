@@ -6682,6 +6682,7 @@ def warehouse_inspect() -> None:
                 "identity_mismatches": coverage.get("warehouse_identity_mismatches"),
                 "duplicate_identities": coverage.get("warehouse_duplicate_identities"),
                 "weight_mismatches": coverage.get("warehouse_weight_mismatches"),
+                "missing_columns": coverage.get("warehouse_missing_columns"),
                 "findings": warehouse_findings,
             },
         }
@@ -6728,6 +6729,10 @@ def warehouse_verify() -> None:
         ),
         "warehouse_weight_mismatches": coverage.get(
             "warehouse_weight_mismatches",
+            {},
+        ),
+        "warehouse_missing_columns": coverage.get(
+            "warehouse_missing_columns",
             {},
         ),
         "warehouse_findings": warehouse_findings,

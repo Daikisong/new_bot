@@ -554,6 +554,7 @@ def build_doctor_report(
                 "warehouse_weight_mismatches",
                 {},
             ),
+            "missing_columns": coverage_audit.get("warehouse_missing_columns", {}),
             "expected_source_counts": coverage_audit.get(
                 "warehouse_expected_source_counts",
                 {},
@@ -2917,6 +2918,10 @@ def _production_warehouse_status(
         actual_warehouse.get("weight_mismatches"),
         report_warehouse.get("weight_mismatches") if report_warehouse is not None else None,
     )
+    missing_columns = _first_non_empty_mapping(
+        actual_warehouse.get("missing_columns"),
+        report_warehouse.get("missing_columns") if report_warehouse is not None else None,
+    )
     return {
         "schema_version": "nslab.production_warehouse.v1",
         "applicable": actual_warehouse["applicable"] or report_warehouse is not None,
@@ -2933,6 +2938,7 @@ def _production_warehouse_status(
         "identity_mismatches": identity_mismatches,
         "duplicate_identities": duplicate_identities,
         "weight_mismatches": weight_mismatches,
+        "missing_columns": missing_columns,
         "report_required_files_present": (
             report_warehouse.get("required_files_present")
             if report_warehouse is not None
@@ -2963,6 +2969,11 @@ def _production_warehouse_status(
         ),
         "report_weight_mismatches": (
             report_warehouse.get("weight_mismatches", {})
+            if report_warehouse is not None
+            else {}
+        ),
+        "report_missing_columns": (
+            report_warehouse.get("missing_columns", {})
             if report_warehouse is not None
             else {}
         ),
@@ -2998,6 +3009,7 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
                 {},
             ),
             "weight_mismatches": coverage_audit.get("warehouse_weight_mismatches", {}),
+            "missing_columns": coverage_audit.get("warehouse_missing_columns", {}),
             "audit_error": None,
         }
     except Exception as exc:
@@ -3011,6 +3023,7 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
             "identity_mismatches": {},
             "duplicate_identities": {},
             "weight_mismatches": {},
+            "missing_columns": {},
             "audit_error": type(exc).__name__,
         }
 
@@ -3033,6 +3046,7 @@ def _warehouse_readiness_findings(warehouse: dict[str, Any]) -> list[str]:
         ("identity_mismatches", "projection identities mismatch source data"),
         ("duplicate_identities", "projection duplicate identities detected"),
         ("weight_mismatches", "projection sample weight sums are invalid"),
+        ("missing_columns", "projection required columns are missing"),
     ):
         value = warehouse.get(field_name)
         if isinstance(value, dict) and value:

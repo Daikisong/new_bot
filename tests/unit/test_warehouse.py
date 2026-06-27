@@ -16,9 +16,14 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, write_json
-from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
+from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
+from news_scalping_lab.warehouse import (
+    EXPECTED_WAREHOUSE_FILES,
+    RECORD_COVERAGE_COLUMNS,
+    WarehouseStore,
+)
 
 
 def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
@@ -34,7 +39,59 @@ def test_warehouse_writes_empty_projection_as_zero_rows(tmp_path) -> None:
     assert inspected["events.parquet"] == 0
     assert inspected["mechanism_memory.parquet"] == 0
     assert inspected["company_memory.parquet"] == 0
+    record_coverage_columns = [
+        row[0]
+        for row in duckdb.sql(
+            "describe select * from "
+            f"read_parquet('{(tmp_path / 'warehouse' / 'record_coverage.parquet').as_posix()}')"
+        ).fetchall()
+    ]
+    assert record_coverage_columns == list(RECORD_COVERAGE_COLUMNS)
     assert warehouse.query_brain_records(record_type="supervised_issuer_day_case") == []
+
+
+def test_record_coverage_projection_keeps_phase_and_training_target_groups(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    records = [
+        _warehouse_brain_record(
+            "BRAIN-COVERAGE-AUDIT",
+            evidence_phase="AUDIT",
+            training_target=None,
+            training_eligible=False,
+        ),
+        _warehouse_brain_record(
+            "BRAIN-COVERAGE-ELIGIBLE",
+            evidence_phase="POSTMORTEM",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+        ),
+    ]
+
+    count = WarehouseStore(tmp_path).write_record_coverage(records)
+
+    assert count == 2
+    rows = _query_parquet(
+        tmp_path / "warehouse" / "record_coverage.parquet",
+        "episode_id, record_type, evidence_phase, training_target, record_count, "
+        "training_eligible_record_count, ineligible_record_count, audit_only_record_count",
+        order_by="evidence_phase",
+    )
+    assert rows == [
+        ("EP-coverage", "memory_claim", "AUDIT", "UNKNOWN", 1, 0, 1, 1),
+        (
+            "EP-coverage",
+            "memory_claim",
+            "POSTMORTEM",
+            "issuer_day_price_response",
+            1,
+            1,
+            0,
+            0,
+        ),
+    ]
 
 
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
@@ -282,7 +339,49 @@ def test_previous_trade_day_is_calendar_previous_day() -> None:
     assert previous_trade_day(date(2030, 1, 10)) == date(2030, 1, 9)
 
 
-def _query_parquet(path: Path, columns: str) -> list[tuple[object, ...]]:
-    return duckdb.sql(
-        f"select {columns} from read_parquet('{path.as_posix()}')"
-    ).fetchall()
+def _warehouse_brain_record(
+    record_id: str,
+    *,
+    evidence_phase: str,
+    training_target: str | None,
+    training_eligible: bool,
+) -> BrainRecordEnvelope:
+    payload = {
+        "record_id": record_id,
+        "record_type": "memory_claim",
+        "episode_id": "EP-coverage",
+        "trade_date": "2030-01-10",
+        "statement": f"{record_id} coverage statement",
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type="memory_claim",
+        episode_id="EP-coverage",
+        trade_date=date(2030, 1, 10),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+        training_target=training_target,
+        evidence_phase=evidence_phase,
+        training_eligible=training_eligible,
+        eligibility_reason="warehouse coverage projection test",
+        status="supported",
+        confidence_label="medium",
+        provenance_source_ids=["SRC-coverage"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_line=1,
+        payload=payload,
+    )
+
+
+def _query_parquet(
+    path: Path,
+    columns: str,
+    *,
+    order_by: str | None = None,
+) -> list[tuple[object, ...]]:
+    query = f"select {columns} from read_parquet('{path.as_posix()}')"
+    if order_by is not None:
+        query = f"{query} order by {order_by}"
+    return duckdb.sql(query).fetchall()

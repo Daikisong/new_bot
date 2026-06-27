@@ -1738,6 +1738,37 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     )
 
 
+def test_coverage_audit_requires_record_coverage_projection_columns(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    WarehouseStore(tmp_path).rebuild_all()
+    WarehouseStore(tmp_path).write_empty("record_coverage.parquet")
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["warehouse_projection_synced"] is False
+    assert audit["warehouse_missing_columns"] == {
+        "record_coverage.parquet": [
+            "episode_id",
+            "record_type",
+            "evidence_phase",
+            "training_target",
+            "record_count",
+            "training_eligible_record_count",
+            "ineligible_record_count",
+            "audit_only_record_count",
+        ]
+    }
+    assert (
+        "warehouse: record_coverage.parquet missing required columns: "
+        "episode_id, record_type, evidence_phase, training_target, record_count, "
+        "training_eligible_record_count, ineligible_record_count, audit_only_record_count"
+    ) in audit["findings"]
+
+
 def test_coverage_audit_requires_accepted_episode_projection_counts(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

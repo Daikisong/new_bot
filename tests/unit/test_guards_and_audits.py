@@ -4015,6 +4015,60 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "future record: REC-sweep-future"
     ) in failed_future_manifest_ids["findings"]
 
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "mode": "exhaustive",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "brain_version": "brain-linked",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "swept_episode_ids": ["EP-sweep-1", "EP-sweep-2"],
+            "memory_sweep_artifacts": [sweep_ref],
+            "memory_sweep_artifact_hashes": {sweep_ref: file_sha256(sweep_path)},
+            "memory_sweep_shard_count": 1,
+            "memory_sweep_cache_hits": 0,
+            "accepted_record_count": 1,
+            "available_record_count": 2,
+            "available_record_ids": ["REC-sweep-1"],
+            "training_eligible_available_record_count": 0,
+            "training_eligible_available_record_ids": ["REC-sweep-1"],
+            "swept_record_count": 2,
+            "swept_record_ids": ["REC-sweep-1"],
+            "record_sweep_artifacts": [record_sweep_ref],
+            "record_sweep_artifact_hashes": {
+                record_sweep_ref: file_sha256(record_sweep_path),
+            },
+            "record_sweep_shard_count": 1,
+            "record_sweep_cache_hits": 0,
+        },
+    )
+
+    failed_record_counts = audit_provenance(tmp_path)
+
+    assert not failed_record_counts["passed"]
+    count_findings = failed_record_counts["findings"]
+    assert (
+        "2030-01-10.json: context manifest available_record_count "
+        "does not match available_record_ids"
+    ) in count_findings
+    assert (
+        "2030-01-10.json: context manifest "
+        "training_eligible_available_record_count does not match "
+        "training_eligible_available_record_ids"
+    ) in count_findings
+    assert (
+        "2030-01-10.json: context manifest swept_record_count "
+        "does not match swept_record_ids"
+    ) in count_findings
+    assert (
+        "2030-01-10.json: context manifest accepted_record_count "
+        "does not match record store"
+    ) in count_findings
+
 
 def test_provenance_audit_verifies_sealed_blind_prediction_hash(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()

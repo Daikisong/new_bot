@@ -168,6 +168,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
             _check_manifest_context_file_hashes(root, path, manifest, findings)
             _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
+            _check_manifest_record_count_contract(root, path, manifest, findings)
             _check_manifest_record_id_availability(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
             _check_retrieval_miss_open_world_outputs(path, prediction, manifest, findings)
@@ -2974,6 +2975,149 @@ def _parse_context_cutoff_at(value: object) -> datetime | None:
         return None
 
 
+def _check_manifest_record_count_contract(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    count_fields = {
+        "available_record_count": "available_record_ids",
+        "training_eligible_available_record_count": (
+            "training_eligible_available_record_ids"
+        ),
+        "swept_record_count": "swept_record_ids",
+    }
+    for count_field, ids_field in count_fields.items():
+        if count_field not in manifest or ids_field not in manifest:
+            continue
+        expected_count = _non_bool_int(manifest.get(count_field))
+        record_ids = _manifest_string_list_or_finding(
+            prediction_path,
+            manifest,
+            ids_field,
+            findings,
+        )
+        if expected_count is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest {count_field} is invalid"
+            )
+            continue
+        if record_ids is None:
+            continue
+        if expected_count != len(record_ids):
+            findings.append(
+                f"{prediction_path.name}: context manifest {count_field} "
+                f"does not match {ids_field}"
+            )
+
+    if "accepted_record_count" in manifest:
+        accepted_record_count = _non_bool_int(manifest.get("accepted_record_count"))
+        if accepted_record_count is None:
+            findings.append(
+                f"{prediction_path.name}: context manifest accepted_record_count is invalid"
+            )
+        else:
+            record_store_count = len(BrainRecordStore(root).list_records())
+            if accepted_record_count != record_store_count:
+                findings.append(
+                    f"{prediction_path.name}: context manifest accepted_record_count "
+                    "does not match record store"
+                )
+
+    available_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "available_record_ids",
+        findings,
+    )
+    training_eligible_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "training_eligible_available_record_ids",
+        findings,
+    )
+    swept_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "swept_record_ids",
+        findings,
+    )
+    retrieved_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "retrieved_record_ids",
+        findings,
+    )
+    counterexample_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "counterexample_record_ids",
+        findings,
+    )
+    if available_record_ids is not None and training_eligible_record_ids is not None:
+        missing = sorted(set(training_eligible_record_ids) - set(available_record_ids))
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                "training_eligible_available_record_ids are not a subset of "
+                "available_record_ids"
+            )
+    if available_record_ids is not None and retrieved_record_ids is not None:
+        missing = sorted(set(retrieved_record_ids) - set(available_record_ids))
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest retrieved_record_ids "
+                "are not a subset of available_record_ids"
+            )
+    if available_record_ids is not None and counterexample_record_ids is not None:
+        missing = sorted(set(counterexample_record_ids) - set(available_record_ids))
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest counterexample_record_ids "
+                "are not a subset of available_record_ids"
+            )
+    if (
+        manifest.get("mode") in {"exhaustive", "brain"}
+        and available_record_ids is not None
+        and swept_record_ids is not None
+        and Counter(available_record_ids) != Counter(swept_record_ids)
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest swept_record_ids "
+            "do not match available_record_ids"
+        )
+
+
+def _optional_manifest_string_list(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> list[str] | None:
+    if field not in manifest:
+        return None
+    return _manifest_string_list_or_finding(prediction_path, manifest, field, findings)
+
+
+def _manifest_string_list_or_finding(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> list[str] | None:
+    value = manifest.get(field)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
+        return None
+    duplicates = _duplicate_strings(value)
+    if duplicates:
+        findings.append(
+            f"{prediction_path.name}: context manifest {field} contains duplicate IDs"
+        )
+    return value
+
+
 def _check_manifest_record_id_availability(
     root: Path,
     prediction_path: Path,
@@ -4956,6 +5100,16 @@ def _unique_strings(values: Any) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _duplicate_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return sorted(duplicates)
 
 
 def _same_unique_string_set(left: Any, right: Any) -> bool:

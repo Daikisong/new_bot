@@ -14,7 +14,11 @@ from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import read_json
-from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
+from news_scalping_lab.warehouse import (
+    EXPECTED_WAREHOUSE_FILES,
+    RECORD_COVERAGE_COLUMNS,
+    WarehouseStore,
+)
 
 
 def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
@@ -62,12 +66,14 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         for filename in EXPECTED_WAREHOUSE_FILES
         if isinstance(warehouse_counts.get(filename), str)
     ]
+    warehouse_missing_columns = _warehouse_missing_columns(root)
     vector_index_current = vector_index.get("status") == "current"
     warehouse_synced = warehouse_research_episode_count == accepted_episode_count
     warehouse_projection_synced = not warehouse_count_mismatches and not (
         warehouse_identity_mismatches
         or warehouse_duplicate_identities
         or warehouse_weight_mismatches
+        or warehouse_missing_columns
     )
     warehouse_required_files_present = (
         not missing_warehouse_files and not unreadable_warehouse_files
@@ -85,6 +91,11 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         findings.append(f"warehouse: missing required parquet file: {filename}")
     for filename in unreadable_warehouse_files:
         findings.append(f"warehouse: unreadable required parquet file: {filename}")
+    for filename, missing_columns in warehouse_missing_columns.items():
+        findings.append(
+            "warehouse: "
+            f"{filename} missing required columns: {', '.join(missing_columns)}"
+        )
     for filename, count_mismatch in warehouse_count_mismatches.items():
         label = warehouse_expected_source_counts[filename]["source_label"]
         findings.append(
@@ -129,6 +140,7 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "warehouse_identity_mismatches": warehouse_identity_mismatches,
         "warehouse_duplicate_identities": warehouse_duplicate_identities,
         "warehouse_weight_mismatches": warehouse_weight_mismatches,
+        "warehouse_missing_columns": warehouse_missing_columns,
         "warehouse_research_episode_count": warehouse_research_episode_count,
         "warehouse_synced": warehouse_synced,
         "warehouse_projection_synced": warehouse_projection_synced,
@@ -137,6 +149,25 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "warehouse_unreadable_files": unreadable_warehouse_files,
         "warehouse_required_files_present": warehouse_required_files_present,
     }
+
+
+def _warehouse_missing_columns(root: Path) -> dict[str, list[str]]:
+    required_columns = {
+        "record_coverage.parquet": list(RECORD_COVERAGE_COLUMNS),
+    }
+    missing: dict[str, list[str]] = {}
+    for filename, expected_columns in required_columns.items():
+        path = root / "warehouse" / filename
+        if not path.exists():
+            continue
+        escaped_path = path.as_posix().replace("'", "''")
+        columns = _warehouse_columns(escaped_path)
+        missing_columns = [
+            column for column in expected_columns if column not in set(columns)
+        ]
+        if missing_columns:
+            missing[filename] = missing_columns
+    return missing
 
 
 def _brain_audit_findings(brain: dict[str, object]) -> list[str]:
@@ -380,9 +411,9 @@ def _warehouse_identity_expectations(
             "source_label": "record provenance links",
         },
         "record_coverage.parquet": {
-            "columns": ("episode_id", "record_type"),
+            "columns": ("episode_id", "record_type", "evidence_phase", "training_target"),
             "expected": _record_coverage_ids(records),
-            "source_label": "episode/type record coverage groups",
+            "source_label": "episode/type/phase/target record coverage groups",
         },
     }
 
@@ -655,10 +686,16 @@ def _record_provenance_ids(records: list[Any]) -> list[str]:
 def _record_coverage_ids(records: list[Any]) -> list[str]:
     return sorted(
         {
-            _identity(record.episode_id, record.record_type)
+            _identity(
+                record.episode_id,
+                record.record_type,
+                record.evidence_phase,
+                getattr(record, "training_target", None) or "UNKNOWN",
+            )
             for record in records
             if isinstance(getattr(record, "episode_id", None), str)
             and isinstance(getattr(record, "record_type", None), str)
+            and isinstance(getattr(record, "evidence_phase", None), str)
         }
     )
 
@@ -723,6 +760,8 @@ def _record_projection_counts(records: list[Any]) -> dict[str, int]:
         (
             str(getattr(record, "episode_id", "")),
             str(getattr(record, "record_type", "")),
+            str(getattr(record, "evidence_phase", "")),
+            str(getattr(record, "training_target", "") or "UNKNOWN"),
         )
         for record in records
     }

@@ -56,6 +56,17 @@ EXPECTED_WAREHOUSE_FILES = (
     "record_coverage.parquet",
 )
 
+RECORD_COVERAGE_COLUMNS = (
+    "episode_id",
+    "record_type",
+    "evidence_phase",
+    "training_target",
+    "record_count",
+    "training_eligible_record_count",
+    "ineligible_record_count",
+    "audit_only_record_count",
+)
+
 _FILTER_VALUE_KEYS = {
     "ticker": "tickers_json",
     "company_name": "company_names_json",
@@ -606,21 +617,42 @@ class WarehouseStore:
         return len(rows)
 
     def write_record_coverage(self, records: list[BrainRecordEnvelope]) -> int:
-        grouped: dict[tuple[str, str], list[BrainRecordEnvelope]] = {}
+        grouped: dict[tuple[str, str, str, str], list[BrainRecordEnvelope]] = {}
         for record in records:
-            grouped.setdefault((record.episode_id, record.record_type), []).append(record)
+            grouped.setdefault(
+                (
+                    record.episode_id,
+                    record.record_type,
+                    record.evidence_phase,
+                    record.training_target or "UNKNOWN",
+                ),
+                [],
+            ).append(record)
         rows = [
             {
                 "episode_id": episode_id,
                 "record_type": record_type,
+                "evidence_phase": evidence_phase,
+                "training_target": training_target,
                 "record_count": len(group_records),
                 "training_eligible_record_count": sum(
                     1 for record in group_records if record.training_eligible
                 ),
+                "ineligible_record_count": sum(
+                    1 for record in group_records if not record.training_eligible
+                ),
+                "audit_only_record_count": sum(
+                    1 for record in group_records if record.evidence_phase == "AUDIT"
+                ),
             }
-            for (episode_id, record_type), group_records in sorted(grouped.items())
+            for (
+                episode_id,
+                record_type,
+                evidence_phase,
+                training_target,
+            ), group_records in sorted(grouped.items())
         ]
-        self._write_rows("record_coverage.parquet", rows)
+        self._write_rows_with_schema("record_coverage.parquet", rows, RECORD_COVERAGE_COLUMNS)
         return len(rows)
 
     def write_empty(self, filename: str) -> None:
@@ -767,6 +799,22 @@ class WarehouseStore:
             pq.write_table(table, path)  # type: ignore[no-untyped-call]
             return
         table = pa.Table.from_pylist(rows)
+        pq.write_table(table, path)  # type: ignore[no-untyped-call]
+
+    def _write_rows_with_schema(
+        self,
+        filename: str,
+        rows: list[dict[str, Any]],
+        columns: tuple[str, ...],
+    ) -> None:
+        if rows:
+            self._write_rows(filename, rows)
+            return
+        path = self.dir / filename
+        table = pa.Table.from_arrays(
+            [pa.array([], type=pa.string()) for _ in columns],
+            names=list(columns),
+        )
         pq.write_table(table, path)  # type: ignore[no-untyped-call]
 
 

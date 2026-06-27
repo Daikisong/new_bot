@@ -1286,6 +1286,32 @@ def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> N
     assert store_report["audit_passed"] is True
     assert store_report["record_store_audit"]["deep"] is True
     assert store_report["record_store_audit"]["passed"] is True
+    coverage_rows = duckdb.sql(
+        "select record_type, evidence_phase, training_target, record_count, "
+        "training_eligible_record_count, ineligible_record_count, audit_only_record_count "
+        f"from read_parquet('{(tmp_path / 'warehouse' / 'record_coverage.parquet').as_posix()}') "
+        "order by record_type"
+    ).fetchall()
+    assert coverage_rows == [
+        (
+            "blind_leader_preference_pair",
+            "POSTMORTEM",
+            "outcome_preferred_candidate",
+            1,
+            1,
+            0,
+            0,
+        ),
+        (
+            "supervised_issuer_day_case",
+            "POSTMORTEM",
+            "issuer_day_price_response",
+            1,
+            1,
+            0,
+            0,
+        ),
+    ]
     sft_rows = _jsonl(sft.path)
     preference_rows = _jsonl(preference.path)
     assert {row["record_id"] for row in sft_rows} == {"BRAIN-SYNTH-ISSUER"}
