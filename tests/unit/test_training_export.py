@@ -1375,6 +1375,53 @@ def test_training_audit_rejects_malformed_sealed_preference_fields(tmp_path) -> 
     ]
 
 
+def test_training_audit_rejects_unsealed_training_eligible_preference_record(
+    tmp_path,
+) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-UNSEALED-PAIR",
+            "blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            training_eligible=True,
+            payload={
+                "blind_pair_id": "PAIR-UNSEALED",
+                "outcome_winner_ticker": "111111",
+                "blind_preference_correct": True,
+            },
+        )
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+
+    manifest = read_json(preference.manifest_path)
+    skipped_by_id = {item["record_id"]: item for item in manifest["skipped_records"]}
+    assert skipped_by_id["BRAIN-UNSEALED-PAIR"]["skip_reasons"] == [
+        "sealed_preference_pair_missing",
+        "record_type_not_selected_for_export_kind",
+    ]
+
+    audit = audit_training_exports(tmp_path)
+    training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
+
+    assert audit["passed"] is False
+    assert (
+        "record-store: training-eligible blind_leader_preference_pair records "
+        "are not sealed: BRAIN-UNSEALED-PAIR"
+        in audit["findings"]
+    )
+    assert training_report["unsealed_training_eligible_preference_record_ids"] == [
+        "BRAIN-UNSEALED-PAIR"
+    ]
+
+
 def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
     store = ResearchStore(tmp_path)
     episode = _accepted_episode().model_copy(

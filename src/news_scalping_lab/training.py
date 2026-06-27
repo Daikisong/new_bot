@@ -90,10 +90,20 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     manifests: dict[str, Any] = {}
     summaries: dict[str, dict[str, Any]] = {}
+    source_records = BrainRecordStore(root).list_records()
     record_store_hashes = {
         record.record_id: record.normalized_payload_sha256
-        for record in BrainRecordStore(root).list_records()
+        for record in source_records
     }
+    unsealed_preference_record_ids = (
+        _unsealed_training_eligible_preference_record_ids(source_records)
+    )
+    if unsealed_preference_record_ids:
+        findings.append(
+            "record-store: training-eligible blind_leader_preference_pair "
+            "records are not sealed: "
+            + ", ".join(unsealed_preference_record_ids)
+        )
     source_record_ids: set[str] = set()
     training_eligible_record_ids: set[str] = set()
     exported_record_ids: set[str] = set()
@@ -195,6 +205,9 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "unique_training_eligible_record_count": len(training_eligible_record_ids),
             "unique_exported_record_count": len(exported_record_ids),
             "unique_skipped_record_count": len(unique_skipped_record_ids),
+            "unsealed_training_eligible_preference_record_ids": (
+                unsealed_preference_record_ids
+            ),
             "unique_source_record_ids": sorted(source_record_ids),
             "unique_training_eligible_record_ids": sorted(training_eligible_record_ids),
             "unique_exported_record_ids": sorted(exported_record_ids),
@@ -1376,6 +1389,18 @@ def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
     ) and bool(rejected)
 
 
+def _unsealed_training_eligible_preference_record_ids(
+    records: list[BrainRecordEnvelope],
+) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if record.training_eligible
+        and record.record_type == "blind_leader_preference_pair"
+        and not _record_has_sealed_preference_pair(record)
+    )
+
+
 def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
     if record.record_type in ERROR_CORRECTION_RECORD_TYPES:
         return _record_error_correction_sft_row(record)
@@ -2024,6 +2049,12 @@ def _skipped_records(
         skip_reasons: list[str] = []
         if not record.training_eligible:
             skip_reasons.append(record.eligibility_reason or "training_eligible=false")
+        if (
+            kind == "preference"
+            and record.record_type == "blind_leader_preference_pair"
+            and not _record_has_sealed_preference_pair(record)
+        ):
+            skip_reasons.append("sealed_preference_pair_missing")
         if not _record_selected_for_kind(kind, record):
             skip_reasons.append("record_type_not_selected_for_export_kind")
         if not skip_reasons:
