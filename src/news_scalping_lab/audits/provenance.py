@@ -6790,6 +6790,7 @@ def _check_session_pack_manifest(
         findings,
     )
     _check_session_pack_omission_report(root, label, manifest_path, manifest, findings)
+    _check_session_pack_record_scope(root, label, manifest, findings)
     _check_session_pack_blocking_contract(
         label,
         manifest,
@@ -6806,7 +6807,7 @@ def _check_session_pack_context_hashes(
     files_field: str,
     hashes_field: str,
     findings: list[str],
-) -> None:
+    ) -> None:
     file_refs = _session_pack_string_list_field(label, manifest, files_field, findings)
     hashes = _session_pack_hash_dict_field(label, manifest, hashes_field, findings)
     if file_refs is None or hashes is None:
@@ -6976,6 +6977,266 @@ def _check_session_pack_omission_report(
         findings.append(f"{label}: session pack omission_report_sha256 mismatch")
 
 
+def _check_session_pack_record_scope(
+    root: Path,
+    label: str,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    record_scope_fields = {
+        "accepted_record_count",
+        "available_record_count",
+        "available_record_ids",
+        "training_eligible_available_record_count",
+        "training_eligible_available_record_ids",
+        "included_record_count",
+        "included_record_ids",
+        "budget_omitted_record_count",
+        "budget_omitted_record_ids",
+        "unavailable_record_count",
+        "unavailable_record_ids",
+        "omitted_record_ids",
+        "available_record_coverage_complete",
+    }
+    records = BrainRecordStore(root).list_records()
+    if not records and not any(field in manifest for field in record_scope_fields):
+        return
+    records_by_id = {record.record_id: record for record in records}
+    record_ids = set(records_by_id)
+    cutoff_at = _parse_context_cutoff_at(manifest.get("cutoff_at"))
+    if cutoff_at is None:
+        available_ids = record_ids
+        unavailable_ids: set[str] = set()
+    else:
+        available_ids = {
+            record.record_id
+            for record in records
+            if is_available_as_of(record.available_from, cutoff_at)
+        }
+        unavailable_ids = record_ids - available_ids
+    training_eligible_available_ids = {
+        record.record_id
+        for record in records
+        if record.training_eligible and record.record_id in available_ids
+    }
+
+    accepted_count = _non_bool_int(manifest.get("accepted_record_count"))
+    if accepted_count is None:
+        findings.append(f"{label}: session pack accepted_record_count invalid")
+    elif accepted_count != len(record_ids):
+        findings.append(f"{label}: session pack accepted_record_count mismatch")
+
+    available_record_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "available_record_ids",
+        findings,
+    )
+    if available_record_ids is not None and set(available_record_ids) != available_ids:
+        findings.append(f"{label}: session pack available_record_ids mismatch")
+    _check_session_pack_record_count(
+        label,
+        manifest,
+        count_field="available_record_count",
+        ids=available_record_ids,
+        expected_count=len(available_ids),
+        findings=findings,
+    )
+
+    training_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "training_eligible_available_record_ids",
+        findings,
+    )
+    if training_ids is not None:
+        training_set = set(training_ids)
+        if training_set != training_eligible_available_ids:
+            findings.append(
+                f"{label}: session pack "
+                "training_eligible_available_record_ids mismatch"
+            )
+        if available_record_ids is not None and not training_set <= set(
+            available_record_ids
+        ):
+            findings.append(
+                f"{label}: session pack training_eligible_available_record_ids "
+                "are not a subset of available_record_ids"
+            )
+    _check_session_pack_record_count(
+        label,
+        manifest,
+        count_field="training_eligible_available_record_count",
+        ids=training_ids,
+        expected_count=len(training_eligible_available_ids),
+        findings=findings,
+    )
+
+    included_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "included_record_ids",
+        findings,
+    )
+    if included_ids is not None:
+        included_set = set(included_ids)
+        _check_unknown_session_pack_record_ids(
+            label,
+            field="included_record_ids",
+            record_ids=included_set,
+            known_record_ids=record_ids,
+            findings=findings,
+        )
+        if not included_set <= available_ids:
+            findings.append(
+                f"{label}: session pack included_record_ids are not a subset of "
+                "available_record_ids"
+            )
+    _check_session_pack_record_count(
+        label,
+        manifest,
+        count_field="included_record_count",
+        ids=included_ids,
+        expected_count=len(included_ids or []),
+        findings=findings,
+    )
+
+    budget_omitted_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "budget_omitted_record_ids",
+        findings,
+    )
+    if budget_omitted_ids is not None:
+        budget_omitted_set = set(budget_omitted_ids)
+        _check_unknown_session_pack_record_ids(
+            label,
+            field="budget_omitted_record_ids",
+            record_ids=budget_omitted_set,
+            known_record_ids=record_ids,
+            findings=findings,
+        )
+        if not budget_omitted_set <= available_ids:
+            findings.append(
+                f"{label}: session pack budget_omitted_record_ids are not a subset "
+                "of available_record_ids"
+            )
+    _check_session_pack_record_count(
+        label,
+        manifest,
+        count_field="budget_omitted_record_count",
+        ids=budget_omitted_ids,
+        expected_count=len(budget_omitted_ids or []),
+        findings=findings,
+    )
+
+    unavailable_record_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "unavailable_record_ids",
+        findings,
+    )
+    if (
+        unavailable_record_ids is not None
+        and set(unavailable_record_ids) != unavailable_ids
+    ):
+        findings.append(f"{label}: session pack unavailable_record_ids mismatch")
+    _check_session_pack_record_count(
+        label,
+        manifest,
+        count_field="unavailable_record_count",
+        ids=unavailable_record_ids,
+        expected_count=len(unavailable_ids),
+        findings=findings,
+    )
+
+    omitted_record_ids = _session_pack_required_unique_ids(
+        label,
+        manifest,
+        "omitted_record_ids",
+        findings,
+    )
+    if omitted_record_ids is not None:
+        omitted_set = set(omitted_record_ids)
+        _check_unknown_session_pack_record_ids(
+            label,
+            field="omitted_record_ids",
+            record_ids=omitted_set,
+            known_record_ids=record_ids,
+            findings=findings,
+        )
+        if included_ids is not None and set(included_ids) & omitted_set:
+            findings.append(f"{label}: session pack included omitted record overlap")
+
+    if included_ids is not None and budget_omitted_ids is not None:
+        expected_budget_omitted = available_ids - set(included_ids)
+        if set(budget_omitted_ids) != expected_budget_omitted:
+            findings.append(f"{label}: session pack budget_omitted_record_ids mismatch")
+        coverage_complete = manifest.get("available_record_coverage_complete")
+        if not isinstance(coverage_complete, bool):
+            findings.append(
+                f"{label}: session pack available_record_coverage_complete invalid"
+            )
+        elif coverage_complete != (not expected_budget_omitted):
+            findings.append(
+                f"{label}: session pack available_record_coverage_complete mismatch"
+            )
+    if omitted_record_ids is not None and budget_omitted_ids is not None:
+        expected_omitted = set(budget_omitted_ids) | unavailable_ids
+        if set(omitted_record_ids) != expected_omitted:
+            findings.append(f"{label}: session pack omitted_record_ids mismatch")
+
+
+def _check_session_pack_record_count(
+    label: str,
+    manifest: dict[str, Any],
+    *,
+    count_field: str,
+    ids: list[str] | None,
+    expected_count: int,
+    findings: list[str],
+) -> None:
+    value = _non_bool_int(manifest.get(count_field))
+    if value is None:
+        findings.append(f"{label}: session pack {count_field} invalid")
+        return
+    if value != expected_count:
+        findings.append(f"{label}: session pack {count_field} mismatch")
+    if ids is not None and value != len(ids):
+        findings.append(f"{label}: session pack {count_field} does not match IDs")
+
+
+def _session_pack_required_unique_ids(
+    label: str,
+    manifest: dict[str, Any],
+    field: str,
+    findings: list[str],
+) -> list[str] | None:
+    ids = _session_pack_string_list_field(label, manifest, field, findings)
+    if ids is None:
+        return None
+    duplicates = _duplicate_strings(ids)
+    if duplicates:
+        findings.append(f"{label}: session pack {field} duplicate")
+    return ids
+
+
+def _check_unknown_session_pack_record_ids(
+    label: str,
+    *,
+    field: str,
+    record_ids: set[str],
+    known_record_ids: set[str],
+    findings: list[str],
+) -> None:
+    unknown = sorted(record_ids - known_record_ids)
+    if unknown:
+        findings.append(
+            f"{label}: session pack {field} references unknown records: "
+            + ", ".join(unknown)
+        )
+
+
 def _check_session_pack_blocking_contract(
     label: str,
     manifest: dict[str, Any],
@@ -7035,6 +7296,32 @@ def _check_session_pack_blocking_contract(
             findings,
         )
 
+    budget_omitted_record_ids = _session_pack_optional_string_list(
+        label,
+        manifest,
+        "budget_omitted_record_ids",
+        findings,
+    )
+    if budget_omitted_record_ids:
+        if blocked is not True:
+            findings.append(
+                f"{label}: session pack record budget omissions without blocked"
+            )
+        _require_session_pack_error(
+            label,
+            errors,
+            "session pack omitted available records due to token budget",
+            "record budget omission",
+            findings,
+        )
+        _require_session_pack_truncation(
+            label,
+            truncation_reasons,
+            "session_pack_record_token_budget_exceeded",
+            "record budget omission",
+            findings,
+        )
+
     unavailable_ids = _session_pack_optional_string_list(
         label,
         manifest,
@@ -7054,6 +7341,28 @@ def _check_session_pack_blocking_contract(
             truncation_reasons,
             "episode_available_from_after_cutoff",
             "future-unavailable episode",
+            findings,
+        )
+
+    unavailable_record_ids = _session_pack_optional_string_list(
+        label,
+        manifest,
+        "unavailable_record_ids",
+        findings,
+    )
+    if unavailable_record_ids:
+        _require_session_pack_error(
+            label,
+            errors,
+            "session pack excluded future-unavailable records",
+            "future-unavailable record",
+            findings,
+        )
+        _require_session_pack_truncation(
+            label,
+            truncation_reasons,
+            "record_available_from_after_cutoff",
+            "future-unavailable record",
             findings,
         )
 

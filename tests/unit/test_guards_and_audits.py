@@ -7157,6 +7157,139 @@ def test_provenance_audit_checks_session_pack_manifest_integrity(
     )
 
 
+def test_provenance_audit_checks_session_pack_record_scope(tmp_path: Path) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    available_record = _brain_record_for_sweep_audit(
+        "REC-pack-provenance-available",
+        episode_id="EP-pack-provenance-records",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    future_record = _brain_record_for_sweep_audit(
+        "REC-pack-provenance-future",
+        episode_id="EP-pack-provenance-records",
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    _store_brain_records_for_sweep_audit(tmp_path, [available_record, future_record])
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "record_memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    for file_name in pack_files:
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    (pack_dir / "record_memory_cases.md").write_text(
+        "REC-pack-provenance-available\n",
+        encoding="utf-8",
+    )
+    omission_report = pack_dir / "omission_report.md"
+    omission_report.write_text("Future-unavailable records are listed.\n", encoding="utf-8")
+
+    def pack_manifest_fields() -> dict[str, object]:
+        pack_hashes = {file_name: file_sha256(pack_dir / file_name) for file_name in pack_files}
+        token_counts = {
+            file_name: max(1, len((pack_dir / file_name).read_text(encoding="utf-8")) // 4)
+            for file_name in pack_files
+        }
+        return {
+            "pack_files": list(pack_files),
+            "pack_file_count": len(pack_files),
+            "pack_file_hashes": pack_hashes,
+            "pack_sha256": sha256_text(
+                "\n".join(pack_hashes[file_name] for file_name in pack_files)
+            ),
+            "omission_report_file": "omission_report.md",
+            "omission_report_sha256": file_sha256(omission_report),
+            "token_budget": 10_000,
+            "token_counts": token_counts,
+            "token_count_total": sum(token_counts.values()),
+        }
+
+    manifest = {
+        "schema_version": "nslab.session_pack_manifest.v1",
+        "blocked": False,
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "as_of": "2030-01-10T08:59:59+09:00",
+        "mode": "brain",
+        "brain_version": "brain-asof-record-scope",
+        "brain_files": [],
+        "brain_file_hashes": {},
+        "shard_brain_files": [],
+        "shard_brain_file_hashes": {},
+        "shard_brain_count": 0,
+        "accepted_record_count": 2,
+        "available_record_count": 1,
+        "available_record_ids": ["REC-pack-provenance-available"],
+        "training_eligible_available_record_count": 1,
+        "training_eligible_available_record_ids": ["REC-pack-provenance-available"],
+        "included_record_count": 1,
+        "included_record_ids": ["REC-pack-provenance-available"],
+        "budget_omitted_record_count": 0,
+        "budget_omitted_record_ids": [],
+        "available_record_coverage_complete": True,
+        "unavailable_record_count": 1,
+        "unavailable_record_ids": ["REC-pack-provenance-future"],
+        "omitted_record_ids": ["REC-pack-provenance-future"],
+        "truncations": [
+            {
+                "artifact": "record_memory_cases.md",
+                "reason": "record_available_from_after_cutoff",
+                "omitted_record_ids": ["REC-pack-provenance-future"],
+            }
+        ],
+        "errors": ["session pack excluded future-unavailable records"],
+        **pack_manifest_fields(),
+    }
+    write_json(pack_dir / "manifest.json", manifest)
+
+    clean = audit_provenance(tmp_path)
+
+    assert clean["passed"], clean["findings"]
+
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            **manifest,
+            "accepted_record_count": 1,
+            "available_record_ids": ["REC-pack-provenance-future"],
+            "included_record_ids": [],
+            "budget_omitted_record_ids": [],
+            "omitted_record_ids": [],
+            "errors": [],
+            "truncations": [],
+            **pack_manifest_fields(),
+        },
+    )
+
+    failed = audit_provenance(tmp_path)
+    label = "session_packs/2030-01-10/manifest.json"
+
+    assert not failed["passed"]
+    assert f"{label}: session pack accepted_record_count mismatch" in failed["findings"]
+    assert f"{label}: session pack available_record_ids mismatch" in failed["findings"]
+    assert (
+        f"{label}: session pack budget_omitted_record_ids mismatch"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack omitted_record_ids mismatch"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing future-unavailable record error"
+        in failed["findings"]
+    )
+    assert (
+        f"{label}: session pack missing future-unavailable record truncation"
+        in failed["findings"]
+    )
+
+
 def test_provenance_audit_flags_training_export_manifest_mismatch(tmp_path: Path) -> None:
     export_dir = tmp_path / "training_exports" / "sft"
     export_dir.mkdir(parents=True)
