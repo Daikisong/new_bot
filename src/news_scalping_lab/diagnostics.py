@@ -3712,9 +3712,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unexpected_available_manifest_kinds": [],
             "unexpected_missing_manifest_kinds": [],
             "weight_validation_statuses": {},
+            "expected_weight_validation_statuses": {},
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
             "invalid_weight_validation_entries": [],
+            "weight_validation_status_mismatches": {},
             "missing_weight_diagnostic_fields": [],
             "invalid_weight_diagnostic_fields": [],
             "weight_diagnostic_count_mismatches": [],
@@ -3800,9 +3802,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unexpected_available_manifest_kinds": [],
             "unexpected_missing_manifest_kinds": [],
             "weight_validation_statuses": {},
+            "expected_weight_validation_statuses": {},
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
             "invalid_weight_validation_entries": [],
+            "weight_validation_status_mismatches": {},
             "missing_weight_diagnostic_fields": [],
             "invalid_weight_diagnostic_fields": [],
             "weight_diagnostic_count_mismatches": [],
@@ -4299,9 +4303,13 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         )
 
     raw_weight_statuses = diagnostics.get("weight_validation_statuses")
+    expected_weight_statuses = _expected_training_export_weight_statuses_from_manifests(
+        audit.get("manifests")
+    )
     missing_weight_validation_kinds: list[str] = []
     unexpected_weight_validation_kinds: list[str] = []
     invalid_weight_validation_entries: list[str] = []
+    weight_validation_status_mismatches: dict[str, dict[str, str | None]] = {}
     if not isinstance(raw_weight_statuses, dict):
         weight_statuses: dict[str, str] = {}
         if diagnostics:
@@ -4339,6 +4347,16 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             findings.append(
                 "training export weight validation statuses include unexpected kinds: "
                 + ", ".join(unexpected_weight_validation_kinds)
+            )
+        weight_validation_status_mismatches = {
+            kind: {"expected": expected_status, "observed": weight_statuses.get(kind)}
+            for kind, expected_status in sorted(expected_weight_statuses.items())
+            if kind in weight_statuses and weight_statuses[kind] != expected_status
+        }
+        if weight_validation_status_mismatches:
+            findings.append(
+                "training export weight validation statuses do not match manifests: "
+                + ", ".join(weight_validation_status_mismatches)
             )
         failed_weights = [
             kind
@@ -4529,9 +4547,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unexpected_available_manifest_kinds": unexpected_available_manifest_kinds,
         "unexpected_missing_manifest_kinds": unexpected_missing_manifest_kinds,
         "weight_validation_statuses": weight_statuses,
+        "expected_weight_validation_statuses": expected_weight_statuses,
         "missing_weight_validation_kinds": missing_weight_validation_kinds,
         "unexpected_weight_validation_kinds": unexpected_weight_validation_kinds,
         "invalid_weight_validation_entries": invalid_weight_validation_entries,
+        "weight_validation_status_mismatches": weight_validation_status_mismatches,
         "missing_weight_diagnostic_fields": missing_weight_diagnostic_fields,
         "invalid_weight_diagnostic_fields": invalid_weight_diagnostic_fields,
         "weight_diagnostic_count_mismatches": weight_diagnostic_count_mismatches,
@@ -7723,6 +7743,22 @@ def _expected_training_export_counts_from_manifests(
             total += value
         if complete:
             expected[output_field] = total
+    return expected
+
+
+def _expected_training_export_weight_statuses_from_manifests(
+    manifests: object,
+) -> dict[str, str]:
+    if not isinstance(manifests, dict):
+        return {}
+    expected: dict[str, str] = {}
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            continue
+        status = manifest.get("weight_validation_status")
+        if isinstance(status, str) and status:
+            expected[kind] = status
     return expected
 
 
