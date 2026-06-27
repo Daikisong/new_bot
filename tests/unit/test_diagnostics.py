@@ -1626,6 +1626,7 @@ def test_production_readiness_rejects_mock_web_evidence_artifacts(
             "run_id": "RUN-web",
             "web_sources": ["WEB-mock"],
             "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
         },
     )
     report = {
@@ -1688,6 +1689,7 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
             "run_id": "RUN-web",
             "web_sources": ["WEB-live"],
             "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
         },
     )
     report = {
@@ -1705,10 +1707,82 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
 
     assert production["web_evidence"]["passed"] is True
     assert production["web_evidence"]["checked_manifest_count"] == 1
+    assert production["web_evidence"]["checked_artifact_reference_count"] == 1
     assert production["web_evidence"]["checked_artifact_count"] == 1
+    assert production["web_evidence"]["missing_artifact_hash_count"] == 0
+    assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 0
     assert production["web_evidence"]["mock_web_artifact_count"] == 0
     assert not any(
         finding.startswith("web_evidence:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_web_evidence_artifact_sha_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "source_id": "WEB-live",
+                "url": "https://example.test/news",
+                "source_url": "https://example.test/news",
+                "title": "live web evidence",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-live"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": "0" * 64,
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["checked_manifest_count"] == 1
+    assert production["web_evidence"]["checked_artifact_reference_count"] == 1
+    assert production["web_evidence"]["checked_artifact_count"] == 1
+    assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 1
+    assert production["web_evidence"]["artifact_sha256_mismatches"] == [
+        {
+            "manifest": "runs/manifests/RUN-web.json",
+            "artifact_field": "web_source_artifact",
+            "sha_field": "web_source_sha256",
+            "artifact": "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl",
+            "expected_sha256": "0" * 64,
+            "observed_sha256": file_sha256(web_source_path),
+        }
+    ]
+    assert (
+        "web_evidence: web evidence artifact sha256 mismatch: "
+        "runs/manifests/RUN-web.json web_source_sha256 for "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl"
+        in production["findings"]
     )
 
 

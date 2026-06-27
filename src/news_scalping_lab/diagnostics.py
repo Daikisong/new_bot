@@ -68,6 +68,10 @@ PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS = (
     "source_ledger_artifact",
     "final_synthesis_context_artifact",
 )
+PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS = {
+    field: field.removesuffix("_artifact") + "_sha256"
+    for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS
+}
 
 
 def production_readiness_report(
@@ -828,16 +832,68 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
     artifact_paths: set[Path] = set()
     unreadable_manifests: list[str] = []
+    invalid_artifact_refs: list[dict[str, Any]] = []
+    missing_artifacts: list[dict[str, Any]] = []
+    missing_artifact_hashes: list[dict[str, Any]] = []
+    artifact_hash_mismatches: list[dict[str, Any]] = []
+    checked_artifact_refs = 0
     for manifest_path in manifest_paths:
+        manifest_relative_path = relative_to_root(manifest_path, root)
         try:
             manifest = _read_json_object(manifest_path)
         except ValueError:
-            unreadable_manifests.append(relative_to_root(manifest_path, root))
+            unreadable_manifests.append(manifest_relative_path)
             continue
         for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS:
-            artifact_path = _project_relative_artifact_path(root, manifest.get(field))
-            if artifact_path is not None and artifact_path.exists() and artifact_path.is_file():
-                artifact_paths.add(artifact_path)
+            artifact_ref = manifest.get(field)
+            if not isinstance(artifact_ref, str) or not artifact_ref:
+                continue
+            checked_artifact_refs += 1
+            artifact_path = _project_relative_artifact_path(root, artifact_ref)
+            if artifact_path is None:
+                invalid_artifact_refs.append(
+                    {
+                        "manifest": manifest_relative_path,
+                        "artifact_field": field,
+                        "artifact": artifact_ref,
+                    }
+                )
+                continue
+            relative_artifact_path = relative_to_root(artifact_path, root)
+            if not artifact_path.exists() or not artifact_path.is_file():
+                missing_artifacts.append(
+                    {
+                        "manifest": manifest_relative_path,
+                        "artifact_field": field,
+                        "artifact": relative_artifact_path,
+                    }
+                )
+                continue
+            artifact_paths.add(artifact_path)
+            sha_field = PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS[field]
+            expected_sha = manifest.get(sha_field)
+            if not isinstance(expected_sha, str) or not expected_sha:
+                missing_artifact_hashes.append(
+                    {
+                        "manifest": manifest_relative_path,
+                        "artifact_field": field,
+                        "sha_field": sha_field,
+                        "artifact": relative_artifact_path,
+                    }
+                )
+                continue
+            observed_sha = file_sha256(artifact_path)
+            if observed_sha != expected_sha:
+                artifact_hash_mismatches.append(
+                    {
+                        "manifest": manifest_relative_path,
+                        "artifact_field": field,
+                        "sha_field": sha_field,
+                        "artifact": relative_artifact_path,
+                        "expected_sha256": expected_sha,
+                        "observed_sha256": observed_sha,
+                    }
+                )
 
     mock_artifacts: list[dict[str, Any]] = []
     unreadable_artifacts: list[str] = []
@@ -859,6 +915,26 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     for path in unreadable_manifests:
         findings.append(f"context manifest is unreadable: {path}")
+    for ref in invalid_artifact_refs:
+        findings.append(
+            "web evidence artifact reference is invalid: "
+            f"{ref['manifest']} {ref['artifact_field']}={ref['artifact']}"
+        )
+    for artifact in missing_artifacts:
+        findings.append(
+            f"web evidence artifact is missing: {artifact['manifest']} "
+            f"{artifact['artifact_field']}={artifact['artifact']}"
+        )
+    for artifact in missing_artifact_hashes:
+        findings.append(
+            f"web evidence artifact hash is missing: {artifact['manifest']} "
+            f"{artifact['sha_field']} for {artifact['artifact']}"
+        )
+    for artifact in artifact_hash_mismatches:
+        findings.append(
+            f"web evidence artifact sha256 mismatch: {artifact['manifest']} "
+            f"{artifact['sha_field']} for {artifact['artifact']}"
+        )
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for artifact in mock_artifacts:
@@ -874,9 +950,18 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "finding_count": len(findings),
         "findings": findings,
         "checked_manifest_count": len(manifest_paths),
+        "checked_artifact_reference_count": checked_artifact_refs,
         "checked_artifact_count": len(artifact_paths),
         "unreadable_manifest_count": len(unreadable_manifests),
         "unreadable_manifests": unreadable_manifests,
+        "invalid_artifact_ref_count": len(invalid_artifact_refs),
+        "invalid_artifact_refs": invalid_artifact_refs,
+        "missing_artifact_count": len(missing_artifacts),
+        "missing_artifacts": missing_artifacts,
+        "missing_artifact_hash_count": len(missing_artifact_hashes),
+        "missing_artifact_hashes": missing_artifact_hashes,
+        "artifact_sha256_mismatch_count": len(artifact_hash_mismatches),
+        "artifact_sha256_mismatches": artifact_hash_mismatches,
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
         "mock_web_artifact_count": len(mock_artifacts),
