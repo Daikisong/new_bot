@@ -16,7 +16,7 @@ from news_scalping_lab.diagnostics import (
     production_readiness_report,
     real_bundle_smoke_report,
 )
-from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
@@ -2407,10 +2407,7 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
             },
         },
     )
-    (current / "compiled_claims.jsonl").write_text(
-        json.dumps({"claim_id": "CC-production"}) + "\n",
-        encoding="utf-8",
-    )
+    _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -2430,6 +2427,88 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     assert not any(
         finding.startswith("brain: llm-full") or finding.startswith("brain: compiled claims")
         for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_invalid_compiled_claim_rows(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        {
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "brain_version": "brain-production",
+            "provider": "openai",
+            "model": "gpt-production",
+            "source_record_count": 1,
+            "compiled_claim_count": 1,
+            "record_shard_count": 1,
+            "category_count": 9,
+            "llm_generation_count": 19,
+        },
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        json.dumps({"claim_id": "CC-production"}) + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["compiled_claim_jsonl_count"] == 1
+    assert production["llm_full_brain"]["compiled_claim_valid_count"] == 0
+    assert production["llm_full_brain"]["compiled_claim_invalid_line_count"] == 1
+    assert (
+        "brain: llm-full compiled claim count does not match valid JSONL claims"
+        in production["findings"]
+    )
+    assert (
+        "brain: compiled claims JSONL has invalid compiled claim rows"
+        in production["findings"]
     )
 
 
@@ -2476,10 +2555,7 @@ def test_production_readiness_rejects_all_cached_llm_full_compile(
             },
         },
     )
-    (current / "compiled_claims.jsonl").write_text(
-        json.dumps({"claim_id": "CC-production"}) + "\n",
-        encoding="utf-8",
-    )
+    _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -2553,10 +2629,7 @@ def test_production_readiness_rejects_llm_full_model_mismatch(
             },
         },
     )
-    (current / "compiled_claims.jsonl").write_text(
-        json.dumps({"claim_id": "CC-production"}) + "\n",
-        encoding="utf-8",
-    )
+    _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -2630,10 +2703,7 @@ def test_production_readiness_rejects_llm_full_source_count_gap(
             },
         },
     )
-    (current / "compiled_claims.jsonl").write_text(
-        json.dumps({"claim_id": "CC-production"}) + "\n",
-        encoding="utf-8",
-    )
+    _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -2699,10 +2769,7 @@ def test_production_readiness_rejects_stale_llm_full_compile_evidence(
             },
         },
     )
-    (current / "compiled_claims.jsonl").write_text(
-        json.dumps({"claim_id": "CC-production"}) + "\n",
-        encoding="utf-8",
-    )
+    _write_compiled_claim_fixture(tmp_path)
     report = {
         "api_connections": {
             "openai": {"status": "configured_not_called"},
@@ -4570,6 +4637,33 @@ def _write_semantic_index_fixture(
         "source_brain_record_count": len(record_ids),
         "brain_record_count": len(record_ids),
     }
+
+
+def _write_compiled_claim_fixture(
+    root: Path,
+    *,
+    claim_id: str = "CC-production",
+) -> None:
+    current = root / "brain" / "current"
+    current.mkdir(parents=True, exist_ok=True)
+    claim = CompiledBrainClaim(
+        claim_id=claim_id,
+        category="world_model",
+        statement="Production brain claim fixture with record-level support.",
+        mechanism="production readiness fixture",
+        scope="diagnostic fixture",
+        supporting_record_ids=["BRAIN-production"],
+        supporting_episode_ids=["EP-production"],
+        positive_case_count=1,
+        confidence_label="medium",
+        status="supported",
+        available_from=datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST),
+        provenance={"fixture": "production_readiness"},
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
 
 
 def _write_training_record_store(root: Path) -> None:

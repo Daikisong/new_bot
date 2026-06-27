@@ -8,12 +8,15 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import BRAIN_FILES, current_brain_version
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.records.models import CompiledBrainClaim
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -2822,7 +2825,9 @@ def _llm_full_brain_status(
         else None
     )
     compile_run = compile_run if isinstance(compile_run, dict) else None
-    compiled_claim_count = _jsonl_line_count(compiled_claims_path)
+    compiled_claim_stats = _compiled_claim_file_stats(compiled_claims_path)
+    compiled_claim_count = compiled_claim_stats["line_count"]
+    valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
     status = {
         "schema_version": "nslab.production_llm_full_brain.v1",
@@ -2844,6 +2849,11 @@ def _llm_full_brain_status(
         ),
         "compiled_claims_exists": compiled_claims_path.exists(),
         "compiled_claim_jsonl_count": compiled_claim_count,
+        "compiled_claim_valid_count": valid_compiled_claim_count,
+        "compiled_claim_invalid_line_count": compiled_claim_stats[
+            "invalid_line_count"
+        ],
+        "duplicate_compiled_claim_ids": compiled_claim_stats["duplicate_claim_ids"],
         "compile_report_path": relative_to_root(
             compile_report_path,
             settings.project_root,
@@ -2925,8 +2935,10 @@ def _llm_full_brain_status(
         manifest_claim_count = status["compiled_claim_count"]
         if not isinstance(manifest_claim_count, int) or manifest_claim_count <= 0:
             findings.append("llm-full compile manifest has no compiled claims")
-        elif manifest_claim_count != compiled_claim_count:
-            findings.append("llm-full compiled claim count does not match JSONL file")
+        elif manifest_claim_count != valid_compiled_claim_count:
+            findings.append(
+                "llm-full compiled claim count does not match valid JSONL claims"
+            )
         record_shard_count = status["record_shard_count"]
         if not isinstance(record_shard_count, int) or record_shard_count <= 0:
             findings.append("llm-full record shard accounting is missing")
@@ -2977,6 +2989,10 @@ def _llm_full_brain_status(
         findings.append("compiled claims JSONL is missing")
     elif compiled_claim_count <= 0:
         findings.append("compiled claims JSONL is empty")
+    elif compiled_claim_stats["invalid_line_count"] != 0:
+        findings.append("compiled claims JSONL has invalid compiled claim rows")
+    elif compiled_claim_stats["duplicate_claim_ids"]:
+        findings.append("compiled claims JSONL has duplicate claim IDs")
     return {
         **status,
         "passed": not findings,
@@ -3655,6 +3671,45 @@ def _jsonl_line_count(path: Path) -> int:
         return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
     except OSError:
         return 0
+
+
+def _compiled_claim_file_stats(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "exists": False,
+            "line_count": 0,
+            "valid_claim_count": 0,
+            "invalid_line_count": 0,
+            "claim_ids": [],
+            "duplicate_claim_ids": [],
+        }
+    line_count = 0
+    invalid_line_count = 0
+    claim_ids: list[str] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+        invalid_line_count = 1
+    for line in lines:
+        if not line.strip():
+            continue
+        line_count += 1
+        try:
+            payload = json.loads(line)
+            claim = CompiledBrainClaim.model_validate(payload)
+        except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
+            invalid_line_count += 1
+            continue
+        claim_ids.append(claim.claim_id)
+    return {
+        "exists": True,
+        "line_count": line_count,
+        "valid_claim_count": len(claim_ids),
+        "invalid_line_count": invalid_line_count,
+        "claim_ids": claim_ids,
+        "duplicate_claim_ids": _duplicate_strings(claim_ids),
+    }
 
 
 def _record_file_stats(path: Path) -> dict[str, Any]:
