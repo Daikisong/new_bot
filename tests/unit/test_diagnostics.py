@@ -2457,6 +2457,10 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["source_phase_counts"] == training_report[
         "source_phase_counts"
     ]
+    assert production["training_exports"]["source_phase_row_count"] == (
+        training_report["blind_safe_row_count"] + training_report["hindsight_row_count"]
+    )
+    assert production["training_exports"]["invalid_source_phase_labels"] == []
     assert production["training_exports"]["counts_by_record_type"] == {
         "blind_leader_preference_pair": 1,
         "supervised_issuer_day_case": 1,
@@ -2742,6 +2746,65 @@ def test_production_readiness_rejects_invalid_training_export_count_maps(
     )
     assert (
         "training: training export counts_by_record_type does not match current records"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_training_export_phase_count_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["blind_safe_row_count"] = 1
+    tampered_report["hindsight_row_count"] = 1
+    tampered_report["source_phase_counts"] = {
+        "AUDIT_ONLY": 1,
+        "BLIND": 2,
+        "POSTMORTEM": tampered_report["hindsight_row_count"],
+    }
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["invalid_source_phase_labels"] == [
+        "AUDIT_ONLY",
+    ]
+    assert production["training_exports"]["source_phase_row_count"] == (
+        tampered_report["blind_safe_row_count"]
+        + tampered_report["hindsight_row_count"]
+        + 2
+    )
+    assert (
+        "training export source_phase_counts include invalid phases: AUDIT_ONLY"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export source phase row count does not match blind/hindsight row counts"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export BLIND phase count does not match blind-safe row count"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export source_phase_counts include invalid phases: AUDIT_ONLY"
         in production["findings"]
     )
 

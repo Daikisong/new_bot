@@ -3677,6 +3677,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "blind_safe_row_count": None,
             "hindsight_row_count": None,
             "source_phase_counts": {},
+            "source_phase_row_count": None,
+            "invalid_source_phase_labels": [],
             "counts_by_record_type": {},
             "counts_by_training_target": {},
             "record_store_counts_by_record_type": {},
@@ -3733,6 +3735,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "blind_safe_row_count": 0,
             "hindsight_row_count": 0,
             "source_phase_counts": {},
+            "source_phase_row_count": 0,
+            "invalid_source_phase_labels": [],
             "counts_by_record_type": {},
             "counts_by_training_target": {},
             "record_store_counts_by_record_type": {},
@@ -3871,6 +3875,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
+    source_phase_row_count = sum(source_phase_counts.values())
     counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
     counts_by_training_target = _int_dict(
         diagnostics.get("counts_by_training_target")
@@ -3892,6 +3897,37 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_count_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    invalid_source_phase_labels = (
+        sorted(set(source_phase_counts) - {"BLIND", "POSTMORTEM"})
+        if "source_phase_counts" not in invalid_count_fields
+        else []
+    )
+    if invalid_source_phase_labels:
+        findings.append(
+            "training export source_phase_counts include invalid phases: "
+            + ", ".join(invalid_source_phase_labels)
+        )
+    if (
+        diagnostics
+        and "source_phase_counts" not in missing_count_fields
+        and "source_phase_counts" not in invalid_count_fields
+        and blind_safe_row_count is not None
+        and hindsight_row_count is not None
+    ):
+        expected_phase_row_count = blind_safe_row_count + hindsight_row_count
+        if source_phase_row_count != expected_phase_row_count:
+            findings.append(
+                "training export source phase row count does not match "
+                "blind/hindsight row counts"
+            )
+        if source_phase_counts.get("BLIND", 0) != blind_safe_row_count:
+            findings.append(
+                "training export BLIND phase count does not match blind-safe row count"
+            )
+        if source_phase_counts.get("POSTMORTEM", 0) != hindsight_row_count:
+            findings.append(
+                "training export POSTMORTEM phase count does not match hindsight row count"
+            )
 
     if record_store_source_count != source_record_count:
         findings.append(
@@ -4091,6 +4127,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "blind_safe_row_count": blind_safe_row_count,
         "hindsight_row_count": hindsight_row_count,
         "source_phase_counts": source_phase_counts,
+        "source_phase_row_count": source_phase_row_count,
+        "invalid_source_phase_labels": invalid_source_phase_labels,
         "counts_by_record_type": counts_by_record_type,
         "counts_by_training_target": counts_by_training_target,
         "record_store_counts_by_record_type": record_store_counts_by_record_type,
