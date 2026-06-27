@@ -149,6 +149,34 @@ def _manifest_display_name(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _resolve_project_path(root: Path, path_ref: str) -> Path | None:
+    path = Path(path_ref)
+    if path.is_absolute():
+        return None
+    resolved_root = root.resolve()
+    resolved_path = (root / path).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return resolved_path
+
+
+def _resolve_manifest_artifact_path(
+    root: Path,
+    manifest_name: str,
+    field_name: str,
+    relative_path: str,
+    findings: list[str],
+) -> Path | None:
+    path = _resolve_project_path(root, relative_path)
+    if path is None:
+        findings.append(
+            f"{manifest_name}: {field_name} path escapes project root: {relative_path}"
+        )
+    return path
+
+
 def _manifest_trade_date(manifest: dict[object, object]) -> date | None:
     raw = manifest.get("trade_date")
     if isinstance(raw, str):
@@ -538,7 +566,12 @@ def _check_context_files_for_future_episode_ids(
         *_string_list(manifest.get("shard_brain_files")),
         *_string_list(manifest.get("memory_sweep_artifacts")),
     ]:
-        path = root / relative_path
+        path = _resolve_project_path(root, relative_path)
+        if path is None:
+            findings.append(
+                f"{manifest_name}: context file path escapes project root: {relative_path}"
+            )
+            continue
         if not path.exists() or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
@@ -630,7 +663,13 @@ def _read_json_ref(
     findings: list[str],
 ) -> object | None:
     relative_path, marker = _split_artifact_ref(relative_ref)
-    path = root / relative_path
+    path = _resolve_project_path(root, relative_path)
+    if path is None:
+        findings.append(
+            f"{manifest_name}: referenced memory artifact path escapes project root: "
+            f"{relative_ref}"
+        )
+        return None
     if not path.exists():
         findings.append(f"{manifest_name}: referenced memory artifact missing: {relative_ref}")
         return None
@@ -1034,7 +1073,11 @@ def _check_row_disposition(
     relative_path = manifest.get("row_disposition_artifact")
     if not isinstance(relative_path, str):
         return
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, "row_disposition_artifact", relative_path, findings
+    )
+    if path is None:
+        return
     if not path.exists():
         findings.append(f"{manifest_name}: row_disposition_artifact missing: {relative_path}")
         return
@@ -1187,7 +1230,11 @@ def _check_source_ledger(
     relative_path = manifest.get("source_ledger_artifact")
     if not isinstance(relative_path, str):
         return
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, "source_ledger_artifact", relative_path, findings
+    )
+    if path is None:
+        return
     if not path.exists():
         findings.append(f"{manifest_name}: source_ledger_artifact missing: {relative_path}")
         return
@@ -1430,7 +1477,12 @@ def _check_web_source_artifact(
             findings.append(f"{manifest_name}: web_source_artifact missing")
         _check_excluded_web_source_artifact(root, manifest_name, manifest, web_sources, findings)
         return
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, "web_source_artifact", relative_path, findings
+    )
+    if path is None:
+        _check_excluded_web_source_artifact(root, manifest_name, manifest, web_sources, findings)
+        return
     if not path.exists():
         findings.append(f"{manifest_name}: web_source_artifact missing: {relative_path}")
         return
@@ -1487,7 +1539,11 @@ def _check_excluded_web_source_artifact(
         if excluded:
             findings.append(f"{manifest_name}: excluded_web_source_artifact missing")
         return
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, "excluded_web_source_artifact", relative_path, findings
+    )
+    if path is None:
+        return
     if not path.exists():
         findings.append(f"{manifest_name}: excluded_web_source_artifact missing: {relative_path}")
         return
@@ -1550,7 +1606,12 @@ def _check_candidate_web_check_artifact(
             findings.append(f"{manifest_name}: candidate_web_check_artifact missing")
         _check_excluded_candidate_web_check_artifact(root, manifest_name, manifest, findings)
         return
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, "candidate_web_check_artifact", relative_path, findings
+    )
+    if path is None:
+        _check_excluded_candidate_web_check_artifact(root, manifest_name, manifest, findings)
+        return
     if not path.exists():
         findings.append(
             f"{manifest_name}: candidate_web_check_artifact missing: {relative_path}"
@@ -1645,7 +1706,15 @@ def _check_excluded_candidate_web_check_artifact(
         if excluded:
             findings.append(f"{manifest_name}: excluded_candidate_web_check_artifact missing")
         return []
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root,
+        manifest_name,
+        "excluded_candidate_web_check_artifact",
+        relative_path,
+        findings,
+    )
+    if path is None:
+        return []
     if not path.exists():
         findings.append(
             f"{manifest_name}: excluded_candidate_web_check_artifact missing: {relative_path}"
@@ -2229,7 +2298,11 @@ def _read_manifest_json_artifact(
     relative_path = manifest.get(path_field)
     if not isinstance(relative_path, str):
         return None
-    path = root / relative_path
+    path = _resolve_manifest_artifact_path(
+        root, manifest_name, path_field, relative_path, findings
+    )
+    if path is None:
+        return None
     if not path.exists():
         findings.append(f"{manifest_name}: {path_field} missing: {relative_path}")
         return None

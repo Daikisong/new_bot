@@ -8554,6 +8554,44 @@ def test_lookahead_audit_checks_session_pack_context_files(tmp_path: Path) -> No
     ) in result["findings"]
 
 
+def test_lookahead_audit_rejects_context_file_paths_outside_project(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "research" / "accepted").mkdir(parents=True)
+    write_json(
+        tmp_path / "research" / "accepted" / "EP-after-cutoff.json",
+        {
+            "episode_id": "EP-after-cutoff",
+            "available_from": "2030-01-10T09:30:00+09:00",
+        },
+    )
+    escaped_ref = "../outside-brain.md"
+    absolute_ref = str((tmp_path / "brain" / "current" / "absolute.md").resolve())
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-escaped-context.json",
+        {
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "brain_files": [escaped_ref, absolute_ref],
+            "shard_brain_files": [],
+            "memory_sweep_artifacts": [],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "RUN-escaped-context.json: context file path escapes project root: "
+        f"{escaped_ref}"
+    ) in result["findings"]
+    assert (
+        "RUN-escaped-context.json: context file path escapes project root: "
+        f"{absolute_ref}"
+    ) in result["findings"]
+
+
 def test_lookahead_audit_checks_session_pack_markdown_files(tmp_path: Path) -> None:
     pack_dir = tmp_path / "session_packs" / "2030-01-10"
     pack_dir.mkdir(parents=True)
@@ -8632,6 +8670,68 @@ def test_lookahead_audit_checks_session_pack_temporal_memory_refs(tmp_path: Path
     assert (
         "session_packs/2030-01-10/manifest.json: included future market_context memory: "
         "memory/market_memory/claims.jsonl#L1"
+    ) in result["findings"]
+
+
+def test_lookahead_audit_rejects_session_pack_memory_refs_outside_project(
+    tmp_path: Path,
+) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    escaped_ref = "../company-memory.json"
+    absolute_ref = f"{(tmp_path / 'memory' / 'market_memory' / 'claims.jsonl').resolve()}#L1"
+    write_json(
+        pack_dir / "manifest.json",
+        {
+            "schema_version": "nslab.session_pack_manifest.v1",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "as_of": "2030-01-10T08:59:59+09:00",
+            "mode": "brain",
+            "included_company_memory_files": [escaped_ref],
+            "included_market_context_files": [absolute_ref],
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: referenced memory artifact path "
+        f"escapes project root: {escaped_ref}"
+    ) in result["findings"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: referenced memory artifact path "
+        f"escapes project root: {absolute_ref}"
+    ) in result["findings"]
+
+
+def test_lookahead_audit_rejects_manifest_artifact_paths_outside_project(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    row_ref = "../row-disposition.jsonl"
+    final_context_ref = str((tmp_path / "runs" / "outside-final-context.json").resolve())
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-escaped-artifacts.json",
+        {
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "row_disposition_artifact": row_ref,
+            "final_synthesis_context_artifact": final_context_ref,
+        },
+    )
+
+    result = audit_lookahead(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "RUN-escaped-artifacts.json: row_disposition_artifact path escapes "
+        f"project root: {row_ref}"
+    ) in result["findings"]
+    assert (
+        "RUN-escaped-artifacts.json: final_synthesis_context_artifact path escapes "
+        f"project root: {final_context_ref}"
     ) in result["findings"]
 
 
