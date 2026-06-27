@@ -885,7 +885,9 @@ def test_production_readiness_rejects_on_disk_mock_embedding_manifest(
     )
 
 
-def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -> None:
+def test_production_readiness_rejects_semantic_index_without_disk_manifest(
+    tmp_path,
+) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai")
     settings.llm.provider = "openai"
     settings.llm.embedding_model = "text-embedding-3-small"
@@ -908,6 +910,39 @@ def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -
             "source_brain_record_count": 2,
             "brain_record_count": 2,
         },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["passed"] is False
+    assert production["semantic_index"]["manifest"]["exists"] is False
+    assert (
+        "embedding: semantic index manifest is missing on disk"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
     }
 
     production = production_readiness_report(report, settings)
@@ -939,15 +974,13 @@ def test_production_readiness_uses_openai_default_embedding_model_when_unset(
             "coverage_complete": True,
         },
     )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
     report = {
         "api_connections": {"openai": {"status": "configured_not_called"}},
-        "vector_index": {
-            "status": "current",
-            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
-            "brain_records_exists": True,
-            "source_brain_record_count": 2,
-            "brain_record_count": 2,
-        },
+        "vector_index": vector_index,
     }
 
     production = production_readiness_report(report, settings)
@@ -978,27 +1011,13 @@ def test_production_readiness_accepts_matching_on_disk_semantic_index_manifest(
             "coverage_complete": True,
         },
     )
-    vector_index_dir = tmp_path / "memory" / "vector_index"
-    vector_index_dir.mkdir(parents=True)
-    write_json(
-        vector_index_dir / "manifest.json",
-        {
-            "schema_version": "nslab.local_vector_index.v1",
-            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
-            "brain_record_count": 2,
-            "brain_record_hashes": {"BRAIN-1": "hash-1", "BRAIN-2": "hash-2"},
-        },
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
     )
     report = {
         "api_connections": {"openai": {"status": "configured_not_called"}},
-        "vector_index": {
-            "status": "current",
-            "manifest_exists": True,
-            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
-            "brain_records_exists": True,
-            "source_brain_record_count": 2,
-            "brain_record_count": 2,
-        },
+        "vector_index": vector_index,
     }
 
     production = production_readiness_report(report, settings)
@@ -1219,27 +1238,13 @@ def test_production_readiness_rejects_implicit_default_semantic_index_model_mism
             "coverage_complete": True,
         },
     )
-    vector_index_dir = tmp_path / "memory" / "vector_index"
-    vector_index_dir.mkdir(parents=True)
-    write_json(
-        vector_index_dir / "manifest.json",
-        {
-            "schema_version": "nslab.local_vector_index.v1",
-            "embedding_method": "llm_embedding:openai:stale-embedding-model",
-            "brain_record_count": 2,
-            "brain_record_hashes": {"BRAIN-1": "hash-1", "BRAIN-2": "hash-2"},
-        },
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:stale-embedding-model",
     )
     report = {
         "api_connections": {"openai": {"status": "configured_not_called"}},
-        "vector_index": {
-            "status": "current",
-            "manifest_exists": True,
-            "embedding_method": "llm_embedding:openai:stale-embedding-model",
-            "brain_records_exists": True,
-            "source_brain_record_count": 2,
-            "brain_record_count": 2,
-        },
+        "vector_index": vector_index,
     }
 
     production = production_readiness_report(report, settings)
@@ -4513,6 +4518,57 @@ def _production_base_report() -> dict[str, object]:
             "status": "current",
             "embedding_method": "llm_embedding:openai:text-embedding-3-small",
         },
+    }
+
+
+def _write_semantic_index_fixture(
+    root: Path,
+    *,
+    embedding_method: str,
+    record_ids: list[str] | None = None,
+) -> dict[str, object]:
+    record_ids = record_ids or ["BRAIN-1", "BRAIN-2"]
+    vector_index_dir = root / "memory" / "vector_index"
+    vector_index_dir.mkdir(parents=True, exist_ok=True)
+    brain_records_payload = "".join(
+        json.dumps(
+            {
+                "record_id": record_id,
+                "record_type": "memory_claim",
+                "terms": [record_id.lower()],
+                "embedding": [0.1, 0.2],
+            },
+            sort_keys=True,
+        )
+        + "\n"
+        for record_id in record_ids
+    )
+    (vector_index_dir / "brain_records.jsonl").write_text(
+        brain_records_payload,
+        encoding="utf-8",
+    )
+    write_json(
+        vector_index_dir / "manifest.json",
+        {
+            "schema_version": "nslab.local_vector_index.v1",
+            "embedding_method": embedding_method,
+            "dimensions": 2,
+            "brain_record_count": len(record_ids),
+            "brain_record_hashes": {
+                record_id: f"hash-{index}"
+                for index, record_id in enumerate(record_ids, start=1)
+            },
+            "brain_records_file": "brain_records.jsonl",
+            "brain_records_sha256": sha256_text(brain_records_payload),
+        },
+    )
+    return {
+        "status": "current",
+        "manifest_exists": True,
+        "embedding_method": embedding_method,
+        "brain_records_exists": True,
+        "source_brain_record_count": len(record_ids),
+        "brain_record_count": len(record_ids),
     }
 
 

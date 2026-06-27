@@ -1480,16 +1480,12 @@ def _production_semantic_index_manifest_status(
     configured_embedding_model: str | None,
 ) -> dict[str, Any]:
     manifest_path = root / "memory" / "vector_index" / "manifest.json"
-    report_manifest_exists = (
-        vector_index.get("manifest_exists") if isinstance(vector_index, dict) else None
-    )
     report_embedding_method = (
         vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
     )
     findings: list[str] = []
     if not manifest_path.exists():
-        if report_manifest_exists is True:
-            findings.append("semantic index manifest is missing on disk")
+        findings.append("semantic index manifest is missing on disk")
         return {
             "schema_version": "nslab.production_semantic_index_manifest.v1",
             "path": relative_to_root(manifest_path, root),
@@ -1502,6 +1498,11 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
+            "brain_records_file": None,
+            "brain_records_file_exists": False,
+            "brain_records_sha256_matches": None,
+            "brain_records_row_count": None,
+            "brain_records_invalid_line_count": None,
         }
     try:
         manifest = _read_json_object(manifest_path)
@@ -1519,6 +1520,11 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
+            "brain_records_file": None,
+            "brain_records_file_exists": False,
+            "brain_records_sha256_matches": None,
+            "brain_records_row_count": None,
+            "brain_records_invalid_line_count": None,
         }
 
     embedding_method = manifest.get("embedding_method")
@@ -1532,6 +1538,47 @@ def _production_semantic_index_manifest_status(
     brain_record_hash_count = (
         len(brain_record_hashes) if isinstance(brain_record_hashes, dict) else None
     )
+    brain_records_file = manifest.get("brain_records_file")
+    brain_records_file = (
+        brain_records_file
+        if isinstance(brain_records_file, str) and brain_records_file
+        else "brain_records.jsonl"
+    )
+    brain_records_path = manifest_path.parent / brain_records_file
+    brain_records_exists = brain_records_path.exists()
+    brain_records_sha256_matches: bool | None = None
+    brain_records_row_count: int | None = None
+    brain_records_invalid_line_count: int | None = None
+    brain_records_ids: list[str] = []
+    if brain_records_exists:
+        try:
+            brain_records_payload = brain_records_path.read_text(encoding="utf-8")
+        except OSError:
+            brain_records_payload = ""
+            brain_records_invalid_line_count = 1
+        declared_brain_records_sha = manifest.get("brain_records_sha256")
+        if isinstance(declared_brain_records_sha, str):
+            brain_records_sha256_matches = (
+                sha256_text(brain_records_payload) == declared_brain_records_sha
+            )
+        rows = [line for line in brain_records_payload.splitlines() if line.strip()]
+        brain_records_row_count = len(rows)
+        invalid_line_count = brain_records_invalid_line_count or 0
+        for line in rows:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                invalid_line_count += 1
+                continue
+            if not isinstance(payload, dict):
+                invalid_line_count += 1
+                continue
+            record_id = payload.get("record_id")
+            if isinstance(record_id, str) and record_id:
+                brain_records_ids.append(record_id)
+            else:
+                invalid_line_count += 1
+        brain_records_invalid_line_count = invalid_line_count
     if manifest.get("schema_version") != "nslab.local_vector_index.v1":
         findings.append("semantic index manifest schema version is invalid")
     if not isinstance(embedding_method, str) or not embedding_method:
@@ -1561,6 +1608,22 @@ def _production_semantic_index_manifest_status(
         and brain_record_hash_count != expected_source_record_count
     ):
         findings.append("semantic index manifest record hash count does not match coverage")
+    if not brain_records_exists:
+        findings.append("semantic index brain record file is missing on disk")
+    elif brain_records_invalid_line_count != 0:
+        findings.append("semantic index brain record file has invalid rows")
+    if brain_records_exists and brain_records_sha256_matches is not True:
+        findings.append("semantic index brain record file hash mismatch")
+    if (
+        brain_records_row_count is not None
+        and brain_record_count is not None
+        and brain_records_row_count != brain_record_count
+    ):
+        findings.append("semantic index brain record row count does not match manifest")
+    if isinstance(brain_record_hashes, dict) and sorted(brain_records_ids) != sorted(
+        key for key in brain_record_hashes if isinstance(key, str)
+    ):
+        findings.append("semantic index brain record IDs do not match manifest hashes")
     return {
         "schema_version": "nslab.production_semantic_index_manifest.v1",
         "path": relative_to_root(manifest_path, root),
@@ -1573,6 +1636,11 @@ def _production_semantic_index_manifest_status(
         "embedding_model": embedding_model,
         "brain_record_count": brain_record_count,
         "brain_record_hash_count": brain_record_hash_count,
+        "brain_records_file": relative_to_root(brain_records_path, root),
+        "brain_records_file_exists": brain_records_exists,
+        "brain_records_sha256_matches": brain_records_sha256_matches,
+        "brain_records_row_count": brain_records_row_count,
+        "brain_records_invalid_line_count": brain_records_invalid_line_count,
     }
 
 
