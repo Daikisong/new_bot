@@ -1521,6 +1521,12 @@ def _production_semantic_index_manifest_status(
             "brain_records_sha256_matches": None,
             "brain_records_row_count": None,
             "brain_records_invalid_line_count": None,
+            "record_store_readable": None,
+            "record_store_record_count": None,
+            "record_store_error": None,
+            "unknown_brain_record_ids": [],
+            "missing_brain_record_ids": [],
+            "brain_record_hash_mismatches": [],
         }
     try:
         manifest = _read_json_object(manifest_path)
@@ -1543,6 +1549,12 @@ def _production_semantic_index_manifest_status(
             "brain_records_sha256_matches": None,
             "brain_records_row_count": None,
             "brain_records_invalid_line_count": None,
+            "record_store_readable": None,
+            "record_store_record_count": None,
+            "record_store_error": None,
+            "unknown_brain_record_ids": [],
+            "missing_brain_record_ids": [],
+            "brain_record_hash_mismatches": [],
         }
 
     embedding_method = manifest.get("embedding_method")
@@ -1597,6 +1609,42 @@ def _production_semantic_index_manifest_status(
             else:
                 invalid_line_count += 1
         brain_records_invalid_line_count = invalid_line_count
+    record_store_stats = _brain_record_store_id_stats(root)
+    record_store_records = (
+        record_store_stats["records_by_id"]
+        if record_store_stats["readable"] is True
+        else None
+    )
+    unknown_brain_record_ids: list[str] = []
+    missing_brain_record_ids: list[str] = []
+    brain_record_hash_mismatches: list[str] = []
+    if isinstance(record_store_records, dict):
+        record_store_ids = set(record_store_records)
+        indexed_ids = set(brain_records_ids)
+        unknown_brain_record_ids = sorted(indexed_ids - record_store_ids)
+        missing_brain_record_ids = sorted(record_store_ids - indexed_ids)
+        if isinstance(brain_record_hashes, dict):
+            manifest_hashes = {
+                key: value
+                for key, value in brain_record_hashes.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+            invalid_hash_ids = [
+                key
+                for key, value in brain_record_hashes.items()
+                if isinstance(key, str) and not isinstance(value, str)
+            ]
+            mismatched_hash_ids = [
+                record_id
+                for record_id in sorted(set(manifest_hashes) & record_store_ids)
+                if (
+                    manifest_hashes[record_id]
+                    != record_store_records[record_id].normalized_payload_sha256
+                )
+            ]
+            brain_record_hash_mismatches = sorted(
+                {*invalid_hash_ids, *mismatched_hash_ids}
+            )
     if manifest.get("schema_version") != "nslab.local_vector_index.v1":
         findings.append("semantic index manifest schema version is invalid")
     if not isinstance(embedding_method, str) or not embedding_method:
@@ -1642,6 +1690,14 @@ def _production_semantic_index_manifest_status(
         key for key in brain_record_hashes if isinstance(key, str)
     ):
         findings.append("semantic index brain record IDs do not match manifest hashes")
+    if record_store_stats["readable"] is not True:
+        findings.append("semantic index record store is unreadable")
+    if unknown_brain_record_ids:
+        findings.append("semantic index references unknown brain record IDs")
+    if missing_brain_record_ids:
+        findings.append("semantic index does not cover record store IDs")
+    if brain_record_hash_mismatches:
+        findings.append("semantic index brain record hashes do not match record store")
     return {
         "schema_version": "nslab.production_semantic_index_manifest.v1",
         "path": relative_to_root(manifest_path, root),
@@ -1659,6 +1715,12 @@ def _production_semantic_index_manifest_status(
         "brain_records_sha256_matches": brain_records_sha256_matches,
         "brain_records_row_count": brain_records_row_count,
         "brain_records_invalid_line_count": brain_records_invalid_line_count,
+        "record_store_readable": record_store_stats["readable"],
+        "record_store_record_count": record_store_stats["record_count"],
+        "record_store_error": record_store_stats["error"],
+        "unknown_brain_record_ids": unknown_brain_record_ids,
+        "missing_brain_record_ids": missing_brain_record_ids,
+        "brain_record_hash_mismatches": brain_record_hash_mismatches,
     }
 
 

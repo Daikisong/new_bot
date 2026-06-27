@@ -1074,6 +1074,119 @@ def test_production_readiness_accepts_matching_on_disk_semantic_index_manifest(
     )
 
 
+def test_production_readiness_rejects_semantic_index_record_store_id_gaps(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    vector_index_dir = tmp_path / "memory" / "vector_index"
+    brain_records_payload = "".join(
+        json.dumps(
+            {
+                "record_id": record_id,
+                "record_type": "memory_claim",
+                "terms": [record_id.lower()],
+                "embedding": [0.1, 0.2],
+            },
+            sort_keys=True,
+        )
+        + "\n"
+        for record_id in ["BRAIN-1", "BRAIN-missing"]
+    )
+    (vector_index_dir / "brain_records.jsonl").write_text(
+        brain_records_payload,
+        encoding="utf-8",
+    )
+    manifest_path = vector_index_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["brain_record_hashes"] = {
+        "BRAIN-1": "hash-1",
+        "BRAIN-missing": "hash-missing",
+    }
+    manifest["brain_records_sha256"] = sha256_text(brain_records_payload)
+    write_json(manifest_path, manifest)
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["passed"] is False
+    assert production["semantic_index"]["manifest"]["unknown_brain_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["semantic_index"]["manifest"]["missing_brain_record_ids"] == [
+        "BRAIN-2"
+    ]
+    assert (
+        "embedding: semantic index references unknown brain record IDs"
+        in production["findings"]
+    )
+    assert (
+        "embedding: semantic index does not cover record store IDs"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_semantic_index_record_store_hash_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    manifest_path = tmp_path / "memory" / "vector_index" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    brain_record_hashes = manifest["brain_record_hashes"]
+    assert isinstance(brain_record_hashes, dict)
+    brain_record_hashes["BRAIN-1"] = "stale-hash"
+    write_json(manifest_path, manifest)
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["passed"] is False
+    assert production["semantic_index"]["manifest"]["brain_record_hash_mismatches"] == [
+        "BRAIN-1"
+    ]
+    assert (
+        "embedding: semantic index brain record hashes do not match record store"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_accepts_complete_record_coverage_manifest(
     tmp_path,
 ) -> None:
@@ -5234,6 +5347,45 @@ def _write_semantic_index_fixture(
     record_ids = record_ids or ["BRAIN-1", "BRAIN-2"]
     vector_index_dir = root / "memory" / "vector_index"
     vector_index_dir.mkdir(parents=True, exist_ok=True)
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    store_records: list[BrainRecordEnvelope] = []
+    for index, record_id in enumerate(record_ids, start=1):
+        payload = {
+            "record_id": record_id,
+            "record_type": "memory_claim",
+            "episode_id": "EP-semantic-index",
+            "trade_date": "2030-01-01",
+            "available_from": datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST).isoformat(),
+            "training_target": "semantic_index_fixture",
+            "training_eligible": True,
+        }
+        store_records.append(
+            BrainRecordEnvelope(
+                record_id=record_id,
+                record_type="memory_claim",
+                episode_id="EP-semantic-index",
+                trade_date=date(2030, 1, 1),
+                available_from=datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST),
+                training_target="semantic_index_fixture",
+                evidence_phase="POSTMORTEM",
+                training_eligible=True,
+                eligibility_reason="semantic index fixture",
+                status="supported",
+                confidence_label="medium",
+                provenance_source_ids=[f"SRC-{index}"],
+                raw_payload_sha256=f"hash-{index}",
+                normalized_payload_sha256=f"hash-{index}",
+                typed_payload_status="KNOWN_TYPED_PAYLOAD",
+                source_block="brain_delta.jsonl",
+                source_line=index,
+                payload=payload,
+            )
+        )
+    (records_dir / "EP-semantic-index.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in store_records),
+        encoding="utf-8",
+    )
     brain_records_payload = "".join(
         json.dumps(
             {
