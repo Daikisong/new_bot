@@ -692,6 +692,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     )
 
     findings: list[str] = []
+    if not manifest_paths:
+        findings.append("production LLM context manifest is missing")
     for path in unreadable_manifests:
         findings.append(f"context manifest is unreadable: {path}")
     for manifest in invalid_manifest_schemas:
