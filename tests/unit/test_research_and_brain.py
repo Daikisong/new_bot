@@ -13,7 +13,11 @@ from typer.testing import CliRunner
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
-from news_scalping_lab.brain.compiler import BrainCompiler, current_brain_file_hashes
+from news_scalping_lab.brain.compiler import (
+    LLM_FULL_COMPILER_VERSION,
+    BrainCompiler,
+    current_brain_file_hashes,
+)
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff
 from news_scalping_lab.cli import app, audit_coverage_cmd
 from news_scalping_lab.cli import brain_audit as cli_brain_audit
@@ -1185,6 +1189,8 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         "BRAIN-CATEGORY-MISSING",
         "BRAIN-SHARD-MISSING",
     ]
+    assert audit["llm_compile_compiler_version"] is None
+    assert audit["llm_compile_expected_compiler_version"] == LLM_FULL_COMPILER_VERSION
     assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
     assert "single_event" in audit["brain_category_source_population_mismatches"]
     assert "theme_formation" in audit["brain_category_source_population_mismatches"]
@@ -1207,6 +1213,11 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert "llm compile manifest source_record_count does not match record store" in audit[
         "llm_compile_findings"
     ]
+    assert (
+        "llm compile manifest compiler_version is missing, not "
+        f"{LLM_FULL_COMPILER_VERSION}"
+        in audit["llm_compile_findings"]
+    )
     assert "llm compile manifest references unknown compiled claim IDs" in audit[
         "llm_compile_findings"
     ]

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
     CATEGORY_RECORD_TYPE_ROUTES,
+    LLM_FULL_COMPILER_VERSION,
     _brain_category,
     _records_for_category,
     current_brain_file_hashes,
@@ -428,6 +429,8 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
     if not manifest:
         return {
             "llm_compile_manifest_present": False,
+            "llm_compile_compiler_version": None,
+            "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
             "llm_compile_findings": findings,
             "llm_compile_unknown_record_ids": unknown_record_ids,
             "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
@@ -438,6 +441,13 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
                 compiled_claim_count_mismatches
             ),
         }
+    compiler_version = _string_value(manifest.get("compiler_version"))
+    if compiler_version != LLM_FULL_COMPILER_VERSION:
+        observed_version = compiler_version or "missing"
+        findings.append(
+            "llm compile manifest compiler_version is "
+            f"{observed_version}, not {LLM_FULL_COMPILER_VERSION}"
+        )
     compiled_claim_file_present, compiled_claim_ids = _compiled_claim_ids(root)
     source_count = _int_value(manifest.get("source_record_count"))
     if source_count is None or source_count != len(record_ids):
@@ -488,6 +498,8 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
         findings.append("llm compile manifest references unknown compiled claim IDs")
     return {
         "llm_compile_manifest_present": True,
+        "llm_compile_compiler_version": compiler_version,
+        "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "llm_compile_findings": findings,
         "llm_compile_unknown_record_ids": unknown_record_ids,
         "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
