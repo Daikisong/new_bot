@@ -4396,6 +4396,13 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     issuer_weight_mismatches = _numeric_map(
         diagnostics.get("issuer_day_weight_sum_mismatches")
     )
+    direct_weight_mismatch_count = _int_from_mapping(
+        diagnostics,
+        "direct_event_weight_sum_mismatch_count",
+    )
+    direct_weight_mismatches = _numeric_map(
+        diagnostics.get("direct_event_weight_sum_mismatches")
+    )
     invalid_weight_diagnostic_fields.extend(
         field
         for field in weight_diagnostic_map_fields
@@ -4405,27 +4412,46 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_weight_diagnostic_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    weight_diagnostic_count_mismatches: list[str] = []
     if (
         duplicate_issuer_day_count is not None
         and "duplicate_issuer_day_keys" not in missing_weight_diagnostic_fields
         and "duplicate_issuer_day_keys" not in invalid_weight_diagnostic_fields
         and duplicate_issuer_day_count != len(duplicate_issuer_day_keys)
     ):
+        weight_diagnostic_count_mismatches.append("duplicate_issuer_day_count")
         findings.append(
             "training export duplicate issuer-day count does not match keys"
+        )
+    if (
+        issuer_weight_mismatch_count is not None
+        and "issuer_day_weight_sum_mismatches" not in missing_weight_diagnostic_fields
+        and "issuer_day_weight_sum_mismatches" not in invalid_weight_diagnostic_fields
+        and issuer_weight_mismatch_count != len(issuer_weight_mismatches)
+    ):
+        weight_diagnostic_count_mismatches.append(
+            "issuer_day_weight_sum_mismatch_count"
+        )
+        findings.append(
+            "training export issuer-day weight mismatch count does not match details"
         )
     if (
         issuer_weight_mismatch_count is not None
         and issuer_weight_mismatch_count != 0
     ):
         findings.append("training export has issuer-day weight sum mismatches")
-    direct_weight_mismatch_count = _int_from_mapping(
-        diagnostics,
-        "direct_event_weight_sum_mismatch_count",
-    )
-    direct_weight_mismatches = _numeric_map(
-        diagnostics.get("direct_event_weight_sum_mismatches")
-    )
+    if (
+        direct_weight_mismatch_count is not None
+        and "direct_event_weight_sum_mismatches" not in missing_weight_diagnostic_fields
+        and "direct_event_weight_sum_mismatches" not in invalid_weight_diagnostic_fields
+        and direct_weight_mismatch_count != len(direct_weight_mismatches)
+    ):
+        weight_diagnostic_count_mismatches.append(
+            "direct_event_weight_sum_mismatch_count"
+        )
+        findings.append(
+            "training export direct-event weight mismatch count does not match details"
+        )
     if direct_weight_mismatch_count is not None and direct_weight_mismatch_count != 0:
         findings.append("training export has direct-event weight sum mismatches")
 
@@ -4506,6 +4532,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "invalid_weight_validation_entries": invalid_weight_validation_entries,
         "missing_weight_diagnostic_fields": missing_weight_diagnostic_fields,
         "invalid_weight_diagnostic_fields": invalid_weight_diagnostic_fields,
+        "weight_diagnostic_count_mismatches": weight_diagnostic_count_mismatches,
         "duplicate_issuer_day_count": duplicate_issuer_day_count,
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
         "issuer_day_weight_sum_mismatch_count": issuer_weight_mismatch_count,
