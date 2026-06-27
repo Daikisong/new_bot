@@ -3811,6 +3811,22 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     skipped_record_reason_counts = _int_dict(
         diagnostics.get("skipped_record_reason_counts")
     )
+    invalid_reason_fields = [
+        field
+        for field in (
+            "skipped_record_reasons_by_record_id",
+            "unique_skipped_record_reasons_by_record_id",
+        )
+        if field in diagnostics
+        and not _string_list_dict_field_valid(diagnostics.get(field))
+    ]
+    if (
+        "skipped_record_reason_counts" in diagnostics
+        and not _int_dict_field_valid(diagnostics.get("skipped_record_reason_counts"))
+    ):
+        invalid_reason_fields.append("skipped_record_reason_counts")
+    for field in invalid_reason_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
@@ -3961,6 +3977,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
         "invalid_record_id_fields": invalid_record_id_fields,
+        "invalid_reason_fields": invalid_reason_fields,
         "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
         "unique_skipped_record_reasons_by_record_id": (
             unique_skipped_record_reasons_by_record_id
@@ -7167,6 +7184,16 @@ def _string_list_dict(value: object) -> dict[str, list[str]]:
     }
 
 
+def _string_list_dict_field_valid(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(item_key, str)
+        and isinstance(item_value, list)
+        and bool(item_value)
+        and all(isinstance(item, str) and item for item in item_value)
+        for item_key, item_value in value.items()
+    )
+
+
 def _int_dict(value: object) -> dict[str, int]:
     if not isinstance(value, dict):
         return {}
@@ -7175,6 +7202,16 @@ def _int_dict(value: object) -> dict[str, int]:
         for key, item in value.items()
         if isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool)
     }
+
+
+def _int_dict_field_valid(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(key, str)
+        and isinstance(item, int)
+        and not isinstance(item, bool)
+        and item >= 0
+        for key, item in value.items()
+    )
 
 
 def _numeric_map(value: object) -> dict[str, float]:

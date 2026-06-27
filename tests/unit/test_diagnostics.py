@@ -2562,6 +2562,64 @@ def test_production_readiness_rejects_non_string_training_export_record_ids(
     )
 
 
+def test_production_readiness_rejects_invalid_training_export_skip_reasons(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["skipped_record_reasons_by_record_id"] = {
+        "BRAIN-TRAIN-ISSUER": ["record_type_not_selected_for_export_kind", 7],
+    }
+    tampered_report["unique_skipped_record_reasons_by_record_id"] = {
+        "BRAIN-TRAIN-PAIR": [],
+    }
+    tampered_report["skipped_record_reason_counts"] = {
+        "record_type_not_selected_for_export_kind": True,
+    }
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["invalid_reason_fields"] == [
+        "skipped_record_reasons_by_record_id",
+        "unique_skipped_record_reasons_by_record_id",
+        "skipped_record_reason_counts",
+    ]
+    assert (
+        "training export diagnostics skipped_record_reasons_by_record_id is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics unique_skipped_record_reasons_by_record_id is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics skipped_record_reason_counts is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics skipped_record_reasons_by_record_id is invalid"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_direct_event_weight_mismatch(
     tmp_path,
 ) -> None:
