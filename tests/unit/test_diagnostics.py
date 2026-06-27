@@ -4366,7 +4366,12 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     web_source_path.write_text(
         json.dumps(
             {
+                "available_before_cutoff": True,
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "published_at": "2030-01-10T08:30:00+09:00",
                 "source_id": "WEB-live",
+                "time_verified": True,
+                "timestamp_precision": "datetime",
                 "url": "https://www.reuters.com/markets/companies/live-web-evidence",
                 "source_url": (
                     "https://www.reuters.com/markets/companies/live-web-evidence"
@@ -4411,6 +4416,10 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 0
     assert production["web_evidence"]["artifact_missing_source_id_count"] == 0
     assert production["web_evidence"]["artifact_missing_source_id_artifacts"] == []
+    assert production["web_evidence"]["artifact_cutoff_missing_count"] == 0
+    assert production["web_evidence"]["artifact_cutoff_failed_count"] == 0
+    assert production["web_evidence"]["artifact_cutoff_after_count"] == 0
+    assert production["web_evidence"]["artifact_cutoff_invalid_timestamp_count"] == 0
     assert production["web_evidence"]["missing_artifact_hash_count"] == 0
     assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 0
     assert production["web_evidence"]["mock_web_artifact_count"] == 0
@@ -4422,6 +4431,141 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     assert production["web_evidence"]["placeholder_web_artifacts"] == []
     assert not any(
         finding.startswith("web_evidence:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_web_evidence_without_cutoff_verification(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "source_id": "WEB-live",
+                "url": "https://www.reuters.com/markets/companies/live-web-evidence",
+                "source_url": (
+                    "https://www.reuters.com/markets/companies/live-web-evidence"
+                ),
+                "title": "live web evidence without cutoff verification",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-live"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["artifact_cutoff_missing_count"] == 1
+    assert production["web_evidence"]["artifact_cutoff_missing_artifacts"] == [
+        {
+            "manifest": "runs/manifests/RUN-web.json",
+            "artifact_field": "web_source_artifact",
+            "artifact": "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl",
+            "checked_row_count": 1,
+            "missing_verification_count": 1,
+        }
+    ]
+    assert (
+        "web_evidence: web evidence artifact has rows without cutoff verification: "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl (1)"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_cutoff_failed_web_evidence(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "available_before_cutoff": False,
+                "cutoff_at": "2030-01-10T08:59:59+09:00",
+                "published_at": "2030-01-10T09:30:00+09:00",
+                "source_id": "WEB-future",
+                "source_url": (
+                    "https://www.reuters.com/markets/companies/future-web-evidence"
+                ),
+                "time_verified": False,
+                "title": "future web evidence",
+                "url": "https://www.reuters.com/markets/companies/future-web-evidence",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-web",
+            "web_sources": ["WEB-future"],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["artifact_cutoff_failed_count"] == 1
+    assert production["web_evidence"]["artifact_cutoff_after_count"] == 1
+    assert (
+        "web_evidence: web evidence artifact has cutoff verification failures: "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl (1)"
+        in production["findings"]
+    )
+    assert (
+        "web_evidence: web evidence artifact has rows after cutoff: "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl (1)"
+        in production["findings"]
     )
 
 

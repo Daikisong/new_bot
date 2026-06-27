@@ -576,6 +576,14 @@
 - artifact_source_id_mismatches: `[]`
 - artifact_missing_source_id_count: `0`
 - artifact_missing_source_id_artifacts: `[]`
+- artifact_cutoff_missing_count: `0`
+- artifact_cutoff_missing_artifacts: `[]`
+- artifact_cutoff_failed_count: `0`
+- artifact_cutoff_failed_artifacts: `[]`
+- artifact_cutoff_after_count: `0`
+- artifact_cutoff_after_artifacts: `[]`
+- artifact_cutoff_invalid_timestamp_count: `0`
+- artifact_cutoff_invalid_timestamp_artifacts: `[]`
 - unreadable_artifact_count: `0`
 - unreadable_artifacts: `[]`
 - invalid_artifact_json_count: `0`

@@ -40,6 +40,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     file_sha256,
     is_available_as_of,
+    parse_datetime,
     relative_to_root,
     sha256_text,
 )
@@ -89,6 +90,12 @@ PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS = (
     "source_ledger_artifact",
     "final_synthesis_context_artifact",
 )
+PRODUCTION_WEB_EVIDENCE_CUTOFF_SAFE_ARTIFACT_FIELDS = {
+    "web_source_artifact",
+    "candidate_web_check_artifact",
+    "source_ledger_artifact",
+    "final_synthesis_context_artifact",
+}
 PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS = {
     field: field.removesuffix("_artifact") + "_sha256"
     for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS
@@ -135,6 +142,15 @@ class WebEvidenceSourceIdStatus:
     source_ids: list[str]
     row_count: int
     missing_source_id_count: int
+
+
+@dataclass(frozen=True)
+class WebEvidenceCutoffStatus:
+    checked_row_count: int
+    missing_verification_count: int
+    failed_verification_count: int
+    after_cutoff_count: int
+    invalid_timestamp_count: int
 
 
 @dataclass(frozen=True)
@@ -1328,6 +1344,10 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     artifact_hash_mismatches: list[dict[str, Any]] = []
     artifact_source_id_mismatches: list[dict[str, Any]] = []
     artifact_missing_source_ids: list[dict[str, Any]] = []
+    artifact_cutoff_missing: list[dict[str, Any]] = []
+    artifact_cutoff_failed: list[dict[str, Any]] = []
+    artifact_cutoff_after: list[dict[str, Any]] = []
+    artifact_cutoff_invalid_timestamps: list[dict[str, Any]] = []
     checked_artifact_refs = 0
     for manifest_path in manifest_paths:
         manifest_relative_path = relative_to_root(manifest_path, root)
@@ -1412,6 +1432,63 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                         }
                     )
             artifact_paths.add(artifact_path)
+            if field in PRODUCTION_WEB_EVIDENCE_CUTOFF_SAFE_ARTIFACT_FIELDS:
+                try:
+                    cutoff_status = _web_evidence_artifact_cutoff_status(artifact_path)
+                except OSError:
+                    cutoff_status = WebEvidenceCutoffStatus(
+                        checked_row_count=0,
+                        missing_verification_count=0,
+                        failed_verification_count=0,
+                        after_cutoff_count=0,
+                        invalid_timestamp_count=0,
+                    )
+                if cutoff_status.missing_verification_count:
+                    artifact_cutoff_missing.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "artifact": relative_artifact_path,
+                            "checked_row_count": cutoff_status.checked_row_count,
+                            "missing_verification_count": (
+                                cutoff_status.missing_verification_count
+                            ),
+                        }
+                    )
+                if cutoff_status.failed_verification_count:
+                    artifact_cutoff_failed.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "artifact": relative_artifact_path,
+                            "checked_row_count": cutoff_status.checked_row_count,
+                            "failed_verification_count": (
+                                cutoff_status.failed_verification_count
+                            ),
+                        }
+                    )
+                if cutoff_status.after_cutoff_count:
+                    artifact_cutoff_after.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "artifact": relative_artifact_path,
+                            "checked_row_count": cutoff_status.checked_row_count,
+                            "after_cutoff_count": cutoff_status.after_cutoff_count,
+                        }
+                    )
+                if cutoff_status.invalid_timestamp_count:
+                    artifact_cutoff_invalid_timestamps.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "artifact": relative_artifact_path,
+                            "checked_row_count": cutoff_status.checked_row_count,
+                            "invalid_timestamp_count": (
+                                cutoff_status.invalid_timestamp_count
+                            ),
+                        }
+                    )
             sha_field = PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS[field]
             expected_sha = manifest.get(sha_field)
             if not isinstance(expected_sha, str) or not expected_sha:
@@ -1521,6 +1598,26 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             f"web evidence artifact has rows without source IDs: "
             f"{artifact['artifact']} ({artifact['missing_source_id_count']})"
         )
+    for artifact in artifact_cutoff_missing:
+        findings.append(
+            f"web evidence artifact has rows without cutoff verification: "
+            f"{artifact['artifact']} ({artifact['missing_verification_count']})"
+        )
+    for artifact in artifact_cutoff_failed:
+        findings.append(
+            f"web evidence artifact has cutoff verification failures: "
+            f"{artifact['artifact']} ({artifact['failed_verification_count']})"
+        )
+    for artifact in artifact_cutoff_after:
+        findings.append(
+            f"web evidence artifact has rows after cutoff: "
+            f"{artifact['artifact']} ({artifact['after_cutoff_count']})"
+        )
+    for artifact in artifact_cutoff_invalid_timestamps:
+        findings.append(
+            f"web evidence artifact has invalid cutoff timestamps: "
+            f"{artifact['artifact']} ({artifact['invalid_timestamp_count']})"
+        )
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for artifact in invalid_json_artifacts:
@@ -1578,6 +1675,27 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             for artifact in artifact_missing_source_ids
         ),
         "artifact_missing_source_id_artifacts": artifact_missing_source_ids,
+        "artifact_cutoff_missing_count": sum(
+            int(artifact["missing_verification_count"])
+            for artifact in artifact_cutoff_missing
+        ),
+        "artifact_cutoff_missing_artifacts": artifact_cutoff_missing,
+        "artifact_cutoff_failed_count": sum(
+            int(artifact["failed_verification_count"])
+            for artifact in artifact_cutoff_failed
+        ),
+        "artifact_cutoff_failed_artifacts": artifact_cutoff_failed,
+        "artifact_cutoff_after_count": sum(
+            int(artifact["after_cutoff_count"]) for artifact in artifact_cutoff_after
+        ),
+        "artifact_cutoff_after_artifacts": artifact_cutoff_after,
+        "artifact_cutoff_invalid_timestamp_count": sum(
+            int(artifact["invalid_timestamp_count"])
+            for artifact in artifact_cutoff_invalid_timestamps
+        ),
+        "artifact_cutoff_invalid_timestamp_artifacts": (
+            artifact_cutoff_invalid_timestamps
+        ),
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
         "invalid_artifact_json_count": sum(
@@ -1746,6 +1864,107 @@ def _web_evidence_artifact_source_id_status(path: Path) -> WebEvidenceSourceIdSt
         row_count=0,
         missing_source_id_count=0,
     )
+
+
+def _web_evidence_artifact_cutoff_status(path: Path) -> WebEvidenceCutoffStatus:
+    checked_row_count = 0
+    missing_verification_count = 0
+    failed_verification_count = 0
+    after_cutoff_count = 0
+    invalid_timestamp_count = 0
+    for payload in _web_evidence_artifact_payloads(path):
+        for row in _web_evidence_rows(payload):
+            checked_row_count += 1
+            has_time_verified = "time_verified" in row
+            has_available_before_cutoff = "available_before_cutoff" in row
+            if not has_time_verified and not has_available_before_cutoff:
+                missing_verification_count += 1
+            elif (
+                (has_time_verified and row.get("time_verified") is not True)
+                or (
+                    has_available_before_cutoff
+                    and row.get("available_before_cutoff") is not True
+                )
+            ):
+                failed_verification_count += 1
+            timestamp_status = _web_evidence_row_timestamp_status(row)
+            if timestamp_status == "after_cutoff":
+                after_cutoff_count += 1
+            elif timestamp_status == "invalid":
+                invalid_timestamp_count += 1
+    return WebEvidenceCutoffStatus(
+        checked_row_count=checked_row_count,
+        missing_verification_count=missing_verification_count,
+        failed_verification_count=failed_verification_count,
+        after_cutoff_count=after_cutoff_count,
+        invalid_timestamp_count=invalid_timestamp_count,
+    )
+
+
+def _web_evidence_artifact_payloads(path: Path) -> list[object]:
+    if path.suffix == ".jsonl":
+        payloads: list[object] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payloads.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return payloads
+    if path.suffix == ".json":
+        text = path.read_text(encoding="utf-8-sig")
+        if not text.strip():
+            return []
+        try:
+            return [json.loads(text)]
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def _web_evidence_rows(value: object) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        rows: list[dict[str, Any]] = []
+        if _is_web_evidence_row(value):
+            rows.append(value)
+        for item in value.values():
+            rows.extend(_web_evidence_rows(item))
+        return rows
+    if isinstance(value, list):
+        rows = []
+        for item in value:
+            rows.extend(_web_evidence_rows(item))
+        return rows
+    return []
+
+
+def _is_web_evidence_row(value: dict[str, Any]) -> bool:
+    return isinstance(value.get("source_id"), str) and any(
+        key in value
+        for key in (
+            "source_url",
+            "url",
+            "published_at",
+            "time_verified",
+            "available_before_cutoff",
+        )
+    )
+
+
+def _web_evidence_row_timestamp_status(row: dict[str, Any]) -> str:
+    raw_published_at = row.get("published_at")
+    raw_cutoff_at = row.get("cutoff_at")
+    if raw_published_at is None and raw_cutoff_at is None:
+        return "not_applicable"
+    if not isinstance(raw_published_at, str) or not isinstance(raw_cutoff_at, str):
+        return "not_applicable"
+    try:
+        published_at = parse_datetime(raw_published_at)
+        cutoff_at = parse_datetime(raw_cutoff_at)
+    except ValueError:
+        return "invalid"
+    return "ok" if is_available_as_of(published_at, cutoff_at) else "after_cutoff"
 
 
 def _top_level_source_id(value: object) -> str | None:
