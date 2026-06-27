@@ -393,7 +393,7 @@
   "record_id_set_matches_raw": true,
   "record_type_counts_match_raw": true,
   "schema_version": "nslab.bundle_inspection_diagnostics.v1",
-  "status": "validation_failed",
+  "status": "forward_compatible_raw_only",
   "supported": false,
   "trade_date": "2024-12-04",
   "training_eligible_count_matches_manifest": true,

@@ -663,9 +663,13 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             "unsupported_bundle_version"
             if effective_adapter is None
             else (
-                "validation_passed"
-                if validation.get("passed") is True
-                else "validation_failed"
+                "forward_compatible_raw_only"
+                if raw_only_adapter is not None
+                else (
+                    "validation_passed"
+                    if validation.get("passed") is True
+                    else "validation_failed"
+                )
             )
         ),
         "validation": validation,

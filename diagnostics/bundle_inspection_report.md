@@ -1,7 +1,7 @@
 # Bundle Inspection Report
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
-- status: `validation_failed`
+- status: `forward_compatible_raw_only`
 - path: `docs/example2.md`
 - bundle_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`

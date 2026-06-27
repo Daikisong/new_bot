@@ -2697,6 +2697,7 @@ def test_future_manifest_with_quoted_v11_front_matter_is_staged_raw_only(
     assert inspection["supported"] is False
     assert inspection["forward_compatible_raw_only"] is True
     assert inspection["adapter"] == "forward-compatible-raw-only"
+    assert inspection["inspection_status"] == "forward_compatible_raw_only"
     assert inspection["raw_record_count"] == 2
     assert inspection["normalized_record_count"] == 2
     assert inspection["dropped_record_count"] == 0
