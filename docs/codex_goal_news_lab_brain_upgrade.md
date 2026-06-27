@@ -938,6 +938,7 @@ nslab memory inspect --episode <episode_id>
 nslab memory inspect-record <record_id>
 nslab memory stats
 nslab memory audit --deep
+nslab memory rebuild-index --production
 
 nslab warehouse rebuild
 nslab warehouse verify

@@ -1029,6 +1029,54 @@ def test_memory_rebuild_index_production_requires_openai_api_key(
     assert "production vector index rebuild requires OPENAI_API_KEY" in result.output
 
 
+def test_memory_rebuild_index_production_requires_openai_sdk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    def missing_sdk(name: str) -> object:
+        if name == "openai":
+            raise ImportError("missing openai")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(cli_module, "import_module", missing_sdk)
+
+    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+
+    assert result.exit_code == 1
+    assert "production vector index rebuild requires the openai SDK" in result.output
+
+
+def test_memory_rebuild_index_production_requires_async_openai(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "import_module", lambda name: object())
+
+    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+
+    assert result.exit_code == 1
+    assert "requires an openai SDK exposing AsyncOpenAI" in result.output
+
+
 def test_warehouse_inspect_cli_reports_audit_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

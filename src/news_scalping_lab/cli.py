@@ -9,6 +9,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterable
 from datetime import date, datetime
+from importlib import import_module
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
@@ -6606,6 +6607,19 @@ def memory_stats() -> None:
     _echo(BrainRecordStore(settings.project_root).stats())
 
 
+def _require_openai_embedding_runtime() -> None:
+    try:
+        module = import_module("openai")
+    except ImportError as exc:
+        raise ValueError(
+            "production vector index rebuild requires the openai SDK; install the openai extra"
+        ) from exc
+    if not hasattr(module, "AsyncOpenAI"):
+        raise ValueError(
+            "production vector index rebuild requires an openai SDK exposing AsyncOpenAI"
+        )
+
+
 @memory_app.command("rebuild-index")
 def memory_rebuild_index(
     production: Annotated[
@@ -6632,6 +6646,8 @@ def memory_rebuild_index(
                 and not settings.env_value("OPENAI_API_KEY")
             ):
                 raise ValueError("production vector index rebuild requires OPENAI_API_KEY")
+            if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES:
+                _require_openai_embedding_runtime()
             provider = create_llm_provider(settings)
             if isinstance(provider, DeterministicMockLLMProvider):
                 raise ValueError("production vector index rebuild cannot use the mock LLM provider")
