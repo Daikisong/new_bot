@@ -1482,9 +1482,9 @@ def _web_evidence_artifact_source_id_status(path: Path) -> WebEvidenceSourceIdSt
             except json.JSONDecodeError:
                 missing_source_id_count += 1
                 continue
-            payload_source_ids = _source_ids_from_payload(payload)
-            if payload_source_ids:
-                source_ids.extend(payload_source_ids)
+            source_id = _top_level_source_id(payload)
+            if source_id is not None:
+                source_ids.append(source_id)
             else:
                 missing_source_id_count += 1
         return WebEvidenceSourceIdStatus(
@@ -1514,6 +1514,13 @@ def _web_evidence_artifact_source_id_status(path: Path) -> WebEvidenceSourceIdSt
         row_count=0,
         missing_source_id_count=0,
     )
+
+
+def _top_level_source_id(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    source_id = value.get("source_id")
+    return source_id if isinstance(source_id, str) and source_id else None
 
 
 def _source_ids_from_payload(value: object) -> list[str]:
