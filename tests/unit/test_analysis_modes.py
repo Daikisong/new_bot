@@ -109,6 +109,24 @@ class SemanticCounterexampleRetrieval(EmptyRecordRetrieval):
         return []
 
 
+class SemanticPositiveRecordRetrieval(EmptyRecordRetrieval):
+    def __init__(self, record_id: str) -> None:
+        self.record_id = record_id
+        self.filters_seen: list[dict[str, object]] = []
+
+    def search_records(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        **filters: object,
+    ) -> list[str]:
+        self.filters_seen.append(dict(filters))
+        if filters.get("training_eligible") is True:
+            return [self.record_id]
+        return []
+
+
 def _brain_record(
     record_id: str,
     *,
@@ -1216,6 +1234,66 @@ async def test_fast_mode_semantic_counterexamples_reach_final_context(
     ]
     assert all(
         candidate.prior_negative_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+        for candidate in analysis.blind_prediction.candidates
+    )
+
+
+@pytest.mark.asyncio
+async def test_fast_mode_semantic_positive_records_reach_prediction_memory(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-FAST-SEMANTIC-POSITIVE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "fast_semantic_positive_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","SemanticPositiveCo, new catalyst",'
+        '"Semantic retrieval should carry positive records into prediction memory."\n',
+        encoding="utf-8",
+    )
+    retrieval = SemanticPositiveRecordRetrieval("BRAIN-FAST-SEMANTIC-POSITIVE")
+
+    analysis = await DailyAnalyzer(settings, retrieval=retrieval).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert {"training_eligible": True} in retrieval.filters_seen
+    assert manifest.retrieved_record_ids == []
+    assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
+    assert manifest.counterexample_record_ids == []
+    assert synthesis_payload["positive_record_ids"] == [
+        "BRAIN-FAST-SEMANTIC-POSITIVE"
+    ]
+    assert synthesis_payload["negative_record_ids"] == []
+    assert [
+        record["record_id"]
+        for record in synthesis_payload["additional_semantic_retrieval"]["records"]
+    ] == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
+    assert all(
+        candidate.prior_positive_record_ids == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
+        for candidate in analysis.blind_prediction.candidates
+    )
+    assert all(
+        candidate.prior_negative_record_ids == []
         for candidate in analysis.blind_prediction.candidates
     )
 

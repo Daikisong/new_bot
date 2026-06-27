@@ -370,6 +370,7 @@ class DailyAnalyzer:
         )
         manifest.token_counts["candidate_expansion_prompt"] = expansion_prompt_tokens
 
+        prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(manifest)
         prediction, blind_prompt_hash, blind_prompt_tokens = await self._generate_prediction(
             trade_date=trade_date,
             cutoff_at=cutoff_at,
@@ -377,7 +378,7 @@ class DailyAnalyzer:
             event_ids=event_ids,
             retrieved_episode_ids=retrieved_ids,
             counterexample_episode_ids=manifest.counterexample_episode_ids,
-            retrieved_record_ids=manifest.retrieved_record_ids,
+            retrieved_record_ids=prediction_retrieved_record_ids,
             counterexample_record_ids=manifest.counterexample_record_ids,
             excluded_source_ids=[],
             first_pass_mechanisms=first_pass_mechanisms,
@@ -397,6 +398,7 @@ class DailyAnalyzer:
                 "retrieved_record_ids": manifest.retrieved_record_ids,
                 "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
                 "counterexample_record_ids": manifest.counterexample_record_ids,
+                "prediction_retrieved_record_ids": prediction_retrieved_record_ids,
                 "accepted_record_count": manifest.accepted_record_count,
                 "available_record_count": manifest.available_record_count,
                 "available_record_ids": manifest.available_record_ids,
@@ -1574,6 +1576,14 @@ class DailyAnalyzer:
             if record.record_type == "counterexample":
                 counterexample_ids.append(record.record_id)
         manifest.counterexample_record_ids = counterexample_ids
+
+    def _prediction_retrieved_record_ids(self, manifest: ContextManifest) -> list[str]:
+        return _unique_preserving_order(
+            [
+                *manifest.retrieved_record_ids,
+                *manifest.semantic_retrieval_record_ids,
+            ]
+        )
 
     def _read_semantic_retrieval_plan(
         self,
@@ -2798,6 +2808,7 @@ class DailyAnalyzer:
             synthesized = prediction
         if not synthesized.candidates:
             synthesized = prediction
+        prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(manifest)
         normalized = self._normalize_prediction(
             synthesized,
             trade_date=prediction.trade_date,
@@ -2809,7 +2820,7 @@ class DailyAnalyzer:
             default_positive_case_ids=manifest.retrieved_episode_ids[:3],
             default_negative_case_ids=manifest.counterexample_episode_ids[:3],
             default_positive_record_ids=_record_ids_without(
-                manifest.retrieved_record_ids,
+                prediction_retrieved_record_ids,
                 manifest.counterexample_record_ids,
             )[:5],
             default_negative_record_ids=manifest.counterexample_record_ids[:5],
