@@ -3655,6 +3655,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "finding_count": 1,
             "findings": [finding],
             "source_record_count": None,
+            "diagnostic_source_record_count": None,
+            "diagnostic_eligible_record_count": None,
+            "diagnostic_exported_record_count": None,
+            "diagnostic_row_count": None,
+            "diagnostic_skipped_record_count": None,
+            "expected_aggregate_counts": {},
+            "missing_aggregate_count_fields": [],
+            "invalid_aggregate_count_fields": [],
             "per_export_eligible_record_count": None,
             "per_export_exported_record_count": None,
             "per_export_skipped_record_count": None,
@@ -3726,6 +3734,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "finding_count": 0,
             "findings": [],
             "source_record_count": 0,
+            "diagnostic_source_record_count": 0,
+            "diagnostic_eligible_record_count": 0,
+            "diagnostic_exported_record_count": 0,
+            "diagnostic_row_count": 0,
+            "diagnostic_skipped_record_count": 0,
+            "expected_aggregate_counts": {},
+            "missing_aggregate_count_fields": [],
+            "invalid_aggregate_count_fields": [],
             "per_export_eligible_record_count": 0,
             "per_export_exported_record_count": 0,
             "per_export_skipped_record_count": 0,
@@ -3841,6 +3857,46 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     record_store_source_count = _int_from_mapping(
         diagnostics,
         "record_store_source_record_count",
+    )
+    diagnostic_source_record_count = _int_from_mapping(
+        diagnostics,
+        "source_record_count",
+    )
+    diagnostic_eligible_record_count = _int_from_mapping(
+        diagnostics,
+        "eligible_record_count",
+    )
+    diagnostic_exported_record_count = _int_from_mapping(
+        diagnostics,
+        "exported_record_count",
+    )
+    diagnostic_row_count = _int_from_mapping(diagnostics, "row_count")
+    diagnostic_skipped_record_count = _int_from_mapping(
+        diagnostics,
+        "skipped_record_count",
+    )
+    aggregate_count_fields = (
+        "source_record_count",
+        "eligible_record_count",
+        "exported_record_count",
+        "row_count",
+        "skipped_record_count",
+    )
+    missing_aggregate_count_fields = [
+        field for field in aggregate_count_fields if diagnostics and field not in diagnostics
+    ]
+    invalid_aggregate_count_fields = [
+        field
+        for field in aggregate_count_fields
+        if field in diagnostics
+        and not _non_negative_int_field_valid(diagnostics.get(field))
+    ]
+    for field in missing_aggregate_count_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_aggregate_count_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
+    expected_aggregate_counts = _expected_training_export_aggregate_counts_from_manifests(
+        audit.get("manifests"),
     )
     unique_source_record_count = _int_from_mapping(
         diagnostics,
@@ -4128,6 +4184,24 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         and unique_exported_count > unique_training_eligible_count
     ):
         findings.append("training export includes more records than eligible records")
+    aggregate_count_values = {
+        "source_record_count": diagnostic_source_record_count,
+        "eligible_record_count": diagnostic_eligible_record_count,
+        "exported_record_count": diagnostic_exported_record_count,
+        "row_count": diagnostic_row_count,
+        "skipped_record_count": diagnostic_skipped_record_count,
+    }
+    for field, observed_count in aggregate_count_values.items():
+        if (
+            diagnostics
+            and field not in missing_aggregate_count_fields
+            and field not in invalid_aggregate_count_fields
+            and field in expected_aggregate_counts
+            and observed_count != expected_aggregate_counts[field]
+        ):
+            findings.append(
+                f"training export diagnostics {field} does not match manifests"
+            )
     per_export_count_values = {
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
@@ -4255,6 +4329,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "findings": findings,
         "source_record_count": source_record_count,
         "record_store_source_record_count": record_store_source_count,
+        "diagnostic_source_record_count": diagnostic_source_record_count,
+        "diagnostic_eligible_record_count": diagnostic_eligible_record_count,
+        "diagnostic_exported_record_count": diagnostic_exported_record_count,
+        "diagnostic_row_count": diagnostic_row_count,
+        "diagnostic_skipped_record_count": diagnostic_skipped_record_count,
+        "expected_aggregate_counts": expected_aggregate_counts,
+        "missing_aggregate_count_fields": missing_aggregate_count_fields,
+        "invalid_aggregate_count_fields": invalid_aggregate_count_fields,
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
         "per_export_skipped_record_count": per_export_skipped_count,
@@ -7496,6 +7578,42 @@ def _expected_training_export_counts_from_manifests(
             total += value
         if complete:
             expected[output_field] = total
+    return expected
+
+
+def _expected_training_export_aggregate_counts_from_manifests(
+    manifests: object,
+) -> dict[str, int]:
+    if not isinstance(manifests, dict):
+        return {}
+    expected: dict[str, int] = {}
+    source_record_counts: list[int] = []
+    sum_fields = (
+        "eligible_record_count",
+        "exported_record_count",
+        "row_count",
+        "skipped_record_count",
+    )
+    sums = dict.fromkeys(sum_fields, 0)
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            return {}
+        source_count = manifest.get("source_record_count")
+        if (
+            not isinstance(source_count, int)
+            or isinstance(source_count, bool)
+            or source_count < 0
+        ):
+            return {}
+        source_record_counts.append(source_count)
+        for field in sum_fields:
+            value = manifest.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return {}
+            sums[field] += value
+    expected["source_record_count"] = max(source_record_counts, default=0)
+    expected.update(sums)
     return expected
 
 

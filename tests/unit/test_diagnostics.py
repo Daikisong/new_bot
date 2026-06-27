@@ -2385,6 +2385,30 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["status"] == "ready"
     assert production["training_exports"]["source_record_count"] == 2
     assert production["training_exports"]["record_store_source_record_count"] == 2
+    assert production["training_exports"]["diagnostic_source_record_count"] == (
+        training_report["source_record_count"]
+    )
+    assert production["training_exports"]["diagnostic_eligible_record_count"] == (
+        training_report["eligible_record_count"]
+    )
+    assert production["training_exports"]["diagnostic_exported_record_count"] == (
+        training_report["exported_record_count"]
+    )
+    assert production["training_exports"]["diagnostic_row_count"] == (
+        training_report["row_count"]
+    )
+    assert production["training_exports"]["diagnostic_skipped_record_count"] == (
+        training_report["skipped_record_count"]
+    )
+    assert production["training_exports"]["expected_aggregate_counts"] == {
+        "source_record_count": training_report["source_record_count"],
+        "eligible_record_count": training_report["eligible_record_count"],
+        "exported_record_count": training_report["exported_record_count"],
+        "row_count": training_report["row_count"],
+        "skipped_record_count": training_report["skipped_record_count"],
+    }
+    assert production["training_exports"]["missing_aggregate_count_fields"] == []
+    assert production["training_exports"]["invalid_aggregate_count_fields"] == []
     assert production["training_exports"]["available_manifest_kinds"] == [
         "evals",
         "preference",
@@ -2620,6 +2644,90 @@ def test_production_readiness_rejects_training_export_unique_record_id_mismatch(
     )
     assert (
         "training: training export unique source record IDs do not match current records"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_training_export_aggregate_count_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    manifests = {
+        kind: json.loads(
+            (tmp_path / "training_exports" / kind / "manifest.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        for kind in ("sft", "preference", "evals")
+    }
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["source_record_count"] = 1
+    tampered_report["eligible_record_count"] = True
+    tampered_report["exported_record_count"] = 0
+    tampered_report["row_count"] = 0
+    tampered_report.pop("skipped_record_count")
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": manifests}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    expected_counts = {
+        "source_record_count": max(
+            manifest["source_record_count"] for manifest in manifests.values()
+        ),
+        "eligible_record_count": sum(
+            manifest["eligible_record_count"] for manifest in manifests.values()
+        ),
+        "exported_record_count": sum(
+            manifest["exported_record_count"] for manifest in manifests.values()
+        ),
+        "row_count": sum(manifest["row_count"] for manifest in manifests.values()),
+        "skipped_record_count": sum(
+            manifest["skipped_record_count"] for manifest in manifests.values()
+        ),
+    }
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["expected_aggregate_counts"] == expected_counts
+    assert production["training_exports"]["missing_aggregate_count_fields"] == [
+        "skipped_record_count",
+    ]
+    assert production["training_exports"]["invalid_aggregate_count_fields"] == [
+        "eligible_record_count",
+    ]
+    assert (
+        "training export diagnostics skipped_record_count is missing"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics eligible_record_count is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics source_record_count does not match manifests"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics exported_record_count does not match manifests"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics source_record_count does not match manifests"
         in production["findings"]
     )
 
