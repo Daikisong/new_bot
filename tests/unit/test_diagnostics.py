@@ -2123,6 +2123,101 @@ def test_production_readiness_rejects_llm_context_manifest_without_prompt_hashes
     )
 
 
+def test_production_readiness_rejects_invalid_llm_context_prompt_hash_entries(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    trace_dir = tmp_path / "runs" / "traces"
+    checkpoint_dir = tmp_path / "runs" / "checkpoints" / "llm"
+    manifest_dir.mkdir(parents=True)
+    trace_dir.mkdir(parents=True)
+    checkpoint_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-invalid-prompt-hashes.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-invalid-prompt-hashes",
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+            "prompt_hashes": {
+                "daily_blind_analysis": "live-trace-hash",
+                "empty_prompt": "",
+                "numeric_prompt": 123,
+            },
+        },
+    )
+    write_json(
+        trace_dir / "TRACE-live.json",
+        {
+            "schema_version": "nslab.llm_trace.v1",
+            "trace_id": "TRACE-live",
+            "operation": "generate_structured",
+            "purpose": "daily_blind_analysis",
+            "provider": "OpenAIResponsesProvider",
+            "checkpoint_id": "LLMCKPT-live",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    write_json(
+        checkpoint_dir / "LLMCKPT-live.json",
+        {
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "checkpoint_id": "LLMCKPT-live",
+            "operation": "generate_structured",
+            "purpose": "daily_blind_analysis",
+            "provider": "OpenAIResponsesProvider",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_evidence"]["passed"] is False
+    assert production["llm_evidence"]["missing_prompt_hash_manifest_count"] == 0
+    assert production["llm_evidence"]["invalid_prompt_hash_manifest_count"] == 1
+    assert production["llm_evidence"]["invalid_prompt_hash_entry_count"] == 2
+    assert production["llm_evidence"]["invalid_prompt_hash_manifests"] == [
+        {
+            "path": "runs/manifests/RUN-invalid-prompt-hashes.json",
+            "run_id": "RUN-invalid-prompt-hashes",
+            "invalid_fields": ["empty_prompt", "numeric_prompt"],
+        }
+    ]
+    assert production["llm_evidence"]["referenced_prompt_hash_count"] == 1
+    assert production["llm_evidence"]["checked_trace_count"] == 1
+    assert production["llm_evidence"]["checked_checkpoint_count"] == 1
+    assert (
+        "llm_evidence: context manifest prompt_hashes contains invalid entries: "
+        "runs/manifests/RUN-invalid-prompt-hashes.json (2)"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_accepts_live_llm_context_manifests(
     tmp_path,
 ) -> None:
@@ -2231,6 +2326,9 @@ def test_production_readiness_accepts_live_llm_context_manifests(
     assert production["llm_evidence"]["checked_manifest_count"] == 1
     assert production["llm_evidence"]["invalid_manifest_schema_count"] == 0
     assert production["llm_evidence"]["mock_model_config_manifest_count"] == 0
+    assert production["llm_evidence"]["invalid_prompt_hash_manifest_count"] == 0
+    assert production["llm_evidence"]["invalid_prompt_hash_entry_count"] == 0
+    assert production["llm_evidence"]["invalid_prompt_hash_manifests"] == []
     assert production["llm_evidence"]["referenced_prompt_hash_count"] == 1
     assert production["llm_evidence"]["checked_trace_count"] == 1
     assert production["llm_evidence"]["invalid_trace_schema_count"] == 0
