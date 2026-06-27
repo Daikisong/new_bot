@@ -26,6 +26,11 @@
       "first_finding": "llm_model: mock model profile cannot compile production brain"
     },
     {
+      "category": "price",
+      "finding_count": 1,
+      "first_finding": "price: mock provider cannot supply production D-1 price evidence"
+    },
+    {
       "category": "real_bundle",
       "finding_count": 1,
       "first_finding": "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending"
@@ -41,13 +46,14 @@
       "first_finding": "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl"
     }
   ],
-  "finding_count": 138,
+  "finding_count": 139,
   "finding_counts_by_category": {
     "brain": 4,
     "embedding": 2,
     "llm": 1,
     "llm_evidence": 106,
     "llm_model": 1,
+    "price": 1,
     "real_bundle": 1,
     "web": 1,
     "web_evidence": 22
@@ -163,6 +169,7 @@
     "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e757310c06146284.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
     "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider",
     "web: mock provider cannot supply production evidence",
+    "price: mock provider cannot supply production D-1 price evidence",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
     "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
@@ -316,6 +323,9 @@
     ],
     "llm_model": [
       "llm_model: mock model profile cannot compile production brain"
+    ],
+    "price": [
+      "price: mock provider cannot supply production D-1 price evidence"
     ],
     "real_bundle": [
       "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending"
@@ -1702,6 +1712,19 @@
     "validated_compiled_claims_without_contradictions": []
   },
   "passed": false,
+  "price_data": {
+    "finding_count": 1,
+    "findings": [
+      "mock provider cannot supply production D-1 price evidence"
+    ],
+    "passed": false,
+    "provider": "mock",
+    "schema_version": "nslab.production_price_data.v1",
+    "status": "attention",
+    "stock_web_effective_path": null,
+    "stock_web_effective_path_exists": false,
+    "stock_web_schema_status": {}
+  },
   "real_bundle_import": {
     "applicable": false,
     "episode_id": null,
@@ -2001,7 +2024,9 @@
   "required_environment": {
     "BRAVE_SEARCH_API_KEY": "<required>",
     "NSLAB_LLM_PROVIDER": "openai",
+    "NSLAB_PRICE_PROVIDER": "stock-web",
     "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
+    "NSLAB_STOCK_WEB_PATH": "<path-to-stock-web-checkout-or-cache>",
     "NSLAB_WEB_PROVIDER": "brave",
     "OPENAI_API_KEY": "<required>"
   },

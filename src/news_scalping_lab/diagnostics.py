@@ -72,6 +72,7 @@ ENV_KEYS = [
 ]
 OPENAI_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
+PRODUCTION_PRICE_PROVIDER_ALIASES = {"stock-web", "stock_web", "stockweb"}
 BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION = "nslab.brain_compile_diagnostics.v1"
 LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
 LLM_FULL_COMPILE_RUN_SCHEMA_VERSION = "nslab.llm_full_brain_compile_run.v1"
@@ -212,6 +213,9 @@ def production_readiness_report(
         findings.append(
             "brave_search: production web research requires configured Brave Search API key"
         )
+    price_data = _production_price_data_status(report, settings)
+    if price_data["passed"] is not True:
+        findings.extend(f"price: {finding}" for finding in price_data["findings"])
     web_evidence = _production_web_evidence_status(settings.project_root)
     if web_evidence["passed"] is not True:
         findings.extend(
@@ -326,6 +330,7 @@ def production_readiness_report(
         "semantic_index": semantic_index,
         "training_exports": training_exports,
         "web_evidence": web_evidence,
+        "price_data": price_data,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
@@ -351,6 +356,48 @@ def _production_blocker_summary(
         }
         for category, category_findings in findings_by_category.items()
     ]
+
+
+def _production_price_data_status(
+    report: dict[str, Any],
+    settings: Settings,
+) -> dict[str, Any]:
+    findings: list[str] = []
+    provider = settings.price_provider.strip().lower()
+    stock_web = report.get("stock_web")
+    if provider == "mock":
+        findings.append("mock provider cannot supply production D-1 price evidence")
+    elif provider not in PRODUCTION_PRICE_PROVIDER_ALIASES:
+        findings.append(f"unsupported production provider {settings.price_provider}")
+    elif not isinstance(stock_web, dict) or stock_web.get("effective_path_exists") is not True:
+        findings.append("stock-web provider has no readable path")
+    elif not isinstance(stock_web.get("schema"), dict):
+        findings.append("stock-web atlas schema is missing or unreadable")
+    elif not isinstance(stock_web.get("schema_status"), dict) or _nested_dict(
+        stock_web, "schema_status"
+    ).get("status") != "ok":
+        findings.append("stock-web atlas manifest/schema or shard roots are incomplete")
+    return {
+        "schema_version": "nslab.production_price_data.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "provider": settings.price_provider,
+        "stock_web_effective_path": (
+            stock_web.get("effective_path") if isinstance(stock_web, dict) else None
+        ),
+        "stock_web_effective_path_exists": (
+            stock_web.get("effective_path_exists")
+            if isinstance(stock_web, dict)
+            else None
+        ),
+        "stock_web_schema_status": (
+            _nested_dict(stock_web, "schema_status")
+            if isinstance(stock_web, dict)
+            else {}
+        ),
+    }
 
 
 def real_bundle_smoke_report(
@@ -719,6 +766,8 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": web_provider,
         settings.brave_search_api_key_env: "<required>",
+        "NSLAB_PRICE_PROVIDER": "stock-web",
+        "NSLAB_STOCK_WEB_PATH": "<path-to-stock-web-checkout-or-cache>",
         REAL_BUNDLE_ENV_KEY: "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     if settings.brave_search_api_key_env != "BRAVE_SEARCH_API_KEY":

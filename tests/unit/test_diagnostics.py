@@ -346,6 +346,8 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": "brave",
         "BRAVE_SEARCH_API_KEY": "<required>",
+        "NSLAB_PRICE_PROVIDER": "stock-web",
+        "NSLAB_STOCK_WEB_PATH": "<path-to-stock-web-checkout-or-cache>",
         "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     assert production["remediation_commands"] == [
@@ -949,6 +951,90 @@ def test_production_readiness_rejects_deterministic_embedding_index(tmp_path) ->
         command.endswith("brain rebuild --mode llm-full")
         for command in production["remediation_commands"]
     )
+
+
+def test_production_readiness_rejects_mock_price_provider(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["price_data"] == {
+        "schema_version": "nslab.production_price_data.v1",
+        "passed": False,
+        "status": "attention",
+        "finding_count": 1,
+        "findings": ["mock provider cannot supply production D-1 price evidence"],
+        "provider": "mock",
+        "stock_web_effective_path": None,
+        "stock_web_effective_path_exists": None,
+        "stock_web_schema_status": {},
+    }
+    assert (
+        "price: mock provider cannot supply production D-1 price evidence"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_stock_web_price_provider(tmp_path) -> None:
+    stock_web_path = tmp_path / "stock-web"
+    atlas = stock_web_path / "atlas"
+    shard_root = atlas / "ohlcv_tradable_by_symbol_year"
+    shard_root.mkdir(parents=True)
+    write_json(
+        atlas / "manifest.json",
+        {
+            "source_name": "stock-web-test",
+            "source_repo_url": "https://example.test/stock-web",
+            "calibration_shard_root": "atlas/ohlcv_tradable_by_symbol_year",
+        },
+    )
+    write_json(
+        atlas / "schema.json",
+        {
+            "tradable_shard_columns": {
+                "d": "date",
+                "o": "open",
+                "h": "high",
+                "l": "low",
+                "c": "close",
+            }
+        },
+    )
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        web_provider="brave",
+        price_provider="stock-web",
+        stock_web_path=stock_web_path,
+    )
+    settings.llm.provider = "openai"
+    report = build_doctor_report(settings)
+    report["api_connections"]["openai"]["status"] = "configured_not_called"
+    report["api_connections"]["brave_search"]["status"] = "configured_not_called"
+    report["vector_index"] = {
+        "status": "current",
+        "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["price_data"]["passed"] is True
+    assert production["price_data"]["provider"] == "stock-web"
+    assert production["price_data"]["stock_web_effective_path"] == (
+        stock_web_path.as_posix()
+    )
+    assert not any(finding.startswith("price:") for finding in production["findings"])
 
 
 def test_production_readiness_rejects_on_disk_mock_embedding_manifest(
@@ -8104,6 +8190,8 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": "brave",
         "BRAVE_SEARCH_API_KEY": "<required>",
+        "NSLAB_PRICE_PROVIDER": "stock-web",
+        "NSLAB_STOCK_WEB_PATH": "<path-to-stock-web-checkout-or-cache>",
         "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     assert (
@@ -8115,6 +8203,7 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
     ]
     assert production["finding_counts_by_category"]["llm"] == 1
     assert production["finding_counts_by_category"]["llm_model"] == 1
+    assert production["finding_counts_by_category"]["price"] == 1
     assert production["finding_counts_by_category"]["web"] == 1
     blocker_summary = {
         item["category"]: item for item in production["blocker_summary"]
