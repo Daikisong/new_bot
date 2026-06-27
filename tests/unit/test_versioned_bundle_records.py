@@ -2211,7 +2211,40 @@ def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     assert report["dropped_record_count"] == 0
     assert report["missing_normalized_record_count"] == 0
     assert report["extra_normalized_record_count"] == 0
+    assert report["quarantined_bundle_count"] == 1
+    assert report["quarantined_raw_record_count"] == 0
+    assert report["normalization_skipped_reason"] == "UNSUPPORTED_BUNDLE_VERSION"
     assert report["quarantined_record_count"] == 1
+    assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
+def test_opaque_unknown_bundle_with_raw_records_reports_quarantined_records(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "opaque_future_bundle_with_records.md"
+    bundle.write_text(
+        _opaque_unsupported_bundle_with_brain_delta(),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["supported"] is False
+    assert inspection["forward_compatible_raw_only"] is False
+    assert result.status == "UNSUPPORTED_BUNDLE_VERSION"
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "UNSUPPORTED_BUNDLE_VERSION"
+    assert report["raw_record_count"] == 1
+    assert report["normalized_record_count"] == 0
+    assert report["raw_normalized_record_count_matches"] is False
+    assert report["dropped_record_count"] == 0
+    assert report["quarantined_bundle_count"] == 1
+    assert report["quarantined_raw_record_count"] == 1
+    assert report["quarantined_record_count"] == 1
+    assert report["normalization_skipped_reason"] == "UNSUPPORTED_BUNDLE_VERSION"
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
@@ -2259,4 +2292,17 @@ trade_date: 2030-01-10
 {"schema_version":"nslab.future_payload.v1","opaque":true}
 ```
 <!-- NSLAB:END future_payload.json -->
+"""
+
+
+def _opaque_unsupported_bundle_with_brain_delta() -> str:
+    return """---
+schema_version: nslab.research_bundle.v99
+episode_id: FUTURE-OPAQUE-WITH-RECORDS
+---
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+```jsonl
+{"record_id":"OPAQUE-RAW-1","record_type":"future_record","training_eligible":true}
+```
+<!-- NSLAB:END brain_delta.jsonl -->
 """

@@ -697,12 +697,7 @@ def import_versioned_bundle(
                 "episode_id": episode_id,
                 "bundle_version": bundle_schema_version(parsed),
                 "raw_bundle_sha256": source_hash,
-                **_record_count_parity_payload(
-                    raw_record_count=len(
-                        parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-                    ),
-                    normalized_record_count=0,
-                ),
+                **_unsupported_bundle_record_payload(parsed),
                 "missing_normalized_record_count": 0,
                 "extra_normalized_record_count": 0,
                 "quarantined_record_count": 1,
@@ -993,6 +988,19 @@ def _record_count_parity_payload(
             raw_record_count == normalized_record_count
         ),
         "dropped_record_count": max(0, raw_record_count - normalized_record_count),
+    }
+
+
+def _unsupported_bundle_record_payload(parsed: GenericParsedBundle) -> dict[str, Any]:
+    raw_record_count = len(parsed.jsonl_blocks.get("brain_delta.jsonl", []))
+    return {
+        "raw_record_count": raw_record_count,
+        "normalized_record_count": 0,
+        "raw_normalized_record_count_matches": raw_record_count == 0,
+        "dropped_record_count": 0,
+        "quarantined_bundle_count": 1,
+        "quarantined_raw_record_count": raw_record_count,
+        "normalization_skipped_reason": "UNSUPPORTED_BUNDLE_VERSION",
     }
 
 
