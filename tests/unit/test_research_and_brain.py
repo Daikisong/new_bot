@@ -1864,6 +1864,55 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert audit["record_coverage_findings"] == []
 
 
+def test_brain_audit_reports_unreadable_record_coverage_manifest(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Record coverage malformed JSON audit note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-COVERAGE-UNREADABLE", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    brain_manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    coverage_path.write_text("{not valid json", encoding="utf-8")
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_complete"] is False
+    assert audit["record_coverage_findings"] == [
+        "record coverage manifest is unreadable"
+    ]
+    assert audit["accepted_record_count"] == 1
+    assert audit["compiled_record_count"] == 0
+    assert audit["expected_swept_record_ids"] == ["BRAIN-COVERAGE-UNREADABLE"]
+    assert audit["missing_swept_record_ids"] == ["BRAIN-COVERAGE-UNREADABLE"]
+    assert audit["record_coverage_as_of"] is None
+    assert audit["expected_record_coverage_as_of"] == brain_manifest.created_at.isoformat()
+    record_coverage_report = read_json(
+        tmp_path / "diagnostics" / "record_coverage_report.json"
+    )
+    latest_record_audit = record_coverage_report["latest_record_coverage_audit"]
+    assert latest_record_audit["findings"] == [
+        "record coverage manifest is unreadable"
+    ]
+    assert latest_record_audit["record_coverage_complete"] is False
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest_brain_audit = brain_report["latest_brain_audit"]
+    assert (
+        "record_coverage_findings: record coverage manifest is unreadable"
+        in latest_brain_audit["findings"]
+    )
+
+
 def test_brain_audit_rejects_record_coverage_episode_count_mismatch(
     tmp_path: Path,
 ) -> None:
