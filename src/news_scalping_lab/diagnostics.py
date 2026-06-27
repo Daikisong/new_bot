@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
+from datetime import datetime
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
@@ -174,7 +176,10 @@ def production_readiness_report(
         record_coverage,
         "accepted_record_count",
     )
-    record_coverage_status = _production_record_coverage_status(record_coverage)
+    record_coverage_status = _production_record_coverage_status(
+        record_coverage,
+        root=settings.project_root,
+    )
     llm_full_brain = _llm_full_brain_status(
         settings,
         build_mode=build_mode,
@@ -1224,7 +1229,11 @@ def _unique_preserving_order(values: list[str]) -> list[str]:
     return unique
 
 
-def _production_record_coverage_status(record_coverage: object) -> dict[str, Any]:
+def _production_record_coverage_status(
+    record_coverage: object,
+    *,
+    root: Path,
+) -> dict[str, Any]:
     if not isinstance(record_coverage, dict):
         return {
             "schema_version": "nslab.production_record_coverage.v1",
@@ -1237,9 +1246,59 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
             "compiled_record_count": None,
             "swept_record_count": None,
             "unswept_record_ids": None,
+            "record_store_readable": None,
+            "record_store_record_count": None,
+            "record_store_error": None,
+            "unknown_swept_record_ids": [],
+            "missing_swept_record_ids": [],
         }
 
     findings: list[str] = []
+    try:
+        store_records = BrainRecordStore(root).list_records()
+        record_store_readable = True
+        record_store_error = None
+    except Exception as exc:
+        store_records = []
+        record_store_readable = False
+        record_store_error = type(exc).__name__
+        findings.append("record coverage source record store is unreadable")
+    store_record_ids = [record.record_id for record in store_records]
+    store_record_id_set = set(store_record_ids)
+    store_record_count = len(store_record_id_set)
+    store_training_eligible_count = sum(
+        1 for record in store_records if record.training_eligible
+    )
+    store_ineligible_count = sum(
+        1 for record in store_records if not record.training_eligible
+    )
+    store_audit_only_count = sum(
+        1 for record in store_records if record.evidence_phase == "AUDIT"
+    )
+    store_counts_by_type = dict(
+        sorted(Counter(record.record_type for record in store_records).items())
+    )
+    store_counts_by_phase = dict(
+        sorted(Counter(record.evidence_phase for record in store_records).items())
+    )
+    store_counts_by_target = dict(
+        sorted(
+            Counter(record.training_target or "UNKNOWN" for record in store_records).items()
+        )
+    )
+    coverage_as_of = _record_coverage_as_of(record_coverage)
+    store_available_as_of_count: int | None = None
+    store_training_eligible_as_of_count: int | None = None
+    if coverage_as_of is not None:
+        available_as_of = [
+            record
+            for record in store_records
+            if is_available_as_of(record.available_from, coverage_as_of)
+        ]
+        store_available_as_of_count = len(available_as_of)
+        store_training_eligible_as_of_count = sum(
+            1 for record in available_as_of if record.training_eligible
+        )
     if record_coverage.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
 
@@ -1272,6 +1331,12 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
         findings.append("record coverage manifest has duplicate swept records")
     if unswept_record_ids:
         findings.append("record coverage manifest has unswept records")
+    unknown_swept_record_ids = sorted(set(swept_record_ids) - store_record_id_set)
+    missing_swept_record_ids = sorted(store_record_id_set - set(swept_record_ids))
+    if record_store_readable is True and unknown_swept_record_ids:
+        findings.append("record coverage manifest swept IDs reference unknown records")
+    if record_store_readable is True and missing_swept_record_ids:
+        findings.append("record coverage manifest swept IDs do not cover record store")
 
     count_maps = {
         "record_counts_by_type": _int_dict(
@@ -1316,11 +1381,35 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
     ):
         findings.append("record coverage manifest available count exceeds accepted count")
     if (
+        record_store_readable is True
+        and accepted_count is not None
+        and accepted_count != store_record_count
+    ):
+        findings.append(
+            "record coverage manifest accepted count does not match record store"
+        )
+    if (
+        record_store_readable is True
+        and available_count is not None
+        and available_count != store_record_count
+    ):
+        findings.append(
+            "record coverage manifest available count does not match record store"
+        )
+    if (
         available_count is not None
         and available_count_as_of is not None
         and available_count_as_of > available_count
     ):
         findings.append("record coverage manifest as-of available count exceeds available count")
+    if (
+        store_available_as_of_count is not None
+        and available_count_as_of is not None
+        and available_count_as_of != store_available_as_of_count
+    ):
+        findings.append(
+            "record coverage manifest as-of available count does not match record store"
+        )
     if (
         accepted_count is not None
         and compiled_count is not None
@@ -1328,6 +1417,14 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
     ):
         findings.append(
             "record coverage manifest compiled count does not match accepted count"
+        )
+    if (
+        record_store_readable is True
+        and compiled_count is not None
+        and compiled_count != store_record_count
+    ):
+        findings.append(
+            "record coverage manifest compiled count does not match record store"
         )
     if swept_count is not None and swept_count != len(swept_record_ids):
         findings.append("record coverage manifest swept count does not match swept IDs")
@@ -1348,6 +1445,14 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
             "record coverage manifest training eligible count exceeds available count"
         )
     if (
+        record_store_readable is True
+        and training_eligible_count is not None
+        and training_eligible_count != store_training_eligible_count
+    ):
+        findings.append(
+            "record coverage manifest training eligible count does not match record store"
+        )
+    if (
         training_eligible_count_as_of is not None
         and available_count_as_of is not None
         and training_eligible_count_as_of > available_count_as_of
@@ -1356,17 +1461,65 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
             "record coverage manifest as-of training eligible count exceeds as-of available count"
         )
     if (
+        store_training_eligible_as_of_count is not None
+        and training_eligible_count_as_of is not None
+        and training_eligible_count_as_of != store_training_eligible_as_of_count
+    ):
+        findings.append(
+            "record coverage manifest as-of training eligible count does not match record store"
+        )
+    if (
         ineligible_count is not None
         and accepted_count is not None
         and ineligible_count > accepted_count
     ):
         findings.append("record coverage manifest ineligible count exceeds accepted count")
     if (
+        record_store_readable is True
+        and ineligible_count is not None
+        and ineligible_count != store_ineligible_count
+    ):
+        findings.append(
+            "record coverage manifest ineligible count does not match record store"
+        )
+    if (
         audit_only_count is not None
         and accepted_count is not None
         and audit_only_count > accepted_count
     ):
         findings.append("record coverage manifest audit-only count exceeds accepted count")
+    if (
+        record_store_readable is True
+        and audit_only_count is not None
+        and audit_only_count != store_audit_only_count
+    ):
+        findings.append(
+            "record coverage manifest audit-only count does not match record store"
+        )
+    if (
+        record_store_readable is True
+        and isinstance(record_coverage.get("record_counts_by_type"), dict)
+        and count_maps["record_counts_by_type"] != store_counts_by_type
+    ):
+        findings.append(
+            "record coverage manifest record_counts_by_type does not match record store"
+        )
+    if (
+        record_store_readable is True
+        and isinstance(record_coverage.get("record_counts_by_evidence_phase"), dict)
+        and count_maps["record_counts_by_evidence_phase"] != store_counts_by_phase
+    ):
+        findings.append(
+            "record coverage manifest record_counts_by_evidence_phase does not match record store"
+        )
+    if (
+        record_store_readable is True
+        and isinstance(record_coverage.get("record_counts_by_training_target"), dict)
+        and count_maps["record_counts_by_training_target"] != store_counts_by_target
+    ):
+        findings.append(
+            "record coverage manifest record_counts_by_training_target does not match record store"
+        )
 
     has_findings_before_complete_check = bool(findings)
     if record_coverage.get("coverage_complete") is not True:
@@ -1401,6 +1554,27 @@ def _production_record_coverage_status(record_coverage: object) -> dict[str, Any
         "ineligible_record_count": ineligible_count,
         "audit_only_record_count": audit_only_count,
         "coverage_complete": record_coverage.get("coverage_complete"),
+        "record_store_readable": record_store_readable,
+        "record_store_record_count": store_record_count if record_store_readable else None,
+        "record_store_error": record_store_error,
+        "record_store_counts_by_type": store_counts_by_type,
+        "record_store_counts_by_evidence_phase": store_counts_by_phase,
+        "record_store_counts_by_training_target": store_counts_by_target,
+        "record_store_training_eligible_record_count": (
+            store_training_eligible_count if record_store_readable else None
+        ),
+        "record_store_ineligible_record_count": (
+            store_ineligible_count if record_store_readable else None
+        ),
+        "record_store_audit_only_record_count": (
+            store_audit_only_count if record_store_readable else None
+        ),
+        "record_store_available_record_count_as_of": store_available_as_of_count,
+        "record_store_training_eligible_record_count_as_of": (
+            store_training_eligible_as_of_count
+        ),
+        "unknown_swept_record_ids": unknown_swept_record_ids,
+        "missing_swept_record_ids": missing_swept_record_ids,
     }
 
 
@@ -4383,6 +4557,16 @@ def _int_from_mapping(source: object, key: str) -> int | None:
         return None
     value = source.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _record_coverage_as_of(record_coverage: dict[str, Any]) -> datetime | None:
+    raw_value = record_coverage.get("record_coverage_as_of")
+    if not isinstance(raw_value, str) or not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(raw_value)
+    except ValueError:
+        return None
 
 
 def _string_list(value: object) -> list[str]:

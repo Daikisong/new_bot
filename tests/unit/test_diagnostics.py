@@ -1194,6 +1194,7 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
     settings.llm.provider = "openai"
     current = tmp_path / "brain" / "current"
     current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
     write_json(current / "record_coverage_manifest.json", _complete_record_coverage())
     report = {
         "api_connections": {
@@ -1214,9 +1215,81 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
     assert production["record_coverage"]["passed"] is True
     assert production["record_coverage"]["status"] == "ready"
     assert production["record_coverage"]["accepted_record_count"] == 2
+    assert production["record_coverage"]["record_store_record_count"] == 2
     assert production["record_coverage"]["swept_record_count"] == 2
     assert production["record_coverage"]["unswept_record_ids"] == []
-    assert not any(finding.startswith("records:") for finding in production["findings"])
+    assert production["record_coverage"]["findings"] == []
+
+
+def test_production_readiness_rejects_record_coverage_store_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    coverage = _complete_record_coverage()
+    coverage.update(
+        {
+            "accepted_record_count": 2,
+            "available_record_count": 2,
+            "compiled_record_count": 2,
+            "swept_record_count": 2,
+            "swept_record_ids": ["BRAIN-1", "BRAIN-missing"],
+            "record_counts_by_type": {
+                "counterexample": 2,
+            },
+            "record_counts_by_evidence_phase": {
+                "AUDIT": 2,
+            },
+            "record_counts_by_training_target": {
+                "audit_only": 2,
+            },
+        }
+    )
+    write_json(current / "record_coverage_manifest.json", coverage)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["unknown_swept_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["record_coverage"]["missing_swept_record_ids"] == ["BRAIN-2"]
+    assert (
+        "records: record coverage manifest swept IDs reference unknown records"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest swept IDs do not cover record store"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest record_counts_by_type does not match record store"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest record_counts_by_evidence_phase does not match record store"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest record_counts_by_training_target does not match record store"
+        in production["findings"]
+    )
 
 
 def test_production_readiness_rejects_incomplete_record_coverage_manifest(
@@ -5732,6 +5805,62 @@ def _training_record(
         source_block="brain_delta.jsonl",
         source_line=1,
         payload=payload,
+    )
+
+
+def _write_record_coverage_store(root: Path) -> None:
+    available_from = datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST)
+    rows: list[BrainRecordEnvelope] = []
+    for index, (record_id, record_type, target, phase, eligible) in enumerate(
+        (
+            (
+                "BRAIN-1",
+                "supervised_issuer_day_case",
+                "issuer_day_price_response",
+                "POSTMORTEM",
+                True,
+            ),
+            ("BRAIN-2", "counterexample", "audit_only", "AUDIT", False),
+        ),
+        start=1,
+    ):
+        payload = {
+            "record_id": record_id,
+            "record_type": record_type,
+            "episode_id": "EP-coverage",
+            "trade_date": "2030-01-01",
+            "available_from": available_from.isoformat(),
+            "training_target": target,
+            "training_eligible": eligible,
+        }
+        payload_hash = sha256_text(canonical_json(payload))
+        rows.append(
+            BrainRecordEnvelope(
+                record_id=record_id,
+                record_type=record_type,
+                episode_id="EP-coverage",
+                trade_date=date(2030, 1, 1),
+                available_from=available_from,
+                training_target=target,
+                evidence_phase=phase,
+                training_eligible=eligible,
+                eligibility_reason="record coverage fixture",
+                status="supported",
+                confidence_label="medium",
+                provenance_source_ids=[f"SRC-coverage-{index}"],
+                raw_payload_sha256=payload_hash,
+                normalized_payload_sha256=payload_hash,
+                typed_payload_status="KNOWN_TYPED_PAYLOAD",
+                source_block="brain_delta.jsonl",
+                source_line=index,
+                payload=payload,
+            )
+        )
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-coverage.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in rows),
+        encoding="utf-8",
     )
 
 
