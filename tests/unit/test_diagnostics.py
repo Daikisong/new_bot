@@ -2822,6 +2822,76 @@ def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
     assert production["required_environment"]["BRAVE_SEARCH_API_KEY"] == "<required>"
 
 
+def test_production_readiness_rejects_missing_web_context_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["checked_manifest_count"] == 0
+    assert production["web_evidence"]["checked_artifact_reference_count"] == 0
+    assert production["web_evidence"]["findings"] == [
+        "production web context manifest is missing"
+    ]
+    assert (
+        "web_evidence: production web context manifest is missing"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_missing_web_evidence_artifact_refs(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-no-web-artifacts.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-no-web-artifacts",
+            "web_sources": ["WEB-live"],
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["checked_manifest_count"] == 1
+    assert production["web_evidence"]["checked_artifact_reference_count"] == 0
+    assert production["web_evidence"]["findings"] == [
+        "production web evidence artifact reference is missing"
+    ]
+    assert (
+        "web_evidence: production web evidence artifact reference is missing"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_mock_web_evidence_artifacts(
     tmp_path,
 ) -> None:

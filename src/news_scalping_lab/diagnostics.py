@@ -1129,6 +1129,10 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             )
 
     findings: list[str] = []
+    if not manifest_paths:
+        findings.append("production web context manifest is missing")
+    elif checked_artifact_refs == 0:
+        findings.append("production web evidence artifact reference is missing")
     for path in unreadable_manifests:
         findings.append(f"context manifest is unreadable: {path}")
     for ref in invalid_artifact_refs:
