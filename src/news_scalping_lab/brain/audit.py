@@ -40,9 +40,16 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     store = ResearchStore(root)
     accepted = store.list_accepted()
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
-    coverage_manifest = read_json(coverage_path) if coverage_path.exists() else {}
+    coverage_manifest, coverage_read_findings = _read_json_object_for_audit(
+        coverage_path,
+        label="coverage manifest",
+    )
     brain_manifest_path = root / "brain" / "current" / "brain_manifest.json"
-    brain_manifest = read_json(brain_manifest_path) if brain_manifest_path.exists() else {}
+    brain_manifest, brain_read_findings = _read_json_object_for_audit(
+        brain_manifest_path,
+        label="brain manifest",
+    )
+    artifact_read_findings = [*coverage_read_findings, *brain_read_findings]
     covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
     accepted_ids = {episode.episode_id for episode in accepted}
     source_hashes = store.accepted_hashes()
@@ -71,6 +78,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     compiled_claim_audit = _audit_compiled_claims(root, accepted_ids)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
+        *artifact_read_findings,
         *claim_audit["claims_without_support"],
         *claim_audit["claims_with_unknown_support"],
         *claim_audit["claim_temporal_leaks"],
@@ -100,6 +108,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,
         "extra_episode_ids": extra,
+        "artifact_read_findings": artifact_read_findings,
         **episode_coverage_audit,
         **claim_audit,
         **mechanism_audit,
@@ -177,6 +186,7 @@ def _write_latest_brain_audit_summary(
         ),
         "brain_category_files_identical": result.get("brain_category_files_identical"),
         "brain_category_bodies_identical": result.get("brain_category_bodies_identical"),
+        "artifact_read_findings": result.get("artifact_read_findings"),
         "episode_coverage_findings": result.get("episode_coverage_findings"),
         "episode_coverage_brain_version": result.get("episode_coverage_brain_version"),
         "expected_episode_coverage_brain_version": result.get(
@@ -321,6 +331,7 @@ def _write_latest_record_coverage_audit_summary(
 
 def _brain_audit_findings(result: dict[str, object]) -> list[str]:
     finding_keys = (
+        "artifact_read_findings",
         "missing_episode_ids",
         "extra_episode_ids",
         "episode_coverage_findings",
@@ -351,6 +362,22 @@ def _brain_audit_findings(result: dict[str, object]) -> list[str]:
         if isinstance(record_findings, list):
             findings.extend(f"record_store: {item}" for item in record_findings)
     return findings
+
+
+def _read_json_object_for_audit(
+    path: Path,
+    *,
+    label: str,
+) -> tuple[dict[str, Any], list[str]]:
+    if not path.exists():
+        return {}, []
+    try:
+        payload = read_json(path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}, [f"{label} is unreadable"]
+    if not isinstance(payload, dict):
+        return {}, [f"{label} must be a JSON object"]
+    return payload, []
 
 
 def _audit_episode_coverage_manifest(

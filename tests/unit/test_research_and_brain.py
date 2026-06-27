@@ -392,6 +392,60 @@ def test_brain_audit_rejects_malformed_episode_coverage_ids(tmp_path) -> None:
     )
 
 
+def test_brain_audit_reports_unreadable_coverage_manifest(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Brain audit should report malformed coverage JSON without crashing.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_path.write_text("{not valid json", encoding="utf-8")
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["coverage_complete"] is False
+    assert audit["artifact_read_findings"] == ["coverage manifest is unreadable"]
+    assert audit["missing_episode_ids"] == [episode.episode_id]
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest = brain_report["latest_brain_audit"]
+    assert latest["artifact_read_findings"] == ["coverage manifest is unreadable"]
+    assert "artifact_read_findings: coverage manifest is unreadable" in latest[
+        "findings"
+    ]
+
+
+def test_brain_audit_reports_unreadable_brain_manifest(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Brain audit should report malformed brain manifest JSON without crashing.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    brain_manifest_path = tmp_path / "brain" / "current" / "brain_manifest.json"
+    brain_manifest_path.write_text("{not valid json", encoding="utf-8")
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["artifact_read_findings"] == ["brain manifest is unreadable"]
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest = brain_report["latest_brain_audit"]
+    assert latest["artifact_read_findings"] == ["brain manifest is unreadable"]
+    assert "artifact_read_findings: brain manifest is unreadable" in latest[
+        "findings"
+    ]
+
+
 def test_coverage_audit_surfaces_stale_episode_coverage_manifest(
     tmp_path,
 ) -> None:
