@@ -2936,14 +2936,21 @@ class DailyAnalyzer:
             "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
             "record_sweep_shard_count": manifest.record_sweep_shard_count,
             "record_sweep_cache_hits": manifest.record_sweep_cache_hits,
+            "accepted_record_count": manifest.accepted_record_count,
+            "available_record_count": manifest.available_record_count,
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
             "retrieved_record_ids": manifest.retrieved_record_ids,
             "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
             "available_record_ids": manifest.available_record_ids,
+            "training_eligible_available_record_count": (
+                manifest.training_eligible_available_record_count
+            ),
             "training_eligible_available_record_ids": (
                 manifest.training_eligible_available_record_ids
             ),
+            "swept_record_count": manifest.swept_record_count,
+            "swept_record_ids": manifest.swept_record_ids,
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
             "excluded_semantic_retrieval_record_ids": (
                 manifest.excluded_semantic_retrieval_record_ids

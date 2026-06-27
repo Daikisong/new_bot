@@ -3063,6 +3063,13 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
     final_payload = {
         "required_inputs": ["current_news"],
         "current_news": ["pre-cutoff news"],
+        "accepted_record_count": 2,
+        "available_record_count": 1,
+        "available_record_ids": ["REC-final-payload"],
+        "training_eligible_available_record_count": 1,
+        "training_eligible_available_record_ids": ["REC-final-payload"],
+        "swept_record_count": 2,
+        "swept_record_ids": ["REC-final-payload"],
         "retrieved_record_ids": ["REC-final-payload"],
         "semantic_retrieval_record_ids": ["REC-final-payload"],
         "counterexample_record_ids": ["REC-final-payload"],
@@ -3100,6 +3107,13 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
             "prediction_sha256": file_sha256(run_prediction_path),
             "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
             "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "accepted_record_count": 3,
+            "available_record_count": 1,
+            "available_record_ids": ["REC-final-manifest"],
+            "training_eligible_available_record_count": 2,
+            "training_eligible_available_record_ids": ["REC-final-manifest"],
+            "swept_record_count": 1,
+            "swept_record_ids": ["REC-final-manifest"],
             "retrieved_record_ids": ["REC-final-manifest"],
             "semantic_retrieval_record_ids": ["REC-final-manifest"],
             "counterexample_record_ids": ["REC-final-manifest"],
@@ -3129,6 +3143,26 @@ def test_provenance_audit_rejects_final_synthesis_manifest_record_id_mismatch(
     assert (
         "2030-01-10.json: final_synthesis_context counterexample_record_ids "
         "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context available_record_ids "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context accepted_record_count "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context "
+        "training_eligible_available_record_count does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context swept_record_count "
+        "does not match context manifest"
+    ) in result["findings"]
+    assert (
+        "2030-01-10.json: final_synthesis_context swept_record_count "
+        "does not match swept_record_ids"
     ) in result["findings"]
 
 

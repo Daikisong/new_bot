@@ -69,7 +69,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     candidate_verification = _dict_value(payload.get("candidate_verification"))
     red_team_output = _dict_value(payload.get("red_team_output"))
     d_minus_one = _dict_value(payload.get("d_minus_one_market_data"))
-    summary = {
+    summary: dict[str, Any] = {
         "required_input_count": _list_len(payload.get("required_inputs")),
         "current_news_count": _list_len(payload.get("current_news")),
         "first_pass_mechanism_count": _first_pass_mechanism_count(
@@ -101,6 +101,34 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if "record_level_shard_contributions" in payload:
         summary["record_shard_contribution_count"] = _list_len(
             payload.get("record_level_shard_contributions")
+        )
+    if "accepted_record_count" in payload:
+        summary["accepted_record_count"] = _int_value(
+            payload.get("accepted_record_count")
+        )
+    if "available_record_count" in payload:
+        summary["available_record_count"] = _int_value(
+            payload.get("available_record_count")
+        )
+    if "available_record_ids" in payload:
+        summary["available_record_id_count"] = _list_len(
+            payload.get("available_record_ids")
+        )
+    if "training_eligible_available_record_count" in payload:
+        summary["training_eligible_available_record_count"] = _int_value(
+            payload.get("training_eligible_available_record_count")
+        )
+    if "training_eligible_available_record_ids" in payload:
+        summary["training_eligible_available_record_id_count"] = _list_len(
+            payload.get("training_eligible_available_record_ids")
+        )
+    if "swept_record_count" in payload:
+        summary["swept_record_count"] = _int_value(
+            payload.get("swept_record_count")
+        )
+    if "swept_record_ids" in payload:
+        summary["swept_record_id_count"] = _list_len(
+            payload.get("swept_record_ids")
         )
     if "retrieved_records" in payload:
         summary["retrieved_record_count"] = _list_len(payload.get("retrieved_records"))
@@ -250,6 +278,10 @@ def string_list(value: Any) -> list[str]:
 
 def _list_len(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
+
+
+def _int_value(value: Any) -> int | None:
+    return value if isinstance(value, int) else None
 
 
 def _dict_value(value: Any) -> dict[str, Any]:

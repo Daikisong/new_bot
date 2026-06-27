@@ -761,6 +761,11 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     synthesis_payload = read_json(
         tmp_path / str(manifest.final_synthesis_context_artifact)
     )["payload"]
+    assert synthesis_payload["accepted_record_count"] == 2
+    assert synthesis_payload["available_record_count"] == 1
+    assert synthesis_payload["training_eligible_available_record_count"] == 1
+    assert synthesis_payload["swept_record_count"] == 1
+    assert synthesis_payload["swept_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
     assert synthesis_payload["available_record_ids"] == ["BRAIN-AVAILABLE"]
