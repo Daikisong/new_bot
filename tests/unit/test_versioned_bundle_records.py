@@ -640,6 +640,192 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
 
 
+def test_v11_bundle_imports_without_legacy_schema_failure(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    result = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    envelope = _read_json(result.envelope_path)
+    index = _read_json(
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "normalized_episode_index.json"
+    )
+
+    assert result.status == "imported"
+    assert result.adapter_name == "v11"
+    assert envelope["bundle_schema_version"] == "nslab.research_bundle.v11"
+    assert envelope["manifest_schema_version"] == "nslab.bundle_manifest.v11"
+    assert envelope["episode_schema_version"] == "nslab.research_episode.v11"
+    assert index["schema_version"] == "nslab.normalized_episode_index.v1"
+    assert index["record_count_by_type"] == {
+        "blind_leader_preference_pair": 1,
+        "future_record_type": 1,
+        "supervised_issuer_day_case": 1,
+    }
+
+
+def test_v11_brain_delta_is_not_discarded(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
+    accepted_records = BrainRecordStore(tmp_path).list_records()
+
+    assert [record.record_id for record in records] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert [record.record_id for record in accepted_records] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert all(record.payload for record in records)
+
+
+def test_bundle_record_count_and_hash_parity(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    inspection = inspect_versioned_bundle(bundle)
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+
+    assert inspection["raw_record_count"] == inspection["normalized_record_count"] == 3
+    assert inspection["raw_normalized_record_count_matches"] is True
+    assert inspection["record_id_set_matches_raw"] is True
+    assert inspection["raw_payload_hashes_match"] is True
+    assert report["raw_record_count"] == report["normalized_record_count"] == 3
+    assert report["dropped_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 0
+    assert report["raw_payload_hashes_match"] is True
+
+
+def test_training_eligible_count_parity(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    inspection = inspect_versioned_bundle(bundle)
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    manifest = _read_json(
+        tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json"
+    )
+
+    assert inspection["raw_training_eligible_record_count"] == 2
+    assert inspection["training_eligible_record_count"] == 2
+    assert inspection["training_eligible_count_matches_raw"] is True
+    assert inspection["training_eligible_count_matches_manifest"] is True
+    assert report["raw_training_eligible_record_count"] == 2
+    assert report["training_eligible_record_count"] == 2
+    assert manifest["training_eligible_record_count"] == 2
+
+
+def test_unknown_record_type_raw_payload_preserved(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    unknown = next(
+        record
+        for record in BrainRecordStore(tmp_path).list_records()
+        if record.record_id == "BRAIN-SYNTH-UNKNOWN"
+    )
+
+    assert unknown.record_type == "future_record_type"
+    assert unknown.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
+    assert unknown.training_eligible is False
+    assert unknown.payload["record_type"] == "future_record_type"
+    assert unknown.payload["training_eligible"] is False
+    assert "unknown record_type preserved as raw payload" in (
+        unknown.eligibility_reason or ""
+    )
+
+
+def test_record_store_idempotent(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+
+    first = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    second = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    records = BrainRecordStore(tmp_path).list_records()
+    raw_bundles = list((tmp_path / "data" / "raw" / "research").glob("*.md"))
+
+    assert first.record_count == second.record_count == 3
+    assert [record.record_id for record in records] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert len(raw_bundles) == 1
+
+
+def test_episode_hash_conflict_quarantined(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path)
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    conflicting = tmp_path / "synthetic_v11_bundle_conflict.md"
+    conflicting.write_text(
+        _synthetic_v11_bundle() + "\n<!-- conflict -->\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(conflicting, root=tmp_path, accepted=True)
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    quarantine = Path(report["quarantine"])
+    assert report["status"] == "EPISODE_HASH_CONFLICT"
+    assert report["quarantined_record_count"] == 1
+    assert (quarantine / "original_bundle.md").exists()
+    assert _read_json(quarantine / "quarantine.json")["reason"] == (
+        "EPISODE_HASH_CONFLICT"
+    )
+
+
+def test_unknown_bundle_version_quarantined_without_data_loss(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_synthetic_bundle_file(
+        tmp_path,
+        text=_synthetic_v11_bundle(schema_version="nslab.research_bundle.v99"),
+    )
+
+    result = import_versioned_bundle(bundle, root=tmp_path)
+    records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+
+    assert result.status == "forward_compatible_raw_only"
+    assert result.record_count == 3
+    assert result.training_eligible_record_count == 0
+    assert [record.record_id for record in records] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert all(record.training_eligible is False for record in records)
+    assert all(
+        record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD" for record in records
+    )
+    assert report["raw_record_count"] == 3
+    assert report["raw_only_record_count"] == 3
+    assert report["dropped_record_count"] == 0
+
+
+def test_warehouse_brain_record_counts(tmp_path: Path) -> None:
+    bundle = _write_synthetic_bundle_file(tmp_path, text=_synthetic_v11_bundle())
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    counts = WarehouseStore(tmp_path).rebuild_all()
+    audit = audit_coverage(tmp_path, deep=True)
+
+    assert counts["brain_records"] == 3
+    assert audit["warehouse_counts"]["brain_records.parquet"] == 3
+    assert audit["warehouse_expected_source_counts"]["brain_records.parquet"] == {
+        "expected": 3,
+        "source_label": "normalized brain records",
+    }
+    assert audit["warehouse_count_mismatches"] == {}
+
+
 def test_v11_bundle_inspection_exposes_direct_ingest_contract(
     tmp_path: Path,
 ) -> None:
@@ -2479,6 +2665,21 @@ def _read_json(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
+
+
+def _write_synthetic_bundle_file(
+    root: Path,
+    *,
+    text: str | None = None,
+) -> Path:
+    settings = Settings(project_root=root)
+    ensure_project_dirs(settings)
+    bundle = root / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle() if text is None else text,
+        encoding="utf-8",
+    )
+    return bundle
 
 
 def _synthetic_v11_bundle_with_bad_brain_delta_hash() -> str:

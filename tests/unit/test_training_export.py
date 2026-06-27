@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, time
+from pathlib import Path
 
 import pytest
 
@@ -149,6 +150,52 @@ def _brain_record(
         source_line=1,
         payload=body,
     )
+
+
+def _write_record_training_fixture(root: Path) -> list[BrainRecordEnvelope]:
+    records = [
+        _brain_record(
+            "BRAIN-ISSUER",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=True,
+            payload={
+                "issuer_day_case_id": "ISSUER-1",
+                "ticker": "111111",
+                "company_name": "WinnerCo",
+                "sample_weight": 1.0,
+                "response_class": "upper_limit",
+                "D_outcome": {"label_quality": "verified"},
+                "event_level_weights": {"EVT-1": 1.0},
+            },
+        ),
+        _brain_record(
+            "BRAIN-PAIR",
+            "blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            training_eligible=True,
+            payload={
+                "blind_pair_id": "PAIR-1",
+                "blind_preferred_ticker": "111111",
+                "blind_rejected_ticker": "222222",
+                "outcome_winner_ticker": "111111",
+                "blind_preference_correct": True,
+            },
+        ),
+        _brain_record(
+            "BRAIN-MEMORY",
+            "memory_claim",
+            training_target="legacy_catalog_only",
+            training_eligible=False,
+        ),
+    ]
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+    return records
 
 
 def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_path) -> None:
@@ -406,6 +453,119 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "leader_selection_comparisons": 1,
         "failure_correction_examples": 1,
     }
+
+
+def test_blind_postmortem_exports_separated(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+
+    sft = export_training(tmp_path, kind="sft")
+    manifest = read_json(sft.manifest_path)
+    blind_rows = _jsonl(tmp_path / manifest["phase_outputs"]["BLIND"]["output_file"])
+    postmortem_rows = _jsonl(
+        tmp_path / manifest["phase_outputs"]["POSTMORTEM"]["output_file"]
+    )
+
+    assert manifest["phase_outputs"]["BLIND"]["source_phase"] == "BLIND"
+    assert manifest["phase_outputs"]["POSTMORTEM"]["source_phase"] == "POSTMORTEM"
+    assert blind_rows
+    assert postmortem_rows
+    assert all(row["hindsight_safe_for_blind_sft"] is True for row in blind_rows)
+    assert all(row["source_phase"] == "BLIND" for row in blind_rows)
+    assert all(row["hindsight_safe_for_blind_sft"] is False for row in postmortem_rows)
+    assert all(row["source_phase"] == "POSTMORTEM" for row in postmortem_rows)
+
+
+def test_training_export_uses_explicit_brain_records(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    _write_record_training_fixture(tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    rows = _jsonl(sft.path)
+    manifest = read_json(sft.manifest_path)
+
+    assert manifest["source_mode"] == "brain_records"
+    assert manifest["source_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    ]
+    assert manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
+    assert {row["record_id"] for row in rows if not row.get("audit_only")} == {
+        "BRAIN-ISSUER"
+    }
+    assert all(row["episode_id"] == "EP-record-training" for row in rows)
+
+
+def test_preference_export_uses_sealed_pairs_only(tmp_path) -> None:
+    store = ResearchStore(tmp_path)
+    episode = _accepted_episode()
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    _write_record_training_fixture(tmp_path)
+
+    preference = export_training(tmp_path, kind="preference")
+    rows = _jsonl(preference.path)
+    manifest = read_json(preference.manifest_path)
+    export_rows = [row for row in rows if not row.get("audit_only")]
+
+    assert manifest["source_mode"] == "brain_records"
+    assert manifest["eligible_record_ids"] == ["BRAIN-PAIR"]
+    assert manifest["exported_record_ids"] == ["BRAIN-PAIR"]
+    assert [row["record_id"] for row in export_rows] == ["BRAIN-PAIR"]
+    assert export_rows[0]["input"]["blind_preferred_ticker"] == "111111"
+    assert export_rows[0]["input"]["blind_rejected_ticker"] == "222222"
+    assert export_rows[0]["output"]["outcome_winner_ticker"] == "111111"
+    assert "WinnerCo" not in json.dumps(export_rows[0], ensure_ascii=False)
+
+
+def test_ineligible_records_not_exported(tmp_path) -> None:
+    _write_record_training_fixture(tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    preference = export_training(tmp_path, kind="preference")
+    evals = export_training(tmp_path, kind="evals")
+
+    for export in (sft, preference, evals):
+        rows = _jsonl(export.path)
+        manifest = read_json(export.manifest_path)
+        audit_rows = _jsonl(
+            tmp_path / manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
+        )
+        assert "BRAIN-MEMORY" not in {
+            row["record_id"] for row in rows if not row.get("audit_only")
+        }
+        assert any(row["record_id"] == "BRAIN-MEMORY" for row in audit_rows)
+
+
+def test_issuer_day_unique_and_weight_one(tmp_path) -> None:
+    _write_record_training_fixture(tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    manifest = read_json(sft.manifest_path)
+
+    assert manifest["duplicate_issuer_day_count"] == 0
+    assert manifest["duplicate_issuer_day_keys"] == []
+    assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
+    assert manifest["issuer_day_weight_sum_mismatches"] == {}
+    assert manifest["weight_validation_status"] == "passed"
+
+
+def test_event_weights_sum_to_one(tmp_path) -> None:
+    _write_record_training_fixture(tmp_path)
+
+    sft = export_training(tmp_path, kind="sft")
+    manifest = read_json(sft.manifest_path)
+
+    assert manifest["direct_event_weight_sum_mismatch_count"] == 0
+    assert manifest["direct_event_weight_sum_mismatches"] == {}
+    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {}
+    assert manifest["weight_validation_status"] == "passed"
 
 
 def test_training_export_report_separates_unique_and_per_export_record_counts(

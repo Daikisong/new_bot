@@ -153,6 +153,35 @@ def test_company_memory_delta_records_apply_as_temporal_memory(tmp_path) -> None
     )
 
 
+def test_company_memory_respects_known_at(tmp_path) -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    pre_cutoff = _company_delta_record(
+        "BRAIN-COMPANY-PRE",
+        available_from=datetime(2030, 1, 10, 8, 30, 0, tzinfo=KST),
+        known_at="2030-01-10T08:30:00+09:00",
+        ticker="PRE",
+        company_name="Pre Cutoff Memory Co",
+    )
+    post_cutoff = _company_delta_record(
+        "BRAIN-COMPANY-POST",
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+        known_at="2030-01-10T09:30:00+09:00",
+        ticker="POST",
+        company_name="Post Cutoff Memory Co",
+    )
+    _store_company_delta_records(tmp_path, [pre_cutoff, post_cutoff])
+
+    result = CompanyMemoryStore(tmp_path).apply_record_deltas(as_of=cutoff)
+    memories = [read_json(path) for path in result.written_paths]
+
+    assert result.written_count == 1
+    assert result.skipped_future_record_ids == ["BRAIN-COMPANY-POST"]
+    assert [memory["company_name"] for memory in memories] == [
+        "Pre Cutoff Memory Co"
+    ]
+    assert memories[0]["known_at"] == "2030-01-10T08:30:00+09:00"
+
+
 def test_company_memory_delta_cannot_backdate_before_record_available_from(tmp_path) -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     record = _company_delta_record(

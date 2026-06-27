@@ -528,6 +528,18 @@ def test_hardcoding_audit_passes_current_source() -> None:
     assert result["passed"], result["findings"]
 
 
+def test_hardcoding_audit_still_passes() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = audit_hardcoding(root)
+    assert result["passed"], result["findings"]
+
+
+def test_lookahead_audit_still_passes() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = audit_lookahead(root, trade_date=date(2026, 6, 24))
+    assert result["passed"], result["findings"]
+
+
 def test_hardcoding_audit_flags_known_company_literals_from_memory(
     tmp_path: Path,
 ) -> None:
