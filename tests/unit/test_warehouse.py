@@ -268,6 +268,60 @@ def test_brain_record_query_filters_rich_record_alias_fields(tmp_path) -> None:
     assert beneficiary_rows[0]["payload"]["outcome_ticker"] == "000004"
 
 
+def test_brain_record_query_filters_multiple_record_types(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    records = [
+        _warehouse_payload_record(
+            "BRAIN-DIRECT",
+            record_type="supervised_direct_event_case",
+            training_target="direct_event_response",
+            payload={
+                "record_id": "BRAIN-DIRECT",
+                "record_type": "supervised_direct_event_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "ticker": "000001",
+            },
+        ),
+        _warehouse_payload_record(
+            "BRAIN-THEME",
+            record_type="supervised_theme_formation_case",
+            training_target="theme_formation_response",
+            payload={
+                "record_id": "BRAIN-THEME",
+                "record_type": "supervised_theme_formation_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "ticker": "000002",
+            },
+        ),
+        _warehouse_payload_record(
+            "BRAIN-MEMORY",
+            record_type="memory_claim",
+            training_target="market_memory",
+            payload={
+                "record_id": "BRAIN-MEMORY",
+                "record_type": "memory_claim",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "statement": "Memory record outside the requested type set.",
+            },
+        ),
+    ]
+    warehouse = WarehouseStore(tmp_path)
+    warehouse.write_brain_records(records)
+
+    rows = warehouse.query_brain_records(
+        record_type=(
+            "supervised_theme_formation_case",
+            "supervised_direct_event_case",
+        )
+    )
+
+    assert [row["record_id"] for row in rows] == ["BRAIN-DIRECT", "BRAIN-THEME"]
+
+
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)

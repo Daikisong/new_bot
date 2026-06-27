@@ -1851,6 +1851,58 @@ def test_warehouse_query_records_cli_filters_record_level_table(
     ]
 
 
+def test_warehouse_query_records_cli_accepts_repeated_record_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    seen: list[dict[str, object]] = []
+
+    class QueryWarehouseStore:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+
+        def query_brain_records(self, **filters: object) -> list[dict[str, object]]:
+            seen.append(filters)
+            return [
+                {
+                    "record_id": "BRAIN-direct",
+                    "record_type": "supervised_direct_event_case",
+                },
+                {
+                    "record_id": "BRAIN-theme",
+                    "record_type": "supervised_theme_formation_case",
+                },
+            ]
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "WarehouseStore", QueryWarehouseStore)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "warehouse",
+            "query-records",
+            "--record-type",
+            "supervised_direct_event_case",
+            "--record-type",
+            "supervised_theme_formation_case",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["row_count"] == 2
+    assert payload["filters"]["record_type"] == [
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+    ]
+    assert seen[0]["record_type"] == (
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+    )
+
+
 def test_warehouse_query_records_cli_rejects_conflicting_eligibility_flags() -> None:
     result = CliRunner().invoke(
         app,

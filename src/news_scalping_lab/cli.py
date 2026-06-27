@@ -6902,7 +6902,7 @@ def warehouse_verify() -> None:
 
 @warehouse_app.command("query-records")
 def warehouse_query_records(
-    record_type: Annotated[str | None, typer.Option("--record-type")] = None,
+    record_type: Annotated[list[str] | None, typer.Option("--record-type")] = None,
     training_target: Annotated[str | None, typer.Option("--training-target")] = None,
     evidence_phase: Annotated[str | None, typer.Option("--evidence-phase")] = None,
     ticker: Annotated[str | None, typer.Option("--ticker")] = None,
@@ -6934,8 +6934,15 @@ def warehouse_query_records(
         True if training_eligible_only else False if ineligible_only else None
     )
     settings = load_settings()
+    record_type_filter: str | tuple[str, ...] | None
+    if record_type is None or not record_type:
+        record_type_filter = None
+    elif len(record_type) == 1:
+        record_type_filter = record_type[0]
+    else:
+        record_type_filter = tuple(record_type)
     filters = {
-        "record_type": record_type,
+        "record_type": record_type_filter,
         "training_target": training_target,
         "evidence_phase": evidence_phase,
         "ticker": ticker,
@@ -6952,7 +6959,7 @@ def warehouse_query_records(
     }
     try:
         rows = WarehouseStore(settings.project_root).query_brain_records(
-            record_type=record_type,
+            record_type=record_type_filter,
             training_target=training_target,
             evidence_phase=evidence_phase,
             ticker=ticker,

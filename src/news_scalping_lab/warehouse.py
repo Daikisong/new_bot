@@ -56,6 +56,8 @@ EXPECTED_WAREHOUSE_FILES = (
     "record_coverage.parquet",
 )
 
+RecordTypeFilter = str | tuple[str, ...] | list[str] | set[str]
+
 RECORD_COVERAGE_COLUMNS = (
     "episode_id",
     "record_type",
@@ -706,7 +708,7 @@ class WarehouseStore:
     def query_brain_records(
         self,
         *,
-        record_type: str | None = None,
+        record_type: RecordTypeFilter | None = None,
         training_target: str | None = None,
         evidence_phase: str | None = None,
         ticker: str | None = None,
@@ -740,7 +742,21 @@ class WarehouseStore:
             where.append(f"{column} = ?")
             params.append(value)
 
-        add_string_filter("record_type", record_type)
+        def add_record_type_filter(value: RecordTypeFilter | None) -> None:
+            if value is None:
+                return
+            if isinstance(value, str):
+                where.append("record_type = ?")
+                params.append(value)
+                return
+            values = sorted({item for item in value if item})
+            if not values:
+                return
+            placeholders = ", ".join("?" for _ in values)
+            where.append(f"record_type in ({placeholders})")
+            params.extend(values)
+
+        add_record_type_filter(record_type)
         add_string_filter("training_target", training_target)
         add_string_filter("evidence_phase", evidence_phase)
         add_string_filter("confidence_label", confidence_label)

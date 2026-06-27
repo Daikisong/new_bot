@@ -522,12 +522,20 @@ Canonical research stays under `research/`, `memory/`, and `brain/`.
 ```bash
 nslab warehouse rebuild
 nslab warehouse inspect
+nslab warehouse query-records --record-type supervised_direct_event_case --record-type supervised_theme_formation_case --training-eligible-only
 nslab warehouse verify
 ```
 
 `warehouse inspect` preserves top-level row counts for each Parquet file and adds
 a `status` object with required-file presence, sync flags, missing/unreadable files,
 count mismatches, identity mismatches, and warehouse-specific findings.
+
+`warehouse query-records` reads `warehouse/brain_records.parquet` directly and
+supports record-level filters for record type, training target, evidence phase,
+ticker, company name, theme, path type, response class, confidence label,
+training eligibility, trade-date range, and `available_from` as-of cutoffs.
+Repeat `--record-type` to inspect multiple supervised or audit record populations
+in one query.
 
 Generated tables include:
 
