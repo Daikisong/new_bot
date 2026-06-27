@@ -540,6 +540,10 @@ def record_store_report_payload(
             audit_result,
             "raw_only_record_ids",
         ),
+        "brain_delta_duplicate_record_ids": _string_list_from_mapping(
+            audit_result,
+            "brain_delta_duplicate_record_ids",
+        ),
         "all_unknown_typed_payload_record_ids": _string_list_from_mapping(
             audit_result,
             "all_unknown_typed_payload_record_ids",
@@ -715,6 +719,7 @@ def _audit_deep_record_store(
         "raw_block_hash_mismatch_episode_ids": [],
         "brain_delta_count_mismatch_episode_ids": [],
         "brain_delta_record_id_mismatch_episode_ids": [],
+        "brain_delta_duplicate_record_ids": [],
         "brain_delta_training_eligible_mismatch_episode_ids": [],
         "brain_delta_type_count_mismatch_episode_ids": [],
         "records_missing_source_block": [],
@@ -1103,6 +1108,12 @@ def _audit_brain_delta_record_ids(
         for record in records
         if record.source_block == "brain_delta.jsonl"
     )
+    duplicate_ids = sorted(
+        record_id for record_id, count in Counter(raw_ids).items() if count > 1
+    )
+    for record_id in duplicate_ids:
+        if record_id not in result["brain_delta_duplicate_record_ids"]:
+            result["brain_delta_duplicate_record_ids"].append(record_id)
     if sorted(raw_ids) != normalized_ids:
         result["brain_delta_record_id_mismatch_episode_ids"].append(episode_id)
 
@@ -1425,6 +1436,7 @@ def _append_deep_findings(result: dict[str, Any]) -> None:
         "brain_delta_record_id_mismatch_episode_ids": (
             "brain_delta raw record IDs do not match normalized records"
         ),
+        "brain_delta_duplicate_record_ids": "brain_delta raw record IDs are duplicated",
         "brain_delta_training_eligible_mismatch_episode_ids": (
             "brain_delta training eligible count does not match normalized records"
         ),

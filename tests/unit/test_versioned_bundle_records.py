@@ -1369,6 +1369,43 @@ def test_record_store_deep_audit_rejects_brain_delta_record_id_gap(
     ]
 
 
+def test_record_store_deep_audit_reports_duplicate_raw_brain_delta_ids(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
+    import_versioned_bundle(bundle, root=tmp_path)
+
+    envelope_path = (
+        tmp_path
+        / "research"
+        / "episodes"
+        / "NSLAB-20300110-SYNTH"
+        / "bundle_envelope.json"
+    )
+    envelope = _read_json(envelope_path)
+    raw_path = tmp_path / str(envelope["raw_block_paths"]["brain_delta.jsonl"])
+    raw_rows = _jsonl(raw_path)
+    raw_rows[1]["record_id"] = raw_rows[0]["record_id"]
+    raw_text = "\n".join(json.dumps(row, ensure_ascii=False) for row in raw_rows) + "\n"
+    raw_path.write_text(raw_text, encoding="utf-8")
+    envelope["raw_block_hashes"]["brain_delta.jsonl"] = sha256_text(raw_text)
+    envelope_path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+
+    audit = audit_record_store(tmp_path, deep=True)
+    report = record_store_report_payload(tmp_path, audit)
+
+    assert audit["passed"] is False
+    assert audit["brain_delta_duplicate_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
+    assert audit["brain_delta_record_id_mismatch_episode_ids"] == [
+        "NSLAB-20300110-SYNTH"
+    ]
+    assert "brain_delta raw record IDs are duplicated" in audit["findings"]
+    assert report["brain_delta_duplicate_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
+
+
 def test_record_store_deep_audit_rejects_brain_delta_population_gap(
     tmp_path: Path,
 ) -> None:
