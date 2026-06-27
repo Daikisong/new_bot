@@ -72,6 +72,8 @@ outcome_snapshot_bytes expected 숫자
 
 단, 이 metadata를 이용해 실제 outcome snapshot 파일을 다운로드·stat·hash·open하는 것은 PHASE_2 seal receipt 검증 전에는 금지다.
 
+GitHub outcome blob existence page를 열었지만 Raw CSV rows/header/sample/byte/hash/row_count/label을 보지 않은 경우는 PRESEAL_OUTCOME_CONTENT_ACCESS가 아니며, acquisition_warnings에 OUTCOME_BLOB_EXISTENCE_PAGE_OPENED_WITHOUT_RAW_CONTENT로 기록하고 ACCEPT_FULL 가능성을 유지한다.
+
 ## V23.1 accepted attempt에서 outcome 파일 생성 금지
 
 PHASE_2 전에는 작업 디렉터리 안에 outcome snapshot 파일이 새로 생기면 안 된다.
