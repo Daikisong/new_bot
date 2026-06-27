@@ -1203,44 +1203,6 @@ def _audit_record_coverage(
     )
     ineligible_count = sum(1 for record in records if not record.training_eligible)
     audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
-    if not records:
-        return {
-            "record_coverage_as_of": None,
-            "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
-            "record_coverage_brain_version": None,
-            "expected_brain_version": expected_brain_version,
-            "record_coverage_build_mode": None,
-            "expected_build_mode": expected_build_mode,
-            "record_coverage_catalog_only": None,
-            "expected_catalog_only": expected_catalog_only,
-            "record_coverage_accepted_episode_count": None,
-            "expected_accepted_episode_count": expected_accepted_episode_count,
-            "accepted_record_count": 0,
-            "available_record_count": 0,
-            "available_record_count_as_of": 0,
-            "training_eligible_available_record_count": 0,
-            "training_eligible_record_count_as_of": 0,
-            "compiled_record_count": 0,
-            "swept_record_count": 0,
-            "swept_record_ids": [],
-            "expected_swept_record_ids": [],
-            "missing_swept_record_ids": [],
-            "unexpected_swept_record_ids": [],
-            "unswept_record_ids": [],
-            "expected_unswept_record_ids": [],
-            "unknown_unswept_record_ids": [],
-            "missing_unswept_record_ids": [],
-            "unexpected_unswept_record_ids": [],
-            "unknown_swept_record_ids": [],
-            "duplicate_swept_record_ids": [],
-            "record_counts_by_type": {},
-            "record_counts_by_evidence_phase": {},
-            "record_counts_by_training_target": {},
-            "ineligible_record_count": 0,
-            "audit_only_record_count": 0,
-            "record_coverage_complete": not accepted_store_findings,
-            "record_coverage_findings": accepted_store_findings,
-        }
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
         return _record_coverage_unavailable_result(

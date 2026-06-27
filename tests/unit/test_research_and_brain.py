@@ -292,6 +292,39 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert WarehouseStore(tmp_path).counts()["research_episodes.parquet"] == 1
 
 
+def test_brain_audit_requires_record_coverage_manifest_without_records(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Record coverage manifest is required even before brain_delta records exist.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    coverage_path.unlink()
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_complete"] is False
+    assert audit["accepted_record_count"] == 0
+    assert audit["expected_swept_record_ids"] == []
+    assert audit["record_coverage_findings"] == [
+        "record coverage manifest is missing"
+    ]
+    record_coverage_report = read_json(
+        tmp_path / "diagnostics" / "record_coverage_report.json"
+    )
+    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == [
+        "record coverage manifest is missing"
+    ]
+
+
 def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
