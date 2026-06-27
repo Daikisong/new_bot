@@ -11,6 +11,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
@@ -157,7 +159,7 @@ class LocalRetrievalStore:
             )
         query_terms = text_terms(query)
         scored: list[tuple[float, str]] = []
-        for episode in self.store.list_accepted():
+        for episode in _read_accepted_episodes_for_legacy_search(self.store):
             score = _semantic_score(query_terms, _episode_text(episode))
             scored.append((score, episode.episode_id))
         scored.sort(key=lambda item: (-item[0], item[1]))
@@ -260,7 +262,11 @@ class LocalRetrievalStore:
     def rebuild_index(self) -> dict[str, object]:
         self.index_dir.mkdir(parents=True, exist_ok=True)
         records: list[dict[str, object]] = []
-        episodes = self.store.list_accepted()
+        brain_records = BrainRecordStore(self.root).list_records()
+        episodes, accepted_store_findings = _read_accepted_episodes_for_index(
+            self.store,
+            brain_records=brain_records,
+        )
         texts = [_episode_text(episode) for episode in episodes]
         vectors = self.embedding_provider.embed_texts(texts)
         for episode, text, vector in zip(episodes, texts, vectors, strict=True):
@@ -273,7 +279,6 @@ class LocalRetrievalStore:
                     "embedding": vector,
                 }
             )
-        brain_records = BrainRecordStore(self.root).list_records()
         record_texts = [_brain_record_text(record) for record in brain_records]
         record_vectors = self.embedding_provider.embed_texts(record_texts)
         dimensions = _vector_dimensions(
@@ -332,6 +337,7 @@ class LocalRetrievalStore:
             "brain_record_count": len(indexed_brain_records),
             "accepted_episode_count": len(accepted_hashes),
             "accepted_hashes": accepted_hashes,
+            "accepted_episode_store_findings": accepted_store_findings,
             "brain_record_hashes": brain_record_hashes,
             "records_file": VECTOR_INDEX_RECORDS,
             "records_sha256": sha256_text(episode_index_payload),
@@ -379,6 +385,42 @@ class LocalRetrievalStore:
         ):
             return None
         return records
+
+
+def _read_accepted_episodes_for_index(
+    store: ResearchStore,
+    *,
+    brain_records: list[BrainRecordEnvelope],
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return store.list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        if brain_records:
+            return [], ["accepted episode store is unreadable"]
+        raise
+
+
+def _read_accepted_episodes_for_legacy_search(
+    store: ResearchStore,
+) -> list[ResearchEpisode]:
+    try:
+        return store.list_accepted()
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return []
 
 
 def inspect_vector_index(root: Path) -> dict[str, object]:

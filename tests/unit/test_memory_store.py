@@ -953,6 +953,35 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
     }
 
 
+def test_record_vector_index_ignores_unreadable_legacy_episode(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    accepted_path = (
+        tmp_path
+        / "research"
+        / "accepted"
+        / "NSLAB-20300110-RETRIEVAL.json"
+    )
+    accepted_path.parent.mkdir(parents=True, exist_ok=True)
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    manifest = memory.rebuild_index()
+
+    assert manifest["record_count"] == 0
+    assert manifest["brain_record_count"] == 9
+    assert manifest["accepted_episode_count"] == 1
+    assert manifest["accepted_episode_store_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert memory.inspect_index()["status"] == "current"
+    assert memory.search_records(
+        "direct positive",
+        record_type="supervised_direct_event_case",
+        ticker="000001",
+    ) == ["BRAIN-REC-DIRECT"]
+    assert memory.search_semantic("legacy episode search", limit=5) == []
+
+
 def test_record_retrieval_filters_alias_and_nested_payload_fields(tmp_path) -> None:
     _store_retrieval_records(tmp_path)
     memory = LocalRetrievalStore(tmp_path)
