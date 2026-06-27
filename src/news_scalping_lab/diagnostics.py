@@ -1691,6 +1691,8 @@ def _production_semantic_index_manifest_status(
             "findings": findings,
             "embedding_method": None,
             "embedding_model": None,
+            "dimensions": None,
+            "record_count": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
             "records_file": None,
@@ -1699,6 +1701,8 @@ def _production_semantic_index_manifest_status(
             "records_file_is_absolute": None,
             "records_file_escapes_index": None,
             "records_sha256_matches": None,
+            "records_row_count": None,
+            "records_invalid_line_count": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
             "brain_records_file_path_valid": None,
@@ -1728,6 +1732,8 @@ def _production_semantic_index_manifest_status(
             "findings": findings,
             "embedding_method": None,
             "embedding_model": None,
+            "dimensions": None,
+            "record_count": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
             "records_file": None,
@@ -1736,6 +1742,8 @@ def _production_semantic_index_manifest_status(
             "records_file_is_absolute": None,
             "records_file_escapes_index": None,
             "records_sha256_matches": None,
+            "records_row_count": None,
+            "records_invalid_line_count": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
             "brain_records_file_path_valid": None,
@@ -1758,6 +1766,9 @@ def _production_semantic_index_manifest_status(
         if isinstance(embedding_method, str)
         else None
     )
+    dimensions = _int_from_mapping(manifest, "dimensions")
+    dimensions = dimensions if isinstance(dimensions, int) and dimensions > 0 else None
+    record_count = _int_from_mapping(manifest, "record_count")
     brain_record_count = _int_from_mapping(manifest, "brain_record_count")
     brain_record_hashes = manifest.get("brain_record_hashes")
     brain_record_hash_count = (
@@ -1788,14 +1799,29 @@ def _production_semantic_index_manifest_status(
             records_path = resolved_records_path
     records_exists = records_path.exists() if records_file_path_valid else False
     records_sha256_matches: bool | None = None
+    records_row_count: int | None = None
+    records_invalid_line_count: int | None = None
     if records_exists:
         try:
             records_payload = records_path.read_text(encoding="utf-8")
         except OSError:
             records_payload = ""
+            records_invalid_line_count = 1
         declared_records_sha = manifest.get("records_sha256")
         if isinstance(declared_records_sha, str):
             records_sha256_matches = sha256_text(records_payload) == declared_records_sha
+        rows = [line for line in records_payload.splitlines() if line.strip()]
+        records_row_count = len(rows)
+        invalid_line_count = records_invalid_line_count or 0
+        for line in rows:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                invalid_line_count += 1
+                continue
+            if not _valid_semantic_index_episode_row(payload, dimensions=dimensions):
+                invalid_line_count += 1
+        records_invalid_line_count = invalid_line_count
 
     brain_records_file = manifest.get("brain_records_file")
     brain_records_file = (
@@ -1856,6 +1882,12 @@ def _production_semantic_index_manifest_status(
             if isinstance(record_id, str) and record_id:
                 brain_records_ids.append(record_id)
             else:
+                invalid_line_count += 1
+                continue
+            if not _valid_semantic_index_brain_record_row(
+                payload,
+                dimensions=dimensions,
+            ):
                 invalid_line_count += 1
         brain_records_invalid_line_count = invalid_line_count
     record_store_stats = _brain_record_store_id_stats(root)
@@ -1929,8 +1961,16 @@ def _production_semantic_index_manifest_status(
         findings.append("semantic index records_file escapes vector index directory")
     if not records_exists:
         findings.append("semantic index records file is missing on disk")
+    elif records_invalid_line_count != 0:
+        findings.append("semantic index records file has invalid rows")
     if records_exists and records_sha256_matches is not True:
         findings.append("semantic index records file hash mismatch")
+    if (
+        records_row_count is not None
+        and record_count is not None
+        and records_row_count != record_count
+    ):
+        findings.append("semantic index records row count does not match manifest")
     if brain_records_file_is_absolute:
         findings.append("semantic index brain_records_file must be vector-index relative")
     if brain_records_file_escapes_index:
@@ -1969,6 +2009,8 @@ def _production_semantic_index_manifest_status(
         "findings": findings,
         "embedding_method": embedding_method,
         "embedding_model": embedding_model,
+        "dimensions": dimensions,
+        "record_count": record_count,
         "brain_record_count": brain_record_count,
         "brain_record_hash_count": brain_record_hash_count,
         "records_file": relative_to_root(records_path, root),
@@ -1977,6 +2019,8 @@ def _production_semantic_index_manifest_status(
         "records_file_is_absolute": records_file_is_absolute,
         "records_file_escapes_index": records_file_escapes_index,
         "records_sha256_matches": records_sha256_matches,
+        "records_row_count": records_row_count,
+        "records_invalid_line_count": records_invalid_line_count,
         "brain_records_file": relative_to_root(brain_records_path, root),
         "brain_records_file_exists": brain_records_exists,
         "brain_records_file_path_valid": brain_records_file_path_valid,
@@ -1992,6 +2036,48 @@ def _production_semantic_index_manifest_status(
         "missing_brain_record_ids": missing_brain_record_ids,
         "brain_record_hash_mismatches": brain_record_hash_mismatches,
     }
+
+
+def _valid_semantic_index_episode_row(
+    value: object,
+    *,
+    dimensions: int | None,
+) -> bool:
+    if dimensions is None or not isinstance(value, dict):
+        return False
+    if not isinstance(value.get("episode_id"), str):
+        return False
+    return _valid_semantic_index_vector_payload(value, dimensions=dimensions)
+
+
+def _valid_semantic_index_brain_record_row(
+    value: object,
+    *,
+    dimensions: int | None,
+) -> bool:
+    if dimensions is None or not isinstance(value, dict):
+        return False
+    if not isinstance(value.get("record_id"), str):
+        return False
+    if not isinstance(value.get("record_type"), str):
+        return False
+    return _valid_semantic_index_vector_payload(value, dimensions=dimensions)
+
+
+def _valid_semantic_index_vector_payload(
+    value: dict[str, Any],
+    *,
+    dimensions: int,
+) -> bool:
+    terms = value.get("terms")
+    embedding = value.get("embedding")
+    return (
+        isinstance(terms, list)
+        and all(isinstance(term, str) for term in terms)
+        and isinstance(embedding, list)
+        and len(embedding) == dimensions
+        and all(isinstance(item, int | float) and not isinstance(item, bool) for item in embedding)
+    )
 
 
 def _production_training_export_status(settings: Settings) -> dict[str, Any]:

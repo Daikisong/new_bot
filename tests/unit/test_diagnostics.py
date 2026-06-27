@@ -1193,6 +1193,132 @@ def test_production_readiness_rejects_escaping_semantic_index_records_file(
     )
 
 
+def test_production_readiness_rejects_invalid_semantic_index_records_file_rows(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    vector_index_dir = tmp_path / "memory" / "vector_index"
+    records_payload = "".join(
+        [
+            json.dumps(
+                {
+                    "episode_id": "EP-semantic-index",
+                    "terms": ["brain-1"],
+                    "embedding": [0.1, 0.2],
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            json.dumps(
+                {
+                    "episode_id": "EP-semantic-index",
+                    "terms": ["brain-2"],
+                    "embedding": [0.1],
+                },
+                sort_keys=True,
+            )
+            + "\n",
+        ]
+    )
+    (vector_index_dir / "records.jsonl").write_text(
+        records_payload,
+        encoding="utf-8",
+    )
+    manifest_path = vector_index_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["records_sha256"] = sha256_text(records_payload)
+    write_json(manifest_path, manifest)
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["passed"] is False
+    assert production["semantic_index"]["manifest"]["records_row_count"] == 2
+    assert production["semantic_index"]["manifest"]["records_invalid_line_count"] == 1
+    assert (
+        "embedding: semantic index records file has invalid rows"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_semantic_index_records_file_count_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    vector_index_dir = tmp_path / "memory" / "vector_index"
+    records_payload = (vector_index_dir / "records.jsonl").read_text(
+        encoding="utf-8"
+    )
+    records_payload += (
+        json.dumps(
+            {
+                "episode_id": "EP-extra",
+                "terms": ["extra"],
+                "embedding": [0.1, 0.2],
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    (vector_index_dir / "records.jsonl").write_text(
+        records_payload,
+        encoding="utf-8",
+    )
+    manifest_path = vector_index_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["records_sha256"] = sha256_text(records_payload)
+    write_json(manifest_path, manifest)
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["passed"] is False
+    assert production["semantic_index"]["manifest"]["record_count"] == 2
+    assert production["semantic_index"]["manifest"]["records_row_count"] == 3
+    assert (
+        "embedding: semantic index records row count does not match manifest"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_absolute_semantic_index_brain_records_file(
     tmp_path,
 ) -> None:
