@@ -1305,6 +1305,12 @@ def _doctor_readiness(
     brain_coverage = _nested_dict(report, "brain", "coverage")
     if accepted_episode_count > 0 and brain_coverage.get("status") != "complete":
         findings.append("brain: accepted episodes are not fully covered")
+    elif (
+        accepted_episode_count == 0
+        and brain_coverage.get("manifest_exists") is True
+        and brain_coverage.get("status") != "complete"
+    ):
+        findings.append("brain: coverage manifest is invalid or stale")
 
     vector_index = report.get("vector_index")
     vector_status = vector_index.get("status") if isinstance(vector_index, dict) else None

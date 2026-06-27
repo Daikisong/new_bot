@@ -403,6 +403,62 @@ def test_doctor_report_rejects_wrong_brain_coverage_episode_ids(tmp_path) -> Non
     ]
 
 
+def test_doctor_report_rejects_stale_empty_project_coverage_manifest(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        web_provider="brave",
+    )
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    WarehouseStore(tmp_path).rebuild_all()
+    LocalRetrievalStore(tmp_path).rebuild_index()
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-secret")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics._openai_sdk_status",
+        lambda: {
+            "available": True,
+            "version": "fake-openai",
+            "async_client_available": True,
+            "error": None,
+        },
+    )
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True, exist_ok=True)
+    write_json(
+        current / "coverage_manifest.json",
+        {
+            "accepted_episode_count": 0,
+            "covered_episode_count": 1,
+            "covered_episode_ids": ["EP-ghost"],
+            "missing_episode_ids": [],
+            "coverage_complete": True,
+        },
+    )
+
+    report = build_doctor_report(settings)
+
+    assert report["brain"]["accepted_episode_count"] == 0
+    assert report["brain"]["coverage"]["status"] == "incomplete"
+    assert report["brain"]["coverage"]["covered_episode_ids"] == ["EP-ghost"]
+    assert report["brain"]["coverage"]["unexpected_covered_episode_ids"] == [
+        "EP-ghost"
+    ]
+    assert (
+        "coverage manifest includes unknown covered episodes"
+        in report["brain"]["coverage"]["findings"]
+    )
+    assert report["readiness"]["passed"] is False
+    assert report["readiness"]["findings"] == [
+        "brain: coverage manifest is invalid or stale"
+    ]
+
+
 def test_production_readiness_rejects_missing_latest_brain_diversity_summary(
     tmp_path,
 ) -> None:
