@@ -9358,6 +9358,143 @@ def test_lookahead_audit_checks_session_pack_episode_scope(tmp_path: Path) -> No
     assert clean["passed"], clean["findings"]
 
 
+def test_lookahead_audit_checks_session_pack_record_scope_and_files(
+    tmp_path: Path,
+) -> None:
+    pack_dir = tmp_path / "session_packs" / "2030-01-10"
+    pack_dir.mkdir(parents=True)
+    available_record = _brain_record_for_sweep_audit(
+        "REC-session-pack-available",
+        episode_id="EP-session-pack-records",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    future_record = _brain_record_for_sweep_audit(
+        "REC-session-pack-future",
+        episode_id="EP-session-pack-records",
+        available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+    )
+    _store_brain_records_for_sweep_audit(tmp_path, [available_record, future_record])
+    pack_files = (
+        "system_instructions.md",
+        "research_brain.md",
+        "memory_cases.md",
+        "record_memory_cases.md",
+        "current_news.md",
+        "company_memory.md",
+        "market_context.md",
+    )
+    for file_name in pack_files:
+        (pack_dir / file_name).write_text(f"{file_name} content\n", encoding="utf-8")
+    (pack_dir / "record_memory_cases.md").write_text(
+        "REC-session-pack-available\n",
+        encoding="utf-8",
+    )
+    (pack_dir / "omission_report.md").write_text("No omissions.\n", encoding="utf-8")
+
+    def pack_manifest_fields() -> dict[str, object]:
+        pack_file_hashes = {
+            file_name: file_sha256(pack_dir / file_name) for file_name in pack_files
+        }
+        token_counts = {
+            file_name: max(
+                1,
+                len((pack_dir / file_name).read_text(encoding="utf-8")) // 4,
+            )
+            for file_name in pack_files
+        }
+        return {
+            "pack_files": list(pack_files),
+            "pack_file_count": len(pack_files),
+            "pack_file_hashes": pack_file_hashes,
+            "pack_sha256": sha256_text(
+                "\n".join(pack_file_hashes[file_name] for file_name in pack_files)
+            ),
+            "omission_report_file": "omission_report.md",
+            "omission_report_sha256": file_sha256(pack_dir / "omission_report.md"),
+            "token_counts": token_counts,
+            "token_count_total": sum(token_counts.values()),
+        }
+
+    manifest = {
+        "schema_version": "nslab.session_pack_manifest.v1",
+        "blocked": False,
+        "trade_date": "2030-01-10",
+        "cutoff_at": "2030-01-10T08:59:59+09:00",
+        "as_of": "2030-01-10T08:59:59+09:00",
+        "mode": "brain",
+        "accepted_episode_count": 0,
+        "available_episode_count": 0,
+        "available_episode_ids": [],
+        "included_episode_count": 0,
+        "included_episode_ids": [],
+        "budget_omitted_episode_count": 0,
+        "budget_omitted_episode_ids": [],
+        "available_coverage_complete": True,
+        "unavailable_episode_count": 0,
+        "omitted_episode_ids": [],
+        "unavailable_episode_ids": [],
+        "accepted_record_count": 2,
+        "available_record_count": 1,
+        "available_record_ids": ["REC-session-pack-future"],
+        "training_eligible_available_record_count": 1,
+        "training_eligible_available_record_ids": ["REC-session-pack-available"],
+        "included_record_count": 1,
+        "included_record_ids": ["REC-session-pack-future"],
+        "budget_omitted_record_count": 0,
+        "budget_omitted_record_ids": [],
+        "available_record_coverage_complete": True,
+        "unavailable_record_count": 1,
+        "omitted_record_ids": ["REC-session-pack-future"],
+        "unavailable_record_ids": ["REC-session-pack-future"],
+        **pack_manifest_fields(),
+    }
+    write_json(pack_dir / "manifest.json", manifest)
+
+    failed_scope = audit_lookahead(tmp_path)
+
+    assert not failed_scope["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack "
+        "available_record_ids mismatch"
+    ) in failed_scope["findings"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack future included "
+        "record: REC-session-pack-future"
+    ) in failed_scope["findings"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack available record "
+        "coverage mismatch"
+    ) in failed_scope["findings"]
+
+    clean_manifest = {
+        **manifest,
+        "available_record_ids": ["REC-session-pack-available"],
+        "included_record_ids": ["REC-session-pack-available"],
+        "budget_omitted_record_ids": [],
+        "omitted_record_ids": ["REC-session-pack-future"],
+        **pack_manifest_fields(),
+    }
+    write_json(pack_dir / "manifest.json", clean_manifest)
+
+    clean = audit_lookahead(tmp_path)
+
+    assert clean["passed"], clean["findings"]
+
+    (pack_dir / "record_memory_cases.md").write_text(
+        "REC-session-pack-available\nREC-session-pack-future\n",
+        encoding="utf-8",
+    )
+    write_json(pack_dir / "manifest.json", {**clean_manifest, **pack_manifest_fields()})
+
+    failed_file = audit_lookahead(tmp_path)
+
+    assert not failed_file["passed"]
+    assert (
+        "session_packs/2030-01-10/manifest.json: session pack file contains "
+        "future record REC-session-pack-future: record_memory_cases.md"
+    ) in failed_file["findings"]
+
+
 def test_lookahead_audit_verifies_session_pack_file_hashes(tmp_path: Path) -> None:
     pack_dir = tmp_path / "session_packs" / "2030-01-10"
     pack_dir.mkdir(parents=True)

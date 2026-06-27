@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 
 from news_scalping_lab.ingest.news import NewsBatch, load_news_csv
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.research_import.bundle import (
     CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
     EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
@@ -41,6 +42,7 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         *sorted((root / "session_packs").glob("*/manifest.json")),
     ]
     accepted_episode_available_from = _accepted_episode_available_from(root)
+    accepted_record_metadata = _accepted_record_metadata(root)
     for path in manifest_paths:
         manifest_name = _manifest_display_name(root, path)
         manifest = read_json(path)
@@ -69,6 +71,15 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             manifest,
             manifest_cutoff_at,
             accepted_episode_available_from,
+            findings,
+        )
+        _check_session_pack_record_scope(
+            root,
+            path,
+            manifest_name,
+            manifest,
+            manifest_cutoff_at,
+            accepted_record_metadata,
             findings,
         )
         if (
@@ -105,6 +116,14 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
             manifest_name,
             manifest_cutoff_at,
             accepted_episode_available_from,
+            findings,
+        )
+        _check_session_pack_files_for_future_record_ids(
+            root,
+            path,
+            manifest_name,
+            manifest_cutoff_at,
+            accepted_record_metadata,
             findings,
         )
         _check_session_pack_temporal_memory_refs(
@@ -496,6 +515,197 @@ def _check_session_pack_episode_scope(
         findings.append(f"{manifest_name}: session pack omitted_episode_ids mismatch")
 
 
+def _check_session_pack_record_scope(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    manifest_cutoff_at: datetime | None,
+    accepted_record_metadata: dict[str, tuple[datetime, bool]],
+    findings: list[str],
+) -> None:
+    if (
+        manifest_path.parent.parent != root / "session_packs"
+        or manifest.get("schema_version") != "nslab.session_pack_manifest.v1"
+    ):
+        return
+    scope_fields = {
+        "accepted_record_count",
+        "available_record_count",
+        "available_record_ids",
+        "included_record_count",
+        "included_record_ids",
+        "omitted_record_ids",
+        "unavailable_record_ids",
+    }
+    if not any(field in manifest for field in scope_fields):
+        return
+
+    accepted_ids = set(accepted_record_metadata)
+    accepted_count = _non_bool_int(manifest.get("accepted_record_count"))
+    if accepted_count is None or accepted_count < 0:
+        findings.append(f"{manifest_name}: session pack accepted_record_count invalid")
+    elif accepted_count != len(accepted_ids):
+        findings.append(f"{manifest_name}: session pack accepted_record_count mismatch")
+    if manifest_cutoff_at is None:
+        return
+
+    available_ids = {
+        record_id
+        for record_id, (available_from, _training_eligible) in accepted_record_metadata.items()
+        if is_available_as_of(available_from, manifest_cutoff_at)
+    }
+    unavailable_ids = accepted_ids - available_ids
+    training_eligible_available_ids = {
+        record_id
+        for record_id, (available_from, training_eligible) in accepted_record_metadata.items()
+        if training_eligible and is_available_as_of(available_from, manifest_cutoff_at)
+    }
+    available_count = _non_bool_int(manifest.get("available_record_count"))
+    if available_count is None or available_count < 0:
+        findings.append(f"{manifest_name}: session pack available_record_count invalid")
+    elif available_count != len(available_ids):
+        findings.append(f"{manifest_name}: session pack available_record_count mismatch")
+
+    manifest_available_ids = _string_list_or_none(manifest.get("available_record_ids"))
+    if manifest_available_ids is None:
+        findings.append(f"{manifest_name}: session pack available_record_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "available_record_ids",
+            manifest_available_ids,
+            findings,
+        )
+        if set(manifest_available_ids) != available_ids:
+            findings.append(f"{manifest_name}: session pack available_record_ids mismatch")
+
+    manifest_unavailable_ids = _string_list_or_none(manifest.get("unavailable_record_ids"))
+    if manifest_unavailable_ids is None:
+        findings.append(f"{manifest_name}: session pack unavailable_record_ids invalid")
+    elif set(manifest_unavailable_ids) != unavailable_ids:
+        findings.append(f"{manifest_name}: session pack unavailable_record_ids mismatch")
+    unavailable_count = _non_bool_int(manifest.get("unavailable_record_count"))
+    if unavailable_count is not None and unavailable_count != len(unavailable_ids):
+        findings.append(f"{manifest_name}: session pack unavailable_record_count mismatch")
+
+    training_ids = _string_list_or_none(
+        manifest.get("training_eligible_available_record_ids")
+    )
+    if training_ids is not None:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "training_eligible_available_record_ids",
+            training_ids,
+            findings,
+        )
+        if set(training_ids) != training_eligible_available_ids:
+            findings.append(
+                f"{manifest_name}: session pack "
+                "training_eligible_available_record_ids mismatch"
+            )
+    training_count = _non_bool_int(
+        manifest.get("training_eligible_available_record_count")
+    )
+    if (
+        training_count is not None
+        and training_count != len(training_eligible_available_ids)
+    ):
+        findings.append(
+            f"{manifest_name}: session pack "
+            "training_eligible_available_record_count mismatch"
+        )
+
+    included_ids = _string_list_or_none(manifest.get("included_record_ids"))
+    if included_ids is None:
+        findings.append(f"{manifest_name}: session pack included_record_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "included_record_ids",
+            included_ids,
+            findings,
+        )
+        included_set = set(included_ids)
+        if not included_set <= accepted_ids:
+            findings.append(f"{manifest_name}: session pack included_record_ids unknown")
+        for record_id in sorted(included_set & unavailable_ids):
+            findings.append(f"{manifest_name}: session pack future included record: {record_id}")
+        included_count = _non_bool_int(manifest.get("included_record_count"))
+        if included_count is None or included_count < 0:
+            findings.append(f"{manifest_name}: session pack included_record_count invalid")
+        elif included_count != len(included_ids):
+            findings.append(f"{manifest_name}: session pack included_record_count mismatch")
+
+    omitted_ids = _string_list_or_none(manifest.get("omitted_record_ids"))
+    if omitted_ids is None:
+        findings.append(f"{manifest_name}: session pack omitted_record_ids invalid")
+    else:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "omitted_record_ids",
+            omitted_ids,
+            findings,
+        )
+        if not set(omitted_ids) <= accepted_ids:
+            findings.append(f"{manifest_name}: session pack omitted_record_ids unknown")
+
+    budget_omitted_ids = _string_list_or_none(manifest.get("budget_omitted_record_ids"))
+    if budget_omitted_ids is not None:
+        _check_duplicate_session_pack_ids(
+            manifest_name,
+            "budget_omitted_record_ids",
+            budget_omitted_ids,
+            findings,
+        )
+        budget_omitted_set = set(budget_omitted_ids)
+        if not budget_omitted_set <= available_ids:
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_record_ids mismatch"
+            )
+        budget_omitted_count = _non_bool_int(manifest.get("budget_omitted_record_count"))
+        if budget_omitted_count is not None and budget_omitted_count != len(
+            budget_omitted_ids
+        ):
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_record_count mismatch"
+            )
+
+    blocked = manifest.get("blocked")
+    if not isinstance(blocked, bool):
+        findings.append(f"{manifest_name}: session pack blocked invalid")
+        return
+    if included_ids is None or omitted_ids is None:
+        return
+    included_set = set(included_ids)
+    omitted_set = set(omitted_ids)
+    if included_set & omitted_set:
+        findings.append(f"{manifest_name}: session pack included omitted record overlap")
+    if budget_omitted_ids is not None:
+        expected_budget_omitted = available_ids - included_set
+        budget_omitted_set = set(budget_omitted_ids)
+        if budget_omitted_set != expected_budget_omitted:
+            findings.append(
+                f"{manifest_name}: session pack budget_omitted_record_ids mismatch"
+            )
+        if omitted_set != budget_omitted_set | unavailable_ids:
+            findings.append(f"{manifest_name}: session pack omitted_record_ids mismatch")
+        coverage_complete = manifest.get("available_record_coverage_complete")
+        if isinstance(coverage_complete, bool) and coverage_complete != (
+            not expected_budget_omitted
+        ):
+            findings.append(
+                f"{manifest_name}: session pack available_record_coverage_complete mismatch"
+            )
+    if blocked is False:
+        if included_set != available_ids:
+            findings.append(f"{manifest_name}: session pack available record coverage mismatch")
+        if omitted_set != unavailable_ids:
+            findings.append(f"{manifest_name}: session pack omitted_record_ids mismatch")
+    elif not unavailable_ids <= omitted_set:
+        findings.append(f"{manifest_name}: session pack omitted_record_ids mismatch")
+
+
 def _check_duplicate_session_pack_ids(
     manifest_name: str,
     field: str,
@@ -524,6 +734,17 @@ def _accepted_episode_available_from(root: Path) -> dict[str, datetime]:
         except ValueError:
             continue
     return available_from
+
+
+def _accepted_record_metadata(root: Path) -> dict[str, tuple[datetime, bool]]:
+    try:
+        records = BrainRecordStore(root).list_records()
+    except Exception:
+        return {}
+    return {
+        record.record_id: (record.available_from, record.training_eligible)
+        for record in records
+    }
 
 
 def _check_retrieved_episode_availability(
@@ -611,6 +832,36 @@ def _check_session_pack_files_for_future_episode_ids(
                 findings.append(
                     f"{manifest_name}: session pack file contains future episode "
                     f"{episode_id}: {file_name}"
+                )
+
+
+def _check_session_pack_files_for_future_record_ids(
+    root: Path,
+    manifest_path: Path,
+    manifest_name: str,
+    manifest_cutoff_at: datetime | None,
+    accepted_record_metadata: dict[str, tuple[datetime, bool]],
+    findings: list[str],
+) -> None:
+    if manifest_path.parent.parent != root / "session_packs" or manifest_cutoff_at is None:
+        return
+    future_record_ids = [
+        record_id
+        for record_id, (available_from, _training_eligible) in accepted_record_metadata.items()
+        if not is_available_as_of(available_from, manifest_cutoff_at)
+    ]
+    if not future_record_ids:
+        return
+    for file_name in SESSION_PACK_FILES:
+        path = manifest_path.parent / file_name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for record_id in future_record_ids:
+            if record_id in text:
+                findings.append(
+                    f"{manifest_name}: session pack file contains future record "
+                    f"{record_id}: {file_name}"
                 )
 
 
