@@ -446,6 +446,47 @@ def test_brain_audit_reports_unreadable_brain_manifest(tmp_path) -> None:
     ]
 
 
+def test_brain_audit_recovers_unreadable_existing_diagnostic_reports(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Brain audit should recover malformed prior diagnostic reports.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    diagnostics_dir = tmp_path / "diagnostics"
+    (diagnostics_dir / "brain_compile_report.json").write_text(
+        "{not valid json",
+        encoding="utf-8",
+    )
+    (diagnostics_dir / "record_coverage_report.json").write_text(
+        "{not valid json",
+        encoding="utf-8",
+    )
+
+    audit = audit_brain(tmp_path)
+
+    assert "latest_brain_audit" in read_json(
+        diagnostics_dir / "brain_compile_report.json"
+    )
+    brain_report = read_json(diagnostics_dir / "brain_compile_report.json")
+    record_report = read_json(diagnostics_dir / "record_coverage_report.json")
+    assert brain_report["previous_report_read_findings"] == [
+        "brain compile diagnostic report is unreadable"
+    ]
+    assert record_report["previous_report_read_findings"] == [
+        "record coverage diagnostic report is unreadable"
+    ]
+    assert record_report["latest_record_coverage_audit"]["record_coverage_complete"] == (
+        audit["record_coverage_complete"]
+    )
+
+
 def test_coverage_audit_surfaces_stale_episode_coverage_manifest(
     tmp_path,
 ) -> None:

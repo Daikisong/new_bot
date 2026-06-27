@@ -139,11 +139,12 @@ def _write_latest_brain_audit_summary(
     deep: bool,
 ) -> None:
     report_path = root / "diagnostics" / "brain_compile_report.json"
-    report: dict[str, Any] = {}
-    if report_path.exists():
-        payload = read_json(report_path)
-        if isinstance(payload, dict):
-            report = payload
+    report, report_read_findings = _read_existing_diagnostic_report_for_audit(
+        report_path,
+        label="brain compile diagnostic report",
+    )
+    if report_read_findings:
+        report["previous_report_read_findings"] = report_read_findings
     report.setdefault("schema_version", "nslab.brain_compile_diagnostics.v1")
     category_source_record_types = result.get("brain_category_source_record_types")
     if isinstance(category_source_record_types, dict):
@@ -230,11 +231,12 @@ def _write_latest_record_coverage_audit_summary(
     result: dict[str, object],
 ) -> None:
     report_path = root / "diagnostics" / "record_coverage_report.json"
-    report: dict[str, Any] = {}
-    if report_path.exists():
-        payload = read_json(report_path)
-        if isinstance(payload, dict):
-            report = payload
+    report, report_read_findings = _read_existing_diagnostic_report_for_audit(
+        report_path,
+        label="record coverage diagnostic report",
+    )
+    if report_read_findings:
+        report["previous_report_read_findings"] = report_read_findings
     report.setdefault("schema_version", "nslab.record_coverage_manifest.v1")
     for key in (
         "record_coverage_as_of",
@@ -327,6 +329,22 @@ def _write_latest_record_coverage_audit_summary(
         "findings": findings if isinstance(findings, list) else [],
     }
     write_diagnostic_report(root, "record_coverage_report", report)
+
+
+def _read_existing_diagnostic_report_for_audit(
+    path: Path,
+    *,
+    label: str,
+) -> tuple[dict[str, Any], list[str]]:
+    if not path.exists():
+        return {}, []
+    try:
+        payload = read_json(path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}, [f"{label} is unreadable"]
+    if not isinstance(payload, dict):
+        return {}, [f"{label} must be a JSON object"]
+    return payload, []
 
 
 def _brain_audit_findings(result: dict[str, object]) -> list[str]:
