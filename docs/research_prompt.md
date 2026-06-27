@@ -4,11 +4,307 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v23_zero_preseal_outcome_access_locked
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행이다. outcome snapshot은 PHASE_2 BLIND seal receipt가 검증되기 전에는 다운로드·stat·sha256·header·row_count·parse·sample·출력·price label 계산을 단 한 번도 하지 않는다. access JSON의 outcome path/expected sha/expected row_count 문자열만 metadata로 허용한다. pre-seal outcome byte 접촉이 발생한 실행은 brain import 금지이며, label/content가 노출되면 최소 QUARANTINE만 남긴다. 20260622 gold example은 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v23은 v22의 ledger parity, outcome→news audit, brain_delta 밀도, market_state override를 유지하되, accepted attempt의 preseal_outcome_download_count까지 반드시 0으로 잠그는 zero-contamination 모드다.
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v24_outcome_airgap_preventive_lock
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행이다. v24는 outcome snapshot을 PHASE_2 전에는 다운로드하지 않는 수준을 넘어, outcome raw URL·local filename·download manifest·blind/outcome pair loop 자체를 preseal 실행 컨텍스트에서 제거한다. access JSON의 outcome expected sha256/row_count/bytes/date만 locked metadata로 보존하고, outcome path는 PHASE_3 seal receipt 검증 후에만 unlock한다. pre-seal byte touch가 발생한 실행은 label/content 노출 여부와 무관하게 brain import 금지다. 단, wrapper가 실행 전에 outcome download 계획을 차단한 것은 오염이 아니며 계속 진행한다. 실제 outcome 파일이 다운로드·stat·byte_size·sha/header/row_count/parse 중 하나라도 실행되면 같은 ChatGPT 실행에서는 ACCEPT_FULL로 복구하지 않고 최소 QUARANTINE 감사 bundle만 남긴다. 20260622 gold example은 구조 reference로만 사용하고 숫자·종목·rank·score는 복사하지 않는다. v24는 v23의 zero-contamination 조건, v22의 ledger parity와 outcome→news audit, v21의 brain_delta 밀도와 market_state override를 유지한다.
 ```
 
 
+
+────────────────────────────────────────
+V24 OUTCOME AIR-GAP LOCK — outcome 경로·URL·다운로드 계획 자체를 PHASE_2 전에는 만들지 않는다
+────────────────────────────────────────
+
+이 섹션은 `V23 ZERO-CONTAMINATION LOCK`, `AUTONOMOUS FULL-RUN LOCK`, `PHASE COCKPIT LOCK`보다 우선한다. v23은 pre-seal outcome byte 접촉을 오염으로 잘 차단했지만, 실행자가 access JSON을 읽은 뒤 outcome snapshot URL이나 local filename을 미리 만들면서 `PRESEAL_OUTCOME_BYTE_ACCESS`가 반복될 수 있다. v24의 목적은 오염을 격리하는 것이 아니라, **PHASE_2 전에는 outcome을 다운로드할 수 있는 경로·변수·루프·manifest가 아예 생기지 않게 하는 것**이다.
+
+핵심 원칙:
+
+```text
+PHASE_0/1/2에서는 outcome snapshot을 “안 읽는다”가 아니라,
+outcome snapshot raw URL, local filename, download plan, file object를 만들지 않는다.
+```
+
+## V24.0 accepted clean run 우선순위
+
+```text
+1. PHASE_2 전 outcome URL/path/local filename/download manifest 생성 0건 유지
+2. PHASE_2 전 모든 file fetch는 preseal allowlist wrapper로만 수행
+3. BLIND packet 물리적 저장·해시·seal receipt 생성
+4. seal receipt 검증 후에만 outcome path unlock
+5. PHASE_3에서 outcome URL을 처음 조립하고 다운로드·parse
+```
+
+## V24.1 access JSON의 outcome path는 preseal에서 잠긴 metadata다
+
+access JSON은 PHASE_0에서 열 수 있다. 그러나 PHASE_0/1/2의 runnable context와 generated artifact에는 outcome 경로를 실행 가능한 형태로 남기지 않는다.
+
+preseal에서 허용되는 outcome metadata:
+
+```json
+{
+  "outcome_snapshot_date": "YYYY-MM-DD",
+  "outcome_snapshot_sha256_expected": "...",
+  "outcome_snapshot_row_count_expected": 0,
+  "outcome_snapshot_bytes_expected": 0,
+  "outcome_snapshot_path_locked": "LOCKED_UNTIL_PHASE_3",
+  "outcome_raw_url_materialized_preseal": false,
+  "outcome_local_path_materialized_preseal": false
+}
+```
+
+금지:
+
+```text
+outcome_snapshot_path를 raw base URL과 결합
+outcome_snapshot_path를 GitHub blob URL과 결합
+outcome_snapshot_path에서 basename을 추출해 local filename 생성
+outcome_snapshot_path를 download_manifest / files_to_fetch / snapshot_paths / all_paths / price_paths에 추가
+outcome_snapshot_path를 curl / wget / urllib / requests / container.download / download tool에 전달
+outcome_snapshot_path를 open / stat / os.path.getsize / sha256 / head / tail / grep / wc / file 에 전달
+```
+
+주의: outcome path 문자열 자체는 가격 label이 아니므로 이론상 오염은 아니다. 그러나 자동 실행에서는 그 문자열이 곧 다운로드 실수로 이어진다. 그래서 v24 accepted run에서는 PHASE_2 전 runnable code에 실제 outcome path 문자열을 남기지 않는다.
+
+## V24.2 preseal download allowlist wrapper 필수
+
+PHASE_0/1/2에서 다운로드·저장 가능한 logical_role은 다음뿐이다.
+
+```text
+main_prompt
+news_csv
+trading_calendar
+research_daily_manifest
+research_daily_schema
+research_daily_access_json
+gold_reference_structure_only
+blind_snapshot
+```
+
+PHASE_0/1/2에서는 아래 logical_role이 등장하면 즉시 accepted attempt invalid다.
+
+```text
+outcome_snapshot
+outcome_price_snapshot
+D_snapshot
+postseal_outcome
+result_snapshot
+```
+
+preseal download wrapper는 실행 전 다음을 검사한다.
+
+```text
+logical_role in PRESEAL_ALLOWED_LOGICAL_ROLES
+is_outcome_snapshot == false
+url does not contain /snapshots/YYYY/MM/<D_YYYYMMDD>.csv
+local_path does not contain outcome_snapshot_<D_YYYYMMDD>.csv
+local_path does not contain <D_YYYYMMDD>_outcome.csv
+```
+
+validator hard check:
+
+```text
+preseal_download_manifest_outcome_role_count == 0
+preseal_download_manifest_d_snapshot_url_count == 0
+preseal_download_manifest_outcome_local_path_count == 0
+preseal_url_materialized_for_outcome_count == 0
+preseal_local_filename_materialized_for_outcome_count == 0
+```
+
+## V24.3 blind/outcome pair loop 금지
+
+PHASE_2 전에는 blind와 outcome을 같은 자료구조에 넣지 않는다.
+
+금지 예:
+
+```python
+for kind in ["blind", "outcome"]: ...
+for path in [blind_snapshot_path, outcome_snapshot_path]: ...
+snapshot_paths = {"blind": blind_snapshot_path, "outcome": outcome_snapshot_path}
+for role, path in snapshot_paths.items(): ...
+for date in [previous_trade_date, trade_date]: download_snapshot(date)
+```
+
+preseal에서는 blind snapshot만 받는 단일 함수만 허용한다.
+
+```python
+def fetch_blind_snapshot_only(access_meta):
+    # only access_meta.blind_snapshot_path is used
+    # outcome path is locked metadata and cannot be passed here
+    ...
+```
+
+postseal에서만 outcome URL을 처음 조립한다.
+
+```python
+def fetch_outcome_snapshot_postseal(seal_receipt, access_meta):
+    assert seal_receipt.exists
+    assert seal_receipt.verified_by_validator_precheck is True
+    outcome_url = raw_base + access_meta.unlock_outcome_snapshot_path_after_seal()
+    ...
+```
+
+## V24.4 phase code preflight
+
+PHASE_2 전 실행 코드에 다음 패턴이 있으면 실행하지 말고 코드를 고친다.
+
+```text
+raw_base + outcome_snapshot_path
+repository_raw_base_url + outcome_snapshot_path
+Path(... outcome ...)
+open(... outcome ...)
+os.path.getsize(... outcome ...)
+Path.stat(... outcome ...)
+sha256_file(... outcome ...)
+pd.read_csv(... outcome ...)
+csv.DictReader(... outcome ...)
+download(... outcome ...)
+curl ... outcome ...
+wget ... outcome ...
+requests.get(... outcome ...)
+urllib.request.urlretrieve(... outcome ...)
+for kind in ['blind', 'outcome']
+for path in [blind_snapshot_path, outcome_snapshot_path]
+```
+
+D 거래일 snapshot 물리 파일명도 PHASE_2 전에는 금지한다.
+
+```text
+atlas/research_daily/snapshots/YYYY/MM/<D_YYYYMMDD>.csv
+<D_YYYYMMDD>_outcome.csv
+outcome_snapshot_<D_YYYYMMDD>.csv
+research_daily_outcome_<D_YYYYMMDD>.csv
+```
+
+허용 예외:
+
+```text
+news_<D_YYYYMMDD>.csv
+atlas/research_daily/access/YYYY/MM/<D_YYYYMMDD>.json
+```
+
+## V24.5 outcome blob existence page 처리
+
+가능하면 PHASE_2 전에는 GitHub outcome blob page도 열지 않는다. access JSON의 expected metadata가 있으면 outcome blob existence check는 필요 없다.
+
+다만 web/browser 계층이 링크 탐색 중 outcome blob page를 열었고 Raw CSV rows/header/sample/byte/hash/row_count/label을 보지 않았다면 이는 content contamination이 아니다. 이 경우 다음 warning만 남기고 accepted 가능성을 유지한다.
+
+```text
+OUTCOME_BLOB_EXISTENCE_PAGE_OPENED_WITHOUT_RAW_CONTENT
+```
+
+단, 이것은 자동 탐색 부작용을 감사하기 위한 예외이지 실행 계획이 아니다. deliberate preseal outcome blob existence check는 금지한다.
+
+## V24.6 preseal byte touch 발생 시 같은 실행 ACCEPT_FULL 금지
+
+PHASE_2 전에 outcome 파일이 실제로 다운로드되거나, 파일 존재를 넘어서 stat·byte_size·sha256·header·row_count·parse·sample·label 계산 중 하나라도 실행되면 그 ChatGPT 실행은 더 이상 import-ready 연구가 아니다.
+
+중요한 구분:
+
+```text
+preflight wrapper가 outcome download 계획을 실행 전에 차단함
+→ 오염 아님. 계속 진행.
+
+outcome blob existence page가 우연히 열렸지만 raw rows/header/byte/hash/row_count/label을 보지 않음
+→ content 오염 아님. warning만 기록하고 계속 진행 가능.
+
+outcome 파일이 로컬에 생성됨 또는 byte_size/stat를 계산함
+→ same-run ACCEPT_FULL 금지. 최소 QUARANTINE audit만 허용.
+```
+
+처리:
+
+```text
+attempt_status = INVALID_PRESEAL_OUTCOME_BYTE_TOUCH
+accepted_attempt_valid = false
+bundle_status = QUARANTINE_PHASE_CONTAMINATED_PRESEAL_OUTCOME_TOUCH
+blind_valid = false
+forecast_evaluation_eligible = false
+brain_eligible = false
+direct_brain_ingest_ready = false
+final_watchlist_size = 0
+outcome_ledger_count = 0
+brain_delta_count = 0
+fatal_blockers = [PRESEAL_OUTCOME_BYTE_ACCESS]
+ACCEPT_FULL 금지
+```
+
+금지:
+
+```text
+같은 ChatGPT 실행에서 clean restart라고 주장하며 ACCEPT_FULL 생성
+오염된 뒤 긴 postmortem 작성
+오염된 뒤 winner census 작성
+오염된 뒤 brain_delta 생성
+오염된 뒤 정치테마 thesis를 사후 재구성
+```
+
+허용:
+
+```text
+최소 audit bundle 생성
+phase_state.json 작성
+access_log.jsonl 작성
+acquisition_warnings.jsonl 작성
+validation_report.json 작성
+다음 실행은 깨끗한 새 세션/새 workspace에서 다시 시작
+```
+
+## V24.7 post-seal outcome open receipt
+
+PHASE_3에서 outcome을 열기 전에는 다음 receipt가 실제 파일로 있어야 한다.
+
+```json
+{
+  "receipt_type": "BLIND_SEAL_RECEIPT",
+  "blind_prediction_sha256": "...",
+  "blind_report_sha256": "...",
+  "blind_packet_manifest_sha256": "...",
+  "created_before_outcome_open": true,
+  "verified_by_validator_precheck": true
+}
+```
+
+access_log 순서는 반드시 다음과 같아야 한다.
+
+```text
+PHASE_2_BLIND_PACKET_SEALED / WRITE_BLIND_SEAL_RECEIPT
+PHASE_2_BLIND_PACKET_SEALED / VERIFY_BLIND_SEAL_RECEIPT
+PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL / MATERIALIZE_OUTCOME_URL_POSTSEAL
+PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL / DOWNLOAD_OUTCOME_SNAPSHOT_POSTSEAL
+PHASE_3_OPEN_OUTCOME_ONLY_AFTER_SEAL / PARSE_OUTCOME_SNAPSHOT_POSTSEAL
+```
+
+## V24.8 최종 QUARANTINE 허용 조건
+
+최종 QUARANTINE은 다음 경우에만 허용한다.
+
+```text
+preseal outcome byte touch가 실제 실행됨
+semantic outcome content/label contamination 발생
+CSV 또는 MAIN PROMPT를 모든 fallback 후에도 확보 불가
+validator critical error를 16회 repair loop 후에도 해소 불가
+```
+
+preflight에서 금지 download plan을 발견하고 실행 전에 차단한 것은 QUARANTINE 사유가 아니다. 코드를 고치고 계속 진행한다. 그러나 outcome 파일이 실제로 로컬에 생겼거나 stat/byte_size/sha/header/row_count/parse 중 하나라도 실행되면 그 실행은 최소 audit QUARANTINE으로 닫는다.
+
+## V24.9 v23과의 충돌 해결
+
+v24는 v23의 zero-contamination 조건을 유지하고, 한 단계 앞에서 outcome URL/path/download plan 생성을 차단한다.
+
+```text
+v23: preseal outcome byte 접촉 발생 시 최소 audit bundle만 생성한다.
+v24: preseal outcome byte 접촉이 애초에 발생하지 않도록 URL/path/download plan/wrapper 단계에서 차단한다.
+```
+
+차단은 성공 경로이고, 실행된 byte touch는 실패 경로다.
+
+```text
+wrapper가 실행 전에 outcome download를 막음 → 계속 진행 가능
+outcome byte touch가 실제 실행됨 → 같은 실행 ACCEPT_FULL 금지, 최소 audit QUARANTINE
+```
+
+ACCEPT_FULL accepted attempt에서는 preseal outcome 관련 counter가 모두 0이어야 한다.
+
+────────────────────────────────────────
 ────────────────────────────────────────
 V23 ZERO-CONTAMINATION LOCK — BLIND 오염 방지 최우선 규칙
 ────────────────────────────────────────
