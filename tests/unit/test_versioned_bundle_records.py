@@ -879,6 +879,35 @@ def test_v11_bundle_inspection_exposes_direct_ingest_contract(
     assert inspection["final_semantic_audit_fail_count"] == 0
 
 
+def test_checked_in_synthetic_v11_fixture_has_direct_ingest_contract() -> None:
+    bundle = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "research_bundles"
+        / "synthetic_v11_bundle.md"
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["validation_passed"] is True
+    assert inspection["hash_mismatch_count"] == 0
+    assert inspection["hash_expectation_conflict_count"] == 0
+    assert inspection["direct_ingest_contract_present"] is True
+    assert (
+        inspection["direct_ingest_contract_schema_version"]
+        == "nslab.direct_ingest_contract.v1"
+    )
+    assert inspection["direct_brain_ingest_ready"] is True
+    assert inspection["brain_eligible"] is True
+    assert inspection["requires_human_semantic_review"] is False
+    assert inspection["direct_ingest_fatal_blocker_count"] == 0
+    assert inspection["direct_ingest_contract_validation_parity_verified"] is True
+    assert inspection["direct_ingest_contract_count_hash_parity_verified"] is True
+    assert inspection["final_semantic_audit_present"] is True
+    assert inspection["final_semantic_audit_count"] == 2
+    assert inspection["final_semantic_audit_fail_count"] == 0
+
+
 def test_record_store_report_counts_dropped_raw_records(tmp_path: Path) -> None:
     episode_dir = tmp_path / "research" / "episodes" / "EP-loss"
     episode_dir.mkdir(parents=True)

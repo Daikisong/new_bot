@@ -31,8 +31,21 @@ blind_valid: true
 ```
 <!-- NSLAB:END validation_report.json -->
 
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+```json
+{"brain_eligible": true, "direct_brain_ingest_ready": true, "fatal_blockers": [], "hard_gate_summary": {"direct_ingest_contract_count_hash_parity_verified": true, "direct_ingest_contract_validation_parity_verified": true}, "record_import_manifest": {"brain_delta_record_count": 2, "final_semantic_audit_count": 2, "source_ledger_record_count": 1, "training_eligible_record_count": 2}, "requires_human_semantic_review": false, "schema_version": "nslab.direct_ingest_contract.v1"}
+```
+<!-- NSLAB:END direct_ingest_contract.json -->
+
+<!-- NSLAB:BEGIN final_semantic_audit.jsonl -->
+```jsonl
+{"candidate_id":"CAND-A","record_id":"BRAIN-SYNTH-ISSUER","semantic_verdict":"PASS"}
+{"candidate_id":"CAND-B","record_id":"BRAIN-SYNTH-PAIR","semantic_verdict":"PASS"}
+```
+<!-- NSLAB:END final_semantic_audit.jsonl -->
+
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 ```json
-{"blind_valid": true, "brain_delta_record_count": 2, "bundle_status": "ACCEPT_FULL", "critical_error_count": 0, "cutoff_at": "2030-01-10T08:59:59+09:00", "embedded_blocks": {"brain_delta.jsonl": {"sha256": "4cf242893146554e825f5af4eb5444c76aee5c5d0145d8bdd2c9889c48d508ee"}, "research_episode.json": {"sha256": "e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06"}, "source_ledger.jsonl": {"sha256": "b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af"}, "validation_report.json": {"sha256": "659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505"}}, "episode_id": "NSLAB-20300110-SYNTH", "schema_version": "nslab.bundle_manifest.v11", "trade_date": "2030-01-10", "training_eligible_record_count": 2, "validator_exit_code": 0}
+{"blind_valid": true, "brain_delta_record_count": 2, "bundle_status": "ACCEPT_FULL", "critical_error_count": 0, "cutoff_at": "2030-01-10T08:59:59+09:00", "embedded_blocks": {"brain_delta.jsonl": {"sha256": "4cf242893146554e825f5af4eb5444c76aee5c5d0145d8bdd2c9889c48d508ee"}, "direct_ingest_contract.json": {"sha256": "527d0c0918f65e39da06103ec47b3d9e3f9f648a21a5ce0046408f2592ffe52e"}, "final_semantic_audit.jsonl": {"sha256": "9007dfc2453d35c8bef500fe4f271e65e99ab801a8d55abf736262be78247ec6"}, "research_episode.json": {"sha256": "e47fe450272a683223cdc7b6581329d2fe1a27147c877e6eec811bb432bbfb06"}, "source_ledger.jsonl": {"sha256": "b338c304b1f136382541508cdc31fbfc9ebf83a356ad36b3c8cc21a6ab7346af"}, "validation_report.json": {"sha256": "659829f46239a588a393ae4efff22ca072772ab629427da20041346bdae00505"}}, "episode_id": "NSLAB-20300110-SYNTH", "schema_version": "nslab.bundle_manifest.v11", "trade_date": "2030-01-10", "training_eligible_record_count": 2, "validator_exit_code": 0}
 ```
 <!-- NSLAB:END bundle_manifest.json -->
