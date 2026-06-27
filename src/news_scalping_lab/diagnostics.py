@@ -3717,6 +3717,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_weight_validation_entries": [],
             "missing_weight_diagnostic_fields": [],
             "invalid_weight_diagnostic_fields": [],
+            "weight_diagnostic_count_mismatches": [],
         }
     source_record_ids = sorted(record.record_id for record in source_records)
     training_eligible_record_ids = sorted(
@@ -3804,6 +3805,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_weight_validation_entries": [],
             "missing_weight_diagnostic_fields": [],
             "invalid_weight_diagnostic_fields": [],
+            "weight_diagnostic_count_mismatches": [],
         }
 
     findings: list[str] = []

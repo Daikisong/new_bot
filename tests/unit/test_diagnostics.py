@@ -2364,6 +2364,21 @@ def test_production_readiness_rejects_missing_training_exports_when_records_exis
     )
 
 
+def test_production_readiness_marks_training_exports_not_applicable_without_records(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is True
+    assert production["training_exports"]["status"] == "not_applicable"
+    assert production["training_exports"]["source_record_count"] == 0
+    assert production["training_exports"]["weight_diagnostic_count_mismatches"] == []
+
+
 def test_production_readiness_accepts_record_backed_training_exports(
     tmp_path,
 ) -> None:
@@ -2538,6 +2553,7 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["invalid_weight_validation_entries"] == []
     assert production["training_exports"]["missing_weight_diagnostic_fields"] == []
     assert production["training_exports"]["invalid_weight_diagnostic_fields"] == []
+    assert production["training_exports"]["weight_diagnostic_count_mismatches"] == []
     assert not any(
         finding.startswith("training:") for finding in production["findings"]
     )
@@ -9385,6 +9401,7 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
     )
     assert production["training_exports"]["passed"] is False
     assert production["training_exports"]["status"] == "attention"
+    assert production["training_exports"]["weight_diagnostic_count_mismatches"] == []
     assert any(
         finding.startswith(
             "training: training export source record store is unreadable"
