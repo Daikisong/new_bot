@@ -527,6 +527,16 @@ candidate_screening.screening_decision in [
 ]
 ```
 
+검증 카운터는 다음처럼 계산한다.
+
+```text
+candidate_screening_include_or_watch_count =
+  count(candidate_screening rows where screening_decision in [INCLUDE, WATCH_SECONDARY])
+
+candidate_ranking_audit_rankable_count =
+  count(candidate_ranking_audit rows whose source_screening_id maps to a rankable candidate)
+```
+
 각 ranking audit row는 다음을 기록한다.
 
 ```text
@@ -542,6 +552,42 @@ safe_D1_context_used
 pairwise_comparison_refs
 rank_reason
 why_not_final_if_excluded
+```
+
+위 필드명은 canonical contract다. 최종 bundle에 들어가기 전 intermediate alias는 반드시 canonical field로 normalize한다.
+
+금지 alias:
+
+```text
+screening_id only without source_screening_id
+final_rank
+ranking_factors
+ranking_score_blind
+```
+
+허용 변환:
+
+```text
+screening_id -> source_screening_id
+final_rank -> rank_if_final_or_null
+ranking_factors + ranking_score_blind -> ranking_inputs
+ranking_score_blind explanation -> rank_reason
+```
+
+final row:
+
+```text
+included_in_final == true
+rank_if_final_or_null is integer 1..N
+why_not_final_if_excluded is null or ""
+```
+
+non-final rankable row:
+
+```text
+included_in_final == false
+rank_if_final_or_null == null
+why_not_final_if_excluded is non-empty
 ```
 
 금지:
@@ -562,6 +608,9 @@ candidate_ranking_audit_missing_rankable_count == 0
 candidate_ranking_audit_excluded_without_reason_count == 0
 candidate_ranking_audit_final_without_rank_count == 0
 candidate_ranking_audit_nonfinal_with_rank_count == 0
+candidate_ranking_audit_missing_canonical_field_count == 0
+candidate_ranking_audit_legacy_alias_field_count == 0
+candidate_ranking_audit_final_rank_sequence_verified == true
 final_watchlist_count <= 20
 rank == 1..N continuous
 duplicate_ticker_count == 0 unless preferred share/common share explicitly separated
@@ -847,20 +896,38 @@ case has screening_decision, sealed_fact_ids, D_response, training_eligible
 ```text
 supervised_issuer_day_case
 supervised_direct_event_case
+supervised_theme_formation_case
 beneficiary_discovery_case
 theme_formation_case
 blind_leader_preference_pair
 candidate_generation_error_case
+candidate_ranking_error_case
 ranking_error_case
-semantic_binding_error_case
+row_disposition_error_case
+entity_resolution_error_case
+context_market_state_or_fact_case
 counterexample
 negative_control_case
 newsless_or_unexplained_case
 event_ticker_edge
 company_memory_delta
-market_state_memory_delta
+memory_claim
+mechanism_memory
 research_question
 ```
+
+최종 bundle의 `brain_delta.jsonl`에는 위 canonical record_type만 쓴다. 아래 non-canonical alias는 최종 산출 전에 반드시 변환한다.
+
+```text
+final_watchlist_supervised_outcome -> supervised_issuer_day_case 또는 supervised_direct_event_case
+outcome_to_news_reverse_audit_case -> beneficiary_discovery_case, newsless_or_unexplained_case, supervised_issuer_day_case 중 의미에 맞는 canonical type
+candidate_generation_miss -> candidate_generation_error_case
+ranking_cutline_miss -> candidate_ranking_error_case
+semantic_binding_error_case -> entity_resolution_error_case 또는 candidate_generation_error_case
+market_state_memory_delta -> context_market_state_or_fact_case, memory_claim, mechanism_memory 중 의미에 맞는 canonical type
+```
+
+alias를 그대로 남기면 두뇌 retrieval index가 분산되므로 `ACCEPT_FULL` 금지다.
 
 최소 필드:
 
@@ -887,6 +954,7 @@ research_question
 brain_delta_actual_record_count == count_lines(parse_final_block("brain_delta.jsonl"))
 brain_delta_record_without_record_type_count == 0
 brain_delta_lesson_memo_only_count == 0
+brain_delta_noncanonical_record_type_count == 0
 training_eligible_false_records_preserved == true
 brain_delta_count_by_type comes from final Markdown reparse
 ```
@@ -995,6 +1063,9 @@ candidate_ranking_audit_missing_rankable_count == 0
 candidate_ranking_audit_excluded_without_reason_count == 0
 candidate_ranking_audit_final_without_rank_count == 0
 candidate_ranking_audit_nonfinal_with_rank_count == 0
+candidate_ranking_audit_missing_canonical_field_count == 0
+candidate_ranking_audit_legacy_alias_field_count == 0
+candidate_ranking_audit_final_rank_sequence_verified == true
 final_watchlist_count <= 20
 final_watchlist_from_preseed_rank_count == 0
 final_codes_order_present == false
@@ -1008,6 +1079,24 @@ brain_delta_actual_record_count >= expected_brain_delta_min
 brain_delta_record_type_counts_match_final_block == true
 section_population_empty_without_audit_count == 0
 ```
+
+`validation_report.json`은 위 값을 산문 또는 boolean map으로만 기록하면 안 된다. 반드시 `checks` 배열에 critical check object를 포함한다.
+
+추가 필수 check_id:
+
+```text
+candidate_ranking_audit_schema_verified
+candidate_ranking_audit_rankable_coverage_verified
+candidate_ranking_audit_final_count_verified
+candidate_ranking_audit_nonfinal_reason_verified
+candidate_ranking_audit_alias_zero_verified
+brain_delta_record_type_canonical_verified
+brain_delta_noncanonical_alias_zero_verified
+direct_ingest_contract_count_hash_mirror_verified
+direct_ingest_contract_validation_parity_verified
+```
+
+각 check는 실제 final Markdown block을 재파싱해 계산한 `actual`, 프롬프트 계약에서 온 `expected`, `expected_source`, `actual_source`, `severity`, `error_ids`를 가져야 한다. `checks_from_reopened_artifacts: {"...": true}` 같은 boolean map만 있으면 `ACCEPT_FULL` 금지다.
 
 검증 실패 시 처리:
 
@@ -1044,10 +1133,14 @@ accept_full_allowed = (
     and candidate_screening_rank_field_count == 0
     and candidate_screening_preseed_rank_count == 0
     and candidate_ranking_audit_rankable_count == candidate_screening_include_or_watch_count
+    and candidate_ranking_audit_final_count == final_watchlist_count
     and candidate_ranking_audit_missing_rankable_count == 0
     and candidate_ranking_audit_excluded_without_reason_count == 0
     and candidate_ranking_audit_final_without_rank_count == 0
     and candidate_ranking_audit_nonfinal_with_rank_count == 0
+    and candidate_ranking_audit_missing_canonical_field_count == 0
+    and candidate_ranking_audit_legacy_alias_field_count == 0
+    and candidate_ranking_audit_final_rank_sequence_verified
     and final_watchlist_from_preseed_rank_count == 0
     and final_codes_order_present == false
     and final_watchlist_from_reparsed_candidate_screening_without_preseed
@@ -1058,6 +1151,9 @@ accept_full_allowed = (
     and outcome_to_news_audit_count == outcome_leader_census_count
     and postmortem_supervised_populations_complete
     and brain_delta_record_level_complete
+    and validation_report_critical_check_objects_present
+    and validation_report_boolean_map_only == false
+    and direct_ingest_contract_count_hash_mirror_verified
     and brain_delta_actual_record_count >= expected_brain_delta_min
     and report_sections_have_population_refs
     and final_markdown_reparse_validator_passed
@@ -1958,6 +2054,11 @@ record_type이 허용 목록 밖임
   "brain_delta_jsonl_sha256": "",
   "brain_delta_counts_by_record_type_actual": {},
   "brain_delta_counts_by_record_type_expected_min": {},
+  "candidate_ranking_audit_count": 0,
+  "candidate_screening_include_or_watch_count": 0,
+  "candidate_ranking_audit_jsonl_sha256": "",
+  "validation_report_sha256": "",
+  "bundle_manifest_sha256": "",
   "brain_delta_density_verified": true,
   "brain_delta_type_count_parity_verified": true,
   "brain_delta_actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
@@ -1971,8 +2072,12 @@ record_type이 허용 목록 밖임
 record_import_manifest.actual_brain_delta_record_count >= record_import_manifest.expected_brain_delta_min
 record_import_manifest.actual_brain_delta_record_count == brain_delta block non-empty jsonl line count
 record_import_manifest.brain_delta_jsonl_sha256 == bundle_manifest.block_hashes["brain_delta.jsonl"].sha256
+record_import_manifest.candidate_ranking_audit_count == candidate_ranking_audit block non-empty jsonl line count
+record_import_manifest.candidate_ranking_audit_count == candidate_screening_include_or_watch_count
+record_import_manifest.candidate_ranking_audit_jsonl_sha256 == bundle_manifest.block_hashes["candidate_ranking_audit.jsonl"].sha256
 record_import_manifest.brain_delta_density_verified == validation_report.checks["brain_delta_density_verified"].passed
 record_import_manifest.brain_delta_actual_source == FINAL_MARKDOWN_BLOCK_REPARSE
+record_import_manifest.validation_report_sha256 == bundle_manifest.block_hashes["validation_report.json"].sha256
 ```
 
 위반 시:
@@ -2462,6 +2567,7 @@ ACCEPT_FULL 금지
   "actual": {},
   "expected": {},
   "expected_source": "PROMPT_CONSTANT | INPUT_PARSE | ACCESS_JSON | CANONICAL_GRAPH_PRESEAL | POSTSEAL_OUTCOME_PARSE | FINAL_BUNDLE_REPARSE",
+  "actual_source": "FINAL_BUNDLE_REPARSE | FINAL_MARKDOWN_BLOCK_REPARSE | ACCESS_LOG_REPARSE | VALIDATOR_RECOMPUTE",
   "severity": "critical",
   "error_ids": []
 }
@@ -2485,6 +2591,14 @@ renderer_validator_independence_verified
 bundle_manifest_block_hashes_verified
 direct_ingest_contract_mirrors_validation_verified
 prediction_performance_not_used_as_structural_gate_verified
+candidate_ranking_audit_schema_verified
+candidate_ranking_audit_rankable_coverage_verified
+candidate_ranking_audit_final_count_verified
+candidate_ranking_audit_nonfinal_reason_verified
+candidate_ranking_audit_alias_zero_verified
+brain_delta_record_type_canonical_verified
+brain_delta_noncanonical_alias_zero_verified
+direct_ingest_contract_count_hash_mirror_verified
 ```
 
 금지:
@@ -2695,6 +2809,17 @@ GitHub 화면이 `too large to display`를 보여도 파일 부재가 아니다.
 5. acquisition_warnings에 JSON_DOWNLOAD_TOOL_CONTENT_TYPE_BLOCK을 기록한다.
 ```
 
+단, stock-web `research_daily` manifest/schema/access JSON은 V25.5의 가격 계층 fast path가 우선한다. 이 JSON들은 routing metadata 확인용이며, bytes를 정확히 저장하지 못한 상태에서 사람이 복사해 canonical JSON으로 재직렬화하거나 sha256을 만든 척하지 않는다.
+
+stock-web JSON bytes 저장이 실패했지만 web/browser로 path metadata를 확인한 경우:
+
+```text
+access_sha256_status = WEB_VIEW_ONLY_UNHASHED
+research_daily_json_reconstructed_count == 0
+acquisition_warnings에 STOCK_WEB_JSON_WEB_VIEW_ONLY_UNHASHED 기록
+snapshot CSV Raw bytes 확보로 즉시 이동
+```
+
 단, access JSON에서 outcome 관련 값은 다음 locked metadata로만 보존한다.
 
 ```text
@@ -2719,6 +2844,20 @@ research_daily 가격 계층은 다음 순서로 확보한다.
 5. access.blind_snapshot_path만 다운로드·parse
 6. BLIND packet seal receipt 검증
 7. 그 뒤 access.outcome_snapshot_path unlock·download·parse
+```
+
+stock-web manifest/schema/access JSON은 routing metadata 확인용이다. 실제 가격 provenance는 blind/outcome snapshot CSV Raw bytes의 sha256, byte_size, header, row_count로 닫는다.
+
+필수 fast path:
+
+```text
+stock-web JSON은 shell/curl/urllib/requests로 반복 다운로드하지 않음
+web/browser로 Raw JSON을 열어 blind_snapshot_path, outcome_snapshot_path, row_count, sha256 metadata만 확인
+JSON bytes를 정확히 저장하지 못하면 access_sha256_status = WEB_VIEW_ONLY_UNHASHED
+JSON 내용을 사람이 복사해 새 JSON 파일로 재구성하거나 sha256을 조작하지 않음
+JSON 다운로드 실패를 이유로 snapshot CSV 확보를 지연하지 않음
+BLIND 전에는 blind_snapshot_path CSV만 Raw bytes로 다운로드·검증
+outcome_snapshot_path CSV는 blind_seal_receipt 생성·검증 후에만 Raw bytes로 다운로드·검증
 ```
 
 PHASE_0/1/2의 download manifest에는 `blind_snapshot`만 들어갈 수 있고 `outcome_snapshot` logical_role은 등장하면 안 된다.
@@ -5502,7 +5641,11 @@ why_now/economic_mechanism/red_team 문장이 중간에서 끊김
     "markdown_final_watchlist_size_lte_20": true,
     "renderer_validator_independence_verified": true,
     "brain_delta_record_level": true,
+    "brain_delta_record_type_canonical_verified": true,
+    "candidate_ranking_audit_schema_verified": true,
+    "candidate_ranking_audit_rankable_coverage_verified": true,
     "record_count_hash_parity_ready": true,
+    "direct_ingest_contract_count_hash_mirror_verified": true,
     "source_fact_id_closure_verified": true,
     "critical_error_count": 0,
     "validator_exit_code": 0
@@ -5510,6 +5653,8 @@ why_now/economic_mechanism/red_team 문장이 중간에서 끊김
   "record_import_manifest": {
     "brain_delta_record_count": 0,
     "training_eligible_record_count": 0,
+    "candidate_ranking_audit_count": 0,
+    "candidate_screening_include_or_watch_count": 0,
     "issuer_day_case_count": 0,
     "direct_event_case_count": 0,
     "theme_formation_case_count": 0,
@@ -5518,7 +5663,10 @@ why_now/economic_mechanism/red_team 문장이 중간에서 끊김
     "fact_ledger_count": 0,
     "id_registry_count": 0,
     "access_log_count": 0,
-    "final_semantic_audit_count": 0
+    "final_semantic_audit_count": 0,
+    "brain_delta_jsonl_sha256": "",
+    "candidate_ranking_audit_jsonl_sha256": "",
+    "validation_report_sha256": ""
   },
   "fatal_blockers": []
 }
@@ -8464,6 +8612,8 @@ atlas/research_daily/manifest.json
 atlas/research_daily/schema.json
 access/YYYY/MM/YYYYMMDD.json
 ```
+
+단, stock-web JSON bytes 저장이 tool/content-type/DNS 제한으로 막히면 JSON을 재구성하지 않는다. web/browser로 routing metadata만 확인하고 `access_sha256_status = WEB_VIEW_ONLY_UNHASHED`로 남긴 뒤, 실제 provenance는 snapshot CSV Raw bytes 검증으로 닫는다.
 
 기록:
 
