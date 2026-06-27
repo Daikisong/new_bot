@@ -2751,6 +2751,7 @@ def _production_record_coverage_status(
             "status": "missing",
             "finding_count": 1,
             "findings": ["record coverage manifest is missing"],
+            "record_coverage_as_of": None,
             "accepted_record_count": None,
             "available_record_count": None,
             "compiled_record_count": None,
@@ -2798,9 +2799,12 @@ def _production_record_coverage_status(
             Counter(record.training_target or "UNKNOWN" for record in store_records).items()
         )
     )
+    raw_coverage_as_of = record_coverage.get("record_coverage_as_of")
     coverage_as_of = _record_coverage_as_of(record_coverage)
     store_available_as_of_count: int | None = None
     store_training_eligible_as_of_count: int | None = None
+    if not isinstance(raw_coverage_as_of, str) or coverage_as_of is None:
+        findings.append("record coverage manifest record_coverage_as_of is missing or invalid")
     if coverage_as_of is not None:
         available_as_of = [
             record
@@ -3049,6 +3053,9 @@ def _production_record_coverage_status(
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+        "record_coverage_as_of": raw_coverage_as_of
+        if isinstance(raw_coverage_as_of, str)
+        else None,
         "accepted_record_count": accepted_count,
         "available_record_count": available_count,
         "available_record_count_as_of": available_count_as_of,

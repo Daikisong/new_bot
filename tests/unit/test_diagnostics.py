@@ -2146,6 +2146,10 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
 
     assert production["record_coverage"]["passed"] is True
     assert production["record_coverage"]["status"] == "ready"
+    assert (
+        production["record_coverage"]["record_coverage_as_of"]
+        == "2030-01-02T00:00:00+09:00"
+    )
     assert production["record_coverage"]["accepted_record_count"] == 2
     assert production["record_coverage"]["record_store_record_count"] == 2
     assert production["record_coverage"]["swept_record_count"] == 2
@@ -2228,6 +2232,47 @@ def test_production_readiness_rejects_record_coverage_store_mismatch(
     )
     assert (
         "records: record coverage manifest record_counts_by_training_target does not match record store"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_invalid_record_coverage_as_of(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    coverage = _complete_record_coverage()
+    coverage["record_coverage_as_of"] = "not-a-datetime"
+    write_json(current / "record_coverage_manifest.json", coverage)
+
+    production = production_readiness_report(
+        {
+            "api_connections": {
+                "openai": {"status": "configured_not_called"},
+                "brave_search": {"status": "configured_not_called"},
+            },
+            "vector_index": {
+                "status": "current",
+                "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+                "brain_records_exists": True,
+                "source_brain_record_count": 2,
+                "brain_record_count": 2,
+            },
+        },
+        settings,
+    )
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["record_coverage_as_of"] == "not-a-datetime"
+    assert (
+        "records: record coverage manifest record_coverage_as_of is missing or invalid"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest is marked complete despite production findings"
         in production["findings"]
     )
 
@@ -11243,6 +11288,7 @@ def _complete_record_coverage() -> dict[str, object]:
         "schema_version": "nslab.record_coverage_manifest.v1",
         "accepted_record_count": 2,
         "available_record_count": 2,
+        "record_coverage_as_of": "2030-01-02T00:00:00+09:00",
         "available_record_count_as_of": 2,
         "training_eligible_available_record_count": 1,
         "training_eligible_record_count_as_of": 1,
