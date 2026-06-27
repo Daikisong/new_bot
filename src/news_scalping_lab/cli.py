@@ -126,6 +126,7 @@ WEB_SOURCE_REQUIRED_FIELDS = {
     "opened_text_sha256",
     "opened_text_excerpt",
 }
+OPENAI_LLM_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 
 
 def _validated_brain_cli_mode(
@@ -6626,6 +6627,11 @@ def memory_rebuild_index(
                 raise ValueError("production vector index rebuild requires a non-mock model profile")
             if not BrainRecordStore(settings.project_root).list_records():
                 raise ValueError("production vector index rebuild requires normalized brain records")
+            if (
+                settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES
+                and not settings.env_value("OPENAI_API_KEY")
+            ):
+                raise ValueError("production vector index rebuild requires OPENAI_API_KEY")
             provider = create_llm_provider(settings)
             if isinstance(provider, DeterministicMockLLMProvider):
                 raise ValueError("production vector index rebuild cannot use the mock LLM provider")

@@ -1009,6 +1009,26 @@ def test_memory_rebuild_index_production_rejects_mock_provider(
     assert "production vector index rebuild requires a real LLM provider" in result.output
 
 
+def test_memory_rebuild_index_production_requires_openai_api_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+
+    assert result.exit_code == 1
+    assert "production vector index rebuild requires OPENAI_API_KEY" in result.output
+
+
 def test_warehouse_inspect_cli_reports_audit_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
