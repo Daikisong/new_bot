@@ -203,8 +203,17 @@ def _write_latest_record_coverage_audit_summary(
         "available_record_count_as_of",
         "training_eligible_available_record_count",
         "training_eligible_record_count_as_of",
+        "compiled_record_count",
         "swept_record_count",
+        "swept_record_ids",
         "unswept_record_ids",
+        "unknown_swept_record_ids",
+        "duplicate_swept_record_ids",
+        "record_counts_by_type",
+        "record_counts_by_evidence_phase",
+        "record_counts_by_training_target",
+        "ineligible_record_count",
+        "audit_only_record_count",
     ):
         if key in result:
             report[key] = result.get(key)
@@ -213,6 +222,30 @@ def _write_latest_record_coverage_audit_summary(
     report["latest_record_coverage_audit"] = {
         "passed": record_coverage_complete is True,
         "record_coverage_complete": record_coverage_complete,
+        "accepted_record_count": result.get("accepted_record_count"),
+        "available_record_count": result.get("available_record_count"),
+        "available_record_count_as_of": result.get("available_record_count_as_of"),
+        "training_eligible_available_record_count": result.get(
+            "training_eligible_available_record_count"
+        ),
+        "training_eligible_record_count_as_of": result.get(
+            "training_eligible_record_count_as_of"
+        ),
+        "compiled_record_count": result.get("compiled_record_count"),
+        "swept_record_count": result.get("swept_record_count"),
+        "swept_record_ids": result.get("swept_record_ids"),
+        "unswept_record_ids": result.get("unswept_record_ids"),
+        "unknown_swept_record_ids": result.get("unknown_swept_record_ids"),
+        "duplicate_swept_record_ids": result.get("duplicate_swept_record_ids"),
+        "record_counts_by_type": result.get("record_counts_by_type"),
+        "record_counts_by_evidence_phase": result.get(
+            "record_counts_by_evidence_phase"
+        ),
+        "record_counts_by_training_target": result.get(
+            "record_counts_by_training_target"
+        ),
+        "ineligible_record_count": result.get("ineligible_record_count"),
+        "audit_only_record_count": result.get("audit_only_record_count"),
         "finding_count": len(findings) if isinstance(findings, list) else 0,
         "findings": findings if isinstance(findings, list) else [],
     }
@@ -836,8 +869,17 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
             "available_record_count_as_of": 0,
             "training_eligible_available_record_count": 0,
             "training_eligible_record_count_as_of": 0,
+            "compiled_record_count": 0,
             "swept_record_count": 0,
+            "swept_record_ids": [],
             "unswept_record_ids": [],
+            "unknown_swept_record_ids": [],
+            "duplicate_swept_record_ids": [],
+            "record_counts_by_type": {},
+            "record_counts_by_evidence_phase": {},
+            "record_counts_by_training_target": {},
+            "ineligible_record_count": 0,
+            "audit_only_record_count": 0,
             "record_coverage_complete": True,
             "record_coverage_findings": [],
         }
@@ -849,8 +891,17 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
             "available_record_count_as_of": len(records),
             "training_eligible_available_record_count": training_eligible_count,
             "training_eligible_record_count_as_of": training_eligible_count,
+            "compiled_record_count": 0,
             "swept_record_count": 0,
+            "swept_record_ids": [],
             "unswept_record_ids": [record.record_id for record in records],
+            "unknown_swept_record_ids": [],
+            "duplicate_swept_record_ids": [],
+            "record_counts_by_type": record_counts_by_type,
+            "record_counts_by_evidence_phase": record_counts_by_phase,
+            "record_counts_by_training_target": record_counts_by_target,
+            "ineligible_record_count": ineligible_count,
+            "audit_only_record_count": audit_only_count,
             "record_coverage_complete": False,
             "record_coverage_findings": ["record coverage manifest is missing"],
         }
@@ -862,8 +913,17 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
             "available_record_count_as_of": len(records),
             "training_eligible_available_record_count": training_eligible_count,
             "training_eligible_record_count_as_of": training_eligible_count,
+            "compiled_record_count": 0,
             "swept_record_count": 0,
+            "swept_record_ids": [],
             "unswept_record_ids": [record.record_id for record in records],
+            "unknown_swept_record_ids": [],
+            "duplicate_swept_record_ids": [],
+            "record_counts_by_type": record_counts_by_type,
+            "record_counts_by_evidence_phase": record_counts_by_phase,
+            "record_counts_by_training_target": record_counts_by_target,
+            "ineligible_record_count": ineligible_count,
+            "audit_only_record_count": audit_only_count,
             "record_coverage_complete": False,
             "record_coverage_findings": [
                 "record coverage manifest must be a JSON object"
@@ -963,8 +1023,17 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
         "available_record_count_as_of": available_count_as_of,
         "training_eligible_available_record_count": training_eligible_count,
         "training_eligible_record_count_as_of": training_eligible_count_as_of,
+        "compiled_record_count": len(records),
         "swept_record_count": len(swept_ids & record_ids),
+        "swept_record_ids": sorted(swept_ids & record_ids),
         "unswept_record_ids": unswept,
+        "unknown_swept_record_ids": unexpected,
+        "duplicate_swept_record_ids": duplicate_swept,
+        "record_counts_by_type": record_counts_by_type,
+        "record_counts_by_evidence_phase": record_counts_by_phase,
+        "record_counts_by_training_target": record_counts_by_target,
+        "ineligible_record_count": ineligible_count,
+        "audit_only_record_count": audit_only_count,
         "record_coverage_complete": not findings,
         "record_coverage_findings": findings,
     }

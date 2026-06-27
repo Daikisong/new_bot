@@ -583,6 +583,12 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert audit["stats"]["unknown_typed_payload_count"] == 1
     assert audit["stats"]["raw_only_record_count"] == 0
     assert audit["stats"]["ineligible_record_count"] == 1
+    assert audit["unknown_typed_payload_record_ids"] == ["BRAIN-SYNTH-UNKNOWN"]
+    assert audit["raw_only_record_ids"] == []
+    assert audit["all_unknown_typed_payload_record_ids"] == ["BRAIN-SYNTH-UNKNOWN"]
+    assert audit["all_raw_only_record_ids"] == []
+    assert audit["staged_unknown_typed_payload_record_ids"] == []
+    assert audit["staged_raw_only_record_ids"] == []
     assert report["record_counts_by_typed_payload_status"] == {
         "KNOWN_TYPED_PAYLOAD": 2,
         "UNKNOWN_TYPED_PAYLOAD": 1,
@@ -602,6 +608,14 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["all_raw_only_record_count"] == 0
     assert report["staged_unknown_typed_payload_count"] == 0
     assert report["staged_raw_only_record_count"] == 0
+    assert report["unknown_typed_payload_record_ids"] == ["BRAIN-SYNTH-UNKNOWN"]
+    assert report["raw_only_record_ids"] == []
+    assert report["all_unknown_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-UNKNOWN"
+    ]
+    assert report["all_raw_only_record_ids"] == []
+    assert report["staged_unknown_typed_payload_record_ids"] == []
+    assert report["staged_raw_only_record_ids"] == []
     import_report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert import_report["raw_normalized_record_count_matches"] is True
     assert import_report["missing_normalized_record_count"] == 0
@@ -2318,12 +2332,56 @@ def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
     assert audit["stats"]["unknown_typed_payload_count"] == 0
     assert audit["all_stats"]["unknown_typed_payload_count"] == 3
     assert audit["staged_stats"]["raw_only_record_count"] == 3
+    assert audit["unknown_typed_payload_record_ids"] == []
+    assert audit["raw_only_record_ids"] == []
+    assert audit["all_unknown_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert audit["all_raw_only_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert audit["staged_unknown_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert audit["staged_raw_only_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
     assert store_report["unknown_typed_payload_count"] == 0
     assert store_report["raw_only_record_count"] == 0
     assert store_report["all_unknown_typed_payload_count"] == 3
     assert store_report["all_raw_only_record_count"] == 3
     assert store_report["staged_unknown_typed_payload_count"] == 3
     assert store_report["staged_raw_only_record_count"] == 3
+    assert store_report["unknown_typed_payload_record_ids"] == []
+    assert store_report["raw_only_record_ids"] == []
+    assert store_report["all_unknown_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert store_report["all_raw_only_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert store_report["staged_unknown_typed_payload_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
+    assert store_report["staged_raw_only_record_ids"] == [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "BRAIN-SYNTH-UNKNOWN",
+    ]
 
 
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:

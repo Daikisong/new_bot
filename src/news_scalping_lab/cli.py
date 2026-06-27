@@ -6961,11 +6961,37 @@ def memory_stats() -> None:
             "staged_raw_only_record_count": report.get(
                 "staged_raw_only_record_count",
             ),
+            "unknown_typed_payload_record_ids": report.get(
+                "unknown_typed_payload_record_ids",
+                [],
+            ),
+            "raw_only_record_ids": report.get("raw_only_record_ids", []),
+            "all_unknown_typed_payload_record_ids": report.get(
+                "all_unknown_typed_payload_record_ids",
+                [],
+            ),
+            "all_raw_only_record_ids": report.get("all_raw_only_record_ids", []),
+            "staged_unknown_typed_payload_record_ids": report.get(
+                "staged_unknown_typed_payload_record_ids",
+                [],
+            ),
+            "staged_raw_only_record_ids": report.get(
+                "staged_raw_only_record_ids",
+                [],
+            ),
             "quarantined_bundle_count": report.get("quarantined_bundle_count"),
             "quarantined_raw_record_count": report.get(
                 "quarantined_raw_record_count",
             ),
+            "quarantined_normalized_record_count": report.get(
+                "quarantined_normalized_record_count",
+            ),
             "quarantined_record_count": report.get("quarantined_record_count"),
+            "quarantine_reasons": report.get("quarantine_reasons", {}),
+            "quarantine_normalization_skipped_reasons": report.get(
+                "quarantine_normalization_skipped_reasons",
+                {},
+            ),
             "audit_passed": report.get("audit_passed"),
         }
     )

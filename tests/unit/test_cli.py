@@ -1161,7 +1161,12 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
         quarantine_dir / "quarantine.json",
         {
             "schema_version": "nslab.bundle_quarantine.v1",
-            "metadata": {"quarantined_raw_record_count": 2},
+            "reason": "BUNDLE_VALIDATION_FAILED",
+            "metadata": {
+                "quarantined_raw_record_count": 2,
+                "quarantined_normalized_record_count": 3,
+                "normalization_skipped_reason": "BUNDLE_VALIDATION_FAILED",
+            },
         },
     )
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
@@ -1184,6 +1189,14 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["all_raw_only_record_count"] == 1
     assert payload["staged_unknown_typed_payload_count"] == 1
     assert payload["staged_raw_only_record_count"] == 1
+    assert payload["unknown_typed_payload_record_ids"] == []
+    assert payload["raw_only_record_ids"] == []
+    assert payload["all_unknown_typed_payload_record_ids"] == ["BRAIN-STAGED-RAW"]
+    assert payload["all_raw_only_record_ids"] == ["BRAIN-STAGED-RAW"]
+    assert payload["staged_unknown_typed_payload_record_ids"] == [
+        "BRAIN-STAGED-RAW"
+    ]
+    assert payload["staged_raw_only_record_ids"] == ["BRAIN-STAGED-RAW"]
     assert payload["raw_record_count"] == 2
     assert payload["normalized_record_count"] == 1
     assert payload["raw_normalized_record_count_matches"] is False
@@ -1192,7 +1205,12 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["extra_normalized_record_count"] == 0
     assert payload["quarantined_bundle_count"] == 1
     assert payload["quarantined_raw_record_count"] == 2
+    assert payload["quarantined_normalized_record_count"] == 3
     assert payload["quarantined_record_count"] == 2
+    assert payload["quarantine_reasons"] == {"BUNDLE_VALIDATION_FAILED": 1}
+    assert payload["quarantine_normalization_skipped_reasons"] == {
+        "BUNDLE_VALIDATION_FAILED": 1
+    }
     assert payload["audit_passed"] is True
 
 

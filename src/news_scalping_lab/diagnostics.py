@@ -1839,6 +1839,8 @@ def _production_record_coverage_status(
             "available_record_count": None,
             "compiled_record_count": None,
             "swept_record_count": None,
+            "swept_record_ids": [],
+            "duplicate_swept_record_ids": [],
             "unswept_record_ids": None,
             "record_store_readable": None,
             "record_store_record_count": None,
@@ -2137,6 +2139,8 @@ def _production_record_coverage_status(
         "compiled_record_count": compiled_count,
         "swept_record_count": swept_count,
         "swept_record_id_count": len(swept_record_ids),
+        "swept_record_ids": swept_record_ids,
+        "duplicate_swept_record_ids": _duplicate_strings(swept_record_ids),
         "unswept_record_ids": unswept_record_ids,
         "record_counts_by_type": count_maps["record_counts_by_type"],
         "record_counts_by_evidence_phase": count_maps[
@@ -2733,6 +2737,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "finding_count": 1,
             "findings": [finding],
             "source_record_count": None,
+            "per_export_eligible_record_count": None,
+            "per_export_exported_record_count": None,
+            "per_export_skipped_record_count": None,
+            "unique_source_record_count": None,
+            "unique_training_eligible_record_count": None,
+            "unique_exported_record_count": None,
+            "unique_skipped_record_count": None,
+            "unique_exported_record_ids": [],
+            "unique_skipped_record_ids": [],
+            "blind_safe_row_count": None,
+            "hindsight_row_count": None,
+            "source_phase_counts": {},
+            "counts_by_record_type": {},
+            "counts_by_training_target": {},
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
         }
@@ -2744,6 +2762,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "finding_count": 0,
             "findings": [],
             "source_record_count": 0,
+            "per_export_eligible_record_count": 0,
+            "per_export_exported_record_count": 0,
+            "per_export_skipped_record_count": 0,
+            "unique_source_record_count": 0,
+            "unique_training_eligible_record_count": 0,
+            "unique_exported_record_count": 0,
+            "unique_skipped_record_count": 0,
+            "unique_exported_record_ids": [],
+            "unique_skipped_record_ids": [],
+            "blind_safe_row_count": 0,
+            "hindsight_row_count": 0,
+            "source_phase_counts": {},
+            "counts_by_record_type": {},
+            "counts_by_training_target": {},
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
         }
@@ -2782,6 +2814,18 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "unique_source_record_count",
     )
+    per_export_eligible_count = _int_from_mapping(
+        diagnostics,
+        "per_export_eligible_record_count",
+    )
+    per_export_exported_count = _int_from_mapping(
+        diagnostics,
+        "per_export_exported_record_count",
+    )
+    per_export_skipped_count = _int_from_mapping(
+        diagnostics,
+        "per_export_skipped_record_count",
+    )
     source_record_hash_count = _int_from_mapping(
         diagnostics,
         "source_record_hash_count",
@@ -2793,6 +2837,23 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unique_exported_count = _int_from_mapping(
         diagnostics,
         "unique_exported_record_count",
+    )
+    unique_skipped_count = _int_from_mapping(
+        diagnostics,
+        "unique_skipped_record_count",
+    )
+    unique_exported_ids = _string_list(
+        diagnostics.get("unique_exported_record_ids")
+    )
+    unique_skipped_ids = _string_list(
+        diagnostics.get("unique_skipped_record_ids")
+    )
+    blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
+    hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
+    source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
+    counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
+    counts_by_training_target = _int_dict(
+        diagnostics.get("counts_by_training_target")
     )
 
     if record_store_source_count != source_record_count:
@@ -2807,6 +2868,25 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(
             "training export source record hash count does not match current records"
         )
+    if unique_source_record_count is not None:
+        if (
+            unique_exported_count is not None
+            and unique_skipped_count is not None
+            and unique_source_record_count != unique_exported_count + unique_skipped_count
+        ):
+            findings.append(
+                "training export unique source/export/skipped counts are inconsistent"
+            )
+        if unique_source_record_count != len(set(unique_exported_ids) | set(unique_skipped_ids)):
+            findings.append(
+                "training export unique source IDs do not match exported and skipped IDs"
+            )
+    if unique_exported_count is not None and unique_exported_count != len(unique_exported_ids):
+        findings.append("training export unique exported record ID count mismatch")
+    if unique_skipped_count is not None and unique_skipped_count != len(unique_skipped_ids):
+        findings.append("training export unique skipped record ID count mismatch")
+    if set(unique_exported_ids) & set(unique_skipped_ids):
+        findings.append("training export exported and skipped record IDs overlap")
     if (
         unique_exported_count is not None
         and unique_training_eligible_count is not None
@@ -2868,10 +2948,21 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "findings": findings,
         "source_record_count": source_record_count,
         "record_store_source_record_count": record_store_source_count,
+        "per_export_eligible_record_count": per_export_eligible_count,
+        "per_export_exported_record_count": per_export_exported_count,
+        "per_export_skipped_record_count": per_export_skipped_count,
         "unique_source_record_count": unique_source_record_count,
         "unique_training_eligible_record_count": unique_training_eligible_count,
         "unique_exported_record_count": unique_exported_count,
+        "unique_skipped_record_count": unique_skipped_count,
+        "unique_exported_record_ids": unique_exported_ids,
+        "unique_skipped_record_ids": unique_skipped_ids,
         "source_record_hash_count": source_record_hash_count,
+        "blind_safe_row_count": blind_safe_row_count,
+        "hindsight_row_count": hindsight_row_count,
+        "source_phase_counts": source_phase_counts,
+        "counts_by_record_type": counts_by_record_type,
+        "counts_by_training_target": counts_by_training_target,
         "available_manifest_kinds": _string_list(
             diagnostics.get("available_manifest_kinds")
         ),
@@ -3090,13 +3181,28 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "extra_normalized_record_count": None,
             "quarantined_bundle_count": None,
             "quarantined_raw_record_count": None,
+            "quarantined_normalized_record_count": None,
             "quarantined_record_count": None,
+            "quarantine_reasons": {},
+            "quarantine_normalization_skipped_reasons": {},
             "all_record_count": None,
             "staged_record_count": None,
             "episode_count": None,
             "training_eligible_record_count": None,
+            "unknown_typed_payload_count": None,
+            "raw_only_record_count": None,
+            "all_unknown_typed_payload_count": None,
+            "all_raw_only_record_count": None,
+            "staged_unknown_typed_payload_count": None,
+            "staged_raw_only_record_count": None,
             "duplicate_record_ids": [],
             "unknown_training_enabled_record_ids": [],
+            "unknown_typed_payload_record_ids": [],
+            "raw_only_record_ids": [],
+            "all_unknown_typed_payload_record_ids": [],
+            "all_raw_only_record_ids": [],
+            "staged_unknown_typed_payload_record_ids": [],
+            "staged_raw_only_record_ids": [],
             "payload_hash_mismatch_record_ids": [],
             "eligible_records_without_provenance": [],
             "brain_delta_count_mismatch_episode_ids": [],
@@ -3150,14 +3256,57 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         "quarantined_raw_record_count": report_payload.get(
             "quarantined_raw_record_count",
         ),
+        "quarantined_normalized_record_count": report_payload.get(
+            "quarantined_normalized_record_count",
+        ),
         "quarantined_record_count": report_payload.get("quarantined_record_count"),
+        "quarantine_reasons": report_payload.get("quarantine_reasons", {}),
+        "quarantine_normalization_skipped_reasons": report_payload.get(
+            "quarantine_normalization_skipped_reasons",
+            {},
+        ),
         "all_record_count": audit.get("all_record_count"),
         "staged_record_count": audit.get("staged_record_count"),
         "episode_count": audit.get("episode_count"),
         "training_eligible_record_count": audit.get("training_eligible_record_count"),
+        "unknown_typed_payload_count": report_payload.get(
+            "unknown_typed_payload_count",
+        ),
+        "raw_only_record_count": report_payload.get("raw_only_record_count"),
+        "all_unknown_typed_payload_count": report_payload.get(
+            "all_unknown_typed_payload_count",
+        ),
+        "all_raw_only_record_count": report_payload.get("all_raw_only_record_count"),
+        "staged_unknown_typed_payload_count": report_payload.get(
+            "staged_unknown_typed_payload_count",
+        ),
+        "staged_raw_only_record_count": report_payload.get(
+            "staged_raw_only_record_count",
+        ),
         "duplicate_record_ids": audit.get("duplicate_record_ids", []),
         "unknown_training_enabled_record_ids": audit.get(
             "unknown_training_enabled_record_ids",
+            [],
+        ),
+        "unknown_typed_payload_record_ids": report_payload.get(
+            "unknown_typed_payload_record_ids",
+            [],
+        ),
+        "raw_only_record_ids": report_payload.get("raw_only_record_ids", []),
+        "all_unknown_typed_payload_record_ids": report_payload.get(
+            "all_unknown_typed_payload_record_ids",
+            [],
+        ),
+        "all_raw_only_record_ids": report_payload.get(
+            "all_raw_only_record_ids",
+            [],
+        ),
+        "staged_unknown_typed_payload_record_ids": report_payload.get(
+            "staged_unknown_typed_payload_record_ids",
+            [],
+        ),
+        "staged_raw_only_record_ids": report_payload.get(
+            "staged_raw_only_record_ids",
             [],
         ),
         "payload_hash_mismatch_record_ids": audit.get(
@@ -3253,6 +3402,12 @@ def _production_record_store_report_findings(
             "extra_normalized_record_count="
             f"{extra_normalized_record_count} expected 0"
         )
+    raw_only_record_count = _int_from_mapping(report_payload, "raw_only_record_count")
+    if raw_only_record_count is not None and raw_only_record_count != 0:
+        findings.append(
+            f"raw_only_record_count={raw_only_record_count} expected 0 "
+            "for accepted records"
+        )
     quarantined_record_count = _int_from_mapping(
         report_payload,
         "quarantined_record_count",
@@ -3260,6 +3415,18 @@ def _production_record_store_report_findings(
     if quarantined_record_count is not None and quarantined_record_count != 0:
         findings.append(
             f"quarantined_record_count={quarantined_record_count} expected 0"
+        )
+    quarantined_normalized_record_count = _int_from_mapping(
+        report_payload,
+        "quarantined_normalized_record_count",
+    )
+    if (
+        quarantined_normalized_record_count is not None
+        and quarantined_normalized_record_count != 0
+    ):
+        findings.append(
+            "quarantined_normalized_record_count="
+            f"{quarantined_normalized_record_count} expected 0"
         )
     quarantined_bundle_count = _int_from_mapping(
         report_payload,

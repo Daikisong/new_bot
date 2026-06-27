@@ -1627,7 +1627,35 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     )
     assert record_coverage_report["available_record_count_as_of"] == 1
     assert record_coverage_report["training_eligible_record_count_as_of"] == 0
+    assert record_coverage_report["compiled_record_count"] == 1
+    assert record_coverage_report["swept_record_count"] == 0
+    assert record_coverage_report["swept_record_ids"] == []
+    assert record_coverage_report["unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["unknown_swept_record_ids"] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["duplicate_swept_record_ids"] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["record_counts_by_type"] == {"memory_claim": 1}
+    assert record_coverage_report["record_counts_by_evidence_phase"] == {"AUDIT": 1}
+    assert record_coverage_report["record_counts_by_training_target"] == {
+        "compiled_claim_audit_fixture": 1
+    }
+    assert record_coverage_report["ineligible_record_count"] == 1
+    assert record_coverage_report["audit_only_record_count"] == 1
     assert record_coverage_report["latest_record_coverage_audit"]["passed"] is False
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "unknown_swept_record_ids"
+    ] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "duplicate_swept_record_ids"
+    ] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "record_counts_by_type"
+    ] == {"memory_claim": 1}
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "record_counts_by_evidence_phase"
+    ] == {"AUDIT": 1}
+    assert record_coverage_report["latest_record_coverage_audit"][
+        "record_counts_by_training_target"
+    ] == {"compiled_claim_audit_fixture": 1}
     assert record_coverage_report["latest_record_coverage_audit"]["findings"] == audit[
         "record_coverage_findings"
     ]

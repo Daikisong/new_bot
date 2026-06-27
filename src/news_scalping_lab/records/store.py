@@ -394,6 +394,12 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
         and record.training_eligible
     )
+    unknown_typed_payload_ids = _unknown_typed_payload_record_ids(records)
+    raw_only_record_ids = _raw_only_record_ids(records)
+    all_unknown_typed_payload_ids = _unknown_typed_payload_record_ids(all_records)
+    all_raw_only_record_ids = _raw_only_record_ids(all_records)
+    staged_unknown_typed_payload_ids = _unknown_typed_payload_record_ids(staged_records)
+    staged_raw_only_record_ids = _raw_only_record_ids(staged_records)
     missing_payload_hashes = sorted(
         record.record_id
         for record in records
@@ -436,6 +442,12 @@ def audit_record_store(root: Path, *, deep: bool = False) -> dict[str, Any]:
         ),
         "duplicate_record_ids": duplicate_ids,
         "unknown_training_enabled_record_ids": unknown_training_enabled,
+        "unknown_typed_payload_record_ids": unknown_typed_payload_ids,
+        "raw_only_record_ids": raw_only_record_ids,
+        "all_unknown_typed_payload_record_ids": all_unknown_typed_payload_ids,
+        "all_raw_only_record_ids": all_raw_only_record_ids,
+        "staged_unknown_typed_payload_record_ids": staged_unknown_typed_payload_ids,
+        "staged_raw_only_record_ids": staged_raw_only_record_ids,
         "payload_hash_mismatch_record_ids": missing_payload_hashes,
         "eligible_records_without_provenance": missing_provenance,
         "invalid_outcome_label_quality_record_ids": invalid_label_quality,
@@ -520,39 +532,97 @@ def record_store_report_payload(
             "staged_stats",
             "raw_only_record_count",
         ),
+        "unknown_typed_payload_record_ids": _string_list_from_mapping(
+            audit_result,
+            "unknown_typed_payload_record_ids",
+        ),
+        "raw_only_record_ids": _string_list_from_mapping(
+            audit_result,
+            "raw_only_record_ids",
+        ),
+        "all_unknown_typed_payload_record_ids": _string_list_from_mapping(
+            audit_result,
+            "all_unknown_typed_payload_record_ids",
+        ),
+        "all_raw_only_record_ids": _string_list_from_mapping(
+            audit_result,
+            "all_raw_only_record_ids",
+        ),
+        "staged_unknown_typed_payload_record_ids": _string_list_from_mapping(
+            audit_result,
+            "staged_unknown_typed_payload_record_ids",
+        ),
+        "staged_raw_only_record_ids": _string_list_from_mapping(
+            audit_result,
+            "staged_raw_only_record_ids",
+        ),
         "warehouse_counts": effective_warehouse_counts,
         "dropped_record_count": dropped_record_count,
         "extra_normalized_record_count": extra_normalized_record_count,
         "quarantined_bundle_count": quarantine_counts["bundle_count"],
         "quarantined_raw_record_count": quarantine_counts["raw_record_count"],
+        "quarantined_normalized_record_count": quarantine_counts[
+            "normalized_record_count"
+        ],
         "quarantined_record_count": quarantine_counts["raw_record_count"],
+        "quarantine_reasons": quarantine_counts["reasons"],
+        "quarantine_normalization_skipped_reasons": quarantine_counts[
+            "normalization_skipped_reasons"
+        ],
         "audit_passed": audit_result.get("passed") is True,
         "record_store_audit": audit_result,
     }
 
 
-def quarantined_bundle_counts(root: Path) -> dict[str, int]:
+def quarantined_bundle_counts(root: Path) -> dict[str, Any]:
     quarantine_dir = root / "data" / "quarantine" / "research_bundles"
     if not quarantine_dir.exists():
-        return {"bundle_count": 0, "raw_record_count": 0}
+        return {
+            "bundle_count": 0,
+            "raw_record_count": 0,
+            "normalized_record_count": 0,
+            "reasons": {},
+            "normalization_skipped_reasons": {},
+        }
     bundle_count = 0
     raw_record_count = 0
+    normalized_record_count = 0
+    reasons: Counter[str] = Counter()
+    normalization_skipped_reasons: Counter[str] = Counter()
     for path in sorted(quarantine_dir.iterdir()):
         if not path.is_dir():
             continue
         bundle_count += 1
         payload = _read_json_dict(path / "quarantine.json") or {}
+        reason = payload.get("reason")
+        if isinstance(reason, str) and reason:
+            reasons[reason] += 1
         metadata = payload.get("metadata")
         metadata = metadata if isinstance(metadata, dict) else {}
+        skipped_reason = metadata.get("normalization_skipped_reason")
+        if isinstance(skipped_reason, str) and skipped_reason:
+            normalization_skipped_reasons[skipped_reason] += 1
         raw_record_count += _int_value(
             metadata.get("quarantined_raw_record_count"),
             default=_int_value(metadata.get("raw_record_count"), default=0),
         )
-    return {"bundle_count": bundle_count, "raw_record_count": raw_record_count}
+        normalized_record_count += _int_value(
+            metadata.get("quarantined_normalized_record_count"),
+            default=0,
+        )
+    return {
+        "bundle_count": bundle_count,
+        "raw_record_count": raw_record_count,
+        "normalized_record_count": normalized_record_count,
+        "reasons": dict(sorted(reasons.items())),
+        "normalization_skipped_reasons": dict(
+            sorted(normalization_skipped_reasons.items())
+        ),
+    }
 
 
 def quarantined_bundle_count(root: Path) -> int:
-    return quarantined_bundle_counts(root)["bundle_count"]
+    return int(quarantined_bundle_counts(root)["bundle_count"])
 
 
 def _raw_record_count_from_raw_blocks(raw_blocks: dict[str, str]) -> int:
@@ -609,6 +679,13 @@ def _nested_int(source: dict[str, Any], *keys: str) -> int:
             return 0
         current = current.get(key)
     return current if isinstance(current, int) and not isinstance(current, bool) else 0
+
+
+def _string_list_from_mapping(source: dict[str, Any], key: str) -> list[str]:
+    value = source.get(key)
+    if not isinstance(value, list):
+        return []
+    return sorted(item for item in value if isinstance(item, str))
 
 
 def _int_value(value: object, *, default: int) -> int:
@@ -1422,6 +1499,20 @@ def _record_stats(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
             1 for record in records if not record.training_eligible
         ),
     }
+
+
+def _unknown_typed_payload_record_ids(records: list[BrainRecordEnvelope]) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
+    )
+
+
+def _raw_only_record_ids(records: list[BrainRecordEnvelope]) -> list[str]:
+    return sorted(
+        record.record_id for record in records if _is_raw_only_record(record)
+    )
 
 
 def _is_raw_only_record(record: BrainRecordEnvelope) -> bool:

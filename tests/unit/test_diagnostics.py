@@ -1681,6 +1681,11 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
     assert production["record_coverage"]["accepted_record_count"] == 2
     assert production["record_coverage"]["record_store_record_count"] == 2
     assert production["record_coverage"]["swept_record_count"] == 2
+    assert production["record_coverage"]["swept_record_ids"] == [
+        "BRAIN-1",
+        "BRAIN-2",
+    ]
+    assert production["record_coverage"]["duplicate_swept_record_ids"] == []
     assert production["record_coverage"]["unswept_record_ids"] == []
     assert production["record_coverage"]["findings"] == []
 
@@ -1699,8 +1704,8 @@ def test_production_readiness_rejects_record_coverage_store_mismatch(
             "accepted_record_count": 2,
             "available_record_count": 2,
             "compiled_record_count": 2,
-            "swept_record_count": 2,
-            "swept_record_ids": ["BRAIN-1", "BRAIN-missing"],
+            "swept_record_count": 3,
+            "swept_record_ids": ["BRAIN-1", "BRAIN-missing", "BRAIN-missing"],
             "record_counts_by_type": {
                 "counterexample": 2,
             },
@@ -1731,6 +1736,9 @@ def test_production_readiness_rejects_record_coverage_store_mismatch(
 
     assert production["record_coverage"]["passed"] is False
     assert production["record_coverage"]["unknown_swept_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["record_coverage"]["duplicate_swept_record_ids"] == [
         "BRAIN-missing"
     ]
     assert production["record_coverage"]["missing_swept_record_ids"] == ["BRAIN-2"]
@@ -1855,6 +1863,11 @@ def test_production_readiness_accepts_record_backed_training_exports(
         export_training(tmp_path, kind=kind)
 
     production = production_readiness_report(_production_base_report(), settings)
+    training_report = json.loads(
+        (tmp_path / "diagnostics" / "training_export_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert production["training_exports"]["passed"] is True
     assert production["training_exports"]["status"] == "ready"
@@ -1863,7 +1876,39 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["unique_source_record_count"] == 2
     assert production["training_exports"]["unique_training_eligible_record_count"] == 2
     assert production["training_exports"]["unique_exported_record_count"] == 2
+    assert production["training_exports"]["unique_skipped_record_count"] == 0
+    assert production["training_exports"]["unique_exported_record_ids"] == [
+        "BRAIN-TRAIN-ISSUER",
+        "BRAIN-TRAIN-PAIR",
+    ]
+    assert production["training_exports"]["unique_skipped_record_ids"] == []
+    assert production["training_exports"]["per_export_eligible_record_count"] == (
+        training_report["per_export_eligible_record_count"]
+    )
+    assert production["training_exports"]["per_export_exported_record_count"] == (
+        training_report["per_export_exported_record_count"]
+    )
+    assert production["training_exports"]["per_export_skipped_record_count"] == (
+        training_report["per_export_skipped_record_count"]
+    )
     assert production["training_exports"]["source_record_hash_count"] == 2
+    assert production["training_exports"]["blind_safe_row_count"] == training_report[
+        "blind_safe_row_count"
+    ]
+    assert production["training_exports"]["hindsight_row_count"] == training_report[
+        "hindsight_row_count"
+    ]
+    assert production["training_exports"]["source_phase_counts"] == training_report[
+        "source_phase_counts"
+    ]
+    assert production["training_exports"]["counts_by_record_type"] == {
+        "blind_leader_preference_pair": 1,
+        "supervised_issuer_day_case": 1,
+    }
+    assert production["training_exports"]["counts_by_training_target"] == {
+        "issuer_day_price_response": 1,
+        "outcome_preferred_candidate": 1,
+    }
     assert production["training_exports"]["weight_validation_statuses"] == {
         "evals": "passed",
         "preference": "passed",
@@ -7663,11 +7708,28 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
             "normalized_record_count": 2,
             "raw_record_counts_by_episode": {"EP-loss": 2},
             "raw_normalized_record_count_matches": True,
+            "unknown_typed_payload_count": 1,
+            "raw_only_record_count": 1,
+            "all_unknown_typed_payload_count": 1,
+            "all_raw_only_record_count": 1,
+            "staged_unknown_typed_payload_count": 0,
+            "staged_raw_only_record_count": 0,
+            "unknown_typed_payload_record_ids": ["BRAIN-RAW-ONLY"],
+            "raw_only_record_ids": ["BRAIN-RAW-ONLY"],
+            "all_unknown_typed_payload_record_ids": ["BRAIN-RAW-ONLY"],
+            "all_raw_only_record_ids": ["BRAIN-RAW-ONLY"],
+            "staged_unknown_typed_payload_record_ids": [],
+            "staged_raw_only_record_ids": [],
             "dropped_record_count": 1,
             "extra_normalized_record_count": 0,
             "quarantined_bundle_count": 1,
             "quarantined_raw_record_count": 1,
+            "quarantined_normalized_record_count": 2,
             "quarantined_record_count": 1,
+            "quarantine_reasons": {"BUNDLE_VALIDATION_FAILED": 1},
+            "quarantine_normalization_skipped_reasons": {
+                "BUNDLE_VALIDATION_FAILED": 1
+            },
         }
 
     monkeypatch.setattr(
@@ -7694,11 +7756,44 @@ def test_production_readiness_rejects_record_store_loss_or_quarantine_counts(
     assert production["record_store"]["passed"] is False
     assert production["record_store"]["dropped_record_count"] == 1
     assert production["record_store"]["extra_normalized_record_count"] == 0
+    assert production["record_store"]["unknown_typed_payload_count"] == 1
+    assert production["record_store"]["raw_only_record_count"] == 1
+    assert production["record_store"]["all_unknown_typed_payload_count"] == 1
+    assert production["record_store"]["all_raw_only_record_count"] == 1
+    assert production["record_store"]["staged_unknown_typed_payload_count"] == 0
+    assert production["record_store"]["staged_raw_only_record_count"] == 0
+    assert production["record_store"]["unknown_typed_payload_record_ids"] == [
+        "BRAIN-RAW-ONLY"
+    ]
+    assert production["record_store"]["raw_only_record_ids"] == ["BRAIN-RAW-ONLY"]
+    assert production["record_store"]["all_unknown_typed_payload_record_ids"] == [
+        "BRAIN-RAW-ONLY"
+    ]
+    assert production["record_store"]["all_raw_only_record_ids"] == [
+        "BRAIN-RAW-ONLY"
+    ]
+    assert production["record_store"]["staged_unknown_typed_payload_record_ids"] == []
+    assert production["record_store"]["staged_raw_only_record_ids"] == []
     assert production["record_store"]["quarantined_bundle_count"] == 1
     assert production["record_store"]["quarantined_raw_record_count"] == 1
+    assert production["record_store"]["quarantined_normalized_record_count"] == 2
     assert production["record_store"]["quarantined_record_count"] == 1
+    assert production["record_store"]["quarantine_reasons"] == {
+        "BUNDLE_VALIDATION_FAILED": 1
+    }
+    assert production["record_store"]["quarantine_normalization_skipped_reasons"] == {
+        "BUNDLE_VALIDATION_FAILED": 1
+    }
     assert "records: dropped_record_count=1 expected 0" in production["findings"]
+    assert (
+        "records: raw_only_record_count=1 expected 0 for accepted records"
+        in production["findings"]
+    )
     assert "records: quarantined_record_count=1 expected 0" in production["findings"]
+    assert (
+        "records: quarantined_normalized_record_count=2 expected 0"
+        in production["findings"]
+    )
     assert "records: quarantined_bundle_count=1 expected 0" in production["findings"]
 
 
