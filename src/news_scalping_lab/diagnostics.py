@@ -1001,12 +1001,21 @@ def _production_llm_trace_evidence_status(
                 {
                     "path": relative_to_root(trace_path, root),
                     "trace_id": trace.get("trace_id"),
+                    "status": trace.get("status"),
                     "purpose": trace.get("purpose"),
                     "prompt_sha256": prompt_hash,
                     "operation": trace.get("operation"),
                     "provider": trace.get("provider"),
                     "model_config": trace.get("model_config"),
+                    "metadata": trace.get("metadata"),
                     "input": trace.get("input"),
+                    "input_sha256": trace.get("input_sha256"),
+                    "output": trace.get("output"),
+                    "output_sha256": trace.get("output_sha256"),
+                    "token_usage": trace.get("token_usage"),
+                    "retries": trace.get("retries"),
+                    "retry_errors": trace.get("retry_errors"),
+                    "error": trace.get("error"),
                 }
             )
         else:
@@ -1070,8 +1079,23 @@ def _production_llm_trace_evidence_status(
                 }
             )
         for trace_ref in checkpoint_trace_refs.get(checkpoint_id, []):
-            for field in ("operation", "purpose", "provider", "model_config", "input"):
-                trace_value = trace_ref.get(field)
+            for field in (
+                "operation",
+                "purpose",
+                "status",
+                "provider",
+                "model_config",
+                "metadata",
+                "input",
+                "input_sha256",
+                "output",
+                "output_sha256",
+                "token_usage",
+                "retries",
+                "retry_errors",
+                "error",
+            ):
+                trace_value = _expected_checkpoint_trace_value(trace_ref, field)
                 checkpoint_value = checkpoint.get(field)
                 if checkpoint_value == trace_value:
                     continue
@@ -1170,6 +1194,13 @@ def _production_llm_trace_evidence_status(
         "mock_checkpoint_count": len(mock_checkpoints),
         "mock_checkpoints": mock_checkpoints,
     }
+
+
+def _expected_checkpoint_trace_value(trace_ref: dict[str, Any], field: str) -> Any:
+    value = trace_ref.get(field)
+    if field == "status" and value == "checkpoint_hit":
+        return "ok"
+    return value
 
 
 def _trace_prompt_hash(trace: dict[str, Any]) -> str | None:
