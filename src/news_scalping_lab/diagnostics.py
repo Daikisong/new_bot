@@ -1693,6 +1693,12 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
+            "records_file": None,
+            "records_file_exists": False,
+            "records_file_path_valid": None,
+            "records_file_is_absolute": None,
+            "records_file_escapes_index": None,
+            "records_sha256_matches": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
             "brain_records_file_path_valid": None,
@@ -1724,6 +1730,12 @@ def _production_semantic_index_manifest_status(
             "embedding_model": None,
             "brain_record_count": None,
             "brain_record_hash_count": None,
+            "records_file": None,
+            "records_file_exists": False,
+            "records_file_path_valid": None,
+            "records_file_is_absolute": None,
+            "records_file_escapes_index": None,
+            "records_sha256_matches": None,
             "brain_records_file": None,
             "brain_records_file_exists": False,
             "brain_records_file_path_valid": None,
@@ -1751,6 +1763,40 @@ def _production_semantic_index_manifest_status(
     brain_record_hash_count = (
         len(brain_record_hashes) if isinstance(brain_record_hashes, dict) else None
     )
+    records_file = manifest.get("records_file")
+    records_file = (
+        records_file if isinstance(records_file, str) and records_file else "records.jsonl"
+    )
+    records_path = manifest_path.parent / "records.jsonl"
+    records_file_is_absolute = False
+    records_file_escapes_index = False
+    records_file_path_valid = True
+    records_ref = Path(records_file)
+    if records_ref.is_absolute():
+        records_file_is_absolute = True
+        records_file_path_valid = False
+        records_path = records_ref
+    else:
+        resolved_records_path = (manifest_path.parent / records_ref).resolve()
+        try:
+            resolved_records_path.relative_to(manifest_path.parent.resolve())
+        except ValueError:
+            records_file_escapes_index = True
+            records_file_path_valid = False
+            records_path = resolved_records_path
+        else:
+            records_path = resolved_records_path
+    records_exists = records_path.exists() if records_file_path_valid else False
+    records_sha256_matches: bool | None = None
+    if records_exists:
+        try:
+            records_payload = records_path.read_text(encoding="utf-8")
+        except OSError:
+            records_payload = ""
+        declared_records_sha = manifest.get("records_sha256")
+        if isinstance(declared_records_sha, str):
+            records_sha256_matches = sha256_text(records_payload) == declared_records_sha
+
     brain_records_file = manifest.get("brain_records_file")
     brain_records_file = (
         brain_records_file
@@ -1877,6 +1923,14 @@ def _production_semantic_index_manifest_status(
         and brain_record_hash_count != expected_source_record_count
     ):
         findings.append("semantic index manifest record hash count does not match coverage")
+    if records_file_is_absolute:
+        findings.append("semantic index records_file must be vector-index relative")
+    if records_file_escapes_index:
+        findings.append("semantic index records_file escapes vector index directory")
+    if not records_exists:
+        findings.append("semantic index records file is missing on disk")
+    if records_exists and records_sha256_matches is not True:
+        findings.append("semantic index records file hash mismatch")
     if brain_records_file_is_absolute:
         findings.append("semantic index brain_records_file must be vector-index relative")
     if brain_records_file_escapes_index:
@@ -1917,6 +1971,12 @@ def _production_semantic_index_manifest_status(
         "embedding_model": embedding_model,
         "brain_record_count": brain_record_count,
         "brain_record_hash_count": brain_record_hash_count,
+        "records_file": relative_to_root(records_path, root),
+        "records_file_exists": records_exists,
+        "records_file_path_valid": records_file_path_valid,
+        "records_file_is_absolute": records_file_is_absolute,
+        "records_file_escapes_index": records_file_escapes_index,
+        "records_sha256_matches": records_sha256_matches,
         "brain_records_file": relative_to_root(brain_records_path, root),
         "brain_records_file_exists": brain_records_exists,
         "brain_records_file_path_valid": brain_records_file_path_valid,
