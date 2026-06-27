@@ -2998,6 +2998,43 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert report["dropped_record_count"] == 0
 
 
+@pytest.mark.parametrize(
+    ("expected_gate", "bundle_kwargs"),
+    [
+        ("validator_exit_code_zero", {"manifest_validator_exit_code": 1}),
+        ("validator_exit_code_zero", {"validation_validator_exit_code": 1}),
+        ("validator_exit_code_zero", {"contract_validator_exit_code": 1}),
+        ("critical_error_count_zero", {"manifest_critical_error_count": 1}),
+        ("critical_error_count_zero", {"validation_critical_error_count": 1}),
+        ("critical_error_count_zero", {"contract_critical_error_count": 1}),
+    ],
+)
+def test_v23_direct_ingest_hard_gates_block_acceptance(
+    tmp_path: Path,
+    expected_gate: str,
+    bundle_kwargs: dict[str, int],
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_direct_ingest_hard_gate_failed.md"
+    bundle.write_text(_v23_direct_ingest_bundle(**bundle_kwargs), encoding="utf-8")
+
+    inspection = inspect_versioned_bundle(bundle)
+    with pytest.raises(VersionedBundleImportError):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    assert inspection["supported"] is True
+    assert inspection["adapter"] == "v23-direct-ingest"
+    assert inspection["inspection_status"] == "validation_failed"
+    assert inspection["validation_passed"] is False
+    assert inspection["validation"][expected_gate] is False
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["adapter"] == "v23-direct-ingest"
+    assert report["validation"][expected_gate] is False
+
+
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -3199,7 +3236,15 @@ validator_exit_code: 0
 """
 
 
-def _v23_direct_ingest_bundle() -> str:
+def _v23_direct_ingest_bundle(
+    *,
+    manifest_validator_exit_code: int = 0,
+    manifest_critical_error_count: int = 0,
+    validation_validator_exit_code: int | None = None,
+    validation_critical_error_count: int | None = None,
+    contract_validator_exit_code: int = 0,
+    contract_critical_error_count: int = 0,
+) -> str:
     episode_id = "NSLAB-20300204-DIRECT"
     trade_day = "2030-02-04"
     records = [
@@ -3283,11 +3328,25 @@ def _v23_direct_ingest_bundle() -> str:
             "next_trade_date": "2030-02-05",
             "bundle_status": "ACCEPT_FULL",
             "brain_eligible": True,
-            "validator_exit_code": 0,
-            "critical_error_count": 0,
+            "validator_exit_code": manifest_validator_exit_code,
+            "critical_error_count": manifest_critical_error_count,
             "brain_delta_record_count": len(records),
             "training_eligible_record_count": len(records),
         },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    validation_payload: dict[str, object] = {
+        "schema_version": "nslab.validation_report.v1",
+        "episode_id": episode_id,
+        "critical_error_count": validation_critical_error_count
+        if validation_critical_error_count is not None
+        else manifest_critical_error_count,
+    }
+    if validation_validator_exit_code is not None:
+        validation_payload["validator_exit_code"] = validation_validator_exit_code
+    validation_report = json.dumps(
+        validation_payload,
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -3303,8 +3362,8 @@ def _v23_direct_ingest_bundle() -> str:
             "hard_gate_summary": {
                 "record_count_hash_parity_ready": True,
                 "schema_contract_verified": True,
-                "validator_exit_code": 0,
-                "critical_error_count": 0,
+                "validator_exit_code": contract_validator_exit_code,
+                "critical_error_count": contract_critical_error_count,
             },
         },
         ensure_ascii=False,
@@ -3358,6 +3417,10 @@ validator_exit_code: 0
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 {_payload_block(manifest, "json")}
 <!-- NSLAB:END bundle_manifest.json -->
+
+<!-- NSLAB:BEGIN validation_report.json -->
+{_payload_block(validation_report, "json")}
+<!-- NSLAB:END validation_report.json -->
 
 <!-- NSLAB:BEGIN direct_ingest_contract.json -->
 {_payload_block(contract, "json")}
