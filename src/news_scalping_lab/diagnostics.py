@@ -2841,6 +2841,9 @@ def _llm_full_brain_status(
         compile_manifest,
         compiled_claim_stats["claim_ids"],
     )
+    record_shard_manifest_stats = _llm_compile_record_shard_manifest_stats(
+        compile_manifest
+    )
     compiled_claim_count = compiled_claim_stats["line_count"]
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
@@ -2887,6 +2890,24 @@ def _llm_full_brain_status(
         ),
         "category_manifest_unknown_compiled_claim_ids": category_manifest_stats[
             "unknown_compiled_claim_ids"
+        ],
+        "record_shard_manifest_observed_count": record_shard_manifest_stats[
+            "observed_count"
+        ],
+        "record_shard_manifest_record_id_count": record_shard_manifest_stats[
+            "record_id_count"
+        ],
+        "record_shard_manifest_unique_record_id_count": record_shard_manifest_stats[
+            "unique_record_id_count"
+        ],
+        "record_shard_manifest_schema_mismatches": record_shard_manifest_stats[
+            "schema_mismatches"
+        ],
+        "record_shard_manifest_count_mismatches": record_shard_manifest_stats[
+            "count_mismatches"
+        ],
+        "record_shard_manifest_duplicate_record_ids": record_shard_manifest_stats[
+            "duplicate_record_ids"
         ],
         "compile_report_path": relative_to_root(
             compile_report_path,
@@ -2976,6 +2997,16 @@ def _llm_full_brain_status(
         record_shard_count = status["record_shard_count"]
         if not isinstance(record_shard_count, int) or record_shard_count <= 0:
             findings.append("llm-full record shard accounting is missing")
+        if record_shard_manifest_stats["schema_mismatches"]:
+            findings.append("llm-full compile manifest record shards are invalid")
+        if record_shard_manifest_stats["count_mismatches"]:
+            findings.append(
+                "llm-full compile manifest record shard counts are inconsistent"
+            )
+        if record_shard_manifest_stats["duplicate_record_ids"]:
+            findings.append(
+                "llm-full compile manifest record shards contain duplicate record IDs"
+            )
         category_count = status["category_count"]
         if category_count != len(BRAIN_FILES):
             findings.append("llm-full category count does not match brain category files")
@@ -3880,6 +3911,61 @@ def _llm_compile_category_manifest_stats(
         "source_count_mismatches": sorted(source_count_mismatches),
         "compiled_claim_count_mismatches": sorted(compiled_claim_count_mismatches),
         "unknown_compiled_claim_ids": sorted(set(unknown_compiled_claim_ids)),
+    }
+
+
+def _llm_compile_record_shard_manifest_stats(manifest: object) -> dict[str, Any]:
+    schema_mismatches: list[str] = []
+    count_mismatches: list[str] = []
+    record_ids: list[str] = []
+    record_shards = manifest.get("record_shards") if isinstance(manifest, dict) else None
+    source_record_count = _int_from_mapping(manifest, "source_record_count")
+    expected_shard_count = _int_from_mapping(manifest, "record_shard_count")
+    if not isinstance(record_shards, list):
+        return {
+            "observed_count": None,
+            "record_id_count": 0,
+            "unique_record_id_count": 0,
+            "schema_mismatches": ["record_shards: missing"],
+            "count_mismatches": count_mismatches,
+            "duplicate_record_ids": [],
+        }
+    if expected_shard_count != len(record_shards):
+        observed = (
+            "missing"
+            if expected_shard_count is None
+            else str(expected_shard_count)
+        )
+        count_mismatches.append(
+            f"record_shard_count: expected {len(record_shards)}, got {observed}"
+        )
+    for index, shard in enumerate(record_shards, start=1):
+        if not isinstance(shard, dict):
+            schema_mismatches.append(f"record_shards[{index}]: invalid entry")
+            continue
+        shard_record_ids = _string_list(shard.get("record_ids"))
+        if not isinstance(shard.get("record_ids"), list):
+            schema_mismatches.append(f"record_shards[{index}]: missing record_ids")
+        if not isinstance(shard.get("cache_key"), str) or not shard.get("cache_key"):
+            schema_mismatches.append(f"record_shards[{index}]: missing cache_key")
+        if shard.get("record_count") != len(shard_record_ids):
+            count_mismatches.append(f"record_shards[{index}]")
+        record_ids.extend(shard_record_ids)
+    if (
+        isinstance(source_record_count, int)
+        and source_record_count != len(set(record_ids))
+    ):
+        count_mismatches.append(
+            "source_record_count: expected "
+            f"{len(set(record_ids))}, got {source_record_count}"
+        )
+    return {
+        "observed_count": len(record_shards),
+        "record_id_count": len(record_ids),
+        "unique_record_id_count": len(set(record_ids)),
+        "schema_mismatches": sorted(schema_mismatches),
+        "count_mismatches": sorted(count_mismatches),
+        "duplicate_record_ids": _duplicate_strings(record_ids),
     }
 
 
