@@ -358,6 +358,7 @@ class DailyAnalyzer:
             manifest=manifest,
             cutoff_at=cutoff_at,
         )
+        self._refresh_counterexample_record_ids_from_retrieval(manifest)
         manifest.token_counts["semantic_retrieval_plan_prompt"] = semantic_prompt_tokens
         _candidate_expansion, expansion_prompt_hash, expansion_prompt_tokens = (
             await self._run_candidate_expansion(
@@ -1548,6 +1549,31 @@ class DailyAnalyzer:
             "record_retrieval_zero_is_valid": True,
             "retrieval_zero_is_valid": True,
         }
+
+    def _refresh_counterexample_record_ids_from_retrieval(
+        self,
+        manifest: ContextManifest,
+    ) -> None:
+        store = BrainRecordStore(self.root)
+        if manifest.mode in {"exhaustive", "brain"}:
+            source_record_ids = manifest.available_record_ids
+        else:
+            source_record_ids = [
+                *manifest.retrieved_record_ids,
+                *manifest.semantic_retrieval_record_ids,
+            ]
+        counterexample_ids: list[str] = []
+        available_record_id_set = set(manifest.available_record_ids)
+        for record_id in _unique_preserving_order(source_record_ids):
+            if record_id not in available_record_id_set:
+                continue
+            try:
+                record = store.get_record(record_id)
+            except FileNotFoundError:
+                continue
+            if record.record_type == "counterexample":
+                counterexample_ids.append(record.record_id)
+        manifest.counterexample_record_ids = counterexample_ids
 
     def _read_semantic_retrieval_plan(
         self,

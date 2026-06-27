@@ -153,13 +153,18 @@ class ContextAssembler:
         counterexample_ids = [
             episode.episode_id for episode in accepted if episode.counterexamples
         ]
+        swept_ids = accepted_ids if mode in {"exhaustive", "brain"} else []
+        swept_record_ids = available_record_ids if mode in {"exhaustive", "brain"} else []
+        retrieved_record_id_set = set(retrieved_record_ids)
         counterexample_record_ids = [
             record.record_id
             for record in available_records
             if record.record_type == "counterexample"
+            and (
+                mode in {"exhaustive", "brain"}
+                or record.record_id in retrieved_record_id_set
+            )
         ]
-        swept_ids = accepted_ids if mode in {"exhaustive", "brain"} else []
-        swept_record_ids = available_record_ids if mode in {"exhaustive", "brain"} else []
         errors: list[str] = []
         if mode == "exhaustive" and len(swept_ids) != len(accepted_ids):
             errors.append("exhaustive coverage mismatch")

@@ -71,6 +71,44 @@ class FirstPassTrackingAnalyzer(DailyAnalyzer):
         return mechanisms
 
 
+class EmptyRecordRetrieval:
+    def search_semantic(self, query: str, *, limit: int = 10) -> list[str]:
+        return []
+
+    def search_records(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        **filters: object,
+    ) -> list[str]:
+        return []
+
+    def list_all_episodes(self) -> list[ResearchEpisode]:
+        return []
+
+    def get_available_as_of(self, cutoff_at: datetime) -> list[ResearchEpisode]:
+        return []
+
+
+class SemanticCounterexampleRetrieval(EmptyRecordRetrieval):
+    def __init__(self, record_id: str) -> None:
+        self.record_id = record_id
+        self.filters_seen: list[dict[str, object]] = []
+
+    def search_records(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        **filters: object,
+    ) -> list[str]:
+        self.filters_seen.append(dict(filters))
+        if filters.get("record_type") == "counterexample":
+            return [self.record_id]
+        return []
+
+
 def _brain_record(
     record_id: str,
     *,
@@ -1067,6 +1105,119 @@ async def test_counterexample_record_ids_reach_prediction_outputs(tmp_path) -> N
     report = (tmp_path / analysis.report_path).read_text(encoding="utf-8")
     assert "Prior negative record IDs: BRAIN-COUNTER" in report
     assert "Contradicting record IDs: BRAIN-COUNTER" in report
+
+
+@pytest.mark.asyncio
+async def test_fast_mode_does_not_auto_load_unretrieved_counterexamples(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-FAST-UNRETRIEVED-COUNTER",
+                record_type="counterexample",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "fast_unretrieved_counterexample_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","FastModeCo, new catalyst",'
+        '"Fast mode should not auto-load unrelated counterexample records."\n',
+        encoding="utf-8",
+    )
+
+    analysis = await DailyAnalyzer(
+        settings,
+        retrieval=EmptyRecordRetrieval(),
+    ).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert manifest.available_record_ids == ["BRAIN-FAST-UNRETRIEVED-COUNTER"]
+    assert manifest.swept_record_ids == []
+    assert manifest.retrieved_record_ids == []
+    assert manifest.semantic_retrieval_record_ids == []
+    assert manifest.counterexample_record_ids == []
+    assert synthesis_payload["counterexample_record_ids"] == []
+    assert synthesis_payload["counterexample_records"] == []
+    assert synthesis_payload["negative_record_ids"] == []
+    assert all(
+        candidate.prior_negative_record_ids == []
+        for candidate in analysis.blind_prediction.candidates
+    )
+
+
+@pytest.mark.asyncio
+async def test_fast_mode_semantic_counterexamples_reach_final_context(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-FAST-SEMANTIC-COUNTER",
+                record_type="counterexample",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    news_csv = tmp_path / "fast_semantic_counterexample_news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","SemanticCounterCo, new catalyst",'
+        '"Semantic retrieval should carry counterexample records to synthesis."\n',
+        encoding="utf-8",
+    )
+    retrieval = SemanticCounterexampleRetrieval("BRAIN-FAST-SEMANTIC-COUNTER")
+
+    analysis = await DailyAnalyzer(settings, retrieval=retrieval).analyze(
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = analysis.context_manifest
+    synthesis_payload = read_json(
+        tmp_path / str(manifest.final_synthesis_context_artifact)
+    )["payload"]
+    assert {"record_type": "counterexample"} in retrieval.filters_seen
+    assert manifest.retrieved_record_ids == []
+    assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+    assert manifest.counterexample_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+    assert synthesis_payload["counterexample_record_ids"] == [
+        "BRAIN-FAST-SEMANTIC-COUNTER"
+    ]
+    assert [
+        record["record_id"] for record in synthesis_payload["counterexample_records"]
+    ] == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+    assert synthesis_payload["negative_record_ids"] == [
+        "BRAIN-FAST-SEMANTIC-COUNTER"
+    ]
+    assert all(
+        candidate.prior_negative_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+        for candidate in analysis.blind_prediction.candidates
+    )
 
 
 @pytest.mark.asyncio
