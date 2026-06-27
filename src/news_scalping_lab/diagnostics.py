@@ -204,7 +204,10 @@ def production_readiness_report(
     record_store = _production_record_store_status(settings)
     if record_store["passed"] is not True:
         findings.extend(f"records: {finding}" for finding in record_store["findings"])
-    warehouse = _production_warehouse_status(report.get("warehouse"))
+    warehouse = _production_warehouse_status(
+        report.get("warehouse"),
+        root=settings.project_root,
+    )
     if warehouse["passed"] is not True:
         findings.extend(f"warehouse: {finding}" for finding in warehouse["findings"])
     vector_index = report.get("vector_index")
@@ -2058,17 +2061,138 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     }
 
 
-def _production_warehouse_status(warehouse: object) -> dict[str, Any]:
-    if not isinstance(warehouse, dict):
-        return {
-            "schema_version": "nslab.production_warehouse.v1",
-            "applicable": False,
-            "passed": True,
-            "status": "not_applicable",
-            "finding_count": 0,
-            "findings": [],
-        }
+def _production_warehouse_status(
+    warehouse: object,
+    *,
+    root: Path,
+) -> dict[str, Any]:
+    actual_warehouse = _current_production_warehouse_snapshot(root)
+    report_warehouse = warehouse if isinstance(warehouse, dict) else None
     findings: list[str] = []
+    if report_warehouse is not None:
+        findings.extend(_warehouse_readiness_findings(report_warehouse))
+    if actual_warehouse["applicable"] is True or report_warehouse is not None:
+        findings.extend(_warehouse_readiness_findings(actual_warehouse))
+    findings = _unique_preserving_order(findings)
+    count_mismatches = _first_non_empty_mapping(
+        actual_warehouse.get("count_mismatches"),
+        report_warehouse.get("count_mismatches") if report_warehouse is not None else None,
+    )
+    identity_mismatches = _first_non_empty_mapping(
+        actual_warehouse.get("identity_mismatches"),
+        report_warehouse.get("identity_mismatches") if report_warehouse is not None else None,
+    )
+    duplicate_identities = _first_non_empty_mapping(
+        actual_warehouse.get("duplicate_identities"),
+        report_warehouse.get("duplicate_identities") if report_warehouse is not None else None,
+    )
+    weight_mismatches = _first_non_empty_mapping(
+        actual_warehouse.get("weight_mismatches"),
+        report_warehouse.get("weight_mismatches") if report_warehouse is not None else None,
+    )
+    return {
+        "schema_version": "nslab.production_warehouse.v1",
+        "applicable": actual_warehouse["applicable"] or report_warehouse is not None,
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "report_present": report_warehouse is not None,
+        "audit_error": actual_warehouse.get("audit_error"),
+        "required_files_present": actual_warehouse.get("required_files_present"),
+        "synced": actual_warehouse.get("synced"),
+        "projection_synced": actual_warehouse.get("projection_synced"),
+        "count_mismatches": count_mismatches,
+        "identity_mismatches": identity_mismatches,
+        "duplicate_identities": duplicate_identities,
+        "weight_mismatches": weight_mismatches,
+        "report_required_files_present": (
+            report_warehouse.get("required_files_present")
+            if report_warehouse is not None
+            else None
+        ),
+        "report_synced": (
+            report_warehouse.get("synced") if report_warehouse is not None else None
+        ),
+        "report_projection_synced": (
+            report_warehouse.get("projection_synced")
+            if report_warehouse is not None
+            else None
+        ),
+        "report_count_mismatches": (
+            report_warehouse.get("count_mismatches", {})
+            if report_warehouse is not None
+            else {}
+        ),
+        "report_identity_mismatches": (
+            report_warehouse.get("identity_mismatches", {})
+            if report_warehouse is not None
+            else {}
+        ),
+        "report_duplicate_identities": (
+            report_warehouse.get("duplicate_identities", {})
+            if report_warehouse is not None
+            else {}
+        ),
+        "report_weight_mismatches": (
+            report_warehouse.get("weight_mismatches", {})
+            if report_warehouse is not None
+            else {}
+        ),
+    }
+
+
+def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
+    try:
+        coverage_audit = audit_coverage(root, deep=True)
+        accepted_episode_count = len(ResearchStore(root).list_accepted())
+        status = _warehouse_status(
+            coverage_audit,
+            accepted_episode_count=accepted_episode_count,
+        )
+        applicable = accepted_episode_count > 0 or _has_expected_warehouse_sources(
+            coverage_audit.get("warehouse_expected_source_counts")
+        )
+        return {
+            "status": status,
+            "applicable": applicable,
+            "required_files_present": coverage_audit.get(
+                "warehouse_required_files_present"
+            ),
+            "synced": coverage_audit.get("warehouse_synced"),
+            "projection_synced": coverage_audit.get("warehouse_projection_synced"),
+            "count_mismatches": coverage_audit.get("warehouse_count_mismatches", {}),
+            "identity_mismatches": coverage_audit.get(
+                "warehouse_identity_mismatches",
+                {},
+            ),
+            "duplicate_identities": coverage_audit.get(
+                "warehouse_duplicate_identities",
+                {},
+            ),
+            "weight_mismatches": coverage_audit.get("warehouse_weight_mismatches", {}),
+            "audit_error": None,
+        }
+    except Exception as exc:
+        return {
+            "status": "attention",
+            "applicable": True,
+            "required_files_present": False,
+            "synced": False,
+            "projection_synced": False,
+            "count_mismatches": {},
+            "identity_mismatches": {},
+            "duplicate_identities": {},
+            "weight_mismatches": {},
+            "audit_error": type(exc).__name__,
+        }
+
+
+def _warehouse_readiness_findings(warehouse: dict[str, Any]) -> list[str]:
+    findings: list[str] = []
+    audit_error = warehouse.get("audit_error")
+    if isinstance(audit_error, str) and audit_error:
+        findings.append(f"warehouse audit failed: {audit_error}")
     if warehouse.get("status") != "ok":
         findings.append("warehouse status is not ok")
     if warehouse.get("required_files_present") is not True:
@@ -2086,21 +2210,14 @@ def _production_warehouse_status(warehouse: object) -> dict[str, Any]:
         value = warehouse.get(field_name)
         if isinstance(value, dict) and value:
             findings.append(finding)
-    return {
-        "schema_version": "nslab.production_warehouse.v1",
-        "applicable": True,
-        "passed": not findings,
-        "status": "ready" if not findings else "attention",
-        "finding_count": len(findings),
-        "findings": findings,
-        "required_files_present": warehouse.get("required_files_present"),
-        "synced": warehouse.get("synced"),
-        "projection_synced": warehouse.get("projection_synced"),
-        "count_mismatches": warehouse.get("count_mismatches", {}),
-        "identity_mismatches": warehouse.get("identity_mismatches", {}),
-        "duplicate_identities": warehouse.get("duplicate_identities", {}),
-        "weight_mismatches": warehouse.get("weight_mismatches", {}),
-    }
+    return findings
+
+
+def _first_non_empty_mapping(*values: object) -> dict[str, Any]:
+    for value in values:
+        if isinstance(value, dict) and value:
+            return value
+    return {}
 
 
 def _llm_embedding_model_from_method(embedding_method: str) -> str | None:

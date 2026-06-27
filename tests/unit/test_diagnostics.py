@@ -488,6 +488,28 @@ def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> 
     )
 
 
+def test_production_readiness_audits_current_warehouse_when_report_missing(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    _write_record_coverage_store(tmp_path)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["warehouse"]["passed"] is False
+    assert production["warehouse"]["report_present"] is False
+    assert production["warehouse"]["required_files_present"] is False
+    assert (
+        "warehouse: required warehouse projections are missing or unreadable"
+        in production["findings"]
+    )
+    assert (
+        "warehouse: record-level projections are not synced"
+        in production["findings"]
+    )
+
+
 def test_doctor_report_flags_missing_and_stale_schema_files(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
