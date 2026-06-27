@@ -1695,6 +1695,7 @@ def _production_semantic_index_manifest_status(
             "record_count": None,
             "accepted_episode_count": None,
             "accepted_hash_count": None,
+            "accepted_hash_invalid_count": None,
             "expected_accepted_hash_count": None,
             "accepted_hashes_match": None,
             "brain_record_count": None,
@@ -1740,6 +1741,7 @@ def _production_semantic_index_manifest_status(
             "record_count": None,
             "accepted_episode_count": None,
             "accepted_hash_count": None,
+            "accepted_hash_invalid_count": None,
             "expected_accepted_hash_count": None,
             "accepted_hashes_match": None,
             "brain_record_count": None,
@@ -1780,11 +1782,19 @@ def _production_semantic_index_manifest_status(
     accepted_episode_count = _int_from_mapping(manifest, "accepted_episode_count")
     expected_accepted_hashes = ResearchStore(root).accepted_hashes()
     accepted_hashes = manifest.get("accepted_hashes")
-    accepted_hashes_valid = {
-        key: value
-        for key, value in accepted_hashes.items()
-        if isinstance(key, str) and isinstance(value, str)
-    } if isinstance(accepted_hashes, dict) else None
+    accepted_hashes_valid: dict[str, str] | None = None
+    accepted_hash_invalid_count: int | None = None
+    if isinstance(accepted_hashes, dict):
+        accepted_hashes_valid = {
+            key: value
+            for key, value in accepted_hashes.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+        accepted_hash_invalid_count = sum(
+            1
+            for key, value in accepted_hashes.items()
+            if not isinstance(key, str) or not isinstance(value, str)
+        )
     accepted_hash_count = (
         len(accepted_hashes_valid) if accepted_hashes_valid is not None else None
     )
@@ -1966,6 +1976,10 @@ def _production_semantic_index_manifest_status(
             findings.append("semantic index manifest embedding model does not match configured model")
     if isinstance(report_embedding_method, str) and embedding_method != report_embedding_method:
         findings.append("semantic index report does not match on-disk embedding method")
+    if accepted_hashes_valid is None:
+        findings.append("semantic index accepted_hashes field is invalid")
+    elif accepted_hash_invalid_count:
+        findings.append("semantic index accepted_hashes has invalid hashes")
     if accepted_episode_count != expected_accepted_hash_count:
         findings.append(
             "semantic index accepted episode count does not match accepted episodes"
@@ -2040,6 +2054,7 @@ def _production_semantic_index_manifest_status(
         "record_count": record_count,
         "accepted_episode_count": accepted_episode_count,
         "accepted_hash_count": accepted_hash_count,
+        "accepted_hash_invalid_count": accepted_hash_invalid_count,
         "expected_accepted_hash_count": expected_accepted_hash_count,
         "accepted_hashes_match": accepted_hashes_match,
         "brain_record_count": brain_record_count,

@@ -1154,6 +1154,47 @@ def test_production_readiness_rejects_stale_semantic_index_accepted_hashes(
     )
 
 
+def test_production_readiness_rejects_invalid_semantic_index_accepted_hashes(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 2,
+            "coverage_complete": True,
+        },
+    )
+    vector_index = _write_semantic_index_fixture(
+        tmp_path,
+        embedding_method="llm_embedding:openai:text-embedding-3-small",
+    )
+    manifest_path = tmp_path / "memory" / "vector_index" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["accepted_hashes"] = {"EP-invalid": 123}
+    write_json(manifest_path, manifest)
+    report = {
+        "api_connections": {"openai": {"status": "configured_not_called"}},
+        "vector_index": vector_index,
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["semantic_index"]["manifest"]["passed"] is False
+    assert (
+        production["semantic_index"]["manifest"]["accepted_hash_invalid_count"] == 1
+    )
+    assert (
+        "embedding: semantic index accepted_hashes has invalid hashes"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_absolute_semantic_index_records_file(
     tmp_path,
 ) -> None:
