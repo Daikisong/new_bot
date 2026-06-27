@@ -3691,6 +3691,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "skipped_record_reasons_by_record_id": {},
             "unique_skipped_record_reasons_by_record_id": {},
             "skipped_record_reason_counts": {},
+            "expected_skipped_record_reason_fields": {},
+            "skipped_record_reason_mismatches": [],
             "blind_safe_row_count": None,
             "hindsight_row_count": None,
             "missing_phase_row_count_fields": [],
@@ -3783,6 +3785,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "skipped_record_reasons_by_record_id": {},
             "unique_skipped_record_reasons_by_record_id": {},
             "skipped_record_reason_counts": {},
+            "expected_skipped_record_reason_fields": {},
+            "skipped_record_reason_mismatches": [],
             "blind_safe_row_count": 0,
             "hindsight_row_count": 0,
             "missing_phase_row_count_fields": [],
@@ -4100,6 +4104,29 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         invalid_reason_fields.append("skipped_record_reason_counts")
     for field in invalid_reason_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    expected_skipped_reason_fields = (
+        _expected_training_export_skipped_reason_fields_from_manifests(
+            audit.get("manifests")
+        )
+    )
+    skipped_reason_values = {
+        "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
+        "unique_skipped_record_reasons_by_record_id": (
+            unique_skipped_record_reasons_by_record_id
+        ),
+        "skipped_record_reason_counts": skipped_record_reason_counts,
+    }
+    skipped_record_reason_mismatches = [
+        field
+        for field, expected_value in expected_skipped_reason_fields.items()
+        if (
+            diagnostics
+            and field not in invalid_reason_fields
+            and skipped_reason_values[field] != expected_value
+        )
+    ]
+    for field in skipped_record_reason_mismatches:
+        findings.append(f"training export diagnostics {field} does not match manifests")
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     phase_row_count_fields = ("blind_safe_row_count", "hindsight_row_count")
@@ -4544,6 +4571,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             unique_skipped_record_reasons_by_record_id
         ),
         "skipped_record_reason_counts": skipped_record_reason_counts,
+        "expected_skipped_record_reason_fields": expected_skipped_reason_fields,
+        "skipped_record_reason_mismatches": skipped_record_reason_mismatches,
         "source_record_hash_count": source_record_hash_count,
         "blind_safe_row_count": blind_safe_row_count,
         "hindsight_row_count": hindsight_row_count,
@@ -7790,6 +7819,53 @@ def _expected_training_export_unique_record_ids_from_manifests(
         "unique_training_eligible_record_ids": sorted(training_eligible_ids),
         "unique_exported_record_ids": sorted(exported_ids),
         "unique_skipped_record_ids": sorted(skipped_ids),
+    }
+
+
+def _expected_training_export_skipped_reason_fields_from_manifests(
+    manifests: object,
+) -> dict[str, Any]:
+    if not isinstance(manifests, dict):
+        return {}
+    source_ids: set[str] = set()
+    exported_ids: set[str] = set()
+    reasons_by_record: dict[str, set[str]] = {}
+    reason_counts: Counter[str] = Counter()
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            return {}
+        skipped_records = manifest.get("skipped_records")
+        if not isinstance(skipped_records, list):
+            return {}
+        source_ids.update(_string_list(manifest.get("source_record_ids")))
+        exported_ids.update(_string_list(manifest.get("exported_record_ids")))
+        for item in skipped_records:
+            if not isinstance(item, dict):
+                continue
+            record_id = item.get("record_id")
+            if not isinstance(record_id, str) or not record_id:
+                continue
+            reasons = _string_list(item.get("skip_reasons"))
+            if not reasons and isinstance(item.get("reason"), str):
+                reasons = [str(item["reason"])]
+            reasons_by_record.setdefault(record_id, set()).update(reasons)
+            for reason in reasons:
+                reason_counts[reason] += 1
+    unique_skipped_ids = source_ids - exported_ids
+    skipped_reasons = {
+        record_id: sorted(reasons)
+        for record_id, reasons in sorted(reasons_by_record.items())
+    }
+    unique_skipped_reasons = {
+        record_id: reasons
+        for record_id, reasons in skipped_reasons.items()
+        if record_id in unique_skipped_ids
+    }
+    return {
+        "skipped_record_reasons_by_record_id": skipped_reasons,
+        "unique_skipped_record_reasons_by_record_id": unique_skipped_reasons,
+        "skipped_record_reason_counts": dict(sorted(reason_counts.items())),
     }
 
 
