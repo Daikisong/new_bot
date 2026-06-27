@@ -1037,6 +1037,99 @@ def test_production_readiness_rejects_semantic_index_record_count_gap(
     )
 
 
+def test_production_readiness_rejects_mock_llm_context_manifests(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-mock-llm.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-mock-llm",
+            "model_config": {
+                "configured_provider": "mock",
+                "provider_class": "DeterministicMockLLMProvider",
+                "model": "deterministic-mock",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_evidence"]["passed"] is False
+    assert production["llm_evidence"]["mock_model_config_manifest_count"] == 1
+    assert production["llm_evidence"]["mock_model_config_manifests"] == [
+        {
+            "path": "runs/manifests/RUN-mock-llm.json",
+            "run_id": "RUN-mock-llm",
+            "mock_values": [
+                "configured_provider=mock",
+                "provider_class=DeterministicMockLLMProvider",
+                "model=deterministic-mock",
+            ],
+        }
+    ]
+    assert (
+        "llm_evidence: mock LLM model_config present in "
+        "runs/manifests/RUN-mock-llm.json: configured_provider=mock, "
+        "provider_class=DeterministicMockLLMProvider, model=deterministic-mock"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_live_llm_context_manifests(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-live-llm.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-live-llm",
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_evidence"]["passed"] is True
+    assert production["llm_evidence"]["checked_manifest_count"] == 1
+    assert production["llm_evidence"]["mock_model_config_manifest_count"] == 0
+    assert not any(
+        finding.startswith("llm_evidence:") for finding in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="mock")
     settings.llm.provider = "openai"

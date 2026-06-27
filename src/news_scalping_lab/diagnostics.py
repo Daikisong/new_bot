@@ -90,6 +90,12 @@ def production_readiness_report(
         findings.append("llm: mock provider cannot compile production brain")
     if settings.llm.provider.strip().lower() == "mock":
         findings.append("llm_model: mock model profile cannot compile production brain")
+    llm_evidence = _production_llm_evidence_status(settings.project_root)
+    if llm_evidence["passed"] is not True:
+        findings.extend(
+            f"llm_evidence: {finding}"
+            for finding in llm_evidence["findings"]
+        )
     openai_status = _nested_dict(report, "api_connections", "openai").get("status")
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
@@ -177,6 +183,7 @@ def production_readiness_report(
         "findings": findings,
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
+        "llm_evidence": llm_evidence,
         "llm_full_brain": llm_full_brain,
         "record_coverage": record_coverage_status,
         "record_store": record_store,
@@ -557,6 +564,69 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} doctor --production",
         ],
     }
+
+
+def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
+    manifest_dir = root / "runs" / "manifests"
+    manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
+    unreadable_manifests: list[str] = []
+    missing_model_config: list[str] = []
+    mock_manifests: list[dict[str, Any]] = []
+    for manifest_path in manifest_paths:
+        relative_path = relative_to_root(manifest_path, root)
+        try:
+            manifest = _read_json_object(manifest_path)
+        except ValueError:
+            unreadable_manifests.append(relative_path)
+            continue
+        model_config = manifest.get("model_config")
+        if not isinstance(model_config, dict) or not model_config:
+            missing_model_config.append(relative_path)
+            continue
+        mock_values = _mock_model_config_values(model_config)
+        if mock_values:
+            mock_manifests.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "mock_values": mock_values,
+                }
+            )
+
+    findings: list[str] = []
+    for path in unreadable_manifests:
+        findings.append(f"context manifest is unreadable: {path}")
+    for path in missing_model_config:
+        findings.append(f"context manifest model_config is missing: {path}")
+    for manifest in mock_manifests:
+        findings.append(
+            f"mock LLM model_config present in {manifest['path']}: "
+            f"{', '.join(manifest['mock_values'])}"
+        )
+
+    return {
+        "schema_version": "nslab.production_llm_evidence.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "checked_manifest_count": len(manifest_paths),
+        "unreadable_manifest_count": len(unreadable_manifests),
+        "unreadable_manifests": unreadable_manifests,
+        "missing_model_config_count": len(missing_model_config),
+        "missing_model_config_manifests": missing_model_config,
+        "mock_model_config_manifest_count": len(mock_manifests),
+        "mock_model_config_manifests": mock_manifests,
+    }
+
+
+def _mock_model_config_values(model_config: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("configured_provider", "provider", "provider_class", "model"):
+        value = model_config.get(key)
+        if isinstance(value, str) and "mock" in value.strip().lower():
+            values.append(f"{key}={value}")
+    return values
 
 
 def _production_web_evidence_status(root: Path) -> dict[str, Any]:
