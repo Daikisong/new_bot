@@ -2385,6 +2385,16 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["status"] == "ready"
     assert production["training_exports"]["source_record_count"] == 2
     assert production["training_exports"]["record_store_source_record_count"] == 2
+    assert production["training_exports"]["available_manifest_kinds"] == [
+        "evals",
+        "preference",
+        "sft",
+    ]
+    assert production["training_exports"]["missing_manifest_kinds"] == []
+    assert production["training_exports"]["invalid_manifest_kind_fields"] == []
+    assert production["training_exports"]["missing_available_manifest_kinds"] == []
+    assert production["training_exports"]["unexpected_available_manifest_kinds"] == []
+    assert production["training_exports"]["unexpected_missing_manifest_kinds"] == []
     assert production["training_exports"]["unique_source_record_count"] == 2
     assert production["training_exports"]["unique_training_eligible_record_count"] == 2
     assert production["training_exports"]["unique_exported_record_count"] == 2
@@ -2481,6 +2491,75 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["invalid_weight_validation_entries"] == []
     assert not any(
         finding.startswith("training:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_invalid_training_export_manifest_kinds(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["available_manifest_kinds"] = ["sft", "debug", 7]
+    tampered_report["missing_manifest_kinds"] = ["ghost"]
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["available_manifest_kinds"] == [
+        "sft",
+        "debug",
+    ]
+    assert production["training_exports"]["missing_manifest_kinds"] == ["ghost"]
+    assert production["training_exports"]["invalid_manifest_kind_fields"] == [
+        "available_manifest_kinds",
+    ]
+    assert production["training_exports"]["missing_available_manifest_kinds"] == [
+        "evals",
+        "preference",
+    ]
+    assert production["training_exports"]["unexpected_available_manifest_kinds"] == [
+        "debug",
+    ]
+    assert production["training_exports"]["unexpected_missing_manifest_kinds"] == [
+        "ghost",
+    ]
+    assert (
+        "training export diagnostics available_manifest_kinds is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export available manifests are missing required kinds: evals, preference"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export available manifests include unexpected kinds: debug"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export missing manifests include unexpected kinds: ghost"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export available manifests are missing required kinds: "
+        "evals, preference"
+        in production["findings"]
     )
 
 

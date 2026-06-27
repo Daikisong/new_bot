@@ -3690,6 +3690,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
+            "invalid_manifest_kind_fields": [],
+            "missing_available_manifest_kinds": [],
+            "unexpected_available_manifest_kinds": [],
+            "unexpected_missing_manifest_kinds": [],
             "weight_validation_statuses": {},
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
@@ -3754,6 +3758,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "invalid_count_fields": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
+            "invalid_manifest_kind_fields": [],
+            "missing_available_manifest_kinds": [],
+            "unexpected_available_manifest_kinds": [],
+            "unexpected_missing_manifest_kinds": [],
             "weight_validation_statuses": {},
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
@@ -3777,7 +3785,45 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     elif diagnostics.get("schema_version") != "nslab.training_export_diagnostics.v1":
         findings.append("training export diagnostics schema_version is invalid")
 
+    available_manifest_kinds = _string_list(
+        diagnostics.get("available_manifest_kinds")
+    )
     missing_manifest_kinds = _string_list(diagnostics.get("missing_manifest_kinds"))
+    invalid_manifest_kind_fields = [
+        field
+        for field in ("available_manifest_kinds", "missing_manifest_kinds")
+        if field in diagnostics
+        and not _non_empty_string_list_field_valid(diagnostics.get(field))
+    ]
+    required_manifest_kinds = set(REQUIRED_TRAINING_EXPORT_KINDS)
+    available_manifest_kind_set = set(available_manifest_kinds)
+    missing_manifest_kind_set = set(missing_manifest_kinds)
+    missing_available_manifest_kinds = sorted(
+        required_manifest_kinds - available_manifest_kind_set
+    )
+    unexpected_available_manifest_kinds = sorted(
+        available_manifest_kind_set - required_manifest_kinds
+    )
+    unexpected_missing_manifest_kinds = sorted(
+        missing_manifest_kind_set - required_manifest_kinds
+    )
+    for field in invalid_manifest_kind_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
+    if missing_available_manifest_kinds:
+        findings.append(
+            "training export available manifests are missing required kinds: "
+            + ", ".join(missing_available_manifest_kinds)
+        )
+    if unexpected_available_manifest_kinds:
+        findings.append(
+            "training export available manifests include unexpected kinds: "
+            + ", ".join(unexpected_available_manifest_kinds)
+        )
+    if unexpected_missing_manifest_kinds:
+        findings.append(
+            "training export missing manifests include unexpected kinds: "
+            + ", ".join(unexpected_missing_manifest_kinds)
+        )
     if missing_manifest_kinds:
         findings.append(
             "training export manifests are missing: "
@@ -4206,10 +4252,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         ),
         "missing_count_fields": missing_count_fields,
         "invalid_count_fields": invalid_count_fields,
-        "available_manifest_kinds": _string_list(
-            diagnostics.get("available_manifest_kinds")
-        ),
+        "available_manifest_kinds": available_manifest_kinds,
         "missing_manifest_kinds": missing_manifest_kinds,
+        "invalid_manifest_kind_fields": invalid_manifest_kind_fields,
+        "missing_available_manifest_kinds": missing_available_manifest_kinds,
+        "unexpected_available_manifest_kinds": unexpected_available_manifest_kinds,
+        "unexpected_missing_manifest_kinds": unexpected_missing_manifest_kinds,
         "weight_validation_statuses": weight_statuses,
         "missing_weight_validation_kinds": missing_weight_validation_kinds,
         "unexpected_weight_validation_kinds": unexpected_weight_validation_kinds,
@@ -7394,6 +7442,12 @@ def _string_list(value: object) -> list[str]:
 
 def _string_list_field_valid(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _non_empty_string_list_field_valid(value: object) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, str) and bool(item) for item in value
+    )
 
 
 def _string_map(value: object) -> dict[str, str]:
