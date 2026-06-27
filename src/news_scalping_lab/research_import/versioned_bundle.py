@@ -642,8 +642,12 @@ def import_versioned_bundle(
                 "episode_id": _episode_id(parsed),
                 "accepted": False,
                 "acceptance_status": "staged",
-                "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
-                "normalized_record_count": raw_only_stored.record_count,
+                **_record_count_parity_payload(
+                    raw_record_count=len(
+                        parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+                    ),
+                    normalized_record_count=raw_only_stored.record_count,
+                ),
                 "training_eligible_record_count": raw_only_stored.training_eligible_record_count,
                 "raw_only_record_count": raw_only_stored.record_count,
                 **import_loss_summary,
@@ -651,7 +655,6 @@ def import_versioned_bundle(
                     "import_loss_audit_passed",
                     _import_loss_audit_passed(import_loss_summary),
                 ),
-                "dropped_record_count": 0,
                 "quarantined_record_count": 0,
                 "record_counts_by_type": dict(
                     sorted(Counter(record.record_type for record in records).items())
@@ -762,15 +765,16 @@ def import_versioned_bundle(
         "raw_bundle_sha256": source_hash,
         "accepted": accepted,
         "acceptance_status": "accepted" if accepted else "staged",
-        "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
-        "normalized_record_count": stored.record_count,
+        **_record_count_parity_payload(
+            raw_record_count=len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
+            normalized_record_count=stored.record_count,
+        ),
         "training_eligible_record_count": stored.training_eligible_record_count,
         **import_loss_summary,
         "import_loss_audit_passed": validation.get(
             "import_loss_audit_passed",
             _import_loss_audit_passed(import_loss_summary),
         ),
-        "dropped_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": dict(
             sorted(Counter(record.record_type for record in records).items())
@@ -817,8 +821,12 @@ def _write_store_conflict_report(
             "raw_bundle_sha256": source_hash,
             "accepted": accepted,
             "acceptance_status": acceptance_status,
-            "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
-            "normalized_record_count": len(records),
+            **_record_count_parity_payload(
+                raw_record_count=len(
+                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+                ),
+                normalized_record_count=len(records),
+            ),
             "training_eligible_record_count": sum(
                 1 for record in records if record.training_eligible
             ),
@@ -827,7 +835,6 @@ def _write_store_conflict_report(
                 "import_loss_audit_passed",
                 _import_loss_audit_passed(import_loss_summary),
             ),
-            "dropped_record_count": 0,
             "quarantined_record_count": 1,
             "quarantine": conflict.quarantine.as_posix(),
             "conflict_reason": conflict.reason,
@@ -871,14 +878,17 @@ def _quarantine_validation_failure(
             "bundle_version": bundle_schema_version(parsed),
             "episode_id": episode_id,
             "raw_bundle_sha256": source_hash,
-            "raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
-            "normalized_record_count": len(records),
+            **_record_count_parity_payload(
+                raw_record_count=len(
+                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+                ),
+                normalized_record_count=len(records),
+            ),
             "training_eligible_record_count": sum(
                 1 for record in records if record.training_eligible
             ),
             **_import_loss_summary(parsed, records),
             "import_loss_audit_passed": validation.get("import_loss_audit_passed"),
-            "dropped_record_count": 0,
             "quarantined_record_count": 1,
             "quarantine": quarantine.as_posix(),
             "validation": validation,
@@ -961,6 +971,21 @@ def _import_loss_summary(
         "raw_payload_hashes_match": not raw_payload_hash_mismatch_record_ids
         and len(raw_hashes) == len(records),
         "raw_payload_hash_mismatch_record_ids": raw_payload_hash_mismatch_record_ids,
+    }
+
+
+def _record_count_parity_payload(
+    *,
+    raw_record_count: int,
+    normalized_record_count: int,
+) -> dict[str, Any]:
+    return {
+        "raw_record_count": raw_record_count,
+        "normalized_record_count": normalized_record_count,
+        "raw_normalized_record_count_matches": (
+            raw_record_count == normalized_record_count
+        ),
+        "dropped_record_count": max(0, raw_record_count - normalized_record_count),
     }
 
 

@@ -27,6 +27,7 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.research_import.versioned_bundle import (
     VersionedBundleImportError,
+    _record_count_parity_payload,
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
@@ -599,6 +600,10 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["staged_unknown_typed_payload_count"] == 0
     assert report["staged_raw_only_record_count"] == 0
     import_report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert import_report["raw_normalized_record_count_matches"] is True
+    assert import_report["missing_normalized_record_count"] == 0
+    assert import_report["extra_normalized_record_count"] == 0
+    assert import_report["dropped_record_count"] == 0
     assert import_report["import_loss_audit_passed"] is True
     assert import_report["record_id_set_matches_raw"] is True
     assert import_report["raw_payload_hashes_match"] is True
@@ -705,12 +710,29 @@ def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
+    assert report["raw_normalized_record_count_matches"] is True
     assert report["dropped_record_count"] == 0
+    assert report["missing_normalized_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 0
     assert report["quarantined_record_count"] == 1
     assert report["import_loss_audit_passed"] is False
     assert report["training_eligible_count_matches_raw"] is False
     assert report["validation"]["import_loss_audit_passed"] is False
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
+
+
+def test_bundle_import_report_parity_payload_counts_dropped_records() -> None:
+    payload = _record_count_parity_payload(
+        raw_record_count=3,
+        normalized_record_count=2,
+    )
+
+    assert payload == {
+        "raw_record_count": 3,
+        "normalized_record_count": 2,
+        "raw_normalized_record_count_matches": False,
+        "dropped_record_count": 1,
+    }
 
 
 def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(
