@@ -546,6 +546,9 @@ class BrainManifest(StrictModel):
     created_at: datetime
     build_mode: str = "full"
     catalog_only: bool = False
+    catalog_mode_reason: str | None = None
+    deprecated_mode_alias: bool = False
+    production_eligible: bool = False
     last_full_rebuild_at: datetime | None = None
     updated_episode_id: str | None = None
     accepted_episode_count: int

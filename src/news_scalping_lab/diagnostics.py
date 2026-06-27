@@ -284,6 +284,9 @@ def production_readiness_report(
     brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     build_mode = brain_manifest.get("build_mode") if isinstance(brain_manifest, dict) else None
     catalog_only = _brain_manifest_catalog_only(brain_manifest)
+    catalog_mode_reason = _brain_manifest_catalog_mode_reason(brain_manifest)
+    deprecated_mode_alias = _brain_manifest_deprecated_mode_alias(brain_manifest)
+    production_eligible = _brain_manifest_production_eligible(brain_manifest)
     current_brain_version_value = (
         brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
     )
@@ -302,6 +305,9 @@ def production_readiness_report(
         settings,
         build_mode=build_mode,
         catalog_only=catalog_only,
+        catalog_mode_reason=catalog_mode_reason,
+        deprecated_mode_alias=deprecated_mode_alias,
+        production_eligible=production_eligible,
         current_brain_version=current_brain_version_value,
         expected_source_record_count=expected_source_record_count,
     )
@@ -5324,6 +5330,9 @@ def _llm_full_brain_status(
     *,
     build_mode: object,
     catalog_only: object,
+    catalog_mode_reason: object,
+    deprecated_mode_alias: object,
+    production_eligible: object,
     current_brain_version: object,
     expected_source_record_count: int | None,
 ) -> dict[str, Any]:
@@ -5382,6 +5391,17 @@ def _llm_full_brain_status(
         "schema_version": "nslab.production_llm_full_brain.v1",
         "build_mode": build_mode if isinstance(build_mode, str) else None,
         "catalog_only": catalog_only if isinstance(catalog_only, bool) else None,
+        "catalog_mode_reason": (
+            catalog_mode_reason if isinstance(catalog_mode_reason, str) else None
+        ),
+        "deprecated_mode_alias": (
+            deprecated_mode_alias
+            if isinstance(deprecated_mode_alias, bool)
+            else None
+        ),
+        "production_eligible": (
+            production_eligible if isinstance(production_eligible, bool) else None
+        ),
         "current_brain_version": current_brain_version
         if isinstance(current_brain_version, str)
         else None,
@@ -6267,6 +6287,46 @@ def _brain_manifest_catalog_only(manifest: dict[str, Any] | None) -> bool | None
         return True
     if build_mode in {"llm-full", "asof_context"}:
         return False
+    return None
+
+
+def _brain_manifest_catalog_mode_reason(manifest: dict[str, Any] | None) -> str | None:
+    if not isinstance(manifest, dict):
+        return None
+    value = manifest.get("catalog_mode_reason")
+    if isinstance(value, str) and value:
+        return value
+    build_mode = manifest.get("build_mode")
+    if build_mode == "full":
+        return "deprecated_full_alias"
+    if build_mode == "catalog":
+        return "explicit_catalog_mode"
+    if build_mode == "incremental":
+        return "catalog_incremental_update"
+    return None
+
+
+def _brain_manifest_deprecated_mode_alias(
+    manifest: dict[str, Any] | None,
+) -> bool | None:
+    if not isinstance(manifest, dict):
+        return None
+    value = manifest.get("deprecated_mode_alias")
+    if isinstance(value, bool):
+        return value
+    return manifest.get("build_mode") == "full"
+
+
+def _brain_manifest_production_eligible(manifest: dict[str, Any] | None) -> bool | None:
+    if not isinstance(manifest, dict):
+        return None
+    value = manifest.get("production_eligible")
+    if isinstance(value, bool):
+        return value
+    build_mode = manifest.get("build_mode")
+    catalog_only = _brain_manifest_catalog_only(manifest)
+    if isinstance(build_mode, str) and isinstance(catalog_only, bool):
+        return build_mode == "llm-full" and catalog_only is False
     return None
 
 

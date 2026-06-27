@@ -286,6 +286,12 @@ class BrainCompiler:
             created_at=created_at,
             build_mode="full" if mode == "full" else "catalog",
             catalog_only=True,
+            catalog_mode_reason=_catalog_mode_reason_for_mode(
+                "full" if mode == "full" else "catalog",
+                catalog_only=True,
+            ),
+            deprecated_mode_alias=mode == "full",
+            production_eligible=False,
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(episodes),
@@ -356,6 +362,9 @@ class BrainCompiler:
             created_at=created_at,
             build_mode="llm-full",
             catalog_only=False,
+            catalog_mode_reason=None,
+            deprecated_mode_alias=False,
+            production_eligible=True,
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(accepted_episodes),
@@ -481,6 +490,12 @@ class BrainCompiler:
             created_at=created_at,
             build_mode="incremental",
             catalog_only=True,
+            catalog_mode_reason=_catalog_mode_reason_for_mode(
+                "incremental",
+                catalog_only=True,
+            ),
+            deprecated_mode_alias=False,
+            production_eligible=False,
             last_full_rebuild_at=(
                 current_manifest.last_full_rebuild_at or current_manifest.created_at
             ),
@@ -1518,10 +1533,11 @@ def _brain_compile_diagnostic_report(
         "compiler_version",
         default=CATALOG_COMPILER_VERSION,
     )
-    catalog_mode_reason = _catalog_mode_reason(manifest)
-    deprecated_mode_alias = manifest.catalog_only and manifest.build_mode == "full"
+    catalog_mode_reason = manifest.catalog_mode_reason or _catalog_mode_reason(manifest)
+    deprecated_mode_alias = manifest.deprecated_mode_alias
     production_eligible = (
-        manifest.build_mode == "llm-full"
+        manifest.production_eligible is True
+        and manifest.build_mode == "llm-full"
         and manifest.catalog_only is False
         and llm_compile_present
     )
@@ -1572,13 +1588,20 @@ def _brain_compile_diagnostic_report(
 
 
 def _catalog_mode_reason(manifest: BrainManifest) -> str | None:
-    if manifest.catalog_only is not True:
+    return _catalog_mode_reason_for_mode(
+        manifest.build_mode,
+        catalog_only=manifest.catalog_only,
+    )
+
+
+def _catalog_mode_reason_for_mode(build_mode: str, *, catalog_only: bool) -> str | None:
+    if catalog_only is not True:
         return None
-    if manifest.build_mode == "full":
+    if build_mode == "full":
         return "deprecated_full_alias"
-    if manifest.build_mode == "catalog":
+    if build_mode == "catalog":
         return "explicit_catalog_mode"
-    if manifest.build_mode == "incremental":
+    if build_mode == "incremental":
         return "catalog_incremental_update"
     return "catalog_only"
 

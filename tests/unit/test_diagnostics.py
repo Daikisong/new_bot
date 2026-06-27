@@ -5557,6 +5557,9 @@ def test_production_readiness_rejects_catalog_only_brain_manifest(
     assert production["passed"] is False
     assert production["llm_full_brain"]["status"] == "attention"
     assert production["llm_full_brain"]["catalog_only"] is True
+    assert production["llm_full_brain"]["catalog_mode_reason"] == "explicit_catalog_mode"
+    assert production["llm_full_brain"]["deprecated_mode_alias"] is False
+    assert production["llm_full_brain"]["production_eligible"] is False
     assert production["llm_full_brain"]["findings"] == [
         "current manifest is catalog_only",
         "current manifest build_mode is catalog, not llm-full",
@@ -5623,6 +5626,9 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     production = production_readiness_report(report, settings)
 
     assert production["llm_full_brain"]["passed"] is True
+    assert production["llm_full_brain"]["catalog_mode_reason"] is None
+    assert production["llm_full_brain"]["deprecated_mode_alias"] is False
+    assert production["llm_full_brain"]["production_eligible"] is True
     assert production["llm_full_brain"]["compiler_version"] == LLM_FULL_COMPILER_VERSION
     assert production["llm_full_brain"]["expected_source_record_count"] == 1
     assert production["llm_full_brain"]["run_llm_live_call_count"] == 19

@@ -165,6 +165,9 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     }
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert brain_manifest["catalog_only"] is False
+    assert brain_manifest["catalog_mode_reason"] is None
+    assert brain_manifest["deprecated_mode_alias"] is False
+    assert brain_manifest["production_eligible"] is True
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
     assert compile_manifest["compiled_claim_count"] == 2
@@ -381,6 +384,9 @@ def test_catalog_brain_marked_catalog_only(tmp_path: Path) -> None:
     assert manifest.catalog_only is True
     assert brain_manifest["build_mode"] == "catalog"
     assert brain_manifest["catalog_only"] is True
+    assert brain_manifest["catalog_mode_reason"] == "explicit_catalog_mode"
+    assert brain_manifest["deprecated_mode_alias"] is False
+    assert brain_manifest["production_eligible"] is False
     assert compile_report["compiler_mode"] == "catalog"
     assert compile_report["catalog_only"] is True
     assert compile_report["catalog_mode_reason"] == "explicit_catalog_mode"

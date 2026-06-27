@@ -242,6 +242,9 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
         encoding="utf-8"
     )
     assert brain_manifest["catalog_only"] is True
+    assert brain_manifest["catalog_mode_reason"] == "deprecated_full_alias"
+    assert brain_manifest["deprecated_mode_alias"] is True
+    assert brain_manifest["production_eligible"] is False
     assert coverage_manifest["catalog_only"] is True
     assert record_coverage_manifest["catalog_only"] is True
     assert record_coverage_manifest["record_coverage_as_of"] == manifest.created_at.isoformat()
@@ -2243,6 +2246,9 @@ def test_brain_update_catalog_fallback_preserves_catalog_mode(tmp_path) -> None:
 
     assert manifest.build_mode == "catalog"
     assert manifest.catalog_only is True
+    assert manifest.catalog_mode_reason == "explicit_catalog_mode"
+    assert manifest.deprecated_mode_alias is False
+    assert manifest.production_eligible is False
     assert manifest.updated_episode_id is None
     assert manifest.covered_episode_ids == [episode.episode_id]
 
@@ -2278,6 +2284,9 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     assert updated.brain_version != first_manifest.brain_version
     assert updated.build_mode == "incremental"
     assert updated.catalog_only is True
+    assert updated.catalog_mode_reason == "catalog_incremental_update"
+    assert updated.deprecated_mode_alias is False
+    assert updated.production_eligible is False
     assert updated.last_full_rebuild_at == first_manifest.created_at
     assert updated.updated_episode_id == episode_b.episode_id
     assert updated.accepted_episode_count == 2
