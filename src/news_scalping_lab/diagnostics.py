@@ -24,7 +24,7 @@ from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports
-from news_scalping_lab.utils import file_sha256, relative_to_root
+from news_scalping_lab.utils import file_sha256, relative_to_root, sha256_text
 
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
@@ -1992,6 +1992,263 @@ def _production_record_store_report_findings(
     return findings
 
 
+def _safe_raw_block_filename(name: str) -> str:
+    return name.replace("/", "__").replace("\\", "__")
+
+
+def _imported_raw_block_status(
+    *,
+    root: Path,
+    episode_dir: Path,
+    envelope: dict[str, Any] | None,
+    block_name: str,
+) -> dict[str, Any]:
+    raw_block_paths = envelope.get("raw_block_paths") if isinstance(envelope, dict) else None
+    raw_block_paths = raw_block_paths if isinstance(raw_block_paths, dict) else {}
+    raw_block_hashes = (
+        envelope.get("raw_block_hashes") if isinstance(envelope, dict) else None
+    )
+    raw_block_hashes = raw_block_hashes if isinstance(raw_block_hashes, dict) else {}
+    raw_block_counts = (
+        envelope.get("raw_block_counts") if isinstance(envelope, dict) else None
+    )
+    raw_block_counts = raw_block_counts if isinstance(raw_block_counts, dict) else {}
+    path_value = raw_block_paths.get(block_name)
+    path_text = path_value if isinstance(path_value, str) and path_value else None
+    path_listed = path_text is not None
+    path = (
+        root / path_text
+        if path_text is not None
+        else episode_dir / "raw_blocks" / _safe_raw_block_filename(block_name)
+    )
+    declared_sha256 = raw_block_hashes.get(block_name)
+    declared_sha256 = declared_sha256 if isinstance(declared_sha256, str) else None
+    declared_count = raw_block_counts.get(block_name)
+    declared_count = (
+        declared_count
+        if isinstance(declared_count, int) and not isinstance(declared_count, bool)
+        else None
+    )
+    exists = path.exists()
+    try:
+        observed_sha256 = sha256_text(path.read_text(encoding="utf-8")) if exists else None
+    except OSError:
+        observed_sha256 = None
+    return {
+        "path": relative_to_root(path, root),
+        "path_listed": path_listed,
+        "exists": exists,
+        "declared_sha256": declared_sha256,
+        "observed_sha256": observed_sha256,
+        "hash_matches": (
+            observed_sha256 == declared_sha256
+            if observed_sha256 is not None and declared_sha256 is not None
+            else None
+        ),
+        "declared_count": declared_count,
+    }
+
+
+def _direct_ingest_contract_raw_status(
+    *,
+    root: Path,
+    episode_dir: Path,
+    envelope: dict[str, Any] | None,
+) -> dict[str, Any]:
+    raw_status = _imported_raw_block_status(
+        root=root,
+        episode_dir=episode_dir,
+        envelope=envelope,
+        block_name="direct_ingest_contract.json",
+    )
+    contract: dict[str, Any] | None = None
+    valid_json: bool | None = None
+    if raw_status["exists"] is True:
+        try:
+            contract = _read_json_object(root / raw_status["path"])
+            valid_json = True
+        except ValueError:
+            valid_json = False
+    hard_gate_summary = (
+        contract.get("hard_gate_summary") if isinstance(contract, dict) else None
+    )
+    hard_gate_summary = (
+        hard_gate_summary if isinstance(hard_gate_summary, dict) else {}
+    )
+    fatal_blockers = contract.get("fatal_blockers") if isinstance(contract, dict) else None
+    fatal_blocker_count = len(fatal_blockers) if isinstance(fatal_blockers, list) else None
+    return {
+        **raw_status,
+        "valid_json": valid_json,
+        "schema_version": contract.get("schema_version")
+        if isinstance(contract, dict)
+        else None,
+        "direct_brain_ingest_ready": contract.get("direct_brain_ingest_ready")
+        if isinstance(contract, dict)
+        else None,
+        "brain_eligible": contract.get("brain_eligible")
+        if isinstance(contract, dict)
+        else None,
+        "requires_human_semantic_review": contract.get(
+            "requires_human_semantic_review"
+        )
+        if isinstance(contract, dict)
+        else None,
+        "fatal_blocker_count": fatal_blocker_count,
+        "validation_parity_verified": hard_gate_summary.get(
+            "direct_ingest_contract_validation_parity_verified"
+        ),
+        "count_hash_parity_verified": hard_gate_summary.get(
+            "direct_ingest_contract_count_hash_parity_verified"
+        ),
+    }
+
+
+def _final_semantic_audit_raw_status(
+    *,
+    root: Path,
+    episode_dir: Path,
+    envelope: dict[str, Any] | None,
+) -> dict[str, Any]:
+    raw_status = _imported_raw_block_status(
+        root=root,
+        episode_dir=episode_dir,
+        envelope=envelope,
+        block_name="final_semantic_audit.jsonl",
+    )
+    row_count = 0
+    invalid_line_count = 0
+    fail_count = 0
+    if raw_status["exists"] is True:
+        try:
+            lines = (root / raw_status["path"]).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+            invalid_line_count = 1
+        for line in lines:
+            if not line.strip():
+                continue
+            row_count += 1
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                invalid_line_count += 1
+                continue
+            if not isinstance(payload, dict):
+                invalid_line_count += 1
+                continue
+            if payload.get("semantic_verdict") != "PASS":
+                fail_count += 1
+    return {
+        **raw_status,
+        "row_count": row_count if raw_status["exists"] is True else None,
+        "invalid_line_count": invalid_line_count
+        if raw_status["exists"] is True
+        else None,
+        "fail_count": fail_count if raw_status["exists"] is True else None,
+    }
+
+
+def _imported_direct_ingest_raw_findings(
+    *,
+    inspection: dict[str, Any] | None,
+    contract_status: dict[str, Any],
+    final_audit_status: dict[str, Any],
+) -> list[str]:
+    if not isinstance(inspection, dict):
+        return []
+    findings: list[str] = []
+    if inspection.get("direct_ingest_contract_present") is True:
+        if contract_status["path_listed"] is not True:
+            findings.append(
+                "direct ingest contract raw block path missing from imported envelope"
+            )
+        if contract_status["exists"] is not True:
+            findings.append("direct ingest contract raw block is missing")
+        elif contract_status["valid_json"] is not True:
+            findings.append("direct ingest contract raw block is invalid JSON")
+        if contract_status["declared_sha256"] is None:
+            findings.append(
+                "direct ingest contract raw block hash missing from imported envelope"
+            )
+        elif contract_status["hash_matches"] is not True:
+            findings.append("direct ingest contract raw block hash mismatch")
+        checks = (
+            (
+                "direct ingest contract schema_version",
+                contract_status.get("schema_version"),
+                inspection.get("direct_ingest_contract_schema_version"),
+            ),
+            (
+                "direct ingest contract direct_brain_ingest_ready",
+                contract_status.get("direct_brain_ingest_ready"),
+                inspection.get("direct_brain_ingest_ready"),
+            ),
+            (
+                "direct ingest contract brain_eligible",
+                contract_status.get("brain_eligible"),
+                inspection.get("brain_eligible"),
+            ),
+            (
+                "direct ingest contract requires_human_semantic_review",
+                contract_status.get("requires_human_semantic_review"),
+                inspection.get("requires_human_semantic_review"),
+            ),
+            (
+                "direct ingest contract fatal blocker count",
+                contract_status.get("fatal_blocker_count"),
+                inspection.get("direct_ingest_fatal_blocker_count"),
+            ),
+            (
+                "direct ingest contract validation parity",
+                contract_status.get("validation_parity_verified"),
+                inspection.get("direct_ingest_contract_validation_parity_verified"),
+            ),
+            (
+                "direct ingest contract count/hash parity",
+                contract_status.get("count_hash_parity_verified"),
+                inspection.get("direct_ingest_contract_count_hash_parity_verified"),
+            ),
+        )
+        for label, observed, expected in checks:
+            if observed != expected:
+                findings.append(f"{label}={observed!r} expected {expected!r}")
+    if inspection.get("final_semantic_audit_present") is True:
+        if final_audit_status["path_listed"] is not True:
+            findings.append(
+                "final semantic audit raw block path missing from imported envelope"
+            )
+        if final_audit_status["exists"] is not True:
+            findings.append("final semantic audit raw block is missing")
+        if final_audit_status["declared_sha256"] is None:
+            findings.append(
+                "final semantic audit raw block hash missing from imported envelope"
+            )
+        elif final_audit_status["hash_matches"] is not True:
+            findings.append("final semantic audit raw block hash mismatch")
+        expected_count = inspection.get("final_semantic_audit_count")
+        if (
+            isinstance(expected_count, int)
+            and not isinstance(expected_count, bool)
+            and final_audit_status.get("row_count") != expected_count
+        ):
+            findings.append(
+                "final semantic audit raw block count does not match real smoke"
+            )
+        expected_fail_count = inspection.get("final_semantic_audit_fail_count")
+        if (
+            isinstance(expected_fail_count, int)
+            and not isinstance(expected_fail_count, bool)
+            and final_audit_status.get("fail_count") != expected_fail_count
+        ):
+            findings.append(
+                "final semantic audit raw block fail count does not match real smoke"
+            )
+        if final_audit_status.get("invalid_line_count") not in {None, 0}:
+            findings.append("final semantic audit raw block has invalid rows")
+    return findings
+
+
 def _real_bundle_import_status(
     settings: Settings,
     real_bundle_smoke: dict[str, Any],
@@ -2321,6 +2578,23 @@ def _real_bundle_import_status(
             record_file_stats["record_counts_by_type"] != expected_record_counts_by_type
         ):
             findings.append("record JSONL type counts do not match real smoke")
+    direct_contract_raw_status = _direct_ingest_contract_raw_status(
+        root=settings.project_root,
+        episode_dir=episode_dir,
+        envelope=envelope,
+    )
+    final_semantic_audit_raw_status = _final_semantic_audit_raw_status(
+        root=settings.project_root,
+        episode_dir=episode_dir,
+        envelope=envelope,
+    )
+    findings.extend(
+        _imported_direct_ingest_raw_findings(
+            inspection=inspection,
+            contract_status=direct_contract_raw_status,
+            final_audit_status=final_semantic_audit_raw_status,
+        )
+    )
     if (
         normalized_index is not None
         and record_manifest is not None
@@ -2402,6 +2676,57 @@ def _real_bundle_import_status(
         "observed_record_ids": record_file_stats["record_ids"],
         "duplicate_record_ids": record_file_stats["duplicate_record_ids"],
         "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
+        "direct_ingest_contract_raw_block_path": direct_contract_raw_status["path"],
+        "direct_ingest_contract_raw_block_path_listed": direct_contract_raw_status[
+            "path_listed"
+        ],
+        "direct_ingest_contract_raw_block_exists": direct_contract_raw_status[
+            "exists"
+        ],
+        "direct_ingest_contract_raw_block_hash_matches": direct_contract_raw_status[
+            "hash_matches"
+        ],
+        "direct_ingest_contract_raw_block_valid_json": direct_contract_raw_status[
+            "valid_json"
+        ],
+        "direct_ingest_contract_schema_version": direct_contract_raw_status[
+            "schema_version"
+        ],
+        "direct_brain_ingest_ready": direct_contract_raw_status[
+            "direct_brain_ingest_ready"
+        ],
+        "brain_eligible": direct_contract_raw_status["brain_eligible"],
+        "requires_human_semantic_review": direct_contract_raw_status[
+            "requires_human_semantic_review"
+        ],
+        "direct_ingest_fatal_blocker_count": direct_contract_raw_status[
+            "fatal_blocker_count"
+        ],
+        "direct_ingest_contract_validation_parity_verified": (
+            direct_contract_raw_status["validation_parity_verified"]
+        ),
+        "direct_ingest_contract_count_hash_parity_verified": (
+            direct_contract_raw_status["count_hash_parity_verified"]
+        ),
+        "final_semantic_audit_raw_block_path": final_semantic_audit_raw_status[
+            "path"
+        ],
+        "final_semantic_audit_raw_block_path_listed": (
+            final_semantic_audit_raw_status["path_listed"]
+        ),
+        "final_semantic_audit_raw_block_exists": final_semantic_audit_raw_status[
+            "exists"
+        ],
+        "final_semantic_audit_raw_block_hash_matches": (
+            final_semantic_audit_raw_status["hash_matches"]
+        ),
+        "final_semantic_audit_count": final_semantic_audit_raw_status["row_count"],
+        "final_semantic_audit_fail_count": final_semantic_audit_raw_status[
+            "fail_count"
+        ],
+        "final_semantic_audit_invalid_line_count": (
+            final_semantic_audit_raw_status["invalid_line_count"]
+        ),
         "passed": not findings,
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),

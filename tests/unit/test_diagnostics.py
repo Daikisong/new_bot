@@ -3270,6 +3270,71 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert production["real_bundle_import"]["quarantined_record_count"] == 0
     assert (
         production["real_bundle_import"][
+            "direct_ingest_contract_raw_block_path_listed"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"]["direct_ingest_contract_raw_block_exists"]
+        is True
+    )
+    assert (
+        production["real_bundle_import"][
+            "direct_ingest_contract_raw_block_hash_matches"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"][
+            "direct_ingest_contract_raw_block_valid_json"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"]["direct_ingest_contract_schema_version"]
+        == "nslab.direct_ingest_contract.v1"
+    )
+    assert production["real_bundle_import"]["direct_brain_ingest_ready"] is True
+    assert production["real_bundle_import"]["brain_eligible"] is True
+    assert (
+        production["real_bundle_import"]["requires_human_semantic_review"]
+        is False
+    )
+    assert production["real_bundle_import"]["direct_ingest_fatal_blocker_count"] == 0
+    assert (
+        production["real_bundle_import"][
+            "direct_ingest_contract_validation_parity_verified"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"][
+            "direct_ingest_contract_count_hash_parity_verified"
+        ]
+        is True
+    )
+    assert (
+        production["real_bundle_import"]["final_semantic_audit_raw_block_path_listed"]
+        is True
+    )
+    assert (
+        production["real_bundle_import"]["final_semantic_audit_raw_block_exists"]
+        is True
+    )
+    assert (
+        production["real_bundle_import"][
+            "final_semantic_audit_raw_block_hash_matches"
+        ]
+        is True
+    )
+    assert production["real_bundle_import"]["final_semantic_audit_count"] == 7
+    assert production["real_bundle_import"]["final_semantic_audit_fail_count"] == 0
+    assert (
+        production["real_bundle_import"]["final_semantic_audit_invalid_line_count"]
+        == 0
+    )
+    assert (
+        production["real_bundle_import"][
             "validation_report_raw_normalized_record_count_matches"
         ]
         is True
@@ -3292,6 +3357,109 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert not any(
         finding.startswith("real_bundle_import:")
         for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_real_import_missing_direct_ingest_raw_blocks(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _valid_v11_bundle_inspection(path),
+    )
+    inspection = _valid_v11_bundle_inspection(bundle)
+    episode_id = str(inspection["episode_id"])
+    episode_dir = tmp_path / "research" / "episodes" / episode_id
+    episode_dir.mkdir(parents=True)
+    write_json(
+        episode_dir / "bundle_envelope.json",
+        {
+            "bundle_schema_version": "nslab.research_bundle.v11",
+            "bundle_status": "ACCEPT_FULL",
+            "blind_valid": True,
+            "raw_bundle_sha256": inspection["raw_bundle_sha256"],
+        },
+    )
+    (episode_dir / "original_bundle.md").write_text(
+        bundle.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    record_path = _write_real_smoke_records(
+        tmp_path,
+        episode_id,
+        inspection,
+        include_direct_ingest_raw_blocks=False,
+    )
+    record_ids = _real_smoke_record_ids(inspection)
+    write_json(
+        episode_dir / "normalized_episode_index.json",
+        {
+            "record_ids": record_ids,
+            "record_count_by_type": inspection["record_counts_by_type"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "source_ids": [_real_smoke_source_id(episode_id)],
+        },
+    )
+    _write_real_smoke_validation_report(tmp_path, episode_id, inspection)
+    write_json(
+        tmp_path / "memory" / "record_manifests" / f"{episode_id}.json",
+        {
+            "accepted": True,
+            "record_count": inspection["normalized_record_count"],
+            "training_eligible_record_count": inspection[
+                "training_eligible_record_count"
+            ],
+            "record_counts_by_type": inspection["record_counts_by_type"],
+            "record_ids": record_ids,
+            "records_file": record_path.relative_to(tmp_path).as_posix(),
+            "records_sha256": file_sha256(record_path),
+        },
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["real_bundle_smoke"]["status"] == "passed"
+    assert production["real_bundle_import"]["passed"] is False
+    assert (
+        production["real_bundle_import"][
+            "direct_ingest_contract_raw_block_path_listed"
+        ]
+        is False
+    )
+    assert (
+        production["real_bundle_import"]["direct_ingest_contract_raw_block_exists"]
+        is False
+    )
+    assert (
+        production["real_bundle_import"]["final_semantic_audit_raw_block_path_listed"]
+        is False
+    )
+    assert (
+        production["real_bundle_import"]["final_semantic_audit_raw_block_exists"]
+        is False
+    )
+    assert (
+        "real_bundle_import: direct ingest contract raw block path missing from imported envelope"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: direct ingest contract raw block is missing"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: final semantic audit raw block path missing from imported envelope"
+        in production["findings"]
+    )
+    assert (
+        "real_bundle_import: final semantic audit raw block is missing"
+        in production["findings"]
     )
 
 
@@ -4126,9 +4294,13 @@ def _write_real_smoke_records(
     root: Path,
     episode_id: str,
     inspection: dict[str, object],
+    *,
+    include_direct_ingest_raw_blocks: bool = True,
 ) -> Path:
     episode_dir = root / "research" / "episodes" / episode_id
     episode_dir.mkdir(parents=True, exist_ok=True)
+    raw_blocks_dir = episode_dir / "raw_blocks"
+    raw_blocks_dir.mkdir(parents=True, exist_ok=True)
     record_path = root / "memory" / "records" / f"{episode_id}.jsonl"
     record_path.parent.mkdir(parents=True, exist_ok=True)
     record_counts_by_type = inspection["record_counts_by_type"]
@@ -4185,8 +4357,8 @@ def _write_real_smoke_records(
             )
             raw_rows.append(raw_payload)
             record_index += 1
-    brain_delta_path = episode_dir / "brain_delta.jsonl"
-    source_ledger_path = episode_dir / "source_ledger.jsonl"
+    brain_delta_path = raw_blocks_dir / "brain_delta.jsonl"
+    source_ledger_path = raw_blocks_dir / "source_ledger.jsonl"
     brain_delta_path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in raw_rows),
         encoding="utf-8",
@@ -4195,6 +4367,66 @@ def _write_real_smoke_records(
         json.dumps({"source_id": source_id}, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    raw_block_paths = {
+        "brain_delta.jsonl": brain_delta_path,
+        "source_ledger.jsonl": source_ledger_path,
+    }
+    if include_direct_ingest_raw_blocks:
+        fatal_blocker_count = inspection["direct_ingest_fatal_blocker_count"]
+        final_semantic_audit_count = inspection["final_semantic_audit_count"]
+        final_semantic_audit_fail_count = inspection["final_semantic_audit_fail_count"]
+        assert isinstance(fatal_blocker_count, int)
+        assert isinstance(final_semantic_audit_count, int)
+        assert isinstance(final_semantic_audit_fail_count, int)
+        direct_ingest_contract_path = raw_blocks_dir / "direct_ingest_contract.json"
+        final_semantic_audit_path = raw_blocks_dir / "final_semantic_audit.jsonl"
+        write_json(
+            direct_ingest_contract_path,
+            {
+                "schema_version": inspection[
+                    "direct_ingest_contract_schema_version"
+                ],
+                "direct_brain_ingest_ready": inspection[
+                    "direct_brain_ingest_ready"
+                ],
+                "brain_eligible": inspection["brain_eligible"],
+                "requires_human_semantic_review": inspection[
+                    "requires_human_semantic_review"
+                ],
+                "fatal_blockers": [
+                    f"fixture-blocker-{index}"
+                    for index in range(fatal_blocker_count)
+                ],
+                "hard_gate_summary": {
+                    "direct_ingest_contract_validation_parity_verified": inspection[
+                        "direct_ingest_contract_validation_parity_verified"
+                    ],
+                    "direct_ingest_contract_count_hash_parity_verified": inspection[
+                        "direct_ingest_contract_count_hash_parity_verified"
+                    ],
+                },
+            },
+        )
+        final_semantic_audit_path.write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "candidate_id": f"CAND-{index}",
+                        "semantic_verdict": (
+                            "FAIL"
+                            if index < final_semantic_audit_fail_count
+                            else "PASS"
+                        ),
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+                for index in range(final_semantic_audit_count)
+            ),
+            encoding="utf-8",
+        )
+        raw_block_paths["direct_ingest_contract.json"] = direct_ingest_contract_path
+        raw_block_paths["final_semantic_audit.jsonl"] = final_semantic_audit_path
     record_path.write_text(
         "".join(record.model_dump_json() + "\n" for record in records),
         encoding="utf-8",
@@ -4205,20 +4437,24 @@ def _write_real_smoke_records(
     envelope.update(
         {
             "raw_block_paths": {
-                "brain_delta.jsonl": brain_delta_path.relative_to(root).as_posix(),
-                "source_ledger.jsonl": source_ledger_path.relative_to(root).as_posix(),
+                name: path.relative_to(root).as_posix()
+                for name, path in sorted(raw_block_paths.items())
             },
             "raw_block_hashes": {
-                "brain_delta.jsonl": sha256_text(
-                    brain_delta_path.read_text(encoding="utf-8")
-                ),
-                "source_ledger.jsonl": sha256_text(
-                    source_ledger_path.read_text(encoding="utf-8")
-                ),
+                name: sha256_text(path.read_text(encoding="utf-8"))
+                for name, path in sorted(raw_block_paths.items())
             },
             "raw_block_counts": {
-                "brain_delta.jsonl": len(raw_rows),
-                "source_ledger.jsonl": 1,
+                name: (
+                    sum(
+                        1
+                        for line in path.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    )
+                    if name.endswith(".jsonl")
+                    else 1
+                )
+                for name, path in sorted(raw_block_paths.items())
             },
         }
     )
