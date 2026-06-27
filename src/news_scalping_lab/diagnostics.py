@@ -3715,6 +3715,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
             "invalid_weight_validation_entries": [],
+            "missing_weight_diagnostic_fields": [],
+            "invalid_weight_diagnostic_fields": [],
         }
     source_record_ids = sorted(record.record_id for record in source_records)
     training_eligible_record_ids = sorted(
@@ -3800,6 +3802,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "missing_weight_validation_kinds": [],
             "unexpected_weight_validation_kinds": [],
             "invalid_weight_validation_entries": [],
+            "missing_weight_diagnostic_fields": [],
+            "invalid_weight_diagnostic_fields": [],
         }
 
     findings: list[str] = []
@@ -4352,6 +4356,26 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     duplicate_issuer_day_keys = _string_list(
         diagnostics.get("duplicate_issuer_day_keys")
     )
+    weight_diagnostic_count_fields = (
+        "duplicate_issuer_day_count",
+        "issuer_day_weight_sum_mismatch_count",
+        "direct_event_weight_sum_mismatch_count",
+    )
+    weight_diagnostic_map_fields = (
+        "issuer_day_weight_sum_mismatches",
+        "direct_event_weight_sum_mismatches",
+    )
+    missing_weight_diagnostic_fields = [
+        field
+        for field in (*weight_diagnostic_count_fields, *weight_diagnostic_map_fields)
+        if diagnostics and field not in diagnostics
+    ]
+    invalid_weight_diagnostic_fields = [
+        field
+        for field in weight_diagnostic_count_fields
+        if field in diagnostics
+        and not _non_negative_int_field_valid(diagnostics.get(field))
+    ]
     if duplicate_issuer_day_count is not None and duplicate_issuer_day_count != 0:
         findings.append("training export has duplicate issuer-day samples")
     issuer_weight_mismatch_count = _int_from_mapping(
@@ -4361,6 +4385,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     issuer_weight_mismatches = _numeric_map(
         diagnostics.get("issuer_day_weight_sum_mismatches")
     )
+    invalid_weight_diagnostic_fields.extend(
+        field
+        for field in weight_diagnostic_map_fields
+        if field in diagnostics and not _numeric_map_field_valid(diagnostics.get(field))
+    )
+    for field in missing_weight_diagnostic_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_weight_diagnostic_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
     if (
         issuer_weight_mismatch_count is not None
         and issuer_weight_mismatch_count != 0
@@ -4451,6 +4484,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "missing_weight_validation_kinds": missing_weight_validation_kinds,
         "unexpected_weight_validation_kinds": unexpected_weight_validation_kinds,
         "invalid_weight_validation_entries": invalid_weight_validation_entries,
+        "missing_weight_diagnostic_fields": missing_weight_diagnostic_fields,
+        "invalid_weight_diagnostic_fields": invalid_weight_diagnostic_fields,
         "duplicate_issuer_day_count": duplicate_issuer_day_count,
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
         "issuer_day_weight_sum_mismatch_count": issuer_weight_mismatch_count,
@@ -7778,6 +7813,16 @@ def _numeric_map(value: object) -> dict[str, float]:
         for key, item in value.items()
         if isinstance(key, str) and isinstance(item, int | float) and not isinstance(item, bool)
     }
+
+
+def _numeric_map_field_valid(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(key, str)
+        and bool(key)
+        and isinstance(item, int | float)
+        and not isinstance(item, bool)
+        for key, item in value.items()
+    )
 
 
 def _duplicate_strings(values: list[str]) -> list[str]:
