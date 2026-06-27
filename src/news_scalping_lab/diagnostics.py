@@ -3667,6 +3667,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "source_record_hashes": {},
+            "record_store_source_record_hashes": {},
+            "missing_hash_fields": [],
+            "invalid_hash_fields": [],
             "skipped_record_reasons_by_record_id": {},
             "unique_skipped_record_reasons_by_record_id": {},
             "skipped_record_reason_counts": {},
@@ -3694,6 +3698,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             Counter(record.training_target or "UNKNOWN" for record in source_records).items()
         )
     )
+    record_store_source_record_hashes = {
+        record.record_id: record.normalized_payload_sha256 for record in source_records
+    }
     source_record_count = len(source_record_ids)
     if source_record_count == 0:
         return {
@@ -3716,6 +3723,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "source_record_hashes": {},
+            "record_store_source_record_hashes": {},
+            "missing_hash_fields": [],
+            "invalid_hash_fields": [],
             "skipped_record_reasons_by_record_id": {},
             "unique_skipped_record_reasons_by_record_id": {},
             "skipped_record_reason_counts": {},
@@ -3782,6 +3793,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "source_record_hash_count",
     )
+    source_record_hashes = _string_map(diagnostics.get("source_record_hashes"))
+    missing_hash_fields = [
+        field for field in ("source_record_hashes",) if diagnostics and field not in diagnostics
+    ]
+    invalid_hash_fields = [
+        field
+        for field in ("source_record_hashes",)
+        if field in diagnostics
+        and not _sha256_string_map_field_valid(diagnostics.get(field))
+    ]
+    for field in missing_hash_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_hash_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
     unique_training_eligible_count = _int_from_mapping(
         diagnostics,
         "unique_training_eligible_record_count",
@@ -3892,6 +3917,30 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     if source_record_hash_count != source_record_count:
         findings.append(
             "training export source record hash count does not match current records"
+        )
+    if (
+        diagnostics
+        and "source_record_hashes" not in missing_hash_fields
+        and "source_record_hashes" not in invalid_hash_fields
+        and set(source_record_hashes) != set(record_store_source_record_hashes)
+    ):
+        findings.append(
+            "training export source_record_hashes IDs do not match current records"
+        )
+    mismatched_hash_ids = sorted(
+        record_id
+        for record_id, digest in source_record_hashes.items()
+        if record_store_source_record_hashes.get(record_id) is not None
+        and record_store_source_record_hashes[record_id] != digest
+    )
+    if (
+        diagnostics
+        and "source_record_hashes" not in invalid_hash_fields
+        and mismatched_hash_ids
+    ):
+        findings.append(
+            "training export source_record_hashes mismatch current records: "
+            + ", ".join(mismatched_hash_ids)
         )
     if unique_source_record_count is not None:
         if (
@@ -4028,6 +4077,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
         "invalid_record_id_fields": invalid_record_id_fields,
+        "source_record_hashes": source_record_hashes,
+        "record_store_source_record_hashes": record_store_source_record_hashes,
+        "missing_hash_fields": missing_hash_fields,
+        "invalid_hash_fields": invalid_hash_fields,
         "invalid_reason_fields": invalid_reason_fields,
         "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
         "unique_skipped_record_reasons_by_record_id": (
@@ -7229,6 +7282,32 @@ def _string_list(value: object) -> list[str]:
 
 def _string_list_field_valid(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _string_map(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        item_key: item_value
+        for item_key, item_value in sorted(value.items())
+        if isinstance(item_key, str) and isinstance(item_value, str)
+    }
+
+
+def _sha256_string_map_field_valid(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(item_key, str)
+        and bool(item_key)
+        and isinstance(item_value, str)
+        and _sha256_digest_valid(item_value)
+        for item_key, item_value in value.items()
+    )
+
+
+def _sha256_digest_valid(value: str) -> bool:
+    return len(value) == 64 and all(
+        char in "0123456789abcdef" for char in value
+    )
 
 
 def _string_list_dict(value: object) -> dict[str, list[str]]:
