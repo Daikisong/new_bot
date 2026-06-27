@@ -2758,6 +2758,87 @@ def test_final_synthesis_summary_counts_record_id_context() -> None:
     assert summary["counterexample_record_count"] == 1
 
 
+def test_provenance_audit_rejects_missing_final_synthesis_required_inputs(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    prediction = {
+        "blind_artifact_sha256": "abc123",
+        "context_manifest_id": "RUN-linked",
+        "blind_analysis": _blind_analysis_with_provenance(),
+        "dominant_sectors": [_sector_with_provenance()],
+        "candidates": [_candidate_with_provenance()],
+    }
+    write_json(tmp_path / "predictions" / "2030-01-10.json", prediction)
+    report_text = _preopen_report_text()
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        report_text, encoding="utf-8"
+    )
+    run_output_dir = tmp_path / "runs" / "checkpoints" / "output_artifacts" / "RUN-linked"
+    run_prediction_path = run_output_dir / "blind_prediction.json"
+    run_report_path = run_output_dir / "preopen_report.md"
+    write_json(run_prediction_path, prediction)
+    run_report_path.write_text(report_text, encoding="utf-8")
+    final_payload = {
+        "required_inputs": ["current_news", "missing_input"],
+        "current_news": ["pre-cutoff news"],
+    }
+    final_context_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "final_synthesis_context"
+        / "RUN-linked"
+        / "final_synthesis_context.json"
+    )
+    write_json(
+        final_context_path,
+        {
+            "schema_version": "nslab.final_synthesis_context.v1",
+            "run_id": "RUN-linked",
+            "prompt_version": "synthesis.final.v1",
+            "required_inputs": final_payload["required_inputs"],
+            "payload_sha256": sha256_text(canonical_json(final_payload)),
+            "input_summary": final_synthesis_input_summary(final_payload),
+            "payload": final_payload,
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "trade_date": "2030-01-10",
+            "cutoff_at": "2030-01-10T08:59:59+09:00",
+            "prompt_hashes": {"blind_analysis": "def456"},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+            "prediction_artifact": run_prediction_path.relative_to(tmp_path).as_posix(),
+            "prediction_sha256": file_sha256(run_prediction_path),
+            "report_artifact": run_report_path.relative_to(tmp_path).as_posix(),
+            "report_sha256": sha256_text(run_report_path.read_text(encoding="utf-8")),
+            "final_synthesis_context_artifact": final_context_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "final_synthesis_context_sha256": sha256_text(
+                final_context_path.read_text(encoding="utf-8")
+            ),
+            "final_synthesis_context_summary": final_synthesis_input_summary(
+                final_payload
+            ),
+        },
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert not result["passed"]
+    assert (
+        "2030-01-10.json: final_synthesis_context missing required input fields: "
+        "missing_input"
+    ) in result["findings"]
+
+
 def test_provenance_audit_rejects_final_synthesis_future_record_ids(
     tmp_path: Path,
 ) -> None:
@@ -3429,6 +3510,7 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     final_payload = {
         "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS),
         "current_news": ["pre-cutoff news"],
+        "open_world_first_analysis": [],
         "web_research": {
             "queries": ["second cutoff safe source", "cutoff safe source"],
             "included_sources": ["WEB-2", "WEB-1"],
@@ -3436,6 +3518,12 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "excluded_after_cutoff_source_ids": [],
         },
         "event_clusters": [event_cluster],
+        "global_brain": [],
+        "all_shard_brains": [],
+        "all_shard_contributions": [],
+        "record_level_shard_contributions": [],
+        "retrieved_raw_episodes": [],
+        "retrieved_records": [],
         "additional_semantic_retrieval": {
             "plan_artifact": semantic_plan_path.relative_to(tmp_path).as_posix(),
             "artifact": semantic_path.relative_to(tmp_path).as_posix(),
@@ -3450,12 +3538,21 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         },
         "semantic_retrieval_record_ids": [],
         "excluded_semantic_retrieval_record_ids": [],
+        "positive_cases": [],
+        "negative_cases": [],
+        "positive_record_ids": [],
+        "negative_record_ids": [],
+        "counterexamples": [],
+        "counterexample_records": [],
         "candidate_research": {"candidates": prediction["candidates"]},
         "news_novelty_review": news_novelty_review,
         "open_world_candidate_expansion": candidate_expansion,
         "candidate_web_checks": [candidate_web_context],
         "candidate_verification": candidate_verification,
         "red_team_output": red_team,
+        "d_minus_one_market_data": {},
+        "company_memory": [],
+        "market_memory": [],
     }
     final_context_path = (
         tmp_path

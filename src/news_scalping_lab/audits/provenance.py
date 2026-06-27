@@ -5402,6 +5402,13 @@ def _check_manifest_final_synthesis_context_artifact(
         findings.append(
             f"{prediction_path.name}: final_synthesis_context required_inputs mismatch"
         )
+    else:
+        _check_final_synthesis_required_input_fields(
+            prediction_path,
+            context_payload,
+            required_inputs,
+            findings,
+        )
     expected_summary = final_synthesis_input_summary(context_payload)
     if payload.get("input_summary") != expected_summary:
         findings.append(
@@ -5433,6 +5440,25 @@ def _check_manifest_final_synthesis_context_artifact(
         context_payload,
         findings,
     )
+
+
+def _check_final_synthesis_required_input_fields(
+    prediction_path: Path,
+    context_payload: dict[str, Any],
+    required_inputs: list[str],
+    findings: list[str],
+) -> None:
+    missing_inputs = [
+        required_input
+        for required_input in required_inputs
+        if required_input not in context_payload
+    ]
+    if missing_inputs:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context missing required "
+            "input fields: "
+            + ", ".join(missing_inputs)
+        )
 
 
 def _check_final_synthesis_manifest_record_ids(
