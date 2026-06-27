@@ -4154,6 +4154,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "missing_current_training_eligible_record_ids": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
             "expected_source_record_hashes": {},
@@ -4252,6 +4253,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_training_eligible_record_ids": [],
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
+            "missing_current_training_eligible_record_ids": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
             "expected_source_record_hashes": {},
@@ -4736,6 +4738,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "training export unique training-eligible record IDs include IDs "
             "not in current records"
         )
+    missing_current_training_eligible_ids = sorted(
+        set(training_eligible_record_ids) - set(unique_training_eligible_ids)
+    )
+    if missing_current_training_eligible_ids:
+        findings.append(
+            "training export unique training-eligible record IDs are missing "
+            "current eligible records: "
+            + ", ".join(missing_current_training_eligible_ids)
+        )
     if set(unique_exported_ids) - set(training_eligible_record_ids):
         findings.append(
             "training export exported record IDs include ineligible current records"
@@ -5079,6 +5090,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_ids": unique_training_eligible_ids,
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
+        "missing_current_training_eligible_record_ids": (
+            missing_current_training_eligible_ids
+        ),
         "invalid_record_id_fields": invalid_record_id_fields,
         "source_record_hashes": source_record_hashes,
         "record_store_source_record_hashes": record_store_source_record_hashes,
