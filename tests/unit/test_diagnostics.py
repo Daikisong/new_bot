@@ -2516,6 +2516,52 @@ def test_production_readiness_rejects_training_export_unique_record_id_mismatch(
     )
 
 
+def test_production_readiness_rejects_non_string_training_export_record_ids(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["unique_exported_record_ids"] = ["BRAIN-TRAIN-ISSUER", 7]
+    tampered_report["unique_skipped_record_ids"] = [False]
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["invalid_record_id_fields"] == [
+        "unique_exported_record_ids",
+        "unique_skipped_record_ids",
+    ]
+    assert (
+        "training export diagnostics unique_exported_record_ids is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics unique_skipped_record_ids is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics unique_exported_record_ids is invalid"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_direct_event_weight_mismatch(
     tmp_path,
 ) -> None:

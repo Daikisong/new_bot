@@ -3790,6 +3790,18 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unique_skipped_ids = _string_list(
         diagnostics.get("unique_skipped_record_ids")
     )
+    invalid_record_id_fields = [
+        field
+        for field in (
+            "unique_source_record_ids",
+            "unique_training_eligible_record_ids",
+            "unique_exported_record_ids",
+            "unique_skipped_record_ids",
+        )
+        if field in diagnostics and not _string_list_field_valid(diagnostics.get(field))
+    ]
+    for field in invalid_record_id_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
     skipped_record_reasons_by_record_id = _string_list_dict(
         diagnostics.get("skipped_record_reasons_by_record_id")
     )
@@ -3948,6 +3960,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_ids": unique_training_eligible_ids,
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
+        "invalid_record_id_fields": invalid_record_id_fields,
         "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
         "unique_skipped_record_reasons_by_record_id": (
             unique_skipped_record_reasons_by_record_id
