@@ -14,7 +14,7 @@ from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text, write_json
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
 
 
@@ -411,6 +411,35 @@ def test_research_migrate_legacy_writes_catalog_only_diagnostics(
     assert report["dropped_record_count"] == 0
     assert report["quarantined_record_count"] == 0
     assert report["record_counts_by_type"] == {"memory_claim": 1}
+    source_path = tmp_path / "research" / "accepted" / "EP-legacy-cli.json"
+    raw_text = source_path.read_text(encoding="utf-8")
+    envelope_path = (
+        tmp_path / "research" / "episodes" / "EP-legacy-cli" / "bundle_envelope.json"
+    )
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    assert envelope["raw_bundle_sha256"] == file_sha256(source_path)
+    assert envelope["raw_block_hashes"] == {
+        "legacy_research_episode.json": sha256_text(raw_text)
+    }
+
+    envelope["raw_bundle_sha256"] = "stale-bundle-hash"
+    envelope["raw_block_hashes"]["legacy_research_episode.json"] = "stale-block-hash"
+    write_json(envelope_path, envelope)
+
+    rerun = CliRunner().invoke(app, ["research", "migrate-legacy"])
+
+    assert rerun.exit_code == 0, rerun.output
+    repaired_report = json.loads(
+        (tmp_path / "diagnostics" / "migration_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repaired_envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    assert repaired_report["repaired_legacy_envelope_count"] == 1
+    assert repaired_envelope["raw_bundle_sha256"] == file_sha256(source_path)
+    assert repaired_envelope["raw_block_hashes"] == {
+        "legacy_research_episode.json": sha256_text(raw_text)
+    }
 
 
 def test_analyze_cli_reports_analysis_errors(

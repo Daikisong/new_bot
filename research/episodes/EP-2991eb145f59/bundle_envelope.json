@@ -15,12 +15,12 @@
     "legacy_research_episode.json": 1
   },
   "raw_block_hashes": {
-    "legacy_research_episode.json": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5"
+    "legacy_research_episode.json": "4d957f90d30ee6304ab794ce9a56ca3868de2559cd4fb3b16fc7ef2500136336"
   },
   "raw_block_paths": {
     "legacy_research_episode.json": "research/episodes/EP-2991eb145f59/raw_blocks/legacy_research_episode.json"
   },
-  "raw_bundle_sha256": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
+  "raw_bundle_sha256": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
   "record_manifest_path": "memory/record_manifests/EP-2991eb145f59.json",
   "schema_version": "nslab.research_bundle_envelope.v1",
   "trade_date": "2026-06-24"

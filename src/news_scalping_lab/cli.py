@@ -88,6 +88,7 @@ from news_scalping_lab.utils import (
     read_json,
     relative_to_root,
     sha256_text,
+    write_json,
 )
 from news_scalping_lab.warehouse import WarehouseStore
 
@@ -673,10 +674,12 @@ def research_migrate_legacy() -> None:
     migrated: list[str] = []
     skipped: list[str] = []
     skipped_existing_record_count = 0
+    repaired_legacy_envelope_count = 0
     record_counts_by_type: Counter[str] = Counter()
     training_eligible_record_count = 0
     for episode in accepted_episodes:
         existing_records = record_store.read_episode_records(episode.episode_id)
+        source_path = settings.project_root / "research" / "accepted" / f"{episode.episode_id}.json"
         if existing_records:
             skipped.append(episode.episode_id)
             skipped_existing_record_count += len(existing_records)
@@ -684,18 +687,29 @@ def research_migrate_legacy() -> None:
                 record_counts_by_type[existing_record.record_type] += 1
                 if existing_record.training_eligible:
                     training_eligible_record_count += 1
+            if _repair_legacy_migration_raw_hashes(
+                settings.project_root,
+                episode_id=episode.episode_id,
+                source_path=source_path,
+            ):
+                repaired_legacy_envelope_count += 1
             continue
         record = _legacy_episode_record(episode)
-        envelope = _legacy_record_envelope(episode, record)
+        raw_text = source_path.read_text(encoding="utf-8")
+        envelope = _legacy_record_envelope(
+            episode,
+            record,
+            source_sha256=file_sha256(source_path),
+            raw_block_sha256=sha256_text(raw_text),
+        )
         index = _legacy_normalized_index(episode, record)
-        source_path = settings.project_root / "research" / "accepted" / f"{episode.episode_id}.json"
         try:
             record_store.store_bundle(
                 source_path=source_path,
                 envelope=envelope,
                 index=index,
                 records=[record],
-                raw_blocks={"legacy_research_episode.json": source_path.read_text(encoding="utf-8")},
+                raw_blocks={"legacy_research_episode.json": raw_text},
                 validation_report={
                     "schema_version": "nslab.legacy_migration_report.v1",
                     "passed": True,
@@ -722,6 +736,7 @@ def research_migrate_legacy() -> None:
         "normalized_record_count": normalized_record_count,
         "migrated_record_count": migrated_record_count,
         "skipped_existing_record_count": skipped_existing_record_count,
+        "repaired_legacy_envelope_count": repaired_legacy_envelope_count,
         "training_eligible_record_count": training_eligible_record_count,
         "ineligible_record_count": normalized_record_count - training_eligible_record_count,
         "dropped_record_count": 0,
@@ -738,6 +753,47 @@ def research_migrate_legacy() -> None:
         report_payload,
     )
     _echo({"migrated_episode_ids": migrated, "skipped_episode_ids": skipped})
+
+
+def _repair_legacy_migration_raw_hashes(
+    root: Path,
+    *,
+    episode_id: str,
+    source_path: Path,
+) -> bool:
+    envelope_path = root / "research" / "episodes" / episode_id / "bundle_envelope.json"
+    raw_block_path = (
+        root
+        / "research"
+        / "episodes"
+        / episode_id
+        / "raw_blocks"
+        / "legacy_research_episode.json"
+    )
+    if not envelope_path.exists() or not raw_block_path.exists() or not source_path.exists():
+        return False
+    try:
+        envelope = read_json(envelope_path)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(envelope, dict) or envelope.get("adapter_name") != "legacy-migration":
+        return False
+    raw_block_hashes = envelope.get("raw_block_hashes")
+    if not isinstance(raw_block_hashes, dict):
+        raw_block_hashes = {}
+    expected_bundle_hash = file_sha256(source_path)
+    expected_block_hash = sha256_text(raw_block_path.read_text(encoding="utf-8"))
+    changed = False
+    if envelope.get("raw_bundle_sha256") != expected_bundle_hash:
+        envelope["raw_bundle_sha256"] = expected_bundle_hash
+        changed = True
+    if raw_block_hashes.get("legacy_research_episode.json") != expected_block_hash:
+        raw_block_hashes["legacy_research_episode.json"] = expected_block_hash
+        envelope["raw_block_hashes"] = raw_block_hashes
+        changed = True
+    if changed:
+        write_json(envelope_path, envelope)
+    return changed
 
 
 @research_app.command("import-batch")
@@ -6769,6 +6825,9 @@ def _legacy_episode_record(episode: Any) -> BrainRecordEnvelope:
 def _legacy_record_envelope(
     episode: Any,
     record: BrainRecordEnvelope,
+    *,
+    source_sha256: str,
+    raw_block_sha256: str,
 ) -> ResearchBundleEnvelope:
     return ResearchBundleEnvelope(
         bundle_schema_version="nslab.legacy_research_episode.v1",
@@ -6780,8 +6839,8 @@ def _legacy_record_envelope(
         available_from=episode.available_from,
         bundle_status="LEGACY_ACCEPTED",
         blind_valid=True,
-        raw_bundle_sha256=record.normalized_payload_sha256,
-        raw_block_hashes={"legacy_research_episode.json": record.normalized_payload_sha256},
+        raw_bundle_sha256=source_sha256,
+        raw_block_hashes={"legacy_research_episode.json": raw_block_sha256},
         raw_block_counts={"legacy_research_episode.json": 1},
         provenance_closure_status="legacy_catalog_only",
         adapter_name="legacy-migration",

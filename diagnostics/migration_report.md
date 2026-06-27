@@ -14,6 +14,7 @@
 - normalized_record_count: `2`
 - migrated_record_count: `0`
 - skipped_existing_record_count: `2`
+- repaired_legacy_envelope_count: `2`
 - training_eligible_record_count: `0`
 - ineligible_record_count: `2`
 - dropped_record_count: `0`

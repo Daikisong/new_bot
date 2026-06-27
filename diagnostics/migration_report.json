@@ -14,6 +14,7 @@
   "record_counts_by_type": {
     "memory_claim": 2
   },
+  "repaired_legacy_envelope_count": 2,
   "schema_version": "nslab.legacy_migration_report.v1",
   "skipped_episode_count": 2,
   "skipped_episode_ids": [
