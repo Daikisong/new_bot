@@ -291,8 +291,9 @@ def production_readiness_report(
     current_brain_version_value = (
         brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
     )
-    record_coverage = _read_optional_json(
-        settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
+    record_coverage, record_coverage_read_findings = _read_optional_json_with_findings(
+        settings.project_root / "brain" / "current" / "record_coverage_manifest.json",
+        label="record coverage manifest",
     )
     episode_coverage_status = _production_episode_coverage_status(
         settings.project_root,
@@ -306,6 +307,7 @@ def production_readiness_report(
         record_coverage,
         brain_manifest=brain_manifest,
         root=settings.project_root,
+        read_findings=record_coverage_read_findings,
     )
     llm_full_brain = _llm_full_brain_status(
         settings,
@@ -3018,6 +3020,7 @@ def _production_record_coverage_status(
     *,
     brain_manifest: object | None = None,
     root: Path,
+    read_findings: list[str] | None = None,
 ) -> dict[str, Any]:
     expected_brain_version = (
         brain_manifest.get("brain_version")
@@ -3057,12 +3060,18 @@ def _production_record_coverage_status(
         accepted_episode_store_error = type(exc).__name__
 
     if not isinstance(record_coverage, dict):
+        unavailable_findings = (
+            list(read_findings)
+            if read_findings
+            else ["record coverage manifest is missing"]
+        )
         return {
             "schema_version": "nslab.production_record_coverage.v1",
             "passed": False,
-            "status": "missing",
-            "finding_count": 1,
-            "findings": ["record coverage manifest is missing"],
+            "status": "unreadable" if read_findings else "missing",
+            "finding_count": len(unavailable_findings),
+            "findings": unavailable_findings,
+            "manifest_read_findings": list(read_findings or []),
             "record_coverage_as_of": None,
             "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
             "record_coverage_brain_version": None,
@@ -7911,6 +7920,26 @@ def _read_optional_json(path: Path) -> dict[str, Any] | None:
     except ValueError:
         return None
     return payload
+
+
+def _read_optional_json_with_findings(
+    path: Path,
+    *,
+    label: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    if not path.exists():
+        return None, []
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return None, [f"{label} is unreadable"]
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None, [f"{label} is unreadable"]
+    if not isinstance(payload, dict):
+        return None, [f"{label} must be a JSON object"]
+    return payload, []
 
 
 def _jsonl_line_count(path: Path) -> int:

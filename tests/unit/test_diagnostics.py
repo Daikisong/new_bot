@@ -2388,6 +2388,32 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
     assert production["record_coverage"]["findings"] == []
 
 
+def test_production_readiness_reports_unreadable_record_coverage_manifest(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    (current / "record_coverage_manifest.json").write_text(
+        "{not valid json",
+        encoding="utf-8",
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["status"] == "unreadable"
+    assert production["record_coverage"]["findings"] == [
+        "record coverage manifest is unreadable"
+    ]
+    assert production["record_coverage"]["manifest_read_findings"] == [
+        "record coverage manifest is unreadable"
+    ]
+    assert "records: record coverage manifest is unreadable" in production["findings"]
+    assert "records: record coverage manifest is missing" not in production["findings"]
+
+
 def test_production_readiness_rejects_record_coverage_store_mismatch(
     tmp_path,
 ) -> None:
