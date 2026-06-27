@@ -3676,6 +3676,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "skipped_record_reason_counts": {},
             "blind_safe_row_count": None,
             "hindsight_row_count": None,
+            "missing_phase_row_count_fields": [],
+            "invalid_phase_row_count_fields": [],
             "source_phase_counts": {},
             "source_phase_row_count": None,
             "invalid_source_phase_labels": [],
@@ -3734,6 +3736,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "skipped_record_reason_counts": {},
             "blind_safe_row_count": 0,
             "hindsight_row_count": 0,
+            "missing_phase_row_count_fields": [],
+            "invalid_phase_row_count_fields": [],
             "source_phase_counts": {},
             "source_phase_row_count": 0,
             "invalid_source_phase_labels": [],
@@ -3874,6 +3878,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is invalid")
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
+    phase_row_count_fields = ("blind_safe_row_count", "hindsight_row_count")
+    missing_phase_row_count_fields = [
+        field for field in phase_row_count_fields if diagnostics and field not in diagnostics
+    ]
+    invalid_phase_row_count_fields = [
+        field
+        for field in phase_row_count_fields
+        if field in diagnostics
+        and not _non_negative_int_field_valid(diagnostics.get(field))
+    ]
+    for field in missing_phase_row_count_fields:
+        findings.append(f"training export diagnostics {field} is missing")
+    for field in invalid_phase_row_count_fields:
+        findings.append(f"training export diagnostics {field} is invalid")
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
     source_phase_row_count = sum(source_phase_counts.values())
     counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
@@ -3911,6 +3929,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics
         and "source_phase_counts" not in missing_count_fields
         and "source_phase_counts" not in invalid_count_fields
+        and not missing_phase_row_count_fields
+        and not invalid_phase_row_count_fields
         and blind_safe_row_count is not None
         and hindsight_row_count is not None
     ):
@@ -4126,6 +4146,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "source_record_hash_count": source_record_hash_count,
         "blind_safe_row_count": blind_safe_row_count,
         "hindsight_row_count": hindsight_row_count,
+        "missing_phase_row_count_fields": missing_phase_row_count_fields,
+        "invalid_phase_row_count_fields": invalid_phase_row_count_fields,
         "source_phase_counts": source_phase_counts,
         "source_phase_row_count": source_phase_row_count,
         "invalid_source_phase_labels": invalid_source_phase_labels,
@@ -7300,6 +7322,10 @@ def _int_from_mapping(source: object, key: str) -> int | None:
         return None
     value = source.get(key)
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _non_negative_int_field_valid(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _record_coverage_as_of(record_coverage: dict[str, Any]) -> datetime | None:

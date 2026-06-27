@@ -2454,6 +2454,8 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["hindsight_row_count"] == training_report[
         "hindsight_row_count"
     ]
+    assert production["training_exports"]["missing_phase_row_count_fields"] == []
+    assert production["training_exports"]["invalid_phase_row_count_fields"] == []
     assert production["training_exports"]["source_phase_counts"] == training_report[
         "source_phase_counts"
     ]
@@ -2805,6 +2807,55 @@ def test_production_readiness_rejects_training_export_phase_count_mismatch(
     )
     assert (
         "training: training export source_phase_counts include invalid phases: AUDIT_ONLY"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_missing_training_export_phase_row_counts(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report.pop("blind_safe_row_count")
+    tampered_report["hindsight_row_count"] = True
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["missing_phase_row_count_fields"] == [
+        "blind_safe_row_count",
+    ]
+    assert production["training_exports"]["invalid_phase_row_count_fields"] == [
+        "hindsight_row_count",
+    ]
+    assert (
+        "training export diagnostics blind_safe_row_count is missing"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics hindsight_row_count is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics blind_safe_row_count is missing"
         in production["findings"]
     )
 
