@@ -2406,6 +2406,79 @@ def test_production_readiness_rejects_record_coverage_episode_count_mismatch(
     )
 
 
+def test_production_readiness_rejects_stale_episode_coverage_brain_metadata(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {
+            "brain_version": "brain-current",
+            "created_at": "2030-01-03T00:00:00+09:00",
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        },
+    )
+    write_json(
+        current / "coverage_manifest.json",
+        {
+            "brain_version": "brain-stale",
+            "created_at": "2030-01-02T00:00:00+09:00",
+            "build_mode": "catalog",
+            "catalog_only": True,
+            "accepted_episode_count": 0,
+            "covered_episode_count": 0,
+            "covered_episode_ids": [],
+            "missing_episode_ids": [],
+            "coverage_complete": True,
+        },
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["episode_coverage"]["passed"] is False
+    assert (
+        production["episode_coverage"]["episode_coverage_brain_version"]
+        == "brain-stale"
+    )
+    assert production["episode_coverage"]["expected_brain_version"] == "brain-current"
+    assert (
+        production["episode_coverage"]["episode_coverage_created_at"]
+        == "2030-01-02T00:00:00+09:00"
+    )
+    assert (
+        production["episode_coverage"]["expected_created_at"]
+        == "2030-01-03T00:00:00+09:00"
+    )
+    assert production["episode_coverage"]["episode_coverage_build_mode"] == "catalog"
+    assert production["episode_coverage"]["expected_build_mode"] == "llm-full"
+    assert production["episode_coverage"]["episode_coverage_catalog_only"] is True
+    assert production["episode_coverage"]["expected_catalog_only"] is False
+    assert (
+        "brain: coverage manifest brain_version does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "brain: coverage manifest created_at does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "brain: coverage manifest build_mode does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "brain: coverage manifest catalog_only does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "brain: coverage manifest is marked complete despite production findings"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_stale_record_coverage_brain_metadata(
     tmp_path,
 ) -> None:

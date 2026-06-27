@@ -294,6 +294,10 @@ def production_readiness_report(
     record_coverage = _read_optional_json(
         settings.project_root / "brain" / "current" / "record_coverage_manifest.json"
     )
+    episode_coverage_status = _production_episode_coverage_status(
+        settings.project_root,
+        brain_manifest=brain_manifest,
+    )
     expected_source_record_count = _int_from_mapping(
         record_coverage,
         "accepted_record_count",
@@ -320,6 +324,11 @@ def production_readiness_report(
         findings.append(f"brain: current manifest build_mode is {observed_mode}, not llm-full")
     if llm_full_brain["passed"] is not True:
         for finding in llm_full_brain["findings"]:
+            formatted_finding = f"brain: {finding}"
+            if formatted_finding not in findings:
+                findings.append(formatted_finding)
+    if episode_coverage_status["passed"] is not True:
+        for finding in episode_coverage_status["findings"]:
             formatted_finding = f"brain: {finding}"
             if formatted_finding not in findings:
                 findings.append(formatted_finding)
@@ -369,6 +378,7 @@ def production_readiness_report(
         "real_bundle_import": real_bundle_import,
         "llm_evidence": llm_evidence,
         "llm_full_brain": llm_full_brain,
+        "episode_coverage": episode_coverage_status,
         "record_coverage": record_coverage_status,
         "record_store": record_store,
         "warehouse": warehouse,
@@ -2738,6 +2748,263 @@ def _unique_preserving_order(values: list[str]) -> list[str]:
         seen.add(value)
         unique.append(value)
     return unique
+
+
+def _production_episode_coverage_status(
+    root: Path,
+    *,
+    brain_manifest: object | None = None,
+) -> dict[str, Any]:
+    accepted_episode_store_readable = True
+    accepted_episode_store_error = None
+    try:
+        accepted_hashes = ResearchStore(root).accepted_hashes()
+        expected_covered_episode_ids = sorted(accepted_hashes)
+        expected_accepted_episode_count: int | None = len(accepted_hashes)
+    except Exception as exc:
+        accepted_episode_store_readable = False
+        accepted_episode_store_error = type(exc).__name__
+        expected_covered_episode_ids = []
+        expected_accepted_episode_count = None
+
+    coverage_path = root / "brain" / "current" / "coverage_manifest.json"
+    if not coverage_path.exists():
+        findings: list[str] = []
+        if accepted_episode_store_readable is False:
+            findings.append("coverage accepted episode store is unreadable")
+        elif expected_accepted_episode_count and expected_accepted_episode_count > 0:
+            findings.append("coverage manifest is missing")
+        return {
+            "schema_version": "nslab.production_episode_coverage.v1",
+            "passed": not findings,
+            "status": "attention" if findings else "not_applicable",
+            "manifest_exists": False,
+            "finding_count": len(findings),
+            "findings": findings,
+            "episode_coverage_brain_version": None,
+            "expected_brain_version": (
+                brain_manifest.get("brain_version")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("brain_version"), str)
+                else None
+            ),
+            "episode_coverage_created_at": None,
+            "expected_created_at": (
+                brain_manifest.get("created_at")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("created_at"), str)
+                else None
+            ),
+            "episode_coverage_build_mode": None,
+            "expected_build_mode": (
+                brain_manifest.get("build_mode")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("build_mode"), str)
+                else None
+            ),
+            "episode_coverage_catalog_only": None,
+            "expected_catalog_only": (
+                brain_manifest.get("catalog_only")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("catalog_only"), bool)
+                else None
+            ),
+            "episode_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
+            "accepted_episode_store_readable": accepted_episode_store_readable,
+            "accepted_episode_store_error": accepted_episode_store_error,
+            "covered_episode_count": 0,
+            "covered_episode_ids": [],
+            "expected_covered_episode_ids": expected_covered_episode_ids,
+            "missing_covered_episode_ids": expected_covered_episode_ids,
+            "unexpected_covered_episode_ids": [],
+            "duplicate_covered_episode_ids": [],
+            "missing_episode_ids": [],
+            "expected_missing_episode_ids": expected_covered_episode_ids,
+            "unknown_missing_episode_ids": [],
+            "missing_missing_episode_ids": [],
+            "unexpected_missing_episode_ids": [],
+            "coverage_complete": None,
+        }
+
+    try:
+        manifest = _read_json_object(coverage_path)
+    except ValueError as exc:
+        return {
+            "schema_version": "nslab.production_episode_coverage.v1",
+            "passed": False,
+            "status": "invalid",
+            "manifest_exists": True,
+            "finding_count": 1,
+            "findings": ["coverage manifest is unreadable"],
+            "error": str(exc),
+            "episode_coverage_brain_version": None,
+            "expected_brain_version": (
+                brain_manifest.get("brain_version")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("brain_version"), str)
+                else None
+            ),
+            "episode_coverage_created_at": None,
+            "expected_created_at": (
+                brain_manifest.get("created_at")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("created_at"), str)
+                else None
+            ),
+            "episode_coverage_build_mode": None,
+            "expected_build_mode": (
+                brain_manifest.get("build_mode")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("build_mode"), str)
+                else None
+            ),
+            "episode_coverage_catalog_only": None,
+            "expected_catalog_only": (
+                brain_manifest.get("catalog_only")
+                if isinstance(brain_manifest, dict)
+                and isinstance(brain_manifest.get("catalog_only"), bool)
+                else None
+            ),
+            "episode_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
+            "accepted_episode_store_readable": accepted_episode_store_readable,
+            "accepted_episode_store_error": accepted_episode_store_error,
+            "covered_episode_count": 0,
+            "covered_episode_ids": [],
+            "expected_covered_episode_ids": expected_covered_episode_ids,
+            "missing_covered_episode_ids": expected_covered_episode_ids,
+            "unexpected_covered_episode_ids": [],
+            "duplicate_covered_episode_ids": [],
+            "missing_episode_ids": [],
+            "expected_missing_episode_ids": expected_covered_episode_ids,
+            "unknown_missing_episode_ids": [],
+            "missing_missing_episode_ids": [],
+            "unexpected_missing_episode_ids": [],
+            "coverage_complete": None,
+        }
+
+    findings = list(
+        _episode_coverage_metadata_status(
+            manifest,
+            brain_manifest=brain_manifest,
+        )["findings"]
+    )
+    if accepted_episode_store_readable is False:
+        findings.append("coverage accepted episode store is unreadable")
+
+    raw_covered_episode_ids = manifest.get("covered_episode_ids")
+    raw_missing_episode_ids = manifest.get("missing_episode_ids")
+    covered_episode_ids = _string_list(raw_covered_episode_ids)
+    missing_episode_ids = _string_list(raw_missing_episode_ids)
+    covered_episode_id_set = set(covered_episode_ids)
+    expected_episode_id_set = set(expected_covered_episode_ids)
+    missing_covered_episode_ids = sorted(
+        expected_episode_id_set - covered_episode_id_set
+    )
+    unexpected_covered_episode_ids = sorted(
+        covered_episode_id_set - expected_episode_id_set
+    )
+    expected_missing_episode_ids = missing_covered_episode_ids
+    missing_episode_id_set = set(missing_episode_ids)
+    unknown_missing_episode_ids = sorted(
+        missing_episode_id_set - expected_episode_id_set
+    )
+    missing_missing_episode_ids = sorted(
+        set(expected_missing_episode_ids) - missing_episode_id_set
+    )
+    unexpected_missing_episode_ids = sorted(
+        missing_episode_id_set - set(expected_missing_episode_ids)
+    )
+
+    if not _string_list_field_valid(raw_covered_episode_ids):
+        findings.append("coverage manifest covered_episode_ids is missing or invalid")
+    if not _string_list_field_valid(raw_missing_episode_ids):
+        findings.append("coverage manifest missing_episode_ids is missing or invalid")
+    if _duplicate_strings(covered_episode_ids):
+        findings.append("coverage manifest has duplicate covered episodes")
+    if accepted_episode_store_readable is True and unexpected_covered_episode_ids:
+        findings.append("coverage manifest includes unknown covered episodes")
+    if accepted_episode_store_readable is True and missing_covered_episode_ids:
+        findings.append("coverage manifest does not cover accepted episodes")
+    if accepted_episode_store_readable is True and unknown_missing_episode_ids:
+        findings.append("coverage manifest missing IDs reference unknown episodes")
+    if (
+        accepted_episode_store_readable is True
+        and _string_list_field_valid(raw_missing_episode_ids)
+        and set(missing_episode_ids) != set(expected_missing_episode_ids)
+    ):
+        findings.append("coverage manifest missing IDs do not match accepted episodes")
+
+    accepted_episode_count = _int_from_mapping(manifest, "accepted_episode_count")
+    covered_episode_count = _int_from_mapping(manifest, "covered_episode_count")
+    if accepted_episode_count is None:
+        findings.append("coverage manifest accepted_episode_count is missing")
+    elif (
+        accepted_episode_store_readable is True
+        and expected_accepted_episode_count is not None
+        and accepted_episode_count != expected_accepted_episode_count
+    ):
+        findings.append(
+            "coverage manifest accepted_episode_count does not match accepted episodes"
+        )
+    if covered_episode_count is None:
+        findings.append("coverage manifest covered_episode_count is missing")
+    elif covered_episode_count != len(covered_episode_ids):
+        findings.append("coverage manifest covered count does not match covered IDs")
+    if (
+        accepted_episode_store_readable is True
+        and covered_episode_count is not None
+        and covered_episode_count != len(expected_episode_id_set - missing_episode_id_set)
+    ):
+        findings.append(
+            "coverage manifest covered count does not match accepted episodes"
+        )
+
+    has_findings_before_complete_check = bool(findings)
+    if manifest.get("coverage_complete") is not True:
+        findings.append("coverage manifest is not marked complete")
+    elif has_findings_before_complete_check:
+        findings.append(
+            "coverage manifest is marked complete despite production findings"
+        )
+
+    metadata = _episode_coverage_metadata_status(
+        manifest,
+        brain_manifest=brain_manifest,
+    )
+    return {
+        "schema_version": "nslab.production_episode_coverage.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "manifest_exists": True,
+        "finding_count": len(findings),
+        "findings": findings,
+        "episode_coverage_brain_version": metadata["brain_version"],
+        "expected_brain_version": metadata["expected_brain_version"],
+        "episode_coverage_created_at": metadata["created_at"],
+        "expected_created_at": metadata["expected_created_at"],
+        "episode_coverage_build_mode": metadata["build_mode"],
+        "expected_build_mode": metadata["expected_build_mode"],
+        "episode_coverage_catalog_only": metadata["catalog_only"],
+        "expected_catalog_only": metadata["expected_catalog_only"],
+        "episode_coverage_accepted_episode_count": accepted_episode_count,
+        "expected_accepted_episode_count": expected_accepted_episode_count,
+        "accepted_episode_store_readable": accepted_episode_store_readable,
+        "accepted_episode_store_error": accepted_episode_store_error,
+        "covered_episode_count": covered_episode_count,
+        "covered_episode_ids": covered_episode_ids,
+        "expected_covered_episode_ids": expected_covered_episode_ids,
+        "missing_covered_episode_ids": missing_covered_episode_ids,
+        "unexpected_covered_episode_ids": unexpected_covered_episode_ids,
+        "duplicate_covered_episode_ids": _duplicate_strings(covered_episode_ids),
+        "missing_episode_ids": missing_episode_ids,
+        "expected_missing_episode_ids": expected_missing_episode_ids,
+        "unknown_missing_episode_ids": unknown_missing_episode_ids,
+        "missing_missing_episode_ids": missing_missing_episode_ids,
+        "unexpected_missing_episode_ids": unexpected_missing_episode_ids,
+        "coverage_complete": manifest.get("coverage_complete"),
+    }
 
 
 def _production_record_coverage_status(
