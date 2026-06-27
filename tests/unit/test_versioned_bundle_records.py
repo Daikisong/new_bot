@@ -524,7 +524,10 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert inspection["normalized_record_count"] == 3
     assert inspection["raw_normalized_record_count_matches"] is True
     assert inspection["dropped_record_count"] == 0
+    assert inspection["quarantined_bundle_count"] == 0
+    assert inspection["quarantined_raw_record_count"] == 0
     assert inspection["quarantined_record_count"] == 0
+    assert inspection["normalization_skipped_reason"] is None
     assert inspection["training_eligible_record_count"] == 2
     assert inspection["validation_passed"] is True
     assert inspection["import_loss_audit_passed"] is True
@@ -732,6 +735,9 @@ def test_bundle_import_report_parity_payload_counts_dropped_records() -> None:
         "normalized_record_count": 2,
         "raw_normalized_record_count_matches": False,
         "dropped_record_count": 1,
+        "quarantined_bundle_count": 0,
+        "quarantined_raw_record_count": 0,
+        "normalization_skipped_reason": None,
     }
 
 
@@ -767,6 +773,9 @@ def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(
     assert inspection["raw_record_count"] == 3
     assert inspection["normalized_record_count"] == 3
     assert inspection["dropped_record_count"] == 0
+    assert inspection["quarantined_bundle_count"] == 0
+    assert inspection["quarantined_raw_record_count"] == 0
+    assert inspection["quarantined_record_count"] == 0
     assert inspection["training_eligible_record_count"] == 2
     assert result.status == "imported"
     assert result.adapter_name == "v10"

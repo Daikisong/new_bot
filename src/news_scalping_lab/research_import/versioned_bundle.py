@@ -1006,6 +1006,9 @@ def _record_count_parity_payload(
             raw_record_count == normalized_record_count
         ),
         "dropped_record_count": max(0, raw_record_count - normalized_record_count),
+        "quarantined_bundle_count": 0,
+        "quarantined_raw_record_count": 0,
+        "normalization_skipped_reason": None,
     }
 
 

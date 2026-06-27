@@ -2086,7 +2086,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
     bundle_version = inspection.get("bundle_schema_version")
     adapter = inspection.get("adapter")
     is_v11 = adapter == "v11" and bundle_version == "nslab.research_bundle.v11"
-    smoke_passed = (
+    structural_checks_passed = (
         is_v11
         and inspection.get("validation_passed") is True
         and validation.get("bundle_status_accept_full") is True
@@ -2116,6 +2116,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         validation=validation,
         is_v11=is_v11,
     )
+    smoke_passed = structural_checks_passed and not failure_reasons
     return {
         "status": "passed" if smoke_passed else "failed",
         "v11_accept_full_smoke_passed": smoke_passed,
