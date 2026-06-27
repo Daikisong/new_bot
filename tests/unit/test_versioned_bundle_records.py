@@ -3011,12 +3011,36 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
         ("critical_error_count_zero", {"manifest_critical_error_count": 1}),
         ("critical_error_count_zero", {"validation_critical_error_count": 1}),
         ("critical_error_count_zero", {"contract_critical_error_count": 1}),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_direct_brain_ingest_ready": False},
+        ),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_automated_import_expected_to_pass": False},
+        ),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_requires_human_semantic_review": True},
+        ),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_fatal_blockers": ["fixture blocker"]},
+        ),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_record_count_hash_parity_ready": False},
+        ),
+        (
+            "direct_ingest_contract_supported",
+            {"contract_schema_contract_verified": False},
+        ),
     ],
 )
 def test_v23_direct_ingest_hard_gates_block_acceptance(
     tmp_path: Path,
     expected_gate: str,
-    bundle_kwargs: dict[str, int],
+    bundle_kwargs: dict[str, object],
 ) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -3036,6 +3060,10 @@ def test_v23_direct_ingest_hard_gates_block_acceptance(
         assert inspection["direct_ingest_validator_exit_code"] == 1
     if "contract_critical_error_count" in bundle_kwargs:
         assert inspection["direct_ingest_critical_error_count"] == 1
+    if "contract_record_count_hash_parity_ready" in bundle_kwargs:
+        assert inspection["direct_ingest_record_count_hash_parity_ready"] is False
+    if "contract_schema_contract_verified" in bundle_kwargs:
+        assert inspection["direct_ingest_schema_contract_verified"] is False
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
@@ -3250,6 +3278,12 @@ def _v23_direct_ingest_bundle(
     manifest_critical_error_count: int = 0,
     validation_validator_exit_code: int | None = None,
     validation_critical_error_count: int | None = None,
+    contract_direct_brain_ingest_ready: bool = True,
+    contract_automated_import_expected_to_pass: bool = True,
+    contract_requires_human_semantic_review: bool = False,
+    contract_fatal_blockers: list[str] | None = None,
+    contract_record_count_hash_parity_ready: bool = True,
+    contract_schema_contract_verified: bool = True,
     contract_validator_exit_code: int = 0,
     contract_critical_error_count: int = 0,
 ) -> str:
@@ -3363,13 +3397,17 @@ def _v23_direct_ingest_bundle(
             "schema_version": "nslab.direct_ingest_contract.v1",
             "episode_id": episode_id,
             "trade_date": trade_day,
-            "direct_brain_ingest_ready": True,
-            "automated_import_expected_to_pass": True,
-            "requires_human_semantic_review": False,
-            "fatal_blockers": [],
+            "direct_brain_ingest_ready": contract_direct_brain_ingest_ready,
+            "automated_import_expected_to_pass": (
+                contract_automated_import_expected_to_pass
+            ),
+            "requires_human_semantic_review": contract_requires_human_semantic_review,
+            "fatal_blockers": contract_fatal_blockers or [],
             "hard_gate_summary": {
-                "record_count_hash_parity_ready": True,
-                "schema_contract_verified": True,
+                "record_count_hash_parity_ready": (
+                    contract_record_count_hash_parity_ready
+                ),
+                "schema_contract_verified": contract_schema_contract_verified,
                 "validator_exit_code": contract_validator_exit_code,
                 "critical_error_count": contract_critical_error_count,
             },
