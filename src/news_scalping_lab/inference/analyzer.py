@@ -3641,11 +3641,15 @@ class DailyAnalyzer:
     def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
         if manifest.mode != "exhaustive":
             return
+        episode_id_coverage_complete = self._exhaustive_episode_id_coverage_complete(
+            manifest
+        )
         record_id_coverage_complete = Counter(manifest.available_record_ids) == Counter(
             manifest.swept_record_ids
         )
         if (
             manifest.accepted_episode_count == manifest.swept_episode_count
+            and episode_id_coverage_complete
             and manifest.available_record_count == manifest.swept_record_count
             and record_id_coverage_complete
             and not manifest.errors
@@ -3654,6 +3658,10 @@ class DailyAnalyzer:
         if manifest.accepted_episode_count != manifest.swept_episode_count:
             manifest.errors.append(
                 "exhaustive mode requires swept_episode_count == accepted_episode_count"
+            )
+        if not episode_id_coverage_complete:
+            manifest.errors.append(
+                "exhaustive mode requires swept_episode_ids to match available accepted episode ids"
             )
         if manifest.available_record_count != manifest.swept_record_count:
             manifest.errors.append(
@@ -3670,6 +3678,15 @@ class DailyAnalyzer:
             "exhaustive memory coverage failed; see "
             f"{manifest_path.relative_to(self.root).as_posix()}"
         )
+
+    @staticmethod
+    def _exhaustive_episode_id_coverage_complete(manifest: ContextManifest) -> bool:
+        if not manifest.total_accepted_episode_ids:
+            return True
+        expected_available_episode_counts = Counter(manifest.total_accepted_episode_ids)
+        expected_available_episode_counts.subtract(manifest.unavailable_episode_ids)
+        expected_available_episode_counts += Counter()
+        return Counter(manifest.swept_episode_ids) == expected_available_episode_counts
 
     async def _generate_prediction(
         self,

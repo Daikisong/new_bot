@@ -945,6 +945,44 @@ def test_exhaustive_coverage_rejects_record_id_mismatch(tmp_path) -> None:
     assert saved_manifest["errors"] == manifest.errors
 
 
+def test_exhaustive_coverage_rejects_episode_id_mismatch(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    manifest = ContextManifest(
+        run_id="RUN-EXHAUSTIVE-EPISODE-ID-MISMATCH",
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        as_of=cutoff_at,
+        accepted_episode_count=1,
+        total_accepted_episode_count=1,
+        total_accepted_episode_ids=["EP-AVAILABLE"],
+        available_episode_count=1,
+        unavailable_episode_count=0,
+        unavailable_episode_ids=[],
+        swept_episode_count=1,
+        swept_episode_ids=["EP-SWEPT"],
+        price_snapshot=PriceSnapshot(
+            source_name="test",
+            allowed_through=date(2030, 1, 9),
+        ),
+    )
+
+    with pytest.raises(ExhaustiveCoverageError):
+        DailyAnalyzer(settings)._fail_if_exhaustive_coverage_incomplete(manifest)
+
+    assert manifest.errors == [
+        "exhaustive mode requires swept_episode_ids to match available accepted episode ids"
+    ]
+    saved_manifest = read_json(
+        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-EPISODE-ID-MISMATCH.json"
+    )
+    assert saved_manifest["total_accepted_episode_ids"] == ["EP-AVAILABLE"]
+    assert saved_manifest["swept_episode_ids"] == ["EP-SWEPT"]
+    assert saved_manifest["errors"] == manifest.errors
+
+
 def test_record_level_available_from_filter(tmp_path) -> None:
     cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     _store_brain_records(
