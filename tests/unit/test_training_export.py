@@ -1081,6 +1081,11 @@ def test_training_audit_rejects_skipped_brain_record_output_rows(tmp_path) -> No
     assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in training_report[
         "findings"
     ]
+    assert training_report["unique_training_eligible_record_ids"] == ["BRAIN-ISSUER"]
+    assert training_report["unique_exported_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+    ]
 
 
 def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> None:

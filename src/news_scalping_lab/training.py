@@ -144,7 +144,6 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             _audit_record_export_scope(kind, manifest, output_rows, findings)
             row_record_ids = _record_ids_from_rows(output_rows)
             exported_record_ids.update(row_record_ids)
-            training_eligible_record_ids.update(row_record_ids)
         if (
             manifest.get("source_mode") == "brain_records"
             and manifest.get("weight_validation_status") == "failed"
