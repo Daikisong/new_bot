@@ -1214,6 +1214,13 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
         "semantic_retrieval_record_ids_subset_verified": True,
         "counterexample_record_ids_subset_verified": True,
         "exhaustive_swept_record_ids_verified": True,
+        "swept_record_delta_fields_verified": True,
+        "missing_swept_record_ids": [],
+        "unexpected_swept_record_ids": [],
+        "duplicate_swept_record_ids": [],
+        "expected_missing_swept_record_ids": [],
+        "expected_unexpected_swept_record_ids": [],
+        "expected_duplicate_swept_record_ids": [],
         "errors": [],
     }
     accepted_record_count = _non_bool_int(manifest.get("accepted_record_count"))
@@ -1276,6 +1283,26 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
         if not status["exhaustive_swept_record_ids_verified"]:
             status["errors"].append("exhaustive_swept_record_ids_mismatch")
 
+    if available_ids is not None and swept_ids is not None and (
+        manifest.get("mode") == "exhaustive"
+        or any(
+            field in manifest
+            for field in (
+                "missing_swept_record_ids",
+                "unexpected_swept_record_ids",
+                "duplicate_swept_record_ids",
+            )
+        )
+    ):
+        status["swept_record_delta_fields_verified"] = (
+            _verify_manifest_record_sweep_delta_fields(
+                status,
+                manifest,
+                available_record_ids=available_ids,
+                swept_record_ids=swept_ids,
+            )
+        )
+
     status["passed"] = (
         status["accepted_record_count_valid"]
         and status["available_record_count_verified"]
@@ -1289,9 +1316,54 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
         and status["semantic_retrieval_record_ids_subset_verified"]
         and status["counterexample_record_ids_subset_verified"]
         and status["exhaustive_swept_record_ids_verified"]
+        and status["swept_record_delta_fields_verified"]
         and not status["errors"]
     )
     return status
+
+
+def _verify_manifest_record_sweep_delta_fields(
+    status: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    available_record_ids: list[str],
+    swept_record_ids: list[str],
+) -> bool:
+    delta = _manifest_record_sweep_delta(
+        available_record_ids=available_record_ids,
+        swept_record_ids=swept_record_ids,
+    )
+    all_verified = True
+    for field, expected in (
+        ("missing_swept_record_ids", delta["missing"]),
+        ("unexpected_swept_record_ids", delta["unexpected"]),
+        ("duplicate_swept_record_ids", delta["duplicate"]),
+    ):
+        expected_field = f"expected_{field}"
+        observed = _optional_manifest_record_id_list(status, manifest, field)
+        status[expected_field] = expected
+        if observed is None:
+            all_verified = False
+            continue
+        status[field] = observed
+        if observed != expected:
+            status["errors"].append(f"{field}_mismatch")
+            all_verified = False
+    return all_verified
+
+
+def _manifest_record_sweep_delta(
+    *,
+    available_record_ids: list[str],
+    swept_record_ids: list[str],
+) -> dict[str, list[str]]:
+    expected_counts = Counter(available_record_ids)
+    swept_counts = Counter(swept_record_ids)
+    return {
+        "missing": sorted((expected_counts - swept_counts).elements()),
+        "unexpected": sorted((swept_counts - expected_counts).elements()),
+        "duplicate": _duplicate_strings(swept_record_ids),
+    }
 
 
 def _verify_manifest_record_id_list_count(
@@ -1332,6 +1404,16 @@ def _manifest_record_id_list(
         status["errors"].append(f"{field}_missing_or_invalid")
         return None
     return list(raw_ids)
+
+
+def _optional_manifest_record_id_list(
+    status: dict[str, Any],
+    manifest: dict[str, Any],
+    field: str,
+) -> list[str] | None:
+    if field not in manifest:
+        return []
+    return _manifest_record_id_list(status, manifest, field)
 
 
 def _record_ids_subset_of_available(

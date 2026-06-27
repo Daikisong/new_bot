@@ -968,6 +968,10 @@ def test_manifest_record_coverage_contract_accepts_valid_fast_manifest() -> None
     assert status["available_record_count_verified"] is True
     assert status["training_eligible_available_record_ids_subset_verified"] is True
     assert status["exhaustive_swept_record_ids_verified"] is True
+    assert status["swept_record_delta_fields_verified"] is True
+    assert status["expected_missing_swept_record_ids"] == []
+    assert status["expected_unexpected_swept_record_ids"] == []
+    assert status["expected_duplicate_swept_record_ids"] == []
     assert status["errors"] == []
 
 
@@ -996,6 +1000,13 @@ def test_manifest_record_coverage_contract_rejects_id_drift() -> None:
     assert status["semantic_retrieval_record_ids_subset_verified"] is True
     assert status["counterexample_record_ids_subset_verified"] is False
     assert status["exhaustive_swept_record_ids_verified"] is False
+    assert status["swept_record_delta_fields_verified"] is False
+    assert status["expected_missing_swept_record_ids"] == ["REC-2"]
+    assert status["expected_unexpected_swept_record_ids"] == ["REC-X"]
+    assert status["expected_duplicate_swept_record_ids"] == []
+    assert status["missing_swept_record_ids"] == []
+    assert status["unexpected_swept_record_ids"] == []
+    assert status["duplicate_swept_record_ids"] == []
     assert "training_eligible_available_record_ids_not_subset_of_available_record_ids" in (
         status["errors"]
     )
@@ -1004,6 +1015,8 @@ def test_manifest_record_coverage_contract_rejects_id_drift() -> None:
         "errors"
     ]
     assert "exhaustive_swept_record_ids_mismatch" in status["errors"]
+    assert "missing_swept_record_ids_mismatch" in status["errors"]
+    assert "unexpected_swept_record_ids_mismatch" in status["errors"]
 
 
 def test_context_export_session_pack_cli_reports_invalid_cutoff(
