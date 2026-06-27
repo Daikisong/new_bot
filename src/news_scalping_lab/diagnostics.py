@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from importlib import import_module
 from importlib.util import find_spec
 from pathlib import Path
@@ -216,6 +216,12 @@ def production_readiness_report(
     price_data = _production_price_data_status(report, settings)
     if price_data["passed"] is not True:
         findings.extend(f"price: {finding}" for finding in price_data["findings"])
+    price_evidence = _production_price_evidence_status(settings.project_root)
+    if price_evidence["passed"] is not True:
+        findings.extend(
+            f"price_evidence: {finding}"
+            for finding in price_evidence["findings"]
+        )
     web_evidence = _production_web_evidence_status(settings.project_root)
     if web_evidence["passed"] is not True:
         findings.extend(
@@ -331,6 +337,7 @@ def production_readiness_report(
         "training_exports": training_exports,
         "web_evidence": web_evidence,
         "price_data": price_data,
+        "price_evidence": price_evidence,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
@@ -398,6 +405,183 @@ def _production_price_data_status(
             else {}
         ),
     }
+
+
+def _production_price_evidence_status(root: Path) -> dict[str, Any]:
+    manifest_dir = root / "runs" / "manifests"
+    manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
+    unreadable_manifests: list[str] = []
+    invalid_manifest_schemas: list[dict[str, Any]] = []
+    missing_price_snapshots: list[str] = []
+    missing_source_names: list[str] = []
+    mock_price_snapshots: list[dict[str, Any]] = []
+    invalid_allowed_through: list[dict[str, Any]] = []
+    unsafe_allowed_through: list[dict[str, Any]] = []
+    invalid_as_of: list[dict[str, Any]] = []
+    as_of_after_cutoff: list[dict[str, Any]] = []
+    for manifest_path in manifest_paths:
+        relative_path = relative_to_root(manifest_path, root)
+        try:
+            manifest = _read_json_object(manifest_path)
+        except ValueError:
+            unreadable_manifests.append(relative_path)
+            continue
+        if manifest.get("schema_version") != "nslab.context_manifest.v1":
+            invalid_manifest_schemas.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "schema_version": manifest.get("schema_version"),
+                }
+            )
+        price_snapshot = manifest.get("price_snapshot")
+        if not isinstance(price_snapshot, dict):
+            missing_price_snapshots.append(relative_path)
+            continue
+        source_name = price_snapshot.get("source_name")
+        if not isinstance(source_name, str) or not source_name.strip():
+            missing_source_names.append(relative_path)
+        elif "mock" in source_name.strip().lower():
+            mock_price_snapshots.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "source_name": source_name,
+                }
+            )
+        raw_allowed_through = price_snapshot.get("allowed_through")
+        trade_date = _manifest_trade_date(manifest)
+        if not isinstance(raw_allowed_through, str) or not raw_allowed_through:
+            invalid_allowed_through.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "allowed_through": raw_allowed_through,
+                }
+            )
+        else:
+            try:
+                allowed_through = date.fromisoformat(raw_allowed_through)
+            except ValueError:
+                invalid_allowed_through.append(
+                    {
+                        "path": relative_path,
+                        "run_id": manifest.get("run_id"),
+                        "allowed_through": raw_allowed_through,
+                    }
+                )
+            else:
+                if trade_date is not None and allowed_through >= trade_date:
+                    unsafe_allowed_through.append(
+                        {
+                            "path": relative_path,
+                            "run_id": manifest.get("run_id"),
+                            "allowed_through": raw_allowed_through,
+                            "trade_date": trade_date.isoformat(),
+                        }
+                    )
+        raw_as_of = price_snapshot.get("as_of")
+        raw_cutoff_at = manifest.get("cutoff_at")
+        if isinstance(raw_as_of, str) and isinstance(raw_cutoff_at, str):
+            try:
+                as_of = parse_datetime(raw_as_of)
+                cutoff_at = parse_datetime(raw_cutoff_at)
+            except ValueError:
+                invalid_as_of.append(
+                    {
+                        "path": relative_path,
+                        "run_id": manifest.get("run_id"),
+                        "as_of": raw_as_of,
+                        "cutoff_at": raw_cutoff_at,
+                    }
+                )
+            else:
+                if not is_available_as_of(as_of, cutoff_at):
+                    as_of_after_cutoff.append(
+                        {
+                            "path": relative_path,
+                            "run_id": manifest.get("run_id"),
+                            "as_of": raw_as_of,
+                            "cutoff_at": raw_cutoff_at,
+                        }
+                    )
+
+    findings: list[str] = []
+    if not manifest_paths:
+        findings.append("production price context manifest is missing")
+    for path in unreadable_manifests:
+        findings.append(f"context manifest is unreadable: {path}")
+    for manifest in invalid_manifest_schemas:
+        findings.append(
+            f"context manifest schema_version is invalid in {manifest['path']}: "
+            f"{manifest['schema_version']}"
+        )
+    for path in missing_price_snapshots:
+        findings.append(f"context manifest price_snapshot is missing: {path}")
+    for path in missing_source_names:
+        findings.append(f"context manifest price_snapshot source_name is missing: {path}")
+    for snapshot in mock_price_snapshots:
+        findings.append(
+            f"mock price_snapshot present in {snapshot['path']}: "
+            f"source_name={snapshot['source_name']}"
+        )
+    for snapshot in invalid_allowed_through:
+        findings.append(
+            f"context manifest price_snapshot allowed_through is invalid in "
+            f"{snapshot['path']}: {snapshot['allowed_through']}"
+        )
+    for snapshot in unsafe_allowed_through:
+        findings.append(
+            f"context manifest price_snapshot allowed_through is not before "
+            f"trade_date in {snapshot['path']}: {snapshot['allowed_through']}"
+        )
+    for snapshot in invalid_as_of:
+        findings.append(
+            f"context manifest price_snapshot as_of is invalid in "
+            f"{snapshot['path']}: {snapshot['as_of']}"
+        )
+    for snapshot in as_of_after_cutoff:
+        findings.append(
+            f"context manifest price_snapshot as_of is after cutoff_at in "
+            f"{snapshot['path']}: {snapshot['as_of']}"
+        )
+
+    return {
+        "schema_version": "nslab.production_price_evidence.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "checked_manifest_count": len(manifest_paths),
+        "unreadable_manifest_count": len(unreadable_manifests),
+        "unreadable_manifests": unreadable_manifests,
+        "invalid_manifest_schema_count": len(invalid_manifest_schemas),
+        "invalid_manifest_schemas": invalid_manifest_schemas,
+        "missing_price_snapshot_count": len(missing_price_snapshots),
+        "missing_price_snapshot_manifests": missing_price_snapshots,
+        "missing_source_name_count": len(missing_source_names),
+        "missing_source_name_manifests": missing_source_names,
+        "mock_price_snapshot_count": len(mock_price_snapshots),
+        "mock_price_snapshots": mock_price_snapshots,
+        "invalid_allowed_through_count": len(invalid_allowed_through),
+        "invalid_allowed_through_manifests": invalid_allowed_through,
+        "unsafe_allowed_through_count": len(unsafe_allowed_through),
+        "unsafe_allowed_through_manifests": unsafe_allowed_through,
+        "invalid_as_of_count": len(invalid_as_of),
+        "invalid_as_of_manifests": invalid_as_of,
+        "as_of_after_cutoff_count": len(as_of_after_cutoff),
+        "as_of_after_cutoff_manifests": as_of_after_cutoff,
+    }
+
+
+def _manifest_trade_date(manifest: dict[str, Any]) -> date | None:
+    raw_trade_date = manifest.get("trade_date")
+    if not isinstance(raw_trade_date, str):
+        return None
+    try:
+        return date.fromisoformat(raw_trade_date)
+    except ValueError:
+        return None
 
 
 def real_bundle_smoke_report(
