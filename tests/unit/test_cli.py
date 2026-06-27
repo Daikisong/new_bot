@@ -13,6 +13,7 @@ from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.research_import.versioned_bundle import BundleImportResult
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text, write_json
 from news_scalping_lab.warehouse import EXPECTED_WAREHOUSE_FILES, WarehouseStore
@@ -239,6 +240,79 @@ def test_research_import_cli_reports_import_errors(
 
     assert result.exit_code == 1
     assert "mode rejected during import: unsupported" in result.output
+
+
+def test_research_import_bundle_cli_surfaces_record_loss_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text("bundle", encoding="utf-8")
+    settings = Settings(project_root=tmp_path)
+    report_path = tmp_path / "diagnostics" / "bundle_import_report.json"
+
+    def fake_import_bundle(
+        path: Path,
+        *,
+        root: Path,
+        validate: bool,
+        accepted: bool,
+    ) -> BundleImportResult:
+        assert path == bundle
+        assert root == tmp_path
+        assert validate is True
+        assert accepted is False
+        report_path.parent.mkdir(parents=True)
+        write_json(
+            report_path,
+            {
+                "raw_record_count": 3,
+                "normalized_record_count": 3,
+                "raw_normalized_record_count_matches": True,
+                "raw_training_eligible_record_count": 2,
+                "training_eligible_record_count": 2,
+                "dropped_record_count": 0,
+                "extra_normalized_record_count": 0,
+                "quarantined_bundle_count": 0,
+                "quarantined_raw_record_count": 0,
+                "quarantined_record_count": 0,
+                "import_loss_audit_passed": True,
+                "record_counts_by_type": {"supervised_issuer_day_case": 3},
+            },
+        )
+        return BundleImportResult(
+            status="imported",
+            adapter_name="v11",
+            episode_id="NSLAB-20300110-SYNTH",
+            bundle_schema_version="nslab.research_bundle.v11",
+            accepted=False,
+            record_count=3,
+            training_eligible_record_count=2,
+            envelope_path=tmp_path / "research" / "episodes" / "bundle_envelope.json",
+            record_path=tmp_path / "memory" / "records" / "NSLAB.jsonl",
+            manifest_path=tmp_path / "memory" / "record_manifests" / "NSLAB.json",
+            validation={"passed": True},
+        )
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "import_versioned_bundle", fake_import_bundle)
+
+    result = CliRunner().invoke(app, ["research", "import-bundle", str(bundle)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["imported"] is True
+    assert payload["raw_record_count"] == 3
+    assert payload["normalized_record_count"] == 3
+    assert payload["raw_normalized_record_count_matches"] is True
+    assert payload["raw_training_eligible_record_count"] == 2
+    assert payload["dropped_record_count"] == 0
+    assert payload["extra_normalized_record_count"] == 0
+    assert payload["quarantined_bundle_count"] == 0
+    assert payload["quarantined_raw_record_count"] == 0
+    assert payload["quarantined_record_count"] == 0
+    assert payload["import_loss_audit_passed"] is True
+    assert payload["record_counts_by_type"] == {"supervised_issuer_day_case": 3}
 
 
 def test_research_inspect_bundle_cli_writes_smoke_diagnostics(

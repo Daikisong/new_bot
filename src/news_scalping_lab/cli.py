@@ -661,6 +661,7 @@ def research_import_bundle(
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
+    import_report = _read_latest_bundle_import_report(settings.project_root)
     _echo(
         {
             "imported": result.status == "imported",
@@ -680,9 +681,43 @@ def research_import_bundle(
             "manifest": result.manifest_path.as_posix()
             if result.manifest_path is not None
             else None,
+            "raw_record_count": import_report.get("raw_record_count"),
+            "normalized_record_count": import_report.get("normalized_record_count"),
+            "raw_normalized_record_count_matches": import_report.get(
+                "raw_normalized_record_count_matches"
+            ),
+            "raw_training_eligible_record_count": import_report.get(
+                "raw_training_eligible_record_count"
+            ),
+            "dropped_record_count": import_report.get("dropped_record_count"),
+            "extra_normalized_record_count": import_report.get(
+                "extra_normalized_record_count"
+            ),
+            "quarantined_bundle_count": import_report.get("quarantined_bundle_count"),
+            "quarantined_raw_record_count": import_report.get(
+                "quarantined_raw_record_count"
+            ),
+            "quarantined_record_count": import_report.get(
+                "quarantined_record_count"
+            ),
+            "import_loss_audit_passed": import_report.get(
+                "import_loss_audit_passed"
+            ),
+            "record_counts_by_type": import_report.get("record_counts_by_type"),
             "validation": result.validation,
         }
     )
+
+
+def _read_latest_bundle_import_report(root: Path) -> dict[str, Any]:
+    path = root / "diagnostics" / "bundle_import_report.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = read_json(path)
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 @research_app.command("migrate-legacy")
