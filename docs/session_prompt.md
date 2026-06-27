@@ -99,6 +99,69 @@ Python 또는 파일 분석 도구는 금지되지 않는다. 단, 도구는 독
 
 ---
 
+[PHASE 1 FIRST OUTPUT CONTRACT — 후보 진입 전 분모 폐쇄 강제]
+
+CSV full parse가 끝난 직후 다음 유효 작업은 반드시 `source_ledger`와 `row_disposition` 전수 population 생성이다.
+
+그 전에는 금지:
+- 후보명, 종목코드, 테마, watchlist 작성
+- P snapshot rank, amount, return 확인
+- “중요 행 추출”, “대표 기사 추출”, “상위 250개/300개 제목 검토”
+- 작업 크기, 처리량, 수동 검토 불가능성, 완벽성 한계에 대한 meta-planning
+- 회사명, 키워드, ticker-like token으로 먼저 후보를 좁히는 작업
+
+PHASE 1 통과 조건:
+```text
+source_ledger_count == csv_row_count
+row_disposition_count == csv_row_count
+material_review_queue_count == material_reviewed_count
+```
+
+위 count receipt를 산출물 내부에 쓰기 전에는 `candidate_screening`, `final_watchlist`, 종목코드 매핑, P snapshot ranking으로 이동할 수 없다.
+
+---
+
+[NO META-PLANNING ESCAPE — 작업 축소 사고 금지]
+
+다음 판단은 연구 진행이 아니라 품질 위반이다.
+
+```text
+작업이 너무 크다
+모든 행을 수동으로 읽을 수 없다
+완벽할 필요는 없다
+효율적으로 중요한 행만 추출한다
+회사명/키워드로 먼저 후보를 좁힌다
+일단 후보를 만들고 나중에 ledger를 맞춘다
+```
+
+이런 생각이 나오면 해당 사고를 즉시 폐기하고 PHASE 1 population 작성으로 돌아간다. 이 문구를 산출물에 변명처럼 기록하지 말고, 실제 작업 순서를 `source_ledger` → `row_disposition` → `material_review_queue` 폐쇄로 되돌린다.
+
+---
+
+[ANTI-REWARD-HACK VALIDATION CONTRACT — 파일 재파싱 기반 검증]
+
+아래 조건은 설명 문구가 아니라 run 유효성 조건이다. 하나라도 위반하면 해당 episode는 `ACCEPT_FULL`이 아니라 invalid다.
+
+1. `final_watchlist`, `final_codes_order`, `selected_codes`, `top_codes`, `manual_ticker_list`처럼 최종 후보 ticker 목록을 코드나 리스트로 먼저 선언하지 않는다.
+2. `final_watchlist`는 반드시 저장된 `candidate_screening.jsonl`을 다시 열어 parse한 결과에서만 생성한다. in-memory 후보 변수나 미리 정한 ticker 순서에서 생성하지 않는다.
+3. `material_reviewed=true`는 `material_review_queue_member`와 같은 boolean으로 자동 부여할 수 없다. 각 material row마다 `review_decision`, `exact_quote`, `issuer_binding` 또는 `rejection_reason`이 있어야 한다.
+4. validation actual 값은 in-memory 변수 사용 금지다. 반드시 저장된 `JSONL`/`JSON`/`Markdown` artifact를 다시 열어 parse한 값만 actual로 쓴다.
+5. count receipt가 맞아도 아래 evidence chain이 끊기면 invalid다.
+
+```text
+source_row
+→ row_disposition
+→ material_review
+→ fact
+→ inference
+→ candidate_screening
+→ final_watchlist
+```
+
+`final_watchlist`의 각 item은 위 chain의 모든 id를 거꾸로 따라가서 원본 CSV row와 exact quote까지 도달해야 한다. 도달하지 못하면 filler 후보로 간주하고 제거한다.
+
+---
+
 [BOOTSTRAP ACQUISITION RULE — MAIN PROMPT와 CSV 확보 전용]
 
 이 BOOTSTRAP ACQUISITION RULE은 MAIN EXECUTION PROMPT와 news_YYYYMMDD.csv 확보에만 적용하며, stock-web outcome snapshot 다운로드에는 적용하지 않는다. outcome snapshot은 MAIN EXECUTION PROMPT의 BLIND seal 이후 규칙만 따른다.
@@ -198,7 +261,7 @@ news_YYYYMMDD.csv
 
 아래 commit-pinned GitHub Raw URL의 실행 프롬프트 전체를 열고 그대로 이행한다.
 
-https://raw.githubusercontent.com/Daikisong/new_bot/de91255baaa2124af747fffdaf571202b03fc07c/docs/research_prompt.md
+https://raw.githubusercontent.com/Daikisong/new_bot/d49e1c0d8ee2e5304824592afaf6f94753a7d070/docs/research_prompt.md
 
 이 URL은 commit-pinned Raw URL이다.
 
@@ -213,12 +276,12 @@ expected_title:
 
 expected_sha256:
 ```text
-1e593b0238733b4501ff1585335f45ff0e7e4745dd085b2d891344aa65f01ba6
+d14861f565bdbae041e8fac09f2210462fea1b55e7bbb64efe4197200ad25d8e
 ```
 
 expected_byte_size:
 ```text
-382408
+389215
 ```
 
 필수 확인:
