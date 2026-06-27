@@ -261,16 +261,22 @@ def real_bundle_smoke_report(
                 }
             )
             continue
+        production_source = _is_production_bundle_candidate(
+            settings,
+            candidate,
+        )
         summary = _real_bundle_inspection_summary(inspection)
+        smoke_passed = summary["v11_accept_full_smoke_passed"] is True
+        if production_source:
+            smoke_passed = (
+                smoke_passed and summary["direct_ingest_smoke_passed"] is True
+            )
         inspections.append(
             {
                 **candidate,
-                "status": summary["status"],
+                "status": "passed" if smoke_passed else "failed",
                 "inspectable": True,
-                "production_source": _is_production_bundle_candidate(
-                    settings,
-                    candidate,
-                ),
+                "production_source": production_source,
                 "inspection": summary,
             }
         )
@@ -279,7 +285,7 @@ def real_bundle_smoke_report(
         item
         for item in inspections
         if isinstance(item.get("inspection"), dict)
-        and item["inspection"].get("v11_accept_full_smoke_passed") is True
+        and item.get("status") == "passed"
     ]
     real_valid_inspections = [
         item for item in valid_inspections if item.get("production_source") is True
@@ -296,17 +302,14 @@ def real_bundle_smoke_report(
     first_production_passed = (
         isinstance(first_production_inspection, dict)
         and isinstance(first_production_inspection.get("inspection"), dict)
-        and first_production_inspection["inspection"].get(
-            "v11_accept_full_smoke_passed"
-        )
-        is True
+        and first_production_inspection.get("status") == "passed"
     )
     failed_inspection_count = sum(
         1
         for item in inspections
         if item.get("inspectable") is True
         and isinstance(item.get("inspection"), dict)
-        and item["inspection"].get("v11_accept_full_smoke_passed") is not True
+        and item.get("status") != "passed"
     )
     production_failed_inspection_count = sum(
         1
@@ -315,7 +318,7 @@ def real_bundle_smoke_report(
         and (
             item.get("inspectable") is not True
             or not isinstance(item.get("inspection"), dict)
-            or item["inspection"].get("v11_accept_full_smoke_passed") is not True
+            or item.get("status") != "passed"
         )
     )
     if first_production_inspection is not None:
@@ -362,7 +365,9 @@ def real_bundle_smoke_report(
             else None
         ),
         "first_production_failure_reasons": (
-            _string_list(first_production_inspection["inspection"].get("failure_reasons"))
+            _real_bundle_production_failure_reasons(
+                first_production_inspection["inspection"]
+            )
             if isinstance(first_production_inspection, dict)
             and isinstance(first_production_inspection.get("inspection"), dict)
             else []
@@ -2699,12 +2704,18 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         validation=validation,
         is_v11=is_v11,
     )
+    direct_ingest_failure_reasons = _real_bundle_direct_ingest_failure_reasons(
+        inspection
+    )
     smoke_passed = structural_checks_passed and not failure_reasons
     return {
         "status": "passed" if smoke_passed else "failed",
         "v11_accept_full_smoke_passed": smoke_passed,
+        "direct_ingest_smoke_passed": not direct_ingest_failure_reasons,
         "failure_reason_count": len(failure_reasons),
         "failure_reasons": failure_reasons,
+        "direct_ingest_failure_reason_count": len(direct_ingest_failure_reasons),
+        "direct_ingest_failure_reasons": direct_ingest_failure_reasons,
         "raw_bundle_sha256": inspection.get("raw_bundle_sha256"),
         "bundle_version": bundle_version,
         "manifest_schema_version": inspection.get("manifest_schema_version"),
@@ -2780,6 +2791,33 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "missing_payload_reference_count": inspection.get(
             "missing_payload_reference_count"
         ),
+        "direct_ingest_contract_present": inspection.get(
+            "direct_ingest_contract_present"
+        ),
+        "direct_ingest_contract_schema_version": inspection.get(
+            "direct_ingest_contract_schema_version"
+        ),
+        "direct_brain_ingest_ready": inspection.get("direct_brain_ingest_ready"),
+        "brain_eligible": inspection.get("brain_eligible"),
+        "requires_human_semantic_review": inspection.get(
+            "requires_human_semantic_review"
+        ),
+        "direct_ingest_fatal_blocker_count": inspection.get(
+            "direct_ingest_fatal_blocker_count"
+        ),
+        "direct_ingest_contract_validation_parity_verified": inspection.get(
+            "direct_ingest_contract_validation_parity_verified"
+        ),
+        "direct_ingest_contract_count_hash_parity_verified": inspection.get(
+            "direct_ingest_contract_count_hash_parity_verified"
+        ),
+        "final_semantic_audit_present": inspection.get(
+            "final_semantic_audit_present"
+        ),
+        "final_semantic_audit_count": inspection.get("final_semantic_audit_count"),
+        "final_semantic_audit_fail_count": inspection.get(
+            "final_semantic_audit_fail_count"
+        ),
     }
 
 
@@ -2839,6 +2877,56 @@ def _real_bundle_failure_reasons(
         if observed != expected:
             reasons.append(f"{name}={observed!r} expected {expected!r}")
     return reasons
+
+
+def _real_bundle_direct_ingest_failure_reasons(
+    inspection: dict[str, Any],
+) -> list[str]:
+    checks = (
+        ("direct_ingest_contract_present", inspection.get("direct_ingest_contract_present"), True),
+        (
+            "direct_ingest_contract_schema_version",
+            inspection.get("direct_ingest_contract_schema_version"),
+            "nslab.direct_ingest_contract.v1",
+        ),
+        ("direct_brain_ingest_ready", inspection.get("direct_brain_ingest_ready"), True),
+        ("brain_eligible", inspection.get("brain_eligible"), True),
+        (
+            "requires_human_semantic_review",
+            inspection.get("requires_human_semantic_review"),
+            False,
+        ),
+        (
+            "direct_ingest_fatal_blocker_count",
+            inspection.get("direct_ingest_fatal_blocker_count"),
+            0,
+        ),
+        (
+            "direct_ingest_contract_validation_parity_verified",
+            inspection.get("direct_ingest_contract_validation_parity_verified"),
+            True,
+        ),
+        (
+            "direct_ingest_contract_count_hash_parity_verified",
+            inspection.get("direct_ingest_contract_count_hash_parity_verified"),
+            True,
+        ),
+        ("final_semantic_audit_present", inspection.get("final_semantic_audit_present"), True),
+        ("final_semantic_audit_fail_count", inspection.get("final_semantic_audit_fail_count"), 0),
+    )
+    return [
+        f"{name}={observed!r} expected {expected!r}"
+        for name, observed, expected in checks
+        if observed != expected
+    ]
+
+
+def _real_bundle_production_failure_reasons(
+    inspection: dict[str, Any],
+) -> list[str]:
+    return _string_list(inspection.get("failure_reasons")) + _string_list(
+        inspection.get("direct_ingest_failure_reasons")
+    )
 
 
 def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:

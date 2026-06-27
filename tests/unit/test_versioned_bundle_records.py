@@ -626,6 +626,59 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_versioned_bundle(raw_bundle, root=tmp_path).record_count == 3
 
 
+def test_v11_bundle_inspection_exposes_direct_ingest_contract(
+    tmp_path: Path,
+) -> None:
+    direct_ingest_contract = json.dumps(
+        {
+            "schema_version": "nslab.direct_ingest_contract.v1",
+            "brain_eligible": True,
+            "direct_brain_ingest_ready": True,
+            "requires_human_semantic_review": False,
+            "fatal_blockers": [],
+            "hard_gate_summary": {
+                "direct_ingest_contract_validation_parity_verified": True,
+                "direct_ingest_contract_count_hash_parity_verified": True,
+            },
+        },
+        sort_keys=True,
+    )
+    final_semantic_audit = "\n".join(
+        [
+            json.dumps({"candidate_id": "CAND-A", "semantic_verdict": "PASS"}),
+            json.dumps({"candidate_id": "CAND-B", "semantic_verdict": "PASS"}),
+        ]
+    )
+    bundle = tmp_path / "synthetic_v11_bundle.md"
+    bundle.write_text(
+        _synthetic_v11_bundle()
+        + "\n<!-- NSLAB:BEGIN direct_ingest_contract.json -->\n"
+        + _payload_block(direct_ingest_contract, "json")
+        + "\n<!-- NSLAB:END direct_ingest_contract.json -->\n\n"
+        + "<!-- NSLAB:BEGIN final_semantic_audit.jsonl -->\n"
+        + _payload_block(final_semantic_audit, "jsonl")
+        + "\n<!-- NSLAB:END final_semantic_audit.jsonl -->\n",
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+
+    assert inspection["direct_ingest_contract_present"] is True
+    assert (
+        inspection["direct_ingest_contract_schema_version"]
+        == "nslab.direct_ingest_contract.v1"
+    )
+    assert inspection["direct_brain_ingest_ready"] is True
+    assert inspection["brain_eligible"] is True
+    assert inspection["requires_human_semantic_review"] is False
+    assert inspection["direct_ingest_fatal_blocker_count"] == 0
+    assert inspection["direct_ingest_contract_validation_parity_verified"] is True
+    assert inspection["direct_ingest_contract_count_hash_parity_verified"] is True
+    assert inspection["final_semantic_audit_present"] is True
+    assert inspection["final_semantic_audit_count"] == 2
+    assert inspection["final_semantic_audit_fail_count"] == 0
+
+
 def test_record_store_report_counts_dropped_raw_records(tmp_path: Path) -> None:
     episode_dir = tmp_path / "research" / "episodes" / "EP-loss"
     episode_dir.mkdir(parents=True)

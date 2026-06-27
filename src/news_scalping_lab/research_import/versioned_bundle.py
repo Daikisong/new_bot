@@ -530,6 +530,27 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "invalid_outcome_label_quality_record_ids"
     )
     invalid_typed_payload_record_ids = validation.get("invalid_typed_payload_record_ids")
+    direct_ingest_contract = _direct_ingest_contract(parsed)
+    direct_ingest_hard_gates = (
+        direct_ingest_contract.get("hard_gate_summary")
+        if isinstance(direct_ingest_contract, dict)
+        else None
+    )
+    direct_ingest_fatal_blockers = (
+        direct_ingest_contract.get("fatal_blockers")
+        if isinstance(direct_ingest_contract, dict)
+        else None
+    )
+    final_semantic_audit_rows = parsed.jsonl_blocks.get("final_semantic_audit.jsonl")
+    final_semantic_fail_count = (
+        sum(
+            1
+            for row in final_semantic_audit_rows
+            if row.get("semantic_verdict") != "PASS"
+        )
+        if final_semantic_audit_rows is not None
+        else None
+    )
     return {
         "path": path.as_posix(),
         "raw_bundle_sha256": file_sha256(path),
@@ -587,6 +608,53 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             if isinstance(invalid_typed_payload_record_ids, list)
             else 0
         ),
+        "direct_ingest_contract_present": isinstance(direct_ingest_contract, dict),
+        "direct_ingest_contract_schema_version": (
+            direct_ingest_contract.get("schema_version")
+            if isinstance(direct_ingest_contract, dict)
+            else None
+        ),
+        "direct_brain_ingest_ready": (
+            direct_ingest_contract.get("direct_brain_ingest_ready")
+            if isinstance(direct_ingest_contract, dict)
+            else None
+        ),
+        "brain_eligible": (
+            direct_ingest_contract.get("brain_eligible")
+            if isinstance(direct_ingest_contract, dict)
+            else None
+        ),
+        "requires_human_semantic_review": (
+            direct_ingest_contract.get("requires_human_semantic_review")
+            if isinstance(direct_ingest_contract, dict)
+            else None
+        ),
+        "direct_ingest_fatal_blocker_count": (
+            len(direct_ingest_fatal_blockers)
+            if isinstance(direct_ingest_fatal_blockers, list)
+            else None
+        ),
+        "direct_ingest_contract_validation_parity_verified": (
+            direct_ingest_hard_gates.get(
+                "direct_ingest_contract_validation_parity_verified"
+            )
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
+        "direct_ingest_contract_count_hash_parity_verified": (
+            direct_ingest_hard_gates.get(
+                "direct_ingest_contract_count_hash_parity_verified"
+            )
+            if isinstance(direct_ingest_hard_gates, dict)
+            else None
+        ),
+        "final_semantic_audit_present": final_semantic_audit_rows is not None,
+        "final_semantic_audit_count": (
+            len(final_semantic_audit_rows)
+            if final_semantic_audit_rows is not None
+            else None
+        ),
+        "final_semantic_audit_fail_count": final_semantic_fail_count,
         "inspection_status": (
             "unsupported_bundle_version"
             if effective_adapter is None
@@ -1261,6 +1329,11 @@ def _manifest(parsed: GenericParsedBundle) -> dict[str, Any]:
 def _validation_report(parsed: GenericParsedBundle) -> dict[str, Any]:
     value = parsed.json_blocks.get("validation_report.json")
     return value if isinstance(value, dict) else {}
+
+
+def _direct_ingest_contract(parsed: GenericParsedBundle) -> dict[str, Any] | None:
+    value = parsed.json_blocks.get("direct_ingest_contract.json")
+    return value if isinstance(value, dict) else None
 
 
 def _episode(parsed: GenericParsedBundle) -> dict[str, Any]:
