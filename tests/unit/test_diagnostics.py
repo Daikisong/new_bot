@@ -2616,6 +2616,153 @@ def test_production_readiness_rejects_llm_full_record_shard_manifest_mismatch(
     )
 
 
+def test_production_readiness_rejects_llm_full_category_source_unknown_record_ids(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    manifest = _llm_compile_manifest_fixture()
+    categories = manifest["categories"]
+    assert isinstance(categories, list)
+    category = categories[0]
+    assert isinstance(category, dict)
+    category["source_record_ids"] = ["BRAIN-missing"]
+    category["source_record_count"] = 1
+    write_json(current / "llm_compile_manifest.json", manifest)
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"][
+        "category_manifest_unknown_source_record_ids"
+    ] == ["BRAIN-missing"]
+    assert (
+        "brain: llm-full compile manifest categories reference unknown source record IDs"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_full_record_shard_unknown_or_missing_record_ids(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    manifest = _llm_compile_manifest_fixture()
+    manifest["record_shards"] = [
+        {
+            "shard_index": 1,
+            "record_count": 1,
+            "record_ids": ["BRAIN-missing"],
+            "cache_key": "LLMBRAIN-missing-shard",
+        }
+    ]
+    write_json(current / "llm_compile_manifest.json", manifest)
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["record_shard_manifest_unknown_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["llm_full_brain"]["record_shard_manifest_missing_record_ids"] == [
+        "BRAIN-production"
+    ]
+    assert (
+        "brain: llm-full compile manifest record shards reference unknown record IDs"
+        in production["findings"]
+    )
+    assert (
+        "brain: llm-full compile manifest record shards do not cover record store IDs"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_missing_llm_full_category_files(
     tmp_path,
 ) -> None:

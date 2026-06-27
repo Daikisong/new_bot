@@ -2860,9 +2860,11 @@ def _llm_full_brain_status(
     category_manifest_stats = _llm_compile_category_manifest_stats(
         compile_manifest,
         compiled_claim_stats["claim_ids"],
+        known_record_ids=known_record_ids,
     )
     record_shard_manifest_stats = _llm_compile_record_shard_manifest_stats(
-        compile_manifest
+        compile_manifest,
+        known_record_ids=known_record_ids,
     )
     compiled_claim_count = compiled_claim_stats["line_count"]
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
@@ -2951,6 +2953,9 @@ def _llm_full_brain_status(
         "category_manifest_unknown_compiled_claim_ids": category_manifest_stats[
             "unknown_compiled_claim_ids"
         ],
+        "category_manifest_unknown_source_record_ids": category_manifest_stats[
+            "unknown_source_record_ids"
+        ],
         "record_shard_manifest_observed_count": record_shard_manifest_stats[
             "observed_count"
         ],
@@ -2968,6 +2973,12 @@ def _llm_full_brain_status(
         ],
         "record_shard_manifest_duplicate_record_ids": record_shard_manifest_stats[
             "duplicate_record_ids"
+        ],
+        "record_shard_manifest_unknown_record_ids": record_shard_manifest_stats[
+            "unknown_record_ids"
+        ],
+        "record_shard_manifest_missing_record_ids": record_shard_manifest_stats[
+            "missing_record_ids"
         ],
         "compile_report_path": relative_to_root(
             compile_report_path,
@@ -3067,6 +3078,14 @@ def _llm_full_brain_status(
             findings.append(
                 "llm-full compile manifest record shards contain duplicate record IDs"
             )
+        if record_shard_manifest_stats["unknown_record_ids"]:
+            findings.append(
+                "llm-full compile manifest record shards reference unknown record IDs"
+            )
+        if record_shard_manifest_stats["missing_record_ids"]:
+            findings.append(
+                "llm-full compile manifest record shards do not cover record store IDs"
+            )
         category_count = status["category_count"]
         if category_count != len(BRAIN_FILES):
             findings.append("llm-full category count does not match brain category files")
@@ -3085,6 +3104,10 @@ def _llm_full_brain_status(
         if category_manifest_stats["unknown_compiled_claim_ids"]:
             findings.append(
                 "llm-full compile manifest references unknown compiled claim IDs"
+            )
+        if category_manifest_stats["unknown_source_record_ids"]:
+            findings.append(
+                "llm-full compile manifest categories reference unknown source record IDs"
             )
         if category_file_stats["missing_files"]:
             findings.append("llm-full brain category files are missing")
@@ -4070,6 +4093,8 @@ def _brain_category_file_stats(current_dir: Path) -> dict[str, Any]:
 def _llm_compile_category_manifest_stats(
     manifest: object,
     compiled_claim_ids: list[str],
+    *,
+    known_record_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     expected_by_category = {
         _brain_category(file_name): file_name for file_name in BRAIN_FILES
@@ -4078,6 +4103,7 @@ def _llm_compile_category_manifest_stats(
     source_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
     unknown_compiled_claim_ids: list[str] = []
+    source_record_ids: list[str] = []
     categories = manifest.get("categories") if isinstance(manifest, dict) else None
     if not isinstance(categories, list):
         return {
@@ -4086,6 +4112,7 @@ def _llm_compile_category_manifest_stats(
             "source_count_mismatches": source_count_mismatches,
             "compiled_claim_count_mismatches": compiled_claim_count_mismatches,
             "unknown_compiled_claim_ids": unknown_compiled_claim_ids,
+            "unknown_source_record_ids": [],
         }
     if len(categories) != len(BRAIN_FILES):
         schema_mismatches.append(
@@ -4125,6 +4152,7 @@ def _llm_compile_category_manifest_stats(
             or category.get("source_record_count") != len(source_ids)
         ):
             source_count_mismatches.append(category_label)
+        source_record_ids.extend(source_ids)
         claim_ids = _string_list(category.get("compiled_claim_ids"))
         if (
             not isinstance(category.get("compiled_claim_ids"), list)
@@ -4139,16 +4167,24 @@ def _llm_compile_category_manifest_stats(
     missing_categories = sorted(set(expected_by_category) - set(observed_category_names))
     for category_name in missing_categories:
         schema_mismatches.append(f"{category_name}: missing category entry")
+    unknown_source_record_ids: list[str] = []
+    if known_record_ids is not None:
+        unknown_source_record_ids = sorted(set(source_record_ids) - known_record_ids)
     return {
         "observed_count": len(categories),
         "schema_mismatches": sorted(schema_mismatches),
         "source_count_mismatches": sorted(source_count_mismatches),
         "compiled_claim_count_mismatches": sorted(compiled_claim_count_mismatches),
         "unknown_compiled_claim_ids": sorted(set(unknown_compiled_claim_ids)),
+        "unknown_source_record_ids": unknown_source_record_ids,
     }
 
 
-def _llm_compile_record_shard_manifest_stats(manifest: object) -> dict[str, Any]:
+def _llm_compile_record_shard_manifest_stats(
+    manifest: object,
+    *,
+    known_record_ids: set[str] | None = None,
+) -> dict[str, Any]:
     schema_mismatches: list[str] = []
     count_mismatches: list[str] = []
     record_ids: list[str] = []
@@ -4163,6 +4199,8 @@ def _llm_compile_record_shard_manifest_stats(manifest: object) -> dict[str, Any]
             "schema_mismatches": ["record_shards: missing"],
             "count_mismatches": count_mismatches,
             "duplicate_record_ids": [],
+            "unknown_record_ids": [],
+            "missing_record_ids": [],
         }
     if expected_shard_count != len(record_shards):
         observed = (
@@ -4193,6 +4231,12 @@ def _llm_compile_record_shard_manifest_stats(manifest: object) -> dict[str, Any]
             "source_record_count: expected "
             f"{len(set(record_ids))}, got {source_record_count}"
         )
+    unknown_record_ids: list[str] = []
+    missing_record_ids: list[str] = []
+    if known_record_ids is not None:
+        observed_record_ids = set(record_ids)
+        unknown_record_ids = sorted(observed_record_ids - known_record_ids)
+        missing_record_ids = sorted(known_record_ids - observed_record_ids)
     return {
         "observed_count": len(record_shards),
         "record_id_count": len(record_ids),
@@ -4200,6 +4244,8 @@ def _llm_compile_record_shard_manifest_stats(manifest: object) -> dict[str, Any]
         "schema_mismatches": sorted(schema_mismatches),
         "count_mismatches": sorted(count_mismatches),
         "duplicate_record_ids": _duplicate_strings(record_ids),
+        "unknown_record_ids": unknown_record_ids,
+        "missing_record_ids": missing_record_ids,
     }
 
 
