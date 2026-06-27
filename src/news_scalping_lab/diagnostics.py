@@ -140,6 +140,7 @@ class WebEvidenceSourceIdStatus:
 class ManifestPromptHashStatus:
     values: set[str]
     invalid_fields: list[str]
+    fields_by_hash: dict[str, set[str]]
 
 
 def production_readiness_report(
@@ -703,6 +704,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     missing_prompt_hash_manifests: list[str] = []
     invalid_prompt_hash_manifests: list[dict[str, Any]] = []
     manifest_prompt_hashes: set[str] = set()
+    manifest_prompt_hash_fields: dict[str, set[str]] = {}
     for manifest_path in manifest_paths:
         relative_path = relative_to_root(manifest_path, root)
         try:
@@ -734,6 +736,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         prompt_hash_status = _manifest_prompt_hash_status(manifest)
         if prompt_hash_status.values:
             manifest_prompt_hashes.update(prompt_hash_status.values)
+            for prompt_hash, fields in prompt_hash_status.fields_by_hash.items():
+                manifest_prompt_hash_fields.setdefault(prompt_hash, set()).update(fields)
         else:
             missing_prompt_hash_manifests.append(relative_path)
         if prompt_hash_status.invalid_fields:
@@ -748,6 +752,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     trace_evidence = _production_llm_trace_evidence_status(
         root,
         manifest_prompt_hashes=manifest_prompt_hashes,
+        manifest_prompt_hash_fields=manifest_prompt_hash_fields,
     )
 
     findings: list[str] = []
@@ -809,6 +814,12 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             "missing_trace_prompt_hash_count"
         ],
         "missing_trace_prompt_hashes": trace_evidence["missing_trace_prompt_hashes"],
+        "prompt_hash_purpose_mismatch_count": trace_evidence[
+            "prompt_hash_purpose_mismatch_count"
+        ],
+        "prompt_hash_purpose_mismatches": trace_evidence[
+            "prompt_hash_purpose_mismatches"
+        ],
         "missing_trace_checkpoint_id_count": trace_evidence[
             "missing_trace_checkpoint_id_count"
         ],
@@ -849,18 +860,25 @@ def _mock_model_config_values(model_config: dict[str, Any]) -> list[str]:
 def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHashStatus:
     prompt_hashes = manifest.get("prompt_hashes")
     if not isinstance(prompt_hashes, dict):
-        return ManifestPromptHashStatus(values=set(), invalid_fields=[])
+        return ManifestPromptHashStatus(
+            values=set(),
+            invalid_fields=[],
+            fields_by_hash={},
+        )
     values: set[str] = set()
     invalid_fields: list[str] = []
+    fields_by_hash: dict[str, set[str]] = {}
     for key, value in prompt_hashes.items():
         field = str(key)
         if isinstance(value, str) and value:
             values.add(value)
+            fields_by_hash.setdefault(value, set()).add(field)
         else:
             invalid_fields.append(field)
     return ManifestPromptHashStatus(
         values=values,
         invalid_fields=sorted(invalid_fields),
+        fields_by_hash=fields_by_hash,
     )
 
 
@@ -868,6 +886,7 @@ def _production_llm_trace_evidence_status(
     root: Path,
     *,
     manifest_prompt_hashes: set[str],
+    manifest_prompt_hash_fields: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     if not manifest_prompt_hashes:
         return {
@@ -879,6 +898,8 @@ def _production_llm_trace_evidence_status(
             "invalid_trace_schemas": [],
             "missing_trace_prompt_hash_count": 0,
             "missing_trace_prompt_hashes": [],
+            "prompt_hash_purpose_mismatch_count": 0,
+            "prompt_hash_purpose_mismatches": [],
             "missing_trace_checkpoint_id_count": 0,
             "missing_trace_checkpoint_id_traces": [],
             "mock_trace_count": 0,
@@ -902,6 +923,7 @@ def _production_llm_trace_evidence_status(
     unreadable_traces: list[str] = []
     invalid_trace_schemas: list[dict[str, Any]] = []
     matched_prompt_hashes: set[str] = set()
+    prompt_hash_purpose_mismatches: list[dict[str, Any]] = []
     missing_trace_checkpoint_id_traces: list[dict[str, Any]] = []
     mock_traces: list[dict[str, Any]] = []
     checkpoint_ids: set[str] = set()
@@ -917,6 +939,22 @@ def _production_llm_trace_evidence_status(
             continue
         matched_prompt_hashes.add(prompt_hash)
         checked_traces.append(trace_path)
+        expected_purposes = (
+            manifest_prompt_hash_fields.get(prompt_hash, set())
+            if manifest_prompt_hash_fields is not None
+            else set()
+        )
+        trace_purpose = trace.get("purpose")
+        if expected_purposes and trace_purpose not in expected_purposes:
+            prompt_hash_purpose_mismatches.append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "prompt_sha256": prompt_hash,
+                    "expected_purposes": sorted(expected_purposes),
+                    "observed_purpose": trace_purpose,
+                }
+            )
         if trace.get("schema_version") != "nslab.llm_trace.v1":
             invalid_trace_schemas.append(
                 {
@@ -1040,6 +1078,11 @@ def _production_llm_trace_evidence_status(
         )
     for prompt_hash in missing_trace_prompt_hashes:
         findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
+    for mismatch in prompt_hash_purpose_mismatches:
+        findings.append(
+            f"referenced LLM trace purpose does not match manifest prompt_hashes: "
+            f"{mismatch['path']}"
+        )
     for trace in missing_trace_checkpoint_id_traces:
         findings.append(f"referenced LLM trace missing checkpoint_id: {trace['path']}")
     for trace in mock_traces:
@@ -1080,6 +1123,8 @@ def _production_llm_trace_evidence_status(
         "invalid_trace_schemas": invalid_trace_schemas,
         "missing_trace_prompt_hash_count": len(missing_trace_prompt_hashes),
         "missing_trace_prompt_hashes": missing_trace_prompt_hashes,
+        "prompt_hash_purpose_mismatch_count": len(prompt_hash_purpose_mismatches),
+        "prompt_hash_purpose_mismatches": prompt_hash_purpose_mismatches,
         "missing_trace_checkpoint_id_count": len(missing_trace_checkpoint_id_traces),
         "missing_trace_checkpoint_id_traces": missing_trace_checkpoint_id_traces,
         "mock_trace_count": len(mock_traces),

@@ -2218,6 +2218,99 @@ def test_production_readiness_rejects_invalid_llm_context_prompt_hash_entries(
     )
 
 
+def test_production_readiness_rejects_llm_trace_purpose_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    trace_dir = tmp_path / "runs" / "traces"
+    checkpoint_dir = tmp_path / "runs" / "checkpoints" / "llm"
+    manifest_dir.mkdir(parents=True)
+    trace_dir.mkdir(parents=True)
+    checkpoint_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-purpose-mismatch.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-purpose-mismatch",
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+            "prompt_hashes": {"daily_blind_analysis": "live-trace-hash"},
+        },
+    )
+    write_json(
+        trace_dir / "TRACE-purpose-mismatch.json",
+        {
+            "schema_version": "nslab.llm_trace.v1",
+            "trace_id": "TRACE-purpose-mismatch",
+            "operation": "generate_structured",
+            "purpose": "postmortem_analysis",
+            "provider": "OpenAIResponsesProvider",
+            "checkpoint_id": "LLMCKPT-purpose-mismatch",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    write_json(
+        checkpoint_dir / "LLMCKPT-purpose-mismatch.json",
+        {
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "checkpoint_id": "LLMCKPT-purpose-mismatch",
+            "operation": "generate_structured",
+            "purpose": "postmortem_analysis",
+            "provider": "OpenAIResponsesProvider",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_evidence"]["passed"] is False
+    assert production["llm_evidence"]["referenced_prompt_hash_count"] == 1
+    assert production["llm_evidence"]["checked_trace_count"] == 1
+    assert production["llm_evidence"]["missing_trace_prompt_hash_count"] == 0
+    assert production["llm_evidence"]["prompt_hash_purpose_mismatch_count"] == 1
+    assert production["llm_evidence"]["prompt_hash_purpose_mismatches"] == [
+        {
+            "path": "runs/traces/TRACE-purpose-mismatch.json",
+            "trace_id": "TRACE-purpose-mismatch",
+            "prompt_sha256": "live-trace-hash",
+            "expected_purposes": ["daily_blind_analysis"],
+            "observed_purpose": "postmortem_analysis",
+        }
+    ]
+    assert production["llm_evidence"]["checked_checkpoint_count"] == 1
+    assert production["llm_evidence"]["checkpoint_trace_mismatch_count"] == 0
+    assert (
+        "llm_evidence: referenced LLM trace purpose does not match "
+        "manifest prompt_hashes: runs/traces/TRACE-purpose-mismatch.json"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_accepts_live_llm_context_manifests(
     tmp_path,
 ) -> None:
@@ -2333,6 +2426,8 @@ def test_production_readiness_accepts_live_llm_context_manifests(
     assert production["llm_evidence"]["checked_trace_count"] == 1
     assert production["llm_evidence"]["invalid_trace_schema_count"] == 0
     assert production["llm_evidence"]["missing_trace_prompt_hash_count"] == 0
+    assert production["llm_evidence"]["prompt_hash_purpose_mismatch_count"] == 0
+    assert production["llm_evidence"]["prompt_hash_purpose_mismatches"] == []
     assert production["llm_evidence"]["missing_trace_checkpoint_id_count"] == 0
     assert production["llm_evidence"]["mock_trace_count"] == 0
     assert production["llm_evidence"]["checked_checkpoint_count"] == 1
