@@ -3686,6 +3686,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_skipped_record_ids": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
+            "expected_source_record_hashes": {},
+            "source_record_hash_manifest_mismatch_ids": [],
             "missing_hash_fields": [],
             "invalid_hash_fields": [],
             "skipped_record_reasons_by_record_id": {},
@@ -3780,6 +3782,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_skipped_record_ids": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
+            "expected_source_record_hashes": {},
+            "source_record_hash_manifest_mismatch_ids": [],
             "missing_hash_fields": [],
             "invalid_hash_fields": [],
             "skipped_record_reasons_by_record_id": {},
@@ -4026,6 +4030,27 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_hash_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    expected_source_record_hashes = (
+        _expected_training_export_source_record_hashes_from_manifests(
+            audit.get("manifests")
+        )
+    )
+    source_record_hash_manifest_mismatch_ids = (
+        _hash_mapping_mismatch_ids(
+            source_record_hashes,
+            expected_source_record_hashes,
+        )
+        if diagnostics
+        and "source_record_hashes" not in missing_hash_fields
+        and "source_record_hashes" not in invalid_hash_fields
+        and expected_source_record_hashes
+        else []
+    )
+    if source_record_hash_manifest_mismatch_ids:
+        findings.append(
+            "training export source_record_hashes do not match manifests: "
+            + ", ".join(source_record_hash_manifest_mismatch_ids)
+        )
     unique_training_eligible_count = _int_from_mapping(
         diagnostics,
         "unique_training_eligible_record_count",
@@ -4563,6 +4588,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "invalid_record_id_fields": invalid_record_id_fields,
         "source_record_hashes": source_record_hashes,
         "record_store_source_record_hashes": record_store_source_record_hashes,
+        "expected_source_record_hashes": expected_source_record_hashes,
+        "source_record_hash_manifest_mismatch_ids": (
+            source_record_hash_manifest_mismatch_ids
+        ),
         "missing_hash_fields": missing_hash_fields,
         "invalid_hash_fields": invalid_hash_fields,
         "invalid_reason_fields": invalid_reason_fields,
@@ -7820,6 +7849,34 @@ def _expected_training_export_unique_record_ids_from_manifests(
         "unique_exported_record_ids": sorted(exported_ids),
         "unique_skipped_record_ids": sorted(skipped_ids),
     }
+
+
+def _expected_training_export_source_record_hashes_from_manifests(
+    manifests: object,
+) -> dict[str, str]:
+    if not isinstance(manifests, dict):
+        return {}
+    expected: dict[str, str] = {}
+    for kind in REQUIRED_TRAINING_EXPORT_KINDS:
+        manifest = manifests.get(kind)
+        if not isinstance(manifest, dict):
+            return {}
+        raw_hashes = manifest.get("source_record_hashes")
+        if not isinstance(raw_hashes, dict):
+            return {}
+        expected.update(_string_map(raw_hashes))
+    return dict(sorted(expected.items()))
+
+
+def _hash_mapping_mismatch_ids(
+    observed: dict[str, str],
+    expected: dict[str, str],
+) -> list[str]:
+    return sorted(
+        record_id
+        for record_id in set(observed) | set(expected)
+        if observed.get(record_id) != expected.get(record_id)
+    )
 
 
 def _expected_training_export_skipped_reason_fields_from_manifests(

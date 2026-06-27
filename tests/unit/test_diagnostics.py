@@ -2380,6 +2380,8 @@ def test_production_readiness_marks_training_exports_not_applicable_without_reco
     assert production["training_exports"]["weight_validation_status_mismatches"] == {}
     assert production["training_exports"]["expected_skipped_record_reason_fields"] == {}
     assert production["training_exports"]["skipped_record_reason_mismatches"] == []
+    assert production["training_exports"]["expected_source_record_hashes"] == {}
+    assert production["training_exports"]["source_record_hash_manifest_mismatch_ids"] == []
     assert production["training_exports"]["weight_diagnostic_count_mismatches"] == []
 
 
@@ -2548,6 +2550,10 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["source_record_hashes"] == production[
         "training_exports"
     ]["record_store_source_record_hashes"]
+    assert production["training_exports"]["expected_source_record_hashes"] == (
+        production["training_exports"]["source_record_hashes"]
+    )
+    assert production["training_exports"]["source_record_hash_manifest_mismatch_ids"] == []
     assert production["training_exports"]["blind_safe_row_count"] == training_report[
         "blind_safe_row_count"
     ]
@@ -3100,6 +3106,57 @@ def test_production_readiness_rejects_training_export_source_hash_mismatch(
     )
     assert (
         "training: training export source_record_hashes IDs do not match current records"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_training_export_source_hash_manifest_mismatch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    manifests = {
+        kind: json.loads(
+            (tmp_path / "training_exports" / kind / "manifest.json").read_text(
+                encoding="utf-8",
+            )
+        )
+        for kind in ("sft", "preference", "evals")
+    }
+    manifests["sft"]["source_record_hashes"]["BRAIN-TRAIN-ISSUER"] = "0" * 64
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    existing_report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", existing_report)
+        return {"passed": True, "findings": [], "manifests": manifests}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["source_record_hash_manifest_mismatch_ids"] == [
+        "BRAIN-TRAIN-ISSUER",
+    ]
+    assert (
+        "training export source_record_hashes do not match manifests: "
+        "BRAIN-TRAIN-ISSUER"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export source_record_hashes do not match manifests: "
+        "BRAIN-TRAIN-ISSUER"
         in production["findings"]
     )
 
