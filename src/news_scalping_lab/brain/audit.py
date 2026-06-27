@@ -666,10 +666,11 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             ),
             "validated_compiled_claims_with_single_episode": validated_single_episode,
         }
-    records_by_id = {
-        record.record_id: record for record in BrainRecordStore(root).list_records()
-    }
+    records = BrainRecordStore(root).list_records()
+    records_by_id = {record.record_id: record for record in records}
     record_ids = set(records_by_id)
+    known_episode_ids = set(accepted_ids)
+    known_episode_ids.update(record.episode_id for record in records)
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
@@ -691,13 +692,15 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             unknown_contradicting_records.append(
                 f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
             )
-        unknown_support_episodes = sorted(set(claim.supporting_episode_ids) - accepted_ids)
+        unknown_support_episodes = sorted(
+            set(claim.supporting_episode_ids) - known_episode_ids
+        )
         if unknown_support_episodes:
             unknown_supporting_episodes.append(
                 f"{claim.claim_id}: {', '.join(unknown_support_episodes)}"
             )
         unknown_contradiction_episodes = sorted(
-            set(claim.contradicting_episode_ids) - accepted_ids
+            set(claim.contradicting_episode_ids) - known_episode_ids
         )
         if unknown_contradiction_episodes:
             unknown_contradicting_episodes.append(

@@ -3,7 +3,7 @@
 - schema_version: `nslab.production_readiness.v1`
 - passed: `False`
 - status: `attention`
-- finding_count: `82`
+- finding_count: `81`
 ## findings
 
 - `real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending`
@@ -85,13 +85,12 @@
 - `brain: current manifest is catalog_only`
 - `brain: current manifest build_mode is catalog, not llm-full`
 - `brain: llm-full compile manifest is missing`
-- `brain: compiled claims JSONL is missing`
 - `embedding: deterministic mock vector index cannot be production semantic index`
 - `embedding: on-disk deterministic mock vector index cannot be production semantic index`
 
 ## finding_counts_by_category
 
-- brain: `4`
+- brain: `3`
 - embedding: `2`
 - llm: `1`
 - llm_evidence: `47`
@@ -104,7 +103,7 @@
 
 ## findings_by_category
 
-- brain: `['brain: current manifest is catalog_only', 'brain: current manifest build_mode is catalog, not llm-full', 'brain: llm-full compile manifest is missing', 'brain: compiled claims JSONL is missing']`
+- brain: `['brain: current manifest is catalog_only', 'brain: current manifest build_mode is catalog, not llm-full', 'brain: llm-full compile manifest is missing']`
 - embedding: `['embedding: deterministic mock vector index cannot be production semantic index', 'embedding: on-disk deterministic mock vector index cannot be production semantic index']`
 - llm: `['llm: mock provider cannot compile production brain']`
 - llm_evidence: `['llm_evidence: mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM model_config present in runs/manifests/RUN-1fca69ca7072.json: provider=mock-compatible', 'llm_evidence: mock LLM model_config present in runs/manifests/RUN-a5840d2def32.json: provider=mock-compatible', 'llm_evidence: mock LLM model_config present in runs/manifests/RUN-aa2a36dbf3e0.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-0ca37aecbe3c.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-188bb56ac676.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-1ee2d8d7b834.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-2e77374f0971.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-386be262d68d.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-41550af6dbf5.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-41ea9acbffd1.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-47566f6fa015.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-47de8cf59ecb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-47e0ab583e4a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-50c4c07b60ea.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-571a901108eb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-78d4a7435057.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-859724333092.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-8831ef3e257f.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-9019e1625000.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-923868eafd90.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-95145e3b062a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-a1aff2ff7fd4.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-cb16cd27ce92.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-d3b1592b4fd2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-d43f1281c8bf.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-f857c7016b69.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM trace present in runs/traces/TRACE-f9d4de2d8052.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-1936b1897508bbd3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-4f0790064ee97066.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-67c0ef01f7e85b5f.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-835d4ddfeac5ccfe.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-b5f12eef215144c2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d2c2ce3b0b40d564.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: provider=DeterministicMockLLMProvider', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e757310c06146284.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock', 'llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider']`
@@ -117,7 +116,7 @@
 
 ## blocker_summary
 
-- `{'category': 'brain', 'finding_count': 4, 'first_finding': 'brain: current manifest is catalog_only'}`
+- `{'category': 'brain', 'finding_count': 3, 'first_finding': 'brain: current manifest is catalog_only'}`
 - `{'category': 'embedding', 'finding_count': 2, 'first_finding': 'embedding: deterministic mock vector index cannot be production semantic index'}`
 - `{'category': 'llm', 'finding_count': 1, 'first_finding': 'llm: mock provider cannot compile production brain'}`
 - `{'category': 'llm_evidence', 'finding_count': 47, 'first_finding': 'llm_evidence: mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock'}`
@@ -228,15 +227,15 @@
 - schema_version: `nslab.production_llm_full_brain.v1`
 - build_mode: `catalog`
 - catalog_only: `True`
-- current_brain_version: `brain-bbeaee24f6`
+- current_brain_version: `brain-b5e0bdca00`
 - expected_source_record_count: `4`
 - applicable: `False`
 - compile_manifest_path: `brain/current/llm_compile_manifest.json`
 - compile_manifest_exists: `False`
 - compiled_claims_path: `brain/current/compiled_claims.jsonl`
-- compiled_claims_exists: `False`
-- compiled_claim_jsonl_count: `0`
-- compiled_claim_valid_count: `0`
+- compiled_claims_exists: `True`
+- compiled_claim_jsonl_count: `4`
+- compiled_claim_valid_count: `4`
 - compiled_claim_invalid_line_count: `0`
 - duplicate_compiled_claim_ids: `[]`
 - compiled_claim_invalid_categories: `[]`
@@ -250,7 +249,7 @@
 - compiled_claim_temporal_leaks: `[]`
 - validated_compiled_claims_without_contradictions: `[]`
 - validated_compiled_claims_with_single_episode: `[]`
-- compiled_claim_supporting_record_id_count: `0`
+- compiled_claim_supporting_record_id_count: `4`
 - compiled_claim_contradicting_record_id_count: `0`
 - record_store_readable_for_compiled_claims: `True`
 - record_store_record_count_for_compiled_claims: `4`
@@ -296,7 +295,7 @@
 - category_count: `None`
 - llm_generation_count: `None`
 - run_brain_version: `None`
-- compile_report_brain_version: `brain-bbeaee24f6`
+- compile_report_brain_version: `brain-b5e0bdca00`
 - run_llm_generation_count: `None`
 - run_llm_live_call_count: `None`
 - run_llm_cache_hit_count: `None`
@@ -313,8 +312,8 @@
 - run_llm_trace_evidence: `{'findings': [], 'checked_trace_count': 0, 'unreadable_trace_count': 0, 'unreadable_traces': [], 'invalid_trace_schema_count': 0, 'invalid_trace_schemas': [], 'invalid_trace_payload_count': 0, 'invalid_trace_payloads': [], 'missing_trace_prompt_hash_count': 0, 'missing_trace_prompt_hashes': [], 'prompt_hash_purpose_mismatch_count': 0, 'prompt_hash_purpose_mismatches': [], 'missing_trace_checkpoint_id_count': 0, 'missing_trace_checkpoint_id_traces': [], 'mock_trace_count': 0, 'mock_traces': [], 'checked_checkpoint_count': 0, 'unreadable_checkpoint_count': 0, 'unreadable_checkpoints': [], 'invalid_checkpoint_schema_count': 0, 'invalid_checkpoint_schemas': [], 'checkpoint_id_mismatch_count': 0, 'checkpoint_id_mismatches': [], 'checkpoint_trace_mismatch_count': 0, 'checkpoint_trace_mismatches': [], 'mock_checkpoint_count': 0, 'mock_checkpoints': []}`
 - passed: `False`
 - status: `not_applicable`
-- finding_count: `4`
-- findings: `['current manifest is catalog_only', 'current manifest build_mode is catalog, not llm-full', 'llm-full compile manifest is missing', 'compiled claims JSONL is missing']`
+- finding_count: `3`
+- findings: `['current manifest is catalog_only', 'current manifest build_mode is catalog, not llm-full', 'llm-full compile manifest is missing']`
 
 ## record_coverage
 

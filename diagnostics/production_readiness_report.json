@@ -2,7 +2,7 @@
   "blocker_summary": [
     {
       "category": "brain",
-      "finding_count": 4,
+      "finding_count": 3,
       "first_finding": "brain: current manifest is catalog_only"
     },
     {
@@ -51,9 +51,9 @@
       "first_finding": "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl"
     }
   ],
-  "finding_count": 82,
+  "finding_count": 81,
   "finding_counts_by_category": {
-    "brain": 4,
+    "brain": 3,
     "embedding": 2,
     "llm": 1,
     "llm_evidence": 47,
@@ -144,7 +144,6 @@
     "brain: current manifest is catalog_only",
     "brain: current manifest build_mode is catalog, not llm-full",
     "brain: llm-full compile manifest is missing",
-    "brain: compiled claims JSONL is missing",
     "embedding: deterministic mock vector index cannot be production semantic index",
     "embedding: on-disk deterministic mock vector index cannot be production semantic index"
   ],
@@ -152,8 +151,7 @@
     "brain": [
       "brain: current manifest is catalog_only",
       "brain: current manifest build_mode is catalog, not llm-full",
-      "brain: llm-full compile manifest is missing",
-      "brain: compiled claims JSONL is missing"
+      "brain: llm-full compile manifest is missing"
     ],
     "embedding": [
       "embedding: deterministic mock vector index cannot be production semantic index",
@@ -855,7 +853,7 @@
     "compile_manifest_exists": false,
     "compile_manifest_path": "brain/current/llm_compile_manifest.json",
     "compile_manifest_schema_version": null,
-    "compile_report_brain_version": "brain-bbeaee24f6",
+    "compile_report_brain_version": "brain-b5e0bdca00",
     "compile_report_exists": true,
     "compile_report_path": "diagnostics/brain_compile_report.json",
     "compile_report_schema_version": "nslab.brain_compile_diagnostics.v1",
@@ -866,11 +864,11 @@
     "compiled_claim_episode_record_mismatches": [],
     "compiled_claim_invalid_categories": [],
     "compiled_claim_invalid_line_count": 0,
-    "compiled_claim_jsonl_count": 0,
-    "compiled_claim_supporting_record_id_count": 0,
+    "compiled_claim_jsonl_count": 4,
+    "compiled_claim_supporting_record_id_count": 4,
     "compiled_claim_temporal_leaks": [],
-    "compiled_claim_valid_count": 0,
-    "compiled_claims_exists": false,
+    "compiled_claim_valid_count": 4,
+    "compiled_claims_exists": true,
     "compiled_claims_path": "brain/current/compiled_claims.jsonl",
     "compiled_claims_with_unknown_contradicting_episodes": [],
     "compiled_claims_with_unknown_contradicting_records": [],
@@ -880,19 +878,18 @@
     "compiled_claims_without_supporting_records": [],
     "compiler_version": null,
     "configured_model": "deterministic-mock",
-    "current_brain_version": "brain-bbeaee24f6",
+    "current_brain_version": "brain-b5e0bdca00",
     "duplicate_compiled_claim_ids": [],
     "expected_compile_manifest_schema_version": "nslab.llm_full_brain_compile_manifest.v1",
     "expected_compile_report_schema_version": "nslab.brain_compile_diagnostics.v1",
     "expected_compile_run_schema_version": "nslab.llm_full_brain_compile_run.v1",
     "expected_compiler_version": "nslab.brain.llm_full.compiler.v4",
     "expected_source_record_count": 4,
-    "finding_count": 4,
+    "finding_count": 3,
     "findings": [
       "current manifest is catalog_only",
       "current manifest build_mode is catalog, not llm-full",
-      "llm-full compile manifest is missing",
-      "compiled claims JSONL is missing"
+      "llm-full compile manifest is missing"
     ],
     "llm_generation_count": null,
     "manifest_llm_duplicate_prompt_hashes": [],

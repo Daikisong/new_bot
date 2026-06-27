@@ -77,7 +77,7 @@ CATEGORY_RECORD_TYPE_ROUTES = {
 }
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
-CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v4"
+CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v5"
 LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v4"
 LLM_FULL_RECORD_SHARD_SIZE = 50
 LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
@@ -279,6 +279,8 @@ class BrainCompiler:
                 )
             ]
         )
+        records = BrainRecordStore(self.root).list_records()
+        compiled_claims = _compiled_claims_from_records(records) if records else None
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -293,7 +295,7 @@ class BrainCompiler:
             source_hashes=source_hashes,
             coverage_complete=len(covered_ids) == len(episodes),
         )
-        self._write_current(manifest, claims)
+        self._write_current(manifest, claims, compiled_claims=compiled_claims)
         self._write_mechanism_memory(manifest, mechanisms)
         self._write_shard_brains(manifest, episodes)
         self._write_immutable_snapshot(version)

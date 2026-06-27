@@ -1,31 +1,31 @@
 # Brain Compile Report
 
 - accepted_episode_count: `2`
-- brain_version: `brain-bbeaee24f6`
+- brain_version: `brain-b5e0bdca00`
 - catalog_only: `True`
 ## category_claim_counts
 
-- beneficiary_discovery: `2`
+- beneficiary_discovery: `0`
 - continuation: `0`
-- counterexamples: `2`
-- failure_modes: `2`
-- leader_selection: `2`
+- counterexamples: `0`
+- failure_modes: `0`
+- leader_selection: `1`
 - market_memory: `2`
-- single_event: `3`
+- single_event: `1`
 - theme_formation: `0`
-- world_model: `7`
+- world_model: `4`
 
 ## category_claim_ids
 
-- beneficiary_discovery: `['CL-e716e9229021', 'CL-0f7bde611467']`
+- beneficiary_discovery: `[]`
 - continuation: `[]`
-- counterexamples: `['CL-e716e9229021', 'CL-0f7bde611467']`
-- failure_modes: `['CL-e716e9229021', 'CL-0f7bde611467']`
-- leader_selection: `['CL-e716e9229021', 'CL-0f7bde611467']`
-- market_memory: `['CL-e716e9229021', 'CL-0f7bde611467']`
-- single_event: `['CL-e716e9229021', 'CL-5b5b51911d46', 'CL-0f7bde611467']`
+- counterexamples: `[]`
+- failure_modes: `[]`
+- leader_selection: `['CC-1c88f25cda7b']`
+- market_memory: `['CC-eb0220461892', 'CC-57d0a61fda13']`
+- single_event: `['CC-d0eb1ee3fcd4']`
 - theme_formation: `[]`
-- world_model: `['CL-e716e9229021', 'CL-81e4515f90eb', 'CL-c348d7fdd941', 'CL-5b5b51911d46', 'CL-0f7bde611467', 'CL-7816a26d3aad', 'CL-c6377253f530']`
+- world_model: `['CC-d0eb1ee3fcd4', 'CC-1c88f25cda7b', 'CC-eb0220461892', 'CC-57d0a61fda13']`
 
 - category_file_count: `9`
 ## category_files
@@ -65,18 +65,18 @@
 - world_model: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
 
 - claim_count: `7`
-- compiled_claim_count: `0`
-- compiled_claims_file_present: `False`
+- compiled_claim_count: `4`
+- compiled_claims_file_present: `True`
 - compiler_mode: `catalog`
-- compiler_model: `nslab.brain.catalog.compiler.v4`
+- compiler_model: `nslab.brain.catalog.compiler.v5`
 - compiler_provider: `deterministic_catalog`
-- compiler_version: `nslab.brain.catalog.compiler.v4`
+- compiler_version: `nslab.brain.catalog.compiler.v5`
 - covered_episode_count: `2`
 ## latest_brain_audit
 
 - deep: `True`
 - passed: `True`
-- brain_version: `brain-bbeaee24f6`
+- brain_version: `brain-b5e0bdca00`
 - brain_build_mode: `catalog`
 - catalog_only: `True`
 - coverage_complete: `True`
@@ -86,7 +86,7 @@
 - llm_compile_manifest_schema_version: `None`
 - llm_compile_expected_manifest_schema_version: `nslab.llm_full_brain_compile_manifest.v1`
 - llm_compile_category_schema_mismatches: `[]`
-- compiled_claim_file_present: `False`
+- compiled_claim_file_present: `True`
 - brain_category_file_count: `9`
 - brain_category_missing_files: `[]`
 - brain_category_source_record_types: `{'beneficiary_discovery': {}, 'continuation': {'memory_claim': 2}, 'counterexamples': {}, 'failure_modes': {}, 'leader_selection': {'blind_leader_preference_pair': 1}, 'market_memory': {'memory_claim': 2}, 'single_event': {'supervised_issuer_day_case': 1}, 'theme_formation': {}, 'world_model': {'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}}`

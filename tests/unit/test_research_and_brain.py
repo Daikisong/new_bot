@@ -1265,6 +1265,46 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     )
 
 
+def test_brain_audit_accepts_compiled_claim_episode_from_record_store(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Accepted catalog note for 2030-01-10.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record(
+        "BRAIN-RECORD-ONLY",
+        "EP-record-only",
+        training_eligible=True,
+    )
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / "EP-record-only.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    compiled_claims = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    audit = audit_brain(tmp_path)
+
+    assert [claim["supporting_episode_ids"] for claim in compiled_claims] == [
+        ["EP-record-only"]
+    ]
+    assert audit["compiled_claims_with_unknown_supporting_episodes"] == []
+    assert audit["compiled_claims_with_unknown_contradicting_episodes"] == []
+    assert audit["compiled_claim_findings"] == []
+
+
 def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     tmp_path: Path,
 ) -> None:
@@ -1451,12 +1491,31 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
 
     report_path = tmp_path / "diagnostics" / "brain_compile_report.json"
     report = read_json(report_path)
+    compiled_claim_rows = [
+        json.loads(line)
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
     stale_report = dict(report)
     stale_report["category_source_record_counts"] = {}
     stale_report.pop("category_source_record_type_counts", None)
     write_json(report_path, stale_report)
     audit = audit_brain(tmp_path)
     assert report["compiler_mode"] == "full"
+    assert report["catalog_only"] is True
+    assert report["compiled_claims_file_present"] is True
+    assert report["compiled_claim_count"] == 3
+    assert {row["supporting_record_ids"][0] for row in compiled_claim_rows} == {
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    }
+    assert report["category_claim_counts"]["world_model"] == 3
+    assert report["category_claim_counts"]["single_event"] == 1
+    assert report["category_claim_counts"]["leader_selection"] == 1
+    assert report["category_claim_counts"]["market_memory"] == 1
     assert report["category_source_record_type_counts"]["world_model"] == {
         "blind_leader_preference_pair": 1,
         "memory_claim": 1,
