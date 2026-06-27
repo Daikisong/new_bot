@@ -334,6 +334,7 @@ def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
         "coverage manifest created_at does not match current brain manifest",
         "coverage manifest build_mode does not match current brain manifest",
         "coverage manifest catalog_only does not match current brain manifest",
+        "coverage manifest is marked complete despite audit findings",
     ]
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit[
@@ -341,6 +342,52 @@ def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
     ]
     assert (
         "episode_coverage_findings: coverage manifest brain_version does not match current brain manifest"
+        in brain_report["latest_brain_audit"]["findings"]
+    )
+
+
+def test_brain_audit_rejects_malformed_episode_coverage_ids(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Episode coverage ID validation should reject malformed ID lists.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "coverage_manifest.json"
+    coverage_manifest = read_json(coverage_path)
+    coverage_manifest.update(
+        {
+            "covered_episode_ids": [episode.episode_id, episode.episode_id, 7],
+            "missing_episode_ids": [False],
+            "covered_episode_count": 1,
+            "coverage_complete": True,
+        }
+    )
+    write_json(coverage_path, coverage_manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["coverage_complete"] is False
+    assert audit["passed"] is False
+    assert audit["missing_episode_ids"] == []
+    assert audit["extra_episode_ids"] == []
+    assert audit["episode_coverage_findings"] == [
+        "coverage manifest covered_episode_ids is missing or invalid",
+        "coverage manifest missing_episode_ids is missing or invalid",
+        "coverage manifest has duplicate covered episodes",
+        "coverage manifest covered count does not match covered IDs",
+        "coverage manifest is marked complete despite audit findings",
+    ]
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit[
+        "episode_coverage_findings"
+    ]
+    assert (
+        "episode_coverage_findings: coverage manifest covered_episode_ids is missing or invalid"
         in brain_report["latest_brain_audit"]["findings"]
     )
 

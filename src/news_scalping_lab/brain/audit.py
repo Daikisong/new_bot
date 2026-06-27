@@ -51,6 +51,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     episode_coverage_audit = _audit_episode_coverage_manifest(
         coverage_manifest,
         current_manifest=brain_manifest,
+        expected_episode_ids=accepted_ids,
     )
     claim_audit = _audit_claims(root, accepted)
     mechanism_audit = _audit_mechanisms(root, accepted)
@@ -356,6 +357,7 @@ def _audit_episode_coverage_manifest(
     coverage_manifest: object,
     *,
     current_manifest: object,
+    expected_episode_ids: set[str],
 ) -> dict[str, Any]:
     expected_brain_version = (
         current_manifest.get("brain_version")
@@ -400,6 +402,15 @@ def _audit_episode_coverage_manifest(
     created_at = coverage_manifest.get("created_at")
     build_mode = coverage_manifest.get("build_mode")
     catalog_only = coverage_manifest.get("catalog_only")
+    raw_covered_ids = coverage_manifest.get("covered_episode_ids")
+    raw_missing_ids = coverage_manifest.get("missing_episode_ids")
+    covered_ids = _string_list(raw_covered_ids)
+    missing_ids = _string_list(raw_missing_ids)
+    expected_ids = set(expected_episode_ids)
+    missing_covered_ids = sorted(expected_ids - set(covered_ids))
+    unexpected_covered_ids = sorted(set(covered_ids) - expected_ids)
+    expected_missing_ids = missing_covered_ids
+    unknown_missing_ids = sorted(set(missing_ids) - expected_ids)
 
     if expected_brain_version is not None:
         if not isinstance(brain_version, str) or not brain_version:
@@ -436,6 +447,43 @@ def _audit_episode_coverage_manifest(
             findings.append(
                 "coverage manifest catalog_only does not match current brain manifest"
             )
+
+    if not _string_list_field_valid(raw_covered_ids):
+        findings.append("coverage manifest covered_episode_ids is missing or invalid")
+    if not _string_list_field_valid(raw_missing_ids):
+        findings.append("coverage manifest missing_episode_ids is missing or invalid")
+    duplicate_covered_ids = _duplicate_strings(covered_ids)
+    if duplicate_covered_ids:
+        findings.append("coverage manifest has duplicate covered episodes")
+    if unexpected_covered_ids:
+        findings.append("coverage manifest includes unknown covered episodes")
+    if missing_covered_ids:
+        findings.append("coverage manifest does not cover accepted episodes")
+    if unknown_missing_ids:
+        findings.append("coverage manifest missing IDs reference unknown episodes")
+    if _string_list_field_valid(raw_missing_ids) and (
+        set(missing_ids) != set(expected_missing_ids)
+    ):
+        findings.append("coverage manifest missing IDs do not match accepted episodes")
+
+    accepted_episode_count = _int_value(coverage_manifest.get("accepted_episode_count"))
+    covered_episode_count = _int_value(coverage_manifest.get("covered_episode_count"))
+    if accepted_episode_count is None:
+        findings.append("coverage manifest accepted_episode_count is missing")
+    elif accepted_episode_count != len(expected_ids):
+        findings.append(
+            "coverage manifest accepted_episode_count does not match accepted episodes"
+        )
+    if covered_episode_count is None:
+        findings.append("coverage manifest covered_episode_count is missing")
+    elif covered_episode_count != len(covered_ids):
+        findings.append("coverage manifest covered count does not match covered IDs")
+
+    has_findings_before_complete_check = bool(findings)
+    if coverage_manifest.get("coverage_complete") is not True:
+        findings.append("coverage manifest is not marked complete")
+    elif has_findings_before_complete_check:
+        findings.append("coverage manifest is marked complete despite audit findings")
 
     return {
         **base,
@@ -1528,6 +1576,10 @@ def _string_list(value: Any) -> list[str]:
 
 def _string_list_field_valid(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _duplicate_strings(values: list[str]) -> list[str]:
+    return sorted(value for value, count in Counter(values).items() if count > 1)
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:
