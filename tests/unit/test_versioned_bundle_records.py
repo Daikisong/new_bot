@@ -295,6 +295,7 @@ def _synthetic_v11_bundle(
     manifest_blind_valid: bool = True,
     manifest_validator_exit_code: int = 0,
     manifest_critical_error_count: int = 0,
+    validation_validator_exit_code: int | None = None,
     validation_critical_error_count: int = 0,
     issuer_available_from: str | None = None,
     issuer_label_quality: str | None = None,
@@ -540,6 +541,8 @@ def _synthetic_v11_bundle(
             ),
         },
     }
+    if validation_validator_exit_code is not None:
+        validation_payload["validator_exit_code"] = validation_validator_exit_code
     if validation_checked_hashes is not None:
         validation_payload["checked_artifact_hashes"] = validation_checked_hashes
     validation_report = json.dumps(
@@ -2622,7 +2625,9 @@ def test_invalid_bundle_available_from_fields_block_acceptance(
         ("bundle_status_accept_full", {"manifest_bundle_status": "REJECTED"}),
         ("blind_valid", {"manifest_blind_valid": False}),
         ("validator_exit_code_zero", {"manifest_validator_exit_code": 1}),
+        ("validator_exit_code_zero", {"validation_validator_exit_code": 1}),
         ("critical_error_count_zero", {"manifest_critical_error_count": 1}),
+        ("critical_error_count_zero", {"validation_critical_error_count": 1}),
     ],
 )
 def test_v11_hard_gates_block_acceptance(

@@ -400,17 +400,19 @@ class V11Adapter(BaseBundleAdapter):
     def validate(self, parsed: GenericParsedBundle) -> dict[str, Any]:
         validation = super().validate(parsed)
         manifest = _manifest(parsed)
+        validation_report = _validation_report(parsed)
         validation.update(
             {
                 "bundle_status_accept_full": manifest.get("bundle_status") == "ACCEPT_FULL",
                 "blind_valid": manifest.get("blind_valid") is True,
-                "validator_exit_code_zero": manifest.get("validator_exit_code") == 0,
-                "critical_error_count_zero": _int_field(
-                    manifest,
-                    "critical_error_count",
-                    _nested_int(_validation_report(parsed), "critical_error_count"),
-                )
-                == 0,
+                "validator_exit_code_zero": _all_declared_int_values_zero(
+                    _int_field(manifest, "validator_exit_code"),
+                    _nested_int(validation_report, "validator_exit_code"),
+                ),
+                "critical_error_count_zero": _all_declared_int_values_zero(
+                    _int_field(manifest, "critical_error_count"),
+                    _nested_int(validation_report, "critical_error_count"),
+                ),
             }
         )
         validation["passed"] = (
@@ -441,6 +443,8 @@ class V23DirectIngestAdapter(BaseBundleAdapter):
         validation = super().validate(parsed)
         checks = _v23_direct_ingest_contract_checks(parsed)
         manifest = _manifest(parsed)
+        validation_report = _validation_report(parsed)
+        direct_ingest_contract = _direct_ingest_contract(parsed) or {}
         validation.update(
             {
                 "direct_ingest_contract_present": checks["contract_present"],
@@ -462,18 +466,24 @@ class V23DirectIngestAdapter(BaseBundleAdapter):
                 "bundle_status_accept_full": manifest.get("bundle_status")
                 == "ACCEPT_FULL",
                 "brain_eligible": _optional_bool(manifest.get("brain_eligible")) is True,
-                "validator_exit_code_zero": _int_field(
-                    manifest,
-                    "validator_exit_code",
-                    _nested_int(_validation_report(parsed), "hard_gate_summary", "validator_exit_code"),
-                )
-                == 0,
-                "critical_error_count_zero": _int_field(
-                    manifest,
-                    "critical_error_count",
-                    _nested_int(_validation_report(parsed), "critical_error_count"),
-                )
-                == 0,
+                "validator_exit_code_zero": _all_declared_int_values_zero(
+                    _int_field(manifest, "validator_exit_code"),
+                    _nested_int(validation_report, "validator_exit_code"),
+                    _nested_int(
+                        direct_ingest_contract,
+                        "hard_gate_summary",
+                        "validator_exit_code",
+                    ),
+                ),
+                "critical_error_count_zero": _all_declared_int_values_zero(
+                    _int_field(manifest, "critical_error_count"),
+                    _nested_int(validation_report, "critical_error_count"),
+                    _nested_int(
+                        direct_ingest_contract,
+                        "hard_gate_summary",
+                        "critical_error_count",
+                    ),
+                ),
             }
         )
         validation["passed"] = (
@@ -1952,6 +1962,15 @@ def _int_field(*sources: object) -> int | None:
                 pass
         index += 1
     return None
+
+
+def _all_declared_int_values_zero(*values: object) -> bool:
+    declared_values = [
+        int_value
+        for value in values
+        if (int_value := _int_field(value)) is not None
+    ]
+    return bool(declared_values) and all(value == 0 for value in declared_values)
 
 
 def _nested_int(source: dict[str, Any], *keys: str) -> int | None:
