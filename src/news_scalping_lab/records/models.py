@@ -186,6 +186,22 @@ class SupervisedThemeFormationCase(FlexiblePayloadModel):
     attribution_status: str | None = None
 
 
+class ThemeFormationCase(FlexiblePayloadModel):
+    record_type: Literal["theme_formation_case"]
+    ticker: str | None = None
+    company_name: str | None = None
+    name: str | None = None
+    candidate_lane: str | None = None
+    lesson: str | None = None
+    source_fact_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    chosen_leader_ticker: str | None = None
+    chosen_leader_company_name: str | None = None
+    outcome_high_return_pct: float | None = None
+    upper_limit_touched: bool | None = None
+    sample_weight: float | None = None
+
+
 class BeneficiaryDiscoveryCase(FlexiblePayloadModel):
     record_type: Literal["beneficiary_discovery_case"]
     case_id: str | None = None
@@ -244,6 +260,59 @@ class CandidateRankingErrorCase(FlexiblePayloadModel):
     corrected_ticker: str | None = None
     corrected_company_name: str | None = None
     correction_record_ids: list[str] = Field(default_factory=list)
+
+
+class RankingErrorCase(FlexiblePayloadModel):
+    record_type: Literal["ranking_error_case"]
+    audit_id: str | None = None
+    error_id: str | None = None
+    classification: str | None = None
+    error_type: str | None = None
+    correction: str | None = None
+    correction_mode: str | None = None
+    matched_screening_ids: list[str] = Field(default_factory=list)
+    name_on_D: str | None = None
+    ticker: str | None = None
+    company_name: str | None = None
+    outcome_high_return_pct: float | None = None
+
+
+class NewslessOrUnexplainedCase(FlexiblePayloadModel):
+    record_type: Literal["newsless_or_unexplained_case"]
+    audit_id: str | None = None
+    input_news_hit_status: str | None = None
+    lesson: str | None = None
+    name_on_D: str | None = None
+    ticker: str | None = None
+    company_name: str | None = None
+    no_catalyst_asserted: bool | None = None
+    outcome_high_return_pct: float | None = None
+
+
+class NegativeControlCase(FlexiblePayloadModel):
+    record_type: Literal["negative_control_case"]
+    screening_id: str | None = None
+    ticker: str | None = None
+    company_name: str | None = None
+    name: str | None = None
+    candidate_lane: str | None = None
+    lesson: str | None = None
+    rejection_or_exclusion_reason: str | None = None
+    outcome_high_return_pct: float | None = None
+    upper_limit_touched: bool | None = None
+
+
+class ContextMarketStateOrFactCase(FlexiblePayloadModel):
+    record_type: Literal["context_market_state_or_fact_case"]
+    entity_name: str | None = None
+    company_name: str | None = None
+    fact_id: str | None = None
+    fact_ids: list[str] = Field(default_factory=list)
+    fact_type: str | None = None
+    issuer_scoped: bool | None = None
+    lesson: str | None = None
+    row_id: str | None = None
+    source_id: str | None = None
 
 
 class RowDispositionErrorCase(FlexiblePayloadModel):
@@ -346,10 +415,15 @@ KNOWN_RECORD_PAYLOAD_MODELS: dict[str, type[FlexiblePayloadModel]] = {
     "supervised_issuer_day_case": SupervisedIssuerDayCase,
     "supervised_direct_event_case": SupervisedDirectEventCase,
     "supervised_theme_formation_case": SupervisedThemeFormationCase,
+    "theme_formation_case": ThemeFormationCase,
     "beneficiary_discovery_case": BeneficiaryDiscoveryCase,
     "blind_leader_preference_pair": BlindLeaderPreferencePair,
     "candidate_generation_error_case": CandidateGenerationErrorCase,
     "candidate_ranking_error_case": CandidateRankingErrorCase,
+    "ranking_error_case": RankingErrorCase,
+    "newsless_or_unexplained_case": NewslessOrUnexplainedCase,
+    "negative_control_case": NegativeControlCase,
+    "context_market_state_or_fact_case": ContextMarketStateOrFactCase,
     "row_disposition_error_case": RowDispositionErrorCase,
     "entity_resolution_error_case": EntityResolutionErrorCase,
     "memory_claim": MemoryClaimRecord,
@@ -364,10 +438,15 @@ TRAINING_RECORD_TYPES = {
     "supervised_issuer_day_case",
     "supervised_direct_event_case",
     "supervised_theme_formation_case",
+    "theme_formation_case",
     "beneficiary_discovery_case",
     "blind_leader_preference_pair",
     "candidate_generation_error_case",
     "candidate_ranking_error_case",
+    "ranking_error_case",
+    "newsless_or_unexplained_case",
+    "negative_control_case",
+    "context_market_state_or_fact_case",
     "row_disposition_error_case",
     "entity_resolution_error_case",
 }
@@ -376,6 +455,7 @@ CANDIDATE_ERROR_RECORD_TYPES = frozenset(
     {
         "candidate_generation_error_case",
         "candidate_ranking_error_case",
+        "ranking_error_case",
         "row_disposition_error_case",
         "entity_resolution_error_case",
     }

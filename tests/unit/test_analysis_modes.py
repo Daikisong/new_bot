@@ -819,6 +819,7 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
             "candidate_generation_error_case",
             "candidate_ranking_error_case",
             "entity_resolution_error_case",
+            "ranking_error_case",
             "row_disposition_error_case",
         ]
     }

@@ -4627,7 +4627,7 @@ def _final_semantic_audit_raw_status(
             if not isinstance(payload, dict):
                 invalid_line_count += 1
                 continue
-            if payload.get("semantic_verdict") != "PASS":
+            if not _semantic_audit_row_passed(payload):
                 fail_count += 1
     return {
         **raw_status,
@@ -4637,6 +4637,14 @@ def _final_semantic_audit_raw_status(
         else None,
         "fail_count": fail_count if raw_status["exists"] is True else None,
     }
+
+
+def _semantic_audit_row_passed(payload: dict[str, Any]) -> bool:
+    for field_name in ("semantic_verdict", "semantic_audit_status", "status"):
+        value = payload.get(field_name)
+        if isinstance(value, str) and value.upper() == "PASS":
+            return True
+    return False
 
 
 def _imported_direct_ingest_raw_findings(

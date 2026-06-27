@@ -73,6 +73,7 @@ RECORD_SFT_TRAINING_CATEGORIES = [
 ERROR_CORRECTION_RECORD_TYPES = {
     "candidate_generation_error_case",
     "candidate_ranking_error_case",
+    "ranking_error_case",
     "row_disposition_error_case",
     "entity_resolution_error_case",
 }
@@ -1299,21 +1300,40 @@ def _record_rows_for_kind(
 
 def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
     if kind == "preference":
-        return record.record_type == "blind_leader_preference_pair"
+        return (
+            record.record_type == "blind_leader_preference_pair"
+            and _record_has_sealed_preference_pair(record)
+        )
     if kind == "evals":
         return record.record_type in {
             "supervised_issuer_day_case",
             "supervised_direct_event_case",
             "supervised_theme_formation_case",
+            "theme_formation_case",
             "beneficiary_discovery_case",
         }
     return record.record_type in {
         "supervised_issuer_day_case",
         "supervised_direct_event_case",
         "supervised_theme_formation_case",
+        "theme_formation_case",
         "beneficiary_discovery_case",
         *ERROR_CORRECTION_RECORD_TYPES,
     }
+
+
+def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
+    payload = record.payload
+    preferred = payload.get("blind_preferred_ticker") or payload.get(
+        "blind_preferred_candidate_id"
+    )
+    rejected = payload.get("blind_rejected_ticker") or payload.get(
+        "blind_rejected_candidate_id"
+    )
+    return isinstance(preferred, str) and bool(preferred) and isinstance(
+        rejected,
+        str,
+    ) and bool(rejected)
 
 
 def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
@@ -1448,6 +1468,8 @@ def _record_sft_task(record: BrainRecordEnvelope) -> str:
     if record.record_type == "supervised_direct_event_case":
         return "record_supervised_direct_event"
     if record.record_type == "supervised_theme_formation_case":
+        return "record_supervised_theme_formation"
+    if record.record_type == "theme_formation_case":
         return "record_supervised_theme_formation"
     if record.record_type == "beneficiary_discovery_case":
         return "record_beneficiary_discovery"
@@ -2003,7 +2025,7 @@ def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, A
                 record.trade_date.isoformat(),
                 str(record.payload.get("ticker") or ""),
             )
-            if key in issuer_keys:
+            if key in issuer_keys and not _uses_fractional_issuer_day_group(record):
                 duplicate_issuer_day_keys.append("|".join(key))
             issuer_keys.add(key)
             issuer_weights["|".join(key)] += _numeric_weight(
@@ -2045,6 +2067,13 @@ def _numeric_weight(value: object) -> float:
     if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
     return 0.0
+
+
+def _uses_fractional_issuer_day_group(record: BrainRecordEnvelope) -> bool:
+    return (
+        record.payload.get("issuer_day_sample_weight_policy")
+        == "fractional_issuer_day_group"
+    )
 
 
 def _nested_get(payload: dict[str, Any], *keys: str) -> Any:

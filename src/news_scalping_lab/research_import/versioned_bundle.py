@@ -106,13 +106,16 @@ class BaseBundleAdapter:
     def supports(self, parsed: GenericParsedBundle) -> bool:
         return False
 
+    def validation_payloads(self, parsed: GenericParsedBundle) -> list[dict[str, Any]]:
+        return parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+
     def validate(self, parsed: GenericParsedBundle) -> dict[str, Any]:
         manifest = _manifest(parsed)
         validation_report = _validation_report(parsed)
         block_hashes = _block_hashes(parsed)
         hash_validation = _hash_validation(parsed, manifest, validation_report)
         hash_mismatches = hash_validation.mismatches
-        records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+        records = self.validation_payloads(parsed)
         source_ids = _source_ids(parsed)
         missing_source_refs = _missing_source_references(records, source_ids)
         payload_reference_result = payload_reference_audit(
@@ -420,6 +423,91 @@ class V11Adapter(BaseBundleAdapter):
         return validation
 
 
+class V23DirectIngestAdapter(BaseBundleAdapter):
+    name = "v23-direct-ingest"
+
+    def supports(self, parsed: GenericParsedBundle) -> bool:
+        manifest_version = _optional_string(_manifest(parsed).get("schema_version"))
+        return (
+            bundle_schema_version(parsed) == "nslab.research_bundle.v11"
+            and manifest_version == "nslab.bundle_manifest.v23"
+            and _v23_direct_ingest_contract_checks(parsed)["supported"] is True
+        )
+
+    def validation_payloads(self, parsed: GenericParsedBundle) -> list[dict[str, Any]]:
+        return _v23_normalized_payloads(parsed)
+
+    def validate(self, parsed: GenericParsedBundle) -> dict[str, Any]:
+        validation = super().validate(parsed)
+        checks = _v23_direct_ingest_contract_checks(parsed)
+        manifest = _manifest(parsed)
+        validation.update(
+            {
+                "direct_ingest_contract_present": checks["contract_present"],
+                "direct_ingest_contract_supported": checks["supported"],
+                "direct_brain_ingest_ready": checks["direct_brain_ingest_ready"],
+                "automated_import_expected_to_pass": checks[
+                    "automated_import_expected_to_pass"
+                ],
+                "requires_human_semantic_review": checks[
+                    "requires_human_semantic_review"
+                ],
+                "direct_ingest_fatal_blocker_count": checks["fatal_blocker_count"],
+                "direct_ingest_record_count_hash_parity_ready": checks[
+                    "record_count_hash_parity_ready"
+                ],
+                "direct_ingest_schema_contract_verified": checks[
+                    "schema_contract_verified"
+                ],
+                "bundle_status_accept_full": manifest.get("bundle_status")
+                == "ACCEPT_FULL",
+                "brain_eligible": _optional_bool(manifest.get("brain_eligible")) is True,
+                "validator_exit_code_zero": _int_field(
+                    manifest,
+                    "validator_exit_code",
+                    _nested_int(_validation_report(parsed), "hard_gate_summary", "validator_exit_code"),
+                )
+                == 0,
+                "critical_error_count_zero": _int_field(
+                    manifest,
+                    "critical_error_count",
+                    _nested_int(_validation_report(parsed), "critical_error_count"),
+                )
+                == 0,
+            }
+        )
+        validation["passed"] = (
+            validation["passed"] is True
+            and validation["direct_ingest_contract_supported"] is True
+            and validation["bundle_status_accept_full"] is True
+            and validation["brain_eligible"] is True
+            and validation["validator_exit_code_zero"] is True
+            and validation["critical_error_count_zero"] is True
+        )
+        return validation
+
+    def normalize_brain_records(self, parsed: GenericParsedBundle) -> list[BrainRecordEnvelope]:
+        episode_id = _episode_id(parsed)
+        trade_day = _trade_date(parsed)
+        default_available_from = _default_available_from(parsed)
+        raw_records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+        normalized_payloads = _v23_normalized_payloads(parsed)
+        return [
+            _record_envelope(
+                payload=payload,
+                raw_payload=raw_payload,
+                episode_id=episode_id,
+                trade_date=trade_day,
+                default_available_from=default_available_from,
+                source_line=line_number,
+            )
+            for line_number, (raw_payload, payload) in enumerate(
+                zip(raw_records, normalized_payloads, strict=False),
+                start=1,
+            )
+        ]
+
+
 class ForwardCompatibleRawOnlyAdapter(BaseBundleAdapter):
     name = "forward-compatible-raw-only"
 
@@ -467,6 +555,7 @@ class ForwardCompatibleRawOnlyAdapter(BaseBundleAdapter):
 
 
 ADAPTERS: tuple[BundleVersionAdapter, ...] = (
+    V23DirectIngestAdapter(),
     V11Adapter(),
     V10Adapter(),
     LegacyV1Adapter(),
@@ -550,7 +639,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         sum(
             1
             for row in final_semantic_audit_rows
-            if row.get("semantic_verdict") != "PASS"
+            if not _semantic_audit_row_passed(row)
         )
         if final_semantic_audit_rows is not None
         else None
@@ -1140,6 +1229,7 @@ def _schema_major(version: str) -> int | None:
 def _record_envelope(
     *,
     payload: dict[str, Any],
+    raw_payload: dict[str, Any] | None = None,
     episode_id: str,
     trade_date: date,
     default_available_from: datetime,
@@ -1173,7 +1263,10 @@ def _record_envelope(
         )
         normalized_payload["training_eligible"] = False
         normalized_payload["eligibility_reason"] = eligibility_reason
-    raw_payload_sha = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    raw_payload_source = payload if raw_payload is None else raw_payload
+    raw_payload_sha = sha256_text(
+        json.dumps(raw_payload_source, ensure_ascii=False, sort_keys=True)
+    )
     normalized_payload_sha = sha256_text(canonical_json(normalized_payload))
     record_id = _record_id(payload, episode_id, record_type, normalized_payload_sha)
     return BrainRecordEnvelope(
@@ -1278,6 +1371,359 @@ def _evidence_phase(record_type: str, payload: dict[str, Any]) -> str:
     if record_type == "beneficiary_discovery_case":
         return "BLIND"
     return "POSTMORTEM"
+
+
+def _v23_direct_ingest_contract_checks(parsed: GenericParsedBundle) -> dict[str, Any]:
+    contract = _direct_ingest_contract(parsed)
+    hard_gate_summary: dict[str, Any] = {}
+    fatal_blockers: list[Any] = []
+    if isinstance(contract, dict):
+        raw_hard_gate_summary = contract.get("hard_gate_summary")
+        if isinstance(raw_hard_gate_summary, dict):
+            hard_gate_summary = raw_hard_gate_summary
+        raw_fatal_blockers = contract.get("fatal_blockers")
+        if isinstance(raw_fatal_blockers, list):
+            fatal_blockers = raw_fatal_blockers
+    direct_ready = (
+        isinstance(contract, dict)
+        and contract.get("direct_brain_ingest_ready") is True
+    )
+    automated_ready = (
+        isinstance(contract, dict)
+        and contract.get("automated_import_expected_to_pass") is True
+    )
+    human_review = (
+        contract.get("requires_human_semantic_review")
+        if isinstance(contract, dict)
+        else None
+    )
+    record_count_hash_ready = hard_gate_summary.get("record_count_hash_parity_ready") is True
+    schema_contract_verified = hard_gate_summary.get("schema_contract_verified") is True
+    supported = (
+        isinstance(contract, dict)
+        and direct_ready
+        and automated_ready
+        and human_review is False
+        and not fatal_blockers
+        and record_count_hash_ready
+        and schema_contract_verified
+    )
+    return {
+        "contract_present": isinstance(contract, dict),
+        "supported": supported,
+        "direct_brain_ingest_ready": direct_ready,
+        "automated_import_expected_to_pass": automated_ready,
+        "requires_human_semantic_review": human_review,
+        "fatal_blocker_count": len(fatal_blockers),
+        "record_count_hash_parity_ready": record_count_hash_ready,
+        "schema_contract_verified": schema_contract_verified,
+    }
+
+
+def _semantic_audit_row_passed(row: dict[str, Any]) -> bool:
+    for field_name in ("semantic_verdict", "semantic_audit_status", "status"):
+        value = row.get(field_name)
+        if isinstance(value, str) and value.upper() == "PASS":
+            return True
+    return False
+
+
+def _v23_normalized_payloads(parsed: GenericParsedBundle) -> list[dict[str, Any]]:
+    raw_records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+    provenance = _v23_provenance_index(parsed)
+    normalized = [
+        _v23_normalized_payload(record, provenance=provenance)
+        for record in raw_records
+    ]
+    _apply_v23_fractional_sample_weights(normalized)
+    return normalized
+
+
+def _v23_normalized_payload(
+    record: dict[str, Any],
+    *,
+    provenance: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    normalized = dict(record)
+    nested = record.get("payload")
+    nested_payload = dict(nested) if isinstance(nested, dict) else {}
+    for key, value in nested_payload.items():
+        normalized.setdefault(key, value)
+    if nested_payload:
+        normalized["payload"] = nested_payload
+    _v23_apply_common_aliases(normalized, nested_payload)
+    _v23_apply_record_type_aliases(normalized)
+    _v23_apply_provenance(normalized, provenance=provenance)
+    normalized.setdefault("training_target", _v23_training_target(normalized))
+    normalized.setdefault("evidence_phase", _v23_evidence_phase(normalized))
+    normalized.setdefault("status", "supported")
+    return normalized
+
+
+def _v23_apply_common_aliases(
+    normalized: dict[str, Any],
+    nested_payload: dict[str, Any],
+) -> None:
+    company_name = _first_optional_string(
+        normalized.get("company_name"),
+        nested_payload.get("company_name"),
+        nested_payload.get("entity_name"),
+        nested_payload.get("name"),
+        nested_payload.get("name_on_D"),
+    )
+    if company_name is not None:
+        normalized.setdefault("company_name", company_name)
+    ticker = _first_optional_string(normalized.get("ticker"), nested_payload.get("ticker"))
+    if ticker is not None:
+        normalized.setdefault("ticker", ticker)
+    candidate_lane = _optional_string(normalized.get("candidate_lane"))
+    if candidate_lane is not None:
+        normalized.setdefault("path_type", candidate_lane)
+    fact_id = _optional_string(normalized.get("fact_id"))
+    fact_ids = _string_list(normalized.get("fact_ids"))
+    source_fact_ids = _string_list(normalized.get("source_fact_ids"))
+    if fact_id is not None and fact_id not in fact_ids:
+        fact_ids.append(fact_id)
+    for item in source_fact_ids:
+        if item not in fact_ids:
+            fact_ids.append(item)
+    if fact_ids:
+        normalized["fact_ids"] = fact_ids
+        normalized.setdefault("blind_fact_ids", fact_ids)
+    if _outcome_payload(normalized):
+        normalized.setdefault("D_outcome", _outcome_payload(normalized))
+
+
+def _v23_apply_record_type_aliases(normalized: dict[str, Any]) -> None:
+    record_type = _optional_string(normalized.get("record_type")) or "unknown"
+    record_id = _optional_string(normalized.get("brain_delta_id")) or _optional_string(
+        normalized.get("record_id")
+    )
+    ticker = _optional_string(normalized.get("ticker"))
+    company_name = _optional_string(normalized.get("company_name"))
+    if record_type in {"supervised_issuer_day_case", "supervised_direct_event_case"}:
+        normalized.setdefault(
+            "issuer_day_case_id",
+            _issuer_day_case_id(normalized),
+        )
+    if record_type == "supervised_direct_event_case":
+        normalized.setdefault("case_id", record_id)
+    elif record_type == "theme_formation_case":
+        normalized.setdefault("chosen_leader_ticker", ticker)
+        normalized.setdefault("chosen_leader_company_name", company_name)
+    elif record_type == "blind_leader_preference_pair":
+        normalized.setdefault("blind_pair_id", record_id)
+        normalized.setdefault("blind_preferred_ticker", ticker)
+        normalized.setdefault("blind_preferred_company_name", company_name)
+        normalized.setdefault("outcome_winner_ticker", ticker)
+        normalized.setdefault("outcome_winner_company_name", company_name)
+        if "pair_direction_verified" in normalized:
+            normalized.setdefault(
+                "blind_preference_correct",
+                normalized.get("pair_direction_verified") is True,
+            )
+    elif record_type == "candidate_generation_error_case":
+        normalized.setdefault("error_id", normalized.get("audit_id") or record_id)
+        normalized.setdefault("error_type", normalized.get("classification"))
+        normalized.setdefault("missed_ticker", ticker)
+        normalized.setdefault("missed_company_name", company_name)
+        normalized.setdefault("correction_mode", normalized.get("classification"))
+    elif record_type == "ranking_error_case":
+        normalized.setdefault("error_id", normalized.get("audit_id") or record_id)
+        normalized.setdefault("error_type", normalized.get("classification"))
+        normalized.setdefault("corrected_ticker", ticker)
+        normalized.setdefault("corrected_company_name", company_name)
+        normalized.setdefault("correction_mode", normalized.get("classification"))
+    elif record_type == "negative_control_case":
+        normalized.setdefault("candidate_ticker", ticker)
+        normalized.setdefault("candidate_company_name", company_name)
+
+
+def _v23_apply_provenance(
+    normalized: dict[str, Any],
+    *,
+    provenance: dict[str, dict[str, str]],
+) -> None:
+    source_ids = _string_list(normalized.get("provenance_source_ids"))
+    for source_id in _direct_source_ids(normalized):
+        _append_unique(source_ids, source_id)
+    fact_to_source = provenance["fact_to_source"]
+    for fact_id in _reference_values(normalized, "fact_id", "fact_ids", "source_fact_ids"):
+        fact_source_id = fact_to_source.get(fact_id)
+        if fact_source_id is not None:
+            _append_unique(source_ids, fact_source_id)
+    row_to_source = provenance["row_to_source"]
+    for row_id in _reference_values(normalized, "row_id", "matched_row_ids"):
+        row_source_id = row_to_source.get(row_id)
+        if row_source_id is not None:
+            _append_unique(source_ids, row_source_id)
+    available_sources = provenance["available_source_ids"]
+    if not source_ids and _has_blind_payload(normalized):
+        _append_if_available(source_ids, available_sources, "SRC-BLIND-SNAPSHOT")
+    if not source_ids and _outcome_payload(normalized):
+        _append_if_available(source_ids, available_sources, "SRC-GOLD-REFERENCE")
+    if source_ids:
+        normalized["provenance_source_ids"] = source_ids
+
+
+def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
+    for record_type in ("supervised_issuer_day_case", "supervised_direct_event_case"):
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for record in records:
+            if (
+                record.get("record_type") != record_type
+                or record.get("training_eligible") is not True
+            ):
+                continue
+            ticker = _optional_string(record.get("ticker"))
+            trade_day = _optional_string(record.get("trade_date"))
+            if ticker is None or trade_day is None:
+                continue
+            groups.setdefault((trade_day, ticker), []).append(record)
+        for group in groups.values():
+            explicit_total = sum(
+                _numeric_weight(record.get("sample_weight"))
+                for record in group
+                if _numeric_weight(record.get("sample_weight")) > 0.0
+            )
+            missing = [
+                record
+                for record in group
+                if _numeric_weight(record.get("sample_weight")) == 0.0
+            ]
+            if missing:
+                fill_weight = max(0.0, 1.0 - explicit_total) / len(missing)
+                for record in missing:
+                    record["sample_weight"] = fill_weight
+            for record in group:
+                if record_type == "supervised_issuer_day_case":
+                    record["issuer_day_sample_weight_policy"] = (
+                        "fractional_issuer_day_group"
+                    )
+                record.setdefault("issuer_day_case_id", _issuer_day_case_id(record))
+
+
+def _v23_training_target(record: dict[str, Any]) -> str | None:
+    return {
+        "supervised_issuer_day_case": "issuer_day_price_response",
+        "supervised_direct_event_case": "direct_event_response",
+        "theme_formation_case": "theme_formation_response",
+        "blind_leader_preference_pair": "outcome_preferred_candidate",
+        "candidate_generation_error_case": "candidate_generation_correction",
+        "ranking_error_case": "candidate_ranking_correction",
+        "negative_control_case": "negative_control_calibration",
+        "newsless_or_unexplained_case": "newsless_outcome_calibration",
+        "context_market_state_or_fact_case": "context_market_state_or_fact",
+    }.get(str(record.get("record_type") or ""))
+
+
+def _v23_evidence_phase(record: dict[str, Any]) -> str:
+    source_phase = _optional_string(record.get("source_phase"))
+    if source_phase is not None:
+        normalized = source_phase.upper()
+        if "POSTSEAL" in normalized or "OUTCOME" in normalized:
+            return "POSTMORTEM"
+        if "BLIND" in normalized:
+            return "BLIND"
+        if "AUDIT" in normalized:
+            return "AUDIT"
+    return _evidence_phase(str(record.get("record_type") or "unknown"), record)
+
+
+def _v23_provenance_index(parsed: GenericParsedBundle) -> dict[str, dict[str, str]]:
+    fact_to_source: dict[str, str] = {}
+    row_to_source: dict[str, str] = {}
+    available_source_ids: dict[str, str] = {}
+    for row in parsed.jsonl_blocks.get("fact_ledger_blind.jsonl", []):
+        fact_id = _optional_string(row.get("fact_id"))
+        source_id = _optional_string(row.get("source_id"))
+        if fact_id is not None and source_id is not None:
+            fact_to_source[fact_id] = source_id
+    for row in parsed.jsonl_blocks.get("source_ledger.jsonl", []):
+        source_id = _optional_string(row.get("source_id"))
+        row_id = _optional_string(row.get("row_id"))
+        if source_id is not None:
+            available_source_ids[source_id] = source_id
+        if row_id is not None and source_id is not None:
+            row_to_source[row_id] = source_id
+    return {
+        "fact_to_source": fact_to_source,
+        "row_to_source": row_to_source,
+        "available_source_ids": available_source_ids,
+    }
+
+
+def _outcome_payload(record: dict[str, Any]) -> dict[str, Any]:
+    outcome: dict[str, Any] = {}
+    for source_key, target_key in (
+        ("ticker", "ticker"),
+        ("company_name", "company_name"),
+        ("outcome_high_return_pct", "high_return_pct"),
+        ("outcome_close_return_pct", "close_return_pct"),
+        ("outcome_high_return_rank", "high_return_rank"),
+        ("upper_limit_touched", "upper_limit_touched"),
+    ):
+        if source_key in record:
+            outcome[target_key] = record[source_key]
+    return outcome
+
+
+def _issuer_day_case_id(record: dict[str, Any]) -> str | None:
+    trade_day = _optional_string(record.get("trade_date"))
+    ticker = _optional_string(record.get("ticker"))
+    if trade_day is None or ticker is None:
+        return None
+    return f"{trade_day}:{ticker}"
+
+
+def _first_optional_string(*values: object) -> str | None:
+    for value in values:
+        candidate = _optional_string(value)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _reference_values(record: dict[str, Any], *field_names: str) -> list[str]:
+    values: list[str] = []
+    for field_name in field_names:
+        value = record.get(field_name)
+        if isinstance(value, str) and value:
+            values.append(value)
+        elif isinstance(value, list):
+            values.extend(item for item in value if isinstance(item, str) and item)
+    return values
+
+
+def _direct_source_ids(record: dict[str, Any]) -> list[str]:
+    return _reference_values(record, "source_id", "source_ids")
+
+
+def _append_unique(values: list[str], item: str) -> None:
+    if item not in values:
+        values.append(item)
+
+
+def _append_if_available(
+    values: list[str],
+    available_sources: dict[str, str],
+    source_id: str,
+) -> None:
+    if source_id in available_sources:
+        _append_unique(values, source_id)
+
+
+def _has_blind_payload(record: dict[str, Any]) -> bool:
+    return any(
+        key in record
+        for key in (
+            "blind_score",
+            "blind_rank",
+            "candidate_lane",
+            "matched_screening_ids",
+            "screening_id",
+        )
+    )
 
 
 def _extract_blocks(text: str) -> dict[str, str]:
@@ -1649,7 +2095,7 @@ def _record_sample_weight_validation(records: list[dict[str, Any]]) -> dict[str,
                 str(record.get("trade_date") or ""),
                 str(record.get("ticker") or ""),
             )
-            if key in issuer_keys:
+            if key in issuer_keys and not _uses_fractional_issuer_day_group(record):
                 duplicate_issuer_day_keys.append("|".join(key))
             issuer_keys.add(key)
             joined_key = "|".join(key)
@@ -1696,6 +2142,10 @@ def _numeric_weight(value: object) -> float:
     if isinstance(value, int | float) and not isinstance(value, bool):
         return float(value)
     return 0.0
+
+
+def _uses_fractional_issuer_day_group(record: dict[str, Any]) -> bool:
+    return record.get("issuer_day_sample_weight_policy") == "fractional_issuer_day_group"
 
 
 def _explicit_datetime(value: object) -> datetime | None:

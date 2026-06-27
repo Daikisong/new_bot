@@ -1,20 +1,20 @@
 # Bundle Inspection Report
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
-- status: `forward_compatible_raw_only`
+- status: `validation_passed`
 - path: `docs/example2.md`
 - bundle_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
 - episode_schema_version: `None`
-- adapter: `forward-compatible-raw-only`
-- supported: `False`
-- forward_compatible_raw_only: `True`
+- adapter: `v23-direct-ingest`
+- supported: `True`
+- forward_compatible_raw_only: `False`
 - episode_id: `NSLAB-20241204-06A72B21`
 - trade_date: `2024-12-04`
 - raw_record_count: `165`
 - normalized_record_count: `165`
 - raw_normalized_record_count_matches: `True`
-- training_eligible_record_count: `0`
+- training_eligible_record_count: `162`
 ## raw_record_ids
 
 - `BD-000001`
@@ -378,13 +378,13 @@
 
 - record_type_counts_match_raw: `True`
 - raw_training_eligible_record_count: `162`
-- training_eligible_count_matches_raw: `False`
+- training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 ## raw_payload_hash_mismatch_record_ids
 
 - none
 
-- import_loss_audit_passed: `False`
+- import_loss_audit_passed: `True`
 - dropped_record_count: `0`
 - quarantined_bundle_count: `0`
 - quarantined_raw_record_count: `0`
@@ -402,7 +402,7 @@
 - supervised_issuer_day_case: `28`
 - theme_formation_case: `7`
 
-- validation_passed: `False`
+- validation_passed: `True`
 - record_count_matches_manifest: `True`
 - training_eligible_count_matches_manifest: `True`
 - hash_mismatch_count: `0`
@@ -418,7 +418,7 @@
 ## validation
 
 - schema_version: `nslab.versioned_bundle_validation.v1`
-- adapter: `forward-compatible-raw-only`
+- adapter: `v23-direct-ingest`
 - bundle_schema_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
 - record_count: `165`
@@ -432,7 +432,7 @@
 - self_referential_hashes: `{}`
 - hash_expectation_sources: `{}`
 - hash_expectation_conflicts: `{}`
-- source_reference_count: `0`
+- source_reference_count: `179`
 - missing_source_references: `[]`
 - provenance_closure_status: `closed`
 - payload_reference_count: `92`
@@ -455,9 +455,9 @@
 - backdated_company_memory_delta_known_at_record_ids: `[]`
 - issuer_day_event_level_weights_valid: `True`
 - invalid_issuer_day_event_level_weight_record_ids: `[]`
-- sample_weight_validation: `{'status': 'failed', 'duplicate_issuer_day_count': 27, 'duplicate_issuer_day_keys': ['2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|'], 'issuer_day_weight_sum_mismatches': {'2024-12-04|': 0.0}, 'direct_event_weight_sum_mismatches': {'2024-12-04:': 0.0}}`
-- sample_weight_validation_status: `failed`
-- import_loss_audit_passed: `False`
+- sample_weight_validation: `{'status': 'passed', 'duplicate_issuer_day_count': 0, 'duplicate_issuer_day_keys': [], 'issuer_day_weight_sum_mismatches': {}, 'direct_event_weight_sum_mismatches': {}}`
+- sample_weight_validation_status: `passed`
+- import_loss_audit_passed: `True`
 - raw_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
 - normalized_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
 - raw_record_without_id_count: `0`
@@ -470,12 +470,21 @@
 - raw_record_counts_by_type: `{'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 28, 'theme_formation_case': 7}`
 - record_type_counts_match_raw: `True`
 - raw_training_eligible_record_count: `162`
-- training_eligible_count_matches_raw: `False`
+- training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 - raw_payload_hash_mismatch_record_ids: `[]`
 - validator_exit_code: `0`
 - critical_error_count: `0`
-- passed: `False`
-- forward_compatible_raw_only: `True`
-- unsupported_bundle_version: `True`
-- reason: `unsupported bundle version preserved as staged raw-only records`
+- passed: `True`
+- direct_ingest_contract_present: `True`
+- direct_ingest_contract_supported: `True`
+- direct_brain_ingest_ready: `True`
+- automated_import_expected_to_pass: `True`
+- requires_human_semantic_review: `False`
+- direct_ingest_fatal_blocker_count: `0`
+- direct_ingest_record_count_hash_parity_ready: `True`
+- direct_ingest_schema_contract_verified: `True`
+- bundle_status_accept_full: `True`
+- brain_eligible: `True`
+- validator_exit_code_zero: `True`
+- critical_error_count_zero: `True`

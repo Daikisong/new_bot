@@ -2719,6 +2719,69 @@ def test_future_manifest_with_quoted_v11_front_matter_is_staged_raw_only(
     assert report["raw_only_record_count"] == 2
 
 
+def test_v23_direct_ingest_contract_normalizes_nested_payloads(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_direct_ingest_bundle.md"
+    bundle.write_text(_v23_direct_ingest_bundle(), encoding="utf-8")
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["supported"] is True
+    assert inspection["adapter"] == "v23-direct-ingest"
+    assert inspection["forward_compatible_raw_only"] is False
+    assert inspection["inspection_status"] == "validation_passed"
+    assert inspection["validation_passed"] is True
+    assert inspection["raw_record_count"] == 3
+    assert inspection["normalized_record_count"] == 3
+    assert inspection["training_eligible_record_count"] == 3
+    assert inspection["training_eligible_count_matches_raw"] is True
+    assert inspection["import_loss_audit_passed"] is True
+    assert inspection["final_semantic_audit_fail_count"] == 0
+    assert inspection["validation"]["sample_weight_validation_status"] == "passed"
+    assert inspection["validation"]["sample_weight_validation"][
+        "duplicate_issuer_day_count"
+    ] == 0
+
+    assert result.status == "imported"
+    assert result.adapter_name == "v23-direct-ingest"
+    assert result.accepted is True
+    assert result.record_count == 3
+    assert result.training_eligible_record_count == 3
+
+    records = BrainRecordStore(tmp_path).list_records()
+    assert [record.record_id for record in records] == [
+        "BD-DIRECT-1",
+        "BD-DIRECT-2",
+        "BD-DIRECT-3",
+    ]
+    assert all(record.typed_payload_status == "KNOWN_TYPED_PAYLOAD" for record in records)
+    assert all(record.training_eligible is True for record in records)
+    issuer = records[0]
+    assert issuer.record_type == "supervised_issuer_day_case"
+    assert issuer.payload["ticker"] == "000001"
+    assert issuer.payload["company_name"] == "Direct Issuer"
+    assert issuer.payload["sample_weight"] == 1.0
+    assert issuer.provenance_source_ids == ["SRC-NEWS-000001"]
+    assert issuer.raw_payload_sha256 != issuer.normalized_payload_sha256
+    theme = records[2]
+    assert theme.record_type == "theme_formation_case"
+    assert theme.payload["chosen_leader_ticker"] == "000002"
+    assert theme.provenance_source_ids == ["SRC-NEWS-000001"]
+
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "imported"
+    assert report["adapter"] == "v23-direct-ingest"
+    assert report["raw_record_count"] == 3
+    assert report["normalized_record_count"] == 3
+    assert report["raw_training_eligible_record_count"] == 3
+    assert report["training_eligible_count_matches_raw"] is True
+    assert report["dropped_record_count"] == 0
+
+
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -2917,6 +2980,157 @@ validator_exit_code: 0
 <!-- NSLAB:BEGIN bundle_manifest.json -->
 {_payload_block(manifest, "json")}
 <!-- NSLAB:END bundle_manifest.json -->
+"""
+
+
+def _v23_direct_ingest_bundle() -> str:
+    episode_id = "NSLAB-20300204-DIRECT"
+    trade_day = "2030-02-04"
+    records = [
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-DIRECT-1",
+            "record_type": "supervised_issuer_day_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000001",
+                "entity_name": "Direct Issuer",
+                "source_id": "SRC-NEWS-000001",
+                "fact_id": "FACT-000001",
+            },
+        },
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-DIRECT-2",
+            "record_type": "supervised_direct_event_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000001",
+                "entity_name": "Direct Issuer",
+                "fact_id": "FACT-000001",
+                "direct_event_type": "CONTRACT_ORDER",
+            },
+        },
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-DIRECT-3",
+            "record_type": "theme_formation_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000002",
+                "name": "Theme Leader",
+                "source_fact_ids": ["FACT-000001"],
+            },
+        },
+    ]
+    brain_delta = "\n".join(
+        json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records
+    )
+    manifest = json.dumps(
+        {
+            "schema_version": "nslab.bundle_manifest.v23",
+            "episode_id": episode_id,
+            "trade_date": trade_day,
+            "next_trade_date": "2030-02-05",
+            "bundle_status": "ACCEPT_FULL",
+            "brain_eligible": True,
+            "validator_exit_code": 0,
+            "critical_error_count": 0,
+            "brain_delta_record_count": len(records),
+            "training_eligible_record_count": len(records),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    contract = json.dumps(
+        {
+            "schema_version": "nslab.direct_ingest_contract.v1",
+            "episode_id": episode_id,
+            "trade_date": trade_day,
+            "direct_brain_ingest_ready": True,
+            "automated_import_expected_to_pass": True,
+            "requires_human_semantic_review": False,
+            "fatal_blockers": [],
+            "hard_gate_summary": {
+                "record_count_hash_parity_ready": True,
+                "schema_contract_verified": True,
+                "validator_exit_code": 0,
+                "critical_error_count": 0,
+            },
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    source_ledger = json.dumps(
+        {
+            "source_id": "SRC-NEWS-000001",
+            "row_id": "NEWS-000001",
+            "source_type": "news_csv_row",
+            "time_verified": True,
+            "available_before_cutoff": True,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    fact_ledger = json.dumps(
+        {
+            "fact_id": "FACT-000001",
+            "source_id": "SRC-NEWS-000001",
+            "row_id": "NEWS-000001",
+            "fact_type": "CONTRACT_ORDER",
+            "entity_name": "Direct Issuer",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    final_semantic_audit = json.dumps(
+        {
+            "semantic_audit_id": "FSA-000001",
+            "semantic_audit_status": "PASS",
+            "ticker": "000001",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return f"""---
+schema_version: "nslab.research_bundle.v11"
+episode_id: "{episode_id}"
+trade_date: "{trade_day}"
+next_trade_date: "2030-02-05"
+cutoff_at: "2030-02-04T08:59:59+09:00"
+bundle_status: "ACCEPT_FULL"
+brain_eligible: true
+validator_exit_code: 0
+---
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{_payload_block(brain_delta, "jsonl")}
+<!-- NSLAB:END brain_delta.jsonl -->
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+{_payload_block(manifest, "json")}
+<!-- NSLAB:END bundle_manifest.json -->
+
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+{_payload_block(contract, "json")}
+<!-- NSLAB:END direct_ingest_contract.json -->
+
+<!-- NSLAB:BEGIN source_ledger.jsonl -->
+{_payload_block(source_ledger, "jsonl")}
+<!-- NSLAB:END source_ledger.jsonl -->
+
+<!-- NSLAB:BEGIN fact_ledger_blind.jsonl -->
+{_payload_block(fact_ledger, "jsonl")}
+<!-- NSLAB:END fact_ledger_blind.jsonl -->
+
+<!-- NSLAB:BEGIN final_semantic_audit.jsonl -->
+{_payload_block(final_semantic_audit, "jsonl")}
+<!-- NSLAB:END final_semantic_audit.jsonl -->
 """
 
 

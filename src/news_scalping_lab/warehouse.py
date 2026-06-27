@@ -94,6 +94,9 @@ _PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "company_name": (
         "company_name",
+        "entity_name",
+        "name",
+        "name_on_D",
         "candidate_company_name",
         "outcome_company_name",
         "chosen_leader_company_name",
@@ -116,6 +119,7 @@ _PAYLOAD_FILTER_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "path_type": (
         "path_type",
+        "candidate_lane",
         "candidate_path_type",
         "missed_path_type",
         "corrected_path_type",
@@ -551,7 +555,7 @@ class WarehouseStore:
                 ),
             )
             for record in records
-            if record.record_type == "supervised_theme_formation_case"
+            if record.record_type in {"supervised_theme_formation_case", "theme_formation_case"}
         ]
         self._write_rows("theme_formation_cases.parquet", rows)
         return len(rows)

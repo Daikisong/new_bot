@@ -125,14 +125,21 @@ payload, and raw payload hash parity before considering the real bundle import
 production-ready. `import-bundle` preserves the
 original Markdown bundle, raw blocks, normalized episode index, record manifest, and
 canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
-legacy `ResearchEpisode` model. Unsupported future bundle versions that still
-expose a common episode envelope and `brain_delta.jsonl` are staged as
-`forward_compatible_raw_only`: raw records are preserved with training disabled
-until a versioned adapter exists. Quoted front-matter scalars are normalized before
-adapter selection, and a future `bundle_manifest` major is never promoted through
-an older v10/v11 adapter just because the envelope still declares a v11 family.
-Opaque unsupported bundles are quarantined under `data/quarantine/research_bundles/`
-without dropping the source bundle.
+legacy `ResearchEpisode` model. v11-envelope bundles with
+`nslab.bundle_manifest.v23` use the `v23-direct-ingest` adapter only when the
+embedded `direct_ingest_contract.json` declares automated direct brain ingest,
+zero fatal blockers, schema-contract readiness, and record-count/hash parity
+readiness. That adapter flattens nested `payload` fields, derives provenance from
+source/fact ledgers, keeps raw record IDs/types/counts/hash parity intact, and
+preserves eligible v23 records for warehouse and training exports. Unsupported
+future bundle versions that still expose a common episode envelope and
+`brain_delta.jsonl` are staged as `forward_compatible_raw_only`: raw records are
+preserved with training disabled until a versioned adapter exists. Quoted
+front-matter scalars are normalized before adapter selection, and a future
+`bundle_manifest` major is never promoted through an older v10/v11 adapter just
+because the envelope still declares a v11 family. Opaque unsupported bundles are
+quarantined under `data/quarantine/research_bundles/` without dropping the source
+bundle.
 
 Canonical record artifacts:
 
