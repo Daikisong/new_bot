@@ -198,6 +198,8 @@ def _write_latest_record_coverage_audit_summary(
             report = payload
     report.setdefault("schema_version", "nslab.record_coverage_manifest.v1")
     for key in (
+        "record_coverage_accepted_episode_count",
+        "expected_accepted_episode_count",
         "accepted_record_count",
         "available_record_count",
         "available_record_count_as_of",
@@ -222,6 +224,12 @@ def _write_latest_record_coverage_audit_summary(
     report["latest_record_coverage_audit"] = {
         "passed": record_coverage_complete is True,
         "record_coverage_complete": record_coverage_complete,
+        "record_coverage_accepted_episode_count": result.get(
+            "record_coverage_accepted_episode_count"
+        ),
+        "expected_accepted_episode_count": result.get(
+            "expected_accepted_episode_count"
+        ),
         "accepted_record_count": result.get("accepted_record_count"),
         "available_record_count": result.get("available_record_count"),
         "available_record_count_as_of": result.get("available_record_count_as_of"),
@@ -852,6 +860,7 @@ def _audit_deterministic_brain_state(
 
 def _audit_record_coverage(root: Path) -> dict[str, Any]:
     records = BrainRecordStore(root).list_records()
+    expected_accepted_episode_count = len(ResearchStore(root).list_accepted())
     record_ids = {record.record_id for record in records}
     training_eligible_count = sum(1 for record in records if record.training_eligible)
     record_counts_by_type = dict(
@@ -867,6 +876,8 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
     if not records:
         return {
+            "record_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": 0,
             "available_record_count": 0,
             "available_record_count_as_of": 0,
@@ -889,6 +900,8 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
         return {
+            "record_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": len(records),
             "available_record_count": len(records),
             "available_record_count_as_of": len(records),
@@ -911,6 +924,8 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
         return {
+            "record_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": len(records),
             "available_record_count": len(records),
             "available_record_count_as_of": len(records),
@@ -933,6 +948,7 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
             ],
         }
     findings: list[str] = []
+    manifest_accepted_episode_count = _int_value(manifest.get("accepted_episode_count"))
     coverage_as_of = _record_coverage_as_of(manifest, findings)
     available_records_as_of = (
         [
@@ -958,6 +974,12 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     )
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+    if manifest_accepted_episode_count is None:
+        findings.append("record coverage manifest accepted_episode_count is missing")
+    elif manifest_accepted_episode_count != expected_accepted_episode_count:
+        findings.append(
+            "record coverage manifest accepted_episode_count does not match accepted episodes"
+        )
     if not _string_list_field_valid(raw_swept_record_ids):
         findings.append("record coverage manifest swept_record_ids is invalid")
     if not _string_list_field_valid(raw_unswept_record_ids):
@@ -1027,6 +1049,8 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     elif has_audit_findings:
         findings.append("record coverage manifest is marked complete despite audit findings")
     return {
+        "record_coverage_accepted_episode_count": manifest_accepted_episode_count,
+        "expected_accepted_episode_count": expected_accepted_episode_count,
         "accepted_record_count": len(records),
         "available_record_count": len(records),
         "available_record_count_as_of": available_count_as_of,

@@ -2150,6 +2150,8 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
         production["record_coverage"]["record_coverage_as_of"]
         == "2030-01-02T00:00:00+09:00"
     )
+    assert production["record_coverage"]["record_coverage_accepted_episode_count"] == 0
+    assert production["record_coverage"]["expected_accepted_episode_count"] == 0
     assert production["record_coverage"]["accepted_record_count"] == 2
     assert production["record_coverage"]["record_store_record_count"] == 2
     assert production["record_coverage"]["swept_record_count"] == 2
@@ -2289,6 +2291,44 @@ def test_production_readiness_rejects_invalid_record_coverage_as_of(
     )
     assert (
         "records: record coverage manifest is marked complete despite production findings"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_record_coverage_episode_count_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    coverage = _complete_record_coverage()
+    coverage["accepted_episode_count"] = 1
+    write_json(current / "record_coverage_manifest.json", coverage)
+
+    production = production_readiness_report(
+        {
+            "api_connections": {
+                "openai": {"status": "configured_not_called"},
+                "brave_search": {"status": "configured_not_called"},
+            },
+            "vector_index": {
+                "status": "current",
+                "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+                "brain_records_exists": True,
+                "source_brain_record_count": 2,
+                "brain_record_count": 2,
+            },
+        },
+        settings,
+    )
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["record_coverage_accepted_episode_count"] == 1
+    assert production["record_coverage"]["expected_accepted_episode_count"] == 0
+    assert (
+        "records: record coverage manifest accepted_episode_count does not match accepted episodes"
         in production["findings"]
     )
 
@@ -11357,6 +11397,7 @@ def _write_record_coverage_store(root: Path) -> None:
 def _complete_record_coverage() -> dict[str, object]:
     return {
         "schema_version": "nslab.record_coverage_manifest.v1",
+        "accepted_episode_count": 0,
         "accepted_record_count": 2,
         "available_record_count": 2,
         "record_coverage_as_of": "2030-01-02T00:00:00+09:00",

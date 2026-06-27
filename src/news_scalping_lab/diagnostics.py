@@ -2744,6 +2744,15 @@ def _production_record_coverage_status(
     *,
     root: Path,
 ) -> dict[str, Any]:
+    accepted_episode_store_readable = True
+    accepted_episode_store_error = None
+    try:
+        expected_accepted_episode_count = len(ResearchStore(root).list_accepted())
+    except Exception as exc:
+        expected_accepted_episode_count = None
+        accepted_episode_store_readable = False
+        accepted_episode_store_error = type(exc).__name__
+
     if not isinstance(record_coverage, dict):
         return {
             "schema_version": "nslab.production_record_coverage.v1",
@@ -2752,6 +2761,10 @@ def _production_record_coverage_status(
             "finding_count": 1,
             "findings": ["record coverage manifest is missing"],
             "record_coverage_as_of": None,
+            "record_coverage_accepted_episode_count": None,
+            "expected_accepted_episode_count": expected_accepted_episode_count,
+            "accepted_episode_store_readable": accepted_episode_store_readable,
+            "accepted_episode_store_error": accepted_episode_store_error,
             "accepted_record_count": None,
             "available_record_count": None,
             "compiled_record_count": None,
@@ -2823,6 +2836,23 @@ def _production_record_coverage_status(
         )
     if record_coverage.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+
+    accepted_episode_count = _int_from_mapping(
+        record_coverage,
+        "accepted_episode_count",
+    )
+    if accepted_episode_count is None:
+        findings.append("record coverage manifest accepted_episode_count is missing")
+    elif (
+        accepted_episode_store_readable is True
+        and expected_accepted_episode_count is not None
+        and accepted_episode_count != expected_accepted_episode_count
+    ):
+        findings.append(
+            "record coverage manifest accepted_episode_count does not match accepted episodes"
+        )
+    if accepted_episode_store_readable is False:
+        findings.append("record coverage accepted episode store is unreadable")
 
     count_keys = (
         "accepted_record_count",
@@ -3080,6 +3110,10 @@ def _production_record_coverage_status(
         "record_coverage_as_of": raw_coverage_as_of
         if isinstance(raw_coverage_as_of, str)
         else None,
+        "record_coverage_accepted_episode_count": accepted_episode_count,
+        "expected_accepted_episode_count": expected_accepted_episode_count,
+        "accepted_episode_store_readable": accepted_episode_store_readable,
+        "accepted_episode_store_error": accepted_episode_store_error,
         "accepted_record_count": accepted_count,
         "available_record_count": available_count,
         "available_record_count_as_of": available_count_as_of,

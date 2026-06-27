@@ -1621,10 +1621,56 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert coverage["available_record_count_as_of"] == 1
     assert coverage["training_eligible_available_record_count"] == 2
     assert coverage["training_eligible_record_count_as_of"] == 1
+    assert audit["record_coverage_accepted_episode_count"] == 1
+    assert audit["expected_accepted_episode_count"] == 1
     assert audit["available_record_count_as_of"] == 1
     assert audit["training_eligible_record_count_as_of"] == 1
     assert audit["record_coverage_complete"] is True
     assert audit["record_coverage_findings"] == []
+
+
+def test_brain_audit_rejects_record_coverage_episode_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Record coverage episode count note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-COVERAGE-COUNT", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    manifest = read_json(coverage_path)
+    manifest["accepted_episode_count"] = 0
+    write_json(coverage_path, manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_accepted_episode_count"] == 0
+    assert audit["expected_accepted_episode_count"] == 1
+    assert (
+        "record coverage manifest accepted_episode_count does not match accepted episodes"
+        in audit["record_coverage_findings"]
+    )
+    record_coverage_report = read_json(
+        tmp_path / "diagnostics" / "record_coverage_report.json"
+    )
+    assert record_coverage_report["record_coverage_accepted_episode_count"] == 0
+    assert record_coverage_report["expected_accepted_episode_count"] == 1
+    assert (
+        record_coverage_report["latest_record_coverage_audit"][
+            "record_coverage_accepted_episode_count"
+        ]
+        == 0
+    )
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:
