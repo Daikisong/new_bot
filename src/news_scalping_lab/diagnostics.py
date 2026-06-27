@@ -1000,7 +1000,7 @@ def _production_llm_trace_evidence_status(
                     "schema_version": trace.get("schema_version"),
                 }
             )
-        trace_payload_mismatches = _llm_trace_payload_hash_mismatches(trace)
+        trace_payload_mismatches = _llm_trace_payload_mismatches(trace)
         if trace_payload_mismatches:
             invalid_trace_payloads.append(
                 {
@@ -1148,7 +1148,7 @@ def _production_llm_trace_evidence_status(
         )
     for trace in invalid_trace_payloads:
         findings.append(
-            f"referenced LLM trace payload hash mismatch in {trace['path']}: "
+            f"referenced LLM trace payload contract mismatch in {trace['path']}: "
             f"{', '.join(trace['mismatched_fields'])}"
         )
     for prompt_hash in missing_trace_prompt_hashes:
@@ -1220,7 +1220,7 @@ def _production_llm_trace_evidence_status(
     }
 
 
-def _llm_trace_payload_hash_mismatches(trace: dict[str, Any]) -> list[str]:
+def _llm_trace_payload_mismatches(trace: dict[str, Any]) -> list[str]:
     mismatches: list[str] = []
     trace_input = trace.get("input")
     if isinstance(trace_input, dict) and "input_sha256" not in trace:
@@ -1240,6 +1240,22 @@ def _llm_trace_payload_hash_mismatches(trace: dict[str, Any]) -> list[str]:
         )
         if trace.get("output_sha256") != expected_output_hash:
             mismatches.append("output_sha256")
+    status = trace.get("status")
+    token_usage = trace.get("token_usage")
+    if status in {"ok", "checkpoint_hit"}:
+        if not isinstance(token_usage, dict):
+            mismatches.append("token_usage_missing")
+        else:
+            prompt_tokens = token_usage.get("prompt_tokens_estimate")
+            if not isinstance(prompt_tokens, int) or isinstance(prompt_tokens, bool):
+                mismatches.append("prompt_tokens_estimate_missing")
+            operation = trace.get("operation")
+            completion_tokens = token_usage.get("completion_tokens_estimate")
+            if operation in {"generate_text", "generate_structured"} and (
+                not isinstance(completion_tokens, int)
+                or isinstance(completion_tokens, bool)
+            ):
+                mismatches.append("completion_tokens_estimate_missing")
     return mismatches
 
 
