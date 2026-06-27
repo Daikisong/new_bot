@@ -136,6 +136,9 @@ def _write_latest_brain_audit_summary(
         "record_coverage_complete": result.get("record_coverage_complete"),
         "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
         "llm_compile_manifest_present": result.get("llm_compile_manifest_present"),
+        "llm_compile_category_schema_mismatches": result.get(
+            "llm_compile_category_schema_mismatches"
+        ),
         "compiled_claim_file_present": result.get("compiled_claim_file_present"),
         "brain_category_file_count": result.get("brain_category_file_count"),
         "brain_category_missing_files": result.get("brain_category_missing_files"),
@@ -416,6 +419,7 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     unknown_record_ids: list[str] = []
     unknown_compiled_claim_ids: list[str] = []
+    category_schema_mismatches: list[str] = []
     category_count_mismatches: list[str] = []
     shard_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
@@ -427,6 +431,7 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
             "llm_compile_findings": findings,
             "llm_compile_unknown_record_ids": unknown_record_ids,
             "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
+            "llm_compile_category_schema_mismatches": category_schema_mismatches,
             "llm_compile_category_count_mismatches": category_count_mismatches,
             "llm_compile_shard_count_mismatches": shard_count_mismatches,
             "llm_compile_compiled_claim_count_mismatches": (
@@ -452,7 +457,12 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
         findings.append("llm compile manifest shard record counts do not match record IDs")
     if shard_record_ids != record_ids:
         findings.append("llm compile manifest shard record IDs do not match record store")
-    for category in _dict_list(manifest.get("categories")):
+    categories = _dict_list(manifest.get("categories"))
+    category_schema_mismatches = _llm_compile_category_schema_mismatches(
+        manifest,
+        categories,
+    )
+    for category in categories:
         category_name = _string_value(category.get("category")) or "UNKNOWN_CATEGORY"
         ids = _string_list(category.get("source_record_ids"))
         if category.get("source_record_count") != len(ids):
@@ -464,6 +474,8 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
         unknown_compiled_claim_ids.extend(
             claim_id for claim_id in claim_ids if claim_id not in compiled_claim_ids
         )
+    if category_schema_mismatches:
+        findings.append("llm compile manifest categories do not match canonical brain files")
     if category_count_mismatches:
         findings.append("llm compile manifest category source counts do not match record IDs")
     if compiled_claim_count_mismatches:
@@ -479,12 +491,57 @@ def _audit_llm_compile_manifest(root: Path) -> dict[str, Any]:
         "llm_compile_findings": findings,
         "llm_compile_unknown_record_ids": unknown_record_ids,
         "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
+        "llm_compile_category_schema_mismatches": sorted(category_schema_mismatches),
         "llm_compile_category_count_mismatches": sorted(category_count_mismatches),
         "llm_compile_shard_count_mismatches": sorted(shard_count_mismatches),
         "llm_compile_compiled_claim_count_mismatches": sorted(
             compiled_claim_count_mismatches
         ),
     }
+
+
+def _llm_compile_category_schema_mismatches(
+    manifest: dict[str, Any],
+    categories: list[dict[str, Any]],
+) -> list[str]:
+    expected_by_category = {
+        _brain_category(file_name): file_name for file_name in BRAIN_FILES
+    }
+    mismatches: list[str] = []
+    manifest_category_count = _int_value(manifest.get("category_count"))
+    if manifest_category_count != len(BRAIN_FILES):
+        observed = (
+            "missing"
+            if manifest_category_count is None
+            else str(manifest_category_count)
+        )
+        mismatches.append(f"category_count: expected {len(BRAIN_FILES)}, got {observed}")
+    if len(categories) != len(BRAIN_FILES):
+        mismatches.append(f"categories: expected {len(BRAIN_FILES)}, got {len(categories)}")
+    observed_counts: Counter[str] = Counter()
+    for index, category in enumerate(categories, start=1):
+        category_name = _string_value(category.get("category"))
+        file_name = _string_value(category.get("file_name"))
+        if category_name is None:
+            mismatches.append(f"categories[{index}]: missing category")
+            continue
+        observed_counts[category_name] += 1
+        expected_file_name = expected_by_category.get(category_name)
+        if expected_file_name is None:
+            mismatches.append(f"categories[{index}]: unexpected category {category_name}")
+            continue
+        if file_name != expected_file_name:
+            observed_file = file_name or "missing"
+            mismatches.append(
+                f"{category_name}: expected file {expected_file_name}, got {observed_file}"
+            )
+    for category_name, count in sorted(observed_counts.items()):
+        if count > 1:
+            mismatches.append(f"{category_name}: duplicate category entry count {count}")
+    missing_categories = sorted(set(expected_by_category) - set(observed_counts))
+    for category_name in missing_categories:
+        mismatches.append(f"{category_name}: missing category entry")
+    return mismatches
 
 
 def _compiled_claim_ids(root: Path) -> tuple[bool, set[str]]:

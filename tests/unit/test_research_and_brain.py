@@ -1191,6 +1191,15 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert audit["llm_compile_unknown_compiled_claim_ids"] == [
         "CC-missing-manifest-claim"
     ]
+    assert "category_count: expected 9, got missing" in audit[
+        "llm_compile_category_schema_mismatches"
+    ]
+    assert "categories: expected 9, got 2" in audit[
+        "llm_compile_category_schema_mismatches"
+    ]
+    assert "world_model: expected file 00_world_model.md, got missing" in audit[
+        "llm_compile_category_schema_mismatches"
+    ]
     assert audit["llm_compile_compiled_claim_count_mismatches"] == [
         "manifest",
         "world_model",
@@ -1201,6 +1210,9 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert "llm compile manifest references unknown compiled claim IDs" in audit[
         "llm_compile_findings"
     ]
+    assert "llm compile manifest categories do not match canonical brain files" in audit[
+        "llm_compile_findings"
+    ]
     assert "compiled claims expose future record evidence" in audit[
         "compiled_claim_findings"
     ]
@@ -1209,6 +1221,9 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert latest_audit["passed"] is False
     assert latest_audit["deep"] is False
     assert latest_audit["llm_compile_manifest_present"] is True
+    assert "categories: expected 9, got 2" in latest_audit[
+        "llm_compile_category_schema_mismatches"
+    ]
     assert latest_audit["compiled_claim_file_present"] is True
     assert any(
         finding
