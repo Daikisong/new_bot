@@ -3125,6 +3125,24 @@ def test_production_readiness_accepts_record_backed_training_exports(
         production["training_exports"]["missing_current_training_eligible_record_ids"]
         == []
     )
+    assert (
+        production["training_exports"][
+            "unsealed_training_eligible_preference_record_ids"
+        ]
+        == []
+    )
+    assert (
+        production["training_exports"][
+            "expected_unsealed_training_eligible_preference_record_ids"
+        ]
+        == []
+    )
+    assert (
+        production["training_exports"][
+            "invalid_unsealed_preference_record_id_fields"
+        ]
+        == []
+    )
     assert production["training_exports"]["expected_unique_record_ids"] == {
         "unique_exported_record_ids": [
             "BRAIN-TRAIN-ISSUER",
@@ -3541,6 +3559,37 @@ def test_production_readiness_rejects_training_export_missing_current_eligible_i
     assert (
         "training: training export unique training-eligible record IDs are missing "
         "current eligible records: BRAIN-TRAIN-PAIR"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_unsealed_training_eligible_preference_records(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path, include_unsealed_preference_pair=True)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"][
+        "unsealed_training_eligible_preference_record_ids"
+    ] == ["BRAIN-TRAIN-UNSEALED-PAIR"]
+    assert production["training_exports"][
+        "expected_unsealed_training_eligible_preference_record_ids"
+    ] == ["BRAIN-TRAIN-UNSEALED-PAIR"]
+    assert (
+        "training export has unsealed training-eligible preference records: "
+        "BRAIN-TRAIN-UNSEALED-PAIR"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export has unsealed training-eligible preference "
+        "records: BRAIN-TRAIN-UNSEALED-PAIR"
         in production["findings"]
     )
 
@@ -11715,6 +11764,7 @@ def _write_training_record_store(
     *,
     include_direct_event_weight_mismatch: bool = False,
     include_duplicate_issuer_day: bool = False,
+    include_unsealed_preference_pair: bool = False,
 ) -> None:
     episode_id = "EP-training-production"
     records = [
@@ -11824,6 +11874,23 @@ def _write_training_record_store(
                     },
                 ),
             ]
+        )
+    if include_unsealed_preference_pair:
+        records.append(
+            _training_record(
+                record_id="BRAIN-TRAIN-UNSEALED-PAIR",
+                record_type="blind_leader_preference_pair",
+                training_target="outcome_preferred_candidate",
+                payload={
+                    "record_id": "BRAIN-TRAIN-UNSEALED-PAIR",
+                    "record_type": "blind_leader_preference_pair",
+                    "episode_id": episode_id,
+                    "trade_date": "2030-01-10",
+                    "blind_pair_id": "PAIR-UNSEALED",
+                    "outcome_winner_ticker": "WIN",
+                    "blind_preference_correct": True,
+                },
+            )
         )
     records_dir = root / "memory" / "records"
     records_dir.mkdir(parents=True, exist_ok=True)

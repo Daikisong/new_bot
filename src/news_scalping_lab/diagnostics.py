@@ -4155,6 +4155,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
             "missing_current_training_eligible_record_ids": [],
+            "unsealed_training_eligible_preference_record_ids": [],
+            "expected_unsealed_training_eligible_preference_record_ids": [],
+            "invalid_unsealed_preference_record_id_fields": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
             "expected_source_record_hashes": {},
@@ -4203,6 +4206,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     source_record_ids = sorted(record.record_id for record in source_records)
     training_eligible_record_ids = sorted(
         record.record_id for record in source_records if record.training_eligible
+    )
+    expected_unsealed_preference_record_ids = (
+        _unsealed_training_eligible_preference_record_ids(source_records)
     )
     record_store_counts_by_record_type = dict(
         sorted(Counter(record.record_type for record in source_records).items())
@@ -4254,6 +4260,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "unique_exported_record_ids": [],
             "unique_skipped_record_ids": [],
             "missing_current_training_eligible_record_ids": [],
+            "unsealed_training_eligible_preference_record_ids": [],
+            "expected_unsealed_training_eligible_preference_record_ids": [],
+            "invalid_unsealed_preference_record_id_fields": [],
             "source_record_hashes": {},
             "record_store_source_record_hashes": {},
             "expected_source_record_hashes": {},
@@ -4557,6 +4566,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
     }
+    unsealed_field = "unsealed_training_eligible_preference_record_ids"
+    unsealed_preference_record_ids = _string_list(diagnostics.get(unsealed_field))
     invalid_record_id_fields = [
         field
         for field in (
@@ -4566,6 +4577,21 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     ]
     for field in invalid_record_id_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    invalid_unsealed_preference_record_id_fields = []
+    if diagnostics and unsealed_field not in diagnostics:
+        findings.append(f"training export diagnostics {unsealed_field} is missing")
+    elif diagnostics and not _string_list_field_valid(diagnostics.get(unsealed_field)):
+        invalid_unsealed_preference_record_id_fields.append(unsealed_field)
+        findings.append(f"training export diagnostics {unsealed_field} is invalid")
+    elif (
+        diagnostics
+        and sorted(unsealed_preference_record_ids)
+        != expected_unsealed_preference_record_ids
+    ):
+        findings.append(
+            "training export diagnostics unsealed preference record IDs do not "
+            "match current records"
+        )
     expected_unique_record_ids = _expected_training_export_unique_record_ids_from_manifests(
         audit.get("manifests")
     )
@@ -4746,6 +4772,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "training export unique training-eligible record IDs are missing "
             "current eligible records: "
             + ", ".join(missing_current_training_eligible_ids)
+        )
+    if expected_unsealed_preference_record_ids:
+        findings.append(
+            "training export has unsealed training-eligible preference records: "
+            + ", ".join(expected_unsealed_preference_record_ids)
         )
     if set(unique_exported_ids) - set(training_eligible_record_ids):
         findings.append(
@@ -5093,7 +5124,16 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "missing_current_training_eligible_record_ids": (
             missing_current_training_eligible_ids
         ),
+        "unsealed_training_eligible_preference_record_ids": (
+            unsealed_preference_record_ids
+        ),
+        "expected_unsealed_training_eligible_preference_record_ids": (
+            expected_unsealed_preference_record_ids
+        ),
         "invalid_record_id_fields": invalid_record_id_fields,
+        "invalid_unsealed_preference_record_id_fields": (
+            invalid_unsealed_preference_record_id_fields
+        ),
         "source_record_hashes": source_record_hashes,
         "record_store_source_record_hashes": record_store_source_record_hashes,
         "expected_source_record_hashes": expected_source_record_hashes,
@@ -5154,6 +5194,34 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "direct_event_weight_sum_mismatches": direct_weight_mismatches,
         "audit_passed": audit_passed,
     }
+
+
+def _unsealed_training_eligible_preference_record_ids(
+    records: list[BrainRecordEnvelope],
+) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if record.training_eligible
+        and record.record_type == "blind_leader_preference_pair"
+        and not _record_has_sealed_preference_pair(record)
+    )
+
+
+def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
+    payload = record.payload
+    preferred = payload.get("blind_preferred_ticker") or payload.get(
+        "blind_preferred_candidate_id"
+    )
+    rejected = payload.get("blind_rejected_ticker") or payload.get(
+        "blind_rejected_candidate_id"
+    )
+    return (
+        isinstance(preferred, str)
+        and bool(preferred)
+        and isinstance(rejected, str)
+        and bool(rejected)
+    )
 
 
 def _production_warehouse_status(
