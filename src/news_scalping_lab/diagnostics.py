@@ -31,7 +31,12 @@ from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports
-from news_scalping_lab.utils import file_sha256, relative_to_root, sha256_text
+from news_scalping_lab.utils import (
+    file_sha256,
+    is_available_as_of,
+    relative_to_root,
+    sha256_text,
+)
 
 ENV_KEYS = [
     "NSLAB_LLM_PROVIDER",
@@ -2841,9 +2846,15 @@ def _llm_full_brain_status(
         if record_id_stats["readable"] is True
         else None
     )
+    known_records_by_id = (
+        record_id_stats["records_by_id"]
+        if record_id_stats["readable"] is True
+        else None
+    )
     compiled_claim_stats = _compiled_claim_file_stats(
         compiled_claims_path,
         known_record_ids=known_record_ids,
+        known_records_by_id=known_records_by_id,
     )
     category_file_stats = _brain_category_file_stats(current_dir)
     category_manifest_stats = _llm_compile_category_manifest_stats(
@@ -2892,6 +2903,25 @@ def _llm_full_brain_status(
         ],
         "compiled_claims_with_unknown_contradicting_records": compiled_claim_stats[
             "claims_with_unknown_contradicting_records"
+        ],
+        "compiled_claims_without_supporting_episodes": compiled_claim_stats[
+            "claims_without_supporting_episodes"
+        ],
+        "compiled_claims_with_unknown_supporting_episodes": compiled_claim_stats[
+            "claims_with_unknown_supporting_episodes"
+        ],
+        "compiled_claims_with_unknown_contradicting_episodes": compiled_claim_stats[
+            "claims_with_unknown_contradicting_episodes"
+        ],
+        "compiled_claim_episode_record_mismatches": compiled_claim_stats[
+            "episode_record_mismatches"
+        ],
+        "compiled_claim_temporal_leaks": compiled_claim_stats["temporal_leaks"],
+        "validated_compiled_claims_without_contradictions": compiled_claim_stats[
+            "validated_without_contradictions"
+        ],
+        "validated_compiled_claims_with_single_episode": compiled_claim_stats[
+            "validated_single_episode"
         ],
         "compiled_claim_supporting_record_id_count": compiled_claim_stats[
             "supporting_record_id_count"
@@ -3120,6 +3150,22 @@ def _llm_full_brain_status(
         findings.append("compiled claims reference unknown supporting record IDs")
     if compiled_claim_stats["claims_with_unknown_contradicting_records"]:
         findings.append("compiled claims reference unknown contradicting record IDs")
+    if compiled_claim_stats["claims_without_supporting_episodes"]:
+        findings.append("compiled claims are missing supporting_episode_ids")
+    if compiled_claim_stats["claims_with_unknown_supporting_episodes"]:
+        findings.append("compiled claims reference unknown supporting episode IDs")
+    if compiled_claim_stats["claims_with_unknown_contradicting_episodes"]:
+        findings.append("compiled claims reference unknown contradicting episode IDs")
+    if compiled_claim_stats["episode_record_mismatches"]:
+        findings.append("compiled claims episode IDs do not match referenced records")
+    if compiled_claim_stats["temporal_leaks"]:
+        findings.append("compiled claims expose future record evidence")
+    if compiled_claim_stats["validated_without_contradictions"]:
+        findings.append("validated compiled claims are missing contradiction evidence")
+    if compiled_claim_stats["validated_single_episode"]:
+        findings.append(
+            "validated compiled claims rely on one or zero supporting episodes"
+        )
     return {
         **status,
         "passed": not findings,
@@ -3811,6 +3857,7 @@ def _compiled_claim_file_stats(
     path: Path,
     *,
     known_record_ids: set[str] | None = None,
+    known_records_by_id: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not path.exists():
         return {
@@ -3824,6 +3871,13 @@ def _compiled_claim_file_stats(
             "claims_without_supporting_records": [],
             "claims_with_unknown_supporting_records": [],
             "claims_with_unknown_contradicting_records": [],
+            "claims_without_supporting_episodes": [],
+            "claims_with_unknown_supporting_episodes": [],
+            "claims_with_unknown_contradicting_episodes": [],
+            "episode_record_mismatches": [],
+            "temporal_leaks": [],
+            "validated_without_contradictions": [],
+            "validated_single_episode": [],
             "supporting_record_id_count": 0,
             "contradicting_record_id_count": 0,
         }
@@ -3834,9 +3888,21 @@ def _compiled_claim_file_stats(
     claims_without_supporting_records: list[str] = []
     claims_with_unknown_supporting_records: list[str] = []
     claims_with_unknown_contradicting_records: list[str] = []
+    claims_without_supporting_episodes: list[str] = []
+    claims_with_unknown_supporting_episodes: list[str] = []
+    claims_with_unknown_contradicting_episodes: list[str] = []
+    episode_record_mismatches: list[str] = []
+    temporal_leaks: list[str] = []
+    validated_without_contradictions: list[str] = []
+    validated_single_episode: list[str] = []
     supporting_record_ids: list[str] = []
     contradicting_record_ids: list[str] = []
     valid_categories = {_brain_category(file_name) for file_name in BRAIN_FILES}
+    known_episode_ids = (
+        {record.episode_id for record in known_records_by_id.values()}
+        if known_records_by_id is not None
+        else None
+    )
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -3857,6 +3923,8 @@ def _compiled_claim_file_stats(
             invalid_categories.append(f"{claim.claim_id}: {claim.category}")
         if not claim.supporting_record_ids:
             claims_without_supporting_records.append(claim.claim_id)
+        if not claim.supporting_episode_ids:
+            claims_without_supporting_episodes.append(claim.claim_id)
         supporting_record_ids.extend(claim.supporting_record_ids)
         contradicting_record_ids.extend(claim.contradicting_record_ids)
         if known_record_ids is not None:
@@ -3872,6 +3940,51 @@ def _compiled_claim_file_stats(
                 claims_with_unknown_contradicting_records.append(
                     f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
                 )
+        if known_episode_ids is not None:
+            unknown_supporting_episodes = sorted(
+                set(claim.supporting_episode_ids) - known_episode_ids
+            )
+            if unknown_supporting_episodes:
+                claims_with_unknown_supporting_episodes.append(
+                    f"{claim.claim_id}: {', '.join(unknown_supporting_episodes)}"
+                )
+            unknown_contradicting_episodes = sorted(
+                set(claim.contradicting_episode_ids) - known_episode_ids
+            )
+            if unknown_contradicting_episodes:
+                claims_with_unknown_contradicting_episodes.append(
+                    f"{claim.claim_id}: {', '.join(unknown_contradicting_episodes)}"
+                )
+        if known_records_by_id is not None:
+            for record_id in claim.supporting_record_ids:
+                record = known_records_by_id.get(record_id)
+                if record is None:
+                    continue
+                if record.episode_id not in claim.supporting_episode_ids:
+                    episode_record_mismatches.append(
+                        f"{claim.claim_id}: supporting {record_id}->{record.episode_id}"
+                    )
+                if not is_available_as_of(record.available_from, claim.available_from):
+                    temporal_leaks.append(
+                        f"{claim.claim_id}: available_from precedes supporting record {record_id}"
+                    )
+            for record_id in claim.contradicting_record_ids:
+                record = known_records_by_id.get(record_id)
+                if record is None:
+                    continue
+                if record.episode_id not in claim.contradicting_episode_ids:
+                    episode_record_mismatches.append(
+                        f"{claim.claim_id}: contradicting {record_id}->{record.episode_id}"
+                    )
+                if not is_available_as_of(record.available_from, claim.available_from):
+                    temporal_leaks.append(
+                        f"{claim.claim_id}: available_from precedes contradicting record {record_id}"
+                    )
+        if claim.status == "validated":
+            if not claim.contradicting_record_ids and not claim.contradicting_episode_ids:
+                validated_without_contradictions.append(claim.claim_id)
+            if len(set(claim.supporting_episode_ids)) <= 1:
+                validated_single_episode.append(claim.claim_id)
     return {
         "exists": True,
         "line_count": line_count,
@@ -3889,6 +4002,19 @@ def _compiled_claim_file_stats(
         "claims_with_unknown_contradicting_records": sorted(
             claims_with_unknown_contradicting_records
         ),
+        "claims_without_supporting_episodes": sorted(
+            claims_without_supporting_episodes
+        ),
+        "claims_with_unknown_supporting_episodes": sorted(
+            claims_with_unknown_supporting_episodes
+        ),
+        "claims_with_unknown_contradicting_episodes": sorted(
+            claims_with_unknown_contradicting_episodes
+        ),
+        "episode_record_mismatches": sorted(episode_record_mismatches),
+        "temporal_leaks": sorted(temporal_leaks),
+        "validated_without_contradictions": sorted(validated_without_contradictions),
+        "validated_single_episode": sorted(validated_single_episode),
         "supporting_record_id_count": len(supporting_record_ids),
         "contradicting_record_id_count": len(contradicting_record_ids),
     }
@@ -3908,6 +4034,7 @@ def _brain_record_store_id_stats(root: Path) -> dict[str, Any]:
     return {
         "readable": True,
         "record_ids": record_ids,
+        "records_by_id": {record.record_id: record for record in records},
         "record_count": len(record_ids),
         "error": None,
     }

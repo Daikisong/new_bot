@@ -2848,6 +2848,200 @@ def test_production_readiness_rejects_compiled_claim_unknown_record_refs(
     )
 
 
+def test_production_readiness_rejects_compiled_claim_episode_and_time_gaps(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_brain_category_file_fixture(tmp_path)
+    _write_production_brain_record_fixture(tmp_path)
+    claim = CompiledBrainClaim(
+        claim_id="CC-production",
+        category="world_model",
+        statement="Production claim provenance must match referenced records.",
+        mechanism="production readiness fixture",
+        scope="diagnostic fixture",
+        supporting_record_ids=["BRAIN-production"],
+        contradicting_record_ids=["BRAIN-production"],
+        supporting_episode_ids=["EP-wrong"],
+        contradicting_episode_ids=[],
+        positive_case_count=1,
+        negative_case_count=1,
+        confidence_label="medium",
+        status="supported",
+        available_from=datetime(2030, 1, 1, 0, 0, 0, tzinfo=KST),
+        provenance={"fixture": "production_readiness"},
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"][
+        "compiled_claims_with_unknown_supporting_episodes"
+    ] == ["CC-production: EP-wrong"]
+    assert production["llm_full_brain"]["compiled_claim_episode_record_mismatches"] == [
+        "CC-production: contradicting BRAIN-production->EP-production",
+        "CC-production: supporting BRAIN-production->EP-production",
+    ]
+    assert production["llm_full_brain"]["compiled_claim_temporal_leaks"] == [
+        "CC-production: available_from precedes contradicting record BRAIN-production",
+        "CC-production: available_from precedes supporting record BRAIN-production",
+    ]
+    assert (
+        "brain: compiled claims reference unknown supporting episode IDs"
+        in production["findings"]
+    )
+    assert (
+        "brain: compiled claims episode IDs do not match referenced records"
+        in production["findings"]
+    )
+    assert (
+        "brain: compiled claims expose future record evidence"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_single_episode_validated_compiled_claim(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_brain_category_file_fixture(tmp_path)
+    _write_production_brain_record_fixture(tmp_path)
+    claim = CompiledBrainClaim(
+        claim_id="CC-production",
+        category="world_model",
+        statement="Single episode support cannot validate a production claim.",
+        mechanism="production readiness fixture",
+        scope="diagnostic fixture",
+        supporting_record_ids=["BRAIN-production"],
+        supporting_episode_ids=["EP-production"],
+        positive_case_count=1,
+        confidence_label="medium",
+        status="validated",
+        available_from=datetime(2030, 1, 2, 0, 0, 0, tzinfo=KST),
+        provenance={"fixture": "production_readiness"},
+    )
+    (current / "compiled_claims.jsonl").write_text(
+        claim.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"][
+        "validated_compiled_claims_without_contradictions"
+    ] == ["CC-production"]
+    assert production["llm_full_brain"][
+        "validated_compiled_claims_with_single_episode"
+    ] == ["CC-production"]
+    assert (
+        "brain: validated compiled claims are missing contradiction evidence"
+        in production["findings"]
+    )
+    assert (
+        "brain: validated compiled claims rely on one or zero supporting episodes"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_all_cached_llm_full_compile(
     tmp_path,
 ) -> None:
