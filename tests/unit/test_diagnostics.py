@@ -2232,6 +2232,50 @@ def test_production_readiness_rejects_record_coverage_store_mismatch(
     )
 
 
+def test_production_readiness_rejects_non_string_record_coverage_ids(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    coverage = _complete_record_coverage()
+    coverage.update(
+        {
+            "swept_record_count": 2,
+            "swept_record_ids": ["BRAIN-1", 7],
+            "unswept_record_ids": [False],
+        }
+    )
+    write_json(current / "record_coverage_manifest.json", coverage)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+            "brain_records_exists": True,
+            "source_brain_record_count": 2,
+            "brain_record_count": 2,
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["record_coverage"]["passed"] is False
+    assert (
+        "records: record coverage manifest swept_record_ids is missing or invalid"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest unswept_record_ids is missing or invalid"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_incomplete_record_coverage_manifest(
     tmp_path,
 ) -> None:

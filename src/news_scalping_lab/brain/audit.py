@@ -947,7 +947,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     training_eligible_count_as_of = sum(
         1 for record in available_records_as_of if record.training_eligible
     )
-    swept_id_list = _string_list(manifest.get("swept_record_ids"))
+    raw_swept_record_ids = manifest.get("swept_record_ids")
+    raw_unswept_record_ids = manifest.get("unswept_record_ids")
+    swept_id_list = _string_list(raw_swept_record_ids)
     swept_ids = set(swept_id_list)
     unswept = sorted(record_ids - swept_ids)
     unexpected = sorted(swept_ids - record_ids)
@@ -956,13 +958,17 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     )
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+    if not _string_list_field_valid(raw_swept_record_ids):
+        findings.append("record coverage manifest swept_record_ids is invalid")
+    if not _string_list_field_valid(raw_unswept_record_ids):
+        findings.append("record coverage manifest unswept_record_ids is invalid")
     if unswept:
         findings.append("record coverage manifest has unswept records")
     if unexpected:
         findings.append("record coverage manifest includes unknown swept records")
     if duplicate_swept:
         findings.append("record coverage manifest has duplicate swept records")
-    if _string_list(manifest.get("unswept_record_ids")) != unswept:
+    if _string_list(raw_unswept_record_ids) != unswept:
         findings.append("record coverage manifest unswept ids do not match record store")
     if manifest.get("accepted_record_count") != len(records):
         findings.append("record coverage manifest count does not match record store")
@@ -1182,6 +1188,10 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_field_valid(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:

@@ -1729,6 +1729,47 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     ]
 
 
+def test_brain_audit_rejects_non_string_record_coverage_ids(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Record coverage ID type audit note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-COVERAGE-TYPE", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    manifest = read_json(coverage_path)
+    manifest.update(
+        {
+            "swept_record_count": 2,
+            "swept_record_ids": ["BRAIN-COVERAGE-TYPE", 7],
+            "unswept_record_ids": [False],
+            "coverage_complete": True,
+        }
+    )
+    write_json(coverage_path, manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_complete"] is False
+    assert (
+        "record coverage manifest swept_record_ids is invalid"
+        in audit["record_coverage_findings"]
+    )
+    assert (
+        "record coverage manifest unswept_record_ids is invalid"
+        in audit["record_coverage_findings"]
+    )
+
+
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     tmp_path,
 ) -> None:

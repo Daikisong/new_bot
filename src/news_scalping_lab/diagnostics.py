@@ -2832,12 +2832,14 @@ def _production_record_coverage_status(
         if value is None:
             findings.append(f"record coverage manifest {key} is missing")
 
-    swept_record_ids = _string_list(record_coverage.get("swept_record_ids"))
-    unswept_record_ids = _string_list(record_coverage.get("unswept_record_ids"))
-    if not isinstance(record_coverage.get("swept_record_ids"), list):
-        findings.append("record coverage manifest swept_record_ids is missing")
-    if not isinstance(record_coverage.get("unswept_record_ids"), list):
-        findings.append("record coverage manifest unswept_record_ids is missing")
+    raw_swept_record_ids = record_coverage.get("swept_record_ids")
+    raw_unswept_record_ids = record_coverage.get("unswept_record_ids")
+    swept_record_ids = _string_list(raw_swept_record_ids)
+    unswept_record_ids = _string_list(raw_unswept_record_ids)
+    if not _string_list_field_valid(raw_swept_record_ids):
+        findings.append("record coverage manifest swept_record_ids is missing or invalid")
+    if not _string_list_field_valid(raw_unswept_record_ids):
+        findings.append("record coverage manifest unswept_record_ids is missing or invalid")
     if _duplicate_strings(swept_record_ids):
         findings.append("record coverage manifest has duplicate swept records")
     if unswept_record_ids:
@@ -7136,6 +7138,10 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _string_list_field_valid(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _string_list_dict(value: object) -> dict[str, list[str]]:
