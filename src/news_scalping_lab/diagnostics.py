@@ -608,6 +608,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     manifest_dir = root / "runs" / "manifests"
     manifest_paths = sorted(manifest_dir.glob("*.json")) if manifest_dir.exists() else []
     unreadable_manifests: list[str] = []
+    invalid_manifest_schemas: list[dict[str, Any]] = []
     missing_model_config: list[str] = []
     mock_manifests: list[dict[str, Any]] = []
     manifest_prompt_hashes: set[str] = set()
@@ -618,6 +619,14 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         except ValueError:
             unreadable_manifests.append(relative_path)
             continue
+        if manifest.get("schema_version") != "nslab.context_manifest.v1":
+            invalid_manifest_schemas.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "schema_version": manifest.get("schema_version"),
+                }
+            )
         model_config = manifest.get("model_config")
         if not isinstance(model_config, dict) or not model_config:
             missing_model_config.append(relative_path)
@@ -641,6 +650,11 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     findings: list[str] = []
     for path in unreadable_manifests:
         findings.append(f"context manifest is unreadable: {path}")
+    for manifest in invalid_manifest_schemas:
+        findings.append(
+            f"context manifest schema_version is invalid in {manifest['path']}: "
+            f"{manifest['schema_version']}"
+        )
     for path in missing_model_config:
         findings.append(f"context manifest model_config is missing: {path}")
     for manifest in mock_manifests:
@@ -659,6 +673,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "checked_manifest_count": len(manifest_paths),
         "unreadable_manifest_count": len(unreadable_manifests),
         "unreadable_manifests": unreadable_manifests,
+        "invalid_manifest_schema_count": len(invalid_manifest_schemas),
+        "invalid_manifest_schemas": invalid_manifest_schemas,
         "missing_model_config_count": len(missing_model_config),
         "missing_model_config_manifests": missing_model_config,
         "mock_model_config_manifest_count": len(mock_manifests),
@@ -667,6 +683,8 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "checked_trace_count": trace_evidence["checked_trace_count"],
         "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
         "unreadable_traces": trace_evidence["unreadable_traces"],
+        "invalid_trace_schema_count": trace_evidence["invalid_trace_schema_count"],
+        "invalid_trace_schemas": trace_evidence["invalid_trace_schemas"],
         "missing_trace_prompt_hash_count": trace_evidence[
             "missing_trace_prompt_hash_count"
         ],
@@ -682,6 +700,12 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "checked_checkpoint_count": trace_evidence["checked_checkpoint_count"],
         "unreadable_checkpoint_count": trace_evidence["unreadable_checkpoint_count"],
         "unreadable_checkpoints": trace_evidence["unreadable_checkpoints"],
+        "invalid_checkpoint_schema_count": trace_evidence[
+            "invalid_checkpoint_schema_count"
+        ],
+        "invalid_checkpoint_schemas": trace_evidence[
+            "invalid_checkpoint_schemas"
+        ],
         "checkpoint_id_mismatch_count": trace_evidence["checkpoint_id_mismatch_count"],
         "checkpoint_id_mismatches": trace_evidence["checkpoint_id_mismatches"],
         "checkpoint_trace_mismatch_count": trace_evidence[
@@ -724,6 +748,8 @@ def _production_llm_trace_evidence_status(
             "checked_trace_count": 0,
             "unreadable_trace_count": 0,
             "unreadable_traces": [],
+            "invalid_trace_schema_count": 0,
+            "invalid_trace_schemas": [],
             "missing_trace_prompt_hash_count": 0,
             "missing_trace_prompt_hashes": [],
             "missing_trace_checkpoint_id_count": 0,
@@ -733,6 +759,8 @@ def _production_llm_trace_evidence_status(
             "checked_checkpoint_count": 0,
             "unreadable_checkpoint_count": 0,
             "unreadable_checkpoints": [],
+            "invalid_checkpoint_schema_count": 0,
+            "invalid_checkpoint_schemas": [],
             "checkpoint_id_mismatch_count": 0,
             "checkpoint_id_mismatches": [],
             "checkpoint_trace_mismatch_count": 0,
@@ -745,6 +773,7 @@ def _production_llm_trace_evidence_status(
     trace_paths = sorted(trace_dir.glob("*.json")) if trace_dir.exists() else []
     checked_traces: list[Path] = []
     unreadable_traces: list[str] = []
+    invalid_trace_schemas: list[dict[str, Any]] = []
     matched_prompt_hashes: set[str] = set()
     missing_trace_checkpoint_id_traces: list[dict[str, Any]] = []
     mock_traces: list[dict[str, Any]] = []
@@ -761,6 +790,16 @@ def _production_llm_trace_evidence_status(
             continue
         matched_prompt_hashes.add(prompt_hash)
         checked_traces.append(trace_path)
+        if trace.get("schema_version") != "nslab.llm_trace.v1":
+            invalid_trace_schemas.append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "purpose": trace.get("purpose"),
+                    "prompt_sha256": prompt_hash,
+                    "schema_version": trace.get("schema_version"),
+                }
+            )
         checkpoint_id = trace.get("checkpoint_id")
         if isinstance(checkpoint_id, str) and checkpoint_id:
             checkpoint_ids.add(checkpoint_id)
@@ -801,6 +840,7 @@ def _production_llm_trace_evidence_status(
     checkpoint_root = root / "runs" / "checkpoints" / "llm"
     checked_checkpoints: list[Path] = []
     unreadable_checkpoints: list[str] = []
+    invalid_checkpoint_schemas: list[dict[str, Any]] = []
     checkpoint_id_mismatches: list[dict[str, Any]] = []
     checkpoint_trace_mismatches: list[dict[str, Any]] = []
     mock_checkpoints: list[dict[str, Any]] = []
@@ -818,6 +858,14 @@ def _production_llm_trace_evidence_status(
             unreadable_checkpoints.append(relative_to_root(checkpoint_path, root))
             continue
         checked_checkpoints.append(checkpoint_path)
+        if checkpoint.get("schema_version") != "nslab.llm_checkpoint.v1":
+            invalid_checkpoint_schemas.append(
+                {
+                    "path": relative_to_root(checkpoint_path, root),
+                    "checkpoint_id": checkpoint.get("checkpoint_id"),
+                    "schema_version": checkpoint.get("schema_version"),
+                }
+            )
         observed_checkpoint_id = checkpoint.get("checkpoint_id")
         if observed_checkpoint_id != checkpoint_id:
             checkpoint_id_mismatches.append(
@@ -858,6 +906,11 @@ def _production_llm_trace_evidence_status(
     findings: list[str] = []
     for path in unreadable_traces:
         findings.append(f"referenced LLM trace is unreadable: {path}")
+    for trace in invalid_trace_schemas:
+        findings.append(
+            f"referenced LLM trace schema_version is invalid in {trace['path']}: "
+            f"{trace['schema_version']}"
+        )
     for prompt_hash in missing_trace_prompt_hashes:
         findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
     for trace in missing_trace_checkpoint_id_traces:
@@ -869,6 +922,11 @@ def _production_llm_trace_evidence_status(
         )
     for path in unreadable_checkpoints:
         findings.append(f"referenced LLM checkpoint is unreadable: {path}")
+    for checkpoint in invalid_checkpoint_schemas:
+        findings.append(
+            f"referenced LLM checkpoint schema_version is invalid in "
+            f"{checkpoint['path']}: {checkpoint['schema_version']}"
+        )
     for mismatch in checkpoint_id_mismatches:
         findings.append(
             f"referenced LLM checkpoint_id mismatch in {mismatch['path']}: "
@@ -891,6 +949,8 @@ def _production_llm_trace_evidence_status(
         "checked_trace_count": len(checked_traces),
         "unreadable_trace_count": len(unreadable_traces),
         "unreadable_traces": unreadable_traces,
+        "invalid_trace_schema_count": len(invalid_trace_schemas),
+        "invalid_trace_schemas": invalid_trace_schemas,
         "missing_trace_prompt_hash_count": len(missing_trace_prompt_hashes),
         "missing_trace_prompt_hashes": missing_trace_prompt_hashes,
         "missing_trace_checkpoint_id_count": len(missing_trace_checkpoint_id_traces),
@@ -900,6 +960,8 @@ def _production_llm_trace_evidence_status(
         "checked_checkpoint_count": len(checked_checkpoints),
         "unreadable_checkpoint_count": len(unreadable_checkpoints),
         "unreadable_checkpoints": unreadable_checkpoints,
+        "invalid_checkpoint_schema_count": len(invalid_checkpoint_schemas),
+        "invalid_checkpoint_schemas": invalid_checkpoint_schemas,
         "checkpoint_id_mismatch_count": len(checkpoint_id_mismatches),
         "checkpoint_id_mismatches": checkpoint_id_mismatches,
         "checkpoint_trace_mismatch_count": len(checkpoint_trace_mismatches),
