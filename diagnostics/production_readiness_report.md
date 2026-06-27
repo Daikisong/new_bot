@@ -482,6 +482,9 @@
 - unique_training_eligible_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
 - unique_exported_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR']`
 - unique_skipped_record_ids: `['EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
+- skipped_record_reasons_by_record_id: `{'BRAIN-SYNTH-ISSUER': ['record_type_not_selected_for_export_kind'], 'BRAIN-SYNTH-PAIR': ['record_type_not_selected_for_export_kind'], 'EP-2991eb145f59:legacy_catalog_record': ['legacy v1 episode migrated as catalog_only memory', 'record_type_not_selected_for_export_kind'], 'EP-f56c790fe2fc:legacy_catalog_record': ['legacy v1 episode migrated as catalog_only memory', 'record_type_not_selected_for_export_kind']}`
+- unique_skipped_record_reasons_by_record_id: `{'EP-2991eb145f59:legacy_catalog_record': ['legacy v1 episode migrated as catalog_only memory', 'record_type_not_selected_for_export_kind'], 'EP-f56c790fe2fc:legacy_catalog_record': ['legacy v1 episode migrated as catalog_only memory', 'record_type_not_selected_for_export_kind']}`
+- skipped_record_reason_counts: `{'legacy v1 episode migrated as catalog_only memory': 6, 'record_type_not_selected_for_export_kind': 9}`
 - source_record_hash_count: `4`
 - blind_safe_row_count: `0`
 - hindsight_row_count: `3`

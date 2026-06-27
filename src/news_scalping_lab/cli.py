@@ -7152,6 +7152,112 @@ def memory_inspect_record(record_id: str) -> None:
     _echo(record.model_dump(mode="json"))
 
 
+@memory_app.command("search-records")
+def memory_search_records(
+    query: Annotated[str, typer.Argument(help="Semantic query text.")],
+    record_type: Annotated[list[str] | None, typer.Option("--record-type")] = None,
+    training_target: Annotated[str | None, typer.Option("--training-target")] = None,
+    evidence_phase: Annotated[str | None, typer.Option("--evidence-phase")] = None,
+    ticker: Annotated[str | None, typer.Option("--ticker")] = None,
+    company_name: Annotated[str | None, typer.Option("--company-name")] = None,
+    theme_id: Annotated[str | None, typer.Option("--theme-id")] = None,
+    path_type: Annotated[str | None, typer.Option("--path-type")] = None,
+    response_class: Annotated[str | None, typer.Option("--response-class")] = None,
+    confidence_label: Annotated[str | None, typer.Option("--confidence-label")] = None,
+    trade_date_from: Annotated[str | None, typer.Option("--trade-date-from")] = None,
+    trade_date_to: Annotated[str | None, typer.Option("--trade-date-to")] = None,
+    available_from_as_of: Annotated[
+        str | None,
+        typer.Option("--available-from-as-of"),
+    ] = None,
+    training_eligible_only: Annotated[
+        bool,
+        typer.Option("--training-eligible-only"),
+    ] = False,
+    ineligible_only: Annotated[bool, typer.Option("--ineligible-only")] = False,
+    limit: Annotated[int, typer.Option("--limit")] = 20,
+    include_records: Annotated[bool, typer.Option("--include-records")] = False,
+) -> None:
+    if training_eligible_only and ineligible_only:
+        typer.echo(
+            "--training-eligible-only and --ineligible-only cannot be combined",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    training_eligible = (
+        True if training_eligible_only else False if ineligible_only else None
+    )
+    record_type_filter: str | tuple[str, ...] | None
+    if record_type is None or not record_type:
+        record_type_filter = None
+    elif len(record_type) == 1:
+        record_type_filter = record_type[0]
+    else:
+        record_type_filter = tuple(record_type)
+    available_from = (
+        _parse_cutoff(available_from_as_of)
+        if available_from_as_of is not None
+        else None
+    )
+    settings = load_settings()
+    store = LocalRetrievalStore(settings.project_root)
+    filters = {
+        "record_type": record_type_filter,
+        "training_target": training_target,
+        "evidence_phase": evidence_phase,
+        "ticker": ticker,
+        "company_name": company_name,
+        "theme_id": theme_id,
+        "path_type": path_type,
+        "response_class": response_class,
+        "confidence_label": confidence_label,
+        "trade_date_from": trade_date_from,
+        "trade_date_to": trade_date_to,
+        "available_from_as_of": available_from_as_of,
+        "training_eligible": training_eligible,
+        "limit": limit,
+    }
+    try:
+        record_ids = store.search_records(
+            query,
+            limit=limit,
+            record_type=record_type_filter,
+            training_target=training_target,
+            trade_date_from=trade_date_from,
+            trade_date_to=trade_date_to,
+            available_from=available_from,
+            ticker=ticker,
+            company_name=company_name,
+            theme_id=theme_id,
+            path_type=path_type,
+            response_class=response_class,
+            training_eligible=training_eligible,
+            evidence_phase=evidence_phase,
+            confidence_label=confidence_label,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    payload: dict[str, Any] = {
+        "query": query,
+        "result_count": len(record_ids),
+        "record_ids": record_ids,
+        "filters": {key: value for key, value in filters.items() if value is not None},
+        "vector_index": store.inspect_index(),
+    }
+    if include_records:
+        record_store = BrainRecordStore(settings.project_root)
+        records: list[dict[str, Any]] = []
+        for record_id in record_ids:
+            try:
+                record = record_store.get_record(record_id)
+            except FileNotFoundError:
+                records.append({"record_id": record_id, "missing": True})
+                continue
+            records.append(record.model_dump(mode="json"))
+        payload["records"] = records
+    _echo(payload)
+
+
 @memory_app.command("stats")
 def memory_stats() -> None:
     settings = load_settings()

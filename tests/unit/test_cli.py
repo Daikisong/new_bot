@@ -1404,6 +1404,82 @@ def test_memory_inspect_record_cli_reports_missing_record(
     assert "record not found: BRAIN-missing" in result.output
 
 
+def test_memory_search_records_cli_queries_record_vector_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    record = _cli_brain_record()
+    records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
+    records_path.parent.mkdir(parents=True, exist_ok=True)
+    records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "search-records",
+            "CLI record contract",
+            "--record-type",
+            "memory_claim",
+            "--training-target",
+            "cli_contract",
+            "--evidence-phase",
+            "AUDIT",
+            "--available-from-as-of",
+            "2030-01-11T00:00:00+09:00",
+            "--ineligible-only",
+            "--include-records",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["query"] == "CLI record contract"
+    assert payload["result_count"] == 1
+    assert payload["record_ids"] == ["BRAIN-CLI"]
+    assert payload["filters"] == {
+        "available_from_as_of": "2030-01-11T00:00:00+09:00",
+        "evidence_phase": "AUDIT",
+        "limit": 20,
+        "record_type": "memory_claim",
+        "training_eligible": False,
+        "training_target": "cli_contract",
+    }
+    assert payload["vector_index"]["status"] == "current"
+    assert payload["vector_index"]["brain_record_count"] == 1
+    assert payload["records"][0]["record_id"] == "BRAIN-CLI"
+    assert payload["records"][0]["payload"]["summary"] == "CLI record contract fixture."
+
+
+def test_memory_search_records_cli_rejects_conflicting_eligibility_filters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "search-records",
+            "conflict",
+            "--training-eligible-only",
+            "--ineligible-only",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert (
+        "--training-eligible-only and --ineligible-only cannot be combined"
+        in result.output
+    )
+
+
 def test_memory_rebuild_index_cli_writes_deterministic_record_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

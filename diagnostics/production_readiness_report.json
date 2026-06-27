@@ -1488,6 +1488,26 @@
       "BRAIN-SYNTH-PAIR"
     ],
     "schema_version": "nslab.production_training_exports.v1",
+    "skipped_record_reason_counts": {
+      "legacy v1 episode migrated as catalog_only memory": 6,
+      "record_type_not_selected_for_export_kind": 9
+    },
+    "skipped_record_reasons_by_record_id": {
+      "BRAIN-SYNTH-ISSUER": [
+        "record_type_not_selected_for_export_kind"
+      ],
+      "BRAIN-SYNTH-PAIR": [
+        "record_type_not_selected_for_export_kind"
+      ],
+      "EP-2991eb145f59:legacy_catalog_record": [
+        "legacy v1 episode migrated as catalog_only memory",
+        "record_type_not_selected_for_export_kind"
+      ],
+      "EP-f56c790fe2fc:legacy_catalog_record": [
+        "legacy v1 episode migrated as catalog_only memory",
+        "record_type_not_selected_for_export_kind"
+      ]
+    },
     "source_phase_counts": {
       "POSTMORTEM": 3
     },
@@ -1504,6 +1524,16 @@
       "EP-2991eb145f59:legacy_catalog_record",
       "EP-f56c790fe2fc:legacy_catalog_record"
     ],
+    "unique_skipped_record_reasons_by_record_id": {
+      "EP-2991eb145f59:legacy_catalog_record": [
+        "legacy v1 episode migrated as catalog_only memory",
+        "record_type_not_selected_for_export_kind"
+      ],
+      "EP-f56c790fe2fc:legacy_catalog_record": [
+        "legacy v1 episode migrated as catalog_only memory",
+        "record_type_not_selected_for_export_kind"
+      ]
+    },
     "unique_source_record_count": 4,
     "unique_source_record_ids": [
       "BRAIN-SYNTH-ISSUER",

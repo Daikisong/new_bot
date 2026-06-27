@@ -104,6 +104,7 @@ nslab research smoke-bundle --path path/to/real_bundle.md --require-valid
 nslab research import-bundle path/to/bundle.md --validate --accept
 nslab memory apply-company-deltas --as-of 2026-06-24T08:59:59+09:00
 nslab memory stats
+nslab memory search-records "positive analogs for a policy catalyst" --record-type supervised_issuer_day_case --training-eligible-only
 nslab memory audit --deep
 ```
 
