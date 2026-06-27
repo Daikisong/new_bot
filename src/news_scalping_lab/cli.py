@@ -6759,6 +6759,10 @@ def memory_stats() -> None:
             "extra_normalized_record_count": report.get(
                 "extra_normalized_record_count",
             ),
+            "quarantined_bundle_count": report.get("quarantined_bundle_count"),
+            "quarantined_raw_record_count": report.get(
+                "quarantined_raw_record_count",
+            ),
             "quarantined_record_count": report.get("quarantined_record_count"),
             "audit_passed": report.get("audit_passed"),
         }

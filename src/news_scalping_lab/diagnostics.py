@@ -1446,6 +1446,15 @@ def _real_bundle_import_status(
         if expected_record_ids
         else None,
         "expected_record_ids": expected_record_ids or None,
+        "quarantined_bundle_count": inspection.get("quarantined_bundle_count")
+        if inspection is not None
+        else None,
+        "quarantined_raw_record_count": inspection.get("quarantined_raw_record_count")
+        if inspection is not None
+        else None,
+        "quarantined_record_count": inspection.get("quarantined_record_count")
+        if inspection is not None
+        else None,
     }
     if real_bundle_smoke.get("status") != "passed":
         return {
@@ -2154,6 +2163,10 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
             "invalid_typed_payload_record_count"
         ),
         "dropped_record_count": inspection.get("dropped_record_count"),
+        "quarantined_bundle_count": inspection.get("quarantined_bundle_count"),
+        "quarantined_raw_record_count": inspection.get(
+            "quarantined_raw_record_count"
+        ),
         "quarantined_record_count": inspection.get("quarantined_record_count"),
         "record_counts_by_type": inspection.get("record_counts_by_type"),
         "validation_passed": inspection.get("validation_passed"),
@@ -2230,6 +2243,13 @@ def _real_bundle_failure_reasons(
         ("raw_payload_hashes_match", inspection.get("raw_payload_hashes_match"), True),
         ("import_loss_audit_passed", inspection.get("import_loss_audit_passed"), True),
         ("typed_payload_valid", inspection.get("typed_payload_valid"), True),
+        ("quarantined_bundle_count", inspection.get("quarantined_bundle_count"), 0),
+        (
+            "quarantined_raw_record_count",
+            inspection.get("quarantined_raw_record_count"),
+            0,
+        ),
+        ("quarantined_record_count", inspection.get("quarantined_record_count"), 0),
     )
     for name, observed, expected in checks:
         if observed != expected:

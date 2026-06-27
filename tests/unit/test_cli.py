@@ -999,6 +999,15 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
         episode_dir / "bundle_envelope.json",
         {"episode_id": "EP-cli", "raw_block_counts": {"brain_delta.jsonl": 2}},
     )
+    quarantine_dir = tmp_path / "data" / "quarantine" / "research_bundles" / "EP-q-abc"
+    quarantine_dir.mkdir(parents=True)
+    write_json(
+        quarantine_dir / "quarantine.json",
+        {
+            "schema_version": "nslab.bundle_quarantine.v1",
+            "metadata": {"quarantined_raw_record_count": 2},
+        },
+    )
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
 
     result = CliRunner().invoke(app, ["memory", "stats"])
@@ -1014,7 +1023,9 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["raw_record_counts_by_episode"] == {"EP-cli": 2}
     assert payload["dropped_record_count"] == 1
     assert payload["extra_normalized_record_count"] == 0
-    assert payload["quarantined_record_count"] == 0
+    assert payload["quarantined_bundle_count"] == 1
+    assert payload["quarantined_raw_record_count"] == 2
+    assert payload["quarantined_record_count"] == 2
     assert payload["audit_passed"] is True
 
 

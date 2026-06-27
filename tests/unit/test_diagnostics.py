@@ -2400,6 +2400,9 @@ def test_production_readiness_accepts_real_smoke_import_link(
     assert production["real_bundle_import"]["observed_record_count"] == 327
     assert production["real_bundle_import"]["expected_record_id_count"] == 327
     assert production["real_bundle_import"]["expected_record_ids"] == record_ids
+    assert production["real_bundle_import"]["quarantined_bundle_count"] == 0
+    assert production["real_bundle_import"]["quarantined_raw_record_count"] == 0
+    assert production["real_bundle_import"]["quarantined_record_count"] == 0
     assert (
         production["real_bundle_import"][
             "validation_report_raw_normalized_record_count_matches"
@@ -3459,6 +3462,8 @@ def _valid_v11_bundle_inspection(path: Path) -> dict[str, object]:
         "dropped_record_count": 0,
         "missing_normalized_record_count": 0,
         "extra_normalized_record_count": 0,
+        "quarantined_bundle_count": 0,
+        "quarantined_raw_record_count": 0,
         "quarantined_record_count": 0,
         "record_counts_by_type": record_counts_by_type,
         "raw_record_ids": record_ids,
