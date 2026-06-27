@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from pathlib import Path
 from typing import TypeVar
 
+import duckdb
 import pytest
 import typer
 from pydantic import BaseModel, ValidationError
@@ -2749,6 +2750,59 @@ def test_coverage_audit_requires_file_backed_warehouse_identity_sets(tmp_path) -
         "warehouse: mechanism_memory.parquet ids mismatch; missing source mechanism "
         "memory ids: MM-source-identity; extra projected ids: MM-stale-identity"
     ) in audit["findings"]
+
+
+def test_coverage_audit_reports_duplicate_brain_record_projection_ids(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Duplicate brain record projection audit note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    records = [
+        _compiled_claim_test_record("BRAIN-WAREHOUSE-DUP-A", episode.episode_id),
+        _compiled_claim_test_record("BRAIN-WAREHOUSE-DUP-B", episode.episode_id),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    records_path = tmp_path / "warehouse" / "brain_records.parquet"
+    tampered_path = tmp_path / "warehouse" / "brain_records_tampered.parquet"
+    escaped_records_path = records_path.as_posix().replace("'", "''")
+    escaped_tampered_path = tampered_path.as_posix().replace("'", "''")
+    duckdb.sql(
+        "copy ("
+        f"select * from read_parquet('{escaped_records_path}') "
+        "where record_id = 'BRAIN-WAREHOUSE-DUP-A' "
+        "union all "
+        f"select * from read_parquet('{escaped_records_path}') "
+        "where record_id = 'BRAIN-WAREHOUSE-DUP-A'"
+        f") to '{escaped_tampered_path}' (format parquet)"
+    )
+    tampered_path.replace(records_path)
+
+    audit = audit_coverage(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["warehouse_projection_synced"] is False
+    assert audit["warehouse_count_mismatches"].get("brain_records.parquet") is None
+    assert audit["warehouse_identity_mismatches"]["brain_records.parquet"] == {
+        "extra": [],
+        "missing": ["BRAIN-WAREHOUSE-DUP-B"],
+    }
+    assert audit["warehouse_duplicate_identities"]["brain_records.parquet"] == [
+        "BRAIN-WAREHOUSE-DUP-A"
+    ]
+    assert (
+        "warehouse: brain_records.parquet duplicate ids: BRAIN-WAREHOUSE-DUP-A"
+        in audit["findings"]
+    )
 
 
 def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:

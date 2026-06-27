@@ -391,7 +391,9 @@ def export_session_pack(
     )
     manifest: dict[str, object] = {
         "schema_version": "nslab.session_pack_manifest.v1",
-        "blocked": bool(omitted_ids or required_context_over_budget),
+        "blocked": bool(
+            omitted_ids or omitted_record_ids or required_context_over_budget
+        ),
         "trade_date": trade_date.isoformat(),
         "cutoff_at": cutoff_at.isoformat(),
         "as_of": cutoff_at.isoformat(),

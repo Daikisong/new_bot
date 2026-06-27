@@ -2272,11 +2272,14 @@ def test_coverage_audit_rejects_duplicate_issuer_day_projection_keys(
     audit = audit_coverage(tmp_path)
 
     assert audit["warehouse_duplicate_identities"] == {
-        "issuer_day_cases.parquet": ["20300110:000001|2030-01-10|000001"]
+        "issuer_day_cases.parquet": [
+            "20300110:000001|2030-01-10|000001",
+            "BRAIN-SYNTH-ISSUER",
+        ]
     }
     assert (
         "warehouse: issuer_day_cases.parquet duplicate ids: "
-        "20300110:000001|2030-01-10|000001"
+        "20300110:000001|2030-01-10|000001, BRAIN-SYNTH-ISSUER"
     ) in audit["findings"]
     assert audit["warehouse_projection_synced"] is False
 

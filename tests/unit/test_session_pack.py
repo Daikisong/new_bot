@@ -436,6 +436,52 @@ def test_session_pack_exports_record_memory_cases_as_of_cutoff(tmp_path) -> None
     assert audit_lookahead(tmp_path)["passed"]
 
 
+def test_session_pack_blocks_when_available_record_exceeds_budget(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.session_pack_token_budget = 100
+    ensure_project_dirs(settings)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","RecordPackCo, catalyst",'
+        '"Session pack should block record memory omissions."\n',
+        encoding="utf-8",
+    )
+    available_record = _record(
+        "REC-SESSION-BUDGET-OMITTED",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+    )
+    _store_records(tmp_path, [available_record])
+
+    with pytest.raises(SessionPackBudgetExceededError) as exc_info:
+        export_session_pack(
+            settings,
+            news_csv=news_csv,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="brain",
+        )
+
+    manifest = read_json(exc_info.value.output_dir / "manifest.json")
+
+    assert manifest["blocked"] is True
+    assert manifest["available_record_ids"] == ["REC-SESSION-BUDGET-OMITTED"]
+    assert manifest["included_record_ids"] == []
+    assert manifest["budget_omitted_record_ids"] == [
+        "REC-SESSION-BUDGET-OMITTED"
+    ]
+    assert manifest["available_record_coverage_complete"] is False
+    assert (
+        "session pack omitted available records due to token budget"
+        in manifest["errors"]
+    )
+    assert (
+        "session pack omitted available records due to token budget"
+        in exc_info.value.errors
+    )
+    assert audit_lookahead(tmp_path)["passed"]
+
+
 def test_session_pack_uses_as_of_brain_context_when_current_contains_future_episode(
     tmp_path,
 ) -> None:

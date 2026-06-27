@@ -469,28 +469,71 @@ def _warehouse_identity_mismatches(
     return mismatches
 
 
-def _warehouse_duplicate_identity_expectations() -> dict[str, dict[str, Any]]:
-    return {
-        "issuer_day_cases.parquet": {
-            "columns": ("issuer_day_case_id", "trade_date", "ticker"),
-            "source_label": "issuer-day case ids",
-        },
-    }
+def _warehouse_duplicate_identity_expectations() -> list[dict[str, Any]]:
+    record_id_files = (
+        ("brain_records.parquet", "normalized brain record ids"),
+        ("issuer_day_cases.parquet", "issuer-day brain record ids"),
+        ("direct_event_cases.parquet", "direct event brain record ids"),
+        ("theme_formation_cases.parquet", "theme formation brain record ids"),
+        ("beneficiary_cases.parquet", "beneficiary discovery brain record ids"),
+        ("leader_pairs.parquet", "sealed leader preference pair record ids"),
+        ("error_cases.parquet", "brain error case record ids"),
+        ("memory_claims.parquet", "brain memory claim record ids"),
+        ("research_questions.parquet", "research question record ids"),
+    )
+    expectations = [
+        {
+            "filename": filename,
+            "columns": ("record_id",),
+            "source_label": source_label,
+        }
+        for filename, source_label in record_id_files
+    ]
+    expectations.extend(
+        [
+            {
+                "filename": "record_provenance.parquet",
+                "columns": ("record_id", "source_id"),
+                "source_label": "record provenance links",
+            },
+            {
+                "filename": "record_coverage.parquet",
+                "columns": (
+                    "episode_id",
+                    "record_type",
+                    "evidence_phase",
+                    "training_target",
+                ),
+                "source_label": "episode/type/phase/target record coverage groups",
+            },
+            {
+                "filename": "issuer_day_cases.parquet",
+                "columns": ("issuer_day_case_id", "trade_date", "ticker"),
+                "source_label": "issuer-day case ids",
+            },
+        ]
+    )
+    return expectations
 
 
 def _warehouse_duplicate_identities(
     root: Path,
-    expectations: dict[str, dict[str, Any]],
+    expectations: list[dict[str, Any]],
 ) -> dict[str, list[str]]:
-    duplicates: dict[str, list[str]] = {}
-    for filename, expectation in expectations.items():
+    duplicate_sets: dict[str, set[str]] = {}
+    for expectation in expectations:
+        filename = str(expectation["filename"])
         duplicate_values = _warehouse_duplicate_identity_values(
             root / "warehouse" / filename,
             tuple(expectation["columns"]),
         )
         if duplicate_values:
-            duplicates[filename] = duplicate_values
-    return duplicates
+            duplicate_sets.setdefault(filename, set()).update(duplicate_values)
+    return {
+        filename: sorted(duplicates)
+        for filename, duplicates in duplicate_sets.items()
+        if duplicates
+    }
 
 
 def _warehouse_identity_values(path: Path, columns: tuple[str, ...]) -> list[str]:
