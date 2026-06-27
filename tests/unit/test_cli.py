@@ -1143,6 +1143,10 @@ def test_warehouse_verify_cli_passes_synced_projection(
     assert payload["warehouse_projection_synced"] is True
     assert payload["warehouse_required_files_present"] is True
     assert sorted(payload["required_files"]) == sorted(EXPECTED_WAREHOUSE_FILES)
+    assert payload["warehouse_missing_files"] == []
+    assert payload["warehouse_unreadable_files"] == []
+    assert payload["warehouse_count_mismatches"] == {}
+    assert payload["warehouse_identity_mismatches"] == {}
     assert payload["warehouse_findings"] == []
     assert payload["warehouse_duplicate_identities"] == {}
     assert payload["warehouse_weight_mismatches"] == {}
@@ -1159,6 +1163,12 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
             "warehouse_synced": True,
             "warehouse_projection_synced": False,
             "warehouse_counts": {"brain_records.parquet": 1},
+            "warehouse_missing_files": [],
+            "warehouse_unreadable_files": [],
+            "warehouse_count_mismatches": {
+                "brain_records.parquet": {"actual": 1, "expected": 2}
+            },
+            "warehouse_identity_mismatches": {},
             "warehouse_duplicate_identities": {},
             "warehouse_weight_mismatches": {},
             "warehouse_required_files": ["brain_records.parquet"],
@@ -1175,6 +1185,9 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
     assert payload["warehouse_findings"] == [
         "warehouse: brain_records.parquet count 1 != expected 2"
     ]
+    assert payload["warehouse_count_mismatches"] == {
+        "brain_records.parquet": {"actual": 1, "expected": 2}
+    }
 
 
 def test_warehouse_verify_cli_exits_nonzero_when_research_episode_count_stale(
@@ -1188,6 +1201,10 @@ def test_warehouse_verify_cli_exits_nonzero_when_research_episode_count_stale(
             "warehouse_synced": False,
             "warehouse_projection_synced": True,
             "warehouse_counts": {"research_episodes.parquet": 1},
+            "warehouse_missing_files": [],
+            "warehouse_unreadable_files": [],
+            "warehouse_count_mismatches": {},
+            "warehouse_identity_mismatches": {},
             "warehouse_duplicate_identities": {},
             "warehouse_weight_mismatches": {},
             "warehouse_required_files": ["research_episodes.parquet"],
@@ -1203,6 +1220,7 @@ def test_warehouse_verify_cli_exits_nonzero_when_research_episode_count_stale(
     assert payload["passed"] is False
     assert payload["warehouse_synced"] is False
     assert payload["warehouse_projection_synced"] is True
+    assert payload["warehouse_count_mismatches"] == {}
     assert payload["warehouse_findings"] == []
 
 

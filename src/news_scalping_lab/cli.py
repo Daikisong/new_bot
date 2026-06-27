@@ -6519,6 +6519,16 @@ def warehouse_verify() -> None:
             "warehouse_required_files_present"
         ),
         "warehouse_counts": coverage.get("warehouse_counts", {}),
+        "warehouse_missing_files": coverage.get("warehouse_missing_files", []),
+        "warehouse_unreadable_files": coverage.get("warehouse_unreadable_files", []),
+        "warehouse_count_mismatches": coverage.get(
+            "warehouse_count_mismatches",
+            {},
+        ),
+        "warehouse_identity_mismatches": coverage.get(
+            "warehouse_identity_mismatches",
+            {},
+        ),
         "warehouse_duplicate_identities": coverage.get(
             "warehouse_duplicate_identities",
             {},
