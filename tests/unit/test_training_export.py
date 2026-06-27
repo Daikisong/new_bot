@@ -462,6 +462,11 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     evals_manifest = read_json(evals.manifest_path)
     for manifest in (sft_manifest, preference_manifest, evals_manifest):
         assert manifest["weight_validation_status"] == "passed"
+        assert manifest["source_record_ids"] == [
+            "BRAIN-ISSUER",
+            "BRAIN-MEMORY",
+            "BRAIN-PAIR",
+        ]
         assert manifest["duplicate_issuer_day_count"] == 0
         assert manifest["duplicate_issuer_day_keys"] == []
         assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
@@ -473,6 +478,18 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
             manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"]
             is False
         )
+    assert sft_manifest["eligible_record_ids"] == ["BRAIN-ISSUER"]
+    assert sft_manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
+    assert sft_manifest["skipped_record_ids"] == ["BRAIN-MEMORY", "BRAIN-PAIR"]
+    assert preference_manifest["eligible_record_ids"] == ["BRAIN-PAIR"]
+    assert preference_manifest["exported_record_ids"] == ["BRAIN-PAIR"]
+    assert preference_manifest["skipped_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+    ]
+    assert evals_manifest["eligible_record_ids"] == ["BRAIN-ISSUER"]
+    assert evals_manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
+    assert evals_manifest["skipped_record_ids"] == ["BRAIN-MEMORY", "BRAIN-PAIR"]
 
     sft_audit_only = _jsonl(
         tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
@@ -518,6 +535,15 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert training_report["unique_skipped_record_count"] == 1
     assert training_report["source_phase_counts"] == {"POSTMORTEM": 3}
     assert training_report["source_record_hash_count"] == 3
+    assert training_report["unique_source_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    ]
+    assert training_report["unique_training_eligible_record_ids"] == [
+        "BRAIN-ISSUER",
+        "BRAIN-PAIR",
+    ]
     assert sorted(training_report["source_record_hashes"]) == [
         "BRAIN-ISSUER",
         "BRAIN-MEMORY",
@@ -539,6 +565,17 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert training_report["issuer_day_weight_sum_mismatches"] == {}
     assert training_report["direct_event_weight_sum_mismatch_count"] == 0
     assert training_report["direct_event_weight_sum_mismatches"] == {}
+
+    sft_manifest["exported_record_ids"] = ["BRAIN-MEMORY"]
+    sft.manifest_path.write_text(
+        json.dumps(sft_manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+    failed = audit_training_exports(tmp_path)
+    assert not failed["passed"]
+    assert "sft: exported_record_ids does not match manifest records" in failed[
+        "findings"
+    ]
 
 
 def test_training_manifest_surfaces_duplicate_issuer_day_weight_validation(

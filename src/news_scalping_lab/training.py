@@ -193,6 +193,8 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "unique_training_eligible_record_count": len(training_eligible_record_ids),
             "unique_exported_record_count": len(exported_record_ids),
             "unique_skipped_record_count": len(unique_skipped_record_ids),
+            "unique_source_record_ids": sorted(source_record_ids),
+            "unique_training_eligible_record_ids": sorted(training_eligible_record_ids),
             "unique_exported_record_ids": sorted(exported_record_ids),
             "unique_skipped_record_ids": unique_skipped_record_ids,
             "blind_safe_row_count": _sum_int(summaries, "blind_safe_row_count"),
@@ -350,6 +352,9 @@ def _source_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
 
 
 def _eligible_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    explicit_ids = _string_list(manifest.get("eligible_record_ids"))
+    if explicit_ids or "eligible_record_ids" in manifest:
+        return set(explicit_ids)
     eligible_ids: set[str] = set()
     skipped_records = manifest.get("skipped_records")
     if isinstance(skipped_records, list):
@@ -363,6 +368,13 @@ def _eligible_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
 
 
 def _skipped_record_ids_from_manifest(manifest: dict[str, Any]) -> set[str]:
+    explicit_ids = _string_list(manifest.get("skipped_record_ids"))
+    if explicit_ids or "skipped_record_ids" in manifest:
+        return set(explicit_ids)
+    return _skipped_record_ids_from_entries(manifest)
+
+
+def _skipped_record_ids_from_entries(manifest: dict[str, Any]) -> set[str]:
     skipped_ids: set[str] = set()
     skipped_records = manifest.get("skipped_records")
     if isinstance(skipped_records, list):
@@ -381,6 +393,29 @@ def _record_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
         for row in rows
         if isinstance(record_id := row.get("record_id"), str) and record_id
     }
+
+
+def _source_record_ids(records: list[BrainRecordEnvelope]) -> list[str]:
+    return sorted(record.record_id for record in records)
+
+
+def _eligible_record_ids_for_kind(
+    kind: str,
+    records: list[BrainRecordEnvelope],
+) -> list[str]:
+    return sorted(
+        record.record_id
+        for record in records
+        if _record_selected_for_kind(kind, record) and record.training_eligible
+    )
+
+
+def _skipped_record_ids(skipped_records: list[dict[str, Any]]) -> list[str]:
+    return sorted(
+        record_id
+        for item in skipped_records
+        if isinstance(record_id := item.get("record_id"), str) and record_id
+    )
 
 
 def export_training(root: Path, *, kind: str) -> TrainingExportResult:
@@ -411,6 +446,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     }
     skipped = [] if records else _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
     skipped_records = _skipped_records(kind, records) if records else []
+    source_record_ids = _source_record_ids(records)
+    eligible_record_ids = _eligible_record_ids_for_kind(kind, records)
+    exported_record_ids = sorted(_record_ids_from_rows(rows))
+    skipped_record_ids = _skipped_record_ids(skipped_records)
     weight_validation = _record_weight_validation(records) if records else {}
     weight_validation_fields = _weight_validation_manifest_fields(weight_validation)
     path = target_dir / f"{kind}.jsonl"
@@ -437,20 +476,13 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "episode_count": len(source_episode_ids),
             "source_episode_count": len(source_episode_ids),
             "source_record_count": len(records),
-            "eligible_record_count": sum(
-                1
-                for record in records
-                if _record_selected_for_kind(kind, record) and record.training_eligible
-            ),
-            "exported_record_count": len(
-                {
-                    record_id
-                    for row in rows
-                    if isinstance(record_id := row.get("record_id"), str)
-                    and record_id
-                }
-            ),
+            "source_record_ids": source_record_ids,
+            "eligible_record_count": len(eligible_record_ids),
+            "eligible_record_ids": eligible_record_ids,
+            "exported_record_count": len(exported_record_ids),
+            "exported_record_ids": exported_record_ids,
             "skipped_record_count": len(skipped_records),
+            "skipped_record_ids": skipped_record_ids,
             "skipped_records": skipped_records,
             "episode_ids": source_episode_ids,
             "eligible_episode_count": len(source_episode_ids) - len(skipped),
@@ -515,21 +547,14 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             if records
             else len(episodes),
             "source_record_count": len(records),
-            "eligible_record_count": sum(
-                1
-                for record in records
-                if _record_selected_for_kind(kind, record) and record.training_eligible
-            ),
-            "exported_record_count": len(
-                {
-                    record_id
-                    for row in rows
-                    if isinstance(record_id := row.get("record_id"), str)
-                    and record_id
-                }
-            ),
+            "source_record_ids": source_record_ids,
+            "eligible_record_count": len(eligible_record_ids),
+            "eligible_record_ids": eligible_record_ids,
+            "exported_record_count": len(exported_record_ids),
+            "exported_record_ids": exported_record_ids,
             "row_count": len(rows),
             "skipped_record_count": len(skipped_records),
+            "skipped_record_ids": skipped_record_ids,
             "counts_by_record_type": _record_type_counts(records),
             "counts_by_training_target": _record_training_target_counts(records),
             **weight_validation_fields,
@@ -547,10 +572,14 @@ def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "source_mode": manifest.get("source_mode"),
         "source_episode_count": manifest.get("source_episode_count"),
         "source_record_count": manifest.get("source_record_count"),
+        "source_record_ids": _string_list(manifest.get("source_record_ids")),
         "eligible_record_count": manifest.get("eligible_record_count"),
+        "eligible_record_ids": _string_list(manifest.get("eligible_record_ids")),
         "exported_record_count": manifest.get("exported_record_count"),
+        "exported_record_ids": _string_list(manifest.get("exported_record_ids")),
         "row_count": manifest.get("row_count"),
         "skipped_record_count": manifest.get("skipped_record_count"),
+        "skipped_record_ids": _string_list(manifest.get("skipped_record_ids")),
         "blind_safe_row_count": manifest.get("blind_safe_row_count"),
         "hindsight_row_count": manifest.get("hindsight_row_count"),
         "counts_by_record_type": manifest.get("counts_by_record_type", {}),
@@ -888,7 +917,7 @@ def _audit_record_export_scope(
     if manifest.get("source_mode") != "brain_records":
         return
     source_ids = _source_record_ids_from_manifest(manifest)
-    skipped_ids = _skipped_record_ids_from_manifest(manifest)
+    skipped_ids = _skipped_record_ids_from_entries(manifest)
     row_ids: list[str] = []
     for index, row in enumerate(rows, start=1):
         record_id = row.get("record_id")
@@ -897,6 +926,34 @@ def _audit_record_export_scope(
             continue
         row_ids.append(record_id)
     row_id_set = set(row_ids)
+    _audit_manifest_record_id_list(
+        kind,
+        manifest,
+        "source_record_ids",
+        expected_ids=source_ids,
+        findings=findings,
+    )
+    _audit_manifest_record_id_list(
+        kind,
+        manifest,
+        "eligible_record_ids",
+        expected_ids=row_id_set,
+        findings=findings,
+    )
+    _audit_manifest_record_id_list(
+        kind,
+        manifest,
+        "exported_record_ids",
+        expected_ids=row_id_set,
+        findings=findings,
+    )
+    _audit_manifest_record_id_list(
+        kind,
+        manifest,
+        "skipped_record_ids",
+        expected_ids=skipped_ids,
+        findings=findings,
+    )
     duplicate_row_ids = sorted(
         record_id for record_id, count in Counter(row_ids).items() if count > 1
     )
@@ -929,6 +986,27 @@ def _audit_record_export_scope(
             f"{kind}: skipped brain record IDs outside source manifest: "
             f"{', '.join(skipped_unknown_ids)}"
         )
+
+
+def _audit_manifest_record_id_list(
+    kind: str,
+    manifest: dict[str, Any],
+    field: str,
+    *,
+    expected_ids: set[str],
+    findings: list[str],
+) -> None:
+    if field not in manifest:
+        return
+    value = manifest.get(field)
+    if not isinstance(value, list) or not all(
+        isinstance(record_id, str) and record_id for record_id in value
+    ):
+        findings.append(f"{kind}: {field} is invalid")
+        return
+    observed_ids = set(value)
+    if observed_ids != expected_ids:
+        findings.append(f"{kind}: {field} does not match manifest records")
 
 
 def _audit_record_preference_rows(

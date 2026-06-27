@@ -286,12 +286,20 @@ def production_readiness_report(
         findings.extend(
             f"training: {finding}" for finding in training_exports["findings"]
         )
+    findings_by_category = _findings_by_category(findings)
+    finding_counts_by_category = {
+        category: len(category_findings)
+        for category, category_findings in findings_by_category.items()
+    }
     return {
         "schema_version": "nslab.production_readiness.v1",
         "passed": not findings,
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+        "finding_counts_by_category": finding_counts_by_category,
+        "findings_by_category": findings_by_category,
+        "blocker_summary": _production_blocker_summary(findings_by_category),
         "real_bundle_smoke": real_bundle_smoke,
         "real_bundle_import": real_bundle_import,
         "llm_evidence": llm_evidence,
@@ -305,6 +313,28 @@ def production_readiness_report(
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
     }
+
+
+def _findings_by_category(findings: list[str]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for finding in findings:
+        category, separator, _ = finding.partition(":")
+        normalized_category = category.strip() if separator and category.strip() else "general"
+        grouped.setdefault(normalized_category, []).append(finding)
+    return {category: grouped[category] for category in sorted(grouped)}
+
+
+def _production_blocker_summary(
+    findings_by_category: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "category": category,
+            "finding_count": len(category_findings),
+            "first_finding": category_findings[0] if category_findings else None,
+        }
+        for category, category_findings in findings_by_category.items()
+    ]
 
 
 def real_bundle_smoke_report(

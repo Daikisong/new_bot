@@ -239,6 +239,18 @@ def test_doctor_production_cli_reports_record_store_gate(
     production = payload["production_readiness"]
     record_store = production["record_store"]
     assert production["passed"] is False
+    assert production["diagnostic_artifacts"] == {
+        "json": "diagnostics/production_readiness_report.json",
+        "markdown": "diagnostics/production_readiness_report.md",
+    }
+    report_path = tmp_path / "diagnostics" / "production_readiness_report.json"
+    markdown_path = tmp_path / "diagnostics" / "production_readiness_report.md"
+    assert report_path.exists()
+    assert markdown_path.exists()
+    diagnostic_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert diagnostic_report["schema_version"] == "nslab.production_readiness.v1"
+    assert diagnostic_report["passed"] is False
+    assert diagnostic_report["finding_counts_by_category"]["llm"] == 1
     assert record_store["schema_version"] == "nslab.production_record_store.v1"
     assert record_store["deep"] is True
     assert record_store["passed"] is True

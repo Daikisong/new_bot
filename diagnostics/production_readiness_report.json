@@ -1,0 +1,2427 @@
+{
+  "blocker_summary": [
+    {
+      "category": "brain",
+      "finding_count": 4,
+      "first_finding": "brain: current manifest is catalog_only"
+    },
+    {
+      "category": "embedding",
+      "finding_count": 2,
+      "first_finding": "embedding: deterministic mock vector index cannot be production semantic index"
+    },
+    {
+      "category": "llm",
+      "finding_count": 1,
+      "first_finding": "llm: mock provider cannot compile production brain"
+    },
+    {
+      "category": "llm_evidence",
+      "finding_count": 106,
+      "first_finding": "llm_evidence: mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock"
+    },
+    {
+      "category": "llm_model",
+      "finding_count": 1,
+      "first_finding": "llm_model: mock model profile cannot compile production brain"
+    },
+    {
+      "category": "real_bundle",
+      "finding_count": 1,
+      "first_finding": "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending"
+    },
+    {
+      "category": "web",
+      "finding_count": 1,
+      "first_finding": "web: mock provider cannot supply production evidence"
+    },
+    {
+      "category": "web_evidence",
+      "finding_count": 22,
+      "first_finding": "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl"
+    }
+  ],
+  "finding_count": 138,
+  "finding_counts_by_category": {
+    "brain": 4,
+    "embedding": 2,
+    "llm": 1,
+    "llm_evidence": 106,
+    "llm_model": 1,
+    "real_bundle": 1,
+    "web": 1,
+    "web_evidence": 22
+  },
+  "findings": [
+    "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending",
+    "llm: mock provider cannot compile production brain",
+    "llm_model: mock model profile cannot compile production brain",
+    "llm_evidence: mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM model_config present in runs/manifests/RUN-1fca69ca7072.json: provider=mock-compatible",
+    "llm_evidence: mock LLM model_config present in runs/manifests/RUN-a5840d2def32.json: provider=mock-compatible",
+    "llm_evidence: mock LLM model_config present in runs/manifests/RUN-aa2a36dbf3e0.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-0ca37aecbe3c.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-188bb56ac676.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-386be262d68d.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-41550af6dbf5.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-78d4a7435057.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-859724333092.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-8831ef3e257f.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-923868eafd90.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-d43f1281c8bf.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-f857c7016b69.json: None",
+    "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-f9d4de2d8052.json: None",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-0ca37aecbe3c.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-188bb56ac676.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-47de8cf59ecb.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-50c4c07b60ea.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-78d4a7435057.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-859724333092.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-8831ef3e257f.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-d43f1281c8bf.json",
+    "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-f857c7016b69.json",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-0ca37aecbe3c.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-188bb56ac676.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-1ee2d8d7b834.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-2e77374f0971.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-386be262d68d.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-41550af6dbf5.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-41ea9acbffd1.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-47566f6fa015.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-47de8cf59ecb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-47e0ab583e4a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-50c4c07b60ea.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-571a901108eb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-78d4a7435057.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-859724333092.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-8831ef3e257f.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-9019e1625000.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-923868eafd90.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-95145e3b062a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-a1aff2ff7fd4.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-cb16cd27ce92.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-d3b1592b4fd2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-d43f1281c8bf.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-f857c7016b69.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM trace present in runs/traces/TRACE-f9d4de2d8052.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: token_usage differs from runs/traces/TRACE-47566f6fa015.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: metadata differs from runs/traces/TRACE-41550af6dbf5.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: token_usage differs from runs/traces/TRACE-41550af6dbf5.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: retries differs from runs/traces/TRACE-41550af6dbf5.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: token_usage differs from runs/traces/TRACE-9019e1625000.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: metadata differs from runs/traces/TRACE-8831ef3e257f.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: token_usage differs from runs/traces/TRACE-8831ef3e257f.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: retries differs from runs/traces/TRACE-8831ef3e257f.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: token_usage differs from runs/traces/TRACE-47de8cf59ecb.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: token_usage differs from runs/traces/TRACE-cb16cd27ce92.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-0ca37aecbe3c.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-0ca37aecbe3c.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-0ca37aecbe3c.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-188bb56ac676.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-188bb56ac676.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-188bb56ac676.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-78d4a7435057.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-78d4a7435057.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-78d4a7435057.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-859724333092.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-859724333092.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-859724333092.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-d43f1281c8bf.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-d43f1281c8bf.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-d43f1281c8bf.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-f857c7016b69.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-f857c7016b69.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-f857c7016b69.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: metadata differs from runs/traces/TRACE-923868eafd90.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: token_usage differs from runs/traces/TRACE-923868eafd90.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: retries differs from runs/traces/TRACE-923868eafd90.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: token_usage differs from runs/traces/TRACE-571a901108eb.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: metadata differs from runs/traces/TRACE-f9d4de2d8052.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: token_usage differs from runs/traces/TRACE-f9d4de2d8052.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: retries differs from runs/traces/TRACE-f9d4de2d8052.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: token_usage differs from runs/traces/TRACE-2e77374f0971.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: metadata differs from runs/traces/TRACE-386be262d68d.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: token_usage differs from runs/traces/TRACE-386be262d68d.json",
+    "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: retries differs from runs/traces/TRACE-386be262d68d.json",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-1936b1897508bbd3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-4f0790064ee97066.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-67c0ef01f7e85b5f.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-835d4ddfeac5ccfe.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-b5f12eef215144c2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d2c2ce3b0b40d564.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: provider=DeterministicMockLLMProvider",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e757310c06146284.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+    "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider",
+    "web: mock provider cannot supply production evidence",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
+    "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+    "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
+    "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
+    "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
+    "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
+    "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl (120)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl (80)",
+    "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl (120)",
+    "brain: current manifest is catalog_only",
+    "brain: current manifest build_mode is catalog, not llm-full",
+    "brain: llm-full compile manifest is missing",
+    "brain: compiled claims JSONL is missing",
+    "embedding: deterministic mock vector index cannot be production semantic index",
+    "embedding: on-disk deterministic mock vector index cannot be production semantic index"
+  ],
+  "findings_by_category": {
+    "brain": [
+      "brain: current manifest is catalog_only",
+      "brain: current manifest build_mode is catalog, not llm-full",
+      "brain: llm-full compile manifest is missing",
+      "brain: compiled claims JSONL is missing"
+    ],
+    "embedding": [
+      "embedding: deterministic mock vector index cannot be production semantic index",
+      "embedding: on-disk deterministic mock vector index cannot be production semantic index"
+    ],
+    "llm": [
+      "llm: mock provider cannot compile production brain"
+    ],
+    "llm_evidence": [
+      "llm_evidence: mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM model_config present in runs/manifests/RUN-1fca69ca7072.json: provider=mock-compatible",
+      "llm_evidence: mock LLM model_config present in runs/manifests/RUN-a5840d2def32.json: provider=mock-compatible",
+      "llm_evidence: mock LLM model_config present in runs/manifests/RUN-aa2a36dbf3e0.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-0ca37aecbe3c.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-188bb56ac676.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-386be262d68d.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-41550af6dbf5.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-78d4a7435057.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-859724333092.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-8831ef3e257f.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-923868eafd90.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-d43f1281c8bf.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-f857c7016b69.json: None",
+      "llm_evidence: referenced LLM trace schema_version is invalid in runs/traces/TRACE-f9d4de2d8052.json: None",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-0ca37aecbe3c.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-188bb56ac676.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-47de8cf59ecb.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-50c4c07b60ea.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-78d4a7435057.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-859724333092.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-8831ef3e257f.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-d43f1281c8bf.json",
+      "llm_evidence: referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-f857c7016b69.json",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-0ca37aecbe3c.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-188bb56ac676.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-1ee2d8d7b834.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-2e77374f0971.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-386be262d68d.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-41550af6dbf5.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-41ea9acbffd1.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-47566f6fa015.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-47de8cf59ecb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-47e0ab583e4a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-50c4c07b60ea.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-571a901108eb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-78d4a7435057.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-859724333092.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-8831ef3e257f.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-9019e1625000.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-923868eafd90.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-95145e3b062a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-a1aff2ff7fd4.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-cb16cd27ce92.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-d3b1592b4fd2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-d43f1281c8bf.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-f857c7016b69.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM trace present in runs/traces/TRACE-f9d4de2d8052.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: token_usage differs from runs/traces/TRACE-47566f6fa015.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: metadata differs from runs/traces/TRACE-41550af6dbf5.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: token_usage differs from runs/traces/TRACE-41550af6dbf5.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: retries differs from runs/traces/TRACE-41550af6dbf5.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: token_usage differs from runs/traces/TRACE-9019e1625000.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: metadata differs from runs/traces/TRACE-8831ef3e257f.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: token_usage differs from runs/traces/TRACE-8831ef3e257f.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: retries differs from runs/traces/TRACE-8831ef3e257f.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: token_usage differs from runs/traces/TRACE-47de8cf59ecb.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: token_usage differs from runs/traces/TRACE-cb16cd27ce92.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-188bb56ac676.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-188bb56ac676.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-188bb56ac676.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-78d4a7435057.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-78d4a7435057.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-78d4a7435057.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-859724333092.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-859724333092.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-859724333092.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-f857c7016b69.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-f857c7016b69.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-f857c7016b69.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: metadata differs from runs/traces/TRACE-923868eafd90.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: token_usage differs from runs/traces/TRACE-923868eafd90.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: retries differs from runs/traces/TRACE-923868eafd90.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: token_usage differs from runs/traces/TRACE-571a901108eb.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: metadata differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: token_usage differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: retries differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: token_usage differs from runs/traces/TRACE-2e77374f0971.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: metadata differs from runs/traces/TRACE-386be262d68d.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: token_usage differs from runs/traces/TRACE-386be262d68d.json",
+      "llm_evidence: referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: retries differs from runs/traces/TRACE-386be262d68d.json",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-1936b1897508bbd3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-4f0790064ee97066.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-67c0ef01f7e85b5f.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-835d4ddfeac5ccfe.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-b5f12eef215144c2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d2c2ce3b0b40d564.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: provider=DeterministicMockLLMProvider",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e757310c06146284.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "llm_evidence: mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider"
+    ],
+    "llm_model": [
+      "llm_model: mock model profile cannot compile production brain"
+    ],
+    "real_bundle": [
+      "real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending"
+    ],
+    "web": [
+      "web: mock provider cannot supply production evidence"
+    ],
+    "web_evidence": [
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
+      "web_evidence: web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+      "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
+      "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
+      "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
+      "web_evidence: web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
+      "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl (120)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl (80)",
+      "web_evidence: mock web source URLs present in runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl (120)"
+    ]
+  },
+  "llm_evidence": {
+    "checked_checkpoint_count": 19,
+    "checked_manifest_count": 4,
+    "checked_trace_count": 24,
+    "checkpoint_id_mismatch_count": 0,
+    "checkpoint_id_mismatches": [],
+    "checkpoint_trace_mismatch_count": 39,
+    "checkpoint_trace_mismatches": [
+      {
+        "checkpoint_id": "LLMCKPT-19590931c2511050",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-19590931c2511050.json",
+        "trace": "runs/traces/TRACE-47566f6fa015.json",
+        "trace_id": "TRACE-47566f6fa015",
+        "trace_value": {
+          "completion_tokens_estimate": 572,
+          "prompt_tokens_estimate": 242743
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-48e1f75528ca154f",
+        "checkpoint_value": {
+          "prompt_version": "synthesis.final.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json",
+        "trace": "runs/traces/TRACE-41550af6dbf5.json",
+        "trace_id": "TRACE-41550af6dbf5",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-48e1f75528ca154f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json",
+        "trace": "runs/traces/TRACE-41550af6dbf5.json",
+        "trace_id": "TRACE-41550af6dbf5",
+        "trace_value": {
+          "completion_tokens_estimate": 3320,
+          "prompt_tokens_estimate": 13974
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-48e1f75528ca154f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json",
+        "trace": "runs/traces/TRACE-41550af6dbf5.json",
+        "trace_id": "TRACE-41550af6dbf5",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-62ea8fd13164b01b",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json",
+        "trace": "runs/traces/TRACE-9019e1625000.json",
+        "trace_id": "TRACE-9019e1625000",
+        "trace_value": {
+          "completion_tokens_estimate": 236186,
+          "prompt_tokens_estimate": 283832
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6c3c5be8dd06ad95",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json",
+        "trace": "runs/traces/TRACE-8831ef3e257f.json",
+        "trace_id": "TRACE-8831ef3e257f",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6c3c5be8dd06ad95",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json",
+        "trace": "runs/traces/TRACE-8831ef3e257f.json",
+        "trace_id": "TRACE-8831ef3e257f",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13249
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6c3c5be8dd06ad95",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json",
+        "trace": "runs/traces/TRACE-8831ef3e257f.json",
+        "trace_id": "TRACE-8831ef3e257f",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6f235463a421d872",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json",
+        "trace": "runs/traces/TRACE-47de8cf59ecb.json",
+        "trace_id": "TRACE-47de8cf59ecb",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13779
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-77deea786815a074",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-77deea786815a074.json",
+        "trace": "runs/traces/TRACE-cb16cd27ce92.json",
+        "trace_id": "TRACE-cb16cd27ce92",
+        "trace_value": {
+          "completion_tokens_estimate": 3320,
+          "prompt_tokens_estimate": 548455
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "trace_id": "TRACE-0ca37aecbe3c",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "trace_id": "TRACE-0ca37aecbe3c",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "trace_id": "TRACE-0ca37aecbe3c",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-188bb56ac676.json",
+        "trace_id": "TRACE-188bb56ac676",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-188bb56ac676.json",
+        "trace_id": "TRACE-188bb56ac676",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-188bb56ac676.json",
+        "trace_id": "TRACE-188bb56ac676",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-78d4a7435057.json",
+        "trace_id": "TRACE-78d4a7435057",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-78d4a7435057.json",
+        "trace_id": "TRACE-78d4a7435057",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-78d4a7435057.json",
+        "trace_id": "TRACE-78d4a7435057",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-859724333092.json",
+        "trace_id": "TRACE-859724333092",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-859724333092.json",
+        "trace_id": "TRACE-859724333092",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-859724333092.json",
+        "trace_id": "TRACE-859724333092",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-d43f1281c8bf.json",
+        "trace_id": "TRACE-d43f1281c8bf",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-d43f1281c8bf.json",
+        "trace_id": "TRACE-d43f1281c8bf",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-d43f1281c8bf.json",
+        "trace_id": "TRACE-d43f1281c8bf",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": {
+          "prompt_version": "daily_blind_analysis.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-f857c7016b69.json",
+        "trace_id": "TRACE-f857c7016b69",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-f857c7016b69.json",
+        "trace_id": "TRACE-f857c7016b69",
+        "trace_value": {
+          "completion_tokens_estimate": 2261,
+          "prompt_tokens_estimate": 13037
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "trace": "runs/traces/TRACE-f857c7016b69.json",
+        "trace_id": "TRACE-f857c7016b69",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-92aae239f7336951",
+        "checkpoint_value": {
+          "prompt_version": "synthesis.final.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json",
+        "trace": "runs/traces/TRACE-923868eafd90.json",
+        "trace_id": "TRACE-923868eafd90",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-92aae239f7336951",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json",
+        "trace": "runs/traces/TRACE-923868eafd90.json",
+        "trace_id": "TRACE-923868eafd90",
+        "trace_value": {
+          "completion_tokens_estimate": 3320,
+          "prompt_tokens_estimate": 18927
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-92aae239f7336951",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json",
+        "trace": "runs/traces/TRACE-923868eafd90.json",
+        "trace_id": "TRACE-923868eafd90",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-bb97ffdbbdba24a3",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json",
+        "trace": "runs/traces/TRACE-571a901108eb.json",
+        "trace_id": "TRACE-571a901108eb",
+        "trace_value": {
+          "completion_tokens_estimate": 5697,
+          "prompt_tokens_estimate": 10625
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-d35b08ad7b4c60ec",
+        "checkpoint_value": {
+          "prompt_version": "red_team.candidate_attack.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json",
+        "trace": "runs/traces/TRACE-f9d4de2d8052.json",
+        "trace_id": "TRACE-f9d4de2d8052",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-d35b08ad7b4c60ec",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json",
+        "trace": "runs/traces/TRACE-f9d4de2d8052.json",
+        "trace_id": "TRACE-f9d4de2d8052",
+        "trace_value": {
+          "completion_tokens_estimate": 1542,
+          "prompt_tokens_estimate": 2812
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-d35b08ad7b4c60ec",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json",
+        "trace": "runs/traces/TRACE-f9d4de2d8052.json",
+        "trace_id": "TRACE-f9d4de2d8052",
+        "trace_value": 0
+      },
+      {
+        "checkpoint_id": "LLMCKPT-e35dca8d70f5eeae",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json",
+        "trace": "runs/traces/TRACE-2e77374f0971.json",
+        "trace_id": "TRACE-2e77374f0971",
+        "trace_value": {
+          "completion_tokens_estimate": 805,
+          "prompt_tokens_estimate": 243916
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-eb78d87afd206a02",
+        "checkpoint_value": {
+          "prompt_version": "red_team.candidate_attack.v1"
+        },
+        "field": "metadata",
+        "path": "runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json",
+        "trace": "runs/traces/TRACE-386be262d68d.json",
+        "trace_id": "TRACE-386be262d68d",
+        "trace_value": null
+      },
+      {
+        "checkpoint_id": "LLMCKPT-eb78d87afd206a02",
+        "checkpoint_value": null,
+        "field": "token_usage",
+        "path": "runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json",
+        "trace": "runs/traces/TRACE-386be262d68d.json",
+        "trace_id": "TRACE-386be262d68d",
+        "trace_value": {
+          "completion_tokens_estimate": 1542,
+          "prompt_tokens_estimate": 2622
+        }
+      },
+      {
+        "checkpoint_id": "LLMCKPT-eb78d87afd206a02",
+        "checkpoint_value": null,
+        "field": "retries",
+        "path": "runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json",
+        "trace": "runs/traces/TRACE-386be262d68d.json",
+        "trace_id": "TRACE-386be262d68d",
+        "trace_value": 0
+      }
+    ],
+    "duplicate_prompt_hash_count": 0,
+    "duplicate_prompt_hash_manifest_count": 0,
+    "duplicate_prompt_hash_manifests": [],
+    "finding_count": 106,
+    "findings": [
+      "mock LLM model_config present in runs/manifests/RUN-116b51828c12.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM model_config present in runs/manifests/RUN-1fca69ca7072.json: provider=mock-compatible",
+      "mock LLM model_config present in runs/manifests/RUN-a5840d2def32.json: provider=mock-compatible",
+      "mock LLM model_config present in runs/manifests/RUN-aa2a36dbf3e0.json: configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-0ca37aecbe3c.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-188bb56ac676.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-386be262d68d.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-41550af6dbf5.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-78d4a7435057.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-859724333092.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-8831ef3e257f.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-923868eafd90.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-d43f1281c8bf.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-f857c7016b69.json: None",
+      "referenced LLM trace schema_version is invalid in runs/traces/TRACE-f9d4de2d8052.json: None",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-0ca37aecbe3c.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-188bb56ac676.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-47de8cf59ecb.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-50c4c07b60ea.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-78d4a7435057.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-859724333092.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-8831ef3e257f.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-d43f1281c8bf.json",
+      "referenced LLM trace purpose does not match manifest prompt_hashes: runs/traces/TRACE-f857c7016b69.json",
+      "mock LLM trace present in runs/traces/TRACE-0ca37aecbe3c.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-188bb56ac676.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-1ee2d8d7b834.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-2e77374f0971.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-386be262d68d.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-41550af6dbf5.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-41ea9acbffd1.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-47566f6fa015.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-47de8cf59ecb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-47e0ab583e4a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-50c4c07b60ea.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-571a901108eb.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-78d4a7435057.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-859724333092.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-8831ef3e257f.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-9019e1625000.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-923868eafd90.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-95145e3b062a.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-a1aff2ff7fd4.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-cb16cd27ce92.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-d3b1592b4fd2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM trace present in runs/traces/TRACE-d43f1281c8bf.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-f857c7016b69.json: provider=DeterministicMockLLMProvider",
+      "mock LLM trace present in runs/traces/TRACE-f9d4de2d8052.json: provider=DeterministicMockLLMProvider",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: token_usage differs from runs/traces/TRACE-47566f6fa015.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: metadata differs from runs/traces/TRACE-41550af6dbf5.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: token_usage differs from runs/traces/TRACE-41550af6dbf5.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: retries differs from runs/traces/TRACE-41550af6dbf5.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: token_usage differs from runs/traces/TRACE-9019e1625000.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: metadata differs from runs/traces/TRACE-8831ef3e257f.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: token_usage differs from runs/traces/TRACE-8831ef3e257f.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: retries differs from runs/traces/TRACE-8831ef3e257f.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: token_usage differs from runs/traces/TRACE-47de8cf59ecb.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: token_usage differs from runs/traces/TRACE-cb16cd27ce92.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-0ca37aecbe3c.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-188bb56ac676.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-188bb56ac676.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-188bb56ac676.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-78d4a7435057.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-78d4a7435057.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-78d4a7435057.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-859724333092.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-859724333092.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-859724333092.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-d43f1281c8bf.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: metadata differs from runs/traces/TRACE-f857c7016b69.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: token_usage differs from runs/traces/TRACE-f857c7016b69.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: retries differs from runs/traces/TRACE-f857c7016b69.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: metadata differs from runs/traces/TRACE-923868eafd90.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: token_usage differs from runs/traces/TRACE-923868eafd90.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: retries differs from runs/traces/TRACE-923868eafd90.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: token_usage differs from runs/traces/TRACE-571a901108eb.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: metadata differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: token_usage differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: retries differs from runs/traces/TRACE-f9d4de2d8052.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: token_usage differs from runs/traces/TRACE-2e77374f0971.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: metadata differs from runs/traces/TRACE-386be262d68d.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: token_usage differs from runs/traces/TRACE-386be262d68d.json",
+      "referenced LLM checkpoint trace mismatch in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: retries differs from runs/traces/TRACE-386be262d68d.json",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-1936b1897508bbd3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-19590931c2511050.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json: provider=DeterministicMockLLMProvider",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-4f0790064ee97066.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-67c0ef01f7e85b5f.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json: provider=DeterministicMockLLMProvider",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-77deea786815a074.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json: provider=DeterministicMockLLMProvider",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-835d4ddfeac5ccfe.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json: provider=DeterministicMockLLMProvider",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-b5f12eef215144c2.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d2c2ce3b0b40d564.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json: provider=DeterministicMockLLMProvider",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-e757310c06146284.json: provider=DeterministicMockLLMProvider, configured_provider=mock, provider_class=DeterministicMockLLMProvider, model=deterministic-mock",
+      "mock LLM checkpoint present in runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json: provider=DeterministicMockLLMProvider"
+    ],
+    "invalid_checkpoint_schema_count": 0,
+    "invalid_checkpoint_schemas": [],
+    "invalid_manifest_schema_count": 0,
+    "invalid_manifest_schemas": [],
+    "invalid_prompt_hash_entry_count": 0,
+    "invalid_prompt_hash_manifest_count": 0,
+    "invalid_prompt_hash_manifests": [],
+    "invalid_trace_payload_count": 0,
+    "invalid_trace_payloads": [],
+    "invalid_trace_schema_count": 11,
+    "invalid_trace_schemas": [
+      {
+        "path": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-0ca37aecbe3c"
+      },
+      {
+        "path": "runs/traces/TRACE-188bb56ac676.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-188bb56ac676"
+      },
+      {
+        "path": "runs/traces/TRACE-386be262d68d.json",
+        "prompt_sha256": "7d02324d6026c587887ebac7f4bffed8fd8ba51d418350f83def589120a551f7",
+        "purpose": "red_team_candidate_review",
+        "schema_version": null,
+        "trace_id": "TRACE-386be262d68d"
+      },
+      {
+        "path": "runs/traces/TRACE-41550af6dbf5.json",
+        "prompt_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+        "purpose": "final_synthesis",
+        "schema_version": null,
+        "trace_id": "TRACE-41550af6dbf5"
+      },
+      {
+        "path": "runs/traces/TRACE-78d4a7435057.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-78d4a7435057"
+      },
+      {
+        "path": "runs/traces/TRACE-859724333092.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-859724333092"
+      },
+      {
+        "path": "runs/traces/TRACE-8831ef3e257f.json",
+        "prompt_sha256": "6cfe421ba2bd77070bff2b122ffa46f297f5bf06203301f234731672985b1ee0",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-8831ef3e257f"
+      },
+      {
+        "path": "runs/traces/TRACE-923868eafd90.json",
+        "prompt_sha256": "47851cfea1085e77a63d7565491f96364b2f5f0eeec29a7e698e20141bd30337",
+        "purpose": "final_synthesis",
+        "schema_version": null,
+        "trace_id": "TRACE-923868eafd90"
+      },
+      {
+        "path": "runs/traces/TRACE-d43f1281c8bf.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-d43f1281c8bf"
+      },
+      {
+        "path": "runs/traces/TRACE-f857c7016b69.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "schema_version": null,
+        "trace_id": "TRACE-f857c7016b69"
+      },
+      {
+        "path": "runs/traces/TRACE-f9d4de2d8052.json",
+        "prompt_sha256": "fc1130d30f70785c0229764d9c11fac12a2a5d044cbfc382f449787ab1f8a27b",
+        "purpose": "red_team_candidate_review",
+        "schema_version": null,
+        "trace_id": "TRACE-f9d4de2d8052"
+      }
+    ],
+    "missing_model_config_count": 0,
+    "missing_model_config_manifests": [],
+    "missing_prompt_hash_manifest_count": 0,
+    "missing_prompt_hash_manifests": [],
+    "missing_trace_checkpoint_id_count": 0,
+    "missing_trace_checkpoint_id_traces": [],
+    "missing_trace_prompt_hash_count": 0,
+    "missing_trace_prompt_hashes": [],
+    "mock_checkpoint_count": 19,
+    "mock_checkpoints": [
+      {
+        "checkpoint_id": "LLMCKPT-1936b1897508bbd3",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-1936b1897508bbd3.json",
+        "purpose": "daily_blind_analysis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-19590931c2511050",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-19590931c2511050.json",
+        "purpose": "semantic_retrieval_plan"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-48e1f75528ca154f",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-48e1f75528ca154f.json",
+        "purpose": "final_synthesis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-4f0790064ee97066",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-4f0790064ee97066.json",
+        "purpose": "open_world_first_analysis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-62ea8fd13164b01b",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-62ea8fd13164b01b.json",
+        "purpose": "news_novelty_review"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-67c0ef01f7e85b5f",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-67c0ef01f7e85b5f.json",
+        "purpose": "semantic_retrieval_plan"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6c3c5be8dd06ad95",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-6c3c5be8dd06ad95.json",
+        "purpose": "daily_blind_analysis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-6f235463a421d872",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-6f235463a421d872.json",
+        "purpose": "daily_blind_analysis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-77deea786815a074",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-77deea786815a074.json",
+        "purpose": "final_synthesis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-7a8f188836500a9f",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-7a8f188836500a9f.json",
+        "purpose": "daily_blind_analysis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-835d4ddfeac5ccfe",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-835d4ddfeac5ccfe.json",
+        "purpose": "red_team_candidate_review"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-92aae239f7336951",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-92aae239f7336951.json",
+        "purpose": "final_synthesis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-b5f12eef215144c2",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-b5f12eef215144c2.json",
+        "purpose": "news_novelty_review"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-bb97ffdbbdba24a3",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-bb97ffdbbdba24a3.json",
+        "purpose": "red_team_candidate_review"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-d2c2ce3b0b40d564",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-d2c2ce3b0b40d564.json",
+        "purpose": "final_synthesis"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-d35b08ad7b4c60ec",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-d35b08ad7b4c60ec.json",
+        "purpose": "red_team_candidate_review"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-e35dca8d70f5eeae",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-e35dca8d70f5eeae.json",
+        "purpose": "candidate_expansion"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-e757310c06146284",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-e757310c06146284.json",
+        "purpose": "candidate_expansion"
+      },
+      {
+        "checkpoint_id": "LLMCKPT-eb78d87afd206a02",
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/checkpoints/llm/LLMCKPT-eb78d87afd206a02.json",
+        "purpose": "red_team_candidate_review"
+      }
+    ],
+    "mock_model_config_manifest_count": 4,
+    "mock_model_config_manifests": [
+      {
+        "mock_values": [
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/manifests/RUN-116b51828c12.json",
+        "run_id": "RUN-116b51828c12"
+      },
+      {
+        "mock_values": [
+          "provider=mock-compatible"
+        ],
+        "path": "runs/manifests/RUN-1fca69ca7072.json",
+        "run_id": "RUN-1fca69ca7072"
+      },
+      {
+        "mock_values": [
+          "provider=mock-compatible"
+        ],
+        "path": "runs/manifests/RUN-a5840d2def32.json",
+        "run_id": "RUN-a5840d2def32"
+      },
+      {
+        "mock_values": [
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "run_id": "RUN-aa2a36dbf3e0"
+      }
+    ],
+    "mock_trace_count": 24,
+    "mock_traces": [
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-0ca37aecbe3c"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-188bb56ac676.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-188bb56ac676"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-1ee2d8d7b834.json",
+        "prompt_sha256": "4fff46cb5668ba2dc64705f167be9aa063a39d6d89678f3d4c3366d9ea4d185b",
+        "purpose": "candidate_expansion",
+        "trace_id": "TRACE-1ee2d8d7b834"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-2e77374f0971.json",
+        "prompt_sha256": "bffc89d96523bdd4249c424ed28fb823768f89b48b654828224fc13b331a6115",
+        "purpose": "candidate_expansion",
+        "trace_id": "TRACE-2e77374f0971"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-386be262d68d.json",
+        "prompt_sha256": "7d02324d6026c587887ebac7f4bffed8fd8ba51d418350f83def589120a551f7",
+        "purpose": "red_team_candidate_review",
+        "trace_id": "TRACE-386be262d68d"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-41550af6dbf5.json",
+        "prompt_sha256": "f380c9d93c3e190e6d871bcda4c9cd23d8bf43d556d3d6f2f27e8d4099cee046",
+        "purpose": "final_synthesis",
+        "trace_id": "TRACE-41550af6dbf5"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-41ea9acbffd1.json",
+        "prompt_sha256": "b542f480bb92be4a64b3fe3fd4af9b774eb67acb4c8a4c3553e2d9f62a477a1f",
+        "purpose": "final_synthesis",
+        "trace_id": "TRACE-41ea9acbffd1"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-47566f6fa015.json",
+        "prompt_sha256": "ad935fec429b30c3caf41e7b37cde5965b9c44efcc564ab967fdb18eeb2b6055",
+        "purpose": "semantic_retrieval_plan",
+        "trace_id": "TRACE-47566f6fa015"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-47de8cf59ecb.json",
+        "prompt_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-47de8cf59ecb"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-47e0ab583e4a.json",
+        "prompt_sha256": "2df373940711145a728cac086e2b7581fa25bfd5149496640a1ce557d098296d",
+        "purpose": "red_team_candidate_review",
+        "trace_id": "TRACE-47e0ab583e4a"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-50c4c07b60ea.json",
+        "prompt_sha256": "2017492e7b9f7b2c594f8552d5c8bddab66292500a45b96542e04da3d60e24a2",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-50c4c07b60ea"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-571a901108eb.json",
+        "prompt_sha256": "12d875ca110f5483fb8cbdb106caaa2a7dd1b56161c2ae673cd07421459672e6",
+        "purpose": "red_team_candidate_review",
+        "trace_id": "TRACE-571a901108eb"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-78d4a7435057.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-78d4a7435057"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-859724333092.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-859724333092"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-8831ef3e257f.json",
+        "prompt_sha256": "6cfe421ba2bd77070bff2b122ffa46f297f5bf06203301f234731672985b1ee0",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-8831ef3e257f"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-9019e1625000.json",
+        "prompt_sha256": "d74615cb5e17e4794e02b089d2db22613e8d5ea16d0413e0e13c6bc9f4b531f9",
+        "purpose": "news_novelty_review",
+        "trace_id": "TRACE-9019e1625000"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-923868eafd90.json",
+        "prompt_sha256": "47851cfea1085e77a63d7565491f96364b2f5f0eeec29a7e698e20141bd30337",
+        "purpose": "final_synthesis",
+        "trace_id": "TRACE-923868eafd90"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-95145e3b062a.json",
+        "prompt_sha256": "cdc04ee8cb9cbe310da7654a255a677fc36d71a42096addd24b4f36f9ad62f00",
+        "purpose": "news_novelty_review",
+        "trace_id": "TRACE-95145e3b062a"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-a1aff2ff7fd4.json",
+        "prompt_sha256": "de5edd39a0ae0a7c52fd94630a1ab6625e8fd86cc9435bfe4eb981b4a622c4ce",
+        "purpose": "open_world_first_analysis",
+        "trace_id": "TRACE-a1aff2ff7fd4"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-cb16cd27ce92.json",
+        "prompt_sha256": "b6df72623911c7a8e242491ed93e8821859729103e85721ec4662ccf01ecbdb7",
+        "purpose": "final_synthesis",
+        "trace_id": "TRACE-cb16cd27ce92"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider",
+          "configured_provider=mock",
+          "provider_class=DeterministicMockLLMProvider",
+          "model=deterministic-mock"
+        ],
+        "path": "runs/traces/TRACE-d3b1592b4fd2.json",
+        "prompt_sha256": "384243ba3002e9cd768d14966695881ca4ed04946df914c6229b164c7426f131",
+        "purpose": "semantic_retrieval_plan",
+        "trace_id": "TRACE-d3b1592b4fd2"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-d43f1281c8bf.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-d43f1281c8bf"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-f857c7016b69.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "purpose": "daily_blind_analysis",
+        "trace_id": "TRACE-f857c7016b69"
+      },
+      {
+        "mock_values": [
+          "provider=DeterministicMockLLMProvider"
+        ],
+        "path": "runs/traces/TRACE-f9d4de2d8052.json",
+        "prompt_sha256": "fc1130d30f70785c0229764d9c11fac12a2a5d044cbfc382f449787ab1f8a27b",
+        "purpose": "red_team_candidate_review",
+        "trace_id": "TRACE-f9d4de2d8052"
+      }
+    ],
+    "passed": false,
+    "prompt_hash_purpose_mismatch_count": 9,
+    "prompt_hash_purpose_mismatches": [
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-0ca37aecbe3c.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-0ca37aecbe3c"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-188bb56ac676.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-188bb56ac676"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-47de8cf59ecb.json",
+        "prompt_sha256": "514fb34aa11bab579733e730134ae60d1e7d6c5048a9d99dbdfd91ab67a4e3a9",
+        "trace_id": "TRACE-47de8cf59ecb"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-50c4c07b60ea.json",
+        "prompt_sha256": "2017492e7b9f7b2c594f8552d5c8bddab66292500a45b96542e04da3d60e24a2",
+        "trace_id": "TRACE-50c4c07b60ea"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-78d4a7435057.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-78d4a7435057"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-859724333092.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-859724333092"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-8831ef3e257f.json",
+        "prompt_sha256": "6cfe421ba2bd77070bff2b122ffa46f297f5bf06203301f234731672985b1ee0",
+        "trace_id": "TRACE-8831ef3e257f"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-d43f1281c8bf.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-d43f1281c8bf"
+      },
+      {
+        "expected_purposes": [
+          "blind_analysis"
+        ],
+        "observed_purpose": "daily_blind_analysis",
+        "path": "runs/traces/TRACE-f857c7016b69.json",
+        "prompt_sha256": "ecc7847eb902b0cbaaddd1e765a02a08480b202496adc468e1a617bea4417f1c",
+        "trace_id": "TRACE-f857c7016b69"
+      }
+    ],
+    "referenced_prompt_hash_count": 19,
+    "schema_version": "nslab.production_llm_evidence.v1",
+    "status": "attention",
+    "unreadable_checkpoint_count": 0,
+    "unreadable_checkpoints": [],
+    "unreadable_manifest_count": 0,
+    "unreadable_manifests": [],
+    "unreadable_trace_count": 0,
+    "unreadable_traces": []
+  },
+  "llm_full_brain": {
+    "applicable": false,
+    "brain_category_empty_files": [],
+    "brain_category_existing_file_count": 9,
+    "brain_category_expected_file_count": 9,
+    "brain_category_missing_files": [],
+    "brain_category_unreadable_files": [],
+    "brain_version": null,
+    "build_mode": "catalog",
+    "catalog_only": true,
+    "category_count": null,
+    "category_manifest_compiled_claim_count_mismatches": [],
+    "category_manifest_expected_count": 9,
+    "category_manifest_observed_count": null,
+    "category_manifest_schema_mismatches": [
+      "categories: missing"
+    ],
+    "category_manifest_source_count_mismatches": [],
+    "category_manifest_unknown_compiled_claim_ids": [],
+    "category_manifest_unknown_source_record_ids": [],
+    "compile_manifest_exists": false,
+    "compile_manifest_path": "brain/current/llm_compile_manifest.json",
+    "compile_manifest_schema_version": null,
+    "compile_report_brain_version": "brain-bbeaee24f6",
+    "compile_report_exists": true,
+    "compile_report_path": "diagnostics/brain_compile_report.json",
+    "compile_report_schema_version": "nslab.brain_compile_diagnostics.v1",
+    "compile_run_present": false,
+    "compile_run_schema_version": null,
+    "compiled_claim_contradicting_record_id_count": 0,
+    "compiled_claim_count": null,
+    "compiled_claim_episode_record_mismatches": [],
+    "compiled_claim_invalid_categories": [],
+    "compiled_claim_invalid_line_count": 0,
+    "compiled_claim_jsonl_count": 0,
+    "compiled_claim_supporting_record_id_count": 0,
+    "compiled_claim_temporal_leaks": [],
+    "compiled_claim_valid_count": 0,
+    "compiled_claims_exists": false,
+    "compiled_claims_path": "brain/current/compiled_claims.jsonl",
+    "compiled_claims_with_unknown_contradicting_episodes": [],
+    "compiled_claims_with_unknown_contradicting_records": [],
+    "compiled_claims_with_unknown_supporting_episodes": [],
+    "compiled_claims_with_unknown_supporting_records": [],
+    "compiled_claims_without_supporting_episodes": [],
+    "compiled_claims_without_supporting_records": [],
+    "compiler_version": null,
+    "configured_model": "deterministic-mock",
+    "current_brain_version": "brain-bbeaee24f6",
+    "duplicate_compiled_claim_ids": [],
+    "expected_compile_manifest_schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+    "expected_compile_report_schema_version": "nslab.brain_compile_diagnostics.v1",
+    "expected_compile_run_schema_version": "nslab.llm_full_brain_compile_run.v1",
+    "expected_compiler_version": "nslab.brain.llm_full.compiler.v4",
+    "expected_source_record_count": 4,
+    "finding_count": 4,
+    "findings": [
+      "current manifest is catalog_only",
+      "current manifest build_mode is catalog, not llm-full",
+      "llm-full compile manifest is missing",
+      "compiled claims JSONL is missing"
+    ],
+    "llm_generation_count": null,
+    "manifest_llm_duplicate_prompt_hashes": [],
+    "manifest_llm_missing_prompt_hash_fields": [],
+    "manifest_llm_prompt_hash_count": 0,
+    "manifest_llm_unique_prompt_hash_count": 0,
+    "model": null,
+    "passed": false,
+    "provider": null,
+    "record_shard_count": null,
+    "record_shard_manifest_count_mismatches": [],
+    "record_shard_manifest_duplicate_record_ids": [],
+    "record_shard_manifest_missing_record_ids": [],
+    "record_shard_manifest_observed_count": null,
+    "record_shard_manifest_record_id_count": 0,
+    "record_shard_manifest_schema_mismatches": [
+      "record_shards: missing"
+    ],
+    "record_shard_manifest_unique_record_id_count": 0,
+    "record_shard_manifest_unknown_record_ids": [],
+    "record_store_error_for_compiled_claims": null,
+    "record_store_readable_for_compiled_claims": true,
+    "record_store_record_count_for_compiled_claims": 4,
+    "run_all_outputs_from_cache": null,
+    "run_brain_version": null,
+    "run_llm_cache_hit_count": null,
+    "run_llm_duplicate_prompt_hashes": [],
+    "run_llm_generation_count": null,
+    "run_llm_live_call_count": null,
+    "run_llm_missing_prompt_hash_fields": [],
+    "run_llm_prompt_hash_count": 0,
+    "run_llm_prompt_hashes": [],
+    "run_llm_trace_evidence": {
+      "checked_checkpoint_count": 0,
+      "checked_trace_count": 0,
+      "checkpoint_id_mismatch_count": 0,
+      "checkpoint_id_mismatches": [],
+      "checkpoint_trace_mismatch_count": 0,
+      "checkpoint_trace_mismatches": [],
+      "findings": [],
+      "invalid_checkpoint_schema_count": 0,
+      "invalid_checkpoint_schemas": [],
+      "invalid_trace_payload_count": 0,
+      "invalid_trace_payloads": [],
+      "invalid_trace_schema_count": 0,
+      "invalid_trace_schemas": [],
+      "missing_trace_checkpoint_id_count": 0,
+      "missing_trace_checkpoint_id_traces": [],
+      "missing_trace_prompt_hash_count": 0,
+      "missing_trace_prompt_hashes": [],
+      "mock_checkpoint_count": 0,
+      "mock_checkpoints": [],
+      "mock_trace_count": 0,
+      "mock_traces": [],
+      "prompt_hash_purpose_mismatch_count": 0,
+      "prompt_hash_purpose_mismatches": [],
+      "unreadable_checkpoint_count": 0,
+      "unreadable_checkpoints": [],
+      "unreadable_trace_count": 0,
+      "unreadable_traces": []
+    },
+    "run_llm_unique_prompt_hash_count": 0,
+    "schema_version": "nslab.production_llm_full_brain.v1",
+    "source_record_count": null,
+    "status": "not_applicable",
+    "validated_compiled_claims_with_single_episode": [],
+    "validated_compiled_claims_without_contradictions": []
+  },
+  "passed": false,
+  "real_bundle_import": {
+    "applicable": false,
+    "episode_id": null,
+    "expected_record_count": null,
+    "expected_record_counts_by_type": null,
+    "expected_record_id_count": null,
+    "expected_record_ids": null,
+    "expected_training_eligible_record_count": null,
+    "finding_count": 0,
+    "findings": [],
+    "passed": false,
+    "quarantined_bundle_count": null,
+    "quarantined_raw_record_count": null,
+    "quarantined_record_count": null,
+    "raw_bundle_sha256": null,
+    "schema_version": "nslab.real_bundle_import_status.v1",
+    "selected_path": null,
+    "status": "not_applicable"
+  },
+  "real_bundle_smoke": {
+    "candidate_count": 1,
+    "environment_key": "NSLAB_REAL_BUNDLE_PATH",
+    "failed_inspection_count": 0,
+    "first_production_failure_reasons": [],
+    "first_production_path": null,
+    "first_production_source": null,
+    "first_production_status": null,
+    "inspected_count": 1,
+    "inspections": [
+      {
+        "absolute_path": "C:/Users/eorb9/projects/news_bot/tests/fixtures/research_bundles/synthetic_v11_bundle.md",
+        "inspectable": true,
+        "inspection": {
+          "adapter": "v11",
+          "available_from_valid": true,
+          "blind_valid": true,
+          "brain_eligible": null,
+          "bundle_status_accept_full": true,
+          "bundle_version": "nslab.research_bundle.v11",
+          "critical_error_count_zero": true,
+          "direct_brain_ingest_ready": null,
+          "direct_ingest_contract_count_hash_parity_verified": null,
+          "direct_ingest_contract_present": false,
+          "direct_ingest_contract_schema_version": null,
+          "direct_ingest_contract_validation_parity_verified": null,
+          "direct_ingest_failure_reason_count": 10,
+          "direct_ingest_failure_reasons": [
+            "direct_ingest_contract_present=False expected True",
+            "direct_ingest_contract_schema_version=None expected 'nslab.direct_ingest_contract.v1'",
+            "direct_brain_ingest_ready=None expected True",
+            "brain_eligible=None expected True",
+            "requires_human_semantic_review=None expected False",
+            "direct_ingest_fatal_blocker_count=None expected 0",
+            "direct_ingest_contract_validation_parity_verified=None expected True",
+            "direct_ingest_contract_count_hash_parity_verified=None expected True",
+            "final_semantic_audit_present=False expected True",
+            "final_semantic_audit_fail_count=None expected 0"
+          ],
+          "direct_ingest_fatal_blocker_count": null,
+          "direct_ingest_smoke_passed": false,
+          "dropped_record_count": 0,
+          "episode_id": "NSLAB-20300110-SYNTH",
+          "episode_schema_version": "nslab.research_episode.v11",
+          "extra_normalized_record_ids": [],
+          "failure_reason_count": 0,
+          "failure_reasons": [],
+          "final_semantic_audit_count": null,
+          "final_semantic_audit_fail_count": null,
+          "final_semantic_audit_present": false,
+          "hash_expectation_conflict_count": 0,
+          "hash_mismatch_count": 0,
+          "import_loss_audit_passed": true,
+          "invalid_available_from_record_count": 0,
+          "invalid_outcome_label_quality_record_count": 0,
+          "invalid_typed_payload_record_count": 0,
+          "manifest_schema_version": "nslab.bundle_manifest.v11",
+          "missing_normalized_record_ids": [],
+          "missing_payload_reference_count": 0,
+          "missing_source_reference_count": 0,
+          "normalized_record_count": 2,
+          "normalized_record_ids": [
+            "BRAIN-SYNTH-ISSUER",
+            "BRAIN-SYNTH-PAIR"
+          ],
+          "outcome_label_quality_valid": true,
+          "quarantined_bundle_count": 0,
+          "quarantined_raw_record_count": 0,
+          "quarantined_record_count": 0,
+          "raw_bundle_sha256": "6447a84d227e995fe20de109a1b3dffd4fa48252f50ee700943e20ac2222a20e",
+          "raw_payload_hash_mismatch_record_ids": [],
+          "raw_payload_hashes_match": true,
+          "raw_record_count": 2,
+          "raw_record_counts_by_type": {
+            "blind_leader_preference_pair": 1,
+            "supervised_issuer_day_case": 1
+          },
+          "raw_record_ids": [
+            "BRAIN-SYNTH-ISSUER",
+            "BRAIN-SYNTH-PAIR"
+          ],
+          "raw_record_without_id_count": 0,
+          "raw_training_eligible_record_count": 2,
+          "record_count_matches_manifest": true,
+          "record_counts_by_type": {
+            "blind_leader_preference_pair": 1,
+            "supervised_issuer_day_case": 1
+          },
+          "record_id_set_comparable": true,
+          "record_id_set_matches_raw": true,
+          "record_type_counts_match_raw": true,
+          "requires_human_semantic_review": null,
+          "status": "passed",
+          "supported": true,
+          "trade_date": "2030-01-10",
+          "training_eligible_count_matches_manifest": true,
+          "training_eligible_count_matches_raw": true,
+          "training_eligible_record_count": 2,
+          "typed_payload_valid": true,
+          "v11_accept_full_smoke_passed": true,
+          "validation_passed": true,
+          "validator_exit_code_zero": true
+        },
+        "path": "tests/fixtures/research_bundles/synthetic_v11_bundle.md",
+        "production_source": false,
+        "source": "tests_fixture",
+        "status": "passed"
+      }
+    ],
+    "passed": false,
+    "production_failed_inspection_count": 0,
+    "real_smoke_pending": true,
+    "real_valid_smoke_count": 0,
+    "schema_version": "nslab.real_bundle_smoke.v1",
+    "search_locations": [
+      {
+        "configured": false,
+        "exists": true,
+        "is_dir": true,
+        "is_file": false,
+        "path": "data/inbox/research",
+        "source": "data_inbox"
+      },
+      {
+        "configured": false,
+        "exists": true,
+        "is_dir": true,
+        "is_file": false,
+        "path": "tests/fixtures/research_bundles",
+        "source": "tests_fixture"
+      }
+    ],
+    "search_order": [
+      "data_inbox",
+      "tests_fixture",
+      "env",
+      "cli"
+    ],
+    "selected": null,
+    "status": "synthetic_only",
+    "synthetic_valid_smoke_count": 1,
+    "valid_smoke_count": 1
+  },
+  "record_coverage": {
+    "accepted_record_count": 4,
+    "audit_only_record_count": 2,
+    "available_record_count": 4,
+    "available_record_count_as_of": 2,
+    "compiled_record_count": 4,
+    "coverage_complete": true,
+    "duplicate_swept_record_ids": [],
+    "finding_count": 0,
+    "findings": [],
+    "ineligible_record_count": 2,
+    "missing_swept_record_ids": [],
+    "passed": true,
+    "record_counts_by_evidence_phase": {
+      "AUDIT": 2,
+      "POSTMORTEM": 2
+    },
+    "record_counts_by_training_target": {
+      "issuer_day_price_response": 1,
+      "legacy_catalog_only": 2,
+      "outcome_preferred_candidate": 1
+    },
+    "record_counts_by_type": {
+      "blind_leader_preference_pair": 1,
+      "memory_claim": 2,
+      "supervised_issuer_day_case": 1
+    },
+    "record_store_audit_only_record_count": 2,
+    "record_store_available_record_count_as_of": 2,
+    "record_store_counts_by_evidence_phase": {
+      "AUDIT": 2,
+      "POSTMORTEM": 2
+    },
+    "record_store_counts_by_training_target": {
+      "issuer_day_price_response": 1,
+      "legacy_catalog_only": 2,
+      "outcome_preferred_candidate": 1
+    },
+    "record_store_counts_by_type": {
+      "blind_leader_preference_pair": 1,
+      "memory_claim": 2,
+      "supervised_issuer_day_case": 1
+    },
+    "record_store_error": null,
+    "record_store_ineligible_record_count": 2,
+    "record_store_readable": true,
+    "record_store_record_count": 4,
+    "record_store_training_eligible_record_count": 2,
+    "record_store_training_eligible_record_count_as_of": 0,
+    "schema_version": "nslab.production_record_coverage.v1",
+    "status": "ready",
+    "swept_record_count": 4,
+    "swept_record_id_count": 4,
+    "swept_record_ids": [
+      "EP-2991eb145f59:legacy_catalog_record",
+      "EP-f56c790fe2fc:legacy_catalog_record",
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR"
+    ],
+    "training_eligible_available_record_count": 2,
+    "training_eligible_record_count_as_of": 0,
+    "unknown_swept_record_ids": [],
+    "unswept_record_ids": []
+  },
+  "record_store": {
+    "all_raw_only_record_count": 0,
+    "all_raw_only_record_ids": [],
+    "all_record_count": 4,
+    "all_unknown_typed_payload_count": 0,
+    "all_unknown_typed_payload_record_ids": [],
+    "backdated_company_memory_delta_known_at_record_ids": [],
+    "brain_delta_count_mismatch_episode_ids": [],
+    "brain_delta_record_id_mismatch_episode_ids": [],
+    "brain_delta_training_eligible_mismatch_episode_ids": [],
+    "brain_delta_type_count_mismatch_episode_ids": [],
+    "deep": true,
+    "dropped_record_count": 0,
+    "duplicate_record_ids": [],
+    "eligible_records_without_provenance": [],
+    "episode_count": 3,
+    "event_ticker_edge_cutoff_provenance_violation_record_ids": [],
+    "event_ticker_edge_source_ledger_cutoff_violation_record_ids": [],
+    "extra_normalized_record_count": 0,
+    "finding_count": 0,
+    "findings": [],
+    "invalid_company_memory_delta_known_at_record_ids": [],
+    "invalid_event_ticker_edge_path_type_record_ids": [],
+    "issuer_day_event_level_weight_mismatch_record_ids": [],
+    "normalized_record_count": 4,
+    "passed": true,
+    "payload_hash_mismatch_record_ids": [],
+    "quarantine_normalization_skipped_reasons": {},
+    "quarantine_reasons": {},
+    "quarantined_bundle_count": 0,
+    "quarantined_normalized_record_count": 0,
+    "quarantined_raw_record_count": 0,
+    "quarantined_record_count": 0,
+    "raw_block_hash_mismatch_episode_ids": [],
+    "raw_normalized_record_count_matches": true,
+    "raw_only_record_count": 0,
+    "raw_only_record_ids": [],
+    "raw_record_count": 4,
+    "raw_record_counts_by_episode": {
+      "EP-2991eb145f59": 1,
+      "EP-f56c790fe2fc": 1,
+      "NSLAB-20300110-SYNTH": 2
+    },
+    "record_count": 4,
+    "records_with_raw_payload_hash_mismatch": [],
+    "schema_version": "nslab.production_record_store.v1",
+    "staged_raw_only_record_count": 0,
+    "staged_raw_only_record_ids": [],
+    "staged_record_count": 0,
+    "staged_unknown_typed_payload_count": 0,
+    "staged_unknown_typed_payload_record_ids": [],
+    "status": "ready",
+    "training_eligible_record_count": 2,
+    "unknown_training_enabled_record_ids": [],
+    "unknown_typed_payload_count": 0,
+    "unknown_typed_payload_record_ids": []
+  },
+  "remediation_commands": [
+    "python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
+    "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
+    "python -m news_scalping_lab.cli memory rebuild-index --production",
+    "python -m news_scalping_lab.cli warehouse rebuild",
+    "python -m news_scalping_lab.cli warehouse verify",
+    "python -m news_scalping_lab.cli brain audit --deep",
+    "python -m news_scalping_lab.cli training export-sft",
+    "python -m news_scalping_lab.cli training export-preference",
+    "python -m news_scalping_lab.cli training export-evals",
+    "python -m news_scalping_lab.cli training audit",
+    "python -m news_scalping_lab.cli doctor --production"
+  ],
+  "required_environment": {
+    "BRAVE_SEARCH_API_KEY": "<required>",
+    "NSLAB_LLM_PROVIDER": "openai",
+    "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
+    "NSLAB_WEB_PROVIDER": "brave",
+    "OPENAI_API_KEY": "<required>"
+  },
+  "schema_version": "nslab.production_readiness.v1",
+  "semantic_index": {
+    "configured_embedding_model": null,
+    "embedding_method": "deterministic_hashing_v1",
+    "embedding_model": null,
+    "expected_source_record_count": 4,
+    "finding_count": 2,
+    "findings": [
+      "deterministic mock vector index cannot be production semantic index",
+      "on-disk deterministic mock vector index cannot be production semantic index"
+    ],
+    "indexed_brain_record_count": 4,
+    "manifest": {
+      "accepted_episode_count": 2,
+      "accepted_hash_count": 2,
+      "accepted_hash_invalid_count": 0,
+      "accepted_hashes_match": true,
+      "brain_record_count": 4,
+      "brain_record_hash_count": 4,
+      "brain_record_hash_mismatches": [],
+      "brain_records_file": "memory/vector_index/brain_records.jsonl",
+      "brain_records_file_escapes_index": false,
+      "brain_records_file_exists": true,
+      "brain_records_file_is_absolute": false,
+      "brain_records_file_path_valid": true,
+      "brain_records_invalid_line_count": 0,
+      "brain_records_row_count": 4,
+      "brain_records_sha256_matches": true,
+      "checked": true,
+      "dimensions": 32,
+      "embedding_method": "deterministic_hashing_v1",
+      "embedding_model": null,
+      "exists": true,
+      "expected_accepted_hash_count": 2,
+      "finding_count": 1,
+      "findings": [
+        "on-disk deterministic mock vector index cannot be production semantic index"
+      ],
+      "missing_brain_record_ids": [],
+      "passed": false,
+      "path": "memory/vector_index/manifest.json",
+      "record_count": 2,
+      "record_store_error": null,
+      "record_store_readable": true,
+      "record_store_record_count": 4,
+      "records_file": "memory/vector_index/episodes.jsonl",
+      "records_file_escapes_index": false,
+      "records_file_exists": true,
+      "records_file_is_absolute": false,
+      "records_file_path_valid": true,
+      "records_invalid_line_count": 0,
+      "records_row_count": 2,
+      "records_sha256_matches": true,
+      "schema_version": "nslab.production_semantic_index_manifest.v1",
+      "unknown_brain_record_ids": []
+    },
+    "passed": false,
+    "schema_version": "nslab.production_semantic_index.v1",
+    "source_brain_record_count": 4,
+    "status": "attention",
+    "vector_index_status": "current"
+  },
+  "status": "attention",
+  "training_exports": {
+    "audit_passed": true,
+    "available_manifest_kinds": [
+      "evals",
+      "preference",
+      "sft"
+    ],
+    "blind_safe_row_count": 0,
+    "counts_by_record_type": {
+      "blind_leader_preference_pair": 1,
+      "memory_claim": 2,
+      "supervised_issuer_day_case": 1
+    },
+    "counts_by_training_target": {
+      "issuer_day_price_response": 1,
+      "legacy_catalog_only": 2,
+      "outcome_preferred_candidate": 1
+    },
+    "direct_event_weight_sum_mismatch_count": 0,
+    "direct_event_weight_sum_mismatches": {},
+    "duplicate_issuer_day_count": 0,
+    "duplicate_issuer_day_keys": [],
+    "finding_count": 0,
+    "findings": [],
+    "hindsight_row_count": 3,
+    "issuer_day_weight_sum_mismatch_count": 0,
+    "issuer_day_weight_sum_mismatches": {},
+    "missing_manifest_kinds": [],
+    "passed": true,
+    "per_export_eligible_record_count": 3,
+    "per_export_exported_record_count": 3,
+    "per_export_skipped_record_count": 9,
+    "record_store_source_record_count": 4,
+    "schema_version": "nslab.production_training_exports.v1",
+    "source_phase_counts": {
+      "POSTMORTEM": 3
+    },
+    "source_record_count": 4,
+    "source_record_hash_count": 4,
+    "status": "ready",
+    "unique_exported_record_count": 2,
+    "unique_exported_record_ids": [
+      "BRAIN-SYNTH-ISSUER",
+      "BRAIN-SYNTH-PAIR"
+    ],
+    "unique_skipped_record_count": 2,
+    "unique_skipped_record_ids": [
+      "EP-2991eb145f59:legacy_catalog_record",
+      "EP-f56c790fe2fc:legacy_catalog_record"
+    ],
+    "unique_source_record_count": 4,
+    "unique_training_eligible_record_count": 2,
+    "weight_validation_statuses": {
+      "evals": "passed",
+      "preference": "passed",
+      "sft": "passed"
+    }
+  },
+  "warehouse": {
+    "applicable": true,
+    "audit_error": null,
+    "count_mismatches": {},
+    "duplicate_identities": {},
+    "finding_count": 0,
+    "findings": [],
+    "identity_mismatches": {},
+    "missing_columns": {},
+    "passed": true,
+    "projection_synced": true,
+    "report_count_mismatches": {},
+    "report_duplicate_identities": {},
+    "report_identity_mismatches": {},
+    "report_missing_columns": {},
+    "report_present": true,
+    "report_projection_synced": true,
+    "report_required_files_present": true,
+    "report_synced": true,
+    "report_weight_mismatches": {},
+    "required_files_present": true,
+    "schema_version": "nslab.production_warehouse.v1",
+    "status": "ready",
+    "synced": true,
+    "weight_mismatches": {}
+  },
+  "web_evidence": {
+    "artifact_missing_source_id_artifacts": [],
+    "artifact_missing_source_id_count": 0,
+    "artifact_record_counts": {
+      "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl": 11,
+      "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl": 0,
+      "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl": 11,
+      "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl": 0,
+      "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json": 1,
+      "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json": 1,
+      "runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl": 56,
+      "runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl": 45,
+      "runs/checkpoints/source_ledger/RUN-a5840d2def32/source_ledger.jsonl": 5,
+      "runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl": 56,
+      "runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl": 0,
+      "runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl": 40,
+      "runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl": 40,
+      "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl": 0,
+      "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl": 40
+    },
+    "artifact_sha256_mismatch_count": 8,
+    "artifact_sha256_mismatches": [
+      {
+        "artifact": "runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
+        "artifact_field": "web_source_artifact",
+        "expected_sha256": "739902c357aaedfd6d8038ee367ee7c19f3b6a4fc327d088c0a399b9a3262a02",
+        "manifest": "runs/manifests/RUN-116b51828c12.json",
+        "observed_sha256": "c404335bec439699204c7d3b1c8ef1510f36fb9563991f4e59ab15783f51ebfb",
+        "sha_field": "web_source_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
+        "artifact_field": "candidate_web_check_artifact",
+        "expected_sha256": "8302550e55982426e7d54eb782ac8adcda5949a889e2aa4b079f5bb311db4e6f",
+        "manifest": "runs/manifests/RUN-116b51828c12.json",
+        "observed_sha256": "6c95d07a813dd90e8b890dc734b9c37d816b817b312a8b62469bd5a987fcb6d5",
+        "sha_field": "candidate_web_check_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
+        "artifact_field": "source_ledger_artifact",
+        "expected_sha256": "4ccc85f95f0758731b65482c1a7f4acd0c396f763d5d15a8023e73124a418185",
+        "manifest": "runs/manifests/RUN-116b51828c12.json",
+        "observed_sha256": "e85d20b5ba0e7967a18b0de41ee33c011be44467a8cfaac0bfb53845dd5715f1",
+        "sha_field": "source_ledger_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+        "artifact_field": "final_synthesis_context_artifact",
+        "expected_sha256": "0f4e8d33bac93eed28798489aa61683beae1f8c6d33f60ed8feb24dd0a7419b4",
+        "manifest": "runs/manifests/RUN-116b51828c12.json",
+        "observed_sha256": "5487db30834038f5df38997767eb4cd5d619ea6f81f38ba58b4f6d2b8cc7ca91",
+        "sha_field": "final_synthesis_context_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
+        "artifact_field": "web_source_artifact",
+        "expected_sha256": "62650bc9058fbabbf7eeea08bc8780fe59c664d92dda5ad931edfd90578bf4a1",
+        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "observed_sha256": "0947a0bd9bf72f6f497bd1b566815b8090d9ab5cd5e3bb50c29939c4c7bcb0e9",
+        "sha_field": "web_source_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
+        "artifact_field": "candidate_web_check_artifact",
+        "expected_sha256": "ea47eac0d56ba2022651028e556ad5245723a876bf27c2c722aefcbfd0287f71",
+        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "observed_sha256": "09e31adba2d981eef2d603bd49b69968c468335bad53ab6a30d695c6956415f5",
+        "sha_field": "candidate_web_check_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
+        "artifact_field": "source_ledger_artifact",
+        "expected_sha256": "93c9b57061f94d626b0045c352fd243e912767ee4e4d8e1416657f4bdbf4ee64",
+        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "observed_sha256": "304e9725c34c2cfea7ac21e2b0891246ecf424acc071626e3b9702671080b631",
+        "sha_field": "source_ledger_sha256"
+      },
+      {
+        "artifact": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+        "artifact_field": "final_synthesis_context_artifact",
+        "expected_sha256": "60903a33a56309bd2223036cf3e719a218a57f7b8fcd7512af324000c0a5e4fd",
+        "manifest": "runs/manifests/RUN-aa2a36dbf3e0.json",
+        "observed_sha256": "a7a11586918f1b487d36f758f04d8caa7af8c89d61b1e98f99a2f158d14d15e4",
+        "sha_field": "final_synthesis_context_sha256"
+      }
+    ],
+    "artifact_source_id_mismatch_count": 0,
+    "artifact_source_id_mismatches": [],
+    "checked_artifact_count": 15,
+    "checked_artifact_record_count": 306,
+    "checked_artifact_reference_count": 15,
+    "checked_manifest_count": 4,
+    "empty_artifact_count": 4,
+    "empty_artifacts": [
+      "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
+      "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
+      "runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
+      "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl"
+    ],
+    "finding_count": 22,
+    "findings": [
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json web_source_sha256 for runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-116b51828c12.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json web_source_sha256 for runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json candidate_web_check_sha256 for runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json source_ledger_sha256 for runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
+      "web evidence artifact sha256 mismatch: runs/manifests/RUN-aa2a36dbf3e0.json final_synthesis_context_sha256 for runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+      "web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-116b51828c12/excluded_candidate_web_checks.jsonl",
+      "web evidence artifact has no evidence rows: runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/excluded_candidate_web_checks.jsonl",
+      "web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-116b51828c12/excluded_web_sources.jsonl",
+      "web evidence artifact has no evidence rows: runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/excluded_web_sources.jsonl",
+      "mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl (33)",
+      "mock web source URLs present in runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl (33)",
+      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json (102)",
+      "mock web source URLs present in runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json (102)",
+      "mock web source URLs present in runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl (102)",
+      "mock web source URLs present in runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl (80)",
+      "mock web source URLs present in runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl (102)",
+      "mock web source URLs present in runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl (120)",
+      "mock web source URLs present in runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl (80)",
+      "mock web source URLs present in runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl (120)"
+    ],
+    "invalid_artifact_json_artifacts": [],
+    "invalid_artifact_json_count": 0,
+    "invalid_artifact_ref_count": 0,
+    "invalid_artifact_refs": [],
+    "invalid_manifest_schema_count": 0,
+    "invalid_manifest_schemas": [],
+    "missing_artifact_count": 0,
+    "missing_artifact_hash_count": 0,
+    "missing_artifact_hashes": [],
+    "missing_artifacts": [],
+    "mock_web_artifact_count": 10,
+    "mock_web_artifacts": [
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 33,
+        "path": "runs/checkpoints/candidate_web_checks/RUN-116b51828c12/candidate_web_checks.jsonl",
+        "sample_values": [
+          "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-26T12:28:22.248563+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-6a9af894e44f",
+          "Mock page mock://web/WEB-24caa6762443 opened at 2026-06-26T12:28:22.248604+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-24caa6762443",
+          "Mock page mock://web/WEB-308f32ddccaa opened at 2026-06-26T12:28:22.248625+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 33,
+        "path": "runs/checkpoints/candidate_web_checks/RUN-aa2a36dbf3e0/candidate_web_checks.jsonl",
+        "sample_values": [
+          "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-25T21:05:47.403880+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-6a9af894e44f",
+          "Mock page mock://web/WEB-24caa6762443 opened at 2026-06-25T21:05:47.403922+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-24caa6762443",
+          "Mock page mock://web/WEB-308f32ddccaa opened at 2026-06-25T21:05:47.403940+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 102,
+        "path": "runs/checkpoints/final_synthesis_context/RUN-116b51828c12/final_synthesis_context.json",
+        "sample_values": [
+          "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-26T12:28:22.248563+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-6a9af894e44f",
+          "Mock page mock://web/WEB-24caa6762443 opened at 2026-06-26T12:28:22.248604+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-24caa6762443",
+          "Mock page mock://web/WEB-308f32ddccaa opened at 2026-06-26T12:28:22.248625+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 102,
+        "path": "runs/checkpoints/final_synthesis_context/RUN-aa2a36dbf3e0/final_synthesis_context.json",
+        "sample_values": [
+          "Mock page mock://web/WEB-6a9af894e44f opened at 2026-06-25T21:05:47.403880+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-6a9af894e44f",
+          "Mock page mock://web/WEB-24caa6762443 opened at 2026-06-25T21:05:47.403922+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-24caa6762443",
+          "Mock page mock://web/WEB-308f32ddccaa opened at 2026-06-25T21:05:47.403940+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 102,
+        "path": "runs/checkpoints/source_ledger/RUN-116b51828c12/source_ledger.jsonl",
+        "sample_values": [
+          "mock://web/WEB-2ecd9325cd63",
+          "mock://web/WEB-7828efa15e4f",
+          "mock://web/WEB-30837b2e5244",
+          "mock://web/WEB-e79ae4f09e91",
+          "mock://web/WEB-98dd0493d035"
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 80,
+        "path": "runs/checkpoints/source_ledger/RUN-1fca69ca7072/source_ledger.jsonl",
+        "sample_values": [
+          "mock://web/WEB-7c0a749ce8c8",
+          "mock://web/WEB-7f8bf9f983d1",
+          "mock://web/WEB-025ff8a9129f",
+          "mock://web/WEB-e79ae4f09e91",
+          "mock://web/WEB-98dd0493d035"
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 102,
+        "path": "runs/checkpoints/source_ledger/RUN-aa2a36dbf3e0/source_ledger.jsonl",
+        "sample_values": [
+          "mock://web/WEB-7c0a749ce8c8",
+          "mock://web/WEB-7f8bf9f983d1",
+          "mock://web/WEB-025ff8a9129f",
+          "mock://web/WEB-e79ae4f09e91",
+          "mock://web/WEB-98dd0493d035"
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 120,
+        "path": "runs/checkpoints/web_sources/RUN-116b51828c12/web_sources.jsonl",
+        "sample_values": [
+          "Mock page mock://web/WEB-2ecd9325cd63 opened at 2026-06-26T12:28:22.058814+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-2ecd9325cd63",
+          "Mock page mock://web/WEB-7828efa15e4f opened at 2026-06-26T12:28:22.058928+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-7828efa15e4f",
+          "Mock page mock://web/WEB-30837b2e5244 opened at 2026-06-26T12:28:22.058951+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 80,
+        "path": "runs/checkpoints/web_sources/RUN-1fca69ca7072/web_sources.jsonl",
+        "sample_values": [
+          "mock://web/WEB-7c0a749ce8c8",
+          "mock://web/WEB-7f8bf9f983d1",
+          "mock://web/WEB-025ff8a9129f",
+          "mock://web/WEB-e79ae4f09e91",
+          "mock://web/WEB-98dd0493d035"
+        ]
+      },
+      {
+        "mock_metadata_count": 0,
+        "mock_url_count": 120,
+        "path": "runs/checkpoints/web_sources/RUN-aa2a36dbf3e0/web_sources.jsonl",
+        "sample_values": [
+          "Mock page mock://web/WEB-7c0a749ce8c8 opened at 2026-06-25T21:05:47.243676+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-7c0a749ce8c8",
+          "Mock page mock://web/WEB-7f8bf9f983d1 opened at 2026-06-25T21:05:47.243724+09:00 with cutoff 2026-06-24T08:59:59+09:00.",
+          "mock://web/WEB-7f8bf9f983d1",
+          "Mock page mock://web/WEB-025ff8a9129f opened at 2026-06-25T21:05:47.243743+09:00 with cutoff 2026-06-24T08:59:59+09:00."
+        ]
+      }
+    ],
+    "mock_web_evidence_count": 874,
+    "mock_web_metadata_count": 0,
+    "mock_web_url_count": 874,
+    "passed": false,
+    "placeholder_web_artifact_count": 0,
+    "placeholder_web_artifacts": [],
+    "placeholder_web_url_count": 0,
+    "schema_version": "nslab.production_web_evidence.v1",
+    "status": "attention",
+    "unreadable_artifact_count": 0,
+    "unreadable_artifacts": [],
+    "unreadable_manifest_count": 0,
+    "unreadable_manifests": []
+  }
+}

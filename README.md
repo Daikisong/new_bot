@@ -197,7 +197,10 @@ web research evidence; configure a live provider before treating web citations a
 production evidence.
 When production readiness fails, `doctor --production` includes
 real bundle smoke/import status, `required_environment`, and
-`remediation_commands`; the normal production sequence is:
+`remediation_commands`. It also emits `finding_counts_by_category`,
+`findings_by_category`, and `blocker_summary` so long readiness reports can be
+triaged by bundle, LLM, embedding, web-evidence, brain, record, warehouse, and
+training gates. The normal production sequence is:
 For `llm-full` brains it also reports `llm_full_brain`, which verifies the
 compile manifest, compiled claims JSONL, configured provider/model match,
 category counts, and the latest compile run cache/live-call accounting from
@@ -569,4 +572,6 @@ diagnostics/training_export_report.json
 diagnostics/training_export_report.md
 diagnostics/migration_report.json
 diagnostics/migration_report.md
+diagnostics/production_readiness_report.json
+diagnostics/production_readiness_report.md
 ```

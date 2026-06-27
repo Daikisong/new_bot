@@ -1649,6 +1649,10 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
             "excluded_episode_ids": ["EP-Y"],
             "result_count": 2,
             "excluded_count": 2,
+            "included_record_ids": ["REC-X"],
+            "excluded_record_ids": ["REC-Y"],
+            "record_result_count": 2,
+            "excluded_record_count": 2,
         }
     ]
     bad_result_text = "".join(canonical_json(row) + "\n" for row in bad_rows)
@@ -1748,6 +1752,14 @@ def test_provenance_audit_validates_semantic_retrieval_artifacts(
         "2030-01-10.json: context manifest semantic_retrieval:1 excluded_count mismatch"
         in findings
     )
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 "
+        "record_result_count mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval:1 "
+        "excluded_record_count mismatch"
+    ) in findings
 
 
 def test_provenance_audit_validates_candidate_expansion_artifact(
@@ -4038,6 +4050,8 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
             "training_eligible_available_record_ids": ["REC-sweep-1"],
             "swept_record_count": 2,
             "swept_record_ids": ["REC-sweep-1"],
+            "semantic_retrieval_record_ids": ["REC-sweep-2"],
+            "excluded_semantic_retrieval_record_ids": ["REC-sweep-2"],
             "record_sweep_artifacts": [record_sweep_ref],
             "record_sweep_artifact_hashes": {
                 record_sweep_ref: file_sha256(record_sweep_path),
@@ -4067,6 +4081,14 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     assert (
         "2030-01-10.json: context manifest accepted_record_count "
         "does not match record store"
+    ) in count_findings
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_record_ids "
+        "are not a subset of available_record_ids"
+    ) in count_findings
+    assert (
+        "2030-01-10.json: context manifest semantic_retrieval_record_ids "
+        "overlap excluded_semantic_retrieval_record_ids"
     ) in count_findings
 
 

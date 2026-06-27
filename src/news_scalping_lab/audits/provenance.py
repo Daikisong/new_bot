@@ -3049,10 +3049,28 @@ def _check_manifest_record_count_contract(
         "retrieved_record_ids",
         findings,
     )
+    excluded_retrieved_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "excluded_retrieved_record_ids",
+        findings,
+    )
     counterexample_record_ids = _optional_manifest_string_list(
         prediction_path,
         manifest,
         "counterexample_record_ids",
+        findings,
+    )
+    semantic_retrieval_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "semantic_retrieval_record_ids",
+        findings,
+    )
+    excluded_semantic_retrieval_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "excluded_semantic_retrieval_record_ids",
         findings,
     )
     if available_record_ids is not None and training_eligible_record_ids is not None:
@@ -3070,6 +3088,15 @@ def _check_manifest_record_count_contract(
                 f"{prediction_path.name}: context manifest retrieved_record_ids "
                 "are not a subset of available_record_ids"
             )
+    if (
+        retrieved_record_ids is not None
+        and excluded_retrieved_record_ids is not None
+        and set(retrieved_record_ids) & set(excluded_retrieved_record_ids)
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest retrieved_record_ids "
+            "overlap excluded_retrieved_record_ids"
+        )
     if available_record_ids is not None and counterexample_record_ids is not None:
         missing = sorted(set(counterexample_record_ids) - set(available_record_ids))
         if missing:
@@ -3077,6 +3104,26 @@ def _check_manifest_record_count_contract(
                 f"{prediction_path.name}: context manifest counterexample_record_ids "
                 "are not a subset of available_record_ids"
             )
+    if (
+        available_record_ids is not None
+        and semantic_retrieval_record_ids is not None
+    ):
+        missing = sorted(set(semantic_retrieval_record_ids) - set(available_record_ids))
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                "semantic_retrieval_record_ids are not a subset of "
+                "available_record_ids"
+            )
+    if (
+        semantic_retrieval_record_ids is not None
+        and excluded_semantic_retrieval_record_ids is not None
+        and set(semantic_retrieval_record_ids) & set(excluded_semantic_retrieval_record_ids)
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval_record_ids "
+            "overlap excluded_semantic_retrieval_record_ids"
+        )
     if (
         manifest.get("mode") in {"exhaustive", "brain"}
         and available_record_ids is not None
@@ -4181,8 +4228,12 @@ def _check_semantic_retrieval_row(
         )
     included_ids = _string_list(row.get("included_episode_ids"))
     excluded_ids = _string_list(row.get("excluded_episode_ids"))
+    included_record_ids = _string_list(row.get("included_record_ids"))
+    excluded_record_ids = _string_list(row.get("excluded_record_ids"))
     result_count = _non_bool_int(row.get("result_count"))
     excluded_count = _non_bool_int(row.get("excluded_count"))
+    record_result_count = _non_bool_int(row.get("record_result_count"))
+    excluded_record_count = _non_bool_int(row.get("excluded_record_count"))
     if result_count is not None and result_count != len(included_ids):
         findings.append(
             f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
@@ -4192,6 +4243,16 @@ def _check_semantic_retrieval_row(
         findings.append(
             f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
             "excluded_count mismatch"
+        )
+    if record_result_count is not None and record_result_count != len(included_record_ids):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "record_result_count mismatch"
+        )
+    if excluded_record_count is not None and excluded_record_count != len(excluded_record_ids):
+        findings.append(
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
+            "excluded_record_count mismatch"
         )
 
 

@@ -48,7 +48,13 @@
       "duplicate_issuer_day_count": 0,
       "duplicate_issuer_day_keys": [],
       "eligible_record_count": 1,
+      "eligible_record_ids": [
+        "BRAIN-SYNTH-ISSUER"
+      ],
       "exported_record_count": 1,
+      "exported_record_ids": [
+        "BRAIN-SYNTH-ISSUER"
+      ],
       "hindsight_row_count": 1,
       "issuer_day_weight_sum_mismatch_count": 0,
       "issuer_day_weight_sum_mismatches": {},
@@ -57,6 +63,11 @@
       "output_file": "training_exports/evals/evals.jsonl",
       "row_count": 1,
       "skipped_record_count": 3,
+      "skipped_record_ids": [
+        "BRAIN-SYNTH-PAIR",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "source_episode_count": 3,
       "source_hashes": {
         "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
@@ -74,6 +85,12 @@
         "EP-2991eb145f59:legacy_catalog_record": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
         "EP-f56c790fe2fc:legacy_catalog_record": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a"
       },
+      "source_record_ids": [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "weight_validation_status": "passed"
     },
     "preference": {
@@ -96,7 +113,13 @@
       "duplicate_issuer_day_count": 0,
       "duplicate_issuer_day_keys": [],
       "eligible_record_count": 1,
+      "eligible_record_ids": [
+        "BRAIN-SYNTH-PAIR"
+      ],
       "exported_record_count": 1,
+      "exported_record_ids": [
+        "BRAIN-SYNTH-PAIR"
+      ],
       "hindsight_row_count": 1,
       "issuer_day_weight_sum_mismatch_count": 0,
       "issuer_day_weight_sum_mismatches": {},
@@ -105,6 +128,11 @@
       "output_file": "training_exports/preference/preference.jsonl",
       "row_count": 1,
       "skipped_record_count": 3,
+      "skipped_record_ids": [
+        "BRAIN-SYNTH-ISSUER",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "source_episode_count": 3,
       "source_hashes": {
         "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
@@ -122,6 +150,12 @@
         "EP-2991eb145f59:legacy_catalog_record": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
         "EP-f56c790fe2fc:legacy_catalog_record": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a"
       },
+      "source_record_ids": [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "weight_validation_status": "passed"
     },
     "sft": {
@@ -150,7 +184,13 @@
       "duplicate_issuer_day_count": 0,
       "duplicate_issuer_day_keys": [],
       "eligible_record_count": 1,
+      "eligible_record_ids": [
+        "BRAIN-SYNTH-ISSUER"
+      ],
       "exported_record_count": 1,
+      "exported_record_ids": [
+        "BRAIN-SYNTH-ISSUER"
+      ],
       "hindsight_row_count": 1,
       "issuer_day_weight_sum_mismatch_count": 0,
       "issuer_day_weight_sum_mismatches": {},
@@ -166,6 +206,11 @@
       "output_file": "training_exports/sft/sft.jsonl",
       "row_count": 1,
       "skipped_record_count": 3,
+      "skipped_record_ids": [
+        "BRAIN-SYNTH-PAIR",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "source_episode_count": 3,
       "source_hashes": {
         "EP-2991eb145f59": "4b33d532c2fc2e45eab2f1dafce485d652a8474115751837703a672c00dec0e5",
@@ -183,6 +228,12 @@
         "EP-2991eb145f59:legacy_catalog_record": "7f77f299c6a2f160dc1c30e9add7f02bd3392861fcf2a70727bfedc71e13d2f5",
         "EP-f56c790fe2fc:legacy_catalog_record": "d892d0d0846335c209032c87461a3a312b516f0537d4bd59e9afb70fa176586a"
       },
+      "source_record_ids": [
+        "BRAIN-SYNTH-ISSUER",
+        "BRAIN-SYNTH-PAIR",
+        "EP-2991eb145f59:legacy_catalog_record",
+        "EP-f56c790fe2fc:legacy_catalog_record"
+      ],
       "weight_validation_status": "passed"
     }
   },
@@ -226,7 +277,17 @@
     "EP-f56c790fe2fc:legacy_catalog_record"
   ],
   "unique_source_record_count": 4,
+  "unique_source_record_ids": [
+    "BRAIN-SYNTH-ISSUER",
+    "BRAIN-SYNTH-PAIR",
+    "EP-2991eb145f59:legacy_catalog_record",
+    "EP-f56c790fe2fc:legacy_catalog_record"
+  ],
   "unique_training_eligible_record_count": 2,
+  "unique_training_eligible_record_ids": [
+    "BRAIN-SYNTH-ISSUER",
+    "BRAIN-SYNTH-PAIR"
+  ],
   "weight_validation_statuses": {
     "evals": "passed",
     "preference": "passed",

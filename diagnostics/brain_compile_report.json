@@ -144,7 +144,10 @@
     "deterministic_rebuild_verified": true,
     "finding_count": 0,
     "findings": [],
+    "llm_compile_category_schema_mismatches": [],
+    "llm_compile_expected_manifest_schema_version": "nslab.llm_full_brain_compile_manifest.v1",
     "llm_compile_manifest_present": false,
+    "llm_compile_manifest_schema_version": null,
     "passed": true,
     "record_coverage_complete": true
   },

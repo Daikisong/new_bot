@@ -83,6 +83,9 @@
 - record_coverage_complete: `True`
 - deterministic_rebuild_verified: `True`
 - llm_compile_manifest_present: `False`
+- llm_compile_manifest_schema_version: `None`
+- llm_compile_expected_manifest_schema_version: `nslab.llm_full_brain_compile_manifest.v1`
+- llm_compile_category_schema_mismatches: `[]`
 - compiled_claim_file_present: `False`
 - brain_category_file_count: `9`
 - brain_category_missing_files: `[]`

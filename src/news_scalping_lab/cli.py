@@ -358,7 +358,13 @@ def doctor(
     settings = load_settings()
     report = build_doctor_report(settings, production=production)
     if production:
-        report["production_readiness"] = production_readiness_report(report, settings)
+        production_report = production_readiness_report(report, settings)
+        production_report["diagnostic_artifacts"] = write_diagnostic_report(
+            settings.project_root,
+            "production_readiness_report",
+            production_report,
+        )
+        report["production_readiness"] = production_report
     _echo(report)
     readiness = report.get("readiness")
     production_readiness = report.get("production_readiness")

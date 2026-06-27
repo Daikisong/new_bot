@@ -42,6 +42,30 @@
 - all_raw_only_record_count: `0`
 - staged_unknown_typed_payload_count: `0`
 - staged_raw_only_record_count: `0`
+## unknown_typed_payload_record_ids
+
+- none
+
+## raw_only_record_ids
+
+- none
+
+## all_unknown_typed_payload_record_ids
+
+- none
+
+## all_raw_only_record_ids
+
+- none
+
+## staged_unknown_typed_payload_record_ids
+
+- none
+
+## staged_raw_only_record_ids
+
+- none
+
 ## warehouse_counts
 
 - beneficiary_cases: `0`
@@ -69,7 +93,16 @@
 
 - dropped_record_count: `0`
 - extra_normalized_record_count: `0`
+- quarantined_bundle_count: `0`
+- quarantined_raw_record_count: `0`
+- quarantined_normalized_record_count: `0`
 - quarantined_record_count: `0`
+## quarantine_reasons
+
+
+## quarantine_normalization_skipped_reasons
+
+
 - audit_passed: `True`
 ## record_store_audit
 
@@ -83,6 +116,12 @@
 - training_eligible_record_count: `2`
 - duplicate_record_ids: `[]`
 - unknown_training_enabled_record_ids: `[]`
+- unknown_typed_payload_record_ids: `[]`
+- raw_only_record_ids: `[]`
+- all_unknown_typed_payload_record_ids: `[]`
+- all_raw_only_record_ids: `[]`
+- staged_unknown_typed_payload_record_ids: `[]`
+- staged_raw_only_record_ids: `[]`
 - payload_hash_mismatch_record_ids: `[]`
 - eligible_records_without_provenance: `[]`
 - invalid_outcome_label_quality_record_ids: `[]`
@@ -91,6 +130,9 @@
 - manifest_record_id_mismatch_episode_ids: `[]`
 - manifest_training_eligible_mismatch_episode_ids: `[]`
 - manifest_type_count_mismatch_episode_ids: `[]`
+- manifest_records_file_missing_episode_ids: `[]`
+- manifest_records_file_absolute_episode_ids: `[]`
+- manifest_records_file_escape_episode_ids: `[]`
 - manifest_hash_mismatch_episode_ids: `[]`
 - missing_normalized_index_episode_ids: `[]`
 - index_record_id_mismatch_episode_ids: `[]`

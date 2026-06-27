@@ -1,15 +1,23 @@
 {
   "all_raw_only_record_count": 0,
+  "all_raw_only_record_ids": [],
   "all_record_count": 4,
   "all_unknown_typed_payload_count": 0,
+  "all_unknown_typed_payload_record_ids": [],
   "audit_passed": true,
   "dropped_record_count": 0,
   "extra_normalized_record_count": 0,
   "ineligible_record_count": 2,
   "normalized_record_count": 4,
+  "quarantine_normalization_skipped_reasons": {},
+  "quarantine_reasons": {},
+  "quarantined_bundle_count": 0,
+  "quarantined_normalized_record_count": 0,
+  "quarantined_raw_record_count": 0,
   "quarantined_record_count": 0,
   "raw_normalized_record_count_matches": true,
   "raw_only_record_count": 0,
+  "raw_only_record_ids": [],
   "raw_record_count": 4,
   "raw_record_counts_by_episode": {
     "EP-2991eb145f59": 1,
@@ -35,6 +43,7 @@
     "KNOWN_TYPED_PAYLOAD": 4
   },
   "record_store_audit": {
+    "all_raw_only_record_ids": [],
     "all_record_count": 4,
     "all_stats": {
       "episode_count": 3,
@@ -61,6 +70,7 @@
       "training_eligible_record_count": 2,
       "unknown_typed_payload_count": 0
     },
+    "all_unknown_typed_payload_record_ids": [],
     "backdated_company_memory_delta_known_at_record_ids": [],
     "brain_delta_count_mismatch_episode_ids": [],
     "brain_delta_record_id_mismatch_episode_ids": [],
@@ -84,6 +94,9 @@
     "manifest_count_mismatch_episode_ids": [],
     "manifest_hash_mismatch_episode_ids": [],
     "manifest_record_id_mismatch_episode_ids": [],
+    "manifest_records_file_absolute_episode_ids": [],
+    "manifest_records_file_escape_episode_ids": [],
+    "manifest_records_file_missing_episode_ids": [],
     "manifest_training_eligible_mismatch_episode_ids": [],
     "manifest_type_count_mismatch_episode_ids": [],
     "missing_bundle_envelope_episode_ids": [],
@@ -93,6 +106,7 @@
     "passed": true,
     "payload_hash_mismatch_record_ids": [],
     "raw_block_hash_mismatch_episode_ids": [],
+    "raw_only_record_ids": [],
     "record_count": 4,
     "records_missing_source_block": [],
     "records_missing_source_line": [],
@@ -102,6 +116,7 @@
     "records_with_unknown_payload_references": [],
     "schema_version": "nslab.record_store_audit.v1",
     "source_ledger_source_id_mismatch_episode_ids": [],
+    "staged_raw_only_record_ids": [],
     "staged_record_count": 0,
     "staged_stats": {
       "episode_count": 0,
@@ -115,6 +130,7 @@
       "training_eligible_record_count": 0,
       "unknown_typed_payload_count": 0
     },
+    "staged_unknown_typed_payload_record_ids": [],
     "stats": {
       "episode_count": 3,
       "ineligible_record_count": 2,
@@ -141,14 +157,18 @@
       "unknown_typed_payload_count": 0
     },
     "training_eligible_record_count": 2,
-    "unknown_training_enabled_record_ids": []
+    "unknown_training_enabled_record_ids": [],
+    "unknown_typed_payload_record_ids": []
   },
   "schema_version": "nslab.brain_record_store_report.v1",
   "staged_raw_only_record_count": 0,
+  "staged_raw_only_record_ids": [],
   "staged_record_count": 0,
   "staged_unknown_typed_payload_count": 0,
+  "staged_unknown_typed_payload_record_ids": [],
   "training_eligible_record_count": 2,
   "unknown_typed_payload_count": 0,
+  "unknown_typed_payload_record_ids": [],
   "warehouse_counts": {
     "beneficiary_cases": 0,
     "brain_records": 4,

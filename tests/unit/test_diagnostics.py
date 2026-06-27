@@ -7862,6 +7862,20 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending"
         in production["findings"]
     )
+    assert production["findings_by_category"]["real_bundle"] == [
+        "real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending"
+    ]
+    assert production["finding_counts_by_category"]["llm"] == 1
+    assert production["finding_counts_by_category"]["llm_model"] == 1
+    assert production["finding_counts_by_category"]["web"] == 1
+    blocker_summary = {
+        item["category"]: item for item in production["blocker_summary"]
+    }
+    assert blocker_summary["real_bundle"] == {
+        "category": "real_bundle",
+        "finding_count": 1,
+        "first_finding": "real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending",
+    }
     assert production["remediation_commands"] == [
         "python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",

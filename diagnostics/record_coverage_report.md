@@ -10,11 +10,31 @@
 - catalog_only: `True`
 - compiled_record_count: `4`
 - coverage_complete: `True`
+## duplicate_swept_record_ids
+
+- none
+
 - ineligible_record_count: `2`
 ## latest_record_coverage_audit
 
 - passed: `True`
 - record_coverage_complete: `True`
+- accepted_record_count: `4`
+- available_record_count: `4`
+- available_record_count_as_of: `2`
+- training_eligible_available_record_count: `2`
+- training_eligible_record_count_as_of: `0`
+- compiled_record_count: `4`
+- swept_record_count: `4`
+- swept_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR', 'EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
+- unswept_record_ids: `[]`
+- unknown_swept_record_ids: `[]`
+- duplicate_swept_record_ids: `[]`
+- record_counts_by_type: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
+- record_counts_by_evidence_phase: `{'AUDIT': 2, 'POSTMORTEM': 2}`
+- record_counts_by_training_target: `{'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}`
+- ineligible_record_count: `2`
+- audit_only_record_count: `2`
 - finding_count: `0`
 - findings: `[]`
 
@@ -40,13 +60,17 @@
 - swept_record_count: `4`
 ## swept_record_ids
 
-- `EP-2991eb145f59:legacy_catalog_record`
-- `EP-f56c790fe2fc:legacy_catalog_record`
 - `BRAIN-SYNTH-ISSUER`
 - `BRAIN-SYNTH-PAIR`
+- `EP-2991eb145f59:legacy_catalog_record`
+- `EP-f56c790fe2fc:legacy_catalog_record`
 
 - training_eligible_available_record_count: `2`
 - training_eligible_record_count_as_of: `0`
+## unknown_swept_record_ids
+
+- none
+
 ## unswept_record_ids
 
 - none
