@@ -1155,6 +1155,7 @@ def _inspect_manifest_reproducibility_fields(
 ) -> dict[str, Any]:
     episode_scope = inspect_manifest_episode_scope(root, manifest)
     price_snapshot = _inspect_price_snapshot_contract(manifest)
+    record_coverage = _inspect_manifest_record_coverage_contract(manifest)
     status: dict[str, Any] = {
         "schema_version": manifest.get("schema_version"),
         "configured": manifest.get("schema_version") == "nslab.context_manifest.v1",
@@ -1165,8 +1166,10 @@ def _inspect_manifest_reproducibility_fields(
         "web_sources_valid": False,
         "episode_scope_valid": bool(episode_scope.get("passed")),
         "price_snapshot_valid": bool(price_snapshot.get("passed")),
+        "record_coverage_valid": bool(record_coverage.get("passed")),
         "episode_scope": episode_scope,
         "price_snapshot": price_snapshot,
+        "record_coverage": record_coverage,
         "errors": [],
     }
     if not status["configured"]:
@@ -1189,7 +1192,165 @@ def _inspect_manifest_reproducibility_fields(
         status["errors"].append("episode_scope_invalid")
     if not status["price_snapshot_valid"]:
         status["errors"].append("price_snapshot_invalid")
+    if not status["record_coverage_valid"]:
+        status["errors"].append("record_coverage_invalid")
     return status
+
+
+def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "accepted_record_count_valid": False,
+        "available_record_count_verified": False,
+        "training_eligible_available_record_count_verified": False,
+        "swept_record_count_verified": False,
+        "available_record_ids_valid": False,
+        "training_eligible_available_record_ids_valid": False,
+        "swept_record_ids_valid": False,
+        "available_record_ids_unique": False,
+        "training_eligible_available_record_ids_unique": False,
+        "swept_record_ids_unique": False,
+        "training_eligible_available_record_ids_subset_verified": False,
+        "retrieved_record_ids_subset_verified": True,
+        "semantic_retrieval_record_ids_subset_verified": True,
+        "counterexample_record_ids_subset_verified": True,
+        "exhaustive_swept_record_ids_verified": True,
+        "errors": [],
+    }
+    accepted_record_count = _non_bool_int(manifest.get("accepted_record_count"))
+    status["accepted_record_count_valid"] = (
+        accepted_record_count is not None and accepted_record_count >= 0
+    )
+    if not status["accepted_record_count_valid"]:
+        status["errors"].append("accepted_record_count_missing_or_invalid")
+
+    available_ids = _verify_manifest_record_id_list_count(
+        status,
+        manifest,
+        count_field="available_record_count",
+        ids_field="available_record_ids",
+    )
+    training_eligible_ids = _verify_manifest_record_id_list_count(
+        status,
+        manifest,
+        count_field="training_eligible_available_record_count",
+        ids_field="training_eligible_available_record_ids",
+    )
+    swept_ids = _verify_manifest_record_id_list_count(
+        status,
+        manifest,
+        count_field="swept_record_count",
+        ids_field="swept_record_ids",
+    )
+
+    if available_ids is not None and training_eligible_ids is not None:
+        status["training_eligible_available_record_ids_subset_verified"] = (
+            _record_ids_subset_of_available(
+                status,
+                field="training_eligible_available_record_ids",
+                record_ids=training_eligible_ids,
+                available_record_ids=available_ids,
+            )
+        )
+    if available_ids is not None:
+        for field, verified_key in (
+            ("retrieved_record_ids", "retrieved_record_ids_subset_verified"),
+            ("semantic_retrieval_record_ids", "semantic_retrieval_record_ids_subset_verified"),
+            ("counterexample_record_ids", "counterexample_record_ids_subset_verified"),
+        ):
+            if field not in manifest:
+                continue
+            ids = _manifest_record_id_list(status, manifest, field)
+            status[verified_key] = ids is not None and _record_ids_subset_of_available(
+                status,
+                field=field,
+                record_ids=ids or [],
+                available_record_ids=available_ids,
+            )
+
+    if manifest.get("mode") == "exhaustive":
+        status["exhaustive_swept_record_ids_verified"] = (
+            available_ids is not None
+            and swept_ids is not None
+            and Counter(available_ids) == Counter(swept_ids)
+        )
+        if not status["exhaustive_swept_record_ids_verified"]:
+            status["errors"].append("exhaustive_swept_record_ids_mismatch")
+
+    status["passed"] = (
+        status["accepted_record_count_valid"]
+        and status["available_record_count_verified"]
+        and status["training_eligible_available_record_count_verified"]
+        and status["swept_record_count_verified"]
+        and status["available_record_ids_unique"]
+        and status["training_eligible_available_record_ids_unique"]
+        and status["swept_record_ids_unique"]
+        and status["training_eligible_available_record_ids_subset_verified"]
+        and status["retrieved_record_ids_subset_verified"]
+        and status["semantic_retrieval_record_ids_subset_verified"]
+        and status["counterexample_record_ids_subset_verified"]
+        and status["exhaustive_swept_record_ids_verified"]
+        and not status["errors"]
+    )
+    return status
+
+
+def _verify_manifest_record_id_list_count(
+    status: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    count_field: str,
+    ids_field: str,
+) -> list[str] | None:
+    count = _non_bool_int(manifest.get(count_field))
+    ids = _manifest_record_id_list(status, manifest, ids_field)
+    count_valid = count is not None and count >= 0
+    if not count_valid:
+        status["errors"].append(f"{count_field}_missing_or_invalid")
+    ids_valid_key = f"{ids_field}_valid"
+    if ids is not None:
+        status[ids_valid_key] = True
+        duplicate_ids = _duplicate_strings(ids)
+        status[f"{ids_field}_unique"] = not duplicate_ids
+        if duplicate_ids:
+            status["errors"].append(f"{ids_field}_duplicate")
+            status[f"{ids_field}_duplicates"] = duplicate_ids
+    if count_valid and ids is not None:
+        verified = count == len(ids)
+        status[f"{count_field}_verified"] = verified
+        if not verified:
+            status["errors"].append(f"{count_field}_mismatch")
+    return ids
+
+
+def _manifest_record_id_list(
+    status: dict[str, Any],
+    manifest: dict[str, Any],
+    field: str,
+) -> list[str] | None:
+    raw_ids = manifest.get(field)
+    if not isinstance(raw_ids, list) or not all(isinstance(item, str) for item in raw_ids):
+        status["errors"].append(f"{field}_missing_or_invalid")
+        return None
+    return list(raw_ids)
+
+
+def _record_ids_subset_of_available(
+    status: dict[str, Any],
+    *,
+    field: str,
+    record_ids: list[str],
+    available_record_ids: list[str],
+) -> bool:
+    unavailable_ids = sorted(set(record_ids) - set(available_record_ids))
+    if unavailable_ids:
+        status["errors"].append(f"{field}_not_subset_of_available_record_ids")
+        status[f"{field}_unavailable_ids"] = unavailable_ids
+        return False
+    return True
+
+
+def _duplicate_strings(values: list[str]) -> list[str]:
+    return sorted(value for value, count in Counter(values).items() if count > 1)
 
 
 def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -5737,6 +5898,7 @@ def _manifest_reproducibility_status_passed(status: dict[str, Any]) -> bool:
         and status.get("web_sources_valid")
         and status.get("episode_scope_valid")
         and status.get("price_snapshot_valid")
+        and status.get("record_coverage_valid")
         and not status.get("errors")
     )
 

@@ -947,6 +947,65 @@ def test_final_synthesis_manifest_record_id_mismatches_detect_list_drift() -> No
     }
 
 
+def test_manifest_record_coverage_contract_accepts_valid_fast_manifest() -> None:
+    manifest = {
+        "mode": "fast",
+        "accepted_record_count": 1,
+        "available_record_count": 1,
+        "available_record_ids": ["REC-1"],
+        "training_eligible_available_record_count": 0,
+        "training_eligible_available_record_ids": [],
+        "swept_record_count": 0,
+        "swept_record_ids": [],
+        "retrieved_record_ids": [],
+        "semantic_retrieval_record_ids": [],
+        "counterexample_record_ids": [],
+    }
+
+    status = cli_module._inspect_manifest_record_coverage_contract(manifest)
+
+    assert status["passed"] is True
+    assert status["available_record_count_verified"] is True
+    assert status["training_eligible_available_record_ids_subset_verified"] is True
+    assert status["exhaustive_swept_record_ids_verified"] is True
+    assert status["errors"] == []
+
+
+def test_manifest_record_coverage_contract_rejects_id_drift() -> None:
+    manifest = {
+        "mode": "exhaustive",
+        "accepted_record_count": 2,
+        "available_record_count": 2,
+        "available_record_ids": ["REC-1", "REC-2"],
+        "training_eligible_available_record_count": 1,
+        "training_eligible_available_record_ids": ["REC-3"],
+        "swept_record_count": 2,
+        "swept_record_ids": ["REC-1", "REC-X"],
+        "retrieved_record_ids": ["REC-3"],
+        "semantic_retrieval_record_ids": ["REC-2"],
+        "counterexample_record_ids": ["REC-X"],
+    }
+
+    status = cli_module._inspect_manifest_record_coverage_contract(manifest)
+
+    assert status["passed"] is False
+    assert status["available_record_count_verified"] is True
+    assert status["swept_record_count_verified"] is True
+    assert status["training_eligible_available_record_ids_subset_verified"] is False
+    assert status["retrieved_record_ids_subset_verified"] is False
+    assert status["semantic_retrieval_record_ids_subset_verified"] is True
+    assert status["counterexample_record_ids_subset_verified"] is False
+    assert status["exhaustive_swept_record_ids_verified"] is False
+    assert "training_eligible_available_record_ids_not_subset_of_available_record_ids" in (
+        status["errors"]
+    )
+    assert "retrieved_record_ids_not_subset_of_available_record_ids" in status["errors"]
+    assert "counterexample_record_ids_not_subset_of_available_record_ids" in status[
+        "errors"
+    ]
+    assert "exhaustive_swept_record_ids_mismatch" in status["errors"]
+
+
 def test_context_export_session_pack_cli_reports_invalid_cutoff(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
