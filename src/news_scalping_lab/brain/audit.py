@@ -56,7 +56,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         accepted=accepted,
         source_hashes=source_hashes,
     )
-    record_audit = _audit_record_coverage(root)
+    record_audit = _audit_record_coverage(root, current_manifest=brain_manifest)
     record_store_audit = audit_record_store(root, deep=deep)
     diversity_audit = _audit_brain_diversity(root)
     llm_compile_audit = _audit_llm_compile_manifest(
@@ -198,6 +198,12 @@ def _write_latest_record_coverage_audit_summary(
             report = payload
     report.setdefault("schema_version", "nslab.record_coverage_manifest.v1")
     for key in (
+        "record_coverage_brain_version",
+        "expected_brain_version",
+        "record_coverage_build_mode",
+        "expected_build_mode",
+        "record_coverage_catalog_only",
+        "expected_catalog_only",
         "record_coverage_accepted_episode_count",
         "expected_accepted_episode_count",
         "accepted_record_count",
@@ -224,6 +230,12 @@ def _write_latest_record_coverage_audit_summary(
     report["latest_record_coverage_audit"] = {
         "passed": record_coverage_complete is True,
         "record_coverage_complete": record_coverage_complete,
+        "record_coverage_brain_version": result.get("record_coverage_brain_version"),
+        "expected_brain_version": result.get("expected_brain_version"),
+        "record_coverage_build_mode": result.get("record_coverage_build_mode"),
+        "expected_build_mode": result.get("expected_build_mode"),
+        "record_coverage_catalog_only": result.get("record_coverage_catalog_only"),
+        "expected_catalog_only": result.get("expected_catalog_only"),
         "record_coverage_accepted_episode_count": result.get(
             "record_coverage_accepted_episode_count"
         ),
@@ -858,8 +870,30 @@ def _audit_deterministic_brain_state(
     }
 
 
-def _audit_record_coverage(root: Path) -> dict[str, Any]:
+def _audit_record_coverage(
+    root: Path,
+    *,
+    current_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     records = BrainRecordStore(root).list_records()
+    expected_brain_version = (
+        current_manifest.get("brain_version")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("brain_version"), str)
+        else None
+    )
+    expected_build_mode = (
+        current_manifest.get("build_mode")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("build_mode"), str)
+        else None
+    )
+    expected_catalog_only = (
+        current_manifest.get("catalog_only")
+        if isinstance(current_manifest, dict)
+        and isinstance(current_manifest.get("catalog_only"), bool)
+        else None
+    )
     expected_accepted_episode_count = len(ResearchStore(root).list_accepted())
     record_ids = {record.record_id for record in records}
     training_eligible_count = sum(1 for record in records if record.training_eligible)
@@ -876,6 +910,12 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
     if not records:
         return {
+            "record_coverage_brain_version": None,
+            "expected_brain_version": expected_brain_version,
+            "record_coverage_build_mode": None,
+            "expected_build_mode": expected_build_mode,
+            "record_coverage_catalog_only": None,
+            "expected_catalog_only": expected_catalog_only,
             "record_coverage_accepted_episode_count": None,
             "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": 0,
@@ -900,6 +940,12 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
         return {
+            "record_coverage_brain_version": None,
+            "expected_brain_version": expected_brain_version,
+            "record_coverage_build_mode": None,
+            "expected_build_mode": expected_build_mode,
+            "record_coverage_catalog_only": None,
+            "expected_catalog_only": expected_catalog_only,
             "record_coverage_accepted_episode_count": None,
             "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": len(records),
@@ -924,6 +970,12 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
         return {
+            "record_coverage_brain_version": None,
+            "expected_brain_version": expected_brain_version,
+            "record_coverage_build_mode": None,
+            "expected_build_mode": expected_build_mode,
+            "record_coverage_catalog_only": None,
+            "expected_catalog_only": expected_catalog_only,
             "record_coverage_accepted_episode_count": None,
             "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_record_count": len(records),
@@ -948,6 +1000,9 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
             ],
         }
     findings: list[str] = []
+    manifest_brain_version = manifest.get("brain_version")
+    manifest_build_mode = manifest.get("build_mode")
+    manifest_catalog_only = manifest.get("catalog_only")
     manifest_accepted_episode_count = _int_value(manifest.get("accepted_episode_count"))
     coverage_as_of = _record_coverage_as_of(manifest, findings)
     available_records_as_of = (
@@ -974,6 +1029,27 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     )
     if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+    if expected_brain_version is not None:
+        if not isinstance(manifest_brain_version, str) or not manifest_brain_version:
+            findings.append("record coverage manifest brain_version is missing")
+        elif manifest_brain_version != expected_brain_version:
+            findings.append(
+                "record coverage manifest brain_version does not match current brain manifest"
+            )
+    if expected_build_mode is not None:
+        if not isinstance(manifest_build_mode, str) or not manifest_build_mode:
+            findings.append("record coverage manifest build_mode is missing")
+        elif manifest_build_mode != expected_build_mode:
+            findings.append(
+                "record coverage manifest build_mode does not match current brain manifest"
+            )
+    if expected_catalog_only is not None:
+        if not isinstance(manifest_catalog_only, bool):
+            findings.append("record coverage manifest catalog_only is missing")
+        elif manifest_catalog_only is not expected_catalog_only:
+            findings.append(
+                "record coverage manifest catalog_only does not match current brain manifest"
+            )
     if manifest_accepted_episode_count is None:
         findings.append("record coverage manifest accepted_episode_count is missing")
     elif manifest_accepted_episode_count != expected_accepted_episode_count:
@@ -1049,6 +1125,18 @@ def _audit_record_coverage(root: Path) -> dict[str, Any]:
     elif has_audit_findings:
         findings.append("record coverage manifest is marked complete despite audit findings")
     return {
+        "record_coverage_brain_version": manifest_brain_version
+        if isinstance(manifest_brain_version, str)
+        else None,
+        "expected_brain_version": expected_brain_version,
+        "record_coverage_build_mode": manifest_build_mode
+        if isinstance(manifest_build_mode, str)
+        else None,
+        "expected_build_mode": expected_build_mode,
+        "record_coverage_catalog_only": manifest_catalog_only
+        if isinstance(manifest_catalog_only, bool)
+        else None,
+        "expected_catalog_only": expected_catalog_only,
         "record_coverage_accepted_episode_count": manifest_accepted_episode_count,
         "expected_accepted_episode_count": expected_accepted_episode_count,
         "accepted_record_count": len(records),

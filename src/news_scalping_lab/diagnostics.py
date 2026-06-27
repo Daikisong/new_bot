@@ -300,6 +300,7 @@ def production_readiness_report(
     )
     record_coverage_status = _production_record_coverage_status(
         record_coverage,
+        brain_manifest=brain_manifest,
         root=settings.project_root,
     )
     llm_full_brain = _llm_full_brain_status(
@@ -2742,8 +2743,24 @@ def _unique_preserving_order(values: list[str]) -> list[str]:
 def _production_record_coverage_status(
     record_coverage: object,
     *,
+    brain_manifest: object | None = None,
     root: Path,
 ) -> dict[str, Any]:
+    expected_brain_version = (
+        brain_manifest.get("brain_version")
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("brain_version"), str)
+        else None
+    )
+    expected_build_mode = (
+        brain_manifest.get("build_mode")
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("build_mode"), str)
+        else None
+    )
+    expected_catalog_only = (
+        brain_manifest.get("catalog_only")
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("catalog_only"), bool)
+        else None
+    )
     accepted_episode_store_readable = True
     accepted_episode_store_error = None
     try:
@@ -2761,6 +2778,12 @@ def _production_record_coverage_status(
             "finding_count": 1,
             "findings": ["record coverage manifest is missing"],
             "record_coverage_as_of": None,
+            "record_coverage_brain_version": None,
+            "expected_brain_version": expected_brain_version,
+            "record_coverage_build_mode": None,
+            "expected_build_mode": expected_build_mode,
+            "record_coverage_catalog_only": None,
+            "expected_catalog_only": expected_catalog_only,
             "record_coverage_accepted_episode_count": None,
             "expected_accepted_episode_count": expected_accepted_episode_count,
             "accepted_episode_store_readable": accepted_episode_store_readable,
@@ -2836,6 +2859,31 @@ def _production_record_coverage_status(
         )
     if record_coverage.get("schema_version") != "nslab.record_coverage_manifest.v1":
         findings.append("record coverage manifest schema_version is invalid")
+
+    raw_brain_version = record_coverage.get("brain_version")
+    raw_build_mode = record_coverage.get("build_mode")
+    raw_catalog_only = record_coverage.get("catalog_only")
+    if expected_brain_version is not None:
+        if not isinstance(raw_brain_version, str) or not raw_brain_version:
+            findings.append("record coverage manifest brain_version is missing")
+        elif raw_brain_version != expected_brain_version:
+            findings.append(
+                "record coverage manifest brain_version does not match current brain manifest"
+            )
+    if expected_build_mode is not None:
+        if not isinstance(raw_build_mode, str) or not raw_build_mode:
+            findings.append("record coverage manifest build_mode is missing")
+        elif raw_build_mode != expected_build_mode:
+            findings.append(
+                "record coverage manifest build_mode does not match current brain manifest"
+            )
+    if expected_catalog_only is not None:
+        if not isinstance(raw_catalog_only, bool):
+            findings.append("record coverage manifest catalog_only is missing")
+        elif raw_catalog_only is not expected_catalog_only:
+            findings.append(
+                "record coverage manifest catalog_only does not match current brain manifest"
+            )
 
     accepted_episode_count = _int_from_mapping(
         record_coverage,
@@ -3110,6 +3158,18 @@ def _production_record_coverage_status(
         "record_coverage_as_of": raw_coverage_as_of
         if isinstance(raw_coverage_as_of, str)
         else None,
+        "record_coverage_brain_version": raw_brain_version
+        if isinstance(raw_brain_version, str)
+        else None,
+        "expected_brain_version": expected_brain_version,
+        "record_coverage_build_mode": raw_build_mode
+        if isinstance(raw_build_mode, str)
+        else None,
+        "expected_build_mode": expected_build_mode,
+        "record_coverage_catalog_only": raw_catalog_only
+        if isinstance(raw_catalog_only, bool)
+        else None,
+        "expected_catalog_only": expected_catalog_only,
         "record_coverage_accepted_episode_count": accepted_episode_count,
         "expected_accepted_episode_count": expected_accepted_episode_count,
         "accepted_episode_store_readable": accepted_episode_store_readable,

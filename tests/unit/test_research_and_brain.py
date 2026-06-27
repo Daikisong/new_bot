@@ -1621,6 +1621,12 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert coverage["available_record_count_as_of"] == 1
     assert coverage["training_eligible_available_record_count"] == 2
     assert coverage["training_eligible_record_count_as_of"] == 1
+    assert audit["record_coverage_brain_version"] == manifest.brain_version
+    assert audit["expected_brain_version"] == manifest.brain_version
+    assert audit["record_coverage_build_mode"] == "full"
+    assert audit["expected_build_mode"] == "full"
+    assert audit["record_coverage_catalog_only"] is True
+    assert audit["expected_catalog_only"] is True
     assert audit["record_coverage_accepted_episode_count"] == 1
     assert audit["expected_accepted_episode_count"] == 1
     assert audit["available_record_count_as_of"] == 1
@@ -1670,6 +1676,68 @@ def test_brain_audit_rejects_record_coverage_episode_count_mismatch(
             "record_coverage_accepted_episode_count"
         ]
         == 0
+    )
+
+
+def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Record coverage brain metadata note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-COVERAGE-META", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    brain_manifest = BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    manifest = read_json(coverage_path)
+    manifest.update(
+        {
+            "brain_version": "brain-stale",
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        }
+    )
+    write_json(coverage_path, manifest)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["record_coverage_brain_version"] == "brain-stale"
+    assert audit["expected_brain_version"] == brain_manifest.brain_version
+    assert audit["record_coverage_build_mode"] == "llm-full"
+    assert audit["expected_build_mode"] == "full"
+    assert audit["record_coverage_catalog_only"] is False
+    assert audit["expected_catalog_only"] is True
+    assert (
+        "record coverage manifest brain_version does not match current brain manifest"
+        in audit["record_coverage_findings"]
+    )
+    assert (
+        "record coverage manifest build_mode does not match current brain manifest"
+        in audit["record_coverage_findings"]
+    )
+    assert (
+        "record coverage manifest catalog_only does not match current brain manifest"
+        in audit["record_coverage_findings"]
+    )
+    record_coverage_report = read_json(
+        tmp_path / "diagnostics" / "record_coverage_report.json"
+    )
+    assert record_coverage_report["record_coverage_brain_version"] == "brain-stale"
+    assert record_coverage_report["expected_brain_version"] == brain_manifest.brain_version
+    assert (
+        record_coverage_report["latest_record_coverage_audit"][
+            "record_coverage_build_mode"
+        ]
+        == "llm-full"
     )
 
 

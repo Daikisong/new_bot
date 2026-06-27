@@ -2333,6 +2333,70 @@ def test_production_readiness_rejects_record_coverage_episode_count_mismatch(
     )
 
 
+def test_production_readiness_rejects_stale_record_coverage_brain_metadata(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    write_json(
+        current / "brain_manifest.json",
+        {
+            "brain_version": "brain-current",
+            "build_mode": "llm-full",
+            "catalog_only": False,
+        },
+    )
+    coverage = _complete_record_coverage()
+    coverage.update(
+        {
+            "brain_version": "brain-stale",
+            "build_mode": "catalog",
+            "catalog_only": True,
+        }
+    )
+    write_json(current / "record_coverage_manifest.json", coverage)
+
+    production = production_readiness_report(
+        {
+            "api_connections": {
+                "openai": {"status": "configured_not_called"},
+                "brave_search": {"status": "configured_not_called"},
+            },
+            "vector_index": {
+                "status": "current",
+                "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+                "brain_records_exists": True,
+                "source_brain_record_count": 2,
+                "brain_record_count": 2,
+            },
+        },
+        settings,
+    )
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["record_coverage_brain_version"] == "brain-stale"
+    assert production["record_coverage"]["expected_brain_version"] == "brain-current"
+    assert production["record_coverage"]["record_coverage_build_mode"] == "catalog"
+    assert production["record_coverage"]["expected_build_mode"] == "llm-full"
+    assert production["record_coverage"]["record_coverage_catalog_only"] is True
+    assert production["record_coverage"]["expected_catalog_only"] is False
+    assert (
+        "records: record coverage manifest brain_version does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest build_mode does not match current brain manifest"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest catalog_only does not match current brain manifest"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_record_coverage_unswept_id_mismatch(
     tmp_path,
 ) -> None:
