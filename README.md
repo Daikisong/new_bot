@@ -226,6 +226,10 @@ python -m news_scalping_lab.cli memory rebuild-index --production
 python -m news_scalping_lab.cli warehouse rebuild
 python -m news_scalping_lab.cli warehouse verify
 python -m news_scalping_lab.cli brain audit --deep
+python -m news_scalping_lab.cli training export-sft
+python -m news_scalping_lab.cli training export-preference
+python -m news_scalping_lab.cli training export-evals
+python -m news_scalping_lab.cli training audit
 python -m news_scalping_lab.cli doctor --production
 ```
 

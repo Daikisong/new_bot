@@ -19,6 +19,7 @@ from news_scalping_lab.diagnostics import (
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.training import export_training
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -336,6 +337,10 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
         "python -m news_scalping_lab.cli warehouse rebuild",
         "python -m news_scalping_lab.cli warehouse verify",
         "python -m news_scalping_lab.cli brain audit --deep",
+        "python -m news_scalping_lab.cli training export-sft",
+        "python -m news_scalping_lab.cli training export-preference",
+        "python -m news_scalping_lab.cli training export-evals",
+        "python -m news_scalping_lab.cli training audit",
         "python -m news_scalping_lab.cli doctor --production",
     ]
 
@@ -1102,6 +1107,59 @@ def test_production_readiness_rejects_incomplete_record_coverage_manifest(
     assert (
         "records: record coverage manifest is marked complete despite production findings"
         in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_missing_training_exports_when_records_exist(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["source_record_count"] == 2
+    assert production["training_exports"]["missing_manifest_kinds"] == [
+        "evals",
+        "preference",
+        "sft",
+    ]
+    assert (
+        "training: training export manifests are missing: evals, preference, sft"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_accepts_record_backed_training_exports(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is True
+    assert production["training_exports"]["status"] == "ready"
+    assert production["training_exports"]["source_record_count"] == 2
+    assert production["training_exports"]["record_store_source_record_count"] == 2
+    assert production["training_exports"]["unique_source_record_count"] == 2
+    assert production["training_exports"]["unique_training_eligible_record_count"] == 2
+    assert production["training_exports"]["unique_exported_record_count"] == 2
+    assert production["training_exports"]["source_record_hash_count"] == 2
+    assert production["training_exports"]["weight_validation_statuses"] == {
+        "evals": "passed",
+        "preference": "passed",
+        "sft": "passed",
+    }
+    assert not any(
+        finding.startswith("training:") for finding in production["findings"]
     )
 
 
@@ -2797,6 +2855,14 @@ def test_production_readiness_rejects_tampered_real_import_record_jsonl(
         "real_bundle_import: record JSONL type counts do not match real smoke"
         in production["findings"]
     )
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["status"] == "attention"
+    assert any(
+        finding.startswith(
+            "training: training export source record store is unreadable"
+        )
+        for finding in production["findings"]
+    )
 
 
 def test_production_readiness_rejects_real_import_index_id_mismatch(
@@ -3255,6 +3321,10 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "python -m news_scalping_lab.cli warehouse rebuild",
         "python -m news_scalping_lab.cli warehouse verify",
         "python -m news_scalping_lab.cli brain audit --deep",
+        "python -m news_scalping_lab.cli training export-sft",
+        "python -m news_scalping_lab.cli training export-preference",
+        "python -m news_scalping_lab.cli training export-evals",
+        "python -m news_scalping_lab.cli training audit",
         "python -m news_scalping_lab.cli doctor --production",
     ]
 
@@ -3422,6 +3492,120 @@ def _write_real_smoke_validation_report(
     write_json(
         root / "research" / "episodes" / episode_id / "validation_report.json",
         report,
+    )
+
+
+def _production_base_report() -> dict[str, object]:
+    return {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+
+def _write_training_record_store(root: Path) -> None:
+    episode_id = "EP-training-production"
+    records = [
+        _training_record(
+            record_id="BRAIN-TRAIN-ISSUER",
+            record_type="supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            payload={
+                "record_id": "BRAIN-TRAIN-ISSUER",
+                "record_type": "supervised_issuer_day_case",
+                "episode_id": episode_id,
+                "trade_date": "2030-01-10",
+                "ticker": "TRAIN",
+                "safe_D1_features": {"market_cap": "known before cutoff"},
+                "blind_fact_ids": ["FACT-TRAIN"],
+                "blind_inference_ids": ["INF-TRAIN"],
+                "event_ids": ["EVT-TRAIN"],
+                "response_class": "winner",
+                "D_outcome": {"label_quality": "verified"},
+                "sample_weight": 1.0,
+                "attribution_status": "attributed",
+            },
+        ),
+        _training_record(
+            record_id="BRAIN-TRAIN-PAIR",
+            record_type="blind_leader_preference_pair",
+            training_target="outcome_preferred_candidate",
+            payload={
+                "record_id": "BRAIN-TRAIN-PAIR",
+                "record_type": "blind_leader_preference_pair",
+                "episode_id": episode_id,
+                "trade_date": "2030-01-10",
+                "blind_pair_id": "PAIR-TRAIN",
+                "blind_preferred_candidate_id": "CAND-WIN",
+                "blind_rejected_candidate_id": "CAND-LOSE",
+                "blind_preferred_ticker": "WIN",
+                "blind_rejected_ticker": "LOSE",
+                "outcome_preferred_candidate_id": "CAND-WIN",
+                "outcome_rejected_candidate_id": "CAND-LOSE",
+                "outcome_winner_ticker": "WIN",
+                "blind_preference_correct": True,
+                "safe_D1_features": {"relative_strength": "known before cutoff"},
+            },
+        ),
+    ]
+    records_dir = root / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode_id}.jsonl").write_text(
+        "".join(record.model_dump_json() + "\n" for record in records),
+        encoding="utf-8",
+    )
+    manifest_dir = root / "memory" / "record_manifests"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    write_json(
+        manifest_dir / f"{episode_id}.json",
+        {
+            "schema_version": "nslab.record_manifest.v1",
+            "episode_id": episode_id,
+            "accepted": True,
+            "acceptance_status": "accepted",
+            "record_count": len(records),
+            "training_eligible_record_count": len(records),
+            "record_counts_by_type": {
+                "blind_leader_preference_pair": 1,
+                "supervised_issuer_day_case": 1,
+            },
+        },
+    )
+
+
+def _training_record(
+    *,
+    record_id: str,
+    record_type: str,
+    training_target: str,
+    payload: dict[str, object],
+) -> BrainRecordEnvelope:
+    available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id="EP-training-production",
+        trade_date=date(2030, 1, 10),
+        available_from=available_from,
+        training_target=training_target,
+        evidence_phase="POSTMORTEM",
+        training_eligible=True,
+        eligibility_reason="production training fixture",
+        status="supported",
+        confidence_label="medium",
+        provenance_source_ids=[f"SRC-{record_id}"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
     )
 
 

@@ -14,11 +14,16 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
-from news_scalping_lab.records.store import audit_record_store, record_store_report_payload
+from news_scalping_lab.records.store import (
+    BrainRecordStore,
+    audit_record_store,
+    record_store_report_payload,
+)
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
+from news_scalping_lab.training import audit_training_exports
 from news_scalping_lab.utils import file_sha256, relative_to_root
 
 ENV_KEYS = [
@@ -185,6 +190,11 @@ def production_readiness_report(
         findings.extend(
             f"embedding: {finding}" for finding in semantic_index["findings"]
         )
+    training_exports = _production_training_export_status(settings)
+    if training_exports["passed"] is not True:
+        findings.extend(
+            f"training: {finding}" for finding in training_exports["findings"]
+        )
     return {
         "schema_version": "nslab.production_readiness.v1",
         "passed": not findings,
@@ -199,6 +209,7 @@ def production_readiness_report(
         "record_store": record_store,
         "warehouse": warehouse,
         "semantic_index": semantic_index,
+        "training_exports": training_exports,
         "web_evidence": web_evidence,
         "required_environment": remediation["required_environment"],
         "remediation_commands": remediation["commands"],
@@ -580,6 +591,10 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} warehouse rebuild",
             f"{python_command} warehouse verify",
             f"{python_command} brain audit --deep",
+            f"{python_command} training export-sft",
+            f"{python_command} training export-preference",
+            f"{python_command} training export-evals",
+            f"{python_command} training audit",
             f"{python_command} doctor --production",
         ],
     }
@@ -1145,6 +1160,166 @@ def _production_semantic_index_manifest_status(
         "embedding_model": embedding_model,
         "brain_record_count": brain_record_count,
         "brain_record_hash_count": brain_record_hash_count,
+    }
+
+
+def _production_training_export_status(settings: Settings) -> dict[str, Any]:
+    root = settings.project_root
+    try:
+        source_record_count = len(BrainRecordStore(root).list_records())
+    except (OSError, ValueError) as exc:
+        finding = (
+            "training export source record store is unreadable: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return {
+            "schema_version": "nslab.production_training_exports.v1",
+            "passed": False,
+            "status": "attention",
+            "finding_count": 1,
+            "findings": [finding],
+            "source_record_count": None,
+            "available_manifest_kinds": [],
+            "missing_manifest_kinds": [],
+        }
+    if source_record_count == 0:
+        return {
+            "schema_version": "nslab.production_training_exports.v1",
+            "passed": True,
+            "status": "not_applicable",
+            "finding_count": 0,
+            "findings": [],
+            "source_record_count": 0,
+            "available_manifest_kinds": [],
+            "missing_manifest_kinds": [],
+        }
+
+    findings: list[str] = []
+    try:
+        audit = audit_training_exports(root)
+    except (OSError, ValueError) as exc:
+        audit = {
+            "passed": False,
+            "findings": [f"training export audit failed: {type(exc).__name__}: {exc}"],
+        }
+    findings.extend(_string_list(audit.get("findings")))
+
+    report = _read_optional_json(root / "diagnostics" / "training_export_report.json")
+    diagnostics = report if isinstance(report, dict) else {}
+    if not diagnostics:
+        findings.append("training export diagnostics report is missing")
+    elif diagnostics.get("schema_version") != "nslab.training_export_diagnostics.v1":
+        findings.append("training export diagnostics schema_version is invalid")
+
+    missing_manifest_kinds = _string_list(diagnostics.get("missing_manifest_kinds"))
+    if missing_manifest_kinds:
+        findings.append(
+            "training export manifests are missing: "
+            + ", ".join(missing_manifest_kinds)
+        )
+    if diagnostics.get("brain_record_source_required") is not True:
+        findings.append("training export diagnostics do not require brain records")
+
+    record_store_source_count = _int_from_mapping(
+        diagnostics,
+        "record_store_source_record_count",
+    )
+    unique_source_record_count = _int_from_mapping(
+        diagnostics,
+        "unique_source_record_count",
+    )
+    source_record_hash_count = _int_from_mapping(
+        diagnostics,
+        "source_record_hash_count",
+    )
+    unique_training_eligible_count = _int_from_mapping(
+        diagnostics,
+        "unique_training_eligible_record_count",
+    )
+    unique_exported_count = _int_from_mapping(
+        diagnostics,
+        "unique_exported_record_count",
+    )
+
+    if record_store_source_count != source_record_count:
+        findings.append(
+            "training export record-store source count does not match current records"
+        )
+    if unique_source_record_count != source_record_count:
+        findings.append(
+            "training export unique source record count does not match current records"
+        )
+    if source_record_hash_count != source_record_count:
+        findings.append(
+            "training export source record hash count does not match current records"
+        )
+    if (
+        unique_exported_count is not None
+        and unique_training_eligible_count is not None
+        and unique_exported_count > unique_training_eligible_count
+    ):
+        findings.append("training export includes more records than eligible records")
+
+    weight_statuses = diagnostics.get("weight_validation_statuses")
+    if not isinstance(weight_statuses, dict):
+        findings.append("training export weight validation statuses are missing")
+    else:
+        failed_weights = [
+            str(kind)
+            for kind, status in sorted(weight_statuses.items())
+            if status != "passed"
+        ]
+        if failed_weights:
+            findings.append(
+                "training export weight validation failed: "
+                + ", ".join(failed_weights)
+            )
+
+    duplicate_issuer_day_count = _int_from_mapping(
+        diagnostics,
+        "duplicate_issuer_day_count",
+    )
+    if duplicate_issuer_day_count is not None and duplicate_issuer_day_count != 0:
+        findings.append("training export has duplicate issuer-day samples")
+    issuer_weight_mismatch_count = _int_from_mapping(
+        diagnostics,
+        "issuer_day_weight_sum_mismatch_count",
+    )
+    if (
+        issuer_weight_mismatch_count is not None
+        and issuer_weight_mismatch_count != 0
+    ):
+        findings.append("training export has issuer-day weight sum mismatches")
+    direct_weight_mismatch_count = _int_from_mapping(
+        diagnostics,
+        "direct_event_weight_sum_mismatch_count",
+    )
+    if direct_weight_mismatch_count is not None and direct_weight_mismatch_count != 0:
+        findings.append("training export has direct-event weight sum mismatches")
+
+    return {
+        "schema_version": "nslab.production_training_exports.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "source_record_count": source_record_count,
+        "record_store_source_record_count": record_store_source_count,
+        "unique_source_record_count": unique_source_record_count,
+        "unique_training_eligible_record_count": unique_training_eligible_count,
+        "unique_exported_record_count": unique_exported_count,
+        "source_record_hash_count": source_record_hash_count,
+        "available_manifest_kinds": _string_list(
+            diagnostics.get("available_manifest_kinds")
+        ),
+        "missing_manifest_kinds": missing_manifest_kinds,
+        "weight_validation_statuses": weight_statuses
+        if isinstance(weight_statuses, dict)
+        else {},
+        "duplicate_issuer_day_count": duplicate_issuer_day_count,
+        "issuer_day_weight_sum_mismatch_count": issuer_weight_mismatch_count,
+        "direct_event_weight_sum_mismatch_count": direct_weight_mismatch_count,
+        "audit_passed": audit.get("passed") is True,
     }
 
 
