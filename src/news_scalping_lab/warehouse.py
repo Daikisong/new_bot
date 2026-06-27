@@ -526,8 +526,18 @@ class WarehouseStore:
                 extra_fields=(
                     "theme_id",
                     "theme_name",
-                    "formation_status",
-                    "actual_leader_ticker",
+                    "event_ids",
+                    "observation_ids",
+                    "fact_ids",
+                    "inference_ids",
+                    "peer_universe",
+                    "chosen_leader_ticker",
+                    "chosen_leader_company_name",
+                    "rejected_candidate_tickers",
+                    "response_class",
+                    "sample_weight",
+                    "label_quality",
+                    "attribution_status",
                 ),
             )
             for record in records
@@ -540,7 +550,21 @@ class WarehouseStore:
         rows = [
             _record_case_row(
                 record,
-                extra_fields=("case_id", "ticker", "company_name", "theme_id"),
+                extra_fields=(
+                    "case_id",
+                    "event_id",
+                    "theme_id",
+                    "candidate_ticker",
+                    "candidate_company_name",
+                    "candidate_path_type",
+                    "beneficiary_relation",
+                    "beneficiary_relation_evidence",
+                    "blind_candidate_ids",
+                    "outcome_ticker",
+                    "outcome_company_name",
+                    "correction_mode",
+                    "sample_weight",
+                ),
             )
             for record in records
             if record.record_type == "beneficiary_discovery_case"

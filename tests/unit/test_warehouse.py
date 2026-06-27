@@ -94,6 +94,114 @@ def test_record_coverage_projection_keeps_phase_and_training_target_groups(
     ]
 
 
+def test_specialized_record_tables_preserve_theme_and_beneficiary_fields(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    records = [
+        _warehouse_payload_record(
+            "BRAIN-THEME-RICH",
+            record_type="supervised_theme_formation_case",
+            training_target="theme_formation_response",
+            payload={
+                "record_id": "BRAIN-THEME-RICH",
+                "record_type": "supervised_theme_formation_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "theme_id": "THEME-supply",
+                "theme_name": "Supply Shock",
+                "event_ids": ["EVT-1", "EVT-2"],
+                "observation_ids": ["OBS-1"],
+                "fact_ids": ["FACT-1"],
+                "inference_ids": ["INF-1"],
+                "peer_universe": ["000001", "000002"],
+                "chosen_leader_ticker": "000001",
+                "chosen_leader_company_name": "Leader Co",
+                "rejected_candidate_tickers": ["000002"],
+                "response_class": "positive_high10",
+                "sample_weight": 0.75,
+                "label_quality": "verified",
+                "attribution_status": "theme_leader",
+            },
+        ),
+        _warehouse_payload_record(
+            "BRAIN-BENEFICIARY-RICH",
+            record_type="beneficiary_discovery_case",
+            training_target="beneficiary_discovery_response",
+            payload={
+                "record_id": "BRAIN-BENEFICIARY-RICH",
+                "record_type": "beneficiary_discovery_case",
+                "episode_id": "EP-rich",
+                "trade_date": "2030-01-10",
+                "case_id": "BEN-1",
+                "event_id": "EVT-1",
+                "theme_id": "THEME-supply",
+                "candidate_ticker": "000003",
+                "candidate_company_name": "Beneficiary Co",
+                "candidate_path_type": "INFERRED_NEW",
+                "beneficiary_relation": "supplier",
+                "beneficiary_relation_evidence": ["FACT-2", "INF-2"],
+                "blind_candidate_ids": ["CAND-3"],
+                "outcome_ticker": "000003",
+                "outcome_company_name": "Beneficiary Co",
+                "correction_mode": "postmortem_add",
+                "sample_weight": 0.25,
+            },
+        ),
+    ]
+    warehouse = WarehouseStore(tmp_path)
+
+    assert warehouse.write_theme_formation_cases(records) == 1
+    assert warehouse.write_beneficiary_cases(records) == 1
+
+    theme_rows = _query_parquet(
+        tmp_path / "warehouse" / "theme_formation_cases.parquet",
+        (
+            "theme_id, theme_name, event_ids, peer_universe, chosen_leader_ticker, "
+            "chosen_leader_company_name, rejected_candidate_tickers, response_class, "
+            "sample_weight, label_quality, attribution_status"
+        ),
+    )
+    beneficiary_rows = _query_parquet(
+        tmp_path / "warehouse" / "beneficiary_cases.parquet",
+        (
+            "case_id, event_id, theme_id, candidate_ticker, candidate_company_name, "
+            "candidate_path_type, beneficiary_relation, beneficiary_relation_evidence, "
+            "blind_candidate_ids, outcome_ticker, outcome_company_name, "
+            "correction_mode, sample_weight"
+        ),
+    )
+    assert theme_rows[0][0:2] == ("THEME-supply", "Supply Shock")
+    assert json.loads(str(theme_rows[0][2])) == ["EVT-1", "EVT-2"]
+    assert json.loads(str(theme_rows[0][3])) == ["000001", "000002"]
+    assert theme_rows[0][4:6] == ("000001", "Leader Co")
+    assert json.loads(str(theme_rows[0][6])) == ["000002"]
+    assert theme_rows[0][7:] == (
+        "positive_high10",
+        0.75,
+        "verified",
+        "theme_leader",
+    )
+    assert beneficiary_rows[0][0:7] == (
+        "BEN-1",
+        "EVT-1",
+        "THEME-supply",
+        "000003",
+        "Beneficiary Co",
+        "INFERRED_NEW",
+        "supplier",
+    )
+    assert json.loads(str(beneficiary_rows[0][7])) == ["FACT-2", "INF-2"]
+    assert json.loads(str(beneficiary_rows[0][8])) == ["CAND-3"]
+    assert beneficiary_rows[0][9:] == (
+        "000003",
+        "Beneficiary Co",
+        "postmortem_add",
+        0.25,
+    )
+
+
 def test_warehouse_projects_observed_events_and_event_sources(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -372,6 +480,35 @@ def _warehouse_brain_record(
         typed_payload_status="KNOWN_TYPED_PAYLOAD",
         source_line=1,
         payload=payload,
+    )
+
+
+def _warehouse_payload_record(
+    record_id: str,
+    *,
+    record_type: str,
+    training_target: str,
+    payload: dict[str, object],
+) -> BrainRecordEnvelope:
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type=record_type,
+        episode_id="EP-rich",
+        trade_date=date(2030, 1, 10),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+        training_target=training_target,
+        evidence_phase="POSTMORTEM",
+        training_eligible=True,
+        eligibility_reason="warehouse rich projection test",
+        status="supported",
+        confidence_label="medium",
+        provenance_source_ids=["SRC-rich"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_line=1,
+        payload=dict(payload),
     )
 
 
