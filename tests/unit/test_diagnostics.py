@@ -327,6 +327,7 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": "brave",
         "BRAVE_SEARCH_API_KEY": "<required>",
+        "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     assert production["remediation_commands"] == [
         "python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_PATH% --require-valid",
@@ -2919,6 +2920,7 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": "brave",
         "BRAVE_SEARCH_API_KEY": "<required>",
+        "NSLAB_REAL_BUNDLE_PATH": "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     assert (
         "real_bundle: no readable v11 ACCEPT_FULL bundle candidate; real smoke pending"

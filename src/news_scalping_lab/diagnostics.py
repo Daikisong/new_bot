@@ -564,6 +564,7 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
         "OPENAI_API_KEY": "<required>",
         "NSLAB_WEB_PROVIDER": web_provider,
         settings.brave_search_api_key_env: "<required>",
+        REAL_BUNDLE_ENV_KEY: "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     if settings.brave_search_api_key_env != "BRAVE_SEARCH_API_KEY":
         required_environment["NSLAB_BRAVE_SEARCH_API_KEY_ENV"] = (
