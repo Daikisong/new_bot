@@ -1,0 +1,18 @@
+{
+  "schema_version": "nslab.blind_seal_receipt.v23",
+  "calendar_date": "2024-12-04",
+  "sealed_at": "2026-06-27T12:43:34+09:00",
+  "blind_packet_manifest_sha256": "ed2da02e7a403c9da6494166eb825774a5c547caa10fa971d313e821ef240d48",
+  "sealed_blind_report_sha256": "9899f877f7680e086dfaabae1b18f1d49a7f6622f6112ecbcc62c4b450ad9958",
+  "blind_prediction_sha256": "d6dfb2f8cec81ad578ac003b9354f900c1149439723568e7ef14d8252a9d7986",
+  "preseal_outcome_download_count": 0,
+  "preseal_outcome_stat_count": 0,
+  "preseal_outcome_sha256_count": 0,
+  "preseal_outcome_header_read_count": 0,
+  "preseal_outcome_row_count_count": 0,
+  "preseal_outcome_parse_count": 0,
+  "preseal_outcome_label_calculation_count": 0,
+  "access_log_preseal_outcome_logical_role_count": 0,
+  "outcome_access_allowed_after_this_receipt": true,
+  "verifier_decision": "SEALED_CLEAN_FOR_POSTSEAL_OUTCOME_OPEN"
+}

@@ -1,21 +1,35 @@
 {
-  "episode_count": 3,
-  "record_count": 4,
+  "episode_count": 4,
+  "record_count": 169,
   "record_counts_by_evidence_phase": {
     "AUDIT": 2,
-    "POSTMORTEM": 2
+    "POSTMORTEM": 167
   },
   "record_counts_by_training_target": {
-    "issuer_day_price_response": 1,
+    "candidate_generation_correction": 8,
+    "candidate_ranking_correction": 1,
+    "context_market_state_or_fact": 17,
+    "direct_event_response": 28,
+    "issuer_day_price_response": 29,
     "legacy_catalog_only": 2,
-    "outcome_preferred_candidate": 1
+    "negative_control_calibration": 13,
+    "newsless_outcome_calibration": 43,
+    "outcome_preferred_candidate": 21,
+    "theme_formation_response": 7
   },
   "record_counts_by_type": {
-    "blind_leader_preference_pair": 1,
+    "blind_leader_preference_pair": 21,
+    "candidate_generation_error_case": 8,
+    "context_market_state_or_fact_case": 17,
     "memory_claim": 2,
-    "supervised_issuer_day_case": 1
+    "negative_control_case": 13,
+    "newsless_or_unexplained_case": 43,
+    "ranking_error_case": 1,
+    "supervised_direct_event_case": 28,
+    "supervised_issuer_day_case": 29,
+    "theme_formation_case": 7
   },
-  "records_sha256": "ee9912b30061a1d3e1c6169b12dd46df3e116d4bd387f771b0934f8741c02d0d",
+  "records_sha256": "9d5ca09d6e908afa5cb2996651ba9828984e370487f5f8b106a93142fbe5cc3e",
   "schema_version": "nslab.record_index_manifest.v1",
-  "training_eligible_record_count": 2
+  "training_eligible_record_count": 164
 }

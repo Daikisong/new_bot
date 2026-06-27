@@ -118,6 +118,7 @@ class BrainRecordEnvelope(StrictRecordModel):
 class SupervisedIssuerDayCase(FlexiblePayloadModel):
     record_type: Literal["supervised_issuer_day_case"]
     issuer_day_case_id: str | None = None
+    issuer_day_weight_group_id: str | None = None
     ticker: str | None = None
     company_name: str | None = None
     theme_id: str | None = None
@@ -142,6 +143,7 @@ class SupervisedDirectEventCase(FlexiblePayloadModel):
     record_type: Literal["supervised_direct_event_case"]
     case_id: str | None = None
     issuer_day_case_id: str | None = None
+    issuer_day_weight_group_id: str | None = None
     ticker: str | None = None
     company_name: str | None = None
     theme_id: str | None = None

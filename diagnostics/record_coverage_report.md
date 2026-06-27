@@ -1,39 +1,39 @@
 # Record Coverage Report
 
 - accepted_episode_count: `2`
-- accepted_record_count: `4`
+- accepted_record_count: `169`
 - audit_only_record_count: `2`
-- available_record_count: `4`
-- available_record_count_as_of: `2`
-- brain_version: `brain-b5e0bdca00`
+- available_record_count: `169`
+- available_record_count_as_of: `167`
+- brain_version: `brain-364486c68b`
 - build_mode: `catalog`
 - catalog_only: `True`
-- compiled_record_count: `4`
+- compiled_record_count: `169`
 - coverage_complete: `True`
 ## duplicate_swept_record_ids
 
 - none
 
-- ineligible_record_count: `2`
+- ineligible_record_count: `5`
 ## latest_record_coverage_audit
 
 - passed: `True`
 - record_coverage_complete: `True`
-- accepted_record_count: `4`
-- available_record_count: `4`
-- available_record_count_as_of: `2`
-- training_eligible_available_record_count: `2`
-- training_eligible_record_count_as_of: `0`
-- compiled_record_count: `4`
-- swept_record_count: `4`
-- swept_record_ids: `['BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR', 'EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
+- accepted_record_count: `169`
+- available_record_count: `169`
+- available_record_count_as_of: `167`
+- training_eligible_available_record_count: `164`
+- training_eligible_record_count_as_of: `162`
+- compiled_record_count: `169`
+- swept_record_count: `169`
+- swept_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165', 'BRAIN-SYNTH-ISSUER', 'BRAIN-SYNTH-PAIR', 'EP-2991eb145f59:legacy_catalog_record', 'EP-f56c790fe2fc:legacy_catalog_record']`
 - unswept_record_ids: `[]`
 - unknown_swept_record_ids: `[]`
 - duplicate_swept_record_ids: `[]`
-- record_counts_by_type: `{'blind_leader_preference_pair': 1, 'memory_claim': 2, 'supervised_issuer_day_case': 1}`
-- record_counts_by_evidence_phase: `{'AUDIT': 2, 'POSTMORTEM': 2}`
-- record_counts_by_training_target: `{'issuer_day_price_response': 1, 'legacy_catalog_only': 2, 'outcome_preferred_candidate': 1}`
-- ineligible_record_count: `2`
+- record_counts_by_type: `{'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}`
+- record_counts_by_evidence_phase: `{'AUDIT': 2, 'POSTMORTEM': 167}`
+- record_counts_by_training_target: `{'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}`
+- ineligible_record_count: `5`
 - audit_only_record_count: `2`
 - finding_count: `0`
 - findings: `[]`
@@ -41,32 +41,211 @@
 ## record_counts_by_evidence_phase
 
 - AUDIT: `2`
-- POSTMORTEM: `2`
+- POSTMORTEM: `167`
 
 ## record_counts_by_training_target
 
-- issuer_day_price_response: `1`
+- candidate_generation_correction: `8`
+- candidate_ranking_correction: `1`
+- context_market_state_or_fact: `17`
+- direct_event_response: `28`
+- issuer_day_price_response: `29`
 - legacy_catalog_only: `2`
-- outcome_preferred_candidate: `1`
+- negative_control_calibration: `13`
+- newsless_outcome_calibration: `43`
+- outcome_preferred_candidate: `21`
+- theme_formation_response: `7`
 
 ## record_counts_by_type
 
-- blind_leader_preference_pair: `1`
+- blind_leader_preference_pair: `21`
+- candidate_generation_error_case: `8`
+- context_market_state_or_fact_case: `17`
 - memory_claim: `2`
-- supervised_issuer_day_case: `1`
+- negative_control_case: `13`
+- newsless_or_unexplained_case: `43`
+- ranking_error_case: `1`
+- supervised_direct_event_case: `28`
+- supervised_issuer_day_case: `29`
+- theme_formation_case: `7`
 
 - record_coverage_as_of: `2026-06-26T12:28:23.361737+09:00`
 - schema_version: `nslab.record_coverage_manifest.v1`
-- swept_record_count: `4`
+- swept_record_count: `169`
 ## swept_record_ids
 
+- `BD-000001`
+- `BD-000002`
+- `BD-000003`
+- `BD-000004`
+- `BD-000005`
+- `BD-000006`
+- `BD-000007`
+- `BD-000008`
+- `BD-000009`
+- `BD-000010`
+- `BD-000011`
+- `BD-000012`
+- `BD-000013`
+- `BD-000014`
+- `BD-000015`
+- `BD-000016`
+- `BD-000017`
+- `BD-000018`
+- `BD-000019`
+- `BD-000020`
+- `BD-000021`
+- `BD-000022`
+- `BD-000023`
+- `BD-000024`
+- `BD-000025`
+- `BD-000026`
+- `BD-000027`
+- `BD-000028`
+- `BD-000029`
+- `BD-000030`
+- `BD-000031`
+- `BD-000032`
+- `BD-000033`
+- `BD-000034`
+- `BD-000035`
+- `BD-000036`
+- `BD-000037`
+- `BD-000038`
+- `BD-000039`
+- `BD-000040`
+- `BD-000041`
+- `BD-000042`
+- `BD-000043`
+- `BD-000044`
+- `BD-000045`
+- `BD-000046`
+- `BD-000047`
+- `BD-000048`
+- `BD-000049`
+- `BD-000050`
+- `BD-000051`
+- `BD-000052`
+- `BD-000053`
+- `BD-000054`
+- `BD-000055`
+- `BD-000056`
+- `BD-000057`
+- `BD-000058`
+- `BD-000059`
+- `BD-000060`
+- `BD-000061`
+- `BD-000062`
+- `BD-000063`
+- `BD-000064`
+- `BD-000065`
+- `BD-000066`
+- `BD-000067`
+- `BD-000068`
+- `BD-000069`
+- `BD-000070`
+- `BD-000071`
+- `BD-000072`
+- `BD-000073`
+- `BD-000074`
+- `BD-000075`
+- `BD-000076`
+- `BD-000077`
+- `BD-000078`
+- `BD-000079`
+- `BD-000080`
+- `BD-000081`
+- `BD-000082`
+- `BD-000083`
+- `BD-000084`
+- `BD-000085`
+- `BD-000086`
+- `BD-000087`
+- `BD-000088`
+- `BD-000089`
+- `BD-000090`
+- `BD-000091`
+- `BD-000092`
+- `BD-000093`
+- `BD-000094`
+- `BD-000095`
+- `BD-000096`
+- `BD-000097`
+- `BD-000098`
+- `BD-000099`
+- `BD-000100`
+- `BD-000101`
+- `BD-000102`
+- `BD-000103`
+- `BD-000104`
+- `BD-000105`
+- `BD-000106`
+- `BD-000107`
+- `BD-000108`
+- `BD-000109`
+- `BD-000110`
+- `BD-000111`
+- `BD-000112`
+- `BD-000113`
+- `BD-000114`
+- `BD-000115`
+- `BD-000116`
+- `BD-000117`
+- `BD-000118`
+- `BD-000119`
+- `BD-000120`
+- `BD-000121`
+- `BD-000122`
+- `BD-000123`
+- `BD-000124`
+- `BD-000125`
+- `BD-000126`
+- `BD-000127`
+- `BD-000128`
+- `BD-000129`
+- `BD-000130`
+- `BD-000131`
+- `BD-000132`
+- `BD-000133`
+- `BD-000134`
+- `BD-000135`
+- `BD-000136`
+- `BD-000137`
+- `BD-000138`
+- `BD-000139`
+- `BD-000140`
+- `BD-000141`
+- `BD-000142`
+- `BD-000143`
+- `BD-000144`
+- `BD-000145`
+- `BD-000146`
+- `BD-000147`
+- `BD-000148`
+- `BD-000149`
+- `BD-000150`
+- `BD-000151`
+- `BD-000152`
+- `BD-000153`
+- `BD-000154`
+- `BD-000155`
+- `BD-000156`
+- `BD-000157`
+- `BD-000158`
+- `BD-000159`
+- `BD-000160`
+- `BD-000161`
+- `BD-000162`
+- `BD-000163`
+- `BD-000164`
+- `BD-000165`
 - `BRAIN-SYNTH-ISSUER`
 - `BRAIN-SYNTH-PAIR`
 - `EP-2991eb145f59:legacy_catalog_record`
 - `EP-f56c790fe2fc:legacy_catalog_record`
 
-- training_eligible_available_record_count: `2`
-- training_eligible_record_count_as_of: `0`
+- training_eligible_available_record_count: `164`
+- training_eligible_record_count_as_of: `162`
 ## unknown_swept_record_ids
 
 - none

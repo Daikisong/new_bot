@@ -1501,12 +1501,16 @@ def _v23_apply_record_type_aliases(normalized: dict[str, Any]) -> None:
     )
     ticker = _optional_string(normalized.get("ticker"))
     company_name = _optional_string(normalized.get("company_name"))
-    if record_type in {"supervised_issuer_day_case", "supervised_direct_event_case"}:
-        normalized.setdefault(
-            "issuer_day_case_id",
-            _issuer_day_case_id(normalized),
-        )
-    if record_type == "supervised_direct_event_case":
+    issuer_day_group_id = _issuer_day_case_id(normalized)
+    if (
+        record_type in {"supervised_issuer_day_case", "supervised_direct_event_case"}
+        and issuer_day_group_id is not None
+    ):
+        normalized.setdefault("issuer_day_weight_group_id", issuer_day_group_id)
+    if record_type == "supervised_issuer_day_case":
+        normalized.setdefault("issuer_day_case_id", record_id or issuer_day_group_id)
+    elif record_type == "supervised_direct_event_case":
+        normalized.setdefault("issuer_day_case_id", issuer_day_group_id)
         normalized.setdefault("case_id", record_id)
     elif record_type == "theme_formation_case":
         normalized.setdefault("chosen_leader_ticker", ticker)
@@ -1580,7 +1584,8 @@ def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
             if ticker is None or trade_day is None:
                 continue
             groups.setdefault((trade_day, ticker), []).append(record)
-        for group in groups.values():
+        for (trade_day, ticker), group in groups.items():
+            group_id = f"{trade_day}:{ticker}"
             explicit_total = sum(
                 _numeric_weight(record.get("sample_weight"))
                 for record in group
@@ -1596,11 +1601,19 @@ def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
                 for record in missing:
                     record["sample_weight"] = fill_weight
             for record in group:
+                record.setdefault("issuer_day_weight_group_id", group_id)
                 if record_type == "supervised_issuer_day_case":
                     record["issuer_day_sample_weight_policy"] = (
                         "fractional_issuer_day_group"
                     )
-                record.setdefault("issuer_day_case_id", _issuer_day_case_id(record))
+                    record.setdefault(
+                        "issuer_day_case_id",
+                        _optional_string(record.get("brain_delta_id"))
+                        or _optional_string(record.get("record_id"))
+                        or group_id,
+                    )
+                else:
+                    record.setdefault("issuer_day_case_id", group_id)
 
 
 def _v23_training_target(record: dict[str, Any]) -> str | None:
@@ -2104,13 +2117,9 @@ def _record_sample_weight_validation(records: list[dict[str, Any]]) -> dict[str,
                 0.0,
             ) + _numeric_weight(record.get("sample_weight", 0.0))
         if record.get("record_type") == "supervised_direct_event_case":
-            issuer_day_case_id = record.get("issuer_day_case_id")
-            if not isinstance(issuer_day_case_id, str) or not issuer_day_case_id:
-                issuer_day_case_id = (
-                    f"{record.get('trade_date') or ''}:{record.get('ticker') or ''}"
-                )
-            direct_weights[issuer_day_case_id] = direct_weights.get(
-                issuer_day_case_id,
+            issuer_day_weight_id = _issuer_day_weight_identity(record)
+            direct_weights[issuer_day_weight_id] = direct_weights.get(
+                issuer_day_weight_id,
                 0.0,
             ) + _numeric_weight(record.get("sample_weight", 0.0))
     issuer_weight_mismatches = _weight_sum_mismatches(issuer_weights)
@@ -2146,6 +2155,14 @@ def _numeric_weight(value: object) -> float:
 
 def _uses_fractional_issuer_day_group(record: dict[str, Any]) -> bool:
     return record.get("issuer_day_sample_weight_policy") == "fractional_issuer_day_group"
+
+
+def _issuer_day_weight_identity(record: dict[str, Any]) -> str:
+    for field_name in ("issuer_day_weight_group_id", "issuer_day_case_id"):
+        value = record.get(field_name)
+        if isinstance(value, str) and value:
+            return value
+    return f"{record.get('trade_date') or ''}:{record.get('ticker') or ''}"
 
 
 def _explicit_datetime(value: object) -> datetime | None:

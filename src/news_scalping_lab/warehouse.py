@@ -498,6 +498,7 @@ class WarehouseStore:
                 record,
                 extra_fields=(
                     "issuer_day_case_id",
+                    "issuer_day_weight_group_id",
                     "ticker",
                     "company_name",
                     "response_class",
@@ -518,6 +519,7 @@ class WarehouseStore:
                 extra_fields=(
                     "case_id",
                     "issuer_day_case_id",
+                    "issuer_day_weight_group_id",
                     "ticker",
                     "company_name",
                     "event_id",

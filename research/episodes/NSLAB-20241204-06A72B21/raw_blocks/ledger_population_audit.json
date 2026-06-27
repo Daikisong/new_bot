@@ -1,0 +1,27 @@
+{
+  "schema_version": "nslab.ledger_population_audit.v1",
+  "news_row_count": 1594,
+  "source_ledger_news_row_count": 1594,
+  "source_ledger_core_file_source_count": 9,
+  "source_ledger_count": 1603,
+  "source_ledger_missing_news_row_count": 0,
+  "source_ledger_duplicate_news_row_source_id_count": 0,
+  "issuer_observation_count": 28,
+  "candidate_screening_count": 33,
+  "fact_ledger_count": 36,
+  "inference_ledger_count": 20,
+  "candidate_screening_unlinked_to_fact_or_rejection_count": 0,
+  "final_supported_inference_or_exempt_count": 20,
+  "final_watchlist_count": 20,
+  "outcome_ledger_count": 2627,
+  "outcome_leader_census_count": 59,
+  "outcome_to_news_audit_count": 59,
+  "checks": {
+    "source_ledger_row_coverage_verified": true,
+    "fact_screening_population_parity_verified": true,
+    "inference_mechanism_linkage_verified": true,
+    "source_fact_id_closure_verified": true,
+    "outcome_to_news_audit_coverage_verified": true
+  },
+  "fatal_blockers": []
+}

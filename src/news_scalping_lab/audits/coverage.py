@@ -374,7 +374,10 @@ def _warehouse_identity_expectations(
         },
         "theme_formation_cases.parquet": {
             "columns": ("record_id",),
-            "expected": _record_ids_for_types(records, {"supervised_theme_formation_case"}),
+            "expected": _record_ids_for_types(
+                records,
+                {"supervised_theme_formation_case", "theme_formation_case"},
+            ),
             "source_label": "theme formation brain record ids",
         },
         "beneficiary_cases.parquet": {
@@ -517,6 +520,7 @@ def _warehouse_weight_mismatches(root: Path) -> dict[str, dict[str, float | str]
         "direct_event_cases.parquet": (
             (
                 "issuer_day_case_id",
+                "issuer_day_weight_group_id",
                 "trade_date",
                 "ticker",
                 "training_eligible",
@@ -524,6 +528,7 @@ def _warehouse_weight_mismatches(root: Path) -> dict[str, dict[str, float | str]
             ),
             (
                 "coalesce("
+                "nullif(cast(issuer_day_weight_group_id as varchar), ''), "
                 "nullif(cast(issuer_day_case_id as varchar), ''), "
                 "coalesce(cast(trade_date as varchar), '') || ':' || "
                 "coalesce(cast(ticker as varchar), '')"
@@ -780,7 +785,8 @@ def _record_projection_counts(records: list[Any]) -> dict[str, int]:
         "theme_formation_cases": sum(
             1
             for record in records
-            if getattr(record, "record_type", None) == "supervised_theme_formation_case"
+            if getattr(record, "record_type", None)
+            in {"supervised_theme_formation_case", "theme_formation_case"}
         ),
         "beneficiary_cases": sum(
             1

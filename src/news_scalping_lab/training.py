@@ -2032,10 +2032,7 @@ def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, A
                 record.payload.get("sample_weight", 0.0)
             )
         if record.record_type == "supervised_direct_event_case":
-            issuer_day_case_id = record.payload.get("issuer_day_case_id")
-            if not isinstance(issuer_day_case_id, str) or not issuer_day_case_id:
-                issuer_day_case_id = f"{record.trade_date.isoformat()}:{record.payload.get('ticker') or ''}"
-            direct_weights[issuer_day_case_id] += _numeric_weight(
+            direct_weights[_issuer_day_weight_identity(record)] += _numeric_weight(
                 record.payload.get("sample_weight", 0.0)
             )
     issuer_weight_mismatches = {
@@ -2074,6 +2071,14 @@ def _uses_fractional_issuer_day_group(record: BrainRecordEnvelope) -> bool:
         record.payload.get("issuer_day_sample_weight_policy")
         == "fractional_issuer_day_group"
     )
+
+
+def _issuer_day_weight_identity(record: BrainRecordEnvelope) -> str:
+    for field_name in ("issuer_day_weight_group_id", "issuer_day_case_id"):
+        value = record.payload.get(field_name)
+        if isinstance(value, str) and value:
+            return value
+    return f"{record.trade_date.isoformat()}:{record.payload.get('ticker') or ''}"
 
 
 def _nested_get(payload: dict[str, Any], *keys: str) -> Any:

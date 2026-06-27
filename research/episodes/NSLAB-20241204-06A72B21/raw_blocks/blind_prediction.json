@@ -1,0 +1,536 @@
+{
+  "schema_version": "nslab.blind_prediction.v11",
+  "calendar_date": "2024-12-04",
+  "input_file": "news_20241204.csv",
+  "cutoff": "2024-12-04T08:59:59+09:00",
+  "blind_snapshot_date": "2024-12-03",
+  "outcome_accessed_before_seal": false,
+  "market_state_summary": {
+    "primary_regime": "POLITICAL_SHOCK_WITH_MARKET_BACKSTOP",
+    "key_facts": [
+      "FACT-000001",
+      "FACT-000002",
+      "FACT-000003",
+      "FACT-000004",
+      "FACT-000005"
+    ],
+    "interpretation": "비상계엄 선포·해제, 정상 개장, 무제한 유동성/증안펀드가 동시에 놓여 시장은 지수 방어와 정치테마 압축이라는 두 갈래 수급을 가질 가능성이 컸다."
+  },
+  "final_watchlist": [
+    {
+      "rank": 1,
+      "ticker": "025950",
+      "name": "동신건설",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 88.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000005",
+        "FACT-000006",
+        "FACT-000007"
+      ],
+      "supporting_inference_ids": [
+        "INF-000001"
+      ],
+      "economic_mechanism": "계엄 해제 직후 탄핵/정권교체 확률이 전면화되면, 한국 소형주 수급은 먼저 정치 테마의 가장 오래된 표식으로 달려간다. 동신건설은 직접 영업 뉴스가 아니라 이재명 테마 베타와 P일 3D 양호 흐름을 타는 후보다.",
+      "main_risk": "issuer-scoped direct catalyst 없음; 순수 정치테마라 피로·과열 리스크 큼",
+      "p_snapshot_context": {
+        "prev_close": 20900.0,
+        "p_amount_rank": 603,
+        "p_turnover_pct": 1.105512,
+        "p_high_return_pct": 1.670644,
+        "p_close_return_pct": -0.238663,
+        "p_return_3d_pct": 11.170213,
+        "p_return_5d_pct": 7.56562
+      }
+    },
+    {
+      "rank": 2,
+      "ticker": "045660",
+      "name": "에이텍",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 86.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000005",
+        "FACT-000006"
+      ],
+      "supporting_inference_ids": [
+        "INF-000002"
+      ],
+      "economic_mechanism": "이재명 대표 관련 뉴스 빈도와 탄핵 절차 가능성이 같은 방향으로 묶이면, 대중이 기억하는 테마명으로 수급이 압축될 수 있다.",
+      "main_risk": "직접 수혜 사실 아님; 테마 맵 신뢰도는 시장 기억 기반",
+      "p_snapshot_context": {
+        "prev_close": 14440.0,
+        "p_amount_rank": 875,
+        "p_turnover_pct": 0.711864,
+        "p_high_return_pct": 2.102313,
+        "p_close_return_pct": 1.19131,
+        "p_return_3d_pct": 3.959683,
+        "p_return_5d_pct": 0.0693
+      }
+    },
+    {
+      "rank": 3,
+      "ticker": "065500",
+      "name": "오리엔트정공",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 84.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000005",
+        "FACT-000007"
+      ],
+      "supporting_inference_ids": [
+        "INF-000003"
+      ],
+      "economic_mechanism": "오버나이트 정치 충격은 실적보다 이름표를 먼저 찾는다. 오리엔트정공은 저가 소형 정치테마 후보로 탄성은 크지만 근거는 market-state다.",
+      "main_risk": "거래대금/직접뉴스 약함",
+      "p_snapshot_context": {
+        "prev_close": 1131.0,
+        "p_amount_rank": 1870,
+        "p_turnover_pct": 0.280441,
+        "p_high_return_pct": 1.070473,
+        "p_close_return_pct": 0.892061,
+        "p_return_3d_pct": 0.533333,
+        "p_return_5d_pct": -3.908241
+      }
+    },
+    {
+      "rank": 4,
+      "ticker": "224110",
+      "name": "에이텍모빌리티",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 82.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000006",
+        "FACT-000007"
+      ],
+      "supporting_inference_ids": [
+        "INF-000004"
+      ],
+      "economic_mechanism": "에이텍 본주와 같은 정치테마 가지에서 후순위 확산 후보. 선도주가 강하면 같은 이름군으로 확산될 수 있다.",
+      "main_risk": "2차 확산주라 대장 확률은 낮음",
+      "p_snapshot_context": {
+        "prev_close": 11720.0,
+        "p_amount_rank": 1617,
+        "p_turnover_pct": 0.263446,
+        "p_high_return_pct": 2.076125,
+        "p_close_return_pct": 1.384083,
+        "p_return_3d_pct": -0.085251,
+        "p_return_5d_pct": -2.49584
+      }
+    },
+    {
+      "rank": 5,
+      "ticker": "045340",
+      "name": "토탈소프트",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 80.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000005"
+      ],
+      "supporting_inference_ids": [
+        "INF-000005"
+      ],
+      "economic_mechanism": "탄핵·정권교체 뉴스가 개장 직전 압축되면 정치테마의 얇은 호가 후보가 반응할 수 있다.",
+      "main_risk": "직접 issuer fact 없음",
+      "p_snapshot_context": {
+        "prev_close": 4890.0,
+        "p_amount_rank": 1767,
+        "p_turnover_pct": 0.288162,
+        "p_high_return_pct": 1.74002,
+        "p_close_return_pct": 0.102354,
+        "p_return_3d_pct": 3.821656,
+        "p_return_5d_pct": 2.301255
+      }
+    },
+    {
+      "rank": 6,
+      "ticker": "052400",
+      "name": "코나아이",
+      "market": "KOSDAQ",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 78.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000006"
+      ],
+      "supporting_inference_ids": [
+        "INF-000006"
+      ],
+      "economic_mechanism": "정치테마 확산 후보. 결제/플랫폼 본업 뉴스가 아니라 theme-member edge로만 취급한다.",
+      "main_risk": "본업 뉴스 부재",
+      "p_snapshot_context": {
+        "prev_close": 14470.0,
+        "p_amount_rank": 1362,
+        "p_turnover_pct": 0.123899,
+        "p_high_return_pct": 0.483092,
+        "p_close_return_pct": -0.138026,
+        "p_return_3d_pct": -0.890411,
+        "p_return_5d_pct": -2.163624
+      }
+    },
+    {
+      "rank": 7,
+      "ticker": "013360",
+      "name": "일성건설",
+      "market": "KOSPI",
+      "candidate_lane": "MARKET_MEMORY_CONTINUATION",
+      "blind_score": 76.0,
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000005"
+      ],
+      "supporting_inference_ids": [
+        "INF-000007"
+      ],
+      "economic_mechanism": "건설 소형주 중 정치테마로 연결되는 기억이 있는 후보. 정권교체/탄핵 헤드라인 강도에는 민감할 수 있다.",
+      "main_risk": "거래대금 중간·테마 순도 불확실",
+      "p_snapshot_context": {
+        "prev_close": 1559.0,
+        "p_amount_rank": 1025,
+        "p_turnover_pct": 0.659015,
+        "p_high_return_pct": 2.752881,
+        "p_close_return_pct": -0.192061,
+        "p_return_3d_pct": 1.895425,
+        "p_return_5d_pct": -2.744853
+      }
+    },
+    {
+      "rank": 8,
+      "ticker": "272210",
+      "name": "한화시스템",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 75.0,
+      "source_fact_ids": [
+        "FACT-000009"
+      ],
+      "supporting_inference_ids": [
+        "INF-000008"
+      ],
+      "economic_mechanism": "2050억 PBL 수주는 방산/시스템 통합 매출 가시성을 직접 보강한다. 정치 리스크 장에서도 방산은 방어적 수급을 받을 여지가 있다.",
+      "main_risk": "대형 방산주는 정치테마 소형주보다 탄력 낮을 수 있음",
+      "p_snapshot_context": {
+        "prev_close": 23100.0,
+        "p_amount_rank": 55,
+        "p_turnover_pct": 1.287906,
+        "p_high_return_pct": 3.303965,
+        "p_close_return_pct": 1.762115,
+        "p_return_3d_pct": -1.282051,
+        "p_return_5d_pct": -2.736842
+      }
+    },
+    {
+      "rank": 9,
+      "ticker": "042660",
+      "name": "한화오션",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 73.0,
+      "source_fact_ids": [
+        "FACT-000021"
+      ],
+      "supporting_inference_ids": [
+        "INF-000009"
+      ],
+      "economic_mechanism": "태국 국방위 방문과 해군 전력 증강 논의는 방산/함정 수출 서사를 건드린다.",
+      "main_risk": "구체 계약 공시 전 단계",
+      "p_snapshot_context": {
+        "prev_close": 34500.0,
+        "p_amount_rank": 22,
+        "p_turnover_pct": 1.095808,
+        "p_high_return_pct": 4.668675,
+        "p_close_return_pct": 3.915663,
+        "p_return_3d_pct": -4.166667,
+        "p_return_5d_pct": -4.166667
+      }
+    },
+    {
+      "rank": 10,
+      "ticker": "307950",
+      "name": "현대오토에버",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 72.0,
+      "source_fact_ids": [
+        "FACT-000010"
+      ],
+      "supporting_inference_ids": [
+        "INF-000010"
+      ],
+      "economic_mechanism": "1,054억원 ERP 계약은 전일 장후 나온 명확한 매출 인식 이벤트다.",
+      "main_risk": "시총 대비 계약 크기 제한",
+      "p_snapshot_context": {
+        "prev_close": 134200.0,
+        "p_amount_rank": 335,
+        "p_turnover_pct": 0.161246,
+        "p_high_return_pct": 1.202104,
+        "p_close_return_pct": 0.826446,
+        "p_return_3d_pct": -5.091938,
+        "p_return_5d_pct": -4.415954
+      }
+    },
+    {
+      "rank": 11,
+      "ticker": "000270",
+      "name": "기아",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 70.0,
+      "source_fact_ids": [
+        "FACT-000011",
+        "FACT-000012"
+      ],
+      "supporting_inference_ids": [
+        "INF-000011"
+      ],
+      "economic_mechanism": "밸류업 업데이트와 영업이익률·주주환원 가이던스가 계엄발 시장 불안을 상쇄할 수 있는 대형 가치주 이벤트다.",
+      "main_risk": "개장 전체 지수 변동성에 민감",
+      "p_snapshot_context": {
+        "prev_close": 98000.0,
+        "p_amount_rank": 20,
+        "p_turnover_pct": 0.319316,
+        "p_high_return_pct": 4.03397,
+        "p_close_return_pct": 4.03397,
+        "p_return_3d_pct": 3.157895,
+        "p_return_5d_pct": 0.719424
+      }
+    },
+    {
+      "rank": 12,
+      "ticker": "079550",
+      "name": "LIG넥스원",
+      "market": "KOSPI",
+      "candidate_lane": "THEME_DIRECT_MIXED",
+      "blind_score": 69.0,
+      "source_fact_ids": [
+        "FACT-000022"
+      ],
+      "supporting_inference_ids": [
+        "INF-000012"
+      ],
+      "economic_mechanism": "천궁/방공체계 맥락은 방산 수출 기대를 유지시키는 고신뢰 테마다.",
+      "main_risk": "해당 기사 자체는 우크라 수출 불가능성도 포함",
+      "p_snapshot_context": {
+        "prev_close": 203500.0,
+        "p_amount_rank": 94,
+        "p_turnover_pct": 0.790423,
+        "p_high_return_pct": 5.063291,
+        "p_close_return_pct": 3.037975,
+        "p_return_3d_pct": 0.246305,
+        "p_return_5d_pct": 0.0
+      }
+    },
+    {
+      "rank": 13,
+      "ticker": "003230",
+      "name": "삼양식품",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 68.0,
+      "source_fact_ids": [
+        "FACT-000024"
+      ],
+      "supporting_inference_ids": [
+        "INF-000013"
+      ],
+      "economic_mechanism": "미국 수출 확대와 높은 마진 유지 리포트는 장전 단일종목 촉매로 충분하다.",
+      "main_risk": "전일 이미 강한 가격, 고밸류 부담",
+      "p_snapshot_context": {
+        "prev_close": 582000.0,
+        "p_amount_rank": 51,
+        "p_turnover_pct": 1.434738,
+        "p_high_return_pct": 7.427536,
+        "p_close_return_pct": 5.434783,
+        "p_return_3d_pct": 11.281071,
+        "p_return_5d_pct": 12.138728
+      }
+    },
+    {
+      "rank": 14,
+      "ticker": "419120",
+      "name": "산돌",
+      "market": "KOSDAQ",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 67.0,
+      "source_fact_ids": [
+        "FACT-000013"
+      ],
+      "supporting_inference_ids": [
+        "INF-000014"
+      ],
+      "economic_mechanism": "윤디자인그룹 인수로 플랫폼 완성도라는 구조 변화가 제시됐다. 소형주라 뉴스 민감도는 높다.",
+      "main_risk": "P일 거래대금 약함",
+      "p_snapshot_context": {
+        "prev_close": 5950.0,
+        "p_amount_rank": 1998,
+        "p_turnover_pct": 0.167719,
+        "p_high_return_pct": 2.058319,
+        "p_close_return_pct": 2.058319,
+        "p_return_3d_pct": -1.490066,
+        "p_return_5d_pct": 0.0
+      }
+    },
+    {
+      "rank": 15,
+      "ticker": "073490",
+      "name": "이노와이어리스",
+      "market": "KOSDAQ",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 66.0,
+      "source_fact_ids": [
+        "FACT-000014"
+      ],
+      "supporting_inference_ids": [
+        "INF-000015"
+      ],
+      "economic_mechanism": "4Q와 2025 실적 개선 리포트, 과도한 저평가 언급은 통신장비 소형주 장전 촉매다.",
+      "main_risk": "리포트 단독 이벤트",
+      "p_snapshot_context": {
+        "prev_close": 18420.0,
+        "p_amount_rank": 1099,
+        "p_turnover_pct": 0.32978,
+        "p_high_return_pct": 2.095974,
+        "p_close_return_pct": 1.599559,
+        "p_return_3d_pct": -2.950474,
+        "p_return_5d_pct": 0.436205
+      }
+    },
+    {
+      "rank": 16,
+      "ticker": "012450",
+      "name": "한화에어로스페이스",
+      "market": "KOSPI",
+      "candidate_lane": "THEME_DIRECT_MIXED",
+      "blind_score": 65.0,
+      "source_fact_ids": [
+        "FACT-000023"
+      ],
+      "supporting_inference_ids": [
+        "INF-000016"
+      ],
+      "economic_mechanism": "방산 수출/대공무기 맥락과 정치 불확실성이 겹칠 때 상대 방어주로 남을 수 있다.",
+      "main_risk": "대형주 탄력 제한",
+      "p_snapshot_context": {
+        "prev_close": 338500.0,
+        "p_amount_rank": 24,
+        "p_turnover_pct": 0.735209,
+        "p_high_return_pct": 6.386293,
+        "p_close_return_pct": 5.451713,
+        "p_return_3d_pct": 4.153846,
+        "p_return_5d_pct": 5.946792
+      }
+    },
+    {
+      "rank": 17,
+      "ticker": "214610",
+      "name": "미코바이오메드",
+      "market": "KOSDAQ",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 64.0,
+      "source_fact_ids": [
+        "FACT-000025"
+      ],
+      "supporting_inference_ids": [
+        "INF-000017"
+      ],
+      "economic_mechanism": "100억원 3자배정 유상증자는 생존/자금 이벤트로 단기 수급을 만들 수 있다.",
+      "main_risk": "증자는 희석 리스크 동반",
+      "p_snapshot_context": {
+        "prev_close": 1509.0,
+        "p_amount_rank": 652,
+        "p_turnover_pct": 2.427222,
+        "p_high_return_pct": 1.34443,
+        "p_close_return_pct": -3.393086,
+        "p_return_3d_pct": 0.868984,
+        "p_return_5d_pct": -1.565558
+      }
+    },
+    {
+      "rank": 18,
+      "ticker": "014790",
+      "name": "HL D&I",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 63.0,
+      "source_fact_ids": [
+        "FACT-000026"
+      ],
+      "supporting_inference_ids": [
+        "INF-000018"
+      ],
+      "economic_mechanism": "매출 대비 22.82% 공사 수주는 재무적으로 큰 계약 이벤트다.",
+      "main_risk": "유동성 낮음",
+      "p_snapshot_context": {
+        "prev_close": 2375.0,
+        "p_amount_rank": 2077,
+        "p_turnover_pct": 0.072446,
+        "p_high_return_pct": 2.37069,
+        "p_close_return_pct": 2.37069,
+        "p_return_3d_pct": -2.263374,
+        "p_return_5d_pct": -1.247401
+      }
+    },
+    {
+      "rank": 19,
+      "ticker": "194480",
+      "name": "데브시스터즈",
+      "market": "KOSDAQ",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 62.0,
+      "source_fact_ids": [
+        "FACT-000027"
+      ],
+      "supporting_inference_ids": [
+        "INF-000019"
+      ],
+      "economic_mechanism": "쿠키런 인도 정식 출시가 게임 IP 확장 서사를 만든다.",
+      "main_risk": "성과 가시성은 출시 후 확인 필요",
+      "p_snapshot_context": {
+        "prev_close": 32500.0,
+        "p_amount_rank": 371,
+        "p_turnover_pct": 1.313883,
+        "p_high_return_pct": 8.032787,
+        "p_close_return_pct": 6.557377,
+        "p_return_3d_pct": 3.503185,
+        "p_return_5d_pct": 4.166667
+      }
+    },
+    {
+      "rank": 20,
+      "ticker": "000120",
+      "name": "CJ대한통운",
+      "market": "KOSPI",
+      "candidate_lane": "DIRECT_ISSUER_EVENT",
+      "blind_score": 61.0,
+      "source_fact_ids": [
+        "FACT-000016"
+      ],
+      "supporting_inference_ids": [
+        "INF-000020"
+      ],
+      "economic_mechanism": "SSG 새벽배송 확대에서 물류 수행 주체로 언급됐다. 전국 물류 인프라 활용 서사.",
+      "main_risk": "계엄 리스크로 내수/B2C 불안",
+      "p_snapshot_context": {
+        "prev_close": 84400.0,
+        "p_amount_rank": 386,
+        "p_turnover_pct": 0.242307,
+        "p_high_return_pct": 3.780488,
+        "p_close_return_pct": 2.926829,
+        "p_return_3d_pct": 1.809409,
+        "p_return_5d_pct": 3.685504
+      }
+    }
+  ],
+  "screened_candidate_count": 33,
+  "notes": "All ranks produced before outcome snapshot download/parse. Political theme candidates are market-state records, not issuer-scoped business catalysts."
+}

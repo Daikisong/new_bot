@@ -1,0 +1,26 @@
+{
+  "schema_version": "nslab.postmortem_summary.v1",
+  "trade_date": "2024-12-04",
+  "final_watchlist_count": 20,
+  "final_watchlist_limit_touched_count": 7,
+  "final_watchlist_high20_count": 7,
+  "final_watchlist_blind_final_hit_count": 7,
+  "outcome_upper_limit_touched_count": 26,
+  "outcome_upper_limit_closed_count": 23,
+  "outcome_high20_count": 59,
+  "outcome_leader_census_count": 59,
+  "outcome_to_news_classification_counts": {
+    "NEWSLESS_OR_UNEXPLAINED": 43,
+    "BLIND_FINAL_HIT": 7,
+    "CANDIDATE_GENERATION_MISS": 8,
+    "RANKING_MISS": 1
+  },
+  "outcome_to_news_hit_status_counts": {
+    "UNRESOLVED_NAME_COLLISION": 3,
+    "SEALED_THEME_MEMBER": 7,
+    "NO_INPUT_NEWS_HIT": 40,
+    "DIRECT_NAME_HIT": 3,
+    "BODY_TABLE_HIT": 6
+  },
+  "interpretation": "정치 충격 시장상태 lane이 개장 전 final 상위 7개를 모두 +20%/상한가권으로 맞혔다. direct issuer event 후보는 좋은 뉴스가 있어도 당일 정치테마 압축 수급에 밀렸다."
+}

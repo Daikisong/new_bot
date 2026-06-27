@@ -2735,9 +2735,9 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert inspection["forward_compatible_raw_only"] is False
     assert inspection["inspection_status"] == "validation_passed"
     assert inspection["validation_passed"] is True
-    assert inspection["raw_record_count"] == 3
-    assert inspection["normalized_record_count"] == 3
-    assert inspection["training_eligible_record_count"] == 3
+    assert inspection["raw_record_count"] == 5
+    assert inspection["normalized_record_count"] == 5
+    assert inspection["training_eligible_record_count"] == 5
     assert inspection["training_eligible_count_matches_raw"] is True
     assert inspection["import_loss_audit_passed"] is True
     assert inspection["final_semantic_audit_fail_count"] == 0
@@ -2745,18 +2745,26 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert inspection["validation"]["sample_weight_validation"][
         "duplicate_issuer_day_count"
     ] == 0
+    assert inspection["validation"]["sample_weight_validation"][
+        "issuer_day_weight_sum_mismatches"
+    ] == {}
+    assert inspection["validation"]["sample_weight_validation"][
+        "direct_event_weight_sum_mismatches"
+    ] == {}
 
     assert result.status == "imported"
     assert result.adapter_name == "v23-direct-ingest"
     assert result.accepted is True
-    assert result.record_count == 3
-    assert result.training_eligible_record_count == 3
+    assert result.record_count == 5
+    assert result.training_eligible_record_count == 5
 
     records = BrainRecordStore(tmp_path).list_records()
     assert [record.record_id for record in records] == [
         "BD-DIRECT-1",
         "BD-DIRECT-2",
         "BD-DIRECT-3",
+        "BD-DIRECT-4",
+        "BD-DIRECT-5",
     ]
     assert all(record.typed_payload_status == "KNOWN_TYPED_PAYLOAD" for record in records)
     assert all(record.training_eligible is True for record in records)
@@ -2764,20 +2772,43 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert issuer.record_type == "supervised_issuer_day_case"
     assert issuer.payload["ticker"] == "000001"
     assert issuer.payload["company_name"] == "Direct Issuer"
-    assert issuer.payload["sample_weight"] == 1.0
+    assert issuer.payload["issuer_day_case_id"] == "BD-DIRECT-1"
+    assert issuer.payload["issuer_day_weight_group_id"] == "2030-02-04:000001"
+    assert issuer.payload["sample_weight"] == 0.5
+    assert issuer.payload["issuer_day_sample_weight_policy"] == (
+        "fractional_issuer_day_group"
+    )
     assert issuer.provenance_source_ids == ["SRC-NEWS-000001"]
     assert issuer.raw_payload_sha256 != issuer.normalized_payload_sha256
+    direct = records[1]
+    assert direct.record_type == "supervised_direct_event_case"
+    assert direct.payload["issuer_day_case_id"] == "2030-02-04:000001"
+    assert direct.payload["issuer_day_weight_group_id"] == "2030-02-04:000001"
+    assert direct.payload["sample_weight"] == 0.5
     theme = records[2]
     assert theme.record_type == "theme_formation_case"
     assert theme.payload["chosen_leader_ticker"] == "000002"
     assert theme.provenance_source_ids == ["SRC-NEWS-000001"]
+    second_issuer = records[3]
+    assert second_issuer.record_type == "supervised_issuer_day_case"
+    assert second_issuer.payload["issuer_day_case_id"] == "BD-DIRECT-4"
+    assert second_issuer.payload["issuer_day_weight_group_id"] == (
+        "2030-02-04:000001"
+    )
+    assert second_issuer.payload["sample_weight"] == 0.5
+    second_direct = records[4]
+    assert second_direct.record_type == "supervised_direct_event_case"
+    assert second_direct.payload["issuer_day_weight_group_id"] == (
+        "2030-02-04:000001"
+    )
+    assert second_direct.payload["sample_weight"] == 0.5
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "imported"
     assert report["adapter"] == "v23-direct-ingest"
-    assert report["raw_record_count"] == 3
-    assert report["normalized_record_count"] == 3
-    assert report["raw_training_eligible_record_count"] == 3
+    assert report["raw_record_count"] == 5
+    assert report["normalized_record_count"] == 5
+    assert report["raw_training_eligible_record_count"] == 5
     assert report["training_eligible_count_matches_raw"] is True
     assert report["dropped_record_count"] == 0
 
@@ -3026,6 +3057,33 @@ def _v23_direct_ingest_bundle() -> str:
                 "ticker": "000002",
                 "name": "Theme Leader",
                 "source_fact_ids": ["FACT-000001"],
+            },
+        },
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-DIRECT-4",
+            "record_type": "supervised_issuer_day_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000001",
+                "entity_name": "Direct Issuer",
+                "fact_id": "FACT-000001",
+            },
+        },
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-DIRECT-5",
+            "record_type": "supervised_direct_event_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000001",
+                "entity_name": "Direct Issuer",
+                "fact_id": "FACT-000001",
+                "direct_event_type": "FOLLOW_UP_ORDER",
             },
         },
     ]
