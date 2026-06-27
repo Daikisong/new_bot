@@ -2409,6 +2409,13 @@ def test_production_readiness_accepts_record_backed_training_exports(
     }
     assert production["training_exports"]["missing_aggregate_count_fields"] == []
     assert production["training_exports"]["invalid_aggregate_count_fields"] == []
+    assert production["training_exports"]["export_kinds"] == [
+        "evals",
+        "preference",
+        "sft",
+    ]
+    assert production["training_exports"]["missing_export_kinds"] == []
+    assert production["training_exports"]["unexpected_export_kinds"] == []
     assert production["training_exports"]["available_manifest_kinds"] == [
         "evals",
         "preference",
@@ -2544,6 +2551,7 @@ def test_production_readiness_rejects_invalid_training_export_manifest_kinds(
 
     report_path = tmp_path / "diagnostics" / "training_export_report.json"
     tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["export_kinds"] = ["sft", "debug", ""]
     tampered_report["available_manifest_kinds"] = ["sft", "debug", 7]
     tampered_report["missing_manifest_kinds"] = ["ghost"]
 
@@ -2559,12 +2567,26 @@ def test_production_readiness_rejects_invalid_training_export_manifest_kinds(
     production = production_readiness_report(_production_base_report(), settings)
 
     assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["export_kinds"] == [
+        "sft",
+        "debug",
+        "",
+    ]
+    assert production["training_exports"]["missing_export_kinds"] == [
+        "evals",
+        "preference",
+    ]
+    assert production["training_exports"]["unexpected_export_kinds"] == [
+        "",
+        "debug",
+    ]
     assert production["training_exports"]["available_manifest_kinds"] == [
         "sft",
         "debug",
     ]
     assert production["training_exports"]["missing_manifest_kinds"] == ["ghost"]
     assert production["training_exports"]["invalid_manifest_kind_fields"] == [
+        "export_kinds",
         "available_manifest_kinds",
     ]
     assert production["training_exports"]["missing_available_manifest_kinds"] == [
@@ -2577,6 +2599,18 @@ def test_production_readiness_rejects_invalid_training_export_manifest_kinds(
     assert production["training_exports"]["unexpected_missing_manifest_kinds"] == [
         "ghost",
     ]
+    assert (
+        "training export diagnostics export_kinds is invalid"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export export_kinds are missing required kinds: evals, preference"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export export_kinds include unexpected kinds: , debug"
+        in production["training_exports"]["findings"]
+    )
     assert (
         "training export diagnostics available_manifest_kinds is invalid"
         in production["training_exports"]["findings"]

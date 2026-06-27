@@ -3699,6 +3699,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "record_store_counts_by_training_target": {},
             "missing_count_fields": [],
             "invalid_count_fields": [],
+            "export_kinds": [],
+            "missing_export_kinds": [],
+            "unexpected_export_kinds": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
             "invalid_manifest_kind_fields": [],
@@ -3778,6 +3781,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "record_store_counts_by_training_target": {},
             "missing_count_fields": [],
             "invalid_count_fields": [],
+            "export_kinds": [],
+            "missing_export_kinds": [],
+            "unexpected_export_kinds": [],
             "available_manifest_kinds": [],
             "missing_manifest_kinds": [],
             "invalid_manifest_kind_fields": [],
@@ -3807,19 +3813,27 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     elif diagnostics.get("schema_version") != "nslab.training_export_diagnostics.v1":
         findings.append("training export diagnostics schema_version is invalid")
 
+    export_kinds = _string_list(diagnostics.get("export_kinds"))
     available_manifest_kinds = _string_list(
         diagnostics.get("available_manifest_kinds")
     )
     missing_manifest_kinds = _string_list(diagnostics.get("missing_manifest_kinds"))
     invalid_manifest_kind_fields = [
         field
-        for field in ("available_manifest_kinds", "missing_manifest_kinds")
+        for field in (
+            "export_kinds",
+            "available_manifest_kinds",
+            "missing_manifest_kinds",
+        )
         if field in diagnostics
         and not _non_empty_string_list_field_valid(diagnostics.get(field))
     ]
     required_manifest_kinds = set(REQUIRED_TRAINING_EXPORT_KINDS)
+    export_kind_set = set(export_kinds)
     available_manifest_kind_set = set(available_manifest_kinds)
     missing_manifest_kind_set = set(missing_manifest_kinds)
+    missing_export_kinds = sorted(required_manifest_kinds - export_kind_set)
+    unexpected_export_kinds = sorted(export_kind_set - required_manifest_kinds)
     missing_available_manifest_kinds = sorted(
         required_manifest_kinds - available_manifest_kind_set
     )
@@ -3831,6 +3845,16 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     )
     for field in invalid_manifest_kind_fields:
         findings.append(f"training export diagnostics {field} is invalid")
+    if missing_export_kinds:
+        findings.append(
+            "training export export_kinds are missing required kinds: "
+            + ", ".join(missing_export_kinds)
+        )
+    if unexpected_export_kinds:
+        findings.append(
+            "training export export_kinds include unexpected kinds: "
+            + ", ".join(unexpected_export_kinds)
+        )
     if missing_available_manifest_kinds:
         findings.append(
             "training export available manifests are missing required kinds: "
@@ -4380,6 +4404,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         ),
         "missing_count_fields": missing_count_fields,
         "invalid_count_fields": invalid_count_fields,
+        "export_kinds": export_kinds,
+        "missing_export_kinds": missing_export_kinds,
+        "unexpected_export_kinds": unexpected_export_kinds,
         "available_manifest_kinds": available_manifest_kinds,
         "missing_manifest_kinds": missing_manifest_kinds,
         "invalid_manifest_kind_fields": invalid_manifest_kind_fields,
