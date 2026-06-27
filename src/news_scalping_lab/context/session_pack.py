@@ -8,11 +8,15 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import CompanyMemory, ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     canonical_json,
@@ -30,6 +34,16 @@ SHARD_BRAIN_MISSING_MESSAGE = (
     "No shard brain summaries are available. Run `nslab brain rebuild --mode llm-full` "
     "for production, or `nslab brain rebuild --mode catalog --allow-catalog` for "
     "offline catalog smoke.\n"
+)
+
+SESSION_PACK_FILES = (
+    "system_instructions.md",
+    "research_brain.md",
+    "memory_cases.md",
+    "record_memory_cases.md",
+    "current_news.md",
+    "company_memory.md",
+    "market_context.md",
 )
 
 
@@ -77,12 +91,26 @@ def export_session_pack(
     ]
     news_sha256 = file_sha256(news_csv)
     store = ResearchStore(settings.project_root)
-    all_accepted = store.list_accepted()
+    all_records = BrainRecordStore(settings.project_root).list_records()
+    all_accepted, accepted_store_errors = _read_accepted_episodes_for_session_pack(
+        store,
+        records=all_records,
+    )
     available = [
         episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)
     ]
     unavailable = [
         episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
+    ]
+    available_records = [
+        record
+        for record in all_records
+        if is_available_as_of(record.available_from, cutoff_at)
+    ]
+    unavailable_records = [
+        record
+        for record in all_records
+        if not is_available_as_of(record.available_from, cutoff_at)
     ]
     context_run_id = stable_id(
         "SESSION",
@@ -145,10 +173,33 @@ def export_session_pack(
     }
     fixed_tokens = sum(_estimate_tokens(text) for text in fixed_texts.values())
     memory_budget = max(0, token_budget - fixed_tokens)
-    memory_text, included, omitted_budget = _build_memory_cases(available, memory_budget)
+    record_memory_text, included_records, omitted_record_budget = (
+        _build_record_memory_cases(available_records, memory_budget)
+    )
+    record_memory_tokens_for_budget = (
+        _estimate_tokens(record_memory_text) if available_records else 0
+    )
+    remaining_memory_budget = max(
+        0,
+        memory_budget - record_memory_tokens_for_budget,
+    )
+    memory_text, included, omitted_budget = _build_memory_cases(
+        available,
+        remaining_memory_budget,
+    )
     omitted_ids = [episode.episode_id for episode in omitted_budget]
     unavailable_ids = [episode.episode_id for episode in unavailable]
+    omitted_record_ids = [record.record_id for record in omitted_record_budget]
+    unavailable_record_ids = [record.record_id for record in unavailable_records]
     truncations: list[dict[str, Any]] = []
+    if omitted_record_ids:
+        truncations.append(
+            {
+                "artifact": "record_memory_cases.md",
+                "reason": "session_pack_record_token_budget_exceeded",
+                "omitted_record_ids": omitted_record_ids,
+            }
+        )
     if omitted_ids:
         truncations.append(
             {
@@ -163,6 +214,14 @@ def export_session_pack(
                 "artifact": "memory_cases.md",
                 "reason": "episode_available_from_after_cutoff",
                 "omitted_episode_ids": unavailable_ids,
+            }
+        )
+    if unavailable_record_ids:
+        truncations.append(
+            {
+                "artifact": "record_memory_cases.md",
+                "reason": "record_available_from_after_cutoff",
+                "omitted_record_ids": unavailable_record_ids,
             }
         )
     if excluded_news_event_ids:
@@ -189,11 +248,15 @@ def export_session_pack(
                 "omitted": market_context.omitted,
             }
         )
-    errors: list[str] = []
+    errors: list[str] = list(accepted_store_errors)
+    if omitted_record_ids:
+        errors.append("session pack omitted available records due to token budget")
     if omitted_ids:
         errors.append("session pack omitted available episodes due to token budget")
     if unavailable_ids:
         errors.append("session pack excluded future-unavailable episodes")
+    if unavailable_record_ids:
+        errors.append("session pack excluded future-unavailable records")
     errors.extend(company_memory.errors)
     errors.extend(market_context.errors)
     context_leak_errors = _future_context_leak_errors(
@@ -209,6 +272,13 @@ def export_session_pack(
         budget_omitted=omitted_budget,
         unavailable=unavailable,
     )
+    record_scope_fields = _record_scope_manifest_fields(
+        all_records=all_records,
+        available=available_records,
+        included=included_records,
+        budget_omitted=omitted_record_budget,
+        unavailable=unavailable_records,
+    )
     omission_report_fields = _write_omission_report(
         output_dir,
         trade_date=trade_date,
@@ -218,6 +288,7 @@ def export_session_pack(
         memory_budget=memory_budget,
         fixed_tokens=fixed_tokens,
         episode_scope=episode_scope_fields,
+        record_scope=record_scope_fields,
         required_context_over_budget=False,
         context_leak_errors=context_leak_errors,
     )
@@ -247,6 +318,7 @@ def export_session_pack(
                 "current_news_event_ids": included_news_event_ids,
                 "excluded_news_event_ids": excluded_news_event_ids,
                 **episode_scope_fields,
+                **record_scope_fields,
                 "included_company_memory_files": company_memory.included_paths,
                 "omitted_company_memory_files": company_memory.omitted,
                 "included_market_context_files": market_context.included_paths,
@@ -264,23 +336,22 @@ def export_session_pack(
     )
     (output_dir / "research_brain.md").write_text(brain_text, encoding="utf-8")
     (output_dir / "memory_cases.md").write_text(memory_text, encoding="utf-8")
+    (output_dir / "record_memory_cases.md").write_text(
+        record_memory_text,
+        encoding="utf-8",
+    )
     (output_dir / "current_news.md").write_text(fixed_texts["current_news.md"], encoding="utf-8")
     (output_dir / "company_memory.md").write_text(fixed_texts["company_memory.md"], encoding="utf-8")
     (output_dir / "market_context.md").write_text(fixed_texts["market_context.md"], encoding="utf-8")
-    pack_files = [
-        "system_instructions.md",
-        "research_brain.md",
-        "memory_cases.md",
-        "current_news.md",
-        "company_memory.md",
-        "market_context.md",
-    ]
+    pack_files = list(SESSION_PACK_FILES)
     token_counts = {
         file_name: _estimate_tokens((output_dir / file_name).read_text(encoding="utf-8"))
         for file_name in pack_files
     }
     token_count_total = sum(token_counts.values())
-    required_context_over_budget = not omitted_ids and token_count_total > token_budget
+    required_context_over_budget = (
+        not omitted_ids and not omitted_record_ids and token_count_total > token_budget
+    )
     if required_context_over_budget:
         truncations.append(
             {
@@ -298,6 +369,13 @@ def export_session_pack(
         budget_omitted=omitted_budget,
         unavailable=unavailable,
     )
+    record_scope_fields = _record_scope_manifest_fields(
+        all_records=all_records,
+        available=available_records,
+        included=included_records,
+        budget_omitted=omitted_record_budget,
+        unavailable=unavailable_records,
+    )
     omission_report_fields = _write_omission_report(
         output_dir,
         trade_date=trade_date,
@@ -307,6 +385,7 @@ def export_session_pack(
         memory_budget=memory_budget,
         fixed_tokens=fixed_tokens,
         episode_scope=episode_scope_fields,
+        record_scope=record_scope_fields,
         required_context_over_budget=required_context_over_budget,
         context_leak_errors=[],
     )
@@ -333,6 +412,7 @@ def export_session_pack(
         "current_news_event_ids": included_news_event_ids,
         "excluded_news_event_ids": excluded_news_event_ids,
         **episode_scope_fields,
+        **record_scope_fields,
         "included_company_memory_files": company_memory.included_paths,
         "omitted_company_memory_files": company_memory.omitted,
         "included_market_context_files": market_context.included_paths,
@@ -353,7 +433,7 @@ def export_session_pack(
         "errors": errors,
     }
     write_json(output_dir / "manifest.json", manifest)
-    if omitted_ids or required_context_over_budget:
+    if omitted_ids or omitted_record_ids or required_context_over_budget:
         raise SessionPackBudgetExceededError(output_dir, errors)
     return output_dir
 
@@ -384,6 +464,41 @@ def _episode_scope_manifest_fields(
     }
 
 
+def _record_scope_manifest_fields(
+    *,
+    all_records: list[BrainRecordEnvelope],
+    available: list[BrainRecordEnvelope],
+    included: list[BrainRecordEnvelope],
+    budget_omitted: list[BrainRecordEnvelope],
+    unavailable: list[BrainRecordEnvelope],
+) -> dict[str, object]:
+    included_ids = [record.record_id for record in included]
+    budget_omitted_ids = [record.record_id for record in budget_omitted]
+    unavailable_ids = [record.record_id for record in unavailable]
+    training_eligible_available_record_ids = [
+        record.record_id for record in available if record.training_eligible
+    ]
+    return {
+        "accepted_record_count": len(all_records),
+        "available_record_count": len(available),
+        "available_record_ids": [record.record_id for record in available],
+        "training_eligible_available_record_count": len(
+            training_eligible_available_record_ids
+        ),
+        "training_eligible_available_record_ids": (
+            training_eligible_available_record_ids
+        ),
+        "included_record_count": len(included),
+        "included_record_ids": included_ids,
+        "budget_omitted_record_count": len(budget_omitted),
+        "budget_omitted_record_ids": budget_omitted_ids,
+        "unavailable_record_count": len(unavailable),
+        "unavailable_record_ids": unavailable_ids,
+        "omitted_record_ids": [*budget_omitted_ids, *unavailable_ids],
+        "available_record_coverage_complete": not budget_omitted_ids,
+    }
+
+
 def _write_omission_report(
     output_dir: Path,
     *,
@@ -394,6 +509,7 @@ def _write_omission_report(
     memory_budget: int,
     fixed_tokens: int,
     episode_scope: dict[str, object],
+    record_scope: dict[str, object],
     required_context_over_budget: bool,
     context_leak_errors: list[str],
 ) -> dict[str, object]:
@@ -407,6 +523,7 @@ def _write_omission_report(
             memory_budget=memory_budget,
             fixed_tokens=fixed_tokens,
             episode_scope=episode_scope,
+            record_scope=record_scope,
             required_context_over_budget=required_context_over_budget,
             context_leak_errors=context_leak_errors,
         ),
@@ -427,12 +544,20 @@ def _render_omission_report(
     memory_budget: int,
     fixed_tokens: int,
     episode_scope: dict[str, object],
+    record_scope: dict[str, object],
     required_context_over_budget: bool,
     context_leak_errors: list[str],
 ) -> str:
     budget_ids = list(_string_sequence(episode_scope.get("budget_omitted_episode_ids")))
     unavailable_ids = list(_string_sequence(episode_scope.get("unavailable_episode_ids")))
     included_ids = list(_string_sequence(episode_scope.get("included_episode_ids")))
+    budget_record_ids = list(
+        _string_sequence(record_scope.get("budget_omitted_record_ids"))
+    )
+    unavailable_record_ids = list(
+        _string_sequence(record_scope.get("unavailable_record_ids"))
+    )
+    included_record_ids = list(_string_sequence(record_scope.get("included_record_ids")))
     lines = [
         "# Session Pack Omissions",
         "",
@@ -447,6 +572,11 @@ def _render_omission_report(
         f"- Included available episodes: {episode_scope['included_episode_count']}",
         f"- Budget-omitted available episodes: {episode_scope['budget_omitted_episode_count']}",
         f"- Future-unavailable episodes: {episode_scope['unavailable_episode_count']}",
+        f"- Accepted records: {record_scope['accepted_record_count']}",
+        f"- Available records: {record_scope['available_record_count']}",
+        f"- Included available records: {record_scope['included_record_count']}",
+        f"- Budget-omitted available records: {record_scope['budget_omitted_record_count']}",
+        f"- Future-unavailable records: {record_scope['unavailable_record_count']}",
         f"- Required context over budget: {str(required_context_over_budget).lower()}",
         "",
         "## Included Available Episodes",
@@ -457,6 +587,15 @@ def _render_omission_report(
         "",
         "## Future-Unavailable Episodes",
         *_id_lines(unavailable_ids),
+        "",
+        "## Included Available Records",
+        *_id_lines(included_record_ids),
+        "",
+        "## Budget-Omitted Available Records",
+        *_id_lines(budget_record_ids),
+        "",
+        "## Future-Unavailable Records",
+        *_id_lines(unavailable_record_ids),
     ]
     if context_leak_errors:
         lines.extend(["", "## Context Leak Errors", *_id_lines(context_leak_errors)])
@@ -473,6 +612,85 @@ def _string_sequence(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _read_accepted_episodes_for_session_pack(
+    store: ResearchStore,
+    *,
+    records: list[BrainRecordEnvelope],
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return store.list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        if records:
+            return [], ["accepted episode store is unreadable"]
+        raise
+
+
+def _build_record_memory_cases(
+    records: list[BrainRecordEnvelope],
+    token_budget: int,
+) -> tuple[str, list[BrainRecordEnvelope], list[BrainRecordEnvelope]]:
+    included: list[BrainRecordEnvelope] = []
+    omitted: list[BrainRecordEnvelope] = []
+    parts: list[str] = []
+    used_tokens = 0
+    for record in records:
+        block = _record_block(record)
+        block_tokens = _estimate_tokens(block)
+        if used_tokens + block_tokens > token_budget:
+            omitted.append(record)
+            continue
+        included.append(record)
+        parts.append(block)
+        used_tokens += block_tokens
+    if not parts:
+        return "No record-level memory cases fit within the session pack budget.\n", included, omitted
+    return "\n\n".join(parts) + "\n", included, omitted
+
+
+def _record_block(record: BrainRecordEnvelope) -> str:
+    payload = record.payload
+    highlights = {
+        key: value
+        for key in (
+            "ticker",
+            "company_name",
+            "theme_id",
+            "path_type",
+            "response_class",
+            "sample_weight",
+            "label_quality",
+            "attribution_status",
+        )
+        if (value := payload.get(key)) is not None
+    }
+    lines = [
+        f"## {record.record_id}",
+        f"- Episode: {record.episode_id}",
+        f"- Record type: {record.record_type}",
+        f"- Trade date: {record.trade_date.isoformat()}",
+        f"- Available from: {record.available_from.isoformat()}",
+        f"- Training target: {record.training_target or 'UNKNOWN'}",
+        f"- Evidence phase: {record.evidence_phase or 'UNKNOWN'}",
+        f"- Training eligible: {str(record.training_eligible).lower()}",
+        f"- Eligibility reason: {record.eligibility_reason or 'none'}",
+        f"- Status: {record.status or 'UNKNOWN'}",
+        f"- Confidence: {record.confidence_label or 'UNKNOWN'}",
+        f"- Provenance source IDs: {', '.join(record.provenance_source_ids) or 'none'}",
+    ]
+    if highlights:
+        lines.extend(["", "Key payload fields:"])
+        lines.extend(f"- {key}: {value}" for key, value in sorted(highlights.items()))
+    lines.extend(["", "Canonical payload:", canonical_json(payload)])
+    return "\n".join(lines).strip()
 
 
 def _build_memory_cases(

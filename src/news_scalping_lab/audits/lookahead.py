@@ -26,6 +26,7 @@ SESSION_PACK_FILES = (
     "system_instructions.md",
     "research_brain.md",
     "memory_cases.md",
+    "record_memory_cases.md",
     "current_news.md",
     "company_memory.md",
     "market_context.md",

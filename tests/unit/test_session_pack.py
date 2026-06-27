@@ -10,8 +10,14 @@ from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.session_pack import SessionPackBudgetExceededError, export_session_pack
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
+from news_scalping_lab.records.models import (
+    BrainRecordEnvelope,
+    NormalizedEpisodeIndex,
+    ResearchBundleEnvelope,
+)
+from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, read_json, write_json
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, write_json
 
 RUNNER = CliRunner()
 
@@ -38,6 +44,94 @@ def _episode(
             open_world_mechanisms=["current evidence -> open-world path"],
         ),
         available_from=datetime.combine(available_day, available_time, tzinfo=KST),
+    )
+
+
+def _record(
+    record_id: str,
+    *,
+    available_from: datetime,
+) -> BrainRecordEnvelope:
+    trade_day = date(2030, 1, 9)
+    payload = {
+        "record_id": record_id,
+        "record_type": "supervised_direct_event_case",
+        "episode_id": "NSLAB-20300110-SESSION-RECORDS",
+        "trade_date": trade_day.isoformat(),
+        "available_from": available_from.isoformat(),
+        "training_target": "direct_event_response",
+        "evidence_phase": "BLIND_SAFE",
+        "ticker": "100001",
+        "company_name": "SessionRecordCo",
+        "path_type": "single_event",
+        "response_class": "positive_high10",
+        "training_eligible": True,
+        "provenance_source_ids": ["SRC-SESSION-RECORD"],
+    }
+    payload_hash = sha256_text(canonical_json(payload))
+    return BrainRecordEnvelope(
+        record_id=record_id,
+        record_type="supervised_direct_event_case",
+        episode_id="NSLAB-20300110-SESSION-RECORDS",
+        trade_date=trade_day,
+        available_from=available_from,
+        training_target="direct_event_response",
+        evidence_phase="BLIND_SAFE",
+        training_eligible=True,
+        eligibility_reason="unit test record",
+        status="tentative",
+        confidence_label="low",
+        provenance_source_ids=["SRC-SESSION-RECORD"],
+        raw_payload_sha256=payload_hash,
+        normalized_payload_sha256=payload_hash,
+        typed_payload_status="KNOWN_TYPED_PAYLOAD",
+        source_block="brain_delta.jsonl",
+        source_line=1,
+        payload=payload,
+    )
+
+
+def _store_records(tmp_path, records: list[BrainRecordEnvelope]) -> None:
+    episode_id = records[0].episode_id
+    source_path = tmp_path / "session_pack_records.md"
+    raw_payload = "\n".join(record.model_dump_json() for record in records)
+    raw_sha = sha256_text(raw_payload)
+    source_path.write_text(raw_payload, encoding="utf-8")
+    BrainRecordStore(tmp_path).store_bundle(
+        source_path=source_path,
+        envelope=ResearchBundleEnvelope(
+            bundle_schema_version="nslab.research_bundle.v11",
+            manifest_schema_version="nslab.bundle_manifest.v11",
+            episode_schema_version="nslab.research_episode.v11",
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_bundle_sha256=raw_sha,
+            raw_block_hashes={"brain_delta.jsonl": raw_sha},
+            raw_block_counts={"brain_delta.jsonl": len(records)},
+            provenance_closure_status="closed",
+            adapter_name="unit-test",
+            import_status="imported",
+        ),
+        index=NormalizedEpisodeIndex(
+            episode_id=episode_id,
+            trade_date=records[0].trade_date,
+            cutoff_at=datetime(2030, 1, 9, 8, 59, 59, tzinfo=KST),
+            available_from=min(record.available_from for record in records),
+            bundle_status="ACCEPT_FULL",
+            blind_valid=True,
+            raw_block_names=["brain_delta.jsonl"],
+            record_ids=[record.record_id for record in records],
+            record_count_by_type={"supervised_direct_event_case": len(records)},
+            training_eligible_record_count=len(records),
+            source_ids=["SRC-SESSION-RECORD"],
+        ),
+        records=records,
+        raw_blocks={"brain_delta.jsonl": raw_payload},
+        validation_report={"passed": True},
     )
 
 
@@ -150,6 +244,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
         "system_instructions.md",
         "research_brain.md",
         "memory_cases.md",
+        "record_memory_cases.md",
         "current_news.md",
         "company_memory.md",
         "market_context.md",
@@ -158,6 +253,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
         "system_instructions.md",
         "research_brain.md",
         "memory_cases.md",
+        "record_memory_cases.md",
         "current_news.md",
         "company_memory.md",
         "market_context.md",
@@ -285,6 +381,57 @@ def test_session_pack_blocks_when_required_context_exceeds_budget(tmp_path) -> N
         for item in manifest["truncations"]
         if item["artifact"] == "session_pack"
     } == {"session_pack_required_context_exceeds_token_budget"}
+    assert audit_lookahead(tmp_path)["passed"]
+
+
+def test_session_pack_exports_record_memory_cases_as_of_cutoff(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    news_csv = tmp_path / "news.csv"
+    news_csv.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","RecordPackCo, catalyst",'
+        '"Session pack should include record-level memory."\n',
+        encoding="utf-8",
+    )
+    _store_records(
+        tmp_path,
+        [
+            _record(
+                "REC-SESSION-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _record(
+                "REC-SESSION-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+
+    output_dir = export_session_pack(
+        settings,
+        news_csv=news_csv,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="brain",
+    )
+
+    manifest = read_json(output_dir / "manifest.json")
+    record_memory = (output_dir / "record_memory_cases.md").read_text(encoding="utf-8")
+
+    assert "REC-SESSION-AVAILABLE" in record_memory
+    assert "REC-SESSION-FUTURE" not in record_memory
+    assert "SessionRecordCo" in record_memory
+    assert manifest["accepted_record_count"] == 2
+    assert manifest["available_record_count"] == 1
+    assert manifest["available_record_ids"] == ["REC-SESSION-AVAILABLE"]
+    assert manifest["included_record_ids"] == ["REC-SESSION-AVAILABLE"]
+    assert manifest["budget_omitted_record_ids"] == []
+    assert manifest["unavailable_record_ids"] == ["REC-SESSION-FUTURE"]
+    assert manifest["available_record_coverage_complete"] is True
+    assert "record_memory_cases.md" in manifest["pack_files"]
+    assert manifest["token_counts"]["record_memory_cases.md"] > 0
+    assert "session pack excluded future-unavailable records" in manifest["errors"]
     assert audit_lookahead(tmp_path)["passed"]
 
 
