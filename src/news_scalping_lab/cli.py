@@ -6680,7 +6680,34 @@ def memory_inspect_record(record_id: str) -> None:
 @memory_app.command("stats")
 def memory_stats() -> None:
     settings = load_settings()
-    _echo(BrainRecordStore(settings.project_root).stats())
+    try:
+        stats = BrainRecordStore(settings.project_root).stats()
+        report = record_store_report_payload(
+            settings.project_root,
+            audit_record_store(settings.project_root),
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            **stats,
+            "raw_record_count": report.get("raw_record_count"),
+            "normalized_record_count": report.get("normalized_record_count"),
+            "raw_normalized_record_count_matches": report.get(
+                "raw_normalized_record_count_matches",
+            ),
+            "raw_record_counts_by_episode": report.get(
+                "raw_record_counts_by_episode",
+                {},
+            ),
+            "dropped_record_count": report.get("dropped_record_count"),
+            "extra_normalized_record_count": report.get(
+                "extra_normalized_record_count",
+            ),
+            "quarantined_record_count": report.get("quarantined_record_count"),
+            "audit_passed": report.get("audit_passed"),
+        }
+    )
 
 
 def _require_openai_embedding_runtime() -> None:
