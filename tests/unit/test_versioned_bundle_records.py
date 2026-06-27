@@ -2681,6 +2681,43 @@ def test_unknown_bundle_version_with_common_records_is_staged_raw_only(
     ]
 
 
+def test_future_manifest_with_quoted_v11_front_matter_is_staged_raw_only(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "future_manifest_v11_family_bundle.md"
+    bundle.write_text(_future_manifest_v11_family_bundle(), encoding="utf-8")
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["bundle_schema_version"] == "nslab.research_bundle.v11"
+    assert inspection["manifest_schema_version"] == "nslab.bundle_manifest.v23"
+    assert inspection["supported"] is False
+    assert inspection["forward_compatible_raw_only"] is True
+    assert inspection["adapter"] == "forward-compatible-raw-only"
+    assert inspection["raw_record_count"] == 2
+    assert inspection["normalized_record_count"] == 2
+    assert inspection["dropped_record_count"] == 0
+    assert inspection["quarantined_bundle_count"] == 0
+    assert inspection["quarantined_raw_record_count"] == 0
+    assert inspection["normalized_record_ids"] == ["BD-FUTURE-1", "BD-FUTURE-2"]
+
+    assert result.status == "forward_compatible_raw_only"
+    assert result.record_count == 2
+    assert result.training_eligible_record_count == 0
+    records = BrainRecordStore(tmp_path).list_records(accepted_only=False)
+    assert [record.record_id for record in records] == ["BD-FUTURE-1", "BD-FUTURE-2"]
+    assert all(record.training_eligible is False for record in records)
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "forward_compatible_raw_only"
+    assert report["raw_record_count"] == 2
+    assert report["normalized_record_count"] == 2
+    assert report["dropped_record_count"] == 0
+    assert report["raw_only_record_count"] == 2
+
+
 def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     ensure_project_dirs(settings)
@@ -2810,6 +2847,76 @@ def _synthetic_v11_bundle_with_manifest_self_hash() -> str:
         + '"}, ',
         1,
     )
+
+
+def _future_manifest_v11_family_bundle() -> str:
+    episode_id = "NSLAB-20300203-FUTURE"
+    trade_day = "2030-02-03"
+    records = [
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-FUTURE-1",
+            "record_type": "supervised_issuer_day_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000001",
+                "entity_name": "Future Issuer",
+                "sample_weight": 1.0,
+            },
+        },
+        {
+            "schema_version": "nslab.brain_delta_record.v1",
+            "brain_delta_id": "BD-FUTURE-2",
+            "record_type": "theme_formation_case",
+            "trade_date": trade_day,
+            "source_phase": "BLIND_PLUS_POSTSEAL_LABEL",
+            "training_eligible": True,
+            "payload": {
+                "ticker": "000002",
+                "name": "Future Theme Leader",
+                "sample_weight": 1.0,
+            },
+        },
+    ]
+    brain_delta = "\n".join(
+        json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records
+    )
+    manifest = json.dumps(
+        {
+            "schema_version": "nslab.bundle_manifest.v23",
+            "episode_id": episode_id,
+            "trade_date": trade_day,
+            "next_trade_date": "2030-02-04",
+            "bundle_status": "ACCEPT_FULL",
+            "brain_eligible": True,
+            "validator_exit_code": 0,
+            "critical_error_count": 0,
+            "brain_delta_record_count": len(records),
+            "training_eligible_record_count": len(records),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return f"""---
+schema_version: "nslab.research_bundle.v11"
+episode_id: "{episode_id}"
+trade_date: "{trade_day}"
+next_trade_date: "2030-02-04"
+cutoff_at: "2030-02-03T08:59:59+09:00"
+bundle_status: "ACCEPT_FULL"
+brain_eligible: true
+validator_exit_code: 0
+---
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{_payload_block(brain_delta, "jsonl")}
+<!-- NSLAB:END brain_delta.jsonl -->
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+{_payload_block(manifest, "json")}
+<!-- NSLAB:END bundle_manifest.json -->
+"""
 
 
 def _opaque_unsupported_bundle() -> str:

@@ -366,6 +366,8 @@ class V10Adapter(BaseBundleAdapter):
             return False
         manifest_version = _optional_string(_manifest(parsed).get("schema_version"))
         episode_version = _optional_string(_episode(parsed).get("schema_version"))
+        if _is_future_bundle_manifest_version(manifest_version, supported_major=10):
+            return False
         versions = {
             version.split(".")[-1],
             (manifest_version or "").split(".")[-1],
@@ -383,6 +385,8 @@ class V11Adapter(BaseBundleAdapter):
             return False
         manifest_version = _optional_string(_manifest(parsed).get("schema_version"))
         episode_version = _optional_string(_episode(parsed).get("schema_version"))
+        if _is_future_bundle_manifest_version(manifest_version, supported_major=11):
+            return False
         versions = {
             version.split(".")[-1],
             (manifest_version or "").split(".")[-1],
@@ -1108,6 +1112,27 @@ def _declares_research_bundle_version(version: str) -> bool:
     return version.startswith("nslab.research_bundle.")
 
 
+def _is_future_bundle_manifest_version(
+    version: str | None,
+    *,
+    supported_major: int,
+) -> bool:
+    if version is None or not version.startswith("nslab.bundle_manifest."):
+        return False
+    major = _schema_major(version)
+    return major is not None and major > supported_major
+
+
+def _schema_major(version: str) -> int | None:
+    suffix = version.rsplit(".", maxsplit=1)[-1]
+    if not suffix.startswith("v"):
+        return None
+    try:
+        return int(suffix[1:])
+    except ValueError:
+        return None
+
+
 def _record_envelope(
     *,
     payload: dict[str, Any],
@@ -1218,6 +1243,7 @@ def _record_id(
 ) -> str:
     for field_name in (
         "record_id",
+        "brain_delta_id",
         "issuer_day_case_id",
         "case_id",
         "blind_pair_id",
@@ -1286,8 +1312,15 @@ def _extract_front_matter(text: str) -> dict[str, str]:
             continue
         key, separator, value = stripped.partition(":")
         if separator and key.strip():
-            front_matter[key.strip()] = value.strip()
+            front_matter[key.strip()] = _front_matter_scalar(value)
     return front_matter
+
+
+def _front_matter_scalar(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        stripped = stripped[1:-1]
+    return stripped
 
 
 def _strip_optional_fence(block: str) -> str:
@@ -1417,7 +1450,15 @@ def _optional_string(value: object) -> str | None:
 
 
 def _optional_bool(value: object) -> bool | None:
-    return value if isinstance(value, bool) else None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+    return None
 
 
 def _int_field(*sources: object) -> int | None:
@@ -1432,10 +1473,20 @@ def _int_field(*sources: object) -> int | None:
             value = source.get(sources[index + 1])
             if isinstance(value, int) and not isinstance(value, bool):
                 return value
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    pass
             index += 2
             continue
         if isinstance(source, int) and not isinstance(source, bool):
             return source
+        if isinstance(source, str):
+            try:
+                return int(source)
+            except ValueError:
+                pass
         index += 1
     return None
 
@@ -1696,7 +1747,11 @@ def _normalized_edge_token(value: object) -> str:
 
 
 def _record_identity(record: dict[str, Any], line_number: int) -> str:
-    return _optional_string(record.get("record_id")) or f"line:{line_number}"
+    return (
+        _optional_string(record.get("record_id"))
+        or _optional_string(record.get("brain_delta_id"))
+        or f"line:{line_number}"
+    )
 
 
 def _invalid_bundle_available_from_fields(parsed: GenericParsedBundle) -> list[str]:

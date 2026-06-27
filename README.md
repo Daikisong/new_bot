@@ -128,8 +128,11 @@ canonical `BrainRecordEnvelope` JSONL without forcing v10/v11 payloads into the
 legacy `ResearchEpisode` model. Unsupported future bundle versions that still
 expose a common episode envelope and `brain_delta.jsonl` are staged as
 `forward_compatible_raw_only`: raw records are preserved with training disabled
-until a versioned adapter exists. Opaque unsupported bundles are quarantined under
-`data/quarantine/research_bundles/` without dropping the source bundle.
+until a versioned adapter exists. Quoted front-matter scalars are normalized before
+adapter selection, and a future `bundle_manifest` major is never promoted through
+an older v10/v11 adapter just because the envelope still declares a v11 family.
+Opaque unsupported bundles are quarantined under `data/quarantine/research_bundles/`
+without dropping the source bundle.
 
 Canonical record artifacts:
 

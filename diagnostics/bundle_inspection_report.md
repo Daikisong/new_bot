@@ -2,423 +2,354 @@
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
 - status: `validation_failed`
-- path: `docs/20260622_nslab_episode_bundle.example.md`
+- path: `docs/example2.md`
 - bundle_version: `nslab.research_bundle.v11`
-- manifest_schema_version: `nslab.bundle_manifest.v11`
-- episode_schema_version: `nslab.research_episode.v11`
-- adapter: `v11`
-- supported: `True`
-- forward_compatible_raw_only: `False`
-- episode_id: `NSLAB-20260622-F70981F4`
-- trade_date: `2026-06-22`
-- raw_record_count: `327`
-- normalized_record_count: `327`
-- training_eligible_record_count: `325`
+- manifest_schema_version: `nslab.bundle_manifest.v23`
+- episode_schema_version: `None`
+- adapter: `forward-compatible-raw-only`
+- supported: `False`
+- forward_compatible_raw_only: `True`
+- episode_id: `NSLAB-20241204-06A72B21`
+- trade_date: `2024-12-04`
+- raw_record_count: `165`
+- normalized_record_count: `165`
+- raw_normalized_record_count_matches: `True`
+- training_eligible_record_count: `0`
 ## raw_record_ids
 
-- `BRAIN-000001`
-- `BRAIN-000002`
-- `BRAIN-000003`
-- `BRAIN-000004`
-- `BRAIN-000005`
-- `BRAIN-000006`
-- `BRAIN-000007`
-- `BRAIN-000008`
-- `BRAIN-000009`
-- `BRAIN-000010`
-- `BRAIN-000011`
-- `BRAIN-000012`
-- `BRAIN-000013`
-- `BRAIN-000014`
-- `BRAIN-000015`
-- `BRAIN-000016`
-- `BRAIN-000017`
-- `BRAIN-000018`
-- `BRAIN-000019`
-- `BRAIN-000020`
-- `BRAIN-000021`
-- `BRAIN-000022`
-- `BRAIN-000023`
-- `BRAIN-000024`
-- `BRAIN-000025`
-- `BRAIN-000026`
-- `BRAIN-000027`
-- `BRAIN-000028`
-- `BRAIN-000029`
-- `BRAIN-000030`
-- `BRAIN-000031`
-- `BRAIN-000032`
-- `BRAIN-000033`
-- `BRAIN-000034`
-- `BRAIN-000035`
-- `BRAIN-000036`
-- `BRAIN-000037`
-- `BRAIN-000038`
-- `BRAIN-000039`
-- `BRAIN-000040`
-- `BRAIN-000041`
-- `BRAIN-000042`
-- `BRAIN-000043`
-- `BRAIN-000044`
-- `BRAIN-000045`
-- `BRAIN-000046`
-- `BRAIN-000047`
-- `BRAIN-000048`
-- `BRAIN-000049`
-- `BRAIN-000050`
-- `BRAIN-000051`
-- `BRAIN-000052`
-- `BRAIN-000053`
-- `BRAIN-000054`
-- `BRAIN-000055`
-- `BRAIN-000056`
-- `BRAIN-000057`
-- `BRAIN-000058`
-- `BRAIN-000059`
-- `BRAIN-000060`
-- `BRAIN-000061`
-- `BRAIN-000062`
-- `BRAIN-000063`
-- `BRAIN-000064`
-- `BRAIN-000065`
-- `BRAIN-000066`
-- `BRAIN-000067`
-- `BRAIN-000068`
-- `BRAIN-000069`
-- `BRAIN-000070`
-- `BRAIN-000071`
-- `BRAIN-000072`
-- `BRAIN-000073`
-- `BRAIN-000074`
-- `BRAIN-000075`
-- `BRAIN-000076`
-- `BRAIN-000077`
-- `BRAIN-000078`
-- `BRAIN-000079`
-- `BRAIN-000080`
-- `BRAIN-000081`
-- `BRAIN-000082`
-- `BRAIN-000083`
-- `BRAIN-000084`
-- `BRAIN-000085`
-- `BRAIN-000086`
-- `BRAIN-000087`
-- `BRAIN-000088`
-- `BRAIN-000089`
-- `BRAIN-000090`
-- `BRAIN-000091`
-- `BRAIN-000092`
-- `BRAIN-000093`
-- `BRAIN-000094`
-- `BRAIN-000095`
-- `BRAIN-000096`
-- `BRAIN-000097`
-- `BRAIN-000098`
-- `BRAIN-000099`
-- `BRAIN-000100`
-- `BRAIN-000101`
-- `BRAIN-000102`
-- `BRAIN-000103`
-- `BRAIN-000104`
-- `BRAIN-000105`
-- `BRAIN-000106`
-- `BRAIN-000107`
-- `BRAIN-000108`
-- `BRAIN-000109`
-- `BRAIN-000110`
-- `BRAIN-000111`
-- `BRAIN-000112`
-- `BRAIN-000113`
-- `BRAIN-000114`
-- `BRAIN-000115`
-- `BRAIN-000116`
-- `BRAIN-000117`
-- `BRAIN-000118`
-- `BRAIN-000119`
-- `BRAIN-000120`
-- `BRAIN-000121`
-- `BRAIN-000122`
-- `BRAIN-000123`
-- `BRAIN-000124`
-- `BRAIN-000125`
-- `BRAIN-000126`
-- `BRAIN-000127`
-- `BRAIN-000128`
-- `BRAIN-000129`
-- `BRAIN-000130`
-- `BRAIN-000131`
-- `BRAIN-000132`
-- `BRAIN-000133`
-- `BRAIN-000134`
-- `BRAIN-000135`
-- `BRAIN-000136`
-- `BRAIN-000137`
-- `BRAIN-000138`
-- `BRAIN-000139`
-- `BRAIN-000140`
-- `BRAIN-000141`
-- `BRAIN-000142`
-- `BRAIN-000143`
-- `BRAIN-000144`
-- `BRAIN-000145`
-- `BRAIN-000146`
-- `BRAIN-000147`
-- `BRAIN-000148`
-- `BRAIN-000149`
-- `BRAIN-000150`
-- `BRAIN-000151`
-- `BRAIN-000152`
-- `BRAIN-000153`
-- `BRAIN-000154`
-- `BRAIN-000155`
-- `BRAIN-000156`
-- `BRAIN-000157`
-- `BRAIN-000158`
-- `BRAIN-000159`
-- `BRAIN-000160`
-- `BRAIN-000161`
-- `BRAIN-000162`
-- `BRAIN-000163`
-- `BRAIN-000164`
-- `BRAIN-000165`
-- `BRAIN-000166`
-- `BRAIN-000167`
-- `BRAIN-000168`
-- `BRAIN-000169`
-- `BRAIN-000170`
-- `BRAIN-000171`
-- `BRAIN-000172`
-- `BRAIN-000173`
-- `BRAIN-000174`
-- `BRAIN-000175`
-- `BRAIN-000176`
-- `BRAIN-000177`
-- `BRAIN-000178`
-- `BRAIN-000179`
-- `BRAIN-000180`
-- `BRAIN-000181`
-- `BRAIN-000182`
-- `BRAIN-000183`
-- `BRAIN-000184`
-- `BRAIN-000185`
-- `BRAIN-000186`
-- `BRAIN-000187`
-- `BRAIN-000188`
-- `BRAIN-000189`
-- `BRAIN-000190`
-- `BRAIN-000191`
-- `BRAIN-000192`
-- `BRAIN-000193`
-- `BRAIN-000194`
-- `BRAIN-000195`
-- `BRAIN-000196`
-- `BRAIN-000197`
-- `BRAIN-000198`
-- `BRAIN-000199`
-- `BRAIN-000200`
+- `BD-000001`
+- `BD-000002`
+- `BD-000003`
+- `BD-000004`
+- `BD-000005`
+- `BD-000006`
+- `BD-000007`
+- `BD-000008`
+- `BD-000009`
+- `BD-000010`
+- `BD-000011`
+- `BD-000012`
+- `BD-000013`
+- `BD-000014`
+- `BD-000015`
+- `BD-000016`
+- `BD-000017`
+- `BD-000018`
+- `BD-000019`
+- `BD-000020`
+- `BD-000021`
+- `BD-000022`
+- `BD-000023`
+- `BD-000024`
+- `BD-000025`
+- `BD-000026`
+- `BD-000027`
+- `BD-000028`
+- `BD-000029`
+- `BD-000030`
+- `BD-000031`
+- `BD-000032`
+- `BD-000033`
+- `BD-000034`
+- `BD-000035`
+- `BD-000036`
+- `BD-000037`
+- `BD-000038`
+- `BD-000039`
+- `BD-000040`
+- `BD-000041`
+- `BD-000042`
+- `BD-000043`
+- `BD-000044`
+- `BD-000045`
+- `BD-000046`
+- `BD-000047`
+- `BD-000048`
+- `BD-000049`
+- `BD-000050`
+- `BD-000051`
+- `BD-000052`
+- `BD-000053`
+- `BD-000054`
+- `BD-000055`
+- `BD-000056`
+- `BD-000057`
+- `BD-000058`
+- `BD-000059`
+- `BD-000060`
+- `BD-000061`
+- `BD-000062`
+- `BD-000063`
+- `BD-000064`
+- `BD-000065`
+- `BD-000066`
+- `BD-000067`
+- `BD-000068`
+- `BD-000069`
+- `BD-000070`
+- `BD-000071`
+- `BD-000072`
+- `BD-000073`
+- `BD-000074`
+- `BD-000075`
+- `BD-000076`
+- `BD-000077`
+- `BD-000078`
+- `BD-000079`
+- `BD-000080`
+- `BD-000081`
+- `BD-000082`
+- `BD-000083`
+- `BD-000084`
+- `BD-000085`
+- `BD-000086`
+- `BD-000087`
+- `BD-000088`
+- `BD-000089`
+- `BD-000090`
+- `BD-000091`
+- `BD-000092`
+- `BD-000093`
+- `BD-000094`
+- `BD-000095`
+- `BD-000096`
+- `BD-000097`
+- `BD-000098`
+- `BD-000099`
+- `BD-000100`
+- `BD-000101`
+- `BD-000102`
+- `BD-000103`
+- `BD-000104`
+- `BD-000105`
+- `BD-000106`
+- `BD-000107`
+- `BD-000108`
+- `BD-000109`
+- `BD-000110`
+- `BD-000111`
+- `BD-000112`
+- `BD-000113`
+- `BD-000114`
+- `BD-000115`
+- `BD-000116`
+- `BD-000117`
+- `BD-000118`
+- `BD-000119`
+- `BD-000120`
+- `BD-000121`
+- `BD-000122`
+- `BD-000123`
+- `BD-000124`
+- `BD-000125`
+- `BD-000126`
+- `BD-000127`
+- `BD-000128`
+- `BD-000129`
+- `BD-000130`
+- `BD-000131`
+- `BD-000132`
+- `BD-000133`
+- `BD-000134`
+- `BD-000135`
+- `BD-000136`
+- `BD-000137`
+- `BD-000138`
+- `BD-000139`
+- `BD-000140`
+- `BD-000141`
+- `BD-000142`
+- `BD-000143`
+- `BD-000144`
+- `BD-000145`
+- `BD-000146`
+- `BD-000147`
+- `BD-000148`
+- `BD-000149`
+- `BD-000150`
+- `BD-000151`
+- `BD-000152`
+- `BD-000153`
+- `BD-000154`
+- `BD-000155`
+- `BD-000156`
+- `BD-000157`
+- `BD-000158`
+- `BD-000159`
+- `BD-000160`
+- `BD-000161`
+- `BD-000162`
+- `BD-000163`
+- `BD-000164`
+- `BD-000165`
 
 ## normalized_record_ids
 
-- `BRAIN-000001`
-- `BRAIN-000002`
-- `BRAIN-000003`
-- `BRAIN-000004`
-- `BRAIN-000005`
-- `BRAIN-000006`
-- `BRAIN-000007`
-- `BRAIN-000008`
-- `BRAIN-000009`
-- `BRAIN-000010`
-- `BRAIN-000011`
-- `BRAIN-000012`
-- `BRAIN-000013`
-- `BRAIN-000014`
-- `BRAIN-000015`
-- `BRAIN-000016`
-- `BRAIN-000017`
-- `BRAIN-000018`
-- `BRAIN-000019`
-- `BRAIN-000020`
-- `BRAIN-000021`
-- `BRAIN-000022`
-- `BRAIN-000023`
-- `BRAIN-000024`
-- `BRAIN-000025`
-- `BRAIN-000026`
-- `BRAIN-000027`
-- `BRAIN-000028`
-- `BRAIN-000029`
-- `BRAIN-000030`
-- `BRAIN-000031`
-- `BRAIN-000032`
-- `BRAIN-000033`
-- `BRAIN-000034`
-- `BRAIN-000035`
-- `BRAIN-000036`
-- `BRAIN-000037`
-- `BRAIN-000038`
-- `BRAIN-000039`
-- `BRAIN-000040`
-- `BRAIN-000041`
-- `BRAIN-000042`
-- `BRAIN-000043`
-- `BRAIN-000044`
-- `BRAIN-000045`
-- `BRAIN-000046`
-- `BRAIN-000047`
-- `BRAIN-000048`
-- `BRAIN-000049`
-- `BRAIN-000050`
-- `BRAIN-000051`
-- `BRAIN-000052`
-- `BRAIN-000053`
-- `BRAIN-000054`
-- `BRAIN-000055`
-- `BRAIN-000056`
-- `BRAIN-000057`
-- `BRAIN-000058`
-- `BRAIN-000059`
-- `BRAIN-000060`
-- `BRAIN-000061`
-- `BRAIN-000062`
-- `BRAIN-000063`
-- `BRAIN-000064`
-- `BRAIN-000065`
-- `BRAIN-000066`
-- `BRAIN-000067`
-- `BRAIN-000068`
-- `BRAIN-000069`
-- `BRAIN-000070`
-- `BRAIN-000071`
-- `BRAIN-000072`
-- `BRAIN-000073`
-- `BRAIN-000074`
-- `BRAIN-000075`
-- `BRAIN-000076`
-- `BRAIN-000077`
-- `BRAIN-000078`
-- `BRAIN-000079`
-- `BRAIN-000080`
-- `BRAIN-000081`
-- `BRAIN-000082`
-- `BRAIN-000083`
-- `BRAIN-000084`
-- `BRAIN-000085`
-- `BRAIN-000086`
-- `BRAIN-000087`
-- `BRAIN-000088`
-- `BRAIN-000089`
-- `BRAIN-000090`
-- `BRAIN-000091`
-- `BRAIN-000092`
-- `BRAIN-000093`
-- `BRAIN-000094`
-- `BRAIN-000095`
-- `BRAIN-000096`
-- `BRAIN-000097`
-- `BRAIN-000098`
-- `BRAIN-000099`
-- `BRAIN-000100`
-- `BRAIN-000101`
-- `BRAIN-000102`
-- `BRAIN-000103`
-- `BRAIN-000104`
-- `BRAIN-000105`
-- `BRAIN-000106`
-- `BRAIN-000107`
-- `BRAIN-000108`
-- `BRAIN-000109`
-- `BRAIN-000110`
-- `BRAIN-000111`
-- `BRAIN-000112`
-- `BRAIN-000113`
-- `BRAIN-000114`
-- `BRAIN-000115`
-- `BRAIN-000116`
-- `BRAIN-000117`
-- `BRAIN-000118`
-- `BRAIN-000119`
-- `BRAIN-000120`
-- `BRAIN-000121`
-- `BRAIN-000122`
-- `BRAIN-000123`
-- `BRAIN-000124`
-- `BRAIN-000125`
-- `BRAIN-000126`
-- `BRAIN-000127`
-- `BRAIN-000128`
-- `BRAIN-000129`
-- `BRAIN-000130`
-- `BRAIN-000131`
-- `BRAIN-000132`
-- `BRAIN-000133`
-- `BRAIN-000134`
-- `BRAIN-000135`
-- `BRAIN-000136`
-- `BRAIN-000137`
-- `BRAIN-000138`
-- `BRAIN-000139`
-- `BRAIN-000140`
-- `BRAIN-000141`
-- `BRAIN-000142`
-- `BRAIN-000143`
-- `BRAIN-000144`
-- `BRAIN-000145`
-- `BRAIN-000146`
-- `BRAIN-000147`
-- `BRAIN-000148`
-- `BRAIN-000149`
-- `BRAIN-000150`
-- `BRAIN-000151`
-- `BRAIN-000152`
-- `BRAIN-000153`
-- `BRAIN-000154`
-- `BRAIN-000155`
-- `BRAIN-000156`
-- `BRAIN-000157`
-- `BRAIN-000158`
-- `BRAIN-000159`
-- `BRAIN-000160`
-- `BRAIN-000161`
-- `BRAIN-000162`
-- `BRAIN-000163`
-- `BRAIN-000164`
-- `BRAIN-000165`
-- `BRAIN-000166`
-- `BRAIN-000167`
-- `BRAIN-000168`
-- `BRAIN-000169`
-- `BRAIN-000170`
-- `BRAIN-000171`
-- `BRAIN-000172`
-- `BRAIN-000173`
-- `BRAIN-000174`
-- `BRAIN-000175`
-- `BRAIN-000176`
-- `BRAIN-000177`
-- `BRAIN-000178`
-- `BRAIN-000179`
-- `BRAIN-000180`
-- `BRAIN-000181`
-- `BRAIN-000182`
-- `BRAIN-000183`
-- `BRAIN-000184`
-- `BRAIN-000185`
-- `BRAIN-000186`
-- `BRAIN-000187`
-- `BRAIN-000188`
-- `BRAIN-000189`
-- `BRAIN-000190`
-- `BRAIN-000191`
-- `BRAIN-000192`
-- `BRAIN-000193`
-- `BRAIN-000194`
-- `BRAIN-000195`
-- `BRAIN-000196`
-- `BRAIN-000197`
-- `BRAIN-000198`
-- `BRAIN-000199`
-- `BRAIN-000200`
+- `BD-000001`
+- `BD-000002`
+- `BD-000003`
+- `BD-000004`
+- `BD-000005`
+- `BD-000006`
+- `BD-000007`
+- `BD-000008`
+- `BD-000009`
+- `BD-000010`
+- `BD-000011`
+- `BD-000012`
+- `BD-000013`
+- `BD-000014`
+- `BD-000015`
+- `BD-000016`
+- `BD-000017`
+- `BD-000018`
+- `BD-000019`
+- `BD-000020`
+- `BD-000021`
+- `BD-000022`
+- `BD-000023`
+- `BD-000024`
+- `BD-000025`
+- `BD-000026`
+- `BD-000027`
+- `BD-000028`
+- `BD-000029`
+- `BD-000030`
+- `BD-000031`
+- `BD-000032`
+- `BD-000033`
+- `BD-000034`
+- `BD-000035`
+- `BD-000036`
+- `BD-000037`
+- `BD-000038`
+- `BD-000039`
+- `BD-000040`
+- `BD-000041`
+- `BD-000042`
+- `BD-000043`
+- `BD-000044`
+- `BD-000045`
+- `BD-000046`
+- `BD-000047`
+- `BD-000048`
+- `BD-000049`
+- `BD-000050`
+- `BD-000051`
+- `BD-000052`
+- `BD-000053`
+- `BD-000054`
+- `BD-000055`
+- `BD-000056`
+- `BD-000057`
+- `BD-000058`
+- `BD-000059`
+- `BD-000060`
+- `BD-000061`
+- `BD-000062`
+- `BD-000063`
+- `BD-000064`
+- `BD-000065`
+- `BD-000066`
+- `BD-000067`
+- `BD-000068`
+- `BD-000069`
+- `BD-000070`
+- `BD-000071`
+- `BD-000072`
+- `BD-000073`
+- `BD-000074`
+- `BD-000075`
+- `BD-000076`
+- `BD-000077`
+- `BD-000078`
+- `BD-000079`
+- `BD-000080`
+- `BD-000081`
+- `BD-000082`
+- `BD-000083`
+- `BD-000084`
+- `BD-000085`
+- `BD-000086`
+- `BD-000087`
+- `BD-000088`
+- `BD-000089`
+- `BD-000090`
+- `BD-000091`
+- `BD-000092`
+- `BD-000093`
+- `BD-000094`
+- `BD-000095`
+- `BD-000096`
+- `BD-000097`
+- `BD-000098`
+- `BD-000099`
+- `BD-000100`
+- `BD-000101`
+- `BD-000102`
+- `BD-000103`
+- `BD-000104`
+- `BD-000105`
+- `BD-000106`
+- `BD-000107`
+- `BD-000108`
+- `BD-000109`
+- `BD-000110`
+- `BD-000111`
+- `BD-000112`
+- `BD-000113`
+- `BD-000114`
+- `BD-000115`
+- `BD-000116`
+- `BD-000117`
+- `BD-000118`
+- `BD-000119`
+- `BD-000120`
+- `BD-000121`
+- `BD-000122`
+- `BD-000123`
+- `BD-000124`
+- `BD-000125`
+- `BD-000126`
+- `BD-000127`
+- `BD-000128`
+- `BD-000129`
+- `BD-000130`
+- `BD-000131`
+- `BD-000132`
+- `BD-000133`
+- `BD-000134`
+- `BD-000135`
+- `BD-000136`
+- `BD-000137`
+- `BD-000138`
+- `BD-000139`
+- `BD-000140`
+- `BD-000141`
+- `BD-000142`
+- `BD-000143`
+- `BD-000144`
+- `BD-000145`
+- `BD-000146`
+- `BD-000147`
+- `BD-000148`
+- `BD-000149`
+- `BD-000150`
+- `BD-000151`
+- `BD-000152`
+- `BD-000153`
+- `BD-000154`
+- `BD-000155`
+- `BD-000156`
+- `BD-000157`
+- `BD-000158`
+- `BD-000159`
+- `BD-000160`
+- `BD-000161`
+- `BD-000162`
+- `BD-000163`
+- `BD-000164`
+- `BD-000165`
 
 - raw_record_without_id_count: `0`
 - record_id_set_comparable: `True`
@@ -427,38 +358,54 @@
 
 - none
 
+- missing_normalized_record_count: `0`
 ## extra_normalized_record_ids
 
 - none
 
+- extra_normalized_record_count: `0`
 ## raw_record_counts_by_type
 
-- blind_leader_preference_pair: `3`
-- supervised_direct_event_case: `171`
-- supervised_issuer_day_case: `150`
-- supervised_theme_formation_case: `3`
+- blind_leader_preference_pair: `20`
+- candidate_generation_error_case: `8`
+- context_market_state_or_fact_case: `17`
+- negative_control_case: `13`
+- newsless_or_unexplained_case: `43`
+- ranking_error_case: `1`
+- supervised_direct_event_case: `28`
+- supervised_issuer_day_case: `28`
+- theme_formation_case: `7`
 
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `325`
-- training_eligible_count_matches_raw: `True`
+- raw_training_eligible_record_count: `162`
+- training_eligible_count_matches_raw: `False`
 - raw_payload_hashes_match: `True`
 ## raw_payload_hash_mismatch_record_ids
 
 - none
 
+- import_loss_audit_passed: `False`
 - dropped_record_count: `0`
+- quarantined_bundle_count: `0`
+- quarantined_raw_record_count: `0`
+- normalization_skipped_reason: `None`
 - quarantined_record_count: `0`
 ## record_counts_by_type
 
-- blind_leader_preference_pair: `3`
-- supervised_direct_event_case: `171`
-- supervised_issuer_day_case: `150`
-- supervised_theme_formation_case: `3`
+- blind_leader_preference_pair: `20`
+- candidate_generation_error_case: `8`
+- context_market_state_or_fact_case: `17`
+- negative_control_case: `13`
+- newsless_or_unexplained_case: `43`
+- ranking_error_case: `1`
+- supervised_direct_event_case: `28`
+- supervised_issuer_day_case: `28`
+- theme_formation_case: `7`
 
 - validation_passed: `False`
 - record_count_matches_manifest: `True`
 - training_eligible_count_matches_manifest: `True`
-- hash_mismatch_count: `16`
+- hash_mismatch_count: `0`
 - hash_expectation_conflict_count: `0`
 - missing_source_reference_count: `0`
 - missing_payload_reference_count: `0`
@@ -466,27 +413,29 @@
 - invalid_available_from_record_count: `0`
 - outcome_label_quality_valid: `True`
 - invalid_outcome_label_quality_record_count: `0`
+- typed_payload_valid: `True`
+- invalid_typed_payload_record_count: `0`
 ## validation
 
 - schema_version: `nslab.versioned_bundle_validation.v1`
-- adapter: `v11`
+- adapter: `forward-compatible-raw-only`
 - bundle_schema_version: `nslab.research_bundle.v11`
-- manifest_schema_version: `nslab.bundle_manifest.v11`
-- record_count: `327`
-- training_eligible_record_count: `325`
-- expected_record_count: `327`
-- expected_training_eligible_record_count: `325`
+- manifest_schema_version: `nslab.bundle_manifest.v23`
+- record_count: `165`
+- training_eligible_record_count: `162`
+- expected_record_count: `165`
+- expected_training_eligible_record_count: `162`
 - record_count_matches_manifest: `True`
 - training_eligible_count_matches_manifest: `True`
-- block_hashes: `{'blind_packet_manifest.json': 'afbb4dfc59a2c7629ef3a84b2a3a4203c90c79f7613c3976b986b5dbb919c636', 'blind_prediction.json': '44be7c8aa446933d09a97cd4833bd0db0749e2db8eea852fcf382e72b5d02037', 'blind_report.md': '9fbc6561f48b194cc12949c6e2f4b4267413f98c6dafa2b984ddaf1ac980f256', 'brain_delta.jsonl': '5e9e021c8e9e6bdd347bc962a2a643e21db6484b679d36a218120004ceb60914', 'bundle_manifest.json': 'e41ff5a8788ae0df70d53562b55bf8322050a1f4c73f14f014b0e933d8024bc6', 'candidate_screening.jsonl': 'c2acc726e771c7d43e08f31ec7002bd11cc362ef237757bf9dc0c88663207a8c', 'entity_ledger_blind.jsonl': 'e7ce2bef32df2a08091f4b9c1a3ac85de3fe44d342ca644cb05b9585d5dc7e00', 'entity_resolution.jsonl': 'ded5b3f864d96b4bc11757f8c244210a8b2ad508d179bbd5ca74cc75054a2407', 'fact_ledger_blind.jsonl': '6cfd6343bece16220d7a2d0a1f39c9b14bad3e1438b1ee1198030c0922725c47', 'id_registry.json': '26295bcae7f6c2400a12fe7a2abf5ec9def0f96146f269f8d7d063b063cfd49e', 'inference_ledger_blind.jsonl': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'outcome_ledger.jsonl': '48b0affabc848c950f48704a0b96c5af457610d2a6332f22b52e4ada1bc55022', 'postmortem_report.md': '111498ce8ac2e70e1cb09a7798a709863943228cc3001b5b1d575f37cd571653', 'research_episode.json': '434f35cc88a43b81b1557f351e927f6e556c9e5d5866067d6c18df40e6742547', 'research_report.md': 'e3dca69e6a56f16375a9a83d6e36f873a6209aac1340f9980b120273ec2a1370', 'row_disposition.jsonl': '93de42b6432d3440befaa288e8897b6e1651b14007294c2891cd489548b153ca', 'source_ledger.jsonl': '628dbcabb69fdb57554d17b378ea29cb4480f22605bf8dc7bea6e9556c3f754b', 'validation_report.json': '9a59ab06e5c611b6ddcea32b2dfd6dce69258b005e9385b8c5e313ce04501375'}`
-- hash_mismatches: `{'blind_packet_manifest.json': {'expected': '4f2a2e8f36e7e53ad011876017dcbfabc9cf57869324d7142d6026b12bfc1cf8', 'actual': 'afbb4dfc59a2c7629ef3a84b2a3a4203c90c79f7613c3976b986b5dbb919c636', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'blind_prediction.json': {'expected': 'b09501c48cfccdfbb86ab4545d0eb9ee37c3019e46a4cdf078cba88516e873b8', 'actual': '44be7c8aa446933d09a97cd4833bd0db0749e2db8eea852fcf382e72b5d02037', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'blind_report.md': {'expected': 'c3d7c565f3860eb170ffa954d40b8f1b06880d472445227850cdcb592aa8d00b', 'actual': '9fbc6561f48b194cc12949c6e2f4b4267413f98c6dafa2b984ddaf1ac980f256', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'brain_delta.jsonl': {'expected': 'cae715b671b0bbd51288ebe793ee5404c7cde911917918b77c36474a7a17860c', 'actual': '5e9e021c8e9e6bdd347bc962a2a643e21db6484b679d36a218120004ceb60914', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'bundle_manifest.json': {'expected': '2efa04db2288b08a433afe40c2ac39510020813951c158efe00723e631aaf3f8', 'actual': 'e41ff5a8788ae0df70d53562b55bf8322050a1f4c73f14f014b0e933d8024bc6', 'sources': ['validation_report.checked_artifact_hashes']}, 'candidate_screening.jsonl': {'expected': '2ca8e7f513180454bcc548831a62e65b909b3e2b83b5307f4013282f44fc0c58', 'actual': 'c2acc726e771c7d43e08f31ec7002bd11cc362ef237757bf9dc0c88663207a8c', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'entity_ledger_blind.jsonl': {'expected': '261db1359976c8844098084256c77f337d5a535f415871038af960d4901e2bf5', 'actual': 'e7ce2bef32df2a08091f4b9c1a3ac85de3fe44d342ca644cb05b9585d5dc7e00', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'entity_resolution.jsonl': {'expected': '6b081d9d85da6bfffc0000e339d892ca964b8494feedd39707a51e33d65f7903', 'actual': 'ded5b3f864d96b4bc11757f8c244210a8b2ad508d179bbd5ca74cc75054a2407', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'fact_ledger_blind.jsonl': {'expected': 'eabacb37f4ec91fbdea26b323829c2741133609beb1800598d362a30c441ce8f', 'actual': '6cfd6343bece16220d7a2d0a1f39c9b14bad3e1438b1ee1198030c0922725c47', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'id_registry.json': {'expected': '213aa8a5226832f8744aa13426d06bd91a52391e4da61f390a5bfb02e270e4b2', 'actual': '26295bcae7f6c2400a12fe7a2abf5ec9def0f96146f269f8d7d063b063cfd49e', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'outcome_ledger.jsonl': {'expected': '1c02ae0a8c835722845c9880d2c60ef02442afef36574d3308497e83339ec6f2', 'actual': '48b0affabc848c950f48704a0b96c5af457610d2a6332f22b52e4ada1bc55022', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'postmortem_report.md': {'expected': '6a1152c66a463fc81f6d9e0d4a61c1bb447e012962abab0dd53eae6dc3654ac6', 'actual': '111498ce8ac2e70e1cb09a7798a709863943228cc3001b5b1d575f37cd571653', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'research_episode.json': {'expected': '165e2fb097383d4c68ed154da55f67d1f7bee772936c5083e73c1906a042ee0e', 'actual': '434f35cc88a43b81b1557f351e927f6e556c9e5d5866067d6c18df40e6742547', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'research_report.md': {'expected': 'd4c75a26f2c95630c2385da05e96b304708193a5c08b679a8af835f348ce9bf2', 'actual': 'e3dca69e6a56f16375a9a83d6e36f873a6209aac1340f9980b120273ec2a1370', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'row_disposition.jsonl': {'expected': '75bdd66d0182444daa827e13e47f895a0313bdd78149c216d491aa89a860d0d9', 'actual': '93de42b6432d3440befaa288e8897b6e1651b14007294c2891cd489548b153ca', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}, 'source_ledger.jsonl': {'expected': '1956a29f889ebc58d34d9581b9591f82f3a75725d5a1dfe2eb7c9e13e78100da', 'actual': '628dbcabb69fdb57554d17b378ea29cb4480f22605bf8dc7bea6e9556c3f754b', 'sources': ['bundle_manifest.embedded_blocks', 'validation_report.checked_artifact_hashes']}}`
+- block_hashes: `{'access_log.jsonl': '40f10add29738540deba368a42dcabde7f5432e582b790cd2433d232fb176f20', 'acquisition_warnings.jsonl': '4fbc2757f43853b4da68dc538ae0b182c0069a25d0752349d6044ebda5880d2a', 'blind_packet_manifest.json': 'ed2da02e7a403c9da6494166eb825774a5c547caa10fa971d313e821ef240d48', 'blind_prediction.json': 'd6dfb2f8cec81ad578ac003b9354f900c1149439723568e7ef14d8252a9d7986', 'blind_seal_receipt.json': '6ded73dade70e6d423419ae2f57848498ff674c001b9e89763c63b99d4a419b0', 'brain_delta.jsonl': '5e114c9803487f2fefed156bb9acb2e0038775f0753a8cc3f85394f0e757e58a', 'bundle_manifest.json': '906d2e1f8e525e0e07aa4c89023a7f55aa5b5b7c2177f28f5ed64dd02f49771d', 'candidate_screening.jsonl': 'dbc69c3bb32f0a0c271d91ca5245bc744492c84a7dc72fe7452b6c3a36126cca', 'canonical_graph.json': '31b31bc6a9d53c7541d78c4fccd6c023604a7dbda2e64b58c7032efb19372821', 'direct_ingest_contract.json': 'cd88550210bd2dd9935ba106503d88fa4acd42ae230412e37ed58e89bf6a4a6d', 'entity_ledger_blind.jsonl': 'a48f28abba8b25c04af7439a5ccf49569be83266b4146a0910b9af92ba4e3f15', 'fact_ledger_blind.jsonl': '70e96e2631a0caeefc001c71f4b7cce8c0726bf6bc631183a0376ebccb84d01a', 'final_semantic_audit.jsonl': '0111708b0ba659f1a7d9eb85a11b92f0838511725bf987598b02047d75bd25ee', 'id_registry.jsonl': '6d318fadfdcf874e2e1b792f7624a5e4866a82f1ca91664476c9f18791521e41', 'inference_ledger_blind.jsonl': 'e74b3e6270d1eb05f8759e621b98ee20fc7d4bc2af0155b6cbf79397565b9bb7', 'ledger_population_audit.json': '63cf32db384cbbb0daddb2619b944c1042e91eefc5eb12c74dd0fe26481f103a', 'outcome_leader_census.jsonl': '8f310026b5b5ee5867b92761f033d17e1c68a248cea7044c0f5f3468a3b68b19', 'outcome_ledger.jsonl': 'b8e1cf29d3eb2c2055c3d256ce0541f135ed59f1a4670991cdf6e90ac70dd06d', 'outcome_to_news_audit.jsonl': 'd636a5f42b2287d733a73c2a438b70d57590f3d2c49d792197bc5c34a8ef85b8', 'phase_state.json': 'a6b4ae323a4532fbb76e56e1ebd0a2292fa77ab789ab560cc2a57308c6969c79', 'postmortem_report.md': 'c87cabd0169c4b5e839e8d3571d3c8bad2a1d69d9f5980c8990856fc0b5edea0', 'postmortem_summary.json': 'a4e37f213841c30cddac5a941257e678420bd3fe93014ecb91a241734b4d0167', 'row_disposition.jsonl': 'd59780aa070f914b277fb01dc64fb330643ce84de1ee440a47a9b25763fe8126', 'source_ledger.jsonl': 'ebb64bcdf78330d622451c3a2ab9687a084e933fbee6ad2145cdaed73a422092', 'validation_report.json': 'a2954b27ee020db2998a0d7d1bb556d343eeac000bceedc39aa96c81cfecca02'}`
+- hash_mismatches: `{}`
 - self_referential_hashes: `{}`
-- hash_expectation_sources: `{'blind_packet_manifest.json': [{'expected': '4f2a2e8f36e7e53ad011876017dcbfabc9cf57869324d7142d6026b12bfc1cf8', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '4f2a2e8f36e7e53ad011876017dcbfabc9cf57869324d7142d6026b12bfc1cf8', 'source': 'validation_report.checked_artifact_hashes'}], 'blind_prediction.json': [{'expected': 'b09501c48cfccdfbb86ab4545d0eb9ee37c3019e46a4cdf078cba88516e873b8', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'b09501c48cfccdfbb86ab4545d0eb9ee37c3019e46a4cdf078cba88516e873b8', 'source': 'validation_report.checked_artifact_hashes'}], 'blind_report.md': [{'expected': 'c3d7c565f3860eb170ffa954d40b8f1b06880d472445227850cdcb592aa8d00b', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'c3d7c565f3860eb170ffa954d40b8f1b06880d472445227850cdcb592aa8d00b', 'source': 'validation_report.checked_artifact_hashes'}], 'brain_delta.jsonl': [{'expected': 'cae715b671b0bbd51288ebe793ee5404c7cde911917918b77c36474a7a17860c', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'cae715b671b0bbd51288ebe793ee5404c7cde911917918b77c36474a7a17860c', 'source': 'validation_report.checked_artifact_hashes'}], 'bundle_manifest.json': [{'expected': '2efa04db2288b08a433afe40c2ac39510020813951c158efe00723e631aaf3f8', 'source': 'validation_report.checked_artifact_hashes'}], 'candidate_screening.jsonl': [{'expected': '2ca8e7f513180454bcc548831a62e65b909b3e2b83b5307f4013282f44fc0c58', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '2ca8e7f513180454bcc548831a62e65b909b3e2b83b5307f4013282f44fc0c58', 'source': 'validation_report.checked_artifact_hashes'}], 'entity_ledger_blind.jsonl': [{'expected': '261db1359976c8844098084256c77f337d5a535f415871038af960d4901e2bf5', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '261db1359976c8844098084256c77f337d5a535f415871038af960d4901e2bf5', 'source': 'validation_report.checked_artifact_hashes'}], 'entity_resolution.jsonl': [{'expected': '6b081d9d85da6bfffc0000e339d892ca964b8494feedd39707a51e33d65f7903', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '6b081d9d85da6bfffc0000e339d892ca964b8494feedd39707a51e33d65f7903', 'source': 'validation_report.checked_artifact_hashes'}], 'fact_ledger_blind.jsonl': [{'expected': 'eabacb37f4ec91fbdea26b323829c2741133609beb1800598d362a30c441ce8f', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'eabacb37f4ec91fbdea26b323829c2741133609beb1800598d362a30c441ce8f', 'source': 'validation_report.checked_artifact_hashes'}], 'id_registry.json': [{'expected': '213aa8a5226832f8744aa13426d06bd91a52391e4da61f390a5bfb02e270e4b2', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '213aa8a5226832f8744aa13426d06bd91a52391e4da61f390a5bfb02e270e4b2', 'source': 'validation_report.checked_artifact_hashes'}], 'inference_ledger_blind.jsonl': [{'expected': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'source': 'validation_report.checked_artifact_hashes'}], 'outcome_ledger.jsonl': [{'expected': '1c02ae0a8c835722845c9880d2c60ef02442afef36574d3308497e83339ec6f2', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '1c02ae0a8c835722845c9880d2c60ef02442afef36574d3308497e83339ec6f2', 'source': 'validation_report.checked_artifact_hashes'}], 'postmortem_report.md': [{'expected': '6a1152c66a463fc81f6d9e0d4a61c1bb447e012962abab0dd53eae6dc3654ac6', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '6a1152c66a463fc81f6d9e0d4a61c1bb447e012962abab0dd53eae6dc3654ac6', 'source': 'validation_report.checked_artifact_hashes'}], 'research_episode.json': [{'expected': '165e2fb097383d4c68ed154da55f67d1f7bee772936c5083e73c1906a042ee0e', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '165e2fb097383d4c68ed154da55f67d1f7bee772936c5083e73c1906a042ee0e', 'source': 'validation_report.checked_artifact_hashes'}], 'research_report.md': [{'expected': 'd4c75a26f2c95630c2385da05e96b304708193a5c08b679a8af835f348ce9bf2', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': 'd4c75a26f2c95630c2385da05e96b304708193a5c08b679a8af835f348ce9bf2', 'source': 'validation_report.checked_artifact_hashes'}], 'row_disposition.jsonl': [{'expected': '75bdd66d0182444daa827e13e47f895a0313bdd78149c216d491aa89a860d0d9', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '75bdd66d0182444daa827e13e47f895a0313bdd78149c216d491aa89a860d0d9', 'source': 'validation_report.checked_artifact_hashes'}], 'source_ledger.jsonl': [{'expected': '1956a29f889ebc58d34d9581b9591f82f3a75725d5a1dfe2eb7c9e13e78100da', 'source': 'bundle_manifest.embedded_blocks'}, {'expected': '1956a29f889ebc58d34d9581b9591f82f3a75725d5a1dfe2eb7c9e13e78100da', 'source': 'validation_report.checked_artifact_hashes'}]}`
+- hash_expectation_sources: `{}`
 - hash_expectation_conflicts: `{}`
-- source_reference_count: `823`
+- source_reference_count: `0`
 - missing_source_references: `[]`
 - provenance_closure_status: `closed`
-- payload_reference_count: `722`
+- payload_reference_count: `92`
 - missing_payload_references: `[]`
 - payload_reference_closure_status: `closed`
 - available_from_valid: `True`
@@ -494,10 +443,39 @@
 - invalid_available_from_record_ids: `[]`
 - outcome_label_quality_valid: `True`
 - invalid_outcome_label_quality_record_ids: `[]`
+- typed_payload_valid: `True`
+- invalid_typed_payload_record_ids: `[]`
+- event_ticker_edge_cutoff_provenance_valid: `True`
+- invalid_event_ticker_edge_cutoff_provenance_record_ids: `[]`
+- event_ticker_edge_source_ledger_cutoff_valid: `True`
+- invalid_event_ticker_edge_source_ledger_cutoff_record_ids: `[]`
+- company_memory_delta_known_at_valid: `True`
+- invalid_company_memory_delta_known_at_record_ids: `[]`
+- company_memory_delta_known_at_not_backdated: `True`
+- backdated_company_memory_delta_known_at_record_ids: `[]`
+- issuer_day_event_level_weights_valid: `True`
+- invalid_issuer_day_event_level_weight_record_ids: `[]`
+- sample_weight_validation: `{'status': 'failed', 'duplicate_issuer_day_count': 27, 'duplicate_issuer_day_keys': ['2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|', '2024-12-04|'], 'issuer_day_weight_sum_mismatches': {'2024-12-04|': 0.0}, 'direct_event_weight_sum_mismatches': {'2024-12-04:': 0.0}}`
+- sample_weight_validation_status: `failed`
+- import_loss_audit_passed: `False`
+- raw_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
+- normalized_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
+- raw_record_without_id_count: `0`
+- record_id_set_comparable: `True`
+- record_id_set_matches_raw: `True`
+- missing_normalized_record_ids: `[]`
+- missing_normalized_record_count: `0`
+- extra_normalized_record_ids: `[]`
+- extra_normalized_record_count: `0`
+- raw_record_counts_by_type: `{'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 28, 'theme_formation_case': 7}`
+- record_type_counts_match_raw: `True`
+- raw_training_eligible_record_count: `162`
+- training_eligible_count_matches_raw: `False`
+- raw_payload_hashes_match: `True`
+- raw_payload_hash_mismatch_record_ids: `[]`
 - validator_exit_code: `0`
 - critical_error_count: `0`
 - passed: `False`
-- bundle_status_accept_full: `True`
-- blind_valid: `True`
-- validator_exit_code_zero: `True`
-- critical_error_count_zero: `True`
+- forward_compatible_raw_only: `True`
+- unsupported_bundle_version: `True`
+- reason: `unsupported bundle version preserved as staged raw-only records`
