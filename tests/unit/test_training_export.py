@@ -793,6 +793,31 @@ def test_training_audit_rejects_invalid_skipped_record_reasons(tmp_path) -> None
     assert "sft: skipped_records:1 skip_reasons is invalid" in audit["findings"]
 
 
+def test_training_audit_rejects_duplicate_manifest_record_id_lists(tmp_path) -> None:
+    _write_record_training_fixture(tmp_path)
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    manifest = read_json(sft.manifest_path)
+    manifest["skipped_record_ids"] = [
+        "BRAIN-MEMORY",
+        "BRAIN-MEMORY",
+        "BRAIN-PAIR",
+    ]
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert (
+        "sft: skipped_record_ids contains duplicate record IDs: BRAIN-MEMORY"
+        in audit["findings"]
+    )
+
+
 def test_training_manifest_surfaces_duplicate_issuer_day_weight_validation(
     tmp_path,
 ) -> None:

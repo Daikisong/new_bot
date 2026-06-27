@@ -1135,6 +1135,14 @@ def _audit_manifest_record_id_list(
     ):
         findings.append(f"{kind}: {field} is invalid")
         return
+    duplicate_ids = sorted(
+        record_id for record_id, count in Counter(value).items() if count > 1
+    )
+    if duplicate_ids:
+        findings.append(
+            f"{kind}: {field} contains duplicate record IDs: "
+            f"{', '.join(duplicate_ids)}"
+        )
     observed_ids = set(value)
     if observed_ids != expected_ids:
         findings.append(f"{kind}: {field} does not match manifest records")
