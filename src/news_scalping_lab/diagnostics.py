@@ -1093,15 +1093,18 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     unreadable_artifacts: list[str] = []
     for artifact_path in sorted(artifact_paths):
         try:
-            mock_url_count, sample_values = _mock_url_evidence(artifact_path)
+            mock_url_count, mock_metadata_count, sample_values = _mock_web_evidence(
+                artifact_path
+            )
         except OSError:
             unreadable_artifacts.append(relative_to_root(artifact_path, root))
             continue
-        if mock_url_count:
+        if mock_url_count or mock_metadata_count:
             mock_artifacts.append(
                 {
                     "path": relative_to_root(artifact_path, root),
                     "mock_url_count": mock_url_count,
+                    "mock_metadata_count": mock_metadata_count,
                     "sample_values": sample_values[:5],
                 }
             )
@@ -1132,10 +1135,18 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for artifact in mock_artifacts:
-        findings.append(
-            f"mock web source URLs present in {artifact['path']} "
-            f"({artifact['mock_url_count']})"
-        )
+        mock_url_count = int(artifact["mock_url_count"])
+        mock_metadata_count = int(artifact["mock_metadata_count"])
+        if mock_url_count:
+            findings.append(
+                f"mock web source URLs present in {artifact['path']} "
+                f"({mock_url_count})"
+            )
+        if mock_metadata_count:
+            findings.append(
+                f"mock web provider metadata present in {artifact['path']} "
+                f"({mock_metadata_count})"
+            )
 
     return {
         "schema_version": "nslab.production_web_evidence.v1",
@@ -1162,6 +1173,13 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "mock_web_url_count": sum(
             int(artifact["mock_url_count"]) for artifact in mock_artifacts
         ),
+        "mock_web_metadata_count": sum(
+            int(artifact["mock_metadata_count"]) for artifact in mock_artifacts
+        ),
+        "mock_web_evidence_count": sum(
+            int(artifact["mock_url_count"]) + int(artifact["mock_metadata_count"])
+            for artifact in mock_artifacts
+        ),
         "mock_web_artifacts": mock_artifacts,
     }
 
@@ -1180,9 +1198,10 @@ def _project_relative_artifact_path(root: Path, value: object) -> Path | None:
     return resolved
 
 
-def _mock_url_evidence(path: Path) -> tuple[int, list[str]]:
+def _mock_web_evidence(path: Path) -> tuple[int, int, list[str]]:
     if path.suffix == ".jsonl":
-        count = 0
+        url_count = 0
+        metadata_count = 0
         samples: list[str] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -1191,20 +1210,28 @@ def _mock_url_evidence(path: Path) -> tuple[int, list[str]]:
                 payload: object = json.loads(line)
             except json.JSONDecodeError:
                 payload = line
-            values = _mock_url_values(payload)
-            count += len(values)
-            samples.extend(values)
-        return count, _unique_preserving_order(samples)
+            url_values = _mock_url_values(payload)
+            metadata_values = _mock_provider_metadata_values(payload)
+            url_count += len(url_values)
+            metadata_count += len(metadata_values)
+            samples.extend(url_values)
+            samples.extend(metadata_values)
+        return url_count, metadata_count, _unique_preserving_order(samples)
     if path.suffix == ".json":
         try:
             payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError:
             payload = path.read_text(encoding="utf-8")
-        values = _mock_url_values(payload)
-        return len(values), _unique_preserving_order(values)
+        url_values = _mock_url_values(payload)
+        metadata_values = _mock_provider_metadata_values(payload)
+        return (
+            len(url_values),
+            len(metadata_values),
+            _unique_preserving_order([*url_values, *metadata_values]),
+        )
     text = path.read_text(encoding="utf-8")
     values = [value for value in text.split() if "mock://" in value]
-    return len(values), _unique_preserving_order(values)
+    return len(values), 0, _unique_preserving_order(values)
 
 
 def _mock_url_values(value: object) -> list[str]:
@@ -1221,6 +1248,28 @@ def _mock_url_values(value: object) -> list[str]:
             values.extend(_mock_url_values(item))
         return values
     return []
+
+
+def _mock_provider_metadata_values(value: object) -> list[str]:
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(_mock_provider_metadata_values(item))
+        return values
+    if not isinstance(value, dict):
+        return []
+    values = []
+    for raw_key, item in value.items():
+        key = str(raw_key)
+        key_lower = key.lower()
+        if (
+            isinstance(item, str)
+            and "mock" in item.strip().lower()
+            and ("provider" in key_lower or key_lower == "source_type")
+        ):
+            values.append(f"{key}={item}")
+        values.extend(_mock_provider_metadata_values(item))
+    return values
 
 
 def _unique_preserving_order(values: list[str]) -> list[str]:
