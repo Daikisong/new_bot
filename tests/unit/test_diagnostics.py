@@ -2159,6 +2159,10 @@ def test_production_readiness_accepts_complete_record_coverage_manifest(
     ]
     assert production["record_coverage"]["duplicate_swept_record_ids"] == []
     assert production["record_coverage"]["unswept_record_ids"] == []
+    assert production["record_coverage"]["expected_unswept_record_ids"] == []
+    assert production["record_coverage"]["unknown_unswept_record_ids"] == []
+    assert production["record_coverage"]["missing_unswept_record_ids"] == []
+    assert production["record_coverage"]["unexpected_unswept_record_ids"] == []
     assert production["record_coverage"]["findings"] == []
 
 
@@ -2273,6 +2277,61 @@ def test_production_readiness_rejects_invalid_record_coverage_as_of(
     )
     assert (
         "records: record coverage manifest is marked complete despite production findings"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_record_coverage_unswept_id_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    _write_record_coverage_store(tmp_path)
+    coverage = _complete_record_coverage()
+    coverage.update(
+        {
+            "swept_record_count": 1,
+            "swept_record_ids": ["BRAIN-1"],
+            "unswept_record_ids": ["BRAIN-1", "BRAIN-missing"],
+        }
+    )
+    write_json(current / "record_coverage_manifest.json", coverage)
+
+    production = production_readiness_report(
+        {
+            "api_connections": {
+                "openai": {"status": "configured_not_called"},
+                "brave_search": {"status": "configured_not_called"},
+            },
+            "vector_index": {
+                "status": "current",
+                "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+                "brain_records_exists": True,
+                "source_brain_record_count": 2,
+                "brain_record_count": 2,
+            },
+        },
+        settings,
+    )
+
+    assert production["record_coverage"]["passed"] is False
+    assert production["record_coverage"]["expected_unswept_record_ids"] == ["BRAIN-2"]
+    assert production["record_coverage"]["unknown_unswept_record_ids"] == [
+        "BRAIN-missing"
+    ]
+    assert production["record_coverage"]["missing_unswept_record_ids"] == ["BRAIN-2"]
+    assert production["record_coverage"]["unexpected_unswept_record_ids"] == [
+        "BRAIN-1",
+        "BRAIN-missing",
+    ]
+    assert (
+        "records: record coverage manifest unswept IDs reference unknown records"
+        in production["findings"]
+    )
+    assert (
+        "records: record coverage manifest unswept IDs do not match record store"
         in production["findings"]
     )
 

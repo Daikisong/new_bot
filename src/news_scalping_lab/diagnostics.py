@@ -2759,6 +2759,10 @@ def _production_record_coverage_status(
             "swept_record_ids": [],
             "duplicate_swept_record_ids": [],
             "unswept_record_ids": None,
+            "expected_unswept_record_ids": [],
+            "unknown_unswept_record_ids": [],
+            "missing_unswept_record_ids": [],
+            "unexpected_unswept_record_ids": [],
             "record_store_readable": None,
             "record_store_record_count": None,
             "record_store_error": None,
@@ -2851,10 +2855,26 @@ def _production_record_coverage_status(
         findings.append("record coverage manifest has unswept records")
     unknown_swept_record_ids = sorted(set(swept_record_ids) - store_record_id_set)
     missing_swept_record_ids = sorted(store_record_id_set - set(swept_record_ids))
+    expected_unswept_record_ids = missing_swept_record_ids
+    unknown_unswept_record_ids = sorted(set(unswept_record_ids) - store_record_id_set)
+    missing_unswept_record_ids = sorted(
+        set(expected_unswept_record_ids) - set(unswept_record_ids)
+    )
+    unexpected_unswept_record_ids = sorted(
+        set(unswept_record_ids) - set(expected_unswept_record_ids)
+    )
     if record_store_readable is True and unknown_swept_record_ids:
         findings.append("record coverage manifest swept IDs reference unknown records")
     if record_store_readable is True and missing_swept_record_ids:
         findings.append("record coverage manifest swept IDs do not cover record store")
+    if record_store_readable is True and unknown_unswept_record_ids:
+        findings.append("record coverage manifest unswept IDs reference unknown records")
+    if (
+        record_store_readable is True
+        and _string_list_field_valid(raw_unswept_record_ids)
+        and set(unswept_record_ids) != set(expected_unswept_record_ids)
+    ):
+        findings.append("record coverage manifest unswept IDs do not match record store")
 
     count_maps = {
         "record_counts_by_type": _int_dict(
@@ -3067,6 +3087,10 @@ def _production_record_coverage_status(
         "swept_record_ids": swept_record_ids,
         "duplicate_swept_record_ids": _duplicate_strings(swept_record_ids),
         "unswept_record_ids": unswept_record_ids,
+        "expected_unswept_record_ids": expected_unswept_record_ids,
+        "unknown_unswept_record_ids": unknown_unswept_record_ids,
+        "missing_unswept_record_ids": missing_unswept_record_ids,
+        "unexpected_unswept_record_ids": unexpected_unswept_record_ids,
         "record_counts_by_type": count_maps["record_counts_by_type"],
         "record_counts_by_evidence_phase": count_maps[
             "record_counts_by_evidence_phase"
