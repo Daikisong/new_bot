@@ -38,7 +38,7 @@ LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifes
 
 def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     store = ResearchStore(root)
-    accepted = store.list_accepted()
+    accepted, accepted_store_findings = _read_accepted_episodes_for_audit(store)
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
     coverage_manifest, coverage_read_findings = _read_json_object_for_audit(
         coverage_path,
@@ -49,7 +49,11 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         brain_manifest_path,
         label="brain manifest",
     )
-    artifact_read_findings = [*coverage_read_findings, *brain_read_findings]
+    artifact_read_findings = [
+        *accepted_store_findings,
+        *coverage_read_findings,
+        *brain_read_findings,
+    ]
     covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
     accepted_ids = {episode.episode_id for episode in accepted}
     source_hashes = store.accepted_hashes()
@@ -108,6 +112,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,
         "extra_episode_ids": extra,
+        "accepted_store_findings": accepted_store_findings,
         "artifact_read_findings": artifact_read_findings,
         **episode_coverage_audit,
         **claim_audit,
@@ -188,6 +193,7 @@ def _write_latest_brain_audit_summary(
         "brain_category_files_identical": result.get("brain_category_files_identical"),
         "brain_category_bodies_identical": result.get("brain_category_bodies_identical"),
         "artifact_read_findings": result.get("artifact_read_findings"),
+        "accepted_store_findings": result.get("accepted_store_findings"),
         "episode_coverage_findings": result.get("episode_coverage_findings"),
         "episode_coverage_brain_version": result.get("episode_coverage_brain_version"),
         "expected_episode_coverage_brain_version": result.get(
@@ -345,6 +351,22 @@ def _read_existing_diagnostic_report_for_audit(
     if not isinstance(payload, dict):
         return {}, [f"{label} must be a JSON object"]
     return payload, []
+
+
+def _read_accepted_episodes_for_audit(
+    store: ResearchStore,
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return store.list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return [], ["accepted episode store is unreadable"]
 
 
 def _brain_audit_findings(result: dict[str, object]) -> list[str]:
@@ -1151,7 +1173,23 @@ def _audit_record_coverage(
             )
         except ValueError:
             expected_record_coverage_as_of = None
-    expected_accepted_episode_count = len(ResearchStore(root).list_accepted())
+    accepted_store_findings: list[str] = []
+    try:
+        expected_accepted_episode_count: int | None = len(
+            ResearchStore(root).list_accepted()
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        expected_accepted_episode_count = None
+        accepted_store_findings = [
+            "record coverage accepted episode store is unreadable"
+        ]
     record_ids = {record.record_id for record in records}
     training_eligible_count = sum(1 for record in records if record.training_eligible)
     record_counts_by_type = dict(
@@ -1200,8 +1238,8 @@ def _audit_record_coverage(
             "record_counts_by_training_target": {},
             "ineligible_record_count": 0,
             "audit_only_record_count": 0,
-            "record_coverage_complete": True,
-            "record_coverage_findings": [],
+            "record_coverage_complete": not accepted_store_findings,
+            "record_coverage_findings": accepted_store_findings,
         }
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
@@ -1219,7 +1257,10 @@ def _audit_record_coverage(
             record_counts_by_target=record_counts_by_target,
             ineligible_count=ineligible_count,
             audit_only_count=audit_only_count,
-            findings=["record coverage manifest is missing"],
+            findings=[
+                *accepted_store_findings,
+                "record coverage manifest is missing",
+            ],
         )
     manifest, manifest_read_findings = _read_json_object_for_audit(
         manifest_path,
@@ -1240,9 +1281,9 @@ def _audit_record_coverage(
             record_counts_by_target=record_counts_by_target,
             ineligible_count=ineligible_count,
             audit_only_count=audit_only_count,
-            findings=manifest_read_findings,
+            findings=[*accepted_store_findings, *manifest_read_findings],
         )
-    findings: list[str] = []
+    findings: list[str] = [*accepted_store_findings]
     manifest_brain_version = manifest.get("brain_version")
     manifest_build_mode = manifest.get("build_mode")
     manifest_catalog_only = manifest.get("catalog_only")
@@ -1317,7 +1358,10 @@ def _audit_record_coverage(
             )
     if manifest_accepted_episode_count is None:
         findings.append("record coverage manifest accepted_episode_count is missing")
-    elif manifest_accepted_episode_count != expected_accepted_episode_count:
+    elif (
+        expected_accepted_episode_count is not None
+        and manifest_accepted_episode_count != expected_accepted_episode_count
+    ):
         findings.append(
             "record coverage manifest accepted_episode_count does not match accepted episodes"
         )
@@ -1442,7 +1486,7 @@ def _record_coverage_unavailable_result(
     expected_brain_version: str | None,
     expected_build_mode: str | None,
     expected_catalog_only: bool | None,
-    expected_accepted_episode_count: int,
+    expected_accepted_episode_count: int | None,
     records: list[BrainRecordEnvelope],
     record_ids: set[str],
     training_eligible_count: int,

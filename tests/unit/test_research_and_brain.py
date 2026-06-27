@@ -446,6 +446,47 @@ def test_brain_audit_reports_unreadable_brain_manifest(tmp_path) -> None:
     ]
 
 
+def test_brain_audit_reports_unreadable_accepted_store(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text(
+        "Brain audit should report malformed accepted episode JSON without crashing.",
+        encoding="utf-8",
+    )
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    accepted_path = tmp_path / "research" / "accepted" / f"{episode.episode_id}.json"
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["passed"] is False
+    assert audit["accepted_episode_count"] == 0
+    assert audit["accepted_store_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert audit["artifact_read_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert "record coverage accepted episode store is unreadable" in audit[
+        "record_coverage_findings"
+    ]
+    brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
+    latest = brain_report["latest_brain_audit"]
+    assert latest["accepted_store_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert "artifact_read_findings: accepted episode store is unreadable" in latest[
+        "findings"
+    ]
+    record_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
+    assert "record coverage accepted episode store is unreadable" in record_report[
+        "latest_record_coverage_audit"
+    ]["findings"]
+
+
 def test_brain_audit_recovers_unreadable_existing_diagnostic_reports(
     tmp_path,
 ) -> None:
