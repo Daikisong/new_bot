@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
     CATALOG_COMPILER_VERSION,
@@ -84,7 +86,11 @@ class ContextAssembler:
         raw_retrieved_ids = retrieved_episode_ids or []
         raw_retrieved_record_ids = retrieved_record_ids or []
         web_query_list = web_queries or []
-        all_accepted = self.store.list_accepted()
+        all_records = BrainRecordStore(self.root).list_records()
+        all_accepted, accepted_store_findings = _read_accepted_episodes_for_context(
+            self.store,
+            records=all_records,
+        )
         accepted = [
             episode
             for episode in all_accepted
@@ -98,7 +104,6 @@ class ContextAssembler:
         accepted_ids = [episode.episode_id for episode in accepted]
         all_accepted_ids = [episode.episode_id for episode in all_accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
-        all_records = BrainRecordStore(self.root).list_records()
         available_records = [
             record
             for record in all_records
@@ -166,6 +171,7 @@ class ContextAssembler:
             )
         ]
         errors: list[str] = []
+        errors.extend(accepted_store_findings)
         if mode == "exhaustive" and len(swept_ids) != len(accepted_ids):
             errors.append("exhaustive coverage mismatch")
         if mode == "exhaustive" and len(swept_record_ids) != len(available_record_ids):
@@ -286,9 +292,12 @@ class ContextAssembler:
             return False
         if self._current_shard_episode_count() != self.shard_episode_count:
             return False
+        all_accepted = _read_accepted_episodes_for_current_context_check(self.store)
+        if all_accepted is None:
+            return False
         future_episode_ids = [
             episode.episode_id
-            for episode in self.store.list_accepted()
+            for episode in all_accepted
             if not is_available_as_of(episode.available_from, cutoff_at)
         ]
         if self._context_files_contain_any_episode_id(
@@ -497,6 +506,42 @@ def current_shard_brain_file_hashes(root: Path) -> dict[str, str]:
         for path in sorted(shard_dir.glob("*.md"))
         if path.is_file()
     }
+
+
+def _read_accepted_episodes_for_context(
+    store: ResearchStore,
+    *,
+    records: list[BrainRecordEnvelope],
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return store.list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        if records:
+            return [], ["accepted episode store is unreadable"]
+        raise
+
+
+def _read_accepted_episodes_for_current_context_check(
+    store: ResearchStore,
+) -> list[ResearchEpisode] | None:
+    try:
+        return store.list_accepted()
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return None
 
 
 def _episode_shards(

@@ -861,6 +861,52 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert record_sweep["observed_record_ids"] == ["BRAIN-AVAILABLE"]
 
 
+def test_context_assembler_preserves_record_context_when_accepted_store_unreadable(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-CONTEXT-AVAILABLE",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-CONTEXT-FUTURE",
+                available_from=datetime(2030, 1, 10, 9, 30, 0, tzinfo=KST),
+            ),
+        ],
+    )
+    accepted_path = (
+        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
+    )
+    accepted_path.parent.mkdir(parents=True, exist_ok=True)
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    manifest = ContextAssembler(tmp_path).assemble(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="record-context-unreadable-accepted-store",
+        retrieved_record_ids=[
+            "BRAIN-CONTEXT-AVAILABLE",
+            "BRAIN-CONTEXT-FUTURE",
+        ],
+    )
+
+    assert manifest.accepted_episode_count == 0
+    assert manifest.total_accepted_episode_count == 0
+    assert manifest.accepted_record_count == 2
+    assert manifest.available_record_ids == ["BRAIN-CONTEXT-AVAILABLE"]
+    assert manifest.swept_record_ids == ["BRAIN-CONTEXT-AVAILABLE"]
+    assert manifest.retrieved_record_ids == ["BRAIN-CONTEXT-AVAILABLE"]
+    assert manifest.excluded_retrieved_record_ids == ["BRAIN-CONTEXT-FUTURE"]
+    assert "accepted episode store is unreadable" in manifest.errors
+    assert "swept_record_count must equal available_record_count" not in manifest.errors
+
+
 @pytest.mark.asyncio
 async def test_exhaustive_record_coverage_100_percent(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
