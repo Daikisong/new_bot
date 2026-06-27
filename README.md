@@ -223,6 +223,7 @@ python -m news_scalping_lab.cli research smoke-bundle --path %NSLAB_REAL_BUNDLE_
 python -m news_scalping_lab.cli brain rebuild --mode llm-full
 python -m news_scalping_lab.cli memory rebuild-index --production
 python -m news_scalping_lab.cli warehouse rebuild
+python -m news_scalping_lab.cli warehouse verify
 python -m news_scalping_lab.cli brain audit --deep
 python -m news_scalping_lab.cli doctor --production
 ```

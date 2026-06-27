@@ -334,6 +334,7 @@ def test_production_readiness_rejects_failed_latest_brain_audit(
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
         "python -m news_scalping_lab.cli memory rebuild-index --production",
         "python -m news_scalping_lab.cli warehouse rebuild",
+        "python -m news_scalping_lab.cli warehouse verify",
         "python -m news_scalping_lab.cli brain audit --deep",
         "python -m news_scalping_lab.cli doctor --production",
     ]
@@ -3153,6 +3154,7 @@ def test_production_readiness_reports_exact_commands_for_mock_defaults(tmp_path)
         "python -m news_scalping_lab.cli brain rebuild --mode llm-full",
         "python -m news_scalping_lab.cli memory rebuild-index --production",
         "python -m news_scalping_lab.cli warehouse rebuild",
+        "python -m news_scalping_lab.cli warehouse verify",
         "python -m news_scalping_lab.cli brain audit --deep",
         "python -m news_scalping_lab.cli doctor --production",
     ]

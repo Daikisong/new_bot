@@ -578,6 +578,7 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
             f"{python_command} brain rebuild --mode llm-full",
             f"{python_command} memory rebuild-index --production",
             f"{python_command} warehouse rebuild",
+            f"{python_command} warehouse verify",
             f"{python_command} brain audit --deep",
             f"{python_command} doctor --production",
         ],
