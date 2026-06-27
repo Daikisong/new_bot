@@ -5974,15 +5974,21 @@ def _check_trace_prompt_token_counts_match_manifest(
             f"token count for {purpose}"
         )
         return
+    mismatched_records: list[dict[str, Any]] = []
     for trace_record in trace_records:
         payload = trace_record["payload"]
         mismatch = _trace_prompt_token_count_mismatch(payload, expected_prompt_tokens)
-        if mismatch:
-            trace_path = trace_record["path"]
-            findings.append(
-                f"{prediction_path.name}: trace prompt token count mismatch for "
-                f"{purpose}: {trace_path.name}"
-            )
+        if not mismatch:
+            return
+        mismatched_records.append(trace_record)
+    if mismatched_records:
+        trace_names = ", ".join(
+            trace_record["path"].name for trace_record in mismatched_records
+        )
+        findings.append(
+            f"{prediction_path.name}: trace prompt token count mismatch for "
+            f"{purpose}: {trace_names}"
+        )
 
 
 def _trace_prompt_token_count_mismatch(

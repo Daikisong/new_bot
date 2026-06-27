@@ -6149,6 +6149,60 @@ def test_provenance_audit_accepts_current_trace_when_stale_trace_shares_prompt_h
     ) not in result["findings"]
 
 
+def test_provenance_audit_accepts_current_trace_token_count_when_stale_trace_shares_prompt_hash(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "predictions").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "runs" / "manifests").mkdir(parents=True)
+    (tmp_path / "runs" / "traces").mkdir(parents=True)
+    write_json(
+        tmp_path / "predictions" / "2030-01-10.json",
+        {
+            "blind_artifact_sha256": "abc123",
+            "context_manifest_id": "RUN-linked",
+            "blind_analysis": _blind_analysis_with_provenance(),
+            "candidates": [_candidate_with_provenance()],
+        },
+    )
+    write_json(
+        tmp_path / "runs" / "manifests" / "RUN-linked.json",
+        {
+            "run_id": "RUN-linked",
+            "prompt_hashes": {"blind_analysis": "blind-hash"},
+            "token_counts": {"blind_analysis_prompt": 25},
+            "price_snapshot": {"allowed_through": "2030-01-09"},
+            "brain_file_hashes": {"brain/current/brain_manifest.json": "789"},
+        },
+    )
+    stale_trace = _trace_payload(
+        prompt_sha256="blind-hash",
+        checkpoint_id="LLMCKPT-stale",
+        trace_id="TRACE-stale",
+    )
+    stale_trace["token_usage"] = {
+        "prompt_tokens_estimate": 24,
+        "completion_tokens_estimate": 10,
+    }
+    current_trace = _trace_payload(
+        prompt_sha256="blind-hash",
+        checkpoint_id="LLMCKPT-current",
+        trace_id="TRACE-current",
+    )
+    write_json(tmp_path / "runs" / "traces" / "TRACE-stale.json", stale_trace)
+    write_json(tmp_path / "runs" / "traces" / "TRACE-current.json", current_trace)
+    (tmp_path / "reports" / "2030-01-10_preopen.md").write_text(
+        "Run ID: `RUN-linked`", encoding="utf-8"
+    )
+
+    result = audit_provenance(tmp_path)
+
+    assert (
+        "2030-01-10.json: trace prompt token count mismatch for "
+        "daily_blind_analysis: TRACE-stale.json"
+    ) not in result["findings"]
+
+
 def test_provenance_audit_flags_incomplete_llm_trace_metadata(tmp_path: Path) -> None:
     (tmp_path / "predictions").mkdir()
     (tmp_path / "reports").mkdir()
