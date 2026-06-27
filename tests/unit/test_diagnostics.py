@@ -6,6 +6,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
     LLM_FULL_COMPILER_VERSION,
@@ -615,6 +616,47 @@ def test_doctor_report_readiness_flags_unsynced_warehouse(tmp_path) -> None:
         "finding_count": 1,
         "findings": ["warehouse: required projections are missing, unreadable, or unsynced"],
     }
+
+
+def test_doctor_report_flags_unreadable_accepted_store(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    export_json_schemas(tmp_path / "schemas")
+    episode = ResearchEpisode(
+        episode_id="EP-doctor-accepted-unreadable",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="doctor-test-v1",
+        price_source_snapshot={"source": "doctor-test"},
+        blind_analysis=BlindAnalysis(
+            summary="Doctor accepted store unreadable test.",
+            open_world_mechanisms=["accepted episode -> diagnostics"],
+        ),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    store = ResearchStore(tmp_path)
+    store.save_episode(episode)
+    store.accept(episode.episode_id)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    accepted_path = tmp_path / "research" / "accepted" / f"{episode.episode_id}.json"
+    accepted_path.write_text("{not valid json", encoding="utf-8")
+
+    coverage = audit_coverage(tmp_path)
+    report = build_doctor_report(settings)
+
+    assert coverage["accepted_episode_store_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert "brain: accepted episode store is unreadable" in coverage["findings"]
+    assert report["brain"]["accepted_episode_count"] == 0
+    assert report["brain"]["accepted_episode_store_findings"] == [
+        "accepted episode store is unreadable"
+    ]
+    assert report["readiness"]["passed"] is False
+    assert "brain: accepted episode store is unreadable" in report["readiness"][
+        "findings"
+    ]
 
 
 def test_doctor_report_exposes_warehouse_duplicate_and_weight_details(

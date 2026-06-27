@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+from pydantic import ValidationError
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.contracts.models import ResearchEpisode
@@ -26,7 +27,9 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
     brain_audit_passed = bool(brain.get("passed"))
     brain_audit_findings = _brain_audit_findings(brain)
     accepted_episode_count = _int_value(brain.get("accepted_episode_count"))
-    accepted_episodes = ResearchStore(root).list_accepted()
+    accepted_episodes, accepted_store_findings = _read_accepted_episodes_for_coverage(
+        root
+    )
     records = BrainRecordStore(root).list_records()
     vector_index = inspect_vector_index(root)
     warehouse_counts = WarehouseStore(root).counts()
@@ -79,6 +82,10 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         not missing_warehouse_files and not unreadable_warehouse_files
     )
     findings = [f"brain: {finding}" for finding in brain_audit_findings]
+    for finding in accepted_store_findings:
+        formatted = f"brain: {finding}"
+        if formatted not in findings:
+            findings.append(formatted)
     if not vector_index_current:
         findings.append(f"vector_index: status is {vector_index.get('status')}")
     if not warehouse_synced:
@@ -132,6 +139,7 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "brain_audit_passed": brain_audit_passed,
         "brain_audit_deep": brain.get("deep"),
         "brain_audit_findings": brain_audit_findings,
+        "accepted_episode_store_findings": accepted_store_findings,
         "vector_index": vector_index,
         "vector_index_current": vector_index_current,
         "warehouse_counts": warehouse_counts,
@@ -149,6 +157,22 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "warehouse_unreadable_files": unreadable_warehouse_files,
         "warehouse_required_files_present": warehouse_required_files_present,
     }
+
+
+def _read_accepted_episodes_for_coverage(
+    root: Path,
+) -> tuple[list[ResearchEpisode], list[str]]:
+    try:
+        return ResearchStore(root).list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return [], ["accepted episode store is unreadable"]
 
 
 def _warehouse_missing_columns(root: Path) -> dict[str, list[str]]:
@@ -173,6 +197,7 @@ def _warehouse_missing_columns(root: Path) -> dict[str, list[str]]:
 def _brain_audit_findings(brain: dict[str, object]) -> list[str]:
     findings: list[str] = []
     for field in (
+        "artifact_read_findings",
         "missing_episode_ids",
         "extra_episode_ids",
         "claims_without_support",

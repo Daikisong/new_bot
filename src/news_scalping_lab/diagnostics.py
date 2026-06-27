@@ -1137,8 +1137,10 @@ def build_doctor_report(
     *,
     production: bool = False,
 ) -> dict[str, Any]:
-    store = ResearchStore(settings.project_root)
-    accepted_episode_count = len(store.list_accepted())
+    accepted_episodes, accepted_store_findings = _read_accepted_episodes_for_diagnostics(
+        settings.project_root
+    )
+    accepted_episode_count = len(accepted_episodes)
     stock_web_path = _resolved_optional_path(settings, settings.stock_web_path)
     stock_web_cache_path = settings.path(settings.stock_web_cache_path)
     stock_web_effective_path, stock_web_effective_source = _stock_web_effective_path(
@@ -1232,6 +1234,7 @@ def build_doctor_report(
         "brain": {
             "head": current_brain_version(settings.project_root),
             "accepted_episode_count": accepted_episode_count,
+            "accepted_episode_store_findings": accepted_store_findings,
             "coverage": _brain_coverage_status(settings.project_root, accepted_episode_count),
             "audit": _brain_audit_status(coverage_audit),
         },
@@ -1252,6 +1255,22 @@ def build_doctor_report(
     return report
 
 
+def _read_accepted_episodes_for_diagnostics(
+    root: Path,
+) -> tuple[list[Any], list[str]]:
+    try:
+        return ResearchStore(root).list_accepted(), []
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ValidationError,
+        TypeError,
+        ValueError,
+    ):
+        return [], ["accepted episode store is unreadable"]
+
+
 def _doctor_readiness(
     report: dict[str, Any],
     *,
@@ -1259,6 +1278,12 @@ def _doctor_readiness(
     accepted_episode_count: int,
 ) -> dict[str, Any]:
     findings: list[str] = []
+    for finding in _string_list(
+        _nested_dict(report, "brain").get("accepted_episode_store_findings")
+    ):
+        formatted = f"brain: {finding}"
+        if formatted not in findings:
+            findings.append(formatted)
     price_provider = settings.price_provider.strip().lower()
     if price_provider not in {"mock", "stock-web", "stock_web", "stockweb"}:
         findings.append(f"price: unsupported provider {settings.price_provider}")
