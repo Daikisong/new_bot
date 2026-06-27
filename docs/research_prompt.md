@@ -4,10 +4,433 @@
 
 ```text
 execution_protocol_version = nslab.brain_grade_semantic_provenance_locked.v11
-research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v27_brain_delta_numeric_validator_lock
-revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행과 importer가 읽을 수 있는 gold-shape 구조다. v27은 v26의 marker·seal receipt·phase finalization, v25 acquisition fast path, v24 outcome air-gap, v23 zero contamination, v22 ledger parity/outcome→news audit, v21 brain_delta density/market_state override를 모두 유지한다. 추가로 20241028류 회귀를 막기 위해 brain_delta 밀도·record type parity·training eligible count를 boolean 선언이 아니라 final Markdown brain_delta.jsonl block 재파싱 기반의 숫자 actual/expected 비교로 검증한다. count gate에서 actual=true expected=true 같은 boolean proxy는 검증 실패이며, actual_brain_delta_record_count < expected_brain_delta_min이면 예측 성과와 무관하게 ACCEPT_FULL 금지다. 예측 성과가 낮은 것은 실패가 아니지만, brain_delta population 부족과 validator의 count 미검출은 direct brain import를 금지한다.```
+research_prompt_revision = nslab.research_prompt.direct_ingest_gold.v30_semantic_regression_harness_final_lock
+revision_goal = 사람 후검수 없이 자동 import-ready ACCEPT_FULL bundle을 생성하되, 최우선 목표는 오염 없는 BLIND 실행, importer가 읽을 수 있는 gold-shape 구조, 숫자 기반 validator, record-level brain_delta, 그리고 final_watchlist의 의미 결속 정확도다. v30은 v27의 brain_delta numeric validator, v26 marker·seal receipt·phase finalization, v25 acquisition fast path, v24 outcome air-gap, v23 zero contamination, v22 ledger parity/outcome→news audit, v21 brain_delta density/market_state override를 모두 유지한다. 추가로 20241028류 semantic false-positive 회귀를 막기 위해 final 후보마다 candidate issuer가 원문 quote의 local predicate owner임을 증명하는 final_evidence_witness와 candidate_semantic_witness를 요구한다. blind_reason·why_now·score·P snapshot·다른 회사 기사·시장표·테마 리스트·참석자 목록·제조사 단순언급·슈퍼개미 보유언급·일반명사 충돌은 final 근거를 대체할 수 없다. known-bad/known-good semantic regression suite를 validator가 직접 실행하고 하나라도 어긋나면 후보를 강등·재렌더·재검증한다. 수리 실패 시 예측 성과와 무관하게 ACCEPT_FULL 금지다.```
 
 
+
+
+────────────────────────────────────────
+V30 SEMANTIC REGRESSION HARNESS FINAL LOCK — known-bad 의미 오결속은 반드시 거절·수리
+────────────────────────────────────────
+
+이 섹션은 `V27 BRAIN-DELTA NUMERIC VALIDATOR LOCK`, `V26 IMPORT-SHAPE REGRESSION LOCK`, `V25 ACQUISITION FAST-PATH LOCK`, `V24 OUTCOME AIR-GAP LOCK`, `V23 ZERO-CONTAMINATION LOCK`, `V22 REGRESSION LOCK`, `V21 REGRESSION LOCK`, `DIRECT-INGEST GOLD LOCK`, `GOLD-RUN HARD GUARD`보다 우선한다.
+
+v30의 목적은 새 점수 공식을 더하는 것이 아니다. 지금까지 발견된 실패의 본질은 “예측이 틀림”이 아니라 **final label이 원문 의미와 다르게 세탁되어 두뇌에 들어가는 것**이다. phase·marker·brain_delta count가 모두 통과해도, final 후보의 primary evidence가 다른 회사 기사·시장표·참석자 목록·제조사 단순언급·일반명사 충돌이면 `ACCEPT_FULL`이 아니다.
+
+핵심 원칙:
+
+```text
+final candidate = ticker가 텍스트에 보인 회사가 아니라, 그 row의 경제 행동을 실제로 소유한 회사다.
+```
+
+예측 성과가 낮은 것은 hard gate가 아니다. final 후보 의미 결속 실패는 hard gate다.
+
+## V30.0 final 후보는 evidence witness 없이는 final에 남을 수 없다
+
+`final_watchlist`의 각 item은 반드시 `final_evidence_witness.jsonl`에 정확히 1개의 witness record를 가진다. 또한 후보 생성 단계의 모든 accepted/rejected observation은 `candidate_semantic_witness.jsonl`에 1개의 witness record를 가진다.
+
+필수 block:
+
+```text
+<!-- NSLAB:BEGIN final_evidence_witness.jsonl -->
+...
+<!-- NSLAB:END final_evidence_witness.jsonl -->
+
+<!-- NSLAB:BEGIN candidate_semantic_witness.jsonl -->
+...
+<!-- NSLAB:END candidate_semantic_witness.jsonl -->
+```
+
+각 final evidence witness의 최소 필드:
+
+```json
+{
+  "candidate_id": "CAND-...",
+  "rank": 1,
+  "ticker": "000000",
+  "candidate_company": "회사명",
+  "source_row_id": "NEWS-...",
+  "primary_fact_id": "FACT-...",
+  "primary_quote": "원문 최소 인용",
+  "article_subject_company": "기사의 실제 주어/대상 회사",
+  "target_issuer_is_article_subject": true,
+  "local_predicate_owner": "회사명",
+  "local_predicate_owner_is_candidate": true,
+  "issuer_role_anchor_type": "TITLE_SUBJECT | DISCLOSURE_SUBJECT | REPORT_TARGET | CONTRACT_PARTY | NAMED_BENEFICIARY | MARKET_STATE_NOTICE_SUBJECT",
+  "issuer_role_anchor_valid": true,
+  "quote_role": "...",
+  "material_fact_class": "...",
+  "catalyst_type": "...",
+  "quote_role_allowed_by_catalyst_type": true,
+  "material_fact_class_allowed_by_quote_role": true,
+  "economic_variable_changed": "REVENUE | MARGIN | COST | CAPITAL_POLICY | APPROVAL_PROBABILITY | CONTROL_PREMIUM | MARKET_MEMORY | RISK_AVOIDANCE | NONE",
+  "economic_mechanism_supported_by_quote": true,
+  "why_now_supported_by_quote_or_safe_d1": true,
+  "forbidden_quote_role_detected": false,
+  "semantic_verdict": "PASS | FAIL",
+  "fail_reasons": []
+}
+```
+
+ACCEPT_FULL 조건:
+
+```text
+final_evidence_witness_block_present == true
+final_evidence_witness_row_count == final_watchlist_size
+final_evidence_witness_pass_count == final_watchlist_size
+final_evidence_witness_fail_count == 0
+candidate_semantic_witness_block_present == true
+```
+
+## V30.1 blind_reason·why_now·score는 evidence가 아니다
+
+아래는 final 후보의 primary evidence를 대체할 수 없다.
+
+```text
+blind_reason 산문
+why_now 산문
+blind_score / adjusted_rank_score
+P snapshot의 turnover_rank, amount_rank, return_5d, upper_limit_touch_count
+동반상승 또는 사후 outcome
+테마명
+리포트 발행 증권사명
+기사 작성자/브로커명
+다른 회사 기사에 들어간 prefix/substring
+```
+
+이 값들은 ranking feature로만 쓸 수 있다. `candidate_company`가 실제 원문 quote의 local predicate owner라는 witness가 없으면 final에 남을 수 없다.
+
+## V30.2 final 금지 quote_role
+
+아래 quote_role은 어떤 catalyst_type으로도 final positive 후보의 primary_fact가 될 수 없다. 반드시 `AUDIT_ONLY`, `CANDIDATE_GENERATION_AUDIT`, `REJECTED_SEMANTIC_FALSE_POSITIVE`, `WATCH_SECONDARY_NON_SCORING` 중 하나로 강등한다.
+
+```text
+ATTENDEE_LIST_MEMBER
+PARTICIPANT_LIST_MEMBER
+MANUFACTURER_ONLY
+CUSTOMER_ONLY_WITHOUT_CONTRACT
+SUPPLIER_ONLY_WITHOUT_ORDER
+THEME_LIST_MEMBER
+BODY_TABLE_LIST_MEMBER
+MARKET_FLOW_TABLE_MEMBER
+FOREIGN_INVESTOR_OR_INSTITUTION_NET_BUY_TABLE_MEMBER
+BROKERAGE_AUTHOR_OR_SOURCE_ATTRIBUTION
+MEDIA_PROGRAM_STOCK_PICK_MENTION
+SUPER_ANT_OR_INVESTOR_HOLDING_ONLY
+INDEX_OR_ETF_COMPONENT_ONLY
+BRAND_PRODUCT_WORD_MENTION
+SUBSIDIARY_AFFILIATE_CONTEXT_ONLY
+GROUP_NAME_CONTEXT_ONLY
+GENERIC_WORD_OR_ACRONYM
+PRODUCT_ADJECTIVE_OR_BRAND_WORD
+PLACE_OR_NATURE_PHENOMENON
+OTHER_COMPANY_ARTICLE
+PREFIX_OR_SUBSTRING_ONLY
+OLD_EVENT_RECAP_ONLY
+RUMOR_OR_UNCONFIRMED_THEME_ONLY
+REPORT_OR_PRESENTATION_SPEAKER_ONLY
+```
+
+validator hard check:
+
+```text
+final_forbidden_quote_role_count == 0
+final_table_or_list_member_count == 0
+final_attendee_or_manufacturer_only_count == 0
+final_generic_word_or_acronym_count == 0
+final_other_company_article_count == 0
+final_prefix_or_substring_only_count == 0
+```
+
+## V30.3 quote_role ↔ catalyst_type compatibility matrix
+
+final item의 `catalyst_type`은 아래 호환 조건을 만족해야 한다.
+
+```text
+CONTRACT_ORDER_OR_SUPPLY / ORDER_CATALYST:
+  allowed quote_role:
+    ISSUER_SIGNED_CONTRACT
+    ISSUER_RECEIVED_ORDER
+    ISSUER_DISCLOSED_SUPPLY_AGREEMENT
+    ISSUER_PROJECT_AWARDED
+  required:
+    candidate_company가 계약·수주·공급·프로젝트·납품·선정·공사의 직접 주체 또는 직접 당사자
+  forbidden:
+    참석자 목록, 발표자 이름, 제조사 단순언급, 순매수표, 관련주 목록, 슈퍼개미 보유 언급, 다른 회사 계약 기사 동반 언급
+
+PRODUCT_COMMERCIALIZATION / PRODUCT_CATALYST:
+  allowed quote_role:
+    ISSUER_PRODUCT_RELEASE_OR_COMMERCIALIZATION
+    ISSUER_PRODUCT_CHANNEL_EXPANSION_WITH_TARGET_MARKET
+    REPORT_TARGET_ANALYSIS
+    NAMED_BENEFICIARY_EXPLICIT
+  required:
+    candidate_company가 제품 출시·상용화·양산·판매 개시·채널 확장·고객 확대를 직접 수행하거나 그 효과의 명시 대상
+  forbidden:
+    ALL NEW 같은 상품 형용사, 제조사 이름만 있는 문장, 쇼핑/할인 문맥의 일반 단어, 전시/행사 참석만 있는 문장
+
+BIO_STAGE_ADVANCE / REGULATORY_OR_CLINICAL:
+  allowed quote_role:
+    ISSUER_REGULATORY_APPROVAL_OR_APPLICATION
+    ISSUER_CLINICAL_STAGE_ADVANCE
+    ISSUER_LICENSE_TECH_TRANSFER_RIGHTS
+    REPORT_TARGET_ANALYSIS
+  required:
+    candidate_company의 품목·임상·허가·학회 결과·기술이전·신약 단계 진전이 직접 언급
+  forbidden:
+    바이오 클러스터 출범식 참석자 목록, 연구기관·기업 관계자 목록, 제조사 단순 언급, 업종 전체 전망만 있는 기사
+
+CAPITAL_POLICY / SHAREHOLDER_RETURN / CONTROL_CHANGE:
+  allowed quote_role:
+    ISSUER_CAPITAL_POLICY_BUYBACK_CANCEL_DIVIDEND
+    ISSUER_CONTROL_CHANGE_STAKE_SALE_MA
+    ISSUER_FINANCING_WITH_CLEAR_USE_AND_NON_DILUTION_CONTEXT
+    DISCLOSURE_SUBJECT
+    REPORT_TARGET_ANALYSIS
+  required:
+    candidate_company의 자사주·소각·배당·유상증자·CB·최대주주변경·경영권 계약·지분취득/매각이 직접 언급
+  forbidden:
+    슈퍼개미가 해당 회사를 보유했다는 언급만으로 계약/공급/자본정책으로 승격, 다른 회사 분쟁 기사에 비교 대상으로 등장
+
+MARKET_MEMORY_CONTINUATION:
+  allowed quote_role:
+    MARKET_STATE_NOTICE_TARGETING_ISSUER
+    EXCHANGE_NOTICE_TARGETING_ISSUER
+    DIRECT_MARKET_STATE_NOTICE
+    NAMED_POLITICAL_THEME_MEMBER_WITH_CURRENT_CONTEXT
+  required:
+    candidate_company 자체에 투자주의·투자경고·조회공시·단기과열·거래정지/재개·정치테마 current context가 있음
+  forbidden:
+    P snapshot-only를 direct issuer catalyst로 둔갑, 다른 정치테마 기사에서 이름 없는 종목을 사후 편입
+
+NAMED_BENEFICIARY / THEME_DIRECT_MIXED:
+  allowed quote_role:
+    NAMED_BENEFICIARY_EXPLICIT
+    DIRECT_ISSUER_ACTION
+  required:
+    기사 안에서 candidate_company가 해당 정책/테마/산업 변화의 명시적 수혜자 또는 수행자로 설명됨
+  forbidden:
+    테마 기사에 회사명이 없는 사후 동행 종목 편입, ETF/업종/해외기업 기사만 보고 국내 관련주 생성
+```
+
+## V30.4 article subject / local predicate owner 일치 규칙
+
+final 후보가 direct catalyst로 들어가려면 다음 중 하나가 true여야 한다.
+
+```text
+target_issuer_is_article_subject == true
+candidate_company == local_predicate_owner
+quote_role == NAMED_BENEFICIARY_EXPLICIT and named_beneficiary_relation_explicit == true
+quote_role in [MARKET_STATE_NOTICE_TARGETING_ISSUER, EXCHANGE_NOTICE_TARGETING_ISSUER, DIRECT_MARKET_STATE_NOTICE] and market_state_notice_subject == candidate_company
+```
+
+다음은 final 실패다.
+
+```text
+article_subject_company != candidate_company and quote_role != NAMED_BENEFICIARY_EXPLICIT and quote_role is not market_state_notice
+local_predicate_owner != candidate_company and catalyst_type is direct issuer catalyst
+primary_quote contains candidate name only in a list
+primary_quote contains candidate only as manufacturer/attendee/investor-held/peer/customer
+primary_quote is about another ticker/company and candidate name is prefix/substring of that ticker/company
+```
+
+## V30.5 economic mechanism은 quote에서 나온 변수만 사용한다
+
+`economic_mechanism`은 템플릿 문장이 아니라 quote와 inference에서 나온 실제 변수만 써야 한다.
+
+금지 예:
+
+```text
+제조사 단순 언급 → 허가확률 상승
+참석자 목록 → 임상/신약 단계 진전
+순매수표 → 제품 상용화
+슈퍼개미 보유 → 수주/공급
+정책 약어 → 제품 출시
+다른 회사 기사 → candidate 회사 매출 bridge
+```
+
+각 final item은 `mechanism_inference_id`를 가져야 하며, 해당 inference는 다음을 포함한다.
+
+```json
+{
+  "inference_id": "INF-...",
+  "source_fact_ids": ["FACT-..."],
+  "candidate_company": "회사명",
+  "economic_variable_changed": "REVENUE | MARGIN | COST | CAPITAL_POLICY | APPROVAL_PROBABILITY | CONTROL_PREMIUM | MARKET_MEMORY | RISK_AVOIDANCE",
+  "mechanism_sentence": "quote에서 직접 나온 정보만으로 작성",
+  "mechanism_supported": true,
+  "unsupported_inserted_concepts": [],
+  "template_mechanism_detected": false
+}
+```
+
+## V30.6 mandatory known regression self-test suite
+
+최종 bundle을 렌더링하기 전에 validator는 실제 episode와 별도로 known regression fixtures를 실행하고 결과를 `semantic_regression_tests.jsonl`와 `semantic_regression_test_report.json` block에 기록한다. 두 block 모두 `ACCEPT_FULL` 필수다.
+
+필수 marker:
+
+```text
+<!-- NSLAB:BEGIN semantic_regression_tests.jsonl -->
+...
+<!-- NSLAB:END semantic_regression_tests.jsonl -->
+
+<!-- NSLAB:BEGIN semantic_regression_test_report.json -->
+...
+<!-- NSLAB:END semantic_regression_test_report.json -->
+```
+
+각 fixture는 아래 필드를 가진다.
+
+```json
+{
+  "fixture_id": "SEM-...",
+  "candidate_company": "",
+  "candidate_ticker": "",
+  "quote": "",
+  "proposed_quote_role": "",
+  "proposed_material_fact_class": "",
+  "proposed_catalyst_type": "",
+  "expected_verdict": "PASS | FAIL",
+  "expected_fail_reason": "",
+  "actual_verdict": "PASS | FAIL",
+  "actual_fail_reason": "",
+  "passed": true
+}
+```
+
+필수 fixture corpus:
+
+```jsonl
+{"fixture_id":"SEM-001","candidate_company":"오로라","candidate_ticker":"039830","quote":"캐나다관광청 \"올겨울은 오로라 관측 최적기\"","proposed_quote_role":"PLACE_OR_NATURE_PHENOMENON","proposed_material_fact_class":"CONTRACT_ORDER","proposed_catalyst_type":"ORDER_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"PLACE_OR_NATURE_PHENOMENON"}
+{"fixture_id":"SEM-002","candidate_company":"DSR","candidate_ticker":"155660","quote":"2단계 스트레스 총부채원리금상환비율(DSR) 시행","proposed_quote_role":"GENERIC_WORD_OR_ACRONYM","proposed_material_fact_class":"PRODUCT_COMMERCIALIZATION","proposed_catalyst_type":"PRODUCT_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"GENERIC_WORD_OR_ACRONYM"}
+{"fixture_id":"SEM-003","candidate_company":"NEW","candidate_ticker":"160550","quote":"ALL NEW 새우초밥을 할인 판매한다","proposed_quote_role":"PRODUCT_ADJECTIVE_OR_BRAND_WORD","proposed_material_fact_class":"PRODUCT_COMMERCIALIZATION","proposed_catalyst_type":"PRODUCT_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"PRODUCT_ADJECTIVE_OR_BRAND_WORD"}
+{"fixture_id":"SEM-004","candidate_company":"코스맥스","candidate_ticker":"192820","quote":"제품의 제조사는 코스맥스이다","proposed_quote_role":"MANUFACTURER_ONLY","proposed_material_fact_class":"BIO_STAGE_ADVANCE","proposed_catalyst_type":"BIO_REGULATORY_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"MANUFACTURER_ONLY"}
+{"fixture_id":"SEM-005","candidate_company":"삼성바이오로직스","candidate_ticker":"207940","quote":"출범식에는 삼성바이오로직스, 셀트리온, 롯데바이오로직스 등 바이오기업 관계자 20여 명이 참석했다","proposed_quote_role":"ATTENDEE_LIST_MEMBER","proposed_material_fact_class":"BIO_STAGE_ADVANCE","proposed_catalyst_type":"BIO_REGULATORY_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"ATTENDEE_LIST_MEMBER"}
+{"fixture_id":"SEM-006","candidate_company":"알테오젠","candidate_ticker":"196170","quote":"그는 알테오젠에 대규모 투자를 한 슈퍼 개미로 유명하다","proposed_quote_role":"SUPER_ANT_OR_INVESTOR_HOLDING_ONLY","proposed_material_fact_class":"CONTRACT_ORDER","proposed_catalyst_type":"ORDER_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"INVESTOR_HOLDING_ONLY"}
+{"fixture_id":"SEM-007","candidate_company":"SK","candidate_ticker":"034730","quote":"삼성 갔던 하이닉스 직원들 나 돌아갈래…만년 2등 꼬리표 뗀 SK하이닉스","proposed_quote_role":"PREFIX_OR_SUBSTRING_ONLY","proposed_material_fact_class":"PRODUCT_COMMERCIALIZATION","proposed_catalyst_type":"PRODUCT_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"OTHER_COMPANY_ARTICLE_OR_PREFIX"}
+{"fixture_id":"SEM-008","candidate_company":"YG PLUS","candidate_ticker":"037270","quote":"[주상전화] 그리드위즈 (453450)","proposed_quote_role":"OTHER_COMPANY_ARTICLE","proposed_material_fact_class":"NAMED_BENEFICIARY","proposed_catalyst_type":"THEME_BENEFICIARY","expected_verdict":"FAIL","expected_fail_reason":"OTHER_COMPANY_ARTICLE"}
+{"fixture_id":"SEM-009","candidate_company":"네이처셀","candidate_ticker":"007390","quote":"25일, 코스닥 외국인 순매수상위에 제약 업종 8종목","proposed_quote_role":"FOREIGN_INVESTOR_OR_INSTITUTION_NET_BUY_TABLE_MEMBER","proposed_material_fact_class":"PRODUCT_COMMERCIALIZATION","proposed_catalyst_type":"PRODUCT_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"TABLE_LIST_MEMBER"}
+{"fixture_id":"SEM-010","candidate_company":"현대로템","candidate_ticker":"064350","quote":"현대로템 어성필 체계공학실장은 한국의 육상 기동화력 개발 현황과 산학 협력 연구 및 전문 인력 양성 방안에 대해 발표했다","proposed_quote_role":"REPORT_OR_PRESENTATION_SPEAKER_ONLY","proposed_material_fact_class":"CONTRACT_ORDER","proposed_catalyst_type":"ORDER_CATALYST","expected_verdict":"FAIL","expected_fail_reason":"NO_CONTRACT_ORDER_FACT"}
+{"fixture_id":"SEM-011","candidate_company":"셀루메드","candidate_ticker":"049180","quote":"셀루메드, 혁신적 주사제형 피부이식재 셀루덤 젠 개발 완료","proposed_quote_role":"ISSUER_PRODUCT_RELEASE_OR_COMMERCIALIZATION","proposed_material_fact_class":"PRODUCT_COMMERCIALIZATION","proposed_catalyst_type":"PRODUCT_CATALYST","expected_verdict":"PASS","expected_fail_reason":""}
+{"fixture_id":"SEM-012","candidate_company":"퀀타매트릭스","candidate_ticker":"317690","quote":"퀀타매트릭스, 최대주주 에즈라 제3자 배정 유상증자 참여","proposed_quote_role":"ISSUER_CONTROL_CHANGE_STAKE_SALE_MA","proposed_material_fact_class":"CAPITAL_POLICY","proposed_catalyst_type":"CAPITAL_STRUCTURE_CATALYST","expected_verdict":"PASS","expected_fail_reason":""}
+{"fixture_id":"SEM-013","candidate_company":"피노","candidate_ticker":"033790","quote":"피노, 29.5억 규모 RF중계기 공급계약 체결","proposed_quote_role":"ISSUER_DISCLOSED_SUPPLY_AGREEMENT","proposed_material_fact_class":"CONTRACT_ORDER","proposed_catalyst_type":"ORDER_CATALYST","expected_verdict":"PASS","expected_fail_reason":""}
+```
+
+ACCEPT_FULL 조건:
+
+```text
+semantic_regression_tests_block_present == true
+semantic_regression_test_report_block_present == true
+semantic_regression_fixture_count >= 13
+semantic_regression_fixture_pass_count == semantic_regression_fixture_count
+semantic_regression_required_fixture_missing_count == 0
+semantic_regression_unexpected_pass_count == 0
+semantic_regression_unexpected_fail_count == 0
+```
+
+## V30.7 semantic fail repair loop
+
+semantic auditor가 final 후보 하나라도 FAIL로 판정하면 즉시 격리하지 말고 먼저 수리한다.
+
+```text
+1. FAIL candidate를 final_watchlist에서 제거하거나 WATCH_SECONDARY/AUDIT_ONLY로 강등한다.
+2. 같은 issuer에 다른 PASS 가능한 source_fact가 있는지 찾는다.
+3. 있으면 그 source_fact로 final_evidence_witness를 재작성하고 rank를 재계산한다.
+4. 없으면 final 후보에서 제외한다.
+5. final rank를 1..N으로 재연속화한다. N은 20 이하.
+6. final_semantic_audit.jsonl, final_evidence_witness.jsonl, candidate_semantic_witness.jsonl, blind_prediction.json, research_report.md, blind_report.md를 canonical_graph에서 재렌더한다.
+7. semantic_regression_tests.jsonl과 semantic_regression_test_report.json을 다시 생성한다.
+8. validator를 다시 실행한다.
+```
+
+수리 후에도 FAIL이 남으면 `QUARANTINE_SEMANTIC_FINAL_ENTAILMENT`다. final_watchlist가 20개보다 적어지는 것은 허용된다. filler 후보를 넣지 않는다.
+
+## V30.8 validation_report와 direct_ingest_contract 필수 semantic check
+
+`validation_report.json`과 `direct_ingest_contract.json`에는 아래 check가 숫자 actual/expected와 함께 들어가야 한다.
+
+```text
+final_evidence_witness_block_present_verified
+candidate_semantic_witness_block_present_verified
+final_evidence_witness_row_count_verified
+final_evidence_witness_pass_count_verified
+final_forbidden_quote_role_count_zero_verified
+final_quote_role_catalyst_compatibility_verified
+final_article_subject_equals_candidate_or_valid_beneficiary_verified
+final_local_predicate_owner_verified
+final_economic_mechanism_supported_verified
+semantic_regression_tests_executed_verified
+semantic_regression_test_report_present_verified
+semantic_regression_required_fixture_count_verified
+semantic_regression_fixture_pass_count_verified
+semantic_regression_unexpected_pass_count_zero_verified
+semantic_regression_unexpected_fail_count_zero_verified
+semantic_repair_loop_executed_if_needed_verified
+```
+
+각 check는 다음 형태를 따른다.
+
+```json
+{
+  "check_id": "final_forbidden_quote_role_count_zero_verified",
+  "passed": true,
+  "actual": {"final_forbidden_quote_role_count": 0},
+  "expected": {"final_forbidden_quote_role_count": 0},
+  "expected_source": "PROMPT_CONSTANT_V30",
+  "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE_AND_SEMANTIC_AUDITOR",
+  "severity": "critical",
+  "error_ids": []
+}
+```
+
+금지:
+
+```text
+semantic check의 actual=true expected=true
+semantic check의 actual="PASS" expected="PASS"
+semantic check가 산문으로만 존재
+semantic_regression_tests를 실행하지 않고 expected pass로 선언
+```
+
+`direct_ingest_contract.json.hard_gate_summary`에는 최소 다음 필드가 있어야 한다.
+
+```json
+{
+  "final_evidence_witness_verified": true,
+  "candidate_semantic_witness_verified": true,
+  "final_forbidden_quote_role_count": 0,
+  "final_semantic_audit_fail_count": 0,
+  "semantic_regression_fixture_fail_count": 0,
+  "semantic_regression_unexpected_pass_count": 0,
+  "semantic_regression_unexpected_fail_count": 0,
+  "quote_role_catalyst_matrix_verified": true,
+  "article_subject_local_predicate_owner_verified": true,
+  "final_economic_mechanism_supported_verified": true
+}
+```
+
+## V30.9 v30 최종 ACCEPT_FULL 판정식
+
+v30에서 `ACCEPT_FULL + direct_brain_ingest_ready=true`는 아래가 모두 true일 때만 허용된다.
+
+```text
+v23_zero_preseal_outcome_access_passed == true
+v24_outcome_airgap_passed == true
+v25_acquisition_fastpath_passed == true
+v26_import_shape_marker_phase_passed == true
+v27_brain_delta_numeric_validator_passed == true
+v30_final_evidence_witness_passed == true
+v30_candidate_semantic_witness_passed == true
+v30_semantic_regression_tests_passed == true
+final_semantic_audit_fail_count == 0
+final_forbidden_quote_role_count == 0
+critical_error_count == 0
+validator_exit_code == 0
+```
+
+하나라도 false이면 `ACCEPT_FULL`을 쓰지 않는다.
 
 
 ────────────────────────────────────────
