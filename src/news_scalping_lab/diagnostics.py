@@ -684,6 +684,10 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "unreadable_checkpoints": trace_evidence["unreadable_checkpoints"],
         "checkpoint_id_mismatch_count": trace_evidence["checkpoint_id_mismatch_count"],
         "checkpoint_id_mismatches": trace_evidence["checkpoint_id_mismatches"],
+        "checkpoint_trace_mismatch_count": trace_evidence[
+            "checkpoint_trace_mismatch_count"
+        ],
+        "checkpoint_trace_mismatches": trace_evidence["checkpoint_trace_mismatches"],
         "mock_checkpoint_count": trace_evidence["mock_checkpoint_count"],
         "mock_checkpoints": trace_evidence["mock_checkpoints"],
     }
@@ -731,6 +735,8 @@ def _production_llm_trace_evidence_status(
             "unreadable_checkpoints": [],
             "checkpoint_id_mismatch_count": 0,
             "checkpoint_id_mismatches": [],
+            "checkpoint_trace_mismatch_count": 0,
+            "checkpoint_trace_mismatches": [],
             "mock_checkpoint_count": 0,
             "mock_checkpoints": [],
         }
@@ -743,6 +749,7 @@ def _production_llm_trace_evidence_status(
     missing_trace_checkpoint_id_traces: list[dict[str, Any]] = []
     mock_traces: list[dict[str, Any]] = []
     checkpoint_ids: set[str] = set()
+    checkpoint_trace_refs: dict[str, list[dict[str, Any]]] = {}
     for trace_path in trace_paths:
         try:
             trace = _read_json_object(trace_path)
@@ -757,6 +764,18 @@ def _production_llm_trace_evidence_status(
         checkpoint_id = trace.get("checkpoint_id")
         if isinstance(checkpoint_id, str) and checkpoint_id:
             checkpoint_ids.add(checkpoint_id)
+            checkpoint_trace_refs.setdefault(checkpoint_id, []).append(
+                {
+                    "path": relative_to_root(trace_path, root),
+                    "trace_id": trace.get("trace_id"),
+                    "purpose": trace.get("purpose"),
+                    "prompt_sha256": prompt_hash,
+                    "operation": trace.get("operation"),
+                    "provider": trace.get("provider"),
+                    "model_config": trace.get("model_config"),
+                    "input": trace.get("input"),
+                }
+            )
         else:
             missing_trace_checkpoint_id_traces.append(
                 {
@@ -783,6 +802,7 @@ def _production_llm_trace_evidence_status(
     checked_checkpoints: list[Path] = []
     unreadable_checkpoints: list[str] = []
     checkpoint_id_mismatches: list[dict[str, Any]] = []
+    checkpoint_trace_mismatches: list[dict[str, Any]] = []
     mock_checkpoints: list[dict[str, Any]] = []
     for checkpoint_id in sorted(checkpoint_ids):
         if checkpoint_id != Path(checkpoint_id).name:
@@ -807,6 +827,23 @@ def _production_llm_trace_evidence_status(
                     "observed_checkpoint_id": observed_checkpoint_id,
                 }
             )
+        for trace_ref in checkpoint_trace_refs.get(checkpoint_id, []):
+            for field in ("operation", "purpose", "provider", "model_config", "input"):
+                trace_value = trace_ref.get(field)
+                checkpoint_value = checkpoint.get(field)
+                if checkpoint_value == trace_value:
+                    continue
+                checkpoint_trace_mismatches.append(
+                    {
+                        "path": relative_to_root(checkpoint_path, root),
+                        "checkpoint_id": checkpoint_id,
+                        "trace": trace_ref["path"],
+                        "trace_id": trace_ref.get("trace_id"),
+                        "field": field,
+                        "trace_value": trace_value,
+                        "checkpoint_value": checkpoint_value,
+                    }
+                )
         mock_values = _mock_llm_artifact_values(checkpoint)
         if mock_values:
             mock_checkpoints.append(
@@ -838,6 +875,11 @@ def _production_llm_trace_evidence_status(
             f"expected {mismatch['expected_checkpoint_id']} observed "
             f"{mismatch['observed_checkpoint_id']}"
         )
+    for mismatch in checkpoint_trace_mismatches:
+        findings.append(
+            f"referenced LLM checkpoint trace mismatch in {mismatch['path']}: "
+            f"{mismatch['field']} differs from {mismatch['trace']}"
+        )
     for checkpoint in mock_checkpoints:
         findings.append(
             f"mock LLM checkpoint present in {checkpoint['path']}: "
@@ -860,6 +902,8 @@ def _production_llm_trace_evidence_status(
         "unreadable_checkpoints": unreadable_checkpoints,
         "checkpoint_id_mismatch_count": len(checkpoint_id_mismatches),
         "checkpoint_id_mismatches": checkpoint_id_mismatches,
+        "checkpoint_trace_mismatch_count": len(checkpoint_trace_mismatches),
+        "checkpoint_trace_mismatches": checkpoint_trace_mismatches,
         "mock_checkpoint_count": len(mock_checkpoints),
         "mock_checkpoints": mock_checkpoints,
     }

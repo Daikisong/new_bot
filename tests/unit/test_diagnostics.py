@@ -1412,8 +1412,10 @@ def test_production_readiness_accepts_live_llm_context_manifests(
         {
             "schema_version": "nslab.llm_checkpoint.v1",
             "checkpoint_id": "LLMCKPT-live",
+            "operation": "generate_structured",
             "purpose": "daily_blind_analysis",
             "provider": "OpenAIResponsesProvider",
+            "input": {"prompt_sha256": "live-trace-hash"},
             "model_config": {
                 "configured_provider": "openai",
                 "provider_class": "OpenAIResponsesProvider",
@@ -1426,8 +1428,10 @@ def test_production_readiness_accepts_live_llm_context_manifests(
         {
             "schema_version": "nslab.llm_checkpoint.v1",
             "checkpoint_id": "LLMCKPT-stale-mock",
+            "operation": "generate_structured",
             "purpose": "daily_blind_analysis",
             "provider": "DeterministicMockLLMProvider",
+            "input": {"prompt_sha256": "stale-mock-trace-hash"},
             "model_config": {
                 "configured_provider": "mock",
                 "provider_class": "DeterministicMockLLMProvider",
@@ -1458,6 +1462,7 @@ def test_production_readiness_accepts_live_llm_context_manifests(
     assert production["llm_evidence"]["mock_trace_count"] == 0
     assert production["llm_evidence"]["checked_checkpoint_count"] == 1
     assert production["llm_evidence"]["checkpoint_id_mismatch_count"] == 0
+    assert production["llm_evidence"]["checkpoint_trace_mismatch_count"] == 0
     assert production["llm_evidence"]["mock_checkpoint_count"] == 0
     assert not any(
         finding.startswith("llm_evidence:") for finding in production["findings"]
@@ -1511,8 +1516,10 @@ def test_production_readiness_rejects_mock_llm_trace_and_checkpoint(
         {
             "schema_version": "nslab.llm_checkpoint.v1",
             "checkpoint_id": "LLMCKPT-mock",
+            "operation": "generate_structured",
             "purpose": "daily_blind_analysis",
             "provider": "DeterministicMockLLMProvider",
+            "input": {"prompt_sha256": "mock-trace-hash"},
             "model_config": {
                 "configured_provider": "mock",
                 "provider_class": "DeterministicMockLLMProvider",
@@ -1557,6 +1564,7 @@ def test_production_readiness_rejects_mock_llm_trace_and_checkpoint(
     ]
     assert production["llm_evidence"]["checked_checkpoint_count"] == 1
     assert production["llm_evidence"]["checkpoint_id_mismatch_count"] == 0
+    assert production["llm_evidence"]["checkpoint_trace_mismatch_count"] == 0
     assert production["llm_evidence"]["mock_checkpoint_count"] == 1
     assert production["llm_evidence"]["mock_checkpoints"] == [
         {
@@ -1703,8 +1711,10 @@ def test_production_readiness_rejects_llm_checkpoint_id_mismatch(
         {
             "schema_version": "nslab.llm_checkpoint.v1",
             "checkpoint_id": "LLMCKPT-other",
+            "operation": "generate_structured",
             "purpose": "daily_blind_analysis",
             "provider": "OpenAIResponsesProvider",
+            "input": {"prompt_sha256": "live-trace-hash"},
             "model_config": {
                 "configured_provider": "openai",
                 "provider_class": "OpenAIResponsesProvider",
@@ -1740,6 +1750,100 @@ def test_production_readiness_rejects_llm_checkpoint_id_mismatch(
         "llm_evidence: referenced LLM checkpoint_id mismatch in "
         "runs/checkpoints/llm/LLMCKPT-live.json: expected LLMCKPT-live "
         "observed LLMCKPT-other"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_checkpoint_trace_payload_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    trace_dir = tmp_path / "runs" / "traces"
+    checkpoint_dir = tmp_path / "runs" / "checkpoints" / "llm"
+    manifest_dir.mkdir(parents=True)
+    trace_dir.mkdir(parents=True)
+    checkpoint_dir.mkdir(parents=True)
+    write_json(
+        manifest_dir / "RUN-live-llm.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-live-llm",
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+            "prompt_hashes": {"daily_blind_analysis": "live-trace-hash"},
+        },
+    )
+    write_json(
+        trace_dir / "TRACE-live.json",
+        {
+            "schema_version": "nslab.llm_trace.v1",
+            "trace_id": "TRACE-live",
+            "operation": "generate_structured",
+            "purpose": "daily_blind_analysis",
+            "provider": "OpenAIResponsesProvider",
+            "checkpoint_id": "LLMCKPT-live",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    write_json(
+        checkpoint_dir / "LLMCKPT-live.json",
+        {
+            "schema_version": "nslab.llm_checkpoint.v1",
+            "checkpoint_id": "LLMCKPT-live",
+            "operation": "generate_structured",
+            "purpose": "daily_blind_analysis",
+            "provider": "UnexpectedProvider",
+            "input": {"prompt_sha256": "live-trace-hash"},
+            "model_config": {
+                "configured_provider": "openai",
+                "provider_class": "OpenAIResponsesProvider",
+                "model": "gpt-production",
+            },
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_evidence"]["passed"] is False
+    assert production["llm_evidence"]["checked_trace_count"] == 1
+    assert production["llm_evidence"]["checked_checkpoint_count"] == 1
+    assert production["llm_evidence"]["checkpoint_id_mismatch_count"] == 0
+    assert production["llm_evidence"]["checkpoint_trace_mismatch_count"] == 1
+    assert production["llm_evidence"]["checkpoint_trace_mismatches"] == [
+        {
+            "path": "runs/checkpoints/llm/LLMCKPT-live.json",
+            "checkpoint_id": "LLMCKPT-live",
+            "trace": "runs/traces/TRACE-live.json",
+            "trace_id": "TRACE-live",
+            "field": "provider",
+            "trace_value": "OpenAIResponsesProvider",
+            "checkpoint_value": "UnexpectedProvider",
+        }
+    ]
+    assert (
+        "llm_evidence: referenced LLM checkpoint trace mismatch in "
+        "runs/checkpoints/llm/LLMCKPT-live.json: provider differs from "
+        "runs/traces/TRACE-live.json"
         in production["findings"]
     )
 
