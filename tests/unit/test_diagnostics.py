@@ -2938,6 +2938,11 @@ def test_production_readiness_rejects_failed_deep_record_store_audit(
 
     assert production["record_store"]["passed"] is False
     assert production["record_store"]["deep"] is True
+    assert production["record_store"]["raw_record_count"] == 0
+    assert production["record_store"]["normalized_record_count"] == 2
+    assert production["record_store"]["raw_record_counts_by_episode"] == {}
+    assert production["record_store"]["dropped_record_count"] == 0
+    assert production["record_store"]["quarantined_record_count"] == 0
     assert production["record_store"]["brain_delta_record_id_mismatch_episode_ids"] == [
         "EP-import-loss"
     ]

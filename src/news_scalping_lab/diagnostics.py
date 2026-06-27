@@ -14,7 +14,7 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
-from news_scalping_lab.records.store import audit_record_store
+from news_scalping_lab.records.store import audit_record_store, record_store_report_payload
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
 from news_scalping_lab.retrieval.store import inspect_vector_index
@@ -1213,6 +1213,11 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
             "findings": [finding],
             "deep": True,
             "record_count": None,
+            "raw_record_count": None,
+            "normalized_record_count": None,
+            "raw_record_counts_by_episode": {},
+            "dropped_record_count": None,
+            "quarantined_record_count": None,
             "all_record_count": None,
             "staged_record_count": None,
             "episode_count": None,
@@ -1240,6 +1245,7 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
     passed = audit.get("passed") is True and audit.get("deep") is True
     if not passed and not findings:
         findings.append("deep record-store audit failed")
+    report_payload = record_store_report_payload(settings.project_root, audit)
     return {
         "schema_version": "nslab.production_record_store.v1",
         "passed": passed,
@@ -1248,6 +1254,14 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
         "findings": findings,
         "deep": audit.get("deep"),
         "record_count": audit.get("record_count"),
+        "raw_record_count": report_payload.get("raw_record_count"),
+        "normalized_record_count": report_payload.get("normalized_record_count"),
+        "raw_record_counts_by_episode": report_payload.get(
+            "raw_record_counts_by_episode",
+            {},
+        ),
+        "dropped_record_count": report_payload.get("dropped_record_count"),
+        "quarantined_record_count": report_payload.get("quarantined_record_count"),
         "all_record_count": audit.get("all_record_count"),
         "staged_record_count": audit.get("staged_record_count"),
         "episode_count": audit.get("episode_count"),
