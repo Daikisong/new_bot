@@ -77,6 +77,12 @@ def production_readiness_report(
         findings.append("real_bundle: only synthetic fixture smoke passed; real v11 ACCEPT_FULL smoke pending")
     elif real_bundle_smoke["status"] != "passed":
         findings.append("real_bundle: v11 ACCEPT_FULL smoke failed")
+        findings.extend(
+            f"real_bundle: {reason}"
+            for reason in _string_list(
+                real_bundle_smoke.get("first_production_failure_reasons")
+            )
+        )
     real_bundle_import = _real_bundle_import_status(settings, real_bundle_smoke)
     if (
         real_bundle_smoke["status"] == "passed"
@@ -335,6 +341,12 @@ def real_bundle_smoke_report(
             first_production_inspection.get("path")
             if first_production_inspection is not None
             else None
+        ),
+        "first_production_failure_reasons": (
+            _string_list(first_production_inspection["inspection"].get("failure_reasons"))
+            if isinstance(first_production_inspection, dict)
+            and isinstance(first_production_inspection.get("inspection"), dict)
+            else []
         ),
         "selected": selected,
         "inspections": inspections,
@@ -1929,9 +1941,16 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         and inspection.get("import_loss_audit_passed") is True
         and inspection.get("typed_payload_valid") is True
     )
+    failure_reasons = _real_bundle_failure_reasons(
+        inspection,
+        validation=validation,
+        is_v11=is_v11,
+    )
     return {
         "status": "passed" if smoke_passed else "failed",
         "v11_accept_full_smoke_passed": smoke_passed,
+        "failure_reason_count": len(failure_reasons),
+        "failure_reasons": failure_reasons,
         "raw_bundle_sha256": inspection.get("raw_bundle_sha256"),
         "bundle_version": bundle_version,
         "manifest_schema_version": inspection.get("manifest_schema_version"),
@@ -2004,6 +2023,57 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
             "missing_payload_reference_count"
         ),
     }
+
+
+def _real_bundle_failure_reasons(
+    inspection: dict[str, Any],
+    *,
+    validation: dict[str, Any],
+    is_v11: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if not is_v11:
+        reasons.append("bundle is not supported v11 research bundle")
+    checks = (
+        ("validation_passed", inspection.get("validation_passed"), True),
+        ("bundle_status_accept_full", validation.get("bundle_status_accept_full"), True),
+        ("blind_valid", validation.get("blind_valid"), True),
+        ("validator_exit_code_zero", validation.get("validator_exit_code_zero"), True),
+        ("critical_error_count_zero", validation.get("critical_error_count_zero"), True),
+        ("record_count_matches_manifest", inspection.get("record_count_matches_manifest"), True),
+        (
+            "training_eligible_count_matches_manifest",
+            inspection.get("training_eligible_count_matches_manifest"),
+            True,
+        ),
+        ("dropped_record_count", inspection.get("dropped_record_count"), 0),
+        ("available_from_valid", inspection.get("available_from_valid"), True),
+        ("outcome_label_quality_valid", inspection.get("outcome_label_quality_valid"), True),
+        ("hash_mismatch_count", inspection.get("hash_mismatch_count"), 0),
+        (
+            "hash_expectation_conflict_count",
+            inspection.get("hash_expectation_conflict_count"),
+            0,
+        ),
+        ("missing_source_reference_count", inspection.get("missing_source_reference_count"), 0),
+        ("missing_payload_reference_count", inspection.get("missing_payload_reference_count"), 0),
+        ("raw_record_without_id_count", inspection.get("raw_record_without_id_count"), 0),
+        ("record_id_set_comparable", inspection.get("record_id_set_comparable"), True),
+        ("record_id_set_matches_raw", inspection.get("record_id_set_matches_raw"), True),
+        ("record_type_counts_match_raw", inspection.get("record_type_counts_match_raw"), True),
+        (
+            "training_eligible_count_matches_raw",
+            inspection.get("training_eligible_count_matches_raw"),
+            True,
+        ),
+        ("raw_payload_hashes_match", inspection.get("raw_payload_hashes_match"), True),
+        ("import_loss_audit_passed", inspection.get("import_loss_audit_passed"), True),
+        ("typed_payload_valid", inspection.get("typed_payload_valid"), True),
+    )
+    for name, observed, expected in checks:
+        if observed != expected:
+            reasons.append(f"{name}={observed!r} expected {expected!r}")
+    return reasons
 
 
 def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:

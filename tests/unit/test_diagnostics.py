@@ -1881,6 +1881,7 @@ def test_real_bundle_smoke_passes_only_for_production_source_bundle(
     assert report["synthetic_valid_smoke_count"] == 0
     assert report["first_production_source"] == "data_inbox"
     assert report["first_production_status"] == "passed"
+    assert report["first_production_failure_reasons"] == []
     assert report["selected"]["source"] == "data_inbox"
     assert report["selected"]["inspection"]["raw_record_count"] == 327
     assert report["selected"]["inspection"]["missing_payload_reference_count"] == 0
@@ -1995,8 +1996,58 @@ def test_real_bundle_smoke_prioritizes_failed_production_candidate(
     assert report["selected"] is None
     assert report["first_production_source"] == "cli"
     assert report["first_production_status"] == "failed"
+    assert report["first_production_failure_reasons"] == [
+        "validation_passed=False expected True",
+        "hash_mismatch_count=1 expected 0",
+    ]
+    production_inspection = next(
+        item for item in report["inspections"] if item["production_source"] is True
+    )
+    assert production_inspection["inspection"]["failure_reasons"] == [
+        "validation_passed=False expected True",
+        "hash_mismatch_count=1 expected 0",
+    ]
     assert report["production_failed_inspection_count"] == 1
     assert report["synthetic_valid_smoke_count"] == 1
+
+
+def test_production_readiness_reports_real_bundle_failure_reasons(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "data" / "inbox" / "research" / "real_bundle.md"
+    bundle.write_text("real bundle", encoding="utf-8")
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.inspect_versioned_bundle",
+        lambda path: _invalid_v11_bundle_inspection(path),
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["real_bundle_smoke"]["status"] == "failed"
+    assert production["real_bundle_smoke"]["first_production_failure_reasons"] == [
+        "validation_passed=False expected True",
+        "hash_mismatch_count=1 expected 0",
+    ]
+    assert "real_bundle: v11 ACCEPT_FULL smoke failed" in production["findings"]
+    assert (
+        "real_bundle: validation_passed=False expected True"
+        in production["findings"]
+    )
+    assert "real_bundle: hash_mismatch_count=1 expected 0" in production["findings"]
 
 
 def test_real_bundle_smoke_rejects_missing_payload_references(
