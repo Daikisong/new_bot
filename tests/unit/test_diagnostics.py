@@ -6,7 +6,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler, _brain_category
+from news_scalping_lab.brain.compiler import (
+    BRAIN_FILES,
+    LLM_FULL_COMPILER_VERSION,
+    BrainCompiler,
+    _brain_category,
+)
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
@@ -3294,6 +3299,194 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
 
 
+def test_production_readiness_accepts_llm_full_v4_trace_evidence(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    compile_manifest = _llm_compile_manifest_v4_fixture()
+    compile_run = _llm_compile_run_v4_fixture()
+    write_json(current / "llm_compile_manifest.json", compile_manifest)
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": compile_run,
+        },
+    )
+    _write_llm_compile_trace_evidence_fixture(tmp_path, compile_run)
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is True
+    assert production["llm_full_brain"]["compiler_version"] == LLM_FULL_COMPILER_VERSION
+    assert production["llm_full_brain"]["run_llm_prompt_hash_count"] == 19
+    assert production["llm_full_brain"]["run_llm_trace_evidence"][
+        "checked_trace_count"
+    ] == 19
+    assert production["llm_full_brain"]["run_llm_trace_evidence"][
+        "checked_checkpoint_count"
+    ] == 19
+    assert not any(
+        finding.startswith("brain: llm-full compile run")
+        for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_full_v4_without_trace_evidence(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    compile_run = _llm_compile_run_v4_fixture()
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_v4_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": compile_run,
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["run_llm_prompt_hash_count"] == 19
+    assert production["llm_full_brain"]["run_llm_trace_evidence"][
+        "missing_trace_prompt_hash_count"
+    ] == 19
+    assert (
+        "brain: llm-full compile run referenced LLM prompt hash has no "
+        "matching trace: brain-compile-shard-0001-hash"
+        in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_llm_full_v4_missing_prompt_hash_accounting(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    write_json(
+        current / "llm_compile_manifest.json",
+        _llm_compile_manifest_v4_fixture(),
+    )
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["run_llm_prompt_hash_count"] == 0
+    assert (
+        "brain: llm-full compile run prompt hash accounting does not match "
+        "generation count"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_llm_full_category_manifest_mismatch(
     tmp_path,
 ) -> None:
@@ -6437,6 +6630,148 @@ def _llm_compile_manifest_fixture(**overrides: object) -> dict[str, object]:
     }
     manifest.update(overrides)
     return manifest
+
+
+def _llm_compile_manifest_v4_fixture(**overrides: object) -> dict[str, object]:
+    manifest = _llm_compile_manifest_fixture(
+        compiler_version=LLM_FULL_COMPILER_VERSION,
+    )
+    record_shards = manifest["record_shards"]
+    assert isinstance(record_shards, list)
+    for index, shard in enumerate(record_shards, start=1):
+        assert isinstance(shard, dict)
+        shard["prompt_sha256"] = f"brain-compile-shard-{index:04d}-hash"
+    categories = manifest["categories"]
+    assert isinstance(categories, list)
+    for category_entry in categories:
+        assert isinstance(category_entry, dict)
+        category = category_entry["category"]
+        assert isinstance(category, str)
+        category_entry["synthesis_prompt_sha256"] = (
+            f"brain-compile-synthesis-{category}-hash"
+        )
+        category_entry["review_prompt_sha256"] = (
+            f"brain-compile-review-{category}-hash"
+        )
+    manifest.update(overrides)
+    return manifest
+
+
+def _llm_compile_run_v4_fixture(**overrides: object) -> dict[str, object]:
+    categories: list[dict[str, object]] = []
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        is_world_model = category == "world_model"
+        categories.append(
+            {
+                "category": category,
+                "file_name": file_name,
+                "source_record_count": 1 if is_world_model else 0,
+                "synthesis_cache_key": f"LLMBRAIN-production-synthesis-{category}",
+                "synthesis_prompt_sha256": (
+                    f"brain-compile-synthesis-{category}-hash"
+                ),
+                "synthesis_cache_hit": False,
+                "review_cache_key": f"LLMBRAIN-production-review-{category}",
+                "review_prompt_sha256": f"brain-compile-review-{category}-hash",
+                "review_cache_hit": False,
+            }
+        )
+    run: dict[str, object] = {
+        "schema_version": "nslab.llm_full_brain_compile_run.v1",
+        "brain_version": "brain-production",
+        "provider": "openai",
+        "model": "gpt-production",
+        "llm_generation_count": 19,
+        "llm_live_call_count": 19,
+        "llm_cache_hit_count": 0,
+        "llm_cache_miss_count": 19,
+        "all_outputs_from_cache": False,
+        "record_shards": [
+            {
+                "shard_index": 1,
+                "cache_key": "LLMBRAIN-production-shard",
+                "prompt_sha256": "brain-compile-shard-0001-hash",
+                "record_count": 1,
+                "cache_hit": False,
+            }
+        ],
+        "categories": categories,
+    }
+    run.update(overrides)
+    return run
+
+
+def _write_llm_compile_trace_evidence_fixture(
+    root: Path,
+    compile_run: dict[str, object],
+) -> None:
+    trace_dir = root / "runs" / "traces"
+    checkpoint_dir = root / "runs" / "checkpoints" / "llm"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    for index, prompt_hash in enumerate(
+        _llm_compile_run_prompt_hashes(compile_run),
+        start=1,
+    ):
+        trace_id = f"TRACE-brain-compile-{index:04d}"
+        checkpoint_id = f"LLMCKPT-brain-compile-{index:04d}"
+        purpose = f"brain_compile:fixture:{index:04d}"
+        model_config = {
+            "configured_provider": "openai",
+            "provider_class": "OpenAIResponsesProvider",
+            "model": "gpt-production",
+            "compiler_version": LLM_FULL_COMPILER_VERSION,
+        }
+        input_payload = {"prompt_sha256": prompt_hash}
+        write_json(
+            trace_dir / f"{trace_id}.json",
+            {
+                "schema_version": "nslab.llm_trace.v1",
+                "trace_id": trace_id,
+                "operation": "generate_text",
+                "purpose": purpose,
+                "status": "ok",
+                "provider": "OpenAIResponsesProvider",
+                "checkpoint_id": checkpoint_id,
+                "input": input_payload,
+                "model_config": model_config,
+            },
+        )
+        write_json(
+            checkpoint_dir / f"{checkpoint_id}.json",
+            {
+                "schema_version": "nslab.llm_checkpoint.v1",
+                "checkpoint_id": checkpoint_id,
+                "operation": "generate_text",
+                "purpose": purpose,
+                "status": "ok",
+                "provider": "OpenAIResponsesProvider",
+                "input": input_payload,
+                "model_config": model_config,
+            },
+        )
+
+
+def _llm_compile_run_prompt_hashes(compile_run: dict[str, object]) -> list[str]:
+    prompt_hashes: list[str] = []
+    record_shards = compile_run["record_shards"]
+    assert isinstance(record_shards, list)
+    for shard in record_shards:
+        assert isinstance(shard, dict)
+        prompt_hash = shard["prompt_sha256"]
+        assert isinstance(prompt_hash, str)
+        prompt_hashes.append(prompt_hash)
+    categories = compile_run["categories"]
+    assert isinstance(categories, list)
+    for category in categories:
+        assert isinstance(category, dict)
+        synthesis_prompt_hash = category["synthesis_prompt_sha256"]
+        review_prompt_hash = category["review_prompt_sha256"]
+        assert isinstance(synthesis_prompt_hash, str)
+        assert isinstance(review_prompt_hash, str)
+        prompt_hashes.extend([synthesis_prompt_hash, review_prompt_hash])
+    return sorted(prompt_hashes)
 
 
 def _write_brain_category_file_fixture(root: Path) -> None:

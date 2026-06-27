@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.brain.compiler import (
     BRAIN_FILES,
+    LLM_FULL_COMPILER_VERSION,
     _brain_category,
     current_brain_version,
 )
@@ -3531,6 +3532,16 @@ def _llm_full_brain_status(
         compile_manifest,
         known_record_ids=known_record_ids,
     )
+    manifest_prompt_hash_stats = _llm_full_compile_prompt_hash_stats(
+        compile_manifest,
+    )
+    run_prompt_hash_stats = _llm_full_compile_prompt_hash_stats(
+        compile_run,
+    )
+    run_trace_evidence = _production_llm_trace_evidence_status(
+        settings.project_root,
+        manifest_prompt_hashes=set(run_prompt_hash_stats["prompt_hashes"]),
+    )
     compiled_claim_count = compiled_claim_stats["line_count"]
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
@@ -3657,6 +3668,9 @@ def _llm_full_brain_status(
         "model": compile_manifest.get("model")
         if isinstance(compile_manifest, dict)
         else None,
+        "compiler_version": compile_manifest.get("compiler_version")
+        if isinstance(compile_manifest, dict)
+        else None,
         "configured_model": settings.llm.model,
         "brain_version": compile_manifest.get("brain_version")
         if isinstance(compile_manifest, dict)
@@ -3678,6 +3692,26 @@ def _llm_full_brain_status(
         "run_all_outputs_from_cache": compile_run.get("all_outputs_from_cache")
         if isinstance(compile_run, dict)
         else None,
+        "manifest_llm_prompt_hash_count": manifest_prompt_hash_stats["prompt_hash_count"],
+        "manifest_llm_unique_prompt_hash_count": manifest_prompt_hash_stats[
+            "unique_prompt_hash_count"
+        ],
+        "manifest_llm_missing_prompt_hash_fields": manifest_prompt_hash_stats[
+            "missing_fields"
+        ],
+        "manifest_llm_duplicate_prompt_hashes": manifest_prompt_hash_stats[
+            "duplicate_prompt_hashes"
+        ],
+        "run_llm_prompt_hash_count": run_prompt_hash_stats["prompt_hash_count"],
+        "run_llm_unique_prompt_hash_count": run_prompt_hash_stats[
+            "unique_prompt_hash_count"
+        ],
+        "run_llm_prompt_hashes": run_prompt_hash_stats["prompt_hashes"],
+        "run_llm_missing_prompt_hash_fields": run_prompt_hash_stats["missing_fields"],
+        "run_llm_duplicate_prompt_hashes": run_prompt_hash_stats[
+            "duplicate_prompt_hashes"
+        ],
+        "run_llm_trace_evidence": run_trace_evidence,
     }
     if catalog_only is True:
         findings.append("current manifest is catalog_only")
@@ -3820,6 +3854,25 @@ def _llm_full_brain_status(
                 findings.append("llm-full LLM generation cache/live-call accounting is invalid")
             elif live_call_count <= 0 or status["run_all_outputs_from_cache"] is True:
                 findings.append("llm-full production compile has no live LLM calls")
+            if status["compiler_version"] == LLM_FULL_COMPILER_VERSION:
+                if run_prompt_hash_stats["missing_fields"]:
+                    findings.append("llm-full compile run prompt hashes are missing")
+                if (
+                    isinstance(generation_count, int)
+                    and run_prompt_hash_stats["prompt_hash_count"] != generation_count
+                ):
+                    findings.append(
+                        "llm-full compile run prompt hash accounting does not match "
+                        "generation count"
+                    )
+                manifest_hashes = set(manifest_prompt_hash_stats["prompt_hashes"])
+                run_hashes = set(run_prompt_hash_stats["prompt_hashes"])
+                if manifest_hashes and run_hashes and manifest_hashes != run_hashes:
+                    findings.append(
+                        "llm-full compile manifest and run prompt hashes differ"
+                    )
+                for trace_finding in run_trace_evidence["findings"]:
+                    findings.append(f"llm-full compile run {trace_finding}")
     if not compiled_claims_path.exists():
         findings.append("compiled claims JSONL is missing")
     elif compiled_claim_count <= 0:
@@ -4912,6 +4965,78 @@ def _llm_compile_record_shard_manifest_stats(
         "unknown_record_ids": unknown_record_ids,
         "missing_record_ids": missing_record_ids,
     }
+
+
+def _llm_full_compile_prompt_hash_stats(source: object) -> dict[str, Any]:
+    prompt_hashes: list[str] = []
+    missing_fields: list[str] = []
+    if not isinstance(source, dict):
+        return {
+            "prompt_hash_count": 0,
+            "unique_prompt_hash_count": 0,
+            "prompt_hashes": [],
+            "missing_fields": [],
+            "duplicate_prompt_hashes": [],
+        }
+    record_shards = source.get("record_shards")
+    if isinstance(record_shards, list):
+        for index, shard in enumerate(record_shards, start=1):
+            if isinstance(shard, dict):
+                _append_prompt_hash(
+                    shard,
+                    "prompt_sha256",
+                    f"record_shards[{index}].prompt_sha256",
+                    prompt_hashes=prompt_hashes,
+                    missing_fields=missing_fields,
+                )
+            else:
+                missing_fields.append(f"record_shards[{index}]")
+    elif record_shards is not None:
+        missing_fields.append("record_shards")
+    categories = source.get("categories")
+    if isinstance(categories, list):
+        for index, category in enumerate(categories, start=1):
+            if not isinstance(category, dict):
+                missing_fields.append(f"categories[{index}]")
+                continue
+            _append_prompt_hash(
+                category,
+                "synthesis_prompt_sha256",
+                f"categories[{index}].synthesis_prompt_sha256",
+                prompt_hashes=prompt_hashes,
+                missing_fields=missing_fields,
+            )
+            _append_prompt_hash(
+                category,
+                "review_prompt_sha256",
+                f"categories[{index}].review_prompt_sha256",
+                prompt_hashes=prompt_hashes,
+                missing_fields=missing_fields,
+            )
+    elif categories is not None:
+        missing_fields.append("categories")
+    return {
+        "prompt_hash_count": len(prompt_hashes),
+        "unique_prompt_hash_count": len(set(prompt_hashes)),
+        "prompt_hashes": sorted(set(prompt_hashes)),
+        "missing_fields": sorted(missing_fields),
+        "duplicate_prompt_hashes": _duplicate_strings(prompt_hashes),
+    }
+
+
+def _append_prompt_hash(
+    source: dict[str, Any],
+    key: str,
+    label: str,
+    *,
+    prompt_hashes: list[str],
+    missing_fields: list[str],
+) -> None:
+    value = source.get(key)
+    if isinstance(value, str) and value:
+        prompt_hashes.append(value)
+    else:
+        missing_fields.append(label)
 
 
 def _record_file_stats(path: Path) -> dict[str, Any]:
