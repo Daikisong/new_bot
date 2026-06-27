@@ -3811,6 +3811,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "findings": [f"training export audit failed: {type(exc).__name__}: {exc}"],
         }
     findings.extend(_string_list(audit.get("findings")))
+    audit_passed = audit.get("passed") is True
+    if not audit_passed:
+        findings.append("training export audit did not pass")
 
     report = _read_optional_json(root / "diagnostics" / "training_export_report.json")
     diagnostics = report if isinstance(report, dict) else {}
@@ -4454,7 +4457,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "issuer_day_weight_sum_mismatches": issuer_weight_mismatches,
         "direct_event_weight_sum_mismatch_count": direct_weight_mismatch_count,
         "direct_event_weight_sum_mismatches": direct_weight_mismatches,
-        "audit_passed": audit.get("passed") is True,
+        "audit_passed": audit_passed,
     }
 
 
