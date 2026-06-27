@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
+from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler, _brain_category
 from news_scalping_lab.cli import app
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
@@ -2420,17 +2420,7 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2472,6 +2462,73 @@ def test_production_readiness_accepts_llm_full_compile_evidence(
     )
 
 
+def test_production_readiness_rejects_llm_full_category_manifest_mismatch(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    settings.llm.model = "gpt-production"
+    current = tmp_path / "brain" / "current"
+    current.mkdir(parents=True)
+    write_json(
+        current / "brain_manifest.json",
+        {"brain_version": "brain-production", "build_mode": "llm-full"},
+    )
+    write_json(
+        current / "record_coverage_manifest.json",
+        {
+            "schema_version": "nslab.record_coverage_manifest.v1",
+            "accepted_record_count": 1,
+            "coverage_complete": True,
+        },
+    )
+    manifest = _llm_compile_manifest_fixture()
+    categories = manifest["categories"]
+    assert isinstance(categories, list)
+    manifest["categories"] = categories[:-1]
+    write_json(current / "llm_compile_manifest.json", manifest)
+    diagnostics_dir = tmp_path / "diagnostics"
+    diagnostics_dir.mkdir()
+    write_json(
+        diagnostics_dir / "brain_compile_report.json",
+        {
+            "schema_version": "nslab.brain_compile_diagnostics.v1",
+            "brain_version": "brain-production",
+            "llm_compile_run": {
+                "schema_version": "nslab.llm_full_brain_compile_run.v1",
+                "brain_version": "brain-production",
+                "llm_generation_count": 19,
+                "llm_live_call_count": 19,
+                "llm_cache_hit_count": 0,
+                "all_outputs_from_cache": False,
+            },
+        },
+    )
+    _write_compiled_claim_fixture(tmp_path)
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["llm_full_brain"]["passed"] is False
+    assert production["llm_full_brain"]["category_manifest_observed_count"] == 8
+    assert "categories: expected 9, got 8" in production["llm_full_brain"][
+        "category_manifest_schema_mismatches"
+    ]
+    assert (
+        "brain: llm-full compile manifest categories do not match canonical brain files"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_missing_llm_full_category_files(
     tmp_path,
 ) -> None:
@@ -2494,17 +2551,7 @@ def test_production_readiness_rejects_missing_llm_full_category_files(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2568,17 +2615,7 @@ def test_production_readiness_rejects_invalid_compiled_claim_rows(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2643,17 +2680,7 @@ def test_production_readiness_rejects_all_cached_llm_full_compile(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2717,17 +2744,7 @@ def test_production_readiness_rejects_llm_full_model_mismatch(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-stale",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(model="gpt-stale"),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2791,17 +2808,7 @@ def test_production_readiness_rejects_llm_full_source_count_gap(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-production",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -2857,17 +2864,7 @@ def test_production_readiness_rejects_stale_llm_full_compile_evidence(
     )
     write_json(
         current / "llm_compile_manifest.json",
-        {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
-            "brain_version": "brain-stale",
-            "provider": "openai",
-            "model": "gpt-production",
-            "source_record_count": 1,
-            "compiled_claim_count": 1,
-            "record_shard_count": 1,
-            "category_count": 9,
-            "llm_generation_count": 19,
-        },
+        _llm_compile_manifest_fixture(brain_version="brain-stale"),
     )
     diagnostics_dir = tmp_path / "diagnostics"
     diagnostics_dir.mkdir()
@@ -4784,6 +4781,37 @@ def _write_compiled_claim_fixture(
         claim.model_dump_json() + "\n",
         encoding="utf-8",
     )
+
+
+def _llm_compile_manifest_fixture(**overrides: object) -> dict[str, object]:
+    categories: list[dict[str, object]] = []
+    for file_name in BRAIN_FILES:
+        category = _brain_category(file_name)
+        is_world_model = category == "world_model"
+        categories.append(
+            {
+                "category": category,
+                "file_name": file_name,
+                "source_record_count": 1 if is_world_model else 0,
+                "source_record_ids": ["BRAIN-production"] if is_world_model else [],
+                "compiled_claim_count": 1 if is_world_model else 0,
+                "compiled_claim_ids": ["CC-production"] if is_world_model else [],
+            }
+        )
+    manifest: dict[str, object] = {
+        "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+        "brain_version": "brain-production",
+        "provider": "openai",
+        "model": "gpt-production",
+        "source_record_count": 1,
+        "compiled_claim_count": 1,
+        "record_shard_count": 1,
+        "category_count": len(BRAIN_FILES),
+        "categories": categories,
+        "llm_generation_count": 19,
+    }
+    manifest.update(overrides)
+    return manifest
 
 
 def _write_brain_category_file_fixture(root: Path) -> None:
