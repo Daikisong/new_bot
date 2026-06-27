@@ -129,6 +129,13 @@ class WebEvidenceArtifactCounts:
     placeholder_sample_values: list[str]
 
 
+@dataclass(frozen=True)
+class WebEvidenceSourceIdStatus:
+    source_ids: list[str]
+    row_count: int
+    missing_source_id_count: int
+
+
 def production_readiness_report(
     report: dict[str, Any],
     settings: Settings,
@@ -1088,6 +1095,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
     missing_artifact_hashes: list[dict[str, Any]] = []
     artifact_hash_mismatches: list[dict[str, Any]] = []
     artifact_source_id_mismatches: list[dict[str, Any]] = []
+    artifact_missing_source_ids: list[dict[str, Any]] = []
     checked_artifact_refs = 0
     for manifest_path in manifest_paths:
         manifest_relative_path = relative_to_root(manifest_path, root)
@@ -1133,11 +1141,29 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             if source_field is not None:
                 expected_source_ids = _string_list(manifest.get(source_field))
                 try:
-                    observed_source_ids = _web_evidence_artifact_source_ids(
+                    source_id_status = _web_evidence_artifact_source_id_status(
                         artifact_path
                     )
                 except OSError:
-                    observed_source_ids = []
+                    source_id_status = WebEvidenceSourceIdStatus(
+                        source_ids=[],
+                        row_count=0,
+                        missing_source_id_count=0,
+                    )
+                observed_source_ids = source_id_status.source_ids
+                if source_id_status.missing_source_id_count:
+                    artifact_missing_source_ids.append(
+                        {
+                            "manifest": manifest_relative_path,
+                            "artifact_field": field,
+                            "source_field": source_field,
+                            "artifact": relative_artifact_path,
+                            "row_count": source_id_status.row_count,
+                            "missing_source_id_count": (
+                                source_id_status.missing_source_id_count
+                            ),
+                        }
+                    )
                 if (
                     set(observed_source_ids) != set(expected_source_ids)
                     or len(observed_source_ids) != len(set(observed_source_ids))
@@ -1258,6 +1284,11 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             f"{artifact['manifest']} {artifact['artifact_field']} -> "
             f"{artifact['source_field']}"
         )
+    for artifact in artifact_missing_source_ids:
+        findings.append(
+            f"web evidence artifact has rows without source IDs: "
+            f"{artifact['artifact']} ({artifact['missing_source_id_count']})"
+        )
     for path in unreadable_artifacts:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for artifact in invalid_json_artifacts:
@@ -1310,6 +1341,11 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "artifact_sha256_mismatches": artifact_hash_mismatches,
         "artifact_source_id_mismatch_count": len(artifact_source_id_mismatches),
         "artifact_source_id_mismatches": artifact_source_id_mismatches,
+        "artifact_missing_source_id_count": sum(
+            int(artifact["missing_source_id_count"])
+            for artifact in artifact_missing_source_ids
+        ),
+        "artifact_missing_source_id_artifacts": artifact_missing_source_ids,
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
         "invalid_artifact_json_count": sum(
@@ -1432,28 +1468,52 @@ def _web_evidence_artifact_counts(
     )
 
 
-def _web_evidence_artifact_source_ids(path: Path) -> list[str]:
+def _web_evidence_artifact_source_id_status(path: Path) -> WebEvidenceSourceIdStatus:
     if path.suffix == ".jsonl":
         source_ids: list[str] = []
+        row_count = 0
+        missing_source_id_count = 0
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
+            row_count += 1
             try:
                 payload: object = json.loads(line)
             except json.JSONDecodeError:
+                missing_source_id_count += 1
                 continue
-            if isinstance(payload, dict):
-                source_id = payload.get("source_id")
-                if isinstance(source_id, str) and source_id:
-                    source_ids.append(source_id)
-        return source_ids
+            payload_source_ids = _source_ids_from_payload(payload)
+            if payload_source_ids:
+                source_ids.extend(payload_source_ids)
+            else:
+                missing_source_id_count += 1
+        return WebEvidenceSourceIdStatus(
+            source_ids=source_ids,
+            row_count=row_count,
+            missing_source_id_count=missing_source_id_count,
+        )
     if path.suffix == ".json":
+        text = path.read_text(encoding="utf-8-sig")
+        row_count = 1 if text.strip() else 0
         try:
-            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            payload = json.loads(text)
         except json.JSONDecodeError:
-            return []
-        return _source_ids_from_payload(payload)
-    return []
+            return WebEvidenceSourceIdStatus(
+                source_ids=[],
+                row_count=row_count,
+                missing_source_id_count=row_count,
+            )
+        source_ids = _source_ids_from_payload(payload)
+        return WebEvidenceSourceIdStatus(
+            source_ids=source_ids,
+            row_count=row_count,
+            missing_source_id_count=0 if source_ids or row_count == 0 else 1,
+        )
+    return WebEvidenceSourceIdStatus(
+        source_ids=[],
+        row_count=0,
+        missing_source_id_count=0,
+    )
 
 
 def _source_ids_from_payload(value: object) -> list[str]:

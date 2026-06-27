@@ -3013,6 +3013,75 @@ def test_production_readiness_rejects_web_evidence_source_id_mismatch(
     )
 
 
+def test_production_readiness_rejects_web_evidence_rows_without_source_id(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    manifest_dir = tmp_path / "runs" / "manifests"
+    web_source_path = (
+        tmp_path / "runs" / "checkpoints" / "web_sources" / "RUN-web" / "web_sources.jsonl"
+    )
+    manifest_dir.mkdir(parents=True)
+    web_source_path.parent.mkdir(parents=True)
+    web_source_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "nslab.web_source.v1",
+                "url": "https://www.reuters.com/markets/companies/live-web-evidence",
+                "source_url": (
+                    "https://www.reuters.com/markets/companies/live-web-evidence"
+                ),
+                "title": "source id missing web evidence",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_json(
+        manifest_dir / "RUN-web.json",
+        {
+            "schema_version": "nslab.context_manifest.v1",
+            "run_id": "RUN-web",
+            "web_sources": [],
+            "web_source_artifact": web_source_path.relative_to(tmp_path).as_posix(),
+            "web_source_sha256": file_sha256(web_source_path),
+        },
+    )
+    report = {
+        "api_connections": {
+            "openai": {"status": "configured_not_called"},
+            "brave_search": {"status": "configured_not_called"},
+        },
+        "vector_index": {
+            "status": "current",
+            "embedding_method": "llm_embedding:openai:text-embedding-3-small",
+        },
+    }
+
+    production = production_readiness_report(report, settings)
+
+    assert production["web_evidence"]["passed"] is False
+    assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 0
+    assert production["web_evidence"]["artifact_missing_source_id_count"] == 1
+    assert production["web_evidence"]["artifact_missing_source_id_artifacts"] == [
+        {
+            "manifest": "runs/manifests/RUN-web.json",
+            "artifact_field": "web_source_artifact",
+            "source_field": "web_sources",
+            "artifact": "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl",
+            "row_count": 1,
+            "missing_source_id_count": 1,
+        }
+    ]
+    assert (
+        "web_evidence: web evidence artifact has rows without source IDs: "
+        "runs/checkpoints/web_sources/RUN-web/web_sources.jsonl (1)"
+        in production["findings"]
+    )
+
+
 def test_production_readiness_rejects_invalid_web_evidence_json_artifact(
     tmp_path,
 ) -> None:
@@ -3346,6 +3415,8 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
     assert production["web_evidence"]["empty_artifact_count"] == 0
     assert production["web_evidence"]["invalid_artifact_json_count"] == 0
     assert production["web_evidence"]["artifact_source_id_mismatch_count"] == 0
+    assert production["web_evidence"]["artifact_missing_source_id_count"] == 0
+    assert production["web_evidence"]["artifact_missing_source_id_artifacts"] == []
     assert production["web_evidence"]["missing_artifact_hash_count"] == 0
     assert production["web_evidence"]["artifact_sha256_mismatch_count"] == 0
     assert production["web_evidence"]["mock_web_artifact_count"] == 0
