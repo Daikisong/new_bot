@@ -3654,6 +3654,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "status": "attention",
             "finding_count": 1,
             "findings": [finding],
+            "diagnostic_report_passed": None,
+            "diagnostic_report_findings": [],
+            "invalid_diagnostic_report_fields": [],
             "source_record_count": None,
             "diagnostic_source_record_count": None,
             "diagnostic_eligible_record_count": None,
@@ -3736,6 +3739,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "status": "not_applicable",
             "finding_count": 0,
             "findings": [],
+            "diagnostic_report_passed": None,
+            "diagnostic_report_findings": [],
+            "invalid_diagnostic_report_fields": [],
             "source_record_count": 0,
             "diagnostic_source_record_count": 0,
             "diagnostic_eligible_record_count": 0,
@@ -3812,6 +3818,28 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append("training export diagnostics report is missing")
     elif diagnostics.get("schema_version") != "nslab.training_export_diagnostics.v1":
         findings.append("training export diagnostics schema_version is invalid")
+    diagnostic_report_passed = (
+        diagnostics.get("passed") if isinstance(diagnostics.get("passed"), bool) else None
+    )
+    diagnostic_report_findings = _string_list(diagnostics.get("findings"))
+    invalid_diagnostic_report_fields: list[str] = []
+    if diagnostics:
+        if not isinstance(diagnostics.get("passed"), bool):
+            invalid_diagnostic_report_fields.append("passed")
+            findings.append("training export diagnostics passed is invalid")
+        elif diagnostics.get("passed") is not True:
+            findings.append("training export diagnostics report did not pass")
+        if (
+            "findings" not in diagnostics
+            or not _string_list_field_valid(diagnostics.get("findings"))
+        ):
+            invalid_diagnostic_report_fields.append("findings")
+            findings.append("training export diagnostics findings is invalid")
+        elif diagnostic_report_findings:
+            findings.append(
+                "training export diagnostics report has findings: "
+                + "; ".join(diagnostic_report_findings)
+            )
 
     export_kinds = _string_list(diagnostics.get("export_kinds"))
     available_manifest_kinds = _string_list(
@@ -4351,6 +4379,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
+        "diagnostic_report_passed": diagnostic_report_passed,
+        "diagnostic_report_findings": diagnostic_report_findings,
+        "invalid_diagnostic_report_fields": invalid_diagnostic_report_fields,
         "source_record_count": source_record_count,
         "record_store_source_record_count": record_store_source_count,
         "diagnostic_source_record_count": diagnostic_source_record_count,

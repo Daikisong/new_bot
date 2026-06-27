@@ -2383,6 +2383,9 @@ def test_production_readiness_accepts_record_backed_training_exports(
 
     assert production["training_exports"]["passed"] is True
     assert production["training_exports"]["status"] == "ready"
+    assert production["training_exports"]["diagnostic_report_passed"] is True
+    assert production["training_exports"]["diagnostic_report_findings"] == []
+    assert production["training_exports"]["invalid_diagnostic_report_fields"] == []
     assert production["training_exports"]["source_record_count"] == 2
     assert production["training_exports"]["record_store_source_record_count"] == 2
     assert production["training_exports"]["diagnostic_source_record_count"] == (
@@ -2535,6 +2538,54 @@ def test_production_readiness_accepts_record_backed_training_exports(
     assert production["training_exports"]["invalid_weight_validation_entries"] == []
     assert not any(
         finding.startswith("training:") for finding in production["findings"]
+    )
+
+
+def test_production_readiness_rejects_failed_training_export_diagnostics_report(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings.llm.provider = "openai"
+    ensure_project_dirs(settings)
+    _write_training_record_store(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    production_readiness_report(_production_base_report(), settings)
+
+    report_path = tmp_path / "diagnostics" / "training_export_report.json"
+    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
+    tampered_report["passed"] = False
+    tampered_report["findings"] = ["diagnostic self-reported failure"]
+
+    def fake_audit_training_exports(root: Path) -> dict[str, object]:
+        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
+        return {"passed": True, "findings": [], "manifests": {}}
+
+    monkeypatch.setattr(
+        "news_scalping_lab.diagnostics.audit_training_exports",
+        fake_audit_training_exports,
+    )
+
+    production = production_readiness_report(_production_base_report(), settings)
+
+    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["diagnostic_report_passed"] is False
+    assert production["training_exports"]["diagnostic_report_findings"] == [
+        "diagnostic self-reported failure",
+    ]
+    assert production["training_exports"]["invalid_diagnostic_report_fields"] == []
+    assert (
+        "training export diagnostics report did not pass"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training export diagnostics report has findings: diagnostic self-reported failure"
+        in production["training_exports"]["findings"]
+    )
+    assert (
+        "training: training export diagnostics report did not pass"
+        in production["findings"]
     )
 
 
