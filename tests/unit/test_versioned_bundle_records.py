@@ -2203,6 +2203,15 @@ def test_opaque_unknown_bundle_version_is_quarantined(tmp_path: Path) -> None:
     assert result.training_eligible_record_count == 0
     assert result.envelope_path is not None
     assert result.envelope_path.exists()
+    report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
+    assert report["status"] == "UNSUPPORTED_BUNDLE_VERSION"
+    assert report["raw_record_count"] == 0
+    assert report["normalized_record_count"] == 0
+    assert report["raw_normalized_record_count_matches"] is True
+    assert report["dropped_record_count"] == 0
+    assert report["missing_normalized_record_count"] == 0
+    assert report["extra_normalized_record_count"] == 0
+    assert report["quarantined_record_count"] == 1
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 

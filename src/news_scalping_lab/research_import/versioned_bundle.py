@@ -697,7 +697,14 @@ def import_versioned_bundle(
                 "episode_id": episode_id,
                 "bundle_version": bundle_schema_version(parsed),
                 "raw_bundle_sha256": source_hash,
-                "dropped_record_count": 0,
+                **_record_count_parity_payload(
+                    raw_record_count=len(
+                        parsed.jsonl_blocks.get("brain_delta.jsonl", [])
+                    ),
+                    normalized_record_count=0,
+                ),
+                "missing_normalized_record_count": 0,
+                "extra_normalized_record_count": 0,
                 "quarantined_record_count": 1,
                 "quarantine": quarantine.as_posix(),
             },
