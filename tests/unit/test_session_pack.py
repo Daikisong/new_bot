@@ -228,9 +228,11 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     assert "- EP-after-cutoff" in omission_report
     assert {item["reason"] for item in manifest["truncations"]} == {
         "session_pack_token_budget_exceeded",
+        "session_pack_required_context_exceeds_token_budget",
         "episode_available_from_after_cutoff",
     }
     assert "session pack omitted available episodes due to token budget" in manifest["errors"]
+    assert "session pack required context exceeds token budget" in manifest["errors"]
     assert "session pack excluded future-unavailable episodes" in manifest["errors"]
     assert "EP-small" not in memory_cases
     assert "EP-large" not in memory_cases
@@ -263,6 +265,7 @@ def test_session_pack_blocks_when_available_episode_exceeds_budget(tmp_path) -> 
     assert manifest["token_count_total"] == sum(manifest["token_counts"].values())
     assert manifest["token_counts"]["memory_cases.md"] > 0
     assert "session pack omitted available episodes due to token budget" in exc_info.value.errors
+    assert "session pack required context exceeds token budget" in exc_info.value.errors
 
 
 def test_session_pack_cli_exits_nonzero_when_available_episode_exceeds_budget(
@@ -475,10 +478,17 @@ def test_session_pack_blocks_when_available_record_exceeds_budget(tmp_path) -> N
         "session pack omitted available records due to token budget"
         in manifest["errors"]
     )
+    assert "session pack required context exceeds token budget" in manifest["errors"]
     assert (
         "session pack omitted available records due to token budget"
         in exc_info.value.errors
     )
+    assert "session pack required context exceeds token budget" in exc_info.value.errors
+    assert {
+        item["reason"]
+        for item in manifest["truncations"]
+        if item["artifact"] == "session_pack"
+    } == {"session_pack_required_context_exceeds_token_budget"}
     assert audit_lookahead(tmp_path)["passed"]
 
 

@@ -349,9 +349,7 @@ def export_session_pack(
         for file_name in pack_files
     }
     token_count_total = sum(token_counts.values())
-    required_context_over_budget = (
-        not omitted_ids and not omitted_record_ids and token_count_total > token_budget
-    )
+    required_context_over_budget = token_count_total > token_budget
     if required_context_over_budget:
         truncations.append(
             {
