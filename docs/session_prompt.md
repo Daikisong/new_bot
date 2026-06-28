@@ -2,6 +2,9 @@
 유지보수 메모:
 docs/research_prompt.md가 바뀌면 이 세션 프롬프트의 MAIN EXECUTION PROMPT 섹션도 함께 갱신한다.
 반드시 main branch Raw URL, expected_sha256, expected_byte_size를 새 research_prompt.md 기준으로 맞춘다.
+자동연구 개선 중에는 main branch Raw URL + expected hash/byte 검증이 의도된 운영 방식이다.
+다른 에이전트는 이 URL을 commit-pinned Raw URL로 바꾸지 말 것.
+구버전 고정이 필요해 보이면 먼저 테스트와 사용자 운영 방식 합의를 갱신해야 한다.
 웹 세션에 붙여넣기 전에는 `이번 세션 시작 파일: news_YYYYMMDD.csv`만 실행할 CSV 파일명으로 바꾼다.
 -->
 
@@ -307,6 +310,12 @@ https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/researc
 
 이 URL은 main branch Raw URL이다.
 
+운영 고정:
+- 자동연구 세션은 최신 `docs/research_prompt.md` 보강을 즉시 반영해야 하므로 이 URL은 `refs/heads/main`을 유지한다.
+- 구버전 실행을 막는 장치는 commit pin이 아니라 아래 `expected_sha256`과 `expected_byte_size` 검증이다.
+- 이 섹션을 commit-pinned URL로 바꾸면 새 research_prompt 보강이 웹세션에 반영되지 않을 수 있다.
+- 따라서 다른 에이전트는 이 URL 정책을 변경하지 말고, research_prompt.md 변경 시 expected 값만 갱신한다.
+
 commit-pinned URL, GitHub HTML preview, 기존 로컬 파일로 대체하지 않는다.
 
 방금 Raw URL에서 받은 MAIN EXECUTION PROMPT는 반드시 다음 값이어야 한다.
@@ -318,12 +327,12 @@ expected_title:
 
 expected_sha256:
 ```text
-0c2d11214bdebb6d0452c967307705cfb6731d41480ea5f9c4194e397e66850e
+43a0fde73a5c7cb736e5c154b51790ff608904b11bb9c2d4ffee85b5a779ffab
 ```
 
 expected_byte_size:
 ```text
-409989
+413840
 ```
 
 필수 확인:

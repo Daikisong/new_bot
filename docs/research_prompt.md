@@ -1040,6 +1040,61 @@ alias를 그대로 남기면 두뇌 retrieval index가 분산되므로 `ACCEPT_F
 }
 ```
 
+### 14.1 brain_delta canonical ticker field hard lock
+
+`brain_delta.jsonl`은 importer가 직접 읽는 record source다. `payload.code`, `payload.stock_code`, `payload.company`, `payload.name`만으로는 canonical issuer identity가 아니다.
+
+다음 record_type은 반드시 top-level canonical field를 가진다.
+
+```text
+supervised_issuer_day_case
+supervised_direct_event_case
+supervised_theme_formation_case
+beneficiary_discovery_case
+event_ticker_edge
+candidate_ranking_error_case
+candidate_generation_error_case
+entity_resolution_error_case
+negative_control_case
+```
+
+필수 top-level field:
+
+```json
+{
+  "ticker": "000000",
+  "company_name": "회사명"
+}
+```
+
+금지:
+
+```json
+{
+  "payload": {
+    "code": "000000",
+    "company": "회사명"
+  }
+}
+```
+
+위처럼 `payload.code` 또는 `payload.company`에만 issuer identity가 있고 top-level `ticker` 또는 `company_name`이 없으면 repo importer는 빈 issuer로 계산한다. 이 경우 sample weight group key가 `YYYY-MM-DD|` 또는 `YYYY-MM-DD:`처럼 비어 `sample_weight_validation_status=failed`가 된다. 이런 bundle은 `ACCEPT_FULL`, `brain_eligible=true`, `direct_brain_ingest_ready=true`를 선언할 수 없다.
+
+허용 mirror:
+
+```json
+{
+  "ticker": "000000",
+  "company_name": "회사명",
+  "payload": {
+    "ticker": "000000",
+    "company_name": "회사명"
+  }
+}
+```
+
+mirror를 둘 경우 top-level과 payload 값은 동일해야 한다. `code`는 legacy alias로 간주하며 최종 `brain_delta.jsonl`에는 남기지 않는다.
+
 필수:
 
 ```text
@@ -1873,12 +1928,71 @@ sample_weight_validation_status = "passed" if (
 
 payload 내부에 `sample_weight`를 넣어도 top-level `sample_weight`가 없거나 다른 값이면 불완전하다. `brain_delta.jsonl` 각 record의 top-level `sample_weight`를 최종 기준으로 삼고, payload mirror가 있으면 같은 값이어야 한다.
 
+Importer sample weight key contract:
+
+```text
+supervised_issuer_day_case group key = top-level (trade_date, ticker)
+supervised_direct_event_case group key = top-level issuer_day_weight_group_id or issuer_day_case_id
+if both direct-event group ids are absent, fallback key = top-level (trade_date, ticker)
+```
+
+Therefore:
+
+```text
+1. `ticker` must be a nonempty top-level 6-digit KRX code on every training-eligible supervised_issuer_day_case.
+2. `ticker` must be a nonempty top-level 6-digit KRX code on every training-eligible supervised_direct_event_case.
+3. `company_name` must be a nonempty top-level issuer name on both record types.
+4. `payload.code` does not count as ticker.
+5. `payload.company` does not count as company_name.
+6. `payload.sample_weight` does not count as sample_weight.
+7. If any training-eligible supervised record has empty top-level ticker, final validation must fail before ACCEPT_FULL.
+```
+
+Required supervised issuer-day shape:
+
+```json
+{
+  "record_type": "supervised_issuer_day_case",
+  "trade_date": "YYYY-MM-DD",
+  "ticker": "000000",
+  "company_name": "회사명",
+  "sample_weight": 1.0,
+  "issuer_day_sample_weight_policy": "single_issuer_day_case",
+  "payload": {
+    "ticker": "000000",
+    "company_name": "회사명"
+  }
+}
+```
+
+Required supervised direct-event shape:
+
+```json
+{
+  "record_type": "supervised_direct_event_case",
+  "trade_date": "YYYY-MM-DD",
+  "ticker": "000000",
+  "company_name": "회사명",
+  "issuer_day_weight_group_id": "YYYY-MM-DD|000000",
+  "sample_weight": 0.3333333333,
+  "payload": {
+    "ticker": "000000",
+    "company_name": "회사명"
+  }
+}
+```
+
+If the same `(trade_date, ticker)` has N training-eligible direct-event records, every record in that group uses the same `issuer_day_weight_group_id = "YYYY-MM-DD|ticker"` and each top-level `sample_weight = 1/N`. Do not set every event to `sample_weight = 1.0`.
+
 `validation_report.json.checks`에는 최소 다음 critical check가 있어야 한다.
 
 ```text
 sample_weight_validation_status_verified
 issuer_day_weight_sum_mismatches_empty_verified
 direct_event_weight_sum_mismatches_empty_verified
+supervised_record_top_level_ticker_nonempty_verified
+supervised_record_top_level_company_name_nonempty_verified
+payload_code_alias_absent_from_supervised_records_verified
 ```
 
 각 check는 final Markdown의 `brain_delta.jsonl` block을 다시 parse해서 계산한 `actual`, prompt/importer 계약의 `expected`, `actual_source="FINAL_MARKDOWN_BLOCK_REPARSE"`, `expected_source="NSLAB_REPO_IMPORTER_SAMPLE_WEIGHT_POLICY"`를 가진다.
@@ -1897,6 +2011,9 @@ direct_event_weight_sum_mismatches_empty_verified
 
 ```text
 same ticker 여러 direct event를 모두 sample_weight=1.0으로 기록
+supervised record에서 top-level `ticker` 없이 `payload.code`만 기록
+supervised record에서 top-level `company_name` 없이 `payload.company`만 기록
+`issuer_day_weight_group_id` 없이 direct event 여러 개를 모두 같은 빈 ticker fallback key로 묶음
 direct_event_weight_sum_mismatches가 비어 있지 않은데 ACCEPT_FULL 선언
 sample_weight_validation_status를 계산하지 않고 passed로 선언
 validation_report에는 passed인데 direct_ingest_contract mirror가 없음
