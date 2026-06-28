@@ -1,0 +1,404 @@
+{
+  "automated_import_expected_to_pass": true,
+  "brain_eligible": true,
+  "bundle_status": "ACCEPT_FULL",
+  "checks": [
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "required_block_missing_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 32,
+      "actual_source": "final Markdown reparse",
+      "check_id": "required_block_duplicate_or_extra_count",
+      "error_ids": [],
+      "expected": 32,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "json_parse_error_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "jsonl_parse_error_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 2072,
+      "actual_source": "final Markdown reparse",
+      "check_id": "source_ledger_news_row_count",
+      "error_ids": [],
+      "expected": 2072,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 2072,
+      "actual_source": "final Markdown reparse",
+      "check_id": "row_disposition_count",
+      "error_ids": [],
+      "expected": 2072,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "material_review_unreviewed_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "material_review_auto_boolean_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "material_review_missing_decision_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "material_review_missing_quote_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "material_review_missing_binding_or_rejection_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 578,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_screening_material_coverage_count",
+      "error_ids": [],
+      "expected": 578,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_screening_rank_field_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_screening_unlinked_to_material_review_count",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 20,
+      "actual_source": "final Markdown reparse",
+      "check_id": "final_watchlist_count_le_20",
+      "error_ids": [],
+      "expected": 20,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 20,
+      "actual_source": "final Markdown reparse",
+      "check_id": "final_evidence_witness_row_count",
+      "error_ids": [],
+      "expected": 20,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "preseal_outcome_access_all_zero",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "outcome_access_after_blind_seal",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 2619,
+      "actual_source": "final Markdown reparse",
+      "check_id": "outcome_ledger_count",
+      "error_ids": [],
+      "expected": 2619,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 73,
+      "actual_source": "final Markdown reparse",
+      "check_id": "outcome_to_news_audit_count",
+      "error_ids": [],
+      "expected": 73,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 458,
+      "actual_source": "final Markdown reparse",
+      "check_id": "brain_delta_actual_record_count",
+      "error_ids": [],
+      "expected": 422,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": 0,
+      "actual_source": "final Markdown reparse",
+      "check_id": "training_eligible_empty_provenance_count_zero_verified",
+      "error_ids": [],
+      "expected": 0,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": "passed",
+      "actual_source": "final Markdown reparse",
+      "check_id": "sample_weight_validation_status_verified",
+      "error_ids": [],
+      "expected": "passed",
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {},
+      "actual_source": "final Markdown reparse",
+      "check_id": "issuer_day_weight_sum_mismatches_empty_verified",
+      "error_ids": [],
+      "expected": {},
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {},
+      "actual_source": "final Markdown reparse",
+      "check_id": "direct_event_weight_sum_mismatches_empty_verified",
+      "error_ids": [],
+      "expected": {},
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": "passed",
+      "actual_source": "final Markdown reparse",
+      "check_id": "training_provenance_closure_status_verified",
+      "error_ids": [],
+      "expected": "passed",
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_ranking_audit_schema_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_ranking_audit_rankable_coverage_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_ranking_audit_final_count_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_ranking_audit_nonfinal_reason_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "candidate_ranking_audit_alias_zero_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "brain_delta_record_type_canonical_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "brain_delta_noncanonical_alias_zero_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "record_provenance_closure_audit_count_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "direct_ingest_contract_count_hash_mirror_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": true,
+      "actual_source": "final Markdown reparse",
+      "check_id": "direct_ingest_contract_validation_parity_verified",
+      "error_ids": [],
+      "expected": true,
+      "expected_source": "prompt_contract",
+      "passed": true,
+      "severity": "critical"
+    }
+  ],
+  "checks_source": "final Markdown re-open/re-parse",
+  "computed_counts": {
+    "brain_delta_record_count": 458,
+    "training_eligible_record_count": 295
+  },
+  "critical_error_count": 0,
+  "direct_brain_ingest_ready": true,
+  "direct_event_weight_sum_mismatches": {},
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "hard_gate_summary": {
+    "critical_error_count": 0,
+    "direct_event_weight_sum_mismatches": {},
+    "direct_ingest_contract_count_hash_parity_verified": true,
+    "direct_ingest_contract_validation_parity_verified": true,
+    "issuer_day_weight_sum_mismatches": {},
+    "record_count_hash_parity_ready": true,
+    "sample_weight_validation_status": "passed",
+    "schema_contract_verified": true,
+    "training_eligible_empty_provenance_count": 0,
+    "training_eligible_unresolved_source_count": 0,
+    "training_provenance_closure_status": "passed",
+    "validator_exit_code": 0
+  },
+  "issuer_day_weight_sum_mismatches": {},
+  "repair_scope": "legacy_bundle_packaging_only_no_new_research_claims",
+  "sample_weight_validation": {
+    "direct_event_weight_sum_mismatches": {},
+    "duplicate_issuer_day_count": 0,
+    "duplicate_issuer_day_keys": [],
+    "issuer_day_weight_sum_mismatches": {},
+    "status": "passed"
+  },
+  "sample_weight_validation_status": "passed",
+  "schema_version": "nslab.validation_report.v23",
+  "status": "PASS",
+  "trade_date": "2024-11-11",
+  "validator_exit_code": 0
+}

@@ -1,0 +1,733 @@
+{
+  "created_from": "reparsed candidate_screening.jsonl",
+  "final_watchlist": [
+    {
+      "blind_score": 36.2,
+      "canonical_name": "NAVER",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "네이버의 AI 승부수…\"쇼핑·지도·부동산에 다 붙인다\"",
+      "fact_ids": [
+        "FACT-000002",
+        "FACT-000035",
+        "FACT-000038",
+        "FACT-000050",
+        "FACT-000073",
+        "FACT-000108",
+        "FACT-000125",
+        "FACT-000179"
+      ],
+      "final_rank": 1,
+      "inference_ids": [
+        "INF-000002",
+        "INF-000035",
+        "INF-000038",
+        "INF-000050",
+        "INF-000073",
+        "INF-000108",
+        "INF-000125",
+        "INF-000179"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000002",
+        "MR-000055",
+        "MR-000060",
+        "MR-000079",
+        "MR-000173",
+        "MR-000332",
+        "MR-000403",
+        "MR-000499"
+      ],
+      "semantic_witness": "네이버의 AI 승부수…\"쇼핑·지도·부동산에 다 붙인다\"",
+      "source_ids": [
+        "SRC-000005",
+        "SRC-000108",
+        "SRC-000117",
+        "SRC-000148",
+        "SRC-000469",
+        "SRC-001293",
+        "SRC-001685",
+        "SRC-001882"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; P_liquidity_top80; theme_momentum",
+      "ticker": "035420"
+    },
+    {
+      "blind_score": 35.9,
+      "canonical_name": "현대지에프홀딩스",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "현대지에프홀딩스, 현대이지웰 지분 15% 공개매수",
+      "fact_ids": [
+        "FACT-000061",
+        "FACT-000063",
+        "FACT-000067",
+        "FACT-000161"
+      ],
+      "final_rank": 2,
+      "inference_ids": [
+        "INF-000061",
+        "INF-000063",
+        "INF-000067",
+        "INF-000161"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000121",
+        "MR-000123",
+        "MR-000138",
+        "MR-000468"
+      ],
+      "semantic_witness": "현대지에프홀딩스, 현대이지웰 지분 15% 공개매수",
+      "source_ids": [
+        "SRC-000305",
+        "SRC-000310",
+        "SRC-000346",
+        "SRC-001828"
+      ],
+      "thesis": "MNA_OWNERSHIP_RESTRUCTURING",
+      "ticker": "005440"
+    },
+    {
+      "blind_score": 35.9,
+      "canonical_name": "LG에너지솔루션",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "포트폴리오 다변화…LG엔솔, 올 초대형 수주 5건",
+      "fact_ids": [
+        "FACT-000060",
+        "FACT-000064",
+        "FACT-000068"
+      ],
+      "final_rank": 3,
+      "inference_ids": [
+        "INF-000060",
+        "INF-000064",
+        "INF-000068"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000120",
+        "MR-000129",
+        "MR-000141"
+      ],
+      "semantic_witness": "포트폴리오 다변화…LG엔솔, 올 초대형 수주 5건",
+      "source_ids": [
+        "SRC-000302",
+        "SRC-000321",
+        "SRC-000351"
+      ],
+      "thesis": "PARTNERSHIP_CONTRACT_ORDER; P_liquidity_top80; P_warm_momentum; theme_momentum",
+      "ticker": "373220"
+    },
+    {
+      "blind_score": 35.4,
+      "canonical_name": "코웨이",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "\"역대 분기 최대 실적\"…코웨이, 3Q 영업익 2071억(종합)",
+      "fact_ids": [
+        "FACT-000132",
+        "FACT-000138",
+        "FACT-000171",
+        "FACT-000218"
+      ],
+      "final_rank": 4,
+      "inference_ids": [
+        "INF-000132",
+        "INF-000138",
+        "INF-000171",
+        "INF-000218"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000415",
+        "MR-000426",
+        "MR-000487",
+        "MR-000553"
+      ],
+      "semantic_witness": "\"역대 분기 최대 실적\"…코웨이, 3Q 영업익 2071억(종합)",
+      "source_ids": [
+        "SRC-001712",
+        "SRC-001729",
+        "SRC-001860",
+        "SRC-001998"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE",
+      "ticker": "021240"
+    },
+    {
+      "blind_score": 33.4,
+      "canonical_name": "동국씨엠",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "동국씨엠, 아주스틸 인수 완료…컬러강판 세계 1위로 우뚝",
+      "fact_ids": [
+        "FACT-000109",
+        "FACT-000133",
+        "FACT-000163"
+      ],
+      "final_rank": 5,
+      "inference_ids": [
+        "INF-000109",
+        "INF-000133",
+        "INF-000163"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000333",
+        "MR-000417",
+        "MR-000470"
+      ],
+      "semantic_witness": "동국씨엠, 아주스틸 인수 완료…컬러강판 세계 1위로 우뚝",
+      "source_ids": [
+        "SRC-001303",
+        "SRC-001716",
+        "SRC-001834"
+      ],
+      "thesis": "MNA_OWNERSHIP_RESTRUCTURING; PARTNERSHIP_CONTRACT_ORDER",
+      "ticker": "460850"
+    },
+    {
+      "blind_score": 31.6,
+      "canonical_name": "알테오젠",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "알테오젠, 日에 피하주사제 3억弗 기술 수출",
+      "fact_ids": [
+        "FACT-000110",
+        "FACT-000200"
+      ],
+      "final_rank": 6,
+      "inference_ids": [
+        "INF-000110",
+        "INF-000200"
+      ],
+      "market": "KOSDAQ GLOBAL",
+      "material_review_ids": [
+        "MR-000335",
+        "MR-000533"
+      ],
+      "semantic_witness": "알테오젠, 日에 피하주사제 3억弗 기술 수출",
+      "source_ids": [
+        "SRC-001305",
+        "SRC-001941"
+      ],
+      "thesis": "P_hot_fatigue; P_liquidity_top80; RND_REGULATORY_OR_LICENSE; theme_momentum",
+      "ticker": "196170"
+    },
+    {
+      "blind_score": 23.6,
+      "canonical_name": "코오롱생명과학",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "코오롱생명과학, 골관절염 세포치료제 유효성 평가법 싱가포르 특허 등록",
+      "fact_ids": [
+        "FACT-000115",
+        "FACT-000121"
+      ],
+      "final_rank": 7,
+      "inference_ids": [
+        "INF-000115",
+        "INF-000121"
+      ],
+      "market": "KOSDAQ",
+      "material_review_ids": [
+        "MR-000374",
+        "MR-000396"
+      ],
+      "semantic_witness": "코오롱생명과학, 골관절염 세포치료제 유효성 평가법 싱가포르 특허 등록",
+      "source_ids": [
+        "SRC-001583",
+        "SRC-001653"
+      ],
+      "thesis": "RND_REGULATORY_OR_LICENSE",
+      "ticker": "102940"
+    },
+    {
+      "blind_score": 23.1,
+      "canonical_name": "LIG넥스원",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "LIG넥스원, 3분기 영업익 519억 26.5%↑…수주 낭보 지속 기대",
+      "fact_ids": [
+        "FACT-000040",
+        "FACT-000177"
+      ],
+      "final_rank": 8,
+      "inference_ids": [
+        "INF-000040",
+        "INF-000177"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000063",
+        "MR-000497"
+      ],
+      "semantic_witness": "LIG넥스원, 3분기 영업익 519억 26.5%↑…수주 낭보 지속 기대",
+      "source_ids": [
+        "SRC-000120",
+        "SRC-001877"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; P_liquidity_top80; SELLSIDE_REVISION",
+      "ticker": "079550"
+    },
+    {
+      "blind_score": 21.8,
+      "canonical_name": "SK바이오팜",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "SK바이오팜, 엑스코프리 매출 증가로 실적 개선…목표가↑-한국",
+      "fact_ids": [
+        "FACT-000032",
+        "FACT-000047"
+      ],
+      "final_rank": 9,
+      "inference_ids": [
+        "INF-000032",
+        "INF-000047"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000046",
+        "MR-000074"
+      ],
+      "semantic_witness": "SK바이오팜, 엑스코프리 매출 증가로 실적 개선…목표가↑-한국",
+      "source_ids": [
+        "SRC-000093",
+        "SRC-000140"
+      ],
+      "thesis": "P_liquidity_top80; P_warm_momentum; SELLSIDE_REVISION; theme_momentum",
+      "ticker": "326030"
+    },
+    {
+      "blind_score": 21.6,
+      "canonical_name": "쏘카",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "쏘카, LG전자와 스마트 충전 스테이션 기술 협력",
+      "fact_ids": [
+        "FACT-000005",
+        "FACT-000008"
+      ],
+      "final_rank": 10,
+      "inference_ids": [
+        "INF-000005",
+        "INF-000008"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000005",
+        "MR-000008"
+      ],
+      "semantic_witness": "쏘카, LG전자와 스마트 충전 스테이션 기술 협력",
+      "source_ids": [
+        "SRC-000009",
+        "SRC-000014"
+      ],
+      "thesis": "PARTNERSHIP_CONTRACT_ORDER",
+      "ticker": "403550"
+    },
+    {
+      "blind_score": 20.0,
+      "canonical_name": "CJ CGV",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "CJ CGV, 6분기 연속 흑자…매출 5천470억원·영업이익 321억원",
+      "fact_ids": [
+        "FACT-000052",
+        "FACT-000164",
+        "FACT-000174",
+        "FACT-000203"
+      ],
+      "final_rank": 11,
+      "inference_ids": [
+        "INF-000052",
+        "INF-000164",
+        "INF-000174",
+        "INF-000203"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000083",
+        "MR-000471",
+        "MR-000494",
+        "MR-000536"
+      ],
+      "semantic_witness": "CJ CGV, 6분기 연속 흑자…매출 5천470억원·영업이익 321억원",
+      "source_ids": [
+        "SRC-000157",
+        "SRC-001835",
+        "SRC-001869",
+        "SRC-001946"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE",
+      "ticker": "079160"
+    },
+    {
+      "blind_score": 19.8,
+      "canonical_name": "한국항공우주",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "\"한국항공우주, 내년에도 실적 성장 전망\"-유안타",
+      "fact_ids": [
+        "FACT-000041"
+      ],
+      "final_rank": 12,
+      "inference_ids": [
+        "INF-000041"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000066"
+      ],
+      "semantic_witness": "\"한국항공우주, 내년에도 실적 성장 전망\"-유안타",
+      "source_ids": [
+        "SRC-000126"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; P_liquidity_top80; P_warm_momentum; theme_momentum",
+      "ticker": "047810"
+    },
+    {
+      "blind_score": 19.3,
+      "canonical_name": "한화오션",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "한화오션 치켜세운 캐나다 해군총장, '60조' 수주로 이어지나",
+      "fact_ids": [
+        "FACT-000072",
+        "FACT-000078"
+      ],
+      "final_rank": 13,
+      "inference_ids": [
+        "INF-000072",
+        "INF-000078"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000171",
+        "MR-000197"
+      ],
+      "semantic_witness": "한화오션 치켜세운 캐나다 해군총장, '60조' 수주로 이어지나",
+      "source_ids": [
+        "SRC-000463",
+        "SRC-000558"
+      ],
+      "thesis": "PARTNERSHIP_CONTRACT_ORDER; P_liquidity_top80; P_warm_momentum",
+      "ticker": "042660"
+    },
+    {
+      "blind_score": 19.1,
+      "canonical_name": "와이지엔터테인먼트",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "\"YG엔터, 내년 블핑·베몬·위너·2NE1 모두 온다…목표가↑\"-삼성",
+      "fact_ids": [
+        "FACT-000010",
+        "FACT-000031"
+      ],
+      "final_rank": 14,
+      "inference_ids": [
+        "INF-000010",
+        "INF-000031"
+      ],
+      "market": "KOSDAQ GLOBAL",
+      "material_review_ids": [
+        "MR-000014",
+        "MR-000044"
+      ],
+      "semantic_witness": "\"YG엔터, 내년 블핑·베몬·위너·2NE1 모두 온다…목표가↑\"-삼성",
+      "source_ids": [
+        "SRC-000039",
+        "SRC-000090"
+      ],
+      "thesis": "P_liquidity_top200; SELLSIDE_REVISION",
+      "ticker": "122870"
+    },
+    {
+      "blind_score": 18.3,
+      "canonical_name": "CJ",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "AI 스마트팩토리 등 사업 수주에…CJ올리브네트웍스, 3Q 견조한 실적",
+      "fact_ids": [
+        "FACT-000001",
+        "FACT-000167",
+        "FACT-000219"
+      ],
+      "final_rank": 15,
+      "inference_ids": [
+        "INF-000001",
+        "INF-000167",
+        "INF-000219"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000001",
+        "MR-000478",
+        "MR-000555"
+      ],
+      "semantic_witness": "AI 스마트팩토리 등 사업 수주에…CJ올리브네트웍스, 3Q 견조한 실적",
+      "source_ids": [
+        "SRC-000002",
+        "SRC-001846",
+        "SRC-002002"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; theme_momentum",
+      "ticker": "001040"
+    },
+    {
+      "blind_score": 18.1,
+      "canonical_name": "현대백화점",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "현대百 지주사, ‘복지몰’ 현대이지웰 지분 15% 공개매수",
+      "fact_ids": [
+        "FACT-000062",
+        "FACT-000215"
+      ],
+      "final_rank": 16,
+      "inference_ids": [
+        "INF-000062",
+        "INF-000215"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000122",
+        "MR-000550"
+      ],
+      "semantic_witness": "현대百 지주사, ‘복지몰’ 현대이지웰 지분 15% 공개매수",
+      "source_ids": [
+        "SRC-000307",
+        "SRC-001984"
+      ],
+      "thesis": "MNA_OWNERSHIP_RESTRUCTURING",
+      "ticker": "069960"
+    },
+    {
+      "blind_score": 17.0,
+      "canonical_name": "서울반도체",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "서울반도체, 3분기 영입익 38억원…2분기 연속 흑자",
+      "fact_ids": [
+        "FACT-000199",
+        "FACT-000212"
+      ],
+      "final_rank": 17,
+      "inference_ids": [
+        "INF-000199",
+        "INF-000212"
+      ],
+      "market": "KOSDAQ GLOBAL",
+      "material_review_ids": [
+        "MR-000532",
+        "MR-000546"
+      ],
+      "semantic_witness": "서울반도체, 3분기 영입익 38억원…2분기 연속 흑자",
+      "source_ids": [
+        "SRC-001940",
+        "SRC-001975"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; theme_momentum",
+      "ticker": "046890"
+    },
+    {
+      "blind_score": 17.0,
+      "canonical_name": "코스메카코리아",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "코스메카코리아, 3분기 영업익 152억원…전년 대비 11% ↑",
+      "fact_ids": [
+        "FACT-000015",
+        "FACT-000048",
+        "FACT-000126",
+        "FACT-000142"
+      ],
+      "final_rank": 18,
+      "inference_ids": [
+        "INF-000015",
+        "INF-000048",
+        "INF-000126",
+        "INF-000142"
+      ],
+      "market": "KOSDAQ",
+      "material_review_ids": [
+        "MR-000022",
+        "MR-000076",
+        "MR-000404",
+        "MR-000435"
+      ],
+      "semantic_witness": "코스메카코리아, 3분기 영업익 152억원…전년 대비 11% ↑",
+      "source_ids": [
+        "SRC-000057",
+        "SRC-000145",
+        "SRC-001688",
+        "SRC-001749"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE; P_liquidity_top200; P_warm_momentum",
+      "ticker": "241710"
+    },
+    {
+      "blind_score": 16.8,
+      "canonical_name": "한화에어로스페이스",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "한화에어로, 중동·유럽서 추가수주 기대 [株슐랭가이드]",
+      "fact_ids": [
+        "FACT-000028",
+        "FACT-000065"
+      ],
+      "final_rank": 19,
+      "inference_ids": [
+        "INF-000028",
+        "INF-000065"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000041",
+        "MR-000133"
+      ],
+      "semantic_witness": "한화에어로, 중동·유럽서 추가수주 기대 [株슐랭가이드]",
+      "source_ids": [
+        "SRC-000086",
+        "SRC-000339"
+      ],
+      "thesis": "PARTNERSHIP_CONTRACT_ORDER; P_liquidity_top80",
+      "ticker": "012450"
+    },
+    {
+      "blind_score": 16.8,
+      "canonical_name": "신세계푸드",
+      "decision_label": "PREOPEN_WATCH",
+      "exact_quote": "[잠정실적]신세계푸드 3Q 실적, 영업이익 84.7억원... 전년동기 대비 8.8% 증가 (연결)",
+      "fact_ids": [
+        "FACT-000175",
+        "FACT-000194"
+      ],
+      "final_rank": 20,
+      "inference_ids": [
+        "INF-000175",
+        "INF-000194"
+      ],
+      "market": "KOSPI",
+      "material_review_ids": [
+        "MR-000495",
+        "MR-000523"
+      ],
+      "semantic_witness": "[잠정실적]신세계푸드 3Q 실적, 영업이익 84.7억원... 전년동기 대비 8.8% 증가 (연결)",
+      "source_ids": [
+        "SRC-001870",
+        "SRC-001921"
+      ],
+      "thesis": "EARNINGS_RESULT_OR_GUIDANCE",
+      "ticker": "031440"
+    }
+  ],
+  "schema_version": "nslab.blind_prediction.v1",
+  "sealed_pair_list": [
+    {
+      "chosen_name": "NAVER",
+      "chosen_ticker": "035420",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-001"
+    },
+    {
+      "chosen_name": "현대지에프홀딩스",
+      "chosen_ticker": "005440",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-002"
+    },
+    {
+      "chosen_name": "LG에너지솔루션",
+      "chosen_ticker": "373220",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-003"
+    },
+    {
+      "chosen_name": "코웨이",
+      "chosen_ticker": "021240",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-004"
+    },
+    {
+      "chosen_name": "동국씨엠",
+      "chosen_ticker": "460850",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-005"
+    },
+    {
+      "chosen_name": "알테오젠",
+      "chosen_ticker": "196170",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-006"
+    },
+    {
+      "chosen_name": "코오롱생명과학",
+      "chosen_ticker": "102940",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-007"
+    },
+    {
+      "chosen_name": "LIG넥스원",
+      "chosen_ticker": "079550",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-008"
+    },
+    {
+      "chosen_name": "SK바이오팜",
+      "chosen_ticker": "326030",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-009"
+    },
+    {
+      "chosen_name": "쏘카",
+      "chosen_ticker": "403550",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-010"
+    },
+    {
+      "chosen_name": "CJ CGV",
+      "chosen_ticker": "079160",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-011"
+    },
+    {
+      "chosen_name": "한국항공우주",
+      "chosen_ticker": "047810",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-012"
+    },
+    {
+      "chosen_name": "한화오션",
+      "chosen_ticker": "042660",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-013"
+    },
+    {
+      "chosen_name": "와이지엔터테인먼트",
+      "chosen_ticker": "122870",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-014"
+    },
+    {
+      "chosen_name": "CJ",
+      "chosen_ticker": "001040",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-015"
+    },
+    {
+      "chosen_name": "현대백화점",
+      "chosen_ticker": "069960",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-016"
+    },
+    {
+      "chosen_name": "서울반도체",
+      "chosen_ticker": "046890",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-017"
+    },
+    {
+      "chosen_name": "코스메카코리아",
+      "chosen_ticker": "241710",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-018"
+    },
+    {
+      "chosen_name": "한화에어로스페이스",
+      "chosen_ticker": "012450",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-019"
+    },
+    {
+      "chosen_name": "신세계푸드",
+      "chosen_ticker": "031440",
+      "comparison_policy": "final_vs_outcome_leader_postmortem_pair_placeholder",
+      "pair_id": "PAIR-020"
+    }
+  ],
+  "trade_date": "2024-11-11"
+}

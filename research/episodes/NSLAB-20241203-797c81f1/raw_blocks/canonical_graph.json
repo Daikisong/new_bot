@@ -1,0 +1,83 @@
+{
+  "brain_delta_population_manifest": {
+    "actual_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "candidate_ranking_error_case": 3,
+      "context_market_state_or_fact_case": 97,
+      "counterexample": 6,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE_PENDING",
+    "candidate_ranking_audit_nonfinal_count": 47,
+    "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR",
+    "final_evidence_witness_count": 20,
+    "final_watchlist_count": 20,
+    "outcome_to_news_audit_count": 115,
+    "outcome_to_news_candidate_generation_miss_count": 5,
+    "outcome_to_news_newsless_count": 104,
+    "outcome_to_news_ranking_miss_count": 2,
+    "rankable_candidate_count": 67,
+    "required_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "context_market_state_or_fact_case": 97,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "selected_negative_control_source_count": 53,
+    "underfilled_count": 0,
+    "underfilled_record_types": []
+  },
+  "edges": {
+    "brain_to_source_closure": 341,
+    "candidate_to_final": 20,
+    "fact_to_inference": 475,
+    "material_to_fact": 475,
+    "outcome_to_news": 115,
+    "source_to_disposition": 1181
+  },
+  "episode_id": "NSLAB-20241203-797c81f1",
+  "nodes": {
+    "brain_delta": 341,
+    "brain_delta_records": 341,
+    "candidate_screening": 565,
+    "facts": 475,
+    "final_watchlist": 20,
+    "inferences": 475,
+    "material_review": 565,
+    "outcome_leader_census": 115,
+    "outcome_ledger": 2629,
+    "outcome_to_news_audit": 115,
+    "record_counts_by_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "candidate_ranking_error_case": 3,
+      "context_market_state_or_fact_case": 97,
+      "counterexample": 6,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "row_disposition": 1181,
+    "source_ledger": 1181,
+    "training_eligible_records": 210
+  },
+  "schema_version": "nslab.canonical_graph.v23",
+  "trade_date": "2024-12-03"
+}

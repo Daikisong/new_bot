@@ -1,0 +1,10 @@
+{
+  "candidate_population_closed_before_final": true,
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "final_reparse_validator_executed": true,
+  "outcome_access_after_blind_seal": true,
+  "phase_order_verified": true,
+  "preseal_outcome_access_all_zero": true,
+  "schema_version": "nslab.phase_audit_report.v1",
+  "source_population_closed_before_candidate": true
+}

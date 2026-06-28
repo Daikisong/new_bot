@@ -1,0 +1,91 @@
+{
+  "fixture_count": 7,
+  "fixtures": [
+    {
+      "actual": {
+        "final_contains": false,
+        "matched_rows": 3,
+        "passed": true
+      },
+      "description": "롯데바이오로직스 대표 선임 기사 안의 전 지씨셀 대표 경력 언급은 지씨셀 catalyst가 아니다",
+      "expected_pass": true,
+      "fixture_id": "SEM-BAD-LOTTE-GCGC",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true,
+        "ticker_final_any": false
+      },
+      "description": "삼성전자 HBM 수출통제 비상 headline은 긍정 catalyst가 아니다",
+      "expected_pass": true,
+      "fixture_id": "SEM-BAD-005930",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true,
+        "ticker_final_any": true
+      },
+      "description": "SK하이닉스 대중 수출제재 headline은 긍정 catalyst가 아니다",
+      "expected_pass": true,
+      "fixture_id": "SEM-BAD-000660",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true,
+        "ticker_final_any": false
+      },
+      "description": "현대차 판매 감소 headline은 긍정 catalyst가 아니다",
+      "expected_pass": true,
+      "fixture_id": "SEM-BAD-005380",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true
+      },
+      "description": "브이티 직접 기사 fixture는 local predicate owner와 quote-role compatibility를 통과한다",
+      "expected_pass": true,
+      "fixture_id": "SEM-GOOD-018290",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true
+      },
+      "description": "셀리드 직접 기사 fixture는 local predicate owner와 quote-role compatibility를 통과한다",
+      "expected_pass": true,
+      "fixture_id": "SEM-GOOD-299660",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    },
+    {
+      "actual": {
+        "matched_rows": 1,
+        "passed": true
+      },
+      "description": "알테오젠 직접 기사 fixture는 local predicate owner와 quote-role compatibility를 통과한다",
+      "expected_pass": true,
+      "fixture_id": "SEM-GOOD-196170",
+      "passed": true,
+      "source": "V30_SEMANTIC_REGRESSION_HARNESS"
+    }
+  ],
+  "pass_count": 7,
+  "schema_version": "nslab.semantic_regression_test_report.v30",
+  "trade_date": "2024-12-03",
+  "unexpected_fail_count": 0,
+  "unexpected_pass_count": 0
+}

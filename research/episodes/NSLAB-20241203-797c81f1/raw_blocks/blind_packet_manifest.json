@@ -1,0 +1,117 @@
+{
+  "blind_valid": true,
+  "created_at": "2026-06-28T13:23:13.231644Z",
+  "files": [
+    {
+      "byte_size": 30785,
+      "line_count": null,
+      "name": "blind_prediction.json",
+      "sha256": "36a11de345e304bb03bb5bac59d91fb1a2af683ea087ee84e25c75899c2de8dd"
+    },
+    {
+      "byte_size": 5360,
+      "line_count": 77,
+      "name": "blind_report.md",
+      "sha256": "fc6cf3700c727e254cf256d3e9563d8853e7ebf065fc57408473c1d3afe7acb9"
+    },
+    {
+      "byte_size": 684498,
+      "line_count": 1181,
+      "name": "source_ledger.jsonl",
+      "sha256": "da07a99da1f122c80e7c8b79501cd5f7014df8891a42fcd849e6726f6b8a02ec"
+    },
+    {
+      "byte_size": 398413,
+      "line_count": 1181,
+      "name": "row_disposition.jsonl",
+      "sha256": "f17ab79c4be240b90dd0320e1dc2e4f9cb54adb88567a508456934c9cdd2e463"
+    },
+    {
+      "byte_size": 440417,
+      "line_count": 565,
+      "name": "material_review_queue.jsonl",
+      "sha256": "0baf6834441a024a45593a2e0992c15f557718efcbf0a3cb825dd93cca14b6ef"
+    },
+    {
+      "byte_size": 145539,
+      "line_count": 475,
+      "name": "entity_ledger_blind.jsonl",
+      "sha256": "1f4e5e1435f0f95e4a372bf8f4906accdcf99ac0c6485ee30cb8d0f8e2e74a71"
+    },
+    {
+      "byte_size": 204463,
+      "line_count": 475,
+      "name": "fact_ledger_blind.jsonl",
+      "sha256": "73f526fd3289391c22952558f6b092205a63c7b99acbbe99a2a430054e1cd3f4"
+    },
+    {
+      "byte_size": 191924,
+      "line_count": 475,
+      "name": "inference_ledger_blind.jsonl",
+      "sha256": "400cc39cc307f11e7fe4c68bc1d1875da866b8abf9b04f089eda21d0ecf35c5e"
+    },
+    {
+      "byte_size": 188264,
+      "line_count": 475,
+      "name": "observation_ledger_blind.jsonl",
+      "sha256": "7895bd9a964c3d8a21a07afbdd21c1a3491eb67b6dbc1166789489cd03b2aa7e"
+    },
+    {
+      "byte_size": 580941,
+      "line_count": 565,
+      "name": "candidate_screening.jsonl",
+      "sha256": "1a032f63d4453ab42afe7b89611166db6d327377b0527fa74ffbb9d8133c4566"
+    },
+    {
+      "byte_size": 88853,
+      "line_count": 67,
+      "name": "candidate_ranking_audit.jsonl",
+      "sha256": "c0abd8da72a52342c4709ec784c599d24f0eb3478d4e6f08d62df4c5c7d9cb6b"
+    },
+    {
+      "byte_size": 10866,
+      "line_count": 20,
+      "name": "final_semantic_audit.jsonl",
+      "sha256": "f25f3522081fe1289494415fef7e321d35697f6c3aad87edc0bdf7e1a4d330a9"
+    },
+    {
+      "byte_size": 24056,
+      "line_count": 97,
+      "name": "market_state_override_audit.jsonl",
+      "sha256": "b3927faee4505ee04b719135444e356671580ee0a812564bde7ca4ecbfb9cdd2"
+    },
+    {
+      "byte_size": 0,
+      "line_count": 0,
+      "name": "body_table_candidate_generation_audit.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "byte_size": 3229,
+      "line_count": null,
+      "name": "ledger_population_audit.json",
+      "sha256": "25eb9a5aab51f32587cd53afc260d617d776b1fcda84368b374b177c7c6f9bae"
+    },
+    {
+      "byte_size": 265096,
+      "line_count": 430,
+      "name": "provisional_hypothesis.jsonl",
+      "sha256": "404c3f9b0051f9f6249e5a2146facf9ff31769483faa7673b93f4c0525c2a5ab"
+    },
+    {
+      "byte_size": 0,
+      "line_count": 0,
+      "name": "outcome_leader_census.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "byte_size": 0,
+      "line_count": 0,
+      "name": "outcome_to_news_audit.jsonl",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "outcome_snapshot_access_before_seal": false,
+  "schema_version": "nslab.blind_packet_manifest.v1",
+  "trade_date": "2024-12-03"
+}

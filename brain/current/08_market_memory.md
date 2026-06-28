@@ -1,6 +1,6 @@
 # 08 Market Memory
 
-Brain version: `brain-6881c6ff22`
+Brain version: `brain-cc5af5ba71`
 Accepted episodes covered: 2/2
 Build mode: `catalog`
 Catalog only: `True`

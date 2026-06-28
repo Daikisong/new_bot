@@ -1,0 +1,38 @@
+{
+  "artifact_hashes": {
+    "blind_count_receipt.json": "b3d2e67b80e797b5c978e75e772587b3eb07b05ace795f6545b7b323b29b13ed",
+    "blind_report.md": "32f73a7817fa65e62d34a11c1c8a6275a08515ab84dfdf00bbc4bded777f32a1",
+    "candidate_ranking_audit.jsonl": "e95cbd90f015fa91fc63a3a3013a0d1f7177aae22f5ebe3b9ca1d2d69dc85029",
+    "candidate_screening.jsonl": "b62a77bad84573a35d0a33068a622751ca24a231c32b29e8794d0c06a97a342b",
+    "entity_resolution.jsonl": "0975594be12cc3892460f83b206aca54edefef674367fe77a6666fa4927c27d1",
+    "event_observation_population.jsonl": "0680904eade37c15be8660452e75dfc040e612d1f08a955a9462d39ad1819499",
+    "fact_ledger_blind.jsonl": "5a791a0258e5eb4fd11d195e56ebc158a4be318059f1e9ba35391a834f08a2d3",
+    "final_evidence_witness.jsonl": "d71ff97fffb615e0c5e320f65269412d5c1f89b2deceef7d5608f637e5391343",
+    "final_watchlist.json": "658e765a69243dbfdb622a931bb5c50e4e9a5d366d6c5eda0fa8c6f01822fb2c",
+    "inference_ledger_blind.jsonl": "42a4c009c3cf85ea3bd98d328a762dc9fe31f868c4c3679d32b050d76db38b81",
+    "material_review.jsonl": "8be70db016c0a83e144360fc642c253d2953d1c1afabf1875ea65e48631e98c0",
+    "material_review_queue.jsonl": "47ddee17a88e079d5c3812d7ebeaa2669c036d3e1c0c13edf98d664a38fd73bd",
+    "row_disposition.jsonl": "958b4f2d3fed82339f891bb35415a2ad430c667f3aa8b8758941d021d58e656c",
+    "source_ledger.jsonl": "a846588f6dfb19118198d61332a34bd89cd64ca2605fb76a0244b1dbc87f2e4b"
+  },
+  "counts": {
+    "candidate_screening_count": 471,
+    "csv_row_count": 2072,
+    "event_observation_count": 578,
+    "fact_ledger_blind_count": 229,
+    "final_watchlist_count": 20,
+    "inference_ledger_blind_count": 229,
+    "material_review_queue_count": 578,
+    "material_review_unreviewed_count": 0,
+    "material_reviewed_count": 578,
+    "parsed_row_count": 2072,
+    "rankable_candidate_count": 56,
+    "row_disposition_count": 2072,
+    "source_ledger_count": 2072,
+    "source_ledger_news_row_count": 2072,
+    "time_unverified_rows": 0
+  },
+  "preseal_outcome_access_all_zero": true,
+  "schema_version": "nslab.blind_packet.v1",
+  "trade_date": "2024-11-11"
+}

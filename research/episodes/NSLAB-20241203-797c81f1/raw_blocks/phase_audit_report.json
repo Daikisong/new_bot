@@ -1,0 +1,7 @@
+{
+  "outcome_access_after_blind_seal": true,
+  "phase_order_verified": true,
+  "schema_version": "nslab.phase_audit_report.v1",
+  "section_1_36_present": true,
+  "status": "PENDING_FINAL_REPARSE"
+}

@@ -1,0 +1,13 @@
+{
+  "blind_packet_file_count": 18,
+  "blind_packet_manifest_sha256": "76fa26c53d44ea0ef839848d8f6643d5524efb927ff66186a86168623c3b0d7c",
+  "blind_valid": true,
+  "outcome_snapshot_downloaded_before_seal": false,
+  "outcome_snapshot_header_accessed_before_seal": false,
+  "outcome_snapshot_row_accessed_before_seal": false,
+  "outcome_snapshot_url_opened_before_seal": false,
+  "schema_version": "nslab.blind_seal_receipt.v1",
+  "seal_before_outcome_access": true,
+  "sealed_at": "2026-06-28T13:23:13.257174Z",
+  "trade_date": "2024-12-03"
+}

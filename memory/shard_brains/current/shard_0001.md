@@ -1,6 +1,6 @@
 # Shard Brain 0001
 
-Brain version: `brain-6881c6ff22`
+Brain version: `brain-cc5af5ba71`
 Episode count: 2
 
 This shard is a compact, data-derived summary of accepted episodes. It is not a whitelist, ticker map, or keyword gate.

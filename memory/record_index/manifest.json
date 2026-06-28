@@ -1,35 +1,42 @@
 {
-  "episode_count": 4,
-  "record_count": 169,
+  "episode_count": 6,
+  "record_count": 968,
   "record_counts_by_evidence_phase": {
     "AUDIT": 2,
-    "POSTMORTEM": 167
+    "BLIND": 145,
+    "POSTMORTEM": 821
   },
   "record_counts_by_training_target": {
-    "candidate_generation_correction": 8,
-    "candidate_ranking_correction": 1,
-    "context_market_state_or_fact": 17,
-    "direct_event_response": 28,
-    "issuer_day_price_response": 29,
+    "UNKNOWN": 71,
+    "candidate_exclusion_calibration": 40,
+    "candidate_generation_correction": 13,
+    "candidate_ranking_correction": 7,
+    "context_market_state_or_fact": 134,
+    "direct_event_response": 277,
+    "issuer_day_price_response": 69,
     "legacy_catalog_only": 2,
-    "negative_control_calibration": 13,
-    "newsless_outcome_calibration": 43,
-    "outcome_preferred_candidate": 21,
-    "theme_formation_response": 7
+    "negative_control_calibration": 66,
+    "newsless_outcome_calibration": 214,
+    "outcome_preferred_candidate": 61,
+    "theme_formation_response": 14
   },
   "record_counts_by_type": {
-    "blind_leader_preference_pair": 21,
-    "candidate_generation_error_case": 8,
-    "context_market_state_or_fact_case": 17,
+    "beneficiary_discovery_case": 6,
+    "blind_leader_preference_pair": 61,
+    "candidate_generation_error_case": 13,
+    "candidate_ranking_error_case": 5,
+    "context_market_state_or_fact_case": 134,
+    "counterexample": 6,
     "memory_claim": 2,
-    "negative_control_case": 13,
-    "newsless_or_unexplained_case": 43,
-    "ranking_error_case": 1,
-    "supervised_direct_event_case": 28,
-    "supervised_issuer_day_case": 29,
-    "theme_formation_case": 7
+    "negative_control_case": 106,
+    "newsless_or_unexplained_case": 214,
+    "rankable_candidate_case": 54,
+    "ranking_error_case": 7,
+    "supervised_direct_event_case": 277,
+    "supervised_issuer_day_case": 69,
+    "theme_formation_case": 14
   },
-  "records_sha256": "d2a05524e9741ec477954d4bf8ea28eb51652bfd6fa817c21599b7e5af6b3d07",
+  "records_sha256": "09ef629e84830430dbd5b5fb7d3aeb473dee9cb4eb6d60b1fcda9e7352f90fe8",
   "schema_version": "nslab.record_index_manifest.v1",
-  "training_eligible_record_count": 144
+  "training_eligible_record_count": 649
 }

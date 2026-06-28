@@ -1,0 +1,12 @@
+{
+  "blind_valid": true,
+  "calendar_date": "2024-12-03",
+  "created_at": "2026-06-28T13:31:27Z",
+  "episode_id": "NSLAB-20241203-797c81f1",
+  "outcome_research_performed": true,
+  "previous_trade_date": "2024-12-02",
+  "price_source_status": "AVAILABLE",
+  "schema_version": "nslab.phase_state.v1",
+  "status": "ACCEPT_FULL",
+  "trade_date": "2024-12-03"
+}

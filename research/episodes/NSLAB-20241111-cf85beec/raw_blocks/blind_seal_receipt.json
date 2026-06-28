@@ -1,0 +1,9 @@
+{
+  "blind_packet_sha256": "6f3d506b1f37b193ca3766b2d1ecca0ff782720a182a493698cc37ef61fe35d2",
+  "outcome_access_allowed_after_this_receipt": true,
+  "outcome_snapshot_path_locked": "atlas/research_daily/snapshots/2024/11/20241111.csv",
+  "preseal_outcome_access_all_zero": true,
+  "schema_version": "nslab.blind_seal_receipt.v1",
+  "sealed_at_utc": "2026-06-28T13:21:57Z",
+  "trade_date": "2024-11-11"
+}

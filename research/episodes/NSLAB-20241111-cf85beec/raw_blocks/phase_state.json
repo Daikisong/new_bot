@@ -1,0 +1,75 @@
+{
+  "bundle_status": "ACCEPT_FULL",
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "outcome_access_after_blind_seal": true,
+  "phases": [
+    {
+      "name": "acquire",
+      "phase": 0,
+      "status": "DONE"
+    },
+    {
+      "name": "source_ledger",
+      "phase": 1,
+      "status": "DONE"
+    },
+    {
+      "name": "blind_workspace",
+      "phase": 2,
+      "status": "DONE"
+    },
+    {
+      "name": "candidate_population",
+      "phase": 3,
+      "status": "DONE"
+    },
+    {
+      "name": "final_watchlist",
+      "phase": 4,
+      "status": "DONE"
+    },
+    {
+      "name": "blind_seal",
+      "phase": 5,
+      "status": "DONE"
+    },
+    {
+      "name": "outcome_acquire",
+      "phase": 6,
+      "status": "DONE"
+    },
+    {
+      "name": "outcome_ledger",
+      "phase": 7,
+      "status": "DONE"
+    },
+    {
+      "name": "outcome_to_news",
+      "phase": 8,
+      "status": "DONE"
+    },
+    {
+      "name": "postmortem",
+      "phase": 9,
+      "status": "DONE"
+    },
+    {
+      "name": "brain_delta",
+      "phase": 10,
+      "status": "DONE"
+    },
+    {
+      "name": "render",
+      "phase": 11,
+      "status": "DONE"
+    },
+    {
+      "name": "final_reparse",
+      "phase": 12,
+      "status": "DONE"
+    }
+  ],
+  "preseal_outcome_access_all_zero": true,
+  "schema_version": "nslab.phase_state.v1",
+  "trade_date": "2024-11-11"
+}

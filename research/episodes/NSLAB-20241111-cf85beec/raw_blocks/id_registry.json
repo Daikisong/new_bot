@@ -1,0 +1,16 @@
+{
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "id_counts": {
+    "BD": 458,
+    "FACT": 229,
+    "INF": 229,
+    "LEAD": 73,
+    "MR": 578,
+    "OTA": 73,
+    "OUT": 2619,
+    "RD": 2072,
+    "SCR": 471,
+    "SRC": 2072
+  },
+  "schema_version": "nslab.id_registry.v1"
+}

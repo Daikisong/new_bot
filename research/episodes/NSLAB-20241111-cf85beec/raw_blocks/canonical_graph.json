@@ -1,0 +1,21 @@
+{
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "nodes": {
+    "brain_delta_records": 458,
+    "record_counts_by_type": {
+      "beneficiary_discovery_case": 2,
+      "blind_leader_preference_pair": 20,
+      "candidate_ranking_error_case": 2,
+      "context_market_state_or_fact_case": 20,
+      "negative_control_case": 40,
+      "newsless_or_unexplained_case": 67,
+      "rankable_candidate_case": 54,
+      "ranking_error_case": 4,
+      "supervised_direct_event_case": 229,
+      "supervised_issuer_day_case": 20
+    },
+    "training_eligible_records": 295
+  },
+  "schema_version": "nslab.canonical_graph.v23",
+  "trade_date": "2024-11-11"
+}

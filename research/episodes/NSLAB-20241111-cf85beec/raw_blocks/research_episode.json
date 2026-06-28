@@ -1,0 +1,628 @@
+{
+  "artifact_type": "research_episode",
+  "automated_import_expected_to_pass": true,
+  "available_from": "2026-06-28T13:55:03.795673+00:00",
+  "blind_snapshot_sha256": "944fe4faacd5fcf02662763fd7b78aa945f069f5a6d2353e9155180fa1f5b469",
+  "brain_delta_record_count": 458,
+  "brain_eligible": true,
+  "bundle_status": "ACCEPT_FULL",
+  "calendar_date": "2024-11-11",
+  "counts": {
+    "D_snapshot_population_count": 2619,
+    "brain_delta_actual_record_count": 458,
+    "candidate_screening_count": 471,
+    "candidate_screening_material_coverage_count": 578,
+    "csv_row_count": 2072,
+    "direct_event_weight_sum_mismatches": {},
+    "expected_brain_delta_min": 422,
+    "expected_brain_delta_source_counts": {
+      "beneficiary_discovery_case_count": 2,
+      "blind_leader_pair_count": 20,
+      "candidate_generation_error_case_count": 0,
+      "context_market_state_or_fact_case_count": 20,
+      "direct_event_case_count": 229,
+      "issuer_day_case_count": 20,
+      "newsless_or_unexplained_case_count": 67,
+      "ranking_error_case_count": 4,
+      "selected_negative_control_source_count": 40,
+      "supervised_direct_event_case_count": 229,
+      "theme_formation_case_count": 20
+    },
+    "fact_ledger_count": 229,
+    "final_watchlist_count": 20,
+    "inference_ledger_count": 229,
+    "issuer_day_weight_sum_mismatches": {},
+    "material_observation_count": 578,
+    "material_review_auto_boolean_count": 0,
+    "material_review_missing_binding_or_rejection_count": 0,
+    "material_review_missing_decision_count": 0,
+    "material_review_missing_quote_count": 0,
+    "material_review_queue_count": 578,
+    "material_review_unreviewed_count": 0,
+    "material_reviewed_count": 578,
+    "outcome_leader_census_count": 73,
+    "outcome_ledger_count": 2619,
+    "outcome_to_news_audit_count": 73,
+    "row_disposition_count": 2072,
+    "sample_weight_validation_status": "passed",
+    "schema_version": "nslab.ledger_population_audit.v1",
+    "source_ledger_news_row_count": 2072,
+    "trade_date": "2024-11-11",
+    "training_eligible_empty_provenance_count": 0,
+    "training_eligible_unresolved_source_count": 0,
+    "training_provenance_closure_status": "passed"
+  },
+  "direct_brain_ingest_ready": true,
+  "episode_id": "NSLAB-20241111-cf85beec",
+  "forecast_scorecard": [
+    {
+      "amount_rank": 33,
+      "blind_score": 36.2,
+      "canonical_name": "NAVER",
+      "close_return_pct": 0.801833,
+      "final_rank": 1,
+      "high_return_pct": 1.37457,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-001",
+      "source_fact_ids": [
+        "FACT-000002",
+        "FACT-000035",
+        "FACT-000038",
+        "FACT-000050",
+        "FACT-000073",
+        "FACT-000108",
+        "FACT-000125",
+        "FACT-000179"
+      ],
+      "source_ids": [
+        "SRC-000005",
+        "SRC-000108",
+        "SRC-000117",
+        "SRC-000148",
+        "SRC-000469",
+        "SRC-001293",
+        "SRC-001685",
+        "SRC-001882"
+      ],
+      "source_inference_ids": [
+        "INF-000002",
+        "INF-000035",
+        "INF-000038",
+        "INF-000050",
+        "INF-000073",
+        "INF-000108",
+        "INF-000125",
+        "INF-000179"
+      ],
+      "ticker": "035420",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 856,
+      "blind_score": 35.9,
+      "canonical_name": "현대지에프홀딩스",
+      "close_return_pct": -1.829268,
+      "final_rank": 2,
+      "high_return_pct": 0.711382,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-002",
+      "source_fact_ids": [
+        "FACT-000061",
+        "FACT-000063",
+        "FACT-000067",
+        "FACT-000161"
+      ],
+      "source_ids": [
+        "SRC-000305",
+        "SRC-000310",
+        "SRC-000346",
+        "SRC-001828"
+      ],
+      "source_inference_ids": [
+        "INF-000061",
+        "INF-000063",
+        "INF-000067",
+        "INF-000161"
+      ],
+      "ticker": "005440",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 7,
+      "blind_score": 35.9,
+      "canonical_name": "LG에너지솔루션",
+      "close_return_pct": 4.391468,
+      "final_rank": 3,
+      "high_return_pct": 9.284818,
+      "hit_high10": false,
+      "outcome_label": "NEAR_MISS_HIGH8",
+      "scorecard_id": "FC-003",
+      "source_fact_ids": [
+        "FACT-000060",
+        "FACT-000064",
+        "FACT-000068"
+      ],
+      "source_ids": [
+        "SRC-000302",
+        "SRC-000321",
+        "SRC-000351"
+      ],
+      "source_inference_ids": [
+        "INF-000060",
+        "INF-000064",
+        "INF-000068"
+      ],
+      "ticker": "373220",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 289,
+      "blind_score": 35.4,
+      "canonical_name": "코웨이",
+      "close_return_pct": -1.610306,
+      "final_rank": 4,
+      "high_return_pct": 0.805153,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-004",
+      "source_fact_ids": [
+        "FACT-000132",
+        "FACT-000138",
+        "FACT-000171",
+        "FACT-000218"
+      ],
+      "source_ids": [
+        "SRC-001712",
+        "SRC-001729",
+        "SRC-001860",
+        "SRC-001998"
+      ],
+      "source_inference_ids": [
+        "INF-000132",
+        "INF-000138",
+        "INF-000171",
+        "INF-000218"
+      ],
+      "ticker": "021240",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 1240,
+      "blind_score": 33.4,
+      "canonical_name": "동국씨엠",
+      "close_return_pct": -2.262443,
+      "final_rank": 5,
+      "high_return_pct": 0.904977,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-005",
+      "source_fact_ids": [
+        "FACT-000109",
+        "FACT-000133",
+        "FACT-000163"
+      ],
+      "source_ids": [
+        "SRC-001303",
+        "SRC-001716",
+        "SRC-001834"
+      ],
+      "source_inference_ids": [
+        "INF-000109",
+        "INF-000133",
+        "INF-000163"
+      ],
+      "ticker": "460850",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 6,
+      "blind_score": 31.6,
+      "canonical_name": "알테오젠",
+      "close_return_pct": 1.94508,
+      "final_rank": 6,
+      "high_return_pct": 4.23341,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-006",
+      "source_fact_ids": [
+        "FACT-000110",
+        "FACT-000200"
+      ],
+      "source_ids": [
+        "SRC-001305",
+        "SRC-001941"
+      ],
+      "source_inference_ids": [
+        "INF-000110",
+        "INF-000200"
+      ],
+      "ticker": "196170",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 1189,
+      "blind_score": 23.6,
+      "canonical_name": "코오롱생명과학",
+      "close_return_pct": -2.755697,
+      "final_rank": 7,
+      "high_return_pct": 0.158983,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-007",
+      "source_fact_ids": [
+        "FACT-000115",
+        "FACT-000121"
+      ],
+      "source_ids": [
+        "SRC-001583",
+        "SRC-001653"
+      ],
+      "source_inference_ids": [
+        "INF-000115",
+        "INF-000121"
+      ],
+      "ticker": "102940",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 59,
+      "blind_score": 23.1,
+      "canonical_name": "LIG넥스원",
+      "close_return_pct": 1.915709,
+      "final_rank": 8,
+      "high_return_pct": 2.298851,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-008",
+      "source_fact_ids": [
+        "FACT-000040",
+        "FACT-000177"
+      ],
+      "source_ids": [
+        "SRC-000120",
+        "SRC-001877"
+      ],
+      "source_inference_ids": [
+        "INF-000040",
+        "INF-000177"
+      ],
+      "ticker": "079550",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 94,
+      "blind_score": 21.8,
+      "canonical_name": "SK바이오팜",
+      "close_return_pct": 1.428571,
+      "final_rank": 9,
+      "high_return_pct": 3.035714,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-009",
+      "source_fact_ids": [
+        "FACT-000032",
+        "FACT-000047"
+      ],
+      "source_ids": [
+        "SRC-000093",
+        "SRC-000140"
+      ],
+      "source_inference_ids": [
+        "INF-000032",
+        "INF-000047"
+      ],
+      "ticker": "326030",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 2259,
+      "blind_score": 21.6,
+      "canonical_name": "쏘카",
+      "close_return_pct": 1.130582,
+      "final_rank": 10,
+      "high_return_pct": 1.187111,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-010",
+      "source_fact_ids": [
+        "FACT-000005",
+        "FACT-000008"
+      ],
+      "source_ids": [
+        "SRC-000009",
+        "SRC-000014"
+      ],
+      "source_inference_ids": [
+        "INF-000005",
+        "INF-000008"
+      ],
+      "ticker": "403550",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 615,
+      "blind_score": 20.0,
+      "canonical_name": "CJ CGV",
+      "close_return_pct": -2.34657,
+      "final_rank": 11,
+      "high_return_pct": 0.902527,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-011",
+      "source_fact_ids": [
+        "FACT-000052",
+        "FACT-000164",
+        "FACT-000174",
+        "FACT-000203"
+      ],
+      "source_ids": [
+        "SRC-000157",
+        "SRC-001835",
+        "SRC-001869",
+        "SRC-001946"
+      ],
+      "source_inference_ids": [
+        "INF-000052",
+        "INF-000164",
+        "INF-000174",
+        "INF-000203"
+      ],
+      "ticker": "079160",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 17,
+      "blind_score": 19.8,
+      "canonical_name": "한국항공우주",
+      "close_return_pct": 7.777778,
+      "final_rank": 12,
+      "high_return_pct": 9.047619,
+      "hit_high10": false,
+      "outcome_label": "NEAR_MISS_HIGH8",
+      "scorecard_id": "FC-012",
+      "source_fact_ids": [
+        "FACT-000041"
+      ],
+      "source_ids": [
+        "SRC-000126"
+      ],
+      "source_inference_ids": [
+        "INF-000041"
+      ],
+      "ticker": "047810",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 3,
+      "blind_score": 19.3,
+      "canonical_name": "한화오션",
+      "close_return_pct": 3.038674,
+      "final_rank": 13,
+      "high_return_pct": 8.701657,
+      "hit_high10": false,
+      "outcome_label": "NEAR_MISS_HIGH8",
+      "scorecard_id": "FC-013",
+      "source_fact_ids": [
+        "FACT-000072",
+        "FACT-000078"
+      ],
+      "source_ids": [
+        "SRC-000463",
+        "SRC-000558"
+      ],
+      "source_inference_ids": [
+        "INF-000072",
+        "INF-000078"
+      ],
+      "ticker": "042660",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 172,
+      "blind_score": 19.1,
+      "canonical_name": "와이지엔터테인먼트",
+      "close_return_pct": -2.036199,
+      "final_rank": 14,
+      "high_return_pct": 2.375566,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-014",
+      "source_fact_ids": [
+        "FACT-000010",
+        "FACT-000031"
+      ],
+      "source_ids": [
+        "SRC-000039",
+        "SRC-000090"
+      ],
+      "source_inference_ids": [
+        "INF-000010",
+        "INF-000031"
+      ],
+      "ticker": "122870",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 202,
+      "blind_score": 18.3,
+      "canonical_name": "CJ",
+      "close_return_pct": -5.933852,
+      "final_rank": 15,
+      "high_return_pct": -0.486381,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-015",
+      "source_fact_ids": [
+        "FACT-000001",
+        "FACT-000167",
+        "FACT-000219"
+      ],
+      "source_ids": [
+        "SRC-000002",
+        "SRC-001846",
+        "SRC-002002"
+      ],
+      "source_inference_ids": [
+        "INF-000001",
+        "INF-000167",
+        "INF-000219"
+      ],
+      "ticker": "001040",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 493,
+      "blind_score": 18.1,
+      "canonical_name": "현대백화점",
+      "close_return_pct": -2.931229,
+      "final_rank": 16,
+      "high_return_pct": 0.0,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-016",
+      "source_fact_ids": [
+        "FACT-000062",
+        "FACT-000215"
+      ],
+      "source_ids": [
+        "SRC-000307",
+        "SRC-001984"
+      ],
+      "source_inference_ids": [
+        "INF-000062",
+        "INF-000215"
+      ],
+      "ticker": "069960",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 295,
+      "blind_score": 17.0,
+      "canonical_name": "서울반도체",
+      "close_return_pct": -7.657143,
+      "final_rank": 17,
+      "high_return_pct": 0.0,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-017",
+      "source_fact_ids": [
+        "FACT-000199",
+        "FACT-000212"
+      ],
+      "source_ids": [
+        "SRC-001940",
+        "SRC-001975"
+      ],
+      "source_inference_ids": [
+        "INF-000199",
+        "INF-000212"
+      ],
+      "ticker": "046890",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 64,
+      "blind_score": 17.0,
+      "canonical_name": "코스메카코리아",
+      "close_return_pct": -16.044776,
+      "final_rank": 18,
+      "high_return_pct": -8.955224,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-018",
+      "source_fact_ids": [
+        "FACT-000015",
+        "FACT-000048",
+        "FACT-000126",
+        "FACT-000142"
+      ],
+      "source_ids": [
+        "SRC-000057",
+        "SRC-000145",
+        "SRC-001688",
+        "SRC-001749"
+      ],
+      "source_inference_ids": [
+        "INF-000015",
+        "INF-000048",
+        "INF-000126",
+        "INF-000142"
+      ],
+      "ticker": "241710",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 26,
+      "blind_score": 16.8,
+      "canonical_name": "한화에어로스페이스",
+      "close_return_pct": 3.097893,
+      "final_rank": 19,
+      "high_return_pct": 3.593556,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-019",
+      "source_fact_ids": [
+        "FACT-000028",
+        "FACT-000065"
+      ],
+      "source_ids": [
+        "SRC-000086",
+        "SRC-000339"
+      ],
+      "source_inference_ids": [
+        "INF-000028",
+        "INF-000065"
+      ],
+      "ticker": "012450",
+      "upper_limit_touched": false
+    },
+    {
+      "amount_rank": 1900,
+      "blind_score": 16.8,
+      "canonical_name": "신세계푸드",
+      "close_return_pct": -1.013025,
+      "final_rank": 20,
+      "high_return_pct": 0.0,
+      "hit_high10": false,
+      "outcome_label": "MISS",
+      "scorecard_id": "FC-020",
+      "source_fact_ids": [
+        "FACT-000175",
+        "FACT-000194"
+      ],
+      "source_ids": [
+        "SRC-001870",
+        "SRC-001921"
+      ],
+      "source_inference_ids": [
+        "INF-000175",
+        "INF-000194"
+      ],
+      "ticker": "031440",
+      "upper_limit_touched": false
+    }
+  ],
+  "input_file": "news_20241111.csv",
+  "input_sha256": "cf85beec92a1924bdb1d42cc8cbcfdaa2ee6f76647b386f7da20317a2593589b",
+  "outcome_leader_summary": {
+    "high_ge_10": 73,
+    "high_ge_15": 41,
+    "high_ge_20": 27,
+    "upper_limit_closed": 7,
+    "upper_limit_touched": 11
+  },
+  "outcome_snapshot_sha256": "47f70bff7347a80fde2e36bf7ad69f5cbac746cac4218fa6ae38a7eea6ea876c",
+  "postmortem_classification_counts": {
+    "BODY_TABLE_HIT": 1,
+    "DIRECT_NAME_HIT_WEAK_BINDING": 1,
+    "NEWSLESS_OR_UNEXPLAINED": 67,
+    "RANKING_MISS": 2,
+    "SCREENED_OUT_BUT_WINNER": 2
+  },
+  "prompt_sha256": "48a3418387e9631f21ff8c72a8914ca9202f4643a9994d32f2bf4c15957d2cdd",
+  "schema_version": "nslab.research_episode.v23",
+  "trade_date": "2024-11-11",
+  "training_eligible_record_count": 295
+}

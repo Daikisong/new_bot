@@ -1,0 +1,1319 @@
+{
+  "automated_import_expected_to_pass": true,
+  "brain_delta_population_manifest": {
+    "actual_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "candidate_ranking_error_case": 3,
+      "context_market_state_or_fact_case": 97,
+      "counterexample": 6,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE_PENDING",
+    "candidate_ranking_audit_nonfinal_count": 47,
+    "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR",
+    "final_evidence_witness_count": 20,
+    "final_watchlist_count": 20,
+    "outcome_to_news_audit_count": 115,
+    "outcome_to_news_candidate_generation_miss_count": 5,
+    "outcome_to_news_newsless_count": 104,
+    "outcome_to_news_ranking_miss_count": 2,
+    "rankable_candidate_count": 67,
+    "required_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "context_market_state_or_fact_case": 97,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "selected_negative_control_source_count": 53,
+    "underfilled_count": 0,
+    "underfilled_record_types": []
+  },
+  "brain_eligible": true,
+  "bundle_status": "ACCEPT_FULL",
+  "checks": [
+    {
+      "actual": {
+        "missing_blocks": [],
+        "required_block_missing_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "required_block_missing_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "required_block_missing_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "errors": [],
+        "json_parse_error_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "json_parse_error_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "json_parse_error_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "errors": [],
+        "jsonl_parse_error_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "jsonl_parse_error_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "jsonl_parse_error_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "source_ledger_news_row_count": 1181
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "source_ledger_news_row_count_verified",
+      "error_ids": [],
+      "expected": {
+        "csv_row_count": 1181
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "row_disposition_count": 1181
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "row_disposition_count_verified",
+      "error_ids": [],
+      "expected": {
+        "csv_row_count": 1181
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "material_review_unreviewed_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "material_review_unreviewed_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "material_review_unreviewed_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "material_review_auto_boolean_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "material_review_auto_boolean_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "material_review_auto_boolean_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "material_review_missing_decision_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "material_review_missing_decision_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "material_review_missing_decision_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "material_review_missing_quote_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "material_review_missing_quote_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "material_review_missing_quote_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "material_review_missing_binding_or_rejection_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "material_review_missing_binding_or_rejection_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "material_review_missing_binding_or_rejection_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_screening_material_coverage_count": 565
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_screening_material_coverage_verified",
+      "error_ids": [],
+      "expected": {
+        "material_observation_count": 475
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "predeclared_final_candidate_list_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "predeclared_final_candidate_list_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "predeclared_final_candidate_list_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_screening_rank_field_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_screening_rank_field_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_screening_rank_field_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_screening_preseed_rank_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_screening_preseed_rank_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_screening_preseed_rank_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_screening_unlinked_to_material_review_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_screening_unlinked_to_material_review_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_screening_unlinked_to_material_review_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "provisional_hypothesis_with_rank_field_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "provisional_hypothesis_with_rank_field_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "provisional_hypothesis_with_rank_field_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "provisional_hypothesis_used_as_final_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "provisional_hypothesis_used_as_final_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "provisional_hypothesis_used_as_final_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "provisional_hypothesis_promoted_without_screening_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "provisional_hypothesis_promoted_without_screening_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "provisional_hypothesis_promoted_without_screening_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "schema_rows_checked": 67,
+        "schema_violation_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_schema_verified",
+      "error_ids": [],
+      "expected": {
+        "schema_violation_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_ranking_audit_rankable_count": 67
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_rankable_coverage_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_screening_include_or_watch_count": 67
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_ranking_audit_final_count": 20
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_final_count_verified",
+      "error_ids": [],
+      "expected": {
+        "final_watchlist_count": 20
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_ranking_audit_excluded_without_reason_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_nonfinal_reason_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_ranking_audit_excluded_without_reason_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "candidate_ranking_audit_legacy_alias_field_count": 0,
+        "candidate_ranking_audit_missing_canonical_field_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_alias_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "candidate_ranking_audit_legacy_alias_field_count": 0,
+        "candidate_ranking_audit_missing_canonical_field_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_rank_sequence": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ]
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_ranking_audit_final_rank_sequence_verified",
+      "error_ids": [],
+      "expected": {
+        "expected_sequence": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20
+        ]
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_watchlist_count": 20
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_watchlist_count_lte_20_verified",
+      "error_ids": [],
+      "expected": {
+        "max_final_watchlist_count": 20
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_watchlist_from_reparsed_candidate_screening_without_preseed": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_watchlist_from_reparsed_candidate_screening_without_preseed_verified",
+      "error_ids": [],
+      "expected": {
+        "required": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "present": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_evidence_witness_block_present_verified",
+      "error_ids": [],
+      "expected": {
+        "present": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "present": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "candidate_semantic_witness_block_present_verified",
+      "error_ids": [],
+      "expected": {
+        "present": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_evidence_witness_row_count": 20
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_evidence_witness_row_count_verified",
+      "error_ids": [],
+      "expected": {
+        "final_watchlist_count": 20
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_evidence_witness_pass_count": 20
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_evidence_witness_pass_count_verified",
+      "error_ids": [],
+      "expected": {
+        "final_watchlist_count": 20
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_forbidden_quote_role_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_forbidden_quote_role_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "final_forbidden_quote_role_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "incompatible_quote_role_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_quote_role_catalyst_compatibility_verified",
+      "error_ids": [],
+      "expected": {
+        "incompatible_quote_role_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "non_local_predicate_owner_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_article_subject_equals_candidate_or_valid_beneficiary_verified",
+      "error_ids": [],
+      "expected": {
+        "non_local_predicate_owner_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "mismatch_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_local_predicate_owner_verified",
+      "error_ids": [],
+      "expected": {
+        "mismatch_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "unsupported_mechanism_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "final_economic_mechanism_supported_verified",
+      "error_ids": [],
+      "expected": {
+        "unsupported_mechanism_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "semantic_regression_fixture_count": 7
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_tests_executed_verified",
+      "error_ids": [],
+      "expected": {
+        "minimum_fixture_count": 1
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "present": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_test_report_present_verified",
+      "error_ids": [],
+      "expected": {
+        "present": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "fixture_count": 7
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_required_fixture_count_verified",
+      "error_ids": [],
+      "expected": {
+        "minimum_required_fixture_count": 7
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "fixture_count": 7,
+        "pass_count": 7
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_fixture_pass_count_verified",
+      "error_ids": [],
+      "expected": {
+        "pass_count_equals_fixture_count": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "semantic_regression_unexpected_pass_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_unexpected_pass_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "semantic_regression_unexpected_pass_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "semantic_regression_unexpected_fail_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_regression_unexpected_fail_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "semantic_regression_unexpected_fail_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "repair_log_count": 2
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "semantic_repair_loop_executed_if_needed_verified",
+      "error_ids": [],
+      "expected": {
+        "minimum_repair_log_count": 1
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "outcome_snapshot_downloaded_before_seal": false,
+        "outcome_snapshot_row_accessed_before_seal": false
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "preseal_outcome_access_all_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "both_false": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "blind_seal_receipt_present": true,
+        "outcome_access_after_blind_seal": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "outcome_access_after_blind_seal_verified",
+      "error_ids": [],
+      "expected": {
+        "outcome_access_after_blind_seal": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "outcome_ledger_count": 2629
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "outcome_ledger_count_verified",
+      "error_ids": [],
+      "expected": {
+        "D_snapshot_population_count": 2629
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "outcome_to_news_audit_count": 115
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "outcome_to_news_audit_count_verified",
+      "error_ids": [],
+      "expected": {
+        "outcome_leader_census_count": 115
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_actual_record_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_density_verified",
+      "error_ids": [],
+      "expected": {
+        "expected_brain_delta_min": 332
+      },
+      "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "expected_brain_delta_min": 332
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_expected_min_numeric_verified",
+      "error_ids": [],
+      "expected": {
+        "numeric_gt_zero": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "actual_brain_delta_record_count": 341,
+        "brain_delta_block_line_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_actual_count_from_final_block_verified",
+      "error_ids": [],
+      "expected": {
+        "counts_equal": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_expected_source_not_generated_output_verified",
+      "error_ids": [],
+      "expected": {
+        "expected_source_not_generated_output": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_actual_source_final_markdown_block_reparse_verified",
+      "error_ids": [],
+      "expected": {
+        "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE"
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_counts_by_record_type_actual": {
+          "beneficiary_discovery_case": 4,
+          "blind_leader_preference_pair": 20,
+          "candidate_generation_error_case": 5,
+          "candidate_ranking_error_case": 3,
+          "context_market_state_or_fact_case": 97,
+          "counterexample": 6,
+          "negative_control_case": 53,
+          "newsless_or_unexplained_case": 104,
+          "ranking_error_case": 2,
+          "supervised_direct_event_case": 20,
+          "supervised_issuer_day_case": 20,
+          "theme_formation_case": 7
+        }
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_type_count_parity_verified",
+      "error_ids": [],
+      "expected": {
+        "same_as_final_block_counter": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_noncanonical_record_type_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_record_type_canonical_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_noncanonical_record_type_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_noncanonical_alias_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_noncanonical_alias_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_noncanonical_alias_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_record_without_record_type_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_record_without_record_type_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_record_without_record_type_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_lesson_memo_only_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_lesson_memo_only_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_lesson_memo_only_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "canonical_ticker_missing_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_canonical_ticker_field_verified",
+      "error_ids": [],
+      "expected": {
+        "canonical_ticker_missing_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_block_line_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_block_line_count_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_actual_record_count": 341
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "payload_hash_mismatch_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_payload_hash_verified",
+      "error_ids": [],
+      "expected": {
+        "payload_hash_mismatch_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "actual_training_eligible_record_count": 230
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_training_eligible_density_verified",
+      "error_ids": [],
+      "expected": {
+        "minimum_training_eligible_record_count": 1
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "noncanonical_record_type_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "brain_delta_record_type_allowed_verified",
+      "error_ids": [],
+      "expected": {
+        "noncanonical_record_type_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "sample_weight_validation_status": "passed"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "sample_weight_validation_status_verified",
+      "error_ids": [],
+      "expected": {
+        "sample_weight_validation_status": "passed"
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "issuer_day_weight_sum_mismatches": {}
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "issuer_day_weight_sum_mismatches_empty_verified",
+      "error_ids": [],
+      "expected": {
+        "issuer_day_weight_sum_mismatches": {}
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "direct_event_weight_sum_mismatches": {}
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "direct_event_weight_sum_mismatches_empty_verified",
+      "error_ids": [],
+      "expected": {
+        "direct_event_weight_sum_mismatches": {}
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "training_provenance_closure_status": "passed"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "training_provenance_closure_status_verified",
+      "error_ids": [],
+      "expected": {
+        "training_provenance_closure_status": "passed"
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "training_eligible_empty_provenance_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "training_eligible_empty_provenance_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "training_eligible_empty_provenance_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "training_eligible_unresolved_source_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "training_eligible_unresolved_source_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "training_eligible_unresolved_source_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "training_eligible_missing_fact_or_inference_path_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "training_eligible_missing_fact_or_inference_path_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "training_eligible_missing_fact_or_inference_path_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "record_provenance_closure_audit_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "record_provenance_closure_audit_count_verified",
+      "error_ids": [],
+      "expected": {
+        "brain_delta_actual_record_count": 341
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "direct_actual_brain_delta_record_count": 341,
+        "final_block_brain_delta_record_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "record_import_manifest_brain_delta_parity_verified",
+      "error_ids": [],
+      "expected": {
+        "counts_equal_or_pending": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "direct_brain_delta_block_line_count": 341,
+        "final_block_line_count": 341
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "direct_ingest_contract_brain_delta_mirror_verified",
+      "error_ids": [],
+      "expected": {
+        "counts_equal_or_pending": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "bundle_brain_delta_sha256": "a7fb148ea31ea1d58b159fd38c1818b3fe87c285d9fe70f2614e2b38292d033b",
+        "direct_brain_delta_jsonl_sha256": "a7fb148ea31ea1d58b159fd38c1818b3fe87c285d9fe70f2614e2b38292d033b"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "direct_ingest_contract_count_hash_mirror_verified",
+      "error_ids": [],
+      "expected": {
+        "hashes_equal_or_pending": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "direct_validation_report_sha256": "6fb0b81c7bdd22eb63234d30a5d71126afd512017ae8c0c535507a8005835ea8",
+        "validation_report_block_sha256": "6fb0b81c7bdd22eb63234d30a5d71126afd512017ae8c0c535507a8005835ea8"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "direct_ingest_contract_validation_parity_verified",
+      "error_ids": [],
+      "expected": {
+        "hashes_equal_or_pending": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "bundle_status": "ACCEPT_FULL",
+        "pass_number": 3
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "front_matter_accept_full_written_after_second_pass_verified",
+      "error_ids": [],
+      "expected": {
+        "allowed_after_second_pass": "ACCEPT_FULL"
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "preseal_outcome_access_all_zero": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v23_zero_preseal_outcome_access_passed",
+      "error_ids": [],
+      "expected": {
+        "preseal_outcome_access_all_zero": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "outcome_access_after_blind_seal": true
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v24_outcome_airgap_passed",
+      "error_ids": [],
+      "expected": {
+        "outcome_access_after_blind_seal": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "main_prompt_sha256": "48a3418387e9631f21ff8c72a8914ca9202f4643a9994d32f2bf4c15957d2cdd",
+        "news_sha256": "797c81f1396c37bba555ad943d12f938590c6b1264feaf489b02f75e211e806c"
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v25_acquisition_fastpath_passed",
+      "error_ids": [],
+      "expected": {
+        "fresh_raw_bytes_verified": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "required_block_missing_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v26_import_shape_marker_phase_passed",
+      "error_ids": [],
+      "expected": {
+        "required_block_missing_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "brain_delta_actual_record_count": 341,
+        "expected_brain_delta_min": 332,
+        "noncanonical_record_type_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v27_brain_delta_numeric_validator_passed",
+      "error_ids": [],
+      "expected": {
+        "actual_gte_expected_and_canonical": true
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "final_evidence_witness_row_count": 20,
+        "semantic_pass_count": 20
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "v30_final_evidence_witness_passed",
+      "error_ids": [],
+      "expected": {
+        "final_watchlist_count": 20,
+        "semantic_pass_count": 20
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    },
+    {
+      "actual": {
+        "section_population_empty_without_audit_count": 0
+      },
+      "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE",
+      "check_id": "section_population_empty_without_audit_count_zero_verified",
+      "error_ids": [],
+      "expected": {
+        "section_population_empty_without_audit_count": 0
+      },
+      "expected_source": "PROMPT_CONTRACT",
+      "passed": true,
+      "severity": "critical"
+    }
+  ],
+  "checks_source": "FINAL_MARKDOWN_BLOCK_REPARSE_FINAL",
+  "computed_counts": {
+    "brain_delta_record_count": 341,
+    "training_eligible_record_count": 210
+  },
+  "critical_error_count": 0,
+  "direct_brain_ingest_ready": true,
+  "direct_event_weight_sum_mismatches": {},
+  "episode_id": "NSLAB-20241203-797c81f1",
+  "fatal_blockers": [],
+  "issuer_day_weight_sum_mismatches": {},
+  "repair_scope": "legacy_bundle_packaging_only_no_new_research_claims",
+  "sample_weight_validation": {
+    "direct_event_weight_sum_mismatches": {},
+    "duplicate_issuer_day_count": 0,
+    "duplicate_issuer_day_keys": [],
+    "issuer_day_weight_sum_mismatches": {},
+    "status": "passed"
+  },
+  "sample_weight_validation_status": "passed",
+  "schema_version": "nslab.validation_report.v23",
+  "stats": {
+    "actual_training_eligible_record_count": 230,
+    "brain_delta_actual_record_count": 341,
+    "brain_delta_count_by_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "candidate_ranking_error_case": 3,
+      "context_market_state_or_fact_case": 97,
+      "counterexample": 6,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "candidate_ranking_audit_count": 67,
+    "candidate_screening_count": 565,
+    "critical_error_count": 0,
+    "direct_event_weight_sum_mismatches": {},
+    "expected_brain_delta_min": 332,
+    "final_watchlist_count": 20,
+    "issuer_day_weight_sum_mismatches": {},
+    "json_parse_error_count": 0,
+    "jsonl_parse_error_count": 0,
+    "material_review_queue_count": 565,
+    "outcome_leader_census_count": 115,
+    "outcome_ledger_count": 2629,
+    "outcome_to_news_audit_count": 115,
+    "record_provenance_closure_audit_count": 341,
+    "required_block_missing_count": 0,
+    "row_disposition_count": 1181,
+    "sample_weight_validation_status": "passed",
+    "source_ledger_news_row_count": 1181,
+    "training_eligible_empty_provenance_count": 0,
+    "training_eligible_unresolved_source_count": 0
+  },
+  "status": "PASS",
+  "trade_date": "2024-12-03",
+  "validator_exit_code": 0
+}

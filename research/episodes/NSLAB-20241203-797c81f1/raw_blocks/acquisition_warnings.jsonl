@@ -1,0 +1,1 @@
+{"fatal":false,"message":"Raw web open for the selected news CSV returned a web-layer internal 400/OK display issue; GitHub HTML raw link fallback was used and fresh raw bytes were verified by sha256/byte/full parse.","phase":"CSV_ACQUISITION","warning_id":"ACQWARN-000001"}

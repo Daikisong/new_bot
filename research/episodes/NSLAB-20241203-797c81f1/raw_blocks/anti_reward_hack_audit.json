@@ -1,0 +1,13 @@
+{
+  "blind_outcome_snapshot_access_count": 0,
+  "candidate_screening_rank_field_count": 0,
+  "evidence_chain_required": "source_row -> row_disposition -> material_review -> fact -> inference -> candidate_screening -> final_watchlist",
+  "final_codes_order_present": false,
+  "final_watchlist_created_from_saved_candidate_screening_reparse": true,
+  "p_snapshot_used_as_direct_issuer_catalyst_count": 0,
+  "predeclared_final_candidate_list_count": 0,
+  "schema_version": "nslab.anti_reward_hack_audit.v1",
+  "status": "PASS",
+  "trade_date": "2024-12-03",
+  "validation_actual_values_from_final_markdown_reparse": true
+}

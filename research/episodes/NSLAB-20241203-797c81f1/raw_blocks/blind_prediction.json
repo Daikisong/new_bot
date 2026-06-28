@@ -1,0 +1,890 @@
+{
+  "created_at": "2026-06-28T13:23:13.156066Z",
+  "final_watchlist": [
+    {
+      "blind_rank_score": 161,
+      "blind_thesis": "알테오젠, 다이이찌산쿄로부터 계약금 2000만달러 수령 / event_types=CONTRACT_OR_ORDER,LICENSE_OR_UPFRONT,IP_CLINICAL_RND,OPERATING_MOMENTUM / blind_strength=151",
+      "company": "알테오젠",
+      "p_snapshot_context": {
+        "amount_rank": 3,
+        "available": true,
+        "close_return_pct": 7.857143,
+        "data_quality_status": "clean",
+        "high_return_pct": 9.285714,
+        "turnover_rank": 235,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 1,
+      "semantic_witness": {
+        "exact_quote": "알테오젠, 다이이찌산쿄로부터 계약금 2000만달러 수령",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "알테오젠",
+          "matched_alias": "알테오젠",
+          "ticker": "196170"
+        },
+        "local_predicate_owner": "알테오젠",
+        "source_id": "SRC-000095"
+      },
+      "source_fact_ids": [
+        "FACT-000051"
+      ],
+      "source_inference_ids": [
+        "INF-000051"
+      ],
+      "source_material_review_ids": [
+        "MR-000055"
+      ],
+      "source_observation_ids": [
+        "OBS-000051"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000055",
+      "ticker": "196170",
+      "why_now": "알테오젠, 다이이찌산쿄로부터 계약금 2000만달러 수령"
+    },
+    {
+      "blind_rank_score": 131,
+      "blind_thesis": "美, 삼성SDI·스텔란티스 합작법인에 10조5000억 대출 지원 / event_types=CONTRACT_OR_ORDER,MNA_OR_CONTROL,OPERATING_MOMENTUM,POLICY_OR_REGULATION / blind_strength=127",
+      "company": "삼성SDI",
+      "p_snapshot_context": {
+        "amount_rank": 37,
+        "available": true,
+        "close_return_pct": 1.768173,
+        "data_quality_status": "clean",
+        "high_return_pct": 3.732809,
+        "turnover_rank": 1107,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 2,
+      "semantic_witness": {
+        "exact_quote": "美, 삼성SDI·스텔란티스 합작법인에 10조5000억 대출 지원",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "삼성SDI",
+          "matched_alias": "삼성SDI",
+          "ticker": "006400"
+        },
+        "local_predicate_owner": "삼성SDI",
+        "source_id": "SRC-000169"
+      },
+      "source_fact_ids": [
+        "FACT-000096"
+      ],
+      "source_inference_ids": [
+        "INF-000096"
+      ],
+      "source_material_review_ids": [
+        "MR-000104"
+      ],
+      "source_observation_ids": [
+        "OBS-000096"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000104",
+      "ticker": "006400",
+      "why_now": "美, 삼성SDI·스텔란티스 합작법인에 10조5000억 대출 지원"
+    },
+    {
+      "blind_rank_score": 129,
+      "blind_thesis": "초고압 변압기 잭팟…LS일렉 5600억 계약 / event_types=CONTRACT_OR_ORDER / blind_strength=119",
+      "company": "LS ELECTRIC",
+      "p_snapshot_context": {
+        "amount_rank": 122,
+        "available": true,
+        "close_return_pct": 0.902778,
+        "data_quality_status": "clean",
+        "high_return_pct": 1.736111,
+        "turnover_rank": 773,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 3,
+      "semantic_witness": {
+        "exact_quote": "초고압 변압기 잭팟…LS일렉 5600억 계약",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "LS ELECTRIC",
+          "matched_alias": "LS일렉",
+          "ticker": "010120"
+        },
+        "local_predicate_owner": "LS ELECTRIC",
+        "source_id": "SRC-000387"
+      },
+      "source_fact_ids": [
+        "FACT-000184"
+      ],
+      "source_inference_ids": [
+        "INF-000184"
+      ],
+      "source_material_review_ids": [
+        "MR-000195"
+      ],
+      "source_observation_ids": [
+        "OBS-000184"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000195",
+      "ticker": "010120",
+      "why_now": "초고압 변압기 잭팟…LS일렉 5600억 계약"
+    },
+    {
+      "blind_rank_score": 119,
+      "blind_thesis": "LG엔솔, 美미시건 배터리 합작 공장의 GM 지분 인수(상보) / event_types=CONTRACT_OR_ORDER,MNA_OR_CONTROL,OPERATING_MOMENTUM,POLICY_OR_REGULATION / blind_strength=115",
+      "company": "LG에너지솔루션",
+      "p_snapshot_context": {
+        "amount_rank": 32,
+        "available": true,
+        "close_return_pct": 2.621232,
+        "data_quality_status": "clean",
+        "high_return_pct": 4.193971,
+        "turnover_rank": 2301,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 4,
+      "semantic_witness": {
+        "exact_quote": "LG엔솔, 美미시건 배터리 합작 공장의 GM 지분 인수(상보)",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "LG에너지솔루션",
+          "matched_alias": "LG엔솔",
+          "ticker": "373220"
+        },
+        "local_predicate_owner": "LG에너지솔루션",
+        "source_id": "SRC-000185"
+      },
+      "source_fact_ids": [
+        "FACT-000104"
+      ],
+      "source_inference_ids": [
+        "INF-000104"
+      ],
+      "source_material_review_ids": [
+        "MR-000112"
+      ],
+      "source_observation_ids": [
+        "OBS-000104"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000112",
+      "ticker": "373220",
+      "why_now": "LG엔솔, 美미시건 배터리 합작 공장의 GM 지분 인수(상보)"
+    },
+    {
+      "blind_rank_score": 115,
+      "blind_thesis": "[IB토마토]대한항공, 아시아나 인수 확정…수익성 개선 본격화 / event_types=LICENSE_OR_UPFRONT,IP_CLINICAL_RND,MNA_OR_CONTROL / blind_strength=111",
+      "company": "대한항공",
+      "p_snapshot_context": {
+        "amount_rank": 77,
+        "available": true,
+        "close_return_pct": -1.156069,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.770713,
+        "turnover_rank": 957,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 5,
+      "semantic_witness": {
+        "exact_quote": "[IB토마토]대한항공, 아시아나 인수 확정…수익성 개선 본격화",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "대한항공",
+          "matched_alias": "대한항공",
+          "ticker": "003490"
+        },
+        "local_predicate_owner": "대한항공",
+        "source_id": "SRC-000257"
+      },
+      "source_fact_ids": [
+        "FACT-000135"
+      ],
+      "source_inference_ids": [
+        "INF-000135"
+      ],
+      "source_material_review_ids": [
+        "MR-000144"
+      ],
+      "source_observation_ids": [
+        "OBS-000135"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000144",
+      "ticker": "003490",
+      "why_now": "[IB토마토]대한항공, 아시아나 인수 확정…수익성 개선 본격화"
+    },
+    {
+      "blind_rank_score": 114,
+      "blind_thesis": "그로쓰리서치 \"원준, 2차전지 넘어 신규 산업으로 확장 계획 중\" / event_types=CONTRACT_OR_ORDER,LICENSE_OR_UPFRONT,OPERATING_MOMENTUM / blind_strength=110",
+      "company": "원준",
+      "p_snapshot_context": {
+        "amount_rank": 826,
+        "available": true,
+        "close_return_pct": 0.7,
+        "data_quality_status": "clean",
+        "high_return_pct": 2.5,
+        "turnover_rank": 700,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 6,
+      "semantic_witness": {
+        "exact_quote": "그로쓰리서치 \"원준, 2차전지 넘어 신규 산업으로 확장 계획 중\"",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "원준",
+          "matched_alias": "원준",
+          "ticker": "382840"
+        },
+        "local_predicate_owner": "원준",
+        "source_id": "SRC-000107"
+      },
+      "source_fact_ids": [
+        "FACT-000060"
+      ],
+      "source_inference_ids": [
+        "INF-000060"
+      ],
+      "source_material_review_ids": [
+        "MR-000064"
+      ],
+      "source_observation_ids": [
+        "OBS-000060"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000064",
+      "ticker": "382840",
+      "why_now": "그로쓰리서치 \"원준, 2차전지 넘어 신규 산업으로 확장 계획 중\""
+    },
+    {
+      "blind_rank_score": 113,
+      "blind_thesis": "현대건설, 올해 도시정비사업 수주 6조원 돌파 / event_types=CONTRACT_OR_ORDER,IP_CLINICAL_RND / blind_strength=103",
+      "company": "현대건설",
+      "p_snapshot_context": {
+        "amount_rank": 200,
+        "available": true,
+        "close_return_pct": -0.182149,
+        "data_quality_status": "clean",
+        "high_return_pct": 1.092896,
+        "turnover_rank": 968,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 7,
+      "semantic_witness": {
+        "exact_quote": "현대건설, 올해 도시정비사업 수주 6조원 돌파",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "현대건설",
+          "matched_alias": "현대건설",
+          "ticker": "000720"
+        },
+        "local_predicate_owner": "현대건설",
+        "source_id": "SRC-000099"
+      },
+      "source_fact_ids": [
+        "FACT-000055"
+      ],
+      "source_inference_ids": [
+        "INF-000055"
+      ],
+      "source_material_review_ids": [
+        "MR-000059"
+      ],
+      "source_observation_ids": [
+        "OBS-000055"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000059",
+      "ticker": "000720",
+      "why_now": "현대건설, 올해 도시정비사업 수주 6조원 돌파"
+    },
+    {
+      "blind_rank_score": 108,
+      "blind_thesis": "브이티, 이앤씨 지분 추가 인수…\"화장품 시장 경쟁력 강화\" / event_types=MNA_OR_CONTROL,OPERATING_MOMENTUM / blind_strength=98",
+      "company": "브이티",
+      "p_snapshot_context": {
+        "amount_rank": 43,
+        "available": true,
+        "close_return_pct": -3.436426,
+        "data_quality_status": "clean",
+        "high_return_pct": 1.202749,
+        "turnover_rank": 95,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 8,
+      "semantic_witness": {
+        "exact_quote": "브이티, 이앤씨 지분 추가 인수…\"화장품 시장 경쟁력 강화\"",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "브이티",
+          "matched_alias": "브이티",
+          "ticker": "018290"
+        },
+        "local_predicate_owner": "브이티",
+        "source_id": "SRC-000001"
+      },
+      "source_fact_ids": [
+        "FACT-000001"
+      ],
+      "source_inference_ids": [
+        "INF-000001"
+      ],
+      "source_material_review_ids": [
+        "MR-000001"
+      ],
+      "source_observation_ids": [
+        "OBS-000001"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000001",
+      "ticker": "018290",
+      "why_now": "브이티, 이앤씨 지분 추가 인수…\"화장품 시장 경쟁력 강화\""
+    },
+    {
+      "blind_rank_score": 104,
+      "blind_thesis": "진에어, 무안~오사카·나리타·타이베이 신규 운항 / event_types=LICENSE_OR_UPFRONT,OPERATING_MOMENTUM / blind_strength=104",
+      "company": "진에어",
+      "p_snapshot_context": {
+        "amount_rank": 435,
+        "available": true,
+        "close_return_pct": -5.517827,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.679117,
+        "turnover_rank": 781,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 9,
+      "semantic_witness": {
+        "exact_quote": "진에어, 무안~오사카·나리타·타이베이 신규 운항",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "진에어",
+          "matched_alias": "진에어",
+          "ticker": "272450"
+        },
+        "local_predicate_owner": "진에어",
+        "source_id": "SRC-000031"
+      },
+      "source_fact_ids": [
+        "FACT-000021"
+      ],
+      "source_inference_ids": [
+        "INF-000021"
+      ],
+      "source_material_review_ids": [
+        "MR-000021"
+      ],
+      "source_observation_ids": [
+        "OBS-000021"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000021",
+      "ticker": "272450",
+      "why_now": "진에어, 무안~오사카·나리타·타이베이 신규 운항"
+    },
+    {
+      "blind_rank_score": 103,
+      "blind_thesis": "NH證 \"한화오션, 美군함 MRO 외형 성장 확대… 목표주가 8% 상향\" / event_types=IP_CLINICAL_RND,BROKER_VIEW,OPERATING_MOMENTUM / blind_strength=93",
+      "company": "한화오션",
+      "p_snapshot_context": {
+        "amount_rank": 12,
+        "available": true,
+        "close_return_pct": -5.142857,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.571429,
+        "turnover_rank": 350,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 10,
+      "semantic_witness": {
+        "exact_quote": "NH證 \"한화오션, 美군함 MRO 외형 성장 확대… 목표주가 8% 상향\"",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "한화오션",
+          "matched_alias": "한화오션",
+          "ticker": "042660"
+        },
+        "local_predicate_owner": "한화오션",
+        "source_id": "SRC-000138"
+      },
+      "source_fact_ids": [
+        "FACT-000081"
+      ],
+      "source_inference_ids": [
+        "INF-000081"
+      ],
+      "source_material_review_ids": [
+        "MR-000086"
+      ],
+      "source_observation_ids": [
+        "OBS-000081"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000086",
+      "ticker": "042660",
+      "why_now": "NH證 \"한화오션, 美군함 MRO 외형 성장 확대… 목표주가 8% 상향\""
+    },
+    {
+      "blind_rank_score": 103,
+      "blind_thesis": "\"AI센터 발열 잡는다\"… LG전자 '칠러' 차세대 수출 효자로 / event_types=BROKER_VIEW,OPERATING_MOMENTUM,POLICY_OR_REGULATION / blind_strength=99",
+      "company": "LG전자",
+      "p_snapshot_context": {
+        "amount_rank": 66,
+        "available": true,
+        "close_return_pct": -1.672241,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.557414,
+        "turnover_rank": 1211,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 11,
+      "semantic_witness": {
+        "exact_quote": "\"AI센터 발열 잡는다\"… LG전자 '칠러' 차세대 수출 효자로",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "LG전자",
+          "matched_alias": "LG전자",
+          "ticker": "066570"
+        },
+        "local_predicate_owner": "LG전자",
+        "source_id": "SRC-000758"
+      },
+      "source_fact_ids": [
+        "FACT-000311"
+      ],
+      "source_inference_ids": [
+        "INF-000311"
+      ],
+      "source_material_review_ids": [
+        "MR-000341"
+      ],
+      "source_observation_ids": [
+        "OBS-000311"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000341",
+      "ticker": "066570",
+      "why_now": "\"AI센터 발열 잡는다\"… LG전자 '칠러' 차세대 수출 효자로"
+    },
+    {
+      "blind_rank_score": 100,
+      "blind_thesis": "딥노이드, RSNA서 초록 발표…AI 기반 폐 결절 진단 기술 주목 / event_types=IP_CLINICAL_RND / blind_strength=90",
+      "company": "딥노이드",
+      "p_snapshot_context": {
+        "amount_rank": 276,
+        "available": true,
+        "close_return_pct": -10.491368,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.265604,
+        "turnover_rank": 121,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 12,
+      "semantic_witness": {
+        "exact_quote": "딥노이드, RSNA서 초록 발표…AI 기반 폐 결절 진단 기술 주목",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "딥노이드",
+          "matched_alias": "딥노이드",
+          "ticker": "315640"
+        },
+        "local_predicate_owner": "딥노이드",
+        "source_id": "SRC-000008"
+      },
+      "source_fact_ids": [
+        "FACT-000005"
+      ],
+      "source_inference_ids": [
+        "INF-000005"
+      ],
+      "source_material_review_ids": [
+        "MR-000005"
+      ],
+      "source_observation_ids": [
+        "OBS-000005"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000005",
+      "ticker": "315640",
+      "why_now": "딥노이드, RSNA서 초록 발표…AI 기반 폐 결절 진단 기술 주목"
+    },
+    {
+      "blind_rank_score": 97,
+      "blind_thesis": "노브랜드, 편안한 성장 속 아웃도어 인수 효과 기대-DS / event_types=MNA_OR_CONTROL,BROKER_VIEW,OPERATING_MOMENTUM / blind_strength=87",
+      "company": "노브랜드",
+      "p_snapshot_context": {
+        "amount_rank": 334,
+        "available": true,
+        "close_return_pct": -2.705815,
+        "data_quality_status": "clean",
+        "high_return_pct": 2.475533,
+        "turnover_rank": 165,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 13,
+      "semantic_witness": {
+        "exact_quote": "노브랜드, 편안한 성장 속 아웃도어 인수 효과 기대-DS",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "노브랜드",
+          "matched_alias": "노브랜드",
+          "ticker": "145170"
+        },
+        "local_predicate_owner": "노브랜드",
+        "source_id": "SRC-000161"
+      },
+      "source_fact_ids": [
+        "FACT-000090"
+      ],
+      "source_inference_ids": [
+        "INF-000090"
+      ],
+      "source_material_review_ids": [
+        "MR-000098"
+      ],
+      "source_observation_ids": [
+        "OBS-000090"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000098",
+      "ticker": "145170",
+      "why_now": "노브랜드, 편안한 성장 속 아웃도어 인수 효과 기대-DS"
+    },
+    {
+      "blind_rank_score": 93,
+      "blind_thesis": "셀리드, 코로나19 백신에 적용된 항원 플랫폼 기술 '한국 특허 등록' 결정 / event_types=IP_CLINICAL_RND / blind_strength=83",
+      "company": "셀리드",
+      "p_snapshot_context": {
+        "amount_rank": 407,
+        "available": true,
+        "close_return_pct": -1.750973,
+        "data_quality_status": "clean",
+        "high_return_pct": 4.085603,
+        "turnover_rank": 163,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 14,
+      "semantic_witness": {
+        "exact_quote": "셀리드, 코로나19 백신에 적용된 항원 플랫폼 기술 '한국 특허 등록' 결정",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "셀리드",
+          "matched_alias": "셀리드",
+          "ticker": "299660"
+        },
+        "local_predicate_owner": "셀리드",
+        "source_id": "SRC-000002"
+      },
+      "source_fact_ids": [
+        "FACT-000002"
+      ],
+      "source_inference_ids": [
+        "INF-000002"
+      ],
+      "source_material_review_ids": [
+        "MR-000002"
+      ],
+      "source_observation_ids": [
+        "OBS-000002"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000002",
+      "ticker": "299660",
+      "why_now": "셀리드, 코로나19 백신에 적용된 항원 플랫폼 기술 '한국 특허 등록' 결정"
+    },
+    {
+      "blind_rank_score": 88,
+      "blind_thesis": "카카오, 다음 뉴스서비스 신규 입점 공고 / event_types=CONTRACT_OR_ORDER / blind_strength=88",
+      "company": "카카오",
+      "p_snapshot_context": {
+        "amount_rank": 5,
+        "available": true,
+        "close_return_pct": 5.112219,
+        "data_quality_status": "clean",
+        "high_return_pct": 5.985037,
+        "turnover_rank": 392,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 15,
+      "semantic_witness": {
+        "exact_quote": "카카오, 다음 뉴스서비스 신규 입점 공고",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "카카오",
+          "matched_alias": "카카오",
+          "ticker": "035720"
+        },
+        "local_predicate_owner": "카카오",
+        "source_id": "SRC-000821"
+      },
+      "source_fact_ids": [
+        "FACT-000337"
+      ],
+      "source_inference_ids": [
+        "INF-000337"
+      ],
+      "source_material_review_ids": [
+        "MR-000374"
+      ],
+      "source_observation_ids": [
+        "OBS-000337"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000374",
+      "ticker": "035720",
+      "why_now": "카카오, 다음 뉴스서비스 신규 입점 공고"
+    },
+    {
+      "blind_rank_score": 88,
+      "blind_thesis": "NH證 “HD현대중공업, 수익성 더 좋아진다… 목표가 14% 상향” / event_types=CONTRACT_OR_ORDER,BROKER_VIEW,OPERATING_MOMENTUM / blind_strength=88",
+      "company": "HD현대중공업",
+      "p_snapshot_context": {
+        "amount_rank": 48,
+        "available": true,
+        "close_return_pct": -4.090909,
+        "data_quality_status": "clean",
+        "high_return_pct": 1.590909,
+        "turnover_rank": 1254,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 16,
+      "semantic_witness": {
+        "exact_quote": "NH證 “HD현대중공업, 수익성 더 좋아진다… 목표가 14% 상향”",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "HD현대중공업",
+          "matched_alias": "HD현대중공업",
+          "ticker": "329180"
+        },
+        "local_predicate_owner": "HD현대중공업",
+        "source_id": "SRC-000047"
+      },
+      "source_fact_ids": [
+        "FACT-000024"
+      ],
+      "source_inference_ids": [
+        "INF-000024"
+      ],
+      "source_material_review_ids": [
+        "MR-000026"
+      ],
+      "source_observation_ids": [
+        "OBS-000024"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000026",
+      "ticker": "329180",
+      "why_now": "NH證 “HD현대중공업, 수익성 더 좋아진다… 목표가 14% 상향”"
+    },
+    {
+      "blind_rank_score": 88,
+      "blind_thesis": "아이에스동서, 에스케이에코플랜트와 661억원 규모 공급계약 / event_types=CONTRACT_OR_ORDER,OPERATING_MOMENTUM / blind_strength=88",
+      "company": "아이에스동서",
+      "p_snapshot_context": {
+        "amount_rank": 700,
+        "available": true,
+        "close_return_pct": 2.816901,
+        "data_quality_status": "clean",
+        "high_return_pct": 3.521127,
+        "turnover_rank": 1611,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 17,
+      "semantic_witness": {
+        "exact_quote": "아이에스동서, 에스케이에코플랜트와 661억원 규모 공급계약",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "아이에스동서",
+          "matched_alias": "아이에스동서",
+          "ticker": "010780"
+        },
+        "local_predicate_owner": "아이에스동서",
+        "source_id": "SRC-000989"
+      },
+      "source_fact_ids": [
+        "FACT-000407"
+      ],
+      "source_inference_ids": [
+        "INF-000407"
+      ],
+      "source_material_review_ids": [
+        "MR-000463"
+      ],
+      "source_observation_ids": [
+        "OBS-000407"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000463",
+      "ticker": "010780",
+      "why_now": "아이에스동서, 에스케이에코플랜트와 661억원 규모 공급계약"
+    },
+    {
+      "blind_rank_score": 85,
+      "blind_thesis": "고려아연, 장중 52주 최고가 150만원 돌파! / event_types=MNA_OR_CONTROL / blind_strength=85",
+      "company": "고려아연",
+      "p_snapshot_context": {
+        "amount_rank": 7,
+        "available": true,
+        "close_return_pct": 19.576271,
+        "data_quality_status": "clean",
+        "high_return_pct": 30.0,
+        "turnover_rank": 688,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 1
+      },
+      "rank": 18,
+      "semantic_witness": {
+        "exact_quote": "고려아연, 장중 52주 최고가 150만원 돌파!",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "고려아연",
+          "matched_alias": "고려아연",
+          "ticker": "010130"
+        },
+        "local_predicate_owner": "고려아연",
+        "source_id": "SRC-000739"
+      },
+      "source_fact_ids": [
+        "FACT-000298"
+      ],
+      "source_inference_ids": [
+        "INF-000298"
+      ],
+      "source_material_review_ids": [
+        "MR-000328"
+      ],
+      "source_observation_ids": [
+        "OBS-000298"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000328",
+      "ticker": "010130",
+      "why_now": "고려아연, 장중 52주 최고가 150만원 돌파!"
+    },
+    {
+      "blind_rank_score": 83,
+      "blind_thesis": "김춘환 SK하이닉스 부사장 \"요소기술 제때 개발하려면 실패 두려워 말아야\" / event_types=OPERATING_MOMENTUM / blind_strength=83",
+      "company": "SK하이닉스",
+      "p_snapshot_context": {
+        "amount_rank": 2,
+        "available": true,
+        "close_return_pct": -0.68793,
+        "data_quality_status": "clean",
+        "high_return_pct": 1.751094,
+        "turnover_rank": 887,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 19,
+      "semantic_witness": {
+        "exact_quote": "김춘환 SK하이닉스 부사장 \"요소기술 제때 개발하려면 실패 두려워 말아야\"",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "SK하이닉스",
+          "matched_alias": "SK하이닉스",
+          "ticker": "000660"
+        },
+        "local_predicate_owner": "SK하이닉스",
+        "source_id": "SRC-001128"
+      },
+      "source_fact_ids": [
+        "FACT-000456"
+      ],
+      "source_inference_ids": [
+        "INF-000456"
+      ],
+      "source_material_review_ids": [
+        "MR-000539"
+      ],
+      "source_observation_ids": [
+        "OBS-000456"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000539",
+      "ticker": "000660",
+      "why_now": "김춘환 SK하이닉스 부사장 \"요소기술 제때 개발하려면 실패 두려워 말아야\""
+    },
+    {
+      "blind_rank_score": 82,
+      "blind_thesis": "동아에스티 ‘그로트핀’ 전문약 매출 첫 1000억원 돌파 / event_types=IP_CLINICAL_RND,OPERATING_MOMENTUM / blind_strength=82",
+      "company": "동아에스티",
+      "p_snapshot_context": {
+        "amount_rank": 735,
+        "available": true,
+        "close_return_pct": 0.0,
+        "data_quality_status": "clean",
+        "high_return_pct": 0.656814,
+        "turnover_rank": 1564,
+        "upper_limit_label_status": "verified_normal_day",
+        "upper_limit_touch_count_5d": 0
+      },
+      "rank": 20,
+      "semantic_witness": {
+        "exact_quote": "동아에스티 ‘그로트핀’ 전문약 매출 첫 1000억원 돌파",
+        "issuer_binding": {
+          "binding_location": "title",
+          "binding_status": "issuer_local_predicate_owner",
+          "issuer_name": "동아에스티",
+          "matched_alias": "동아에스티",
+          "ticker": "170900"
+        },
+        "local_predicate_owner": "동아에스티",
+        "source_id": "SRC-001143"
+      },
+      "source_fact_ids": [
+        "FACT-000463"
+      ],
+      "source_inference_ids": [
+        "INF-000463"
+      ],
+      "source_material_review_ids": [
+        "MR-000548"
+      ],
+      "source_observation_ids": [
+        "OBS-000463"
+      ],
+      "source_phase": "BLIND",
+      "source_screening_id": "SCR-000548",
+      "ticker": "170900",
+      "why_now": "동아에스티 ‘그로트핀’ 전문약 매출 첫 1000억원 돌파"
+    }
+  ],
+  "final_watchlist_count": 20,
+  "final_watchlist_from_reparsed_candidate_screening_without_preseed": true,
+  "previous_trade_date": "2024-12-02",
+  "schema_version": "nslab.blind_prediction.v1",
+  "trade_date": "2024-12-03"
+}

@@ -33,6 +33,29 @@ JSON_BLOCKS = {
     "anti_reward_hack_audit.json",
 }
 
+RECORD_IDENTITY_FIELDS = (
+    "record_id",
+    "brain_delta_id",
+    "issuer_day_case_id",
+    "case_id",
+    "blind_pair_id",
+    "claim_id",
+    "mechanism_id",
+    "counterexample_id",
+    "edge_id",
+    "question_id",
+    "error_id",
+    "audit_id",
+)
+
+EVENT_TICKER_EDGE_ALLOWED_PATH_TYPES = {
+    "CONTINUATION",
+    "DIRECT",
+    "FUNDAMENTAL",
+    "INFERRED_NEW",
+    "MARKET_MEMORY",
+}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -77,13 +100,14 @@ def repair_bundle(input_path: Path, output_path: Path) -> dict[str, Any]:
     if source_ledger_rows:
         jsonl_blocks["source_ledger.jsonl"] = source_ledger_rows
 
+    fact_rows = jsonl_blocks.get("fact_ledger_blind.jsonl", [])
+    inference_rows = jsonl_blocks.get("inference_ledger_blind.jsonl", [])
     source_ids = _known_ids(source_ledger_rows, "source_id")
     source_rows_by_id = _source_rows_by_id(source_ledger_rows)
-    fact_ids = _known_ids(jsonl_blocks.get("fact_ledger_blind.jsonl", []), "fact_id")
-    inference_ids = _known_ids(
-        jsonl_blocks.get("inference_ledger_blind.jsonl", []),
-        "inference_id",
-    )
+    fact_ids = _known_ids(fact_rows, "fact_id")
+    inference_ids = _known_ids(inference_rows, "inference_id")
+    fact_source_ids_by_id = _fact_source_ids_by_id(fact_rows, source_ids)
+    inference_fact_ids_by_id = _inference_fact_ids_by_id(inference_rows, fact_ids)
 
     available_from = _first_string(
         front.get("available_from"),
@@ -106,6 +130,8 @@ def repair_bundle(input_path: Path, output_path: Path) -> dict[str, Any]:
         source_rows_by_id=source_rows_by_id,
         known_fact_ids=fact_ids,
         known_inference_ids=inference_ids,
+        fact_source_ids_by_id=fact_source_ids_by_id,
+        inference_fact_ids_by_id=inference_fact_ids_by_id,
     )
     jsonl_blocks["brain_delta.jsonl"] = repaired_records
 
@@ -205,11 +231,15 @@ def _repair_brain_delta(
     source_rows_by_id: dict[str, dict[str, Any]],
     known_fact_ids: set[str],
     known_inference_ids: set[str],
-) -> list[dict[str, Any]]:
+    fact_source_ids_by_id: dict[str, list[str]],
+    inference_fact_ids_by_id: dict[str, list[str]],
+    ) -> list[dict[str, Any]]:
     repaired: list[dict[str, Any]] = []
     issuer_day_records: list[dict[str, Any]] = []
+    direct_event_records: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         record_type = str(row.get("record_type") or "")
+        issuer_day_weight_record = False
         if record_type == "supervised_blind_final_candidate_case":
             record = _issuer_day_case(
                 row,
@@ -220,57 +250,152 @@ def _repair_brain_delta(
                 known_source_ids=known_source_ids,
                 known_fact_ids=known_fact_ids,
                 known_inference_ids=known_inference_ids,
+                fact_source_ids_by_id=fact_source_ids_by_id,
+                inference_fact_ids_by_id=inference_fact_ids_by_id,
             )
-            issuer_day_records.append(record)
-            repaired.append(record)
+            issuer_day_weight_record = True
         elif record_type == "supervised_outcome_leader_case":
-            repaired.append(
-                _outcome_leader_case(
-                    row,
-                    index=index,
-                    episode_id=episode_id,
-                    trade_date=trade_date,
-                    available_from=available_from,
-                    known_source_ids=known_source_ids,
-                    known_fact_ids=known_fact_ids,
-                ),
+            record = _outcome_leader_case(
+                row,
+                index=index,
+                episode_id=episode_id,
+                trade_date=trade_date,
+                available_from=available_from,
+                known_source_ids=known_source_ids,
+                known_fact_ids=known_fact_ids,
+                fact_source_ids_by_id=fact_source_ids_by_id,
             )
         elif record_type == "supervised_missed_cluster_case":
-            repaired.append(
-                _missed_cluster_case(
-                    row,
-                    index=index,
-                    episode_id=episode_id,
-                    trade_date=trade_date,
-                    available_from=available_from,
-                ),
+            record = _missed_cluster_case(
+                row,
+                index=index,
+                episode_id=episode_id,
+                trade_date=trade_date,
+                available_from=available_from,
             )
         elif record_type:
-            repaired.append(
-                _existing_direct_ingest_case(
-                    row,
-                    index=index,
-                    episode_id=episode_id,
-                    trade_date=trade_date,
-                    available_from=available_from,
-                    known_source_ids=known_source_ids,
-                    source_rows_by_id=source_rows_by_id,
-                    known_fact_ids=known_fact_ids,
-                    known_inference_ids=known_inference_ids,
-                ),
+            record = _existing_direct_ingest_case(
+                row,
+                index=index,
+                episode_id=episode_id,
+                trade_date=trade_date,
+                available_from=available_from,
+                known_source_ids=known_source_ids,
+                source_rows_by_id=source_rows_by_id,
+                known_fact_ids=known_fact_ids,
+                known_inference_ids=known_inference_ids,
+                fact_source_ids_by_id=fact_source_ids_by_id,
+                inference_fact_ids_by_id=inference_fact_ids_by_id,
             )
         else:
-            repaired.append(
-                _unknown_legacy_case(
-                    row,
-                    index=index,
-                    episode_id=episode_id,
-                    trade_date=trade_date,
-                    available_from=available_from,
-                ),
+            record = _unknown_legacy_case(
+                row,
+                index=index,
+                episode_id=episode_id,
+                trade_date=trade_date,
+                available_from=available_from,
             )
+        _materialize_bundle_level_provenance(record, known_source_ids=known_source_ids)
+        _drop_training_without_provenance(record)
+        _drop_unsealed_preference_pair(record)
+        _namespace_record_identity(record, episode_id=episode_id)
+        if issuer_day_weight_record:
+            issuer_day_records.append(record)
+        if record.get("record_type") == "supervised_direct_event_case":
+            direct_event_records.append(record)
+        repaired.append(record)
     _normalize_issuer_day_weights(issuer_day_records)
+    _normalize_issuer_day_weights(direct_event_records)
     return repaired
+
+
+def _namespace_record_identity(record: dict[str, Any], *, episode_id: str) -> None:
+    old_id = _first_string(record.get("record_id"), record.get("brain_delta_id"))
+    if old_id is None:
+        return
+    namespaced_id = _global_record_id(episode_id, old_id)
+    if namespaced_id == old_id:
+        return
+    for field in RECORD_IDENTITY_FIELDS:
+        if _first_string(record.get(field)) == old_id:
+            record[field] = namespaced_id
+    payload = record.get("payload")
+    if isinstance(payload, dict):
+        for field in RECORD_IDENTITY_FIELDS:
+            if _first_string(payload.get(field)) == old_id:
+                payload[field] = namespaced_id
+    record["record_id"] = namespaced_id
+    record["brain_delta_id"] = namespaced_id
+
+
+def _global_record_id(episode_id: str, record_id: str) -> str:
+    prefix = f"{episode_id}__"
+    if record_id.startswith(prefix):
+        return record_id
+    return f"{prefix}{record_id}"
+
+
+def _drop_training_without_provenance(record: dict[str, Any]) -> None:
+    if record.get("training_eligible") is not True:
+        return
+    if _string_list(record.get("provenance_source_ids")):
+        return
+    record["training_eligible"] = False
+    record["sample_weight"] = 0.0
+    record["training_exclusion_reason"] = "missing_provenance_source_ids"
+
+
+def _drop_unsealed_preference_pair(record: dict[str, Any]) -> None:
+    if record.get("record_type") != "blind_leader_preference_pair":
+        return
+    if record.get("training_eligible") is not True:
+        return
+    if _has_sealed_preference_pair(record):
+        return
+    record["training_eligible"] = False
+    record["sample_weight"] = 0.0
+    record["training_exclusion_reason"] = "sealed_preference_pair_missing"
+    reason = _first_string(record.get("eligibility_reason"))
+    suffix = "sealed_preference_pair_missing"
+    record["eligibility_reason"] = f"{reason}; {suffix}" if reason else suffix
+
+
+def _has_sealed_preference_pair(record: dict[str, Any]) -> bool:
+    payload = dict(record)
+    nested = record.get("payload")
+    if isinstance(nested, dict):
+        for key, value in nested.items():
+            payload.setdefault(key, value)
+    preferred = _first_string(
+        payload.get("blind_preferred_ticker"),
+        payload.get("blind_preferred_candidate_id"),
+    )
+    rejected = _first_string(
+        payload.get("blind_rejected_ticker"),
+        payload.get("blind_rejected_candidate_id"),
+    )
+    return preferred is not None and rejected is not None
+    reason = _first_string(record.get("eligibility_reason"))
+    suffix = "missing_provenance_source_ids"
+    record["eligibility_reason"] = f"{reason}; {suffix}" if reason else suffix
+
+
+def _materialize_bundle_level_provenance(
+    record: dict[str, Any],
+    *,
+    known_source_ids: set[str],
+) -> None:
+    if _string_list(record.get("provenance_source_ids")):
+        return
+    bundle_source_id: str | None = None
+    if _has_blind_payload(record) and "SRC-BLIND-SNAPSHOT" in known_source_ids:
+        bundle_source_id = "SRC-BLIND-SNAPSHOT"
+    elif _has_outcome_payload(record) and "SRC-GOLD-REFERENCE" in known_source_ids:
+        bundle_source_id = "SRC-GOLD-REFERENCE"
+    if bundle_source_id is None:
+        return
+    record["provenance_source_ids"] = [bundle_source_id]
+    record.setdefault("source_ids", [bundle_source_id])
 
 
 def _existing_direct_ingest_case(
@@ -284,6 +409,8 @@ def _existing_direct_ingest_case(
     source_rows_by_id: dict[str, dict[str, Any]],
     known_fact_ids: set[str],
     known_inference_ids: set[str],
+    fact_source_ids_by_id: dict[str, list[str]],
+    inference_fact_ids_by_id: dict[str, list[str]],
 ) -> dict[str, Any]:
     repaired = deepcopy(row)
     payload = _as_dict(repaired.get("payload"))
@@ -319,10 +446,6 @@ def _existing_direct_ingest_case(
     if company_name:
         repaired["company_name"] = company_name
 
-    source_ids = _collect_source_ids(repaired, payload, known_source_ids)
-    if source_ids:
-        repaired["provenance_source_ids"] = source_ids
-        repaired.setdefault("source_ids", source_ids)
     fact_ids = _filter_known(
         [
             *_string_list(repaired.get("source_fact_ids")),
@@ -350,6 +473,21 @@ def _existing_direct_ingest_case(
     if inference_ids:
         repaired["source_inference_ids"] = inference_ids
         repaired.setdefault("inference_ids", inference_ids)
+
+    source_ids = _collect_source_ids(repaired, payload, known_source_ids)
+    source_ids = _merge_unique(
+        source_ids,
+        _source_ids_from_fact_inference(
+            fact_ids,
+            inference_ids,
+            fact_source_ids_by_id=fact_source_ids_by_id,
+            inference_fact_ids_by_id=inference_fact_ids_by_id,
+            known_source_ids=known_source_ids,
+        ),
+    )
+    if source_ids:
+        repaired["provenance_source_ids"] = source_ids
+        repaired.setdefault("source_ids", source_ids)
 
     if repaired.get("training_eligible") is not True:
         repaired["sample_weight"] = 0.0
@@ -440,6 +578,25 @@ def _standardize_custom_record_type(
         )
         record["outcome_high_return_pct"] = _float_or_none(payload.get("high_return_pct"))
         record["upper_limit_touched"] = payload.get("upper_limit_touched")
+    elif original_type == "selected_negative_control_source":
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "negative_control_case"
+        record["training_target"] = "candidate_exclusion_calibration"
+        record["sample_weight"] = 1.0
+        record["screening_id"] = _first_string(payload.get("screening_id"))
+        record["candidate_lane"] = _first_string(payload.get("lane"))
+        record["rejection_or_exclusion_reason"] = _first_string(
+            payload.get("rejection_reason"),
+            payload.get("why_not_final_if_excluded"),
+        )
+        record["outcome_high_return_pct"] = _float_or_none(
+            payload.get("outcome_high_return_pct"),
+        )
+        record["upper_limit_touched"] = payload.get("upper_limit_touched")
+    elif original_type == "rankable_candidate_case":
+        record["training_eligible"] = False
+        record["sample_weight"] = 0.0
+        record["training_exclusion_reason"] = "rankable_candidate_audit_not_training_type"
     elif original_type == "outcome_leader_reverse_audit_case":
         _standardize_outcome_leader_reverse_audit(record, payload=payload)
 
@@ -513,6 +670,7 @@ def _repair_event_ticker_edge_cutoff(
     *,
     source_rows_by_id: dict[str, dict[str, Any]],
 ) -> None:
+    record["path_type"] = _event_ticker_edge_path_type(record)
     if record.get("training_eligible") is not True:
         record["sample_weight"] = 0.0
         return
@@ -552,12 +710,24 @@ def _issuer_day_case(
     known_source_ids: set[str],
     known_fact_ids: set[str],
     known_inference_ids: set[str],
+    fact_source_ids_by_id: dict[str, list[str]],
+    inference_fact_ids_by_id: dict[str, list[str]],
 ) -> dict[str, Any]:
     ticker = _first_string(row.get("ticker"), row.get("code"))
     company_name = _first_string(row.get("company_name"), row.get("name"))
     source_ids = _filter_known(_string_list(row.get("source_ids")), known_source_ids)
     fact_ids = _filter_known(_string_list(row.get("fact_ids")), known_fact_ids)
     inference_ids = _filter_known(_string_list(row.get("inference_ids")), known_inference_ids)
+    source_ids = _merge_unique(
+        source_ids,
+        _source_ids_from_fact_inference(
+            fact_ids,
+            inference_ids,
+            fact_source_ids_by_id=fact_source_ids_by_id,
+            inference_fact_ids_by_id=inference_fact_ids_by_id,
+            known_source_ids=known_source_ids,
+        ),
+    )
     training_eligible = bool(ticker and company_name and (source_ids or fact_ids))
     record_id = _first_string(row.get("record_id"), row.get("brain_delta_id")) or (
         f"REPAIRED-FINAL-{index:04d}"
@@ -621,11 +791,22 @@ def _outcome_leader_case(
     available_from: str | None,
     known_source_ids: set[str],
     known_fact_ids: set[str],
+    fact_source_ids_by_id: dict[str, list[str]],
 ) -> dict[str, Any]:
     ticker = _first_string(row.get("ticker"), row.get("code"))
     company_name = _first_string(row.get("company_name"), row.get("name"))
     source_ids = _filter_known(_string_list(row.get("source_ids")), known_source_ids)
     fact_ids = _filter_known(_string_list(row.get("fact_ids")), known_fact_ids)
+    source_ids = _merge_unique(
+        source_ids,
+        _source_ids_from_fact_inference(
+            fact_ids,
+            [],
+            fact_source_ids_by_id=fact_source_ids_by_id,
+            inference_fact_ids_by_id={},
+            known_source_ids=known_source_ids,
+        ),
+    )
     has_bound_news = bool(source_ids or fact_ids)
     record_id = _first_string(row.get("record_id"), row.get("brain_delta_id")) or (
         f"REPAIRED-LEADER-{index:04d}"
@@ -764,12 +945,23 @@ def _normalize_issuer_day_weights(records: list[dict[str, Any]]) -> None:
         key = (str(record.get("trade_date") or ""), str(record.get("ticker") or ""))
         groups.setdefault(key, []).append(record)
     for (trade_date, ticker), group in groups.items():
-        weight = 1.0 / len(group)
         group_id = f"{trade_date}:{ticker}"
-        for record in group:
+        weights = _fractional_weights(len(group))
+        for record, weight in zip(group, weights, strict=True):
             record["sample_weight"] = weight
             record["issuer_day_weight_group_id"] = group_id
             record["issuer_day_sample_weight_policy"] = "fractional_issuer_day_group"
+
+
+def _fractional_weights(count: int) -> list[float]:
+    if count <= 0:
+        return []
+    if count == 1:
+        return [1.0]
+    base = round(1.0 / count, 6)
+    weights = [base for _ in range(count - 1)]
+    weights.append(round(1.0 - sum(weights), 6))
+    return weights
 
 
 def _repair_semantic_audit_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -1147,6 +1339,58 @@ def _source_rows_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return indexed
 
 
+def _fact_source_ids_by_id(
+    rows: list[dict[str, Any]],
+    known_source_ids: set[str],
+) -> dict[str, list[str]]:
+    indexed: dict[str, list[str]] = {}
+    for row in rows:
+        fact_id = _first_string(row.get("fact_id"))
+        if fact_id is None:
+            continue
+        source_ids = _filter_known(
+            [
+                *_string_list(row.get("source_ids")),
+                *_string_list(row.get("source_row_ids")),
+                *[
+                    value
+                    for value in (
+                        _first_string(row.get("source_id")),
+                        _first_string(row.get("row_id")),
+                        _first_string(row.get("source_row_id")),
+                    )
+                    if value is not None
+                ],
+            ],
+            known_source_ids,
+        )
+        if source_ids:
+            indexed[fact_id] = _merge_unique(indexed.get(fact_id, []), source_ids)
+    return indexed
+
+
+def _inference_fact_ids_by_id(
+    rows: list[dict[str, Any]],
+    known_fact_ids: set[str],
+) -> dict[str, list[str]]:
+    indexed: dict[str, list[str]] = {}
+    for row in rows:
+        inference_id = _first_string(row.get("inference_id"))
+        if inference_id is None:
+            continue
+        fact_ids = _filter_known(
+            [
+                *_string_list(row.get("supporting_fact_ids")),
+                *_string_list(row.get("fact_ids")),
+                *_string_list(row.get("source_fact_ids")),
+            ],
+            known_fact_ids,
+        )
+        if fact_ids:
+            indexed[inference_id] = _merge_unique(indexed.get(inference_id, []), fact_ids)
+    return indexed
+
+
 def _collect_source_ids(
     record: dict[str, Any],
     payload: dict[str, Any],
@@ -1157,6 +1401,9 @@ def _collect_source_ids(
         *_string_list(record.get("source_ids")),
         *_string_list(record.get("source_ledger_ids")),
         *_string_list(record.get("source_row_ids")),
+        *_string_list(payload.get("provenance_source_ids")),
+        *_string_list(payload.get("source_ids")),
+        *_string_list(payload.get("source_ledger_ids")),
         *_string_list(payload.get("source_row_ids")),
     ]
     for key in ("source_row_id", "source_id", "news_source_id"):
@@ -1170,6 +1417,97 @@ def _collect_source_ids(
             source_ids.append(candidate)
             seen.add(candidate)
     return source_ids
+
+
+def _source_ids_from_fact_inference(
+    fact_ids: list[str],
+    inference_ids: list[str],
+    *,
+    fact_source_ids_by_id: dict[str, list[str]],
+    inference_fact_ids_by_id: dict[str, list[str]],
+    known_source_ids: set[str],
+) -> list[str]:
+    derived_fact_ids = list(fact_ids)
+    for inference_id in inference_ids:
+        derived_fact_ids = _merge_unique(
+            derived_fact_ids,
+            inference_fact_ids_by_id.get(inference_id, []),
+        )
+    source_ids: list[str] = []
+    for fact_id in derived_fact_ids:
+        source_ids = _merge_unique(source_ids, fact_source_ids_by_id.get(fact_id, []))
+    return _filter_known(source_ids, known_source_ids)
+
+
+def _event_ticker_edge_path_type(record: dict[str, Any]) -> str:
+    payload = _as_dict(record.get("payload"))
+    existing = _first_string(
+        record.get("path_type"),
+        payload.get("path_type"),
+        record.get("candidate_path_type"),
+        payload.get("candidate_path_type"),
+    )
+    if existing is not None and existing.upper() in EVENT_TICKER_EDGE_ALLOWED_PATH_TYPES:
+        return existing.upper()
+    edge_type = _first_string(
+        record.get("edge_type"),
+        payload.get("edge_type"),
+        record.get("relation_class"),
+        payload.get("relation_class"),
+        record.get("catalyst_type"),
+        payload.get("catalyst_type"),
+    )
+    normalized = edge_type.upper() if edge_type is not None else ""
+    if "DIRECT" in normalized:
+        return "DIRECT"
+    if "CONTINUATION" in normalized:
+        return "CONTINUATION"
+    if "FUNDAMENTAL" in normalized:
+        return "FUNDAMENTAL"
+    if "MEMORY" in normalized:
+        return "MARKET_MEMORY"
+    return "INFERRED_NEW"
+
+
+def _has_blind_payload(record: dict[str, Any]) -> bool:
+    payload = _as_dict(record.get("payload"))
+    blind_fields = (
+        "blind_rank",
+        "blind_score",
+        "safe_D1_features",
+        "blind_fact_ids",
+        "blind_inference_ids",
+        "blind_preferred_ticker",
+        "blind_rejected_ticker",
+        "blind_selected_ticker",
+    )
+    return any(field in record or field in payload for field in blind_fields)
+
+
+def _has_outcome_payload(record: dict[str, Any]) -> bool:
+    payload = _as_dict(record.get("payload"))
+    outcome_fields = (
+        "D_outcome",
+        "outcome",
+        "outcome_high_return_pct",
+        "outcome_close_return_pct",
+        "high_return_pct",
+        "close_return_pct",
+        "upper_limit_touched",
+        "outcome_winner_ticker",
+    )
+    return any(field in record or field in payload for field in outcome_fields)
+
+
+def _merge_unique(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            if item not in seen:
+                merged.append(item)
+                seen.add(item)
+    return merged
 
 
 def _source_row_cutoff_valid(row: dict[str, Any] | None) -> bool:

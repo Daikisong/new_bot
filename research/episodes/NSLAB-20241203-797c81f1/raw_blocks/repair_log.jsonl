@@ -1,0 +1,2 @@
+{"issue":"candidate_screening risk guard executed after decision branch","phase":"BLIND_SEMANTIC_REPAIR","repair":"risk guard moved before decision; ticker 144510 prior-employer and negative semiconductor/auto headlines excluded from final evidence chain","repair_id":"REPAIR-000001","result":"passed"}
+{"issue":"validator requires final Markdown marker block reparse","phase":"FINAL_REPARSE","repair":"two-pass assembly with marker parse, count/hash, and direct ingest mirror checks","repair_id":"REPAIR-000002","result":"pending_second_pass"}

@@ -1,0 +1,31 @@
+{
+  "artifact_type": "research_episode",
+  "automated_import_expected_to_pass": true,
+  "available_from": "2026-06-28T13:31:30Z",
+  "blind_snapshot_sha256": "d040186bfa1d0c5614f273c5ec19afd029bac2f02586178103bcf4b3a3b38882",
+  "blind_valid": true,
+  "brain_delta_record_count": 341,
+  "brain_eligible": true,
+  "bundle_status": "ACCEPT_FULL",
+  "calendar_date": "2024-12-03",
+  "counts": {
+    "brain_delta_count": 341,
+    "candidate_screening_count": 565,
+    "csv_row_count": 1181,
+    "final_watchlist_count": 20,
+    "material_review_count": 565,
+    "outcome_leader_census_count": 115,
+    "outcome_ledger_count": 2629
+  },
+  "direct_brain_ingest_ready": true,
+  "episode_id": "NSLAB-20241203-797c81f1",
+  "input_file": "news_20241203_20260628T131116Z_797c81f1.csv",
+  "input_sha256": "797c81f1396c37bba555ad943d12f938590c6b1264feaf489b02f75e211e806c",
+  "main_prompt_sha256": "48a3418387e9631f21ff8c72a8914ca9202f4643a9994d32f2bf4c15957d2cdd",
+  "outcome_research_performed": true,
+  "outcome_snapshot_sha256": "17f13b5b6e9d11e01c5b91ada96103d3b110cefc8bc50236401d94c74ffcbe5e",
+  "previous_trade_date": "2024-12-02",
+  "schema_version": "nslab.research_episode.v23",
+  "trade_date": "2024-12-03",
+  "training_eligible_record_count": 210
+}

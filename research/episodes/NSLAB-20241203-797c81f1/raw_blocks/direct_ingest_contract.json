@@ -1,0 +1,31 @@
+{
+  "automated_import_expected_to_pass": true,
+  "brain_eligible": true,
+  "bundle_status": "ACCEPT_FULL",
+  "direct_brain_ingest_ready": true,
+  "episode_id": "NSLAB-20241203-797c81f1",
+  "fatal_blockers": [],
+  "hard_gate_summary": {
+    "critical_error_count": 0,
+    "direct_event_weight_sum_mismatches": {},
+    "direct_ingest_contract_count_hash_parity_verified": true,
+    "direct_ingest_contract_validation_parity_verified": true,
+    "issuer_day_weight_sum_mismatches": {},
+    "record_count_hash_parity_ready": true,
+    "sample_weight_validation_status": "passed",
+    "schema_contract_verified": true,
+    "validator_exit_code": 0
+  },
+  "ingest_primary_records": [
+    "brain_delta.jsonl",
+    "research_episode.json",
+    "canonical_graph.json",
+    "postmortem_summary.json",
+    "validation_report.json"
+  ],
+  "record_count": 341,
+  "repair_scope": "packaging_normalization_only",
+  "requires_human_semantic_review": false,
+  "schema_version": "nslab.direct_ingest_contract.v1",
+  "training_eligible_record_count": 210
+}

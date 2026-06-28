@@ -1,0 +1,65 @@
+{
+  "brain_delta_population_manifest": {
+    "actual_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "candidate_ranking_error_case": 3,
+      "context_market_state_or_fact_case": 97,
+      "counterexample": 6,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "actual_source": "FINAL_MARKDOWN_BLOCK_REPARSE_PENDING",
+    "candidate_ranking_audit_nonfinal_count": 47,
+    "expected_source": "CANONICAL_GRAPH_PRESEAL_AND_POSTSEAL_COUNTS_RECOMPUTED_BY_VALIDATOR",
+    "final_evidence_witness_count": 20,
+    "final_watchlist_count": 20,
+    "outcome_to_news_audit_count": 115,
+    "outcome_to_news_candidate_generation_miss_count": 5,
+    "outcome_to_news_newsless_count": 104,
+    "outcome_to_news_ranking_miss_count": 2,
+    "rankable_candidate_count": 67,
+    "required_counts_by_record_type": {
+      "beneficiary_discovery_case": 4,
+      "blind_leader_preference_pair": 20,
+      "candidate_generation_error_case": 5,
+      "context_market_state_or_fact_case": 97,
+      "negative_control_case": 53,
+      "newsless_or_unexplained_case": 104,
+      "ranking_error_case": 2,
+      "supervised_direct_event_case": 20,
+      "supervised_issuer_day_case": 20,
+      "theme_formation_case": 7
+    },
+    "selected_negative_control_source_count": 53,
+    "underfilled_count": 0,
+    "underfilled_record_types": []
+  },
+  "created_at": "2026-06-28T13:31:27Z",
+  "final_hits": {
+    "HIT_HIGH15": 2,
+    "HIT_HIGH20": 1,
+    "HIT_UPPER_LIMIT_CLOSED": 1,
+    "MISS": 1,
+    "POSITIVE_BUT_NOT_LEADER": 15
+  },
+  "forecast_scorecard_count": 20,
+  "outcome_audit_class_counts": {
+    "CANDIDATE_GENERATION_MISS": 5,
+    "DIRECT_TICKER_HIT_FINAL": 4,
+    "NEWSLESS_OR_UNEXPLAINED": 104,
+    "RANKING_MISS": 1,
+    "SCREENED_OUT_BUT_WINNER": 1
+  },
+  "outcome_leader_census_count": 115,
+  "outcome_row_count": 2629,
+  "outcome_snapshot_sha256": "17f13b5b6e9d11e01c5b91ada96103d3b110cefc8bc50236401d94c74ffcbe5e",
+  "outcome_to_news_audit_count": 115,
+  "schema_version": "nslab.postmortem_summary.v1",
+  "trade_date": "2024-12-03"
+}

@@ -1,65 +1,128 @@
 # Brain Record Store Report
 
 - schema_version: `nslab.brain_record_store_report.v1`
-- record_count: `169`
-- raw_record_count: `169`
-- normalized_record_count: `169`
+- record_count: `968`
+- raw_record_count: `968`
+- normalized_record_count: `968`
 - raw_normalized_record_count_matches: `True`
 ## raw_record_counts_by_episode
 
 - EP-2991eb145f59: `1`
 - EP-f56c790fe2fc: `1`
+- NSLAB-20241111-cf85beec: `458`
+- NSLAB-20241203-797c81f1: `341`
 - NSLAB-20241204-06A72B21: `165`
 - NSLAB-20300110-SYNTH: `2`
 
-- all_record_count: `169`
+- all_record_count: `968`
 - staged_record_count: `0`
-- training_eligible_record_count: `144`
+- training_eligible_record_count: `649`
 ## record_counts_by_type
 
-- blind_leader_preference_pair: `21`
-- candidate_generation_error_case: `8`
-- context_market_state_or_fact_case: `17`
+- beneficiary_discovery_case: `6`
+- blind_leader_preference_pair: `61`
+- candidate_generation_error_case: `13`
+- candidate_ranking_error_case: `5`
+- context_market_state_or_fact_case: `134`
+- counterexample: `6`
 - memory_claim: `2`
-- negative_control_case: `13`
-- newsless_or_unexplained_case: `43`
-- ranking_error_case: `1`
-- supervised_direct_event_case: `28`
-- supervised_issuer_day_case: `29`
-- theme_formation_case: `7`
+- negative_control_case: `106`
+- newsless_or_unexplained_case: `214`
+- rankable_candidate_case: `54`
+- ranking_error_case: `7`
+- supervised_direct_event_case: `277`
+- supervised_issuer_day_case: `69`
+- theme_formation_case: `14`
 
 ## record_counts_by_evidence_phase
 
 - AUDIT: `2`
-- POSTMORTEM: `167`
+- BLIND: `145`
+- POSTMORTEM: `821`
 
 ## record_counts_by_training_target
 
-- candidate_generation_correction: `8`
-- candidate_ranking_correction: `1`
-- context_market_state_or_fact: `17`
-- direct_event_response: `28`
-- issuer_day_price_response: `29`
+- UNKNOWN: `71`
+- candidate_exclusion_calibration: `40`
+- candidate_generation_correction: `13`
+- candidate_ranking_correction: `7`
+- context_market_state_or_fact: `134`
+- direct_event_response: `277`
+- issuer_day_price_response: `69`
 - legacy_catalog_only: `2`
-- negative_control_calibration: `13`
-- newsless_outcome_calibration: `43`
-- outcome_preferred_candidate: `21`
-- theme_formation_response: `7`
+- negative_control_calibration: `66`
+- newsless_outcome_calibration: `214`
+- outcome_preferred_candidate: `61`
+- theme_formation_response: `14`
 
 ## record_counts_by_typed_payload_status
 
-- KNOWN_TYPED_PAYLOAD: `169`
+- KNOWN_TYPED_PAYLOAD: `914`
+- UNKNOWN_TYPED_PAYLOAD: `54`
 
-- unknown_typed_payload_count: `0`
+- unknown_typed_payload_count: `54`
 - raw_only_record_count: `0`
-- ineligible_record_count: `25`
-- all_unknown_typed_payload_count: `0`
+- ineligible_record_count: `319`
+- all_unknown_typed_payload_count: `54`
 - all_raw_only_record_count: `0`
 - staged_unknown_typed_payload_count: `0`
 - staged_raw_only_record_count: `0`
 ## unknown_typed_payload_record_ids
 
-- none
+- `NSLAB-20241111-cf85beec__BD-000250`
+- `NSLAB-20241111-cf85beec__BD-000251`
+- `NSLAB-20241111-cf85beec__BD-000252`
+- `NSLAB-20241111-cf85beec__BD-000253`
+- `NSLAB-20241111-cf85beec__BD-000254`
+- `NSLAB-20241111-cf85beec__BD-000255`
+- `NSLAB-20241111-cf85beec__BD-000256`
+- `NSLAB-20241111-cf85beec__BD-000257`
+- `NSLAB-20241111-cf85beec__BD-000258`
+- `NSLAB-20241111-cf85beec__BD-000259`
+- `NSLAB-20241111-cf85beec__BD-000260`
+- `NSLAB-20241111-cf85beec__BD-000261`
+- `NSLAB-20241111-cf85beec__BD-000262`
+- `NSLAB-20241111-cf85beec__BD-000263`
+- `NSLAB-20241111-cf85beec__BD-000264`
+- `NSLAB-20241111-cf85beec__BD-000265`
+- `NSLAB-20241111-cf85beec__BD-000266`
+- `NSLAB-20241111-cf85beec__BD-000267`
+- `NSLAB-20241111-cf85beec__BD-000268`
+- `NSLAB-20241111-cf85beec__BD-000269`
+- `NSLAB-20241111-cf85beec__BD-000270`
+- `NSLAB-20241111-cf85beec__BD-000271`
+- `NSLAB-20241111-cf85beec__BD-000272`
+- `NSLAB-20241111-cf85beec__BD-000273`
+- `NSLAB-20241111-cf85beec__BD-000274`
+- `NSLAB-20241111-cf85beec__BD-000275`
+- `NSLAB-20241111-cf85beec__BD-000276`
+- `NSLAB-20241111-cf85beec__BD-000277`
+- `NSLAB-20241111-cf85beec__BD-000278`
+- `NSLAB-20241111-cf85beec__BD-000279`
+- `NSLAB-20241111-cf85beec__BD-000280`
+- `NSLAB-20241111-cf85beec__BD-000281`
+- `NSLAB-20241111-cf85beec__BD-000282`
+- `NSLAB-20241111-cf85beec__BD-000283`
+- `NSLAB-20241111-cf85beec__BD-000284`
+- `NSLAB-20241111-cf85beec__BD-000285`
+- `NSLAB-20241111-cf85beec__BD-000286`
+- `NSLAB-20241111-cf85beec__BD-000287`
+- `NSLAB-20241111-cf85beec__BD-000288`
+- `NSLAB-20241111-cf85beec__BD-000289`
+- `NSLAB-20241111-cf85beec__BD-000290`
+- `NSLAB-20241111-cf85beec__BD-000292`
+- `NSLAB-20241111-cf85beec__BD-000293`
+- `NSLAB-20241111-cf85beec__BD-000294`
+- `NSLAB-20241111-cf85beec__BD-000295`
+- `NSLAB-20241111-cf85beec__BD-000296`
+- `NSLAB-20241111-cf85beec__BD-000297`
+- `NSLAB-20241111-cf85beec__BD-000298`
+- `NSLAB-20241111-cf85beec__BD-000299`
+- `NSLAB-20241111-cf85beec__BD-000300`
+- `NSLAB-20241111-cf85beec__BD-000301`
+- `NSLAB-20241111-cf85beec__BD-000303`
+- `NSLAB-20241111-cf85beec__BD-000304`
+- `NSLAB-20241111-cf85beec__BD-000305`
 
 ## raw_only_record_ids
 
@@ -71,7 +134,60 @@
 
 ## all_unknown_typed_payload_record_ids
 
-- none
+- `NSLAB-20241111-cf85beec__BD-000250`
+- `NSLAB-20241111-cf85beec__BD-000251`
+- `NSLAB-20241111-cf85beec__BD-000252`
+- `NSLAB-20241111-cf85beec__BD-000253`
+- `NSLAB-20241111-cf85beec__BD-000254`
+- `NSLAB-20241111-cf85beec__BD-000255`
+- `NSLAB-20241111-cf85beec__BD-000256`
+- `NSLAB-20241111-cf85beec__BD-000257`
+- `NSLAB-20241111-cf85beec__BD-000258`
+- `NSLAB-20241111-cf85beec__BD-000259`
+- `NSLAB-20241111-cf85beec__BD-000260`
+- `NSLAB-20241111-cf85beec__BD-000261`
+- `NSLAB-20241111-cf85beec__BD-000262`
+- `NSLAB-20241111-cf85beec__BD-000263`
+- `NSLAB-20241111-cf85beec__BD-000264`
+- `NSLAB-20241111-cf85beec__BD-000265`
+- `NSLAB-20241111-cf85beec__BD-000266`
+- `NSLAB-20241111-cf85beec__BD-000267`
+- `NSLAB-20241111-cf85beec__BD-000268`
+- `NSLAB-20241111-cf85beec__BD-000269`
+- `NSLAB-20241111-cf85beec__BD-000270`
+- `NSLAB-20241111-cf85beec__BD-000271`
+- `NSLAB-20241111-cf85beec__BD-000272`
+- `NSLAB-20241111-cf85beec__BD-000273`
+- `NSLAB-20241111-cf85beec__BD-000274`
+- `NSLAB-20241111-cf85beec__BD-000275`
+- `NSLAB-20241111-cf85beec__BD-000276`
+- `NSLAB-20241111-cf85beec__BD-000277`
+- `NSLAB-20241111-cf85beec__BD-000278`
+- `NSLAB-20241111-cf85beec__BD-000279`
+- `NSLAB-20241111-cf85beec__BD-000280`
+- `NSLAB-20241111-cf85beec__BD-000281`
+- `NSLAB-20241111-cf85beec__BD-000282`
+- `NSLAB-20241111-cf85beec__BD-000283`
+- `NSLAB-20241111-cf85beec__BD-000284`
+- `NSLAB-20241111-cf85beec__BD-000285`
+- `NSLAB-20241111-cf85beec__BD-000286`
+- `NSLAB-20241111-cf85beec__BD-000287`
+- `NSLAB-20241111-cf85beec__BD-000288`
+- `NSLAB-20241111-cf85beec__BD-000289`
+- `NSLAB-20241111-cf85beec__BD-000290`
+- `NSLAB-20241111-cf85beec__BD-000292`
+- `NSLAB-20241111-cf85beec__BD-000293`
+- `NSLAB-20241111-cf85beec__BD-000294`
+- `NSLAB-20241111-cf85beec__BD-000295`
+- `NSLAB-20241111-cf85beec__BD-000296`
+- `NSLAB-20241111-cf85beec__BD-000297`
+- `NSLAB-20241111-cf85beec__BD-000298`
+- `NSLAB-20241111-cf85beec__BD-000299`
+- `NSLAB-20241111-cf85beec__BD-000300`
+- `NSLAB-20241111-cf85beec__BD-000301`
+- `NSLAB-20241111-cf85beec__BD-000303`
+- `NSLAB-20241111-cf85beec__BD-000304`
+- `NSLAB-20241111-cf85beec__BD-000305`
 
 ## all_raw_only_record_ids
 
@@ -87,28 +203,28 @@
 
 ## warehouse_counts
 
-- beneficiary_cases: `0`
-- brain_records: `169`
-- company_memory: `5`
-- company_memory_delta_records: `0`
-- company_memory_delta_written: `0`
-- daily_outcomes: `1`
-- direct_event_cases: `28`
-- error_cases: `9`
-- event_sources: `0`
-- event_ticker_edges: `0`
 - events: `0`
-- issuer_day_cases: `29`
-- leader_pairs: `21`
+- event_sources: `0`
+- research_episodes: `2`
+- event_ticker_edges: `0`
 - market_memory: `5`
 - mechanism_memory: `6`
-- memory_claims: `2`
+- company_memory: `5`
 - predictions: `1`
-- record_coverage: `13`
-- record_provenance: `183`
-- research_episodes: `2`
+- daily_outcomes: `1`
+- company_memory_delta_records: `0`
+- company_memory_delta_written: `0`
+- brain_records: `968`
+- issuer_day_cases: `69`
+- direct_event_cases: `277`
+- theme_formation_cases: `14`
+- beneficiary_cases: `6`
+- leader_pairs: `61`
+- error_cases: `25`
+- memory_claims: `8`
 - research_questions: `0`
-- theme_formation_cases: `7`
+- record_provenance: `853`
+- record_coverage: `36`
 
 - dropped_record_count: `0`
 - extra_normalized_record_count: `0`
@@ -128,16 +244,16 @@
 - schema_version: `nslab.record_store_audit.v1`
 - passed: `True`
 - deep: `True`
-- record_count: `169`
-- all_record_count: `169`
+- record_count: `968`
+- all_record_count: `968`
 - staged_record_count: `0`
-- episode_count: `4`
-- training_eligible_record_count: `144`
+- episode_count: `6`
+- training_eligible_record_count: `649`
 - duplicate_record_ids: `[]`
 - unknown_training_enabled_record_ids: `[]`
-- unknown_typed_payload_record_ids: `[]`
+- unknown_typed_payload_record_ids: `['NSLAB-20241111-cf85beec__BD-000250', 'NSLAB-20241111-cf85beec__BD-000251', 'NSLAB-20241111-cf85beec__BD-000252', 'NSLAB-20241111-cf85beec__BD-000253', 'NSLAB-20241111-cf85beec__BD-000254', 'NSLAB-20241111-cf85beec__BD-000255', 'NSLAB-20241111-cf85beec__BD-000256', 'NSLAB-20241111-cf85beec__BD-000257', 'NSLAB-20241111-cf85beec__BD-000258', 'NSLAB-20241111-cf85beec__BD-000259', 'NSLAB-20241111-cf85beec__BD-000260', 'NSLAB-20241111-cf85beec__BD-000261', 'NSLAB-20241111-cf85beec__BD-000262', 'NSLAB-20241111-cf85beec__BD-000263', 'NSLAB-20241111-cf85beec__BD-000264', 'NSLAB-20241111-cf85beec__BD-000265', 'NSLAB-20241111-cf85beec__BD-000266', 'NSLAB-20241111-cf85beec__BD-000267', 'NSLAB-20241111-cf85beec__BD-000268', 'NSLAB-20241111-cf85beec__BD-000269', 'NSLAB-20241111-cf85beec__BD-000270', 'NSLAB-20241111-cf85beec__BD-000271', 'NSLAB-20241111-cf85beec__BD-000272', 'NSLAB-20241111-cf85beec__BD-000273', 'NSLAB-20241111-cf85beec__BD-000274', 'NSLAB-20241111-cf85beec__BD-000275', 'NSLAB-20241111-cf85beec__BD-000276', 'NSLAB-20241111-cf85beec__BD-000277', 'NSLAB-20241111-cf85beec__BD-000278', 'NSLAB-20241111-cf85beec__BD-000279', 'NSLAB-20241111-cf85beec__BD-000280', 'NSLAB-20241111-cf85beec__BD-000281', 'NSLAB-20241111-cf85beec__BD-000282', 'NSLAB-20241111-cf85beec__BD-000283', 'NSLAB-20241111-cf85beec__BD-000284', 'NSLAB-20241111-cf85beec__BD-000285', 'NSLAB-20241111-cf85beec__BD-000286', 'NSLAB-20241111-cf85beec__BD-000287', 'NSLAB-20241111-cf85beec__BD-000288', 'NSLAB-20241111-cf85beec__BD-000289', 'NSLAB-20241111-cf85beec__BD-000290', 'NSLAB-20241111-cf85beec__BD-000292', 'NSLAB-20241111-cf85beec__BD-000293', 'NSLAB-20241111-cf85beec__BD-000294', 'NSLAB-20241111-cf85beec__BD-000295', 'NSLAB-20241111-cf85beec__BD-000296', 'NSLAB-20241111-cf85beec__BD-000297', 'NSLAB-20241111-cf85beec__BD-000298', 'NSLAB-20241111-cf85beec__BD-000299', 'NSLAB-20241111-cf85beec__BD-000300', 'NSLAB-20241111-cf85beec__BD-000301', 'NSLAB-20241111-cf85beec__BD-000303', 'NSLAB-20241111-cf85beec__BD-000304', 'NSLAB-20241111-cf85beec__BD-000305']`
 - raw_only_record_ids: `[]`
-- all_unknown_typed_payload_record_ids: `[]`
+- all_unknown_typed_payload_record_ids: `['NSLAB-20241111-cf85beec__BD-000250', 'NSLAB-20241111-cf85beec__BD-000251', 'NSLAB-20241111-cf85beec__BD-000252', 'NSLAB-20241111-cf85beec__BD-000253', 'NSLAB-20241111-cf85beec__BD-000254', 'NSLAB-20241111-cf85beec__BD-000255', 'NSLAB-20241111-cf85beec__BD-000256', 'NSLAB-20241111-cf85beec__BD-000257', 'NSLAB-20241111-cf85beec__BD-000258', 'NSLAB-20241111-cf85beec__BD-000259', 'NSLAB-20241111-cf85beec__BD-000260', 'NSLAB-20241111-cf85beec__BD-000261', 'NSLAB-20241111-cf85beec__BD-000262', 'NSLAB-20241111-cf85beec__BD-000263', 'NSLAB-20241111-cf85beec__BD-000264', 'NSLAB-20241111-cf85beec__BD-000265', 'NSLAB-20241111-cf85beec__BD-000266', 'NSLAB-20241111-cf85beec__BD-000267', 'NSLAB-20241111-cf85beec__BD-000268', 'NSLAB-20241111-cf85beec__BD-000269', 'NSLAB-20241111-cf85beec__BD-000270', 'NSLAB-20241111-cf85beec__BD-000271', 'NSLAB-20241111-cf85beec__BD-000272', 'NSLAB-20241111-cf85beec__BD-000273', 'NSLAB-20241111-cf85beec__BD-000274', 'NSLAB-20241111-cf85beec__BD-000275', 'NSLAB-20241111-cf85beec__BD-000276', 'NSLAB-20241111-cf85beec__BD-000277', 'NSLAB-20241111-cf85beec__BD-000278', 'NSLAB-20241111-cf85beec__BD-000279', 'NSLAB-20241111-cf85beec__BD-000280', 'NSLAB-20241111-cf85beec__BD-000281', 'NSLAB-20241111-cf85beec__BD-000282', 'NSLAB-20241111-cf85beec__BD-000283', 'NSLAB-20241111-cf85beec__BD-000284', 'NSLAB-20241111-cf85beec__BD-000285', 'NSLAB-20241111-cf85beec__BD-000286', 'NSLAB-20241111-cf85beec__BD-000287', 'NSLAB-20241111-cf85beec__BD-000288', 'NSLAB-20241111-cf85beec__BD-000289', 'NSLAB-20241111-cf85beec__BD-000290', 'NSLAB-20241111-cf85beec__BD-000292', 'NSLAB-20241111-cf85beec__BD-000293', 'NSLAB-20241111-cf85beec__BD-000294', 'NSLAB-20241111-cf85beec__BD-000295', 'NSLAB-20241111-cf85beec__BD-000296', 'NSLAB-20241111-cf85beec__BD-000297', 'NSLAB-20241111-cf85beec__BD-000298', 'NSLAB-20241111-cf85beec__BD-000299', 'NSLAB-20241111-cf85beec__BD-000300', 'NSLAB-20241111-cf85beec__BD-000301', 'NSLAB-20241111-cf85beec__BD-000303', 'NSLAB-20241111-cf85beec__BD-000304', 'NSLAB-20241111-cf85beec__BD-000305']`
 - all_raw_only_record_ids: `[]`
 - staged_unknown_typed_payload_record_ids: `[]`
 - staged_raw_only_record_ids: `[]`
@@ -180,6 +296,6 @@
 - backdated_company_memory_delta_known_at_record_ids: `[]`
 - issuer_day_event_level_weight_mismatch_record_ids: `[]`
 - findings: `[]`
-- stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 144, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 25}`
-- all_stats: `{'record_count': 169, 'episode_count': 4, 'training_eligible_record_count': 144, 'record_counts_by_type': {'blind_leader_preference_pair': 21, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'memory_claim': 2, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 29, 'theme_formation_case': 7}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 169}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'POSTMORTEM': 167}, 'record_counts_by_training_target': {'candidate_generation_correction': 8, 'candidate_ranking_correction': 1, 'context_market_state_or_fact': 17, 'direct_event_response': 28, 'issuer_day_price_response': 29, 'legacy_catalog_only': 2, 'negative_control_calibration': 13, 'newsless_outcome_calibration': 43, 'outcome_preferred_candidate': 21, 'theme_formation_response': 7}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 25}`
+- stats: `{'record_count': 968, 'episode_count': 6, 'training_eligible_record_count': 649, 'record_counts_by_type': {'beneficiary_discovery_case': 6, 'blind_leader_preference_pair': 61, 'candidate_generation_error_case': 13, 'candidate_ranking_error_case': 5, 'context_market_state_or_fact_case': 134, 'counterexample': 6, 'memory_claim': 2, 'negative_control_case': 106, 'newsless_or_unexplained_case': 214, 'rankable_candidate_case': 54, 'ranking_error_case': 7, 'supervised_direct_event_case': 277, 'supervised_issuer_day_case': 69, 'theme_formation_case': 14}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 914, 'UNKNOWN_TYPED_PAYLOAD': 54}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'BLIND': 145, 'POSTMORTEM': 821}, 'record_counts_by_training_target': {'UNKNOWN': 71, 'candidate_exclusion_calibration': 40, 'candidate_generation_correction': 13, 'candidate_ranking_correction': 7, 'context_market_state_or_fact': 134, 'direct_event_response': 277, 'issuer_day_price_response': 69, 'legacy_catalog_only': 2, 'negative_control_calibration': 66, 'newsless_outcome_calibration': 214, 'outcome_preferred_candidate': 61, 'theme_formation_response': 14}, 'unknown_typed_payload_count': 54, 'raw_only_record_count': 0, 'ineligible_record_count': 319}`
+- all_stats: `{'record_count': 968, 'episode_count': 6, 'training_eligible_record_count': 649, 'record_counts_by_type': {'beneficiary_discovery_case': 6, 'blind_leader_preference_pair': 61, 'candidate_generation_error_case': 13, 'candidate_ranking_error_case': 5, 'context_market_state_or_fact_case': 134, 'counterexample': 6, 'memory_claim': 2, 'negative_control_case': 106, 'newsless_or_unexplained_case': 214, 'rankable_candidate_case': 54, 'ranking_error_case': 7, 'supervised_direct_event_case': 277, 'supervised_issuer_day_case': 69, 'theme_formation_case': 14}, 'record_counts_by_typed_payload_status': {'KNOWN_TYPED_PAYLOAD': 914, 'UNKNOWN_TYPED_PAYLOAD': 54}, 'record_counts_by_evidence_phase': {'AUDIT': 2, 'BLIND': 145, 'POSTMORTEM': 821}, 'record_counts_by_training_target': {'UNKNOWN': 71, 'candidate_exclusion_calibration': 40, 'candidate_generation_correction': 13, 'candidate_ranking_correction': 7, 'context_market_state_or_fact': 134, 'direct_event_response': 277, 'issuer_day_price_response': 69, 'legacy_catalog_only': 2, 'negative_control_calibration': 66, 'newsless_outcome_calibration': 214, 'outcome_preferred_candidate': 61, 'theme_formation_response': 14}, 'unknown_typed_payload_count': 54, 'raw_only_record_count': 0, 'ineligible_record_count': 319}`
 - staged_stats: `{'record_count': 0, 'episode_count': 0, 'training_eligible_record_count': 0, 'record_counts_by_type': {}, 'record_counts_by_typed_payload_status': {}, 'record_counts_by_evidence_phase': {}, 'record_counts_by_training_target': {}, 'unknown_typed_payload_count': 0, 'raw_only_record_count': 0, 'ineligible_record_count': 0}`
