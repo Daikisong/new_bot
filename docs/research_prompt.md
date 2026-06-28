@@ -84,6 +84,9 @@ direct_ingest_contract.json.hard_gate_summary.schema_contract_verified == true
 direct_ingest_contract.json.hard_gate_summary.record_count_hash_parity_ready == true
 direct_ingest_contract.json.hard_gate_summary.direct_ingest_contract_validation_parity_verified == true
 direct_ingest_contract.json.hard_gate_summary.direct_ingest_contract_count_hash_parity_verified == true
+direct_ingest_contract.json.hard_gate_summary.sample_weight_validation_status == "passed"
+direct_ingest_contract.json.hard_gate_summary.issuer_day_weight_sum_mismatches == {}
+direct_ingest_contract.json.hard_gate_summary.direct_event_weight_sum_mismatches == {}
 direct_ingest_contract.json.hard_gate_summary.validator_exit_code == 0
 direct_ingest_contract.json.hard_gate_summary.critical_error_count == 0
 ```
@@ -1166,6 +1169,9 @@ outcome_ledger_count == D_snapshot_population_count
 outcome_to_news_audit_count == outcome_leader_census_count
 brain_delta_actual_record_count >= expected_brain_delta_min
 brain_delta_record_type_counts_match_final_block == true
+sample_weight_validation_status == passed
+issuer_day_weight_sum_mismatches == {}
+direct_event_weight_sum_mismatches == {}
 section_population_empty_without_audit_count == 0
 ```
 
@@ -1181,6 +1187,9 @@ candidate_ranking_audit_nonfinal_reason_verified
 candidate_ranking_audit_alias_zero_verified
 brain_delta_record_type_canonical_verified
 brain_delta_noncanonical_alias_zero_verified
+sample_weight_validation_status_verified
+issuer_day_weight_sum_mismatches_empty_verified
+direct_event_weight_sum_mismatches_empty_verified
 direct_ingest_contract_count_hash_mirror_verified
 direct_ingest_contract_validation_parity_verified
 ```
@@ -1244,6 +1253,9 @@ accept_full_allowed = (
     and validation_report_boolean_map_only == false
     and direct_ingest_contract_count_hash_mirror_verified
     and brain_delta_actual_record_count >= expected_brain_delta_min
+    and sample_weight_validation_status == "passed"
+    and issuer_day_weight_sum_mismatches == {}
+    and direct_event_weight_sum_mismatches == {}
     and report_sections_have_population_refs
     and final_markdown_reparse_validator_passed
     and fatal_blockers == []
@@ -1781,6 +1793,9 @@ semantic_regression_tests를 실행하지 않고 expected pass로 선언
   "semantic_regression_fixture_fail_count": 0,
   "semantic_regression_unexpected_pass_count": 0,
   "semantic_regression_unexpected_fail_count": 0,
+  "sample_weight_validation_status": "passed",
+  "issuer_day_weight_sum_mismatches": {},
+  "direct_event_weight_sum_mismatches": {},
   "quote_role_catalyst_matrix_verified": true,
   "article_subject_local_predicate_owner_verified": true,
   "final_economic_mechanism_supported_verified": true
@@ -1800,6 +1815,9 @@ v27_brain_delta_numeric_validator_passed == true
 v30_final_evidence_witness_passed == true
 v30_candidate_semantic_witness_passed == true
 v30_semantic_regression_tests_passed == true
+sample_weight_validation_status == passed
+issuer_day_weight_sum_mismatches == {}
+direct_event_weight_sum_mismatches == {}
 final_semantic_audit_fail_count == 0
 final_forbidden_quote_role_count == 0
 critical_error_count == 0
@@ -1807,6 +1825,95 @@ validator_exit_code == 0
 ```
 
 하나라도 false이면 `ACCEPT_FULL`을 쓰지 않는다.
+
+## V30.10 direct-ingest sample weight parity lock
+
+이 섹션은 `V30.9 v30 최종 ACCEPT_FULL 판정식`, `V27 BRAIN-DELTA NUMERIC VALIDATOR LOCK`, `G11 최종 ACCEPT_FULL 판정식`보다 우선한다.
+
+`news-scalping-lab` importer는 `brain_delta.jsonl`을 정규화한 뒤 training sample weight를 검사한다. final bundle validator도 같은 검사를 최종 Markdown block 재파싱 결과로 직접 수행해야 한다. `validation_report.json` 또는 `direct_ingest_contract.json`의 자기 선언만으로 통과시킬 수 없다.
+
+최종 validator 계산식:
+
+```python
+records = parse_jsonl(final_markdown_block["brain_delta.jsonl"])
+
+issuer_day_groups = group_by(
+    records where record_type == "supervised_issuer_day_case"
+    and training_eligible is true,
+    key=(trade_date, ticker)
+)
+
+direct_event_groups = group_by(
+    records where record_type == "supervised_direct_event_case"
+    and training_eligible is true,
+    key=(trade_date, ticker)
+)
+
+issuer_day_weight_sum_mismatches = {
+    key: sum(numeric(sample_weight))
+    for key, rows in issuer_day_groups
+    if abs(sum(numeric(sample_weight)) - 1.0) > 1e-9
+}
+
+direct_event_weight_sum_mismatches = {
+    key: sum(numeric(sample_weight))
+    for key, rows in direct_event_groups
+    if abs(sum(numeric(sample_weight)) - 1.0) > 1e-9
+}
+
+sample_weight_validation_status = "passed" if (
+    issuer_day_weight_sum_mismatches == {}
+    and direct_event_weight_sum_mismatches == {}
+) else "failed"
+```
+
+`supervised_issuer_day_case`는 같은 `(trade_date, ticker)`당 학습 가중치 합이 정확히 1이어야 한다.
+
+`supervised_direct_event_case`는 같은 `(trade_date, ticker)`에 training-eligible event가 N개 있으면 각 event record의 top-level `sample_weight`를 `1 / N`으로 둔다. 예를 들어 같은 날짜 같은 종목 direct event가 6개면 각 record는 `sample_weight = 0.1666666667`이어야 하며 합은 1이다. 모든 direct event record를 `sample_weight = 1.0`으로 쓰면 repo importer에서 거부된다.
+
+payload 내부에 `sample_weight`를 넣어도 top-level `sample_weight`가 없거나 다른 값이면 불완전하다. `brain_delta.jsonl` 각 record의 top-level `sample_weight`를 최종 기준으로 삼고, payload mirror가 있으면 같은 값이어야 한다.
+
+`validation_report.json.checks`에는 최소 다음 critical check가 있어야 한다.
+
+```text
+sample_weight_validation_status_verified
+issuer_day_weight_sum_mismatches_empty_verified
+direct_event_weight_sum_mismatches_empty_verified
+```
+
+각 check는 final Markdown의 `brain_delta.jsonl` block을 다시 parse해서 계산한 `actual`, prompt/importer 계약의 `expected`, `actual_source="FINAL_MARKDOWN_BLOCK_REPARSE"`, `expected_source="NSLAB_REPO_IMPORTER_SAMPLE_WEIGHT_POLICY"`를 가진다.
+
+`direct_ingest_contract.json.hard_gate_summary`와 `record_import_manifest`에는 다음 mirror 값을 기록한다.
+
+```json
+{
+  "sample_weight_validation_status": "passed",
+  "issuer_day_weight_sum_mismatches": {},
+  "direct_event_weight_sum_mismatches": {}
+}
+```
+
+금지:
+
+```text
+same ticker 여러 direct event를 모두 sample_weight=1.0으로 기록
+direct_event_weight_sum_mismatches가 비어 있지 않은데 ACCEPT_FULL 선언
+sample_weight_validation_status를 계산하지 않고 passed로 선언
+validation_report에는 passed인데 direct_ingest_contract mirror가 없음
+```
+
+실패 시 처리:
+
+```text
+1. brain_delta.jsonl을 canonical graph에서 다시 생성한다.
+2. training_eligible supervised_direct_event_case를 (trade_date, ticker)로 그룹화한다.
+3. 각 그룹 N개 record의 sample_weight를 1/N으로 재기입한다.
+4. supervised_issuer_day_case 그룹 합도 1인지 재계산한다.
+5. validation_report, direct_ingest_contract, bundle_manifest hash/count를 다시 쓴다.
+6. final Markdown을 다시 열어 parse하고 sample_weight_validation_status == passed일 때만 ACCEPT_FULL을 허용한다.
+```
+
+이 오류는 BLIND 오염이 아니라 렌더/validator 수리 가능 오류다. 바로 quarantine으로 끝내지 말고 위 절차로 자동 수리한다. 수리 후에도 mismatch가 남으면 `QUARANTINE_SAMPLE_WEIGHT_VALIDATION_FAILED`이며 `brain_eligible=false`, `direct_brain_ingest_ready=false`, `ACCEPT_FULL` 금지다.
 
 
 ────────────────────────────────────────
@@ -6174,6 +6281,7 @@ direct_ingest_contract의 fatal_blockers를 지워서 ready=true로 만들기
 - fact quote 미존재 또는 offset 불일치
 - validator self-reference
 - brain_delta record population 부족
+- issuer_day/direct_event sample_weight group sum 불일치
 
 개별 record downgrade 가능:
 - 특정 후보의 인과가 약함
@@ -6833,6 +6941,9 @@ accept_full_allowed = (
     and markdown_final_watchlist_table_count_consistency_verified
     and markdown_final_watchlist_size <= 20
     and validator_expected_source_not_generated_output
+    and sample_weight_validation_status == "passed"
+    and issuer_day_weight_sum_mismatches == {}
+    and direct_event_weight_sum_mismatches == {}
     and validator_exit_code == 0
     and critical_error_count == 0
     and context_contamination_count == 0
@@ -7316,6 +7427,7 @@ Markdown/JSON count 불일치
 ID/source/fact orphan
 placeholder 또는 incomplete sentence
 direct_ingest_contract count/hash 불일치
+issuer_day 또는 direct_event sample_weight 합계 불일치
 ```
 
 수리 불가능한 오류:
