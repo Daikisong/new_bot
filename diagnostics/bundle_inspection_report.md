@@ -2,19 +2,19 @@
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
 - status: `validation_passed`
-- path: `docs/example2.md`
+- path: `docs/pilot_repairs/20241218_nslab_episode_bundle.repaired.md`
 - bundle_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
-- episode_schema_version: `None`
+- episode_schema_version: `nslab.research_episode.v23`
 - adapter: `v23-direct-ingest`
 - supported: `True`
 - forward_compatible_raw_only: `False`
-- episode_id: `NSLAB-20241204-06A72B21`
-- trade_date: `2024-12-04`
-- raw_record_count: `165`
-- normalized_record_count: `165`
+- episode_id: `NSLAB-20241218-0afe77e4`
+- trade_date: `2024-12-18`
+- raw_record_count: `222`
+- normalized_record_count: `222`
 - raw_normalized_record_count_matches: `True`
-- training_eligible_record_count: `142`
+- training_eligible_record_count: `195`
 ## raw_record_ids
 
 - `BD-000001`
@@ -182,6 +182,41 @@
 - `BD-000163`
 - `BD-000164`
 - `BD-000165`
+- `BD-000166`
+- `BD-000167`
+- `BD-000168`
+- `BD-000169`
+- `BD-000170`
+- `BD-000171`
+- `BD-000172`
+- `BD-000173`
+- `BD-000174`
+- `BD-000175`
+- `BD-000176`
+- `BD-000177`
+- `BD-000178`
+- `BD-000179`
+- `BD-000180`
+- `BD-000181`
+- `BD-000182`
+- `BD-000183`
+- `BD-000184`
+- `BD-000185`
+- `BD-000186`
+- `BD-000187`
+- `BD-000188`
+- `BD-000189`
+- `BD-000190`
+- `BD-000191`
+- `BD-000192`
+- `BD-000193`
+- `BD-000194`
+- `BD-000195`
+- `BD-000196`
+- `BD-000197`
+- `BD-000198`
+- `BD-000199`
+- `BD-000200`
 
 ## normalized_record_ids
 
@@ -350,6 +385,41 @@
 - `BD-000163`
 - `BD-000164`
 - `BD-000165`
+- `BD-000166`
+- `BD-000167`
+- `BD-000168`
+- `BD-000169`
+- `BD-000170`
+- `BD-000171`
+- `BD-000172`
+- `BD-000173`
+- `BD-000174`
+- `BD-000175`
+- `BD-000176`
+- `BD-000177`
+- `BD-000178`
+- `BD-000179`
+- `BD-000180`
+- `BD-000181`
+- `BD-000182`
+- `BD-000183`
+- `BD-000184`
+- `BD-000185`
+- `BD-000186`
+- `BD-000187`
+- `BD-000188`
+- `BD-000189`
+- `BD-000190`
+- `BD-000191`
+- `BD-000192`
+- `BD-000193`
+- `BD-000194`
+- `BD-000195`
+- `BD-000196`
+- `BD-000197`
+- `BD-000198`
+- `BD-000199`
+- `BD-000200`
 
 - raw_record_without_id_count: `0`
 - record_id_set_comparable: `True`
@@ -366,18 +436,24 @@
 - extra_normalized_record_count: `0`
 ## raw_record_counts_by_type
 
+- beneficiary_discovery_case: `1`
 - blind_leader_preference_pair: `20`
-- candidate_generation_error_case: `8`
-- context_market_state_or_fact_case: `17`
-- negative_control_case: `13`
-- newsless_or_unexplained_case: `43`
+- candidate_generation_error_case: `22`
+- candidate_ranking_error_case: `1`
+- context_market_state_or_fact_case: `36`
+- event_ticker_edge: `20`
+- mechanism_memory: `1`
+- memory_claim: `1`
+- negative_control_case: `15`
+- newsless_or_unexplained_case: `54`
 - ranking_error_case: `1`
-- supervised_direct_event_case: `28`
-- supervised_issuer_day_case: `28`
-- theme_formation_case: `7`
+- research_question: `5`
+- supervised_direct_event_case: `20`
+- supervised_issuer_day_case: `20`
+- theme_formation_case: `5`
 
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `142`
+- raw_training_eligible_record_count: `195`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 ## raw_payload_hash_mismatch_record_ids
@@ -392,15 +468,21 @@
 - quarantined_record_count: `0`
 ## record_counts_by_type
 
+- beneficiary_discovery_case: `1`
 - blind_leader_preference_pair: `20`
-- candidate_generation_error_case: `8`
-- context_market_state_or_fact_case: `17`
-- negative_control_case: `13`
-- newsless_or_unexplained_case: `43`
+- candidate_generation_error_case: `22`
+- candidate_ranking_error_case: `1`
+- context_market_state_or_fact_case: `36`
+- event_ticker_edge: `20`
+- mechanism_memory: `1`
+- memory_claim: `1`
+- negative_control_case: `15`
+- newsless_or_unexplained_case: `54`
 - ranking_error_case: `1`
-- supervised_direct_event_case: `28`
-- supervised_issuer_day_case: `28`
-- theme_formation_case: `7`
+- research_question: `5`
+- supervised_direct_event_case: `20`
+- supervised_issuer_day_case: `20`
+- theme_formation_case: `5`
 
 - validation_passed: `True`
 - record_count_matches_manifest: `True`
@@ -421,21 +503,21 @@
 - adapter: `v23-direct-ingest`
 - bundle_schema_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
-- record_count: `165`
-- training_eligible_record_count: `162`
-- expected_record_count: `165`
-- expected_training_eligible_record_count: `162`
+- record_count: `222`
+- training_eligible_record_count: `215`
+- expected_record_count: `222`
+- expected_training_eligible_record_count: `215`
 - record_count_matches_manifest: `True`
 - training_eligible_count_matches_manifest: `True`
-- block_hashes: `{'access_log.jsonl': '40f10add29738540deba368a42dcabde7f5432e582b790cd2433d232fb176f20', 'acquisition_warnings.jsonl': '4fbc2757f43853b4da68dc538ae0b182c0069a25d0752349d6044ebda5880d2a', 'blind_packet_manifest.json': 'ed2da02e7a403c9da6494166eb825774a5c547caa10fa971d313e821ef240d48', 'blind_prediction.json': 'd6dfb2f8cec81ad578ac003b9354f900c1149439723568e7ef14d8252a9d7986', 'blind_seal_receipt.json': '6ded73dade70e6d423419ae2f57848498ff674c001b9e89763c63b99d4a419b0', 'brain_delta.jsonl': '5e114c9803487f2fefed156bb9acb2e0038775f0753a8cc3f85394f0e757e58a', 'bundle_manifest.json': '906d2e1f8e525e0e07aa4c89023a7f55aa5b5b7c2177f28f5ed64dd02f49771d', 'candidate_screening.jsonl': 'dbc69c3bb32f0a0c271d91ca5245bc744492c84a7dc72fe7452b6c3a36126cca', 'canonical_graph.json': '31b31bc6a9d53c7541d78c4fccd6c023604a7dbda2e64b58c7032efb19372821', 'direct_ingest_contract.json': 'cd88550210bd2dd9935ba106503d88fa4acd42ae230412e37ed58e89bf6a4a6d', 'entity_ledger_blind.jsonl': 'a48f28abba8b25c04af7439a5ccf49569be83266b4146a0910b9af92ba4e3f15', 'fact_ledger_blind.jsonl': '70e96e2631a0caeefc001c71f4b7cce8c0726bf6bc631183a0376ebccb84d01a', 'final_semantic_audit.jsonl': '0111708b0ba659f1a7d9eb85a11b92f0838511725bf987598b02047d75bd25ee', 'id_registry.jsonl': '6d318fadfdcf874e2e1b792f7624a5e4866a82f1ca91664476c9f18791521e41', 'inference_ledger_blind.jsonl': 'e74b3e6270d1eb05f8759e621b98ee20fc7d4bc2af0155b6cbf79397565b9bb7', 'ledger_population_audit.json': '63cf32db384cbbb0daddb2619b944c1042e91eefc5eb12c74dd0fe26481f103a', 'outcome_leader_census.jsonl': '8f310026b5b5ee5867b92761f033d17e1c68a248cea7044c0f5f3468a3b68b19', 'outcome_ledger.jsonl': 'b8e1cf29d3eb2c2055c3d256ce0541f135ed59f1a4670991cdf6e90ac70dd06d', 'outcome_to_news_audit.jsonl': 'd636a5f42b2287d733a73c2a438b70d57590f3d2c49d792197bc5c34a8ef85b8', 'phase_state.json': 'a6b4ae323a4532fbb76e56e1ebd0a2292fa77ab789ab560cc2a57308c6969c79', 'postmortem_report.md': 'c87cabd0169c4b5e839e8d3571d3c8bad2a1d69d9f5980c8990856fc0b5edea0', 'postmortem_summary.json': 'a4e37f213841c30cddac5a941257e678420bd3fe93014ecb91a241734b4d0167', 'row_disposition.jsonl': 'd59780aa070f914b277fb01dc64fb330643ce84de1ee440a47a9b25763fe8126', 'source_ledger.jsonl': 'ebb64bcdf78330d622451c3a2ab9687a084e933fbee6ad2145cdaed73a422092', 'validation_report.json': 'a2954b27ee020db2998a0d7d1bb556d343eeac000bceedc39aa96c81cfecca02'}`
+- block_hashes: `{'access_log.jsonl': 'f042a9a43dce432f6fd79af0b8f033332e9a0c5b93ac0a94365024d0e6f08d03', 'acquisition_warnings.jsonl': '91c89755de926048b562d9ee39108e65bf508d53eca375b9773a52c8741ade76', 'anti_reward_hack_audit.json': '136611866534a1d7b165185963646b36d7655c2d7ac51d5c09932cdf14a9c05b', 'attempt_history.jsonl': '5cc557f1cc78c5280a46219c3ff91e9b9aa6a4aa7c8c2b524ecf39357023e1ce', 'blind_packet_manifest.json': 'fbbc874189b0ee4a7416b1e08022b9ceb7c73b4e7d6e648b548383c08cd0c2d6', 'blind_prediction.json': '61b74f8bc1b97f7b08f5dccb844f3284f8d94173d6749255f807aa47b84753a5', 'blind_report.md': 'e4aeb11cb372b99237553a696c4f9838a4c8e4c572e3cf86c5f5f3d8c7fccd47', 'blind_seal_receipt.json': '85660cc393c6920c82205cd8516a72d922bd5f496f87ed664135f93f6ba0b243', 'body_table_candidate_generation_audit.jsonl': 'eed976816f77e44a14c06b67f59747a072bb37c4d590516bb03e2d495b9e57d8', 'brain_delta.jsonl': '6584e043cafb1787a07cd06d26b19a543b5288d85cab855146205c4e2691102f', 'bundle_manifest.json': '633580761cb3edcb46800a1c37ef1be1563720298b2720e6d0067edb316a392a', 'bundle_readme.md': 'd02b1a5c344747b94c89190d7d6f5894d91df635cb04a6f5d299a272bc88a5c7', 'candidate_ranking_audit.jsonl': '8784da27a2e7e69004e5549cbf43304a93603a6912fed27d39ce5342b1752194', 'candidate_screening.jsonl': '3a776108bb66fdcfed6f916dffae86c54f26dbcf9b37dd8de29d395a51169cce', 'candidate_semantic_witness.jsonl': '68b0e03e8c827b120e32332fac64bd4f9348ffe515c3573f22655f1e0db2f75a', 'canonical_graph.json': 'c7e9edf25edaa846d3f8b470f8c7c0acc6d3191b81ecd35fe4fe7af8beff9253', 'direct_ingest_contract.json': '3339f40e616bc5359237ae2b15a7fd3bbb2636232486db47c2295bbe8052db73', 'entity_ledger_blind.jsonl': '2ff1aaeb74b391743f1140aa2ee906226f15724ae620db75bf7e93eac2992275', 'entity_resolution.jsonl': '3c20b48d48089808ed0555f2dfdef99057931d6bc03b23e957d41ab56b854a8e', 'fact_ledger_blind.jsonl': 'e7be3f5ff651ef1453e0f996e36e061276d00e8b8efdd613576bb30fa3e67dec', 'final_evidence_witness.jsonl': '00fd50016ee5f1c923c5ad296c3933c97819fb21c3d94356f924cc2ff4b3088d', 'final_semantic_audit.jsonl': '2c9182bf8a1d2f62524f972707fc39e3e21430d8ebb4f4a20db3c0ba91658598', 'id_registry.json': '2e3dab7b8c0249087c1b0d2677bf49694c8f1556d71a3a7732044c6a60376766', 'id_registry.jsonl': 'c1537f4ec88c342fcc056bfd7724fc3d91f21b2a4d21ce772853d7b4a77a5d5f', 'inference_ledger_blind.jsonl': '287db23831c994fe00208f66253779563281dc5e17cc1526cb1999be41646b64', 'ledger_population_audit.json': '5f63f45b25bbf998aff5b19a6417c80e328e05c71f30bea78bef9adbed7a6db2', 'market_state_override_audit.jsonl': '20638f3614782590a189b709ce79e58252a2d10ef61960022b863acbc7a3b89b', 'material_review.jsonl': 'cf3d662296f26ef5c1ab79753650af1837049eebaee84b977329ffcfe1cb8cc5', 'material_review_queue.jsonl': '250393a48039f02a50ec5f521feacdfb5bb7359e805b26f51a1ab1cba6f481f4', 'outcome_leader_census.jsonl': '5d212119752e68969f8f9d7df0b618dd985d9eb4347f0da277dac54fa56960b1', 'outcome_ledger.jsonl': '15af119b376fdef7e7615c642933a49fdb5443765413197ef922c7158d33bef9', 'outcome_to_news_audit.jsonl': '86bf8c768c0c7010439160a3c954d45685ca8e6157c64fedefad1f27725c2451', 'phase_audit_report.json': 'c9550e27bbf56f3129516aebef57e555a6844812eee00e4f45da562ec8fcaeef', 'phase_state.json': '6a0436ed91e9ea7b91dec53b36ac18b23568179da7dbda426443bd3b399f2925', 'postmortem_report.md': 'ecb4b654bac4fb5442f1dfb9afe52d318479736f2d4fc1afe030156c92de95e6', 'postmortem_summary.json': '860607ce4f7050aa5de9b5b1937a2449a7095c83cef4a398c4b1c180472ce245', 'provisional_hypothesis.jsonl': '92a42208addaa692ab357b4bf2892af07908d2e9f0dd62d9f0b2b41f9fede0ec', 'repair_log.jsonl': '0f077d6287c7d17b28b00f39113c2dbae8c5af7b3ce73f2a593216701688ab79', 'research_episode.json': '6d719039f1779d7b5812762321e5f232d3c1a015376237255cf43dbd1a3c3d42', 'research_report.md': 'd1f93912d945a2122bfb7a3e5a20c4f546e904e446c47cf09efb0d10f5784fd0', 'row_disposition.jsonl': 'c240f393d547f58631ce623b40d8779bb5a997847a8d089aa4dd1eea0be2195e', 'semantic_regression_test_report.json': 'ade36d1e15e9c0cadbc6b7b42297ef0c6e1875d773ad588ad10be7ef2ef00bca', 'semantic_regression_tests.jsonl': '097015439a73ee28dd55b7a621fa758c87d787ccbba5f637b4ded9d5811c53f5', 'source_ledger.jsonl': '9cbdca72c32baf9e3cbb0fed67af3cb0cc0edc2d56d482e5dc5320989d1295d6', 'validation_report.json': '213308524cce50f68d0f842da656e34c706154b8d598bf756e3d9494c4b9f5ee'}`
 - hash_mismatches: `{}`
 - self_referential_hashes: `{}`
-- hash_expectation_sources: `{}`
+- hash_expectation_sources: `{'access_log.jsonl': [{'expected': 'f042a9a43dce432f6fd79af0b8f033332e9a0c5b93ac0a94365024d0e6f08d03', 'source': 'bundle_manifest.embedded_blocks'}], 'acquisition_warnings.jsonl': [{'expected': '91c89755de926048b562d9ee39108e65bf508d53eca375b9773a52c8741ade76', 'source': 'bundle_manifest.embedded_blocks'}], 'anti_reward_hack_audit.json': [{'expected': '136611866534a1d7b165185963646b36d7655c2d7ac51d5c09932cdf14a9c05b', 'source': 'bundle_manifest.embedded_blocks'}], 'attempt_history.jsonl': [{'expected': '5cc557f1cc78c5280a46219c3ff91e9b9aa6a4aa7c8c2b524ecf39357023e1ce', 'source': 'bundle_manifest.embedded_blocks'}], 'blind_packet_manifest.json': [{'expected': 'fbbc874189b0ee4a7416b1e08022b9ceb7c73b4e7d6e648b548383c08cd0c2d6', 'source': 'bundle_manifest.embedded_blocks'}], 'blind_prediction.json': [{'expected': '61b74f8bc1b97f7b08f5dccb844f3284f8d94173d6749255f807aa47b84753a5', 'source': 'bundle_manifest.embedded_blocks'}], 'blind_report.md': [{'expected': 'e4aeb11cb372b99237553a696c4f9838a4c8e4c572e3cf86c5f5f3d8c7fccd47', 'source': 'bundle_manifest.embedded_blocks'}], 'blind_seal_receipt.json': [{'expected': '85660cc393c6920c82205cd8516a72d922bd5f496f87ed664135f93f6ba0b243', 'source': 'bundle_manifest.embedded_blocks'}], 'body_table_candidate_generation_audit.jsonl': [{'expected': 'eed976816f77e44a14c06b67f59747a072bb37c4d590516bb03e2d495b9e57d8', 'source': 'bundle_manifest.embedded_blocks'}], 'brain_delta.jsonl': [{'expected': '6584e043cafb1787a07cd06d26b19a543b5288d85cab855146205c4e2691102f', 'source': 'bundle_manifest.embedded_blocks'}], 'bundle_readme.md': [{'expected': 'd02b1a5c344747b94c89190d7d6f5894d91df635cb04a6f5d299a272bc88a5c7', 'source': 'bundle_manifest.embedded_blocks'}], 'candidate_ranking_audit.jsonl': [{'expected': '8784da27a2e7e69004e5549cbf43304a93603a6912fed27d39ce5342b1752194', 'source': 'bundle_manifest.embedded_blocks'}], 'candidate_screening.jsonl': [{'expected': '3a776108bb66fdcfed6f916dffae86c54f26dbcf9b37dd8de29d395a51169cce', 'source': 'bundle_manifest.embedded_blocks'}], 'candidate_semantic_witness.jsonl': [{'expected': '68b0e03e8c827b120e32332fac64bd4f9348ffe515c3573f22655f1e0db2f75a', 'source': 'bundle_manifest.embedded_blocks'}], 'canonical_graph.json': [{'expected': 'c7e9edf25edaa846d3f8b470f8c7c0acc6d3191b81ecd35fe4fe7af8beff9253', 'source': 'bundle_manifest.embedded_blocks'}], 'direct_ingest_contract.json': [{'expected': '3339f40e616bc5359237ae2b15a7fd3bbb2636232486db47c2295bbe8052db73', 'source': 'bundle_manifest.embedded_blocks'}], 'entity_ledger_blind.jsonl': [{'expected': '2ff1aaeb74b391743f1140aa2ee906226f15724ae620db75bf7e93eac2992275', 'source': 'bundle_manifest.embedded_blocks'}], 'entity_resolution.jsonl': [{'expected': '3c20b48d48089808ed0555f2dfdef99057931d6bc03b23e957d41ab56b854a8e', 'source': 'bundle_manifest.embedded_blocks'}], 'fact_ledger_blind.jsonl': [{'expected': 'e7be3f5ff651ef1453e0f996e36e061276d00e8b8efdd613576bb30fa3e67dec', 'source': 'bundle_manifest.embedded_blocks'}], 'final_evidence_witness.jsonl': [{'expected': '00fd50016ee5f1c923c5ad296c3933c97819fb21c3d94356f924cc2ff4b3088d', 'source': 'bundle_manifest.embedded_blocks'}], 'final_semantic_audit.jsonl': [{'expected': '2c9182bf8a1d2f62524f972707fc39e3e21430d8ebb4f4a20db3c0ba91658598', 'source': 'bundle_manifest.embedded_blocks'}], 'id_registry.json': [{'expected': '2e3dab7b8c0249087c1b0d2677bf49694c8f1556d71a3a7732044c6a60376766', 'source': 'bundle_manifest.embedded_blocks'}], 'id_registry.jsonl': [{'expected': 'c1537f4ec88c342fcc056bfd7724fc3d91f21b2a4d21ce772853d7b4a77a5d5f', 'source': 'bundle_manifest.embedded_blocks'}], 'inference_ledger_blind.jsonl': [{'expected': '287db23831c994fe00208f66253779563281dc5e17cc1526cb1999be41646b64', 'source': 'bundle_manifest.embedded_blocks'}], 'ledger_population_audit.json': [{'expected': '5f63f45b25bbf998aff5b19a6417c80e328e05c71f30bea78bef9adbed7a6db2', 'source': 'bundle_manifest.embedded_blocks'}], 'market_state_override_audit.jsonl': [{'expected': '20638f3614782590a189b709ce79e58252a2d10ef61960022b863acbc7a3b89b', 'source': 'bundle_manifest.embedded_blocks'}], 'material_review.jsonl': [{'expected': 'cf3d662296f26ef5c1ab79753650af1837049eebaee84b977329ffcfe1cb8cc5', 'source': 'bundle_manifest.embedded_blocks'}], 'material_review_queue.jsonl': [{'expected': '250393a48039f02a50ec5f521feacdfb5bb7359e805b26f51a1ab1cba6f481f4', 'source': 'bundle_manifest.embedded_blocks'}], 'outcome_leader_census.jsonl': [{'expected': '5d212119752e68969f8f9d7df0b618dd985d9eb4347f0da277dac54fa56960b1', 'source': 'bundle_manifest.embedded_blocks'}], 'outcome_ledger.jsonl': [{'expected': '15af119b376fdef7e7615c642933a49fdb5443765413197ef922c7158d33bef9', 'source': 'bundle_manifest.embedded_blocks'}], 'outcome_to_news_audit.jsonl': [{'expected': '86bf8c768c0c7010439160a3c954d45685ca8e6157c64fedefad1f27725c2451', 'source': 'bundle_manifest.embedded_blocks'}], 'phase_audit_report.json': [{'expected': 'c9550e27bbf56f3129516aebef57e555a6844812eee00e4f45da562ec8fcaeef', 'source': 'bundle_manifest.embedded_blocks'}], 'phase_state.json': [{'expected': '6a0436ed91e9ea7b91dec53b36ac18b23568179da7dbda426443bd3b399f2925', 'source': 'bundle_manifest.embedded_blocks'}], 'postmortem_report.md': [{'expected': 'ecb4b654bac4fb5442f1dfb9afe52d318479736f2d4fc1afe030156c92de95e6', 'source': 'bundle_manifest.embedded_blocks'}], 'postmortem_summary.json': [{'expected': '860607ce4f7050aa5de9b5b1937a2449a7095c83cef4a398c4b1c180472ce245', 'source': 'bundle_manifest.embedded_blocks'}], 'provisional_hypothesis.jsonl': [{'expected': '92a42208addaa692ab357b4bf2892af07908d2e9f0dd62d9f0b2b41f9fede0ec', 'source': 'bundle_manifest.embedded_blocks'}], 'repair_log.jsonl': [{'expected': '0f077d6287c7d17b28b00f39113c2dbae8c5af7b3ce73f2a593216701688ab79', 'source': 'bundle_manifest.embedded_blocks'}], 'research_episode.json': [{'expected': '6d719039f1779d7b5812762321e5f232d3c1a015376237255cf43dbd1a3c3d42', 'source': 'bundle_manifest.embedded_blocks'}], 'research_report.md': [{'expected': 'd1f93912d945a2122bfb7a3e5a20c4f546e904e446c47cf09efb0d10f5784fd0', 'source': 'bundle_manifest.embedded_blocks'}], 'row_disposition.jsonl': [{'expected': 'c240f393d547f58631ce623b40d8779bb5a997847a8d089aa4dd1eea0be2195e', 'source': 'bundle_manifest.embedded_blocks'}], 'semantic_regression_test_report.json': [{'expected': 'ade36d1e15e9c0cadbc6b7b42297ef0c6e1875d773ad588ad10be7ef2ef00bca', 'source': 'bundle_manifest.embedded_blocks'}], 'semantic_regression_tests.jsonl': [{'expected': '097015439a73ee28dd55b7a621fa758c87d787ccbba5f637b4ded9d5811c53f5', 'source': 'bundle_manifest.embedded_blocks'}], 'source_ledger.jsonl': [{'expected': '9cbdca72c32baf9e3cbb0fed67af3cb0cc0edc2d56d482e5dc5320989d1295d6', 'source': 'bundle_manifest.embedded_blocks'}], 'validation_report.json': [{'expected': '213308524cce50f68d0f842da656e34c706154b8d598bf756e3d9494c4b9f5ee', 'source': 'bundle_manifest.embedded_blocks'}]}`
 - hash_expectation_conflicts: `{}`
-- source_reference_count: `179`
+- source_reference_count: `98`
 - missing_source_references: `[]`
 - provenance_closure_status: `closed`
-- payload_reference_count: `92`
+- payload_reference_count: `196`
 - missing_payload_references: `[]`
 - payload_reference_closure_status: `closed`
 - available_from_valid: `True`
@@ -458,8 +540,8 @@
 - sample_weight_validation: `{'status': 'passed', 'duplicate_issuer_day_count': 0, 'duplicate_issuer_day_keys': [], 'issuer_day_weight_sum_mismatches': {}, 'direct_event_weight_sum_mismatches': {}}`
 - sample_weight_validation_status: `passed`
 - import_loss_audit_passed: `True`
-- raw_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
-- normalized_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165']`
+- raw_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165', 'BD-000166', 'BD-000167', 'BD-000168', 'BD-000169', 'BD-000170', 'BD-000171', 'BD-000172', 'BD-000173', 'BD-000174', 'BD-000175', 'BD-000176', 'BD-000177', 'BD-000178', 'BD-000179', 'BD-000180', 'BD-000181', 'BD-000182', 'BD-000183', 'BD-000184', 'BD-000185', 'BD-000186', 'BD-000187', 'BD-000188', 'BD-000189', 'BD-000190', 'BD-000191', 'BD-000192', 'BD-000193', 'BD-000194', 'BD-000195', 'BD-000196', 'BD-000197', 'BD-000198', 'BD-000199', 'BD-000200', 'BD-000201', 'BD-000202', 'BD-000203', 'BD-000204', 'BD-000205', 'BD-000206', 'BD-000207', 'BD-000208', 'BD-000209', 'BD-000210', 'BD-000211', 'BD-000212', 'BD-000213', 'BD-000214', 'BD-000215', 'BD-000216', 'BD-000217', 'BD-000218', 'BD-000219', 'BD-000220', 'BD-000221', 'BD-000222']`
+- normalized_record_ids: `['BD-000001', 'BD-000002', 'BD-000003', 'BD-000004', 'BD-000005', 'BD-000006', 'BD-000007', 'BD-000008', 'BD-000009', 'BD-000010', 'BD-000011', 'BD-000012', 'BD-000013', 'BD-000014', 'BD-000015', 'BD-000016', 'BD-000017', 'BD-000018', 'BD-000019', 'BD-000020', 'BD-000021', 'BD-000022', 'BD-000023', 'BD-000024', 'BD-000025', 'BD-000026', 'BD-000027', 'BD-000028', 'BD-000029', 'BD-000030', 'BD-000031', 'BD-000032', 'BD-000033', 'BD-000034', 'BD-000035', 'BD-000036', 'BD-000037', 'BD-000038', 'BD-000039', 'BD-000040', 'BD-000041', 'BD-000042', 'BD-000043', 'BD-000044', 'BD-000045', 'BD-000046', 'BD-000047', 'BD-000048', 'BD-000049', 'BD-000050', 'BD-000051', 'BD-000052', 'BD-000053', 'BD-000054', 'BD-000055', 'BD-000056', 'BD-000057', 'BD-000058', 'BD-000059', 'BD-000060', 'BD-000061', 'BD-000062', 'BD-000063', 'BD-000064', 'BD-000065', 'BD-000066', 'BD-000067', 'BD-000068', 'BD-000069', 'BD-000070', 'BD-000071', 'BD-000072', 'BD-000073', 'BD-000074', 'BD-000075', 'BD-000076', 'BD-000077', 'BD-000078', 'BD-000079', 'BD-000080', 'BD-000081', 'BD-000082', 'BD-000083', 'BD-000084', 'BD-000085', 'BD-000086', 'BD-000087', 'BD-000088', 'BD-000089', 'BD-000090', 'BD-000091', 'BD-000092', 'BD-000093', 'BD-000094', 'BD-000095', 'BD-000096', 'BD-000097', 'BD-000098', 'BD-000099', 'BD-000100', 'BD-000101', 'BD-000102', 'BD-000103', 'BD-000104', 'BD-000105', 'BD-000106', 'BD-000107', 'BD-000108', 'BD-000109', 'BD-000110', 'BD-000111', 'BD-000112', 'BD-000113', 'BD-000114', 'BD-000115', 'BD-000116', 'BD-000117', 'BD-000118', 'BD-000119', 'BD-000120', 'BD-000121', 'BD-000122', 'BD-000123', 'BD-000124', 'BD-000125', 'BD-000126', 'BD-000127', 'BD-000128', 'BD-000129', 'BD-000130', 'BD-000131', 'BD-000132', 'BD-000133', 'BD-000134', 'BD-000135', 'BD-000136', 'BD-000137', 'BD-000138', 'BD-000139', 'BD-000140', 'BD-000141', 'BD-000142', 'BD-000143', 'BD-000144', 'BD-000145', 'BD-000146', 'BD-000147', 'BD-000148', 'BD-000149', 'BD-000150', 'BD-000151', 'BD-000152', 'BD-000153', 'BD-000154', 'BD-000155', 'BD-000156', 'BD-000157', 'BD-000158', 'BD-000159', 'BD-000160', 'BD-000161', 'BD-000162', 'BD-000163', 'BD-000164', 'BD-000165', 'BD-000166', 'BD-000167', 'BD-000168', 'BD-000169', 'BD-000170', 'BD-000171', 'BD-000172', 'BD-000173', 'BD-000174', 'BD-000175', 'BD-000176', 'BD-000177', 'BD-000178', 'BD-000179', 'BD-000180', 'BD-000181', 'BD-000182', 'BD-000183', 'BD-000184', 'BD-000185', 'BD-000186', 'BD-000187', 'BD-000188', 'BD-000189', 'BD-000190', 'BD-000191', 'BD-000192', 'BD-000193', 'BD-000194', 'BD-000195', 'BD-000196', 'BD-000197', 'BD-000198', 'BD-000199', 'BD-000200', 'BD-000201', 'BD-000202', 'BD-000203', 'BD-000204', 'BD-000205', 'BD-000206', 'BD-000207', 'BD-000208', 'BD-000209', 'BD-000210', 'BD-000211', 'BD-000212', 'BD-000213', 'BD-000214', 'BD-000215', 'BD-000216', 'BD-000217', 'BD-000218', 'BD-000219', 'BD-000220', 'BD-000221', 'BD-000222']`
 - raw_record_without_id_count: `0`
 - record_id_set_comparable: `True`
 - record_id_set_matches_raw: `True`
@@ -467,9 +549,9 @@
 - missing_normalized_record_count: `0`
 - extra_normalized_record_ids: `[]`
 - extra_normalized_record_count: `0`
-- raw_record_counts_by_type: `{'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 28, 'theme_formation_case': 7}`
+- raw_record_counts_by_type: `{'beneficiary_discovery_case': 1, 'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 22, 'candidate_ranking_error_case': 1, 'context_market_state_or_fact_case': 36, 'event_ticker_edge': 20, 'mechanism_memory': 1, 'memory_claim': 1, 'negative_control_case': 15, 'newsless_or_unexplained_case': 54, 'ranking_error_case': 1, 'research_question': 5, 'supervised_direct_event_case': 20, 'supervised_issuer_day_case': 20, 'theme_formation_case': 5}`
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `142`
+- raw_training_eligible_record_count: `195`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 - raw_payload_hash_mismatch_record_ids: `[]`

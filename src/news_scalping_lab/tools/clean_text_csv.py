@@ -1,4 +1,12 @@
-"""Clean CSV files so they remain valid UTF-8 text for content sniffers."""
+"""Clean news CSV files before full-CSV research ingestion.
+
+Run this as the first filtering step when preparing a raw news CSV for full
+episode research. Some crawled articles contain invisible C0 control characters
+such as ESC or ETX. They are not article content, but they can make GitHub,
+browsers, or LLM upload surfaces sniff the CSV as application/octet-stream
+instead of text/csv. This tool removes only those non-text controls, then
+re-parses the cleaned bytes as CSV before writing.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +15,17 @@ import csv
 from collections import Counter
 from pathlib import Path
 
+# Keep the control characters that are valid in text/CSV structure. Everything
+# else below U+0020 is treated as transport/crawler noise and removed.
 ALLOWED_CONTROL_CHARS = {"\t", "\n", "\r"}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Remove non-text C0 control characters from UTF-8 CSV files while "
-            "preserving all other content."
+            "Full-CSV research prefilter: remove non-text C0 control "
+            "characters from UTF-8 CSV files while preserving all article "
+            "content."
         )
     )
     parser.add_argument("csv_path", type=Path)
@@ -62,6 +73,13 @@ class CleanCsvReport:
 
 
 def clean_text_csv(path: Path, *, in_place: bool = False) -> CleanCsvReport:
+    """Return a cleaning report, optionally rewriting the CSV in place.
+
+    The write path is intentionally gated by a full CSV parse. If cleaning ever
+    breaks quoting, delimiters, or row structure enough for csv.reader to fail,
+    the exception is raised before any bytes are written.
+    """
+
     original_bytes = path.read_bytes()
     original_text = original_bytes.decode("utf-8")
     cleaned_text, removed = remove_non_text_control_chars(original_text)
@@ -80,6 +98,8 @@ def clean_text_csv(path: Path, *, in_place: bool = False) -> CleanCsvReport:
 
 
 def remove_non_text_control_chars(text: str) -> tuple[str, Counter[str]]:
+    """Remove invisible C0 controls that make an otherwise valid CSV look binary."""
+
     removed: Counter[str] = Counter()
     cleaned_chars: list[str] = []
     for char in text:
