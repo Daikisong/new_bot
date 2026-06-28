@@ -41,6 +41,82 @@ CSV 전수 확보·전수 분류
 
 ---
 
+## 0.1 최종 import-ready bundle shell hard lock
+
+최종 Markdown은 새 형식을 발명하지 않는다. `docs/example2.md`와 같은 repo-importable research bundle shell을 따른다. 이 규칙은 뒤쪽 하위 호환 섹션의 예시보다 우선한다.
+
+파일 첫 byte는 반드시 YAML front matter 시작인 `---`여야 한다. H1 제목으로 시작하는 파일은 사람이 읽기 좋아도 repo import-ready bundle이 아니다.
+
+최종 front matter 최소 계약:
+
+```yaml
+---
+schema_version: "nslab.research_bundle.v11"
+artifact_type: "research_episode_bundle"
+episode_id: "NSLAB-YYYYMMDD-<INPUT_SHA8>"
+trade_date: "YYYY-MM-DD"
+bundle_status: "ACCEPT_FULL"
+brain_eligible: true
+direct_brain_ingest_ready: true
+...
+---
+```
+
+필수:
+
+```text
+front_matter.schema_version == nslab.research_bundle.v11
+front_matter.artifact_type == research_episode_bundle
+front_matter.episode_id is non-empty
+front_matter.bundle_status == ACCEPT_FULL only after final reparse validator passes
+bundle_manifest.json.schema_version in [nslab.bundle_manifest.v23, nslab.bundle_manifest.v11]
+bundle_manifest.json.episode_id == front_matter.episode_id
+direct_ingest_contract.json.schema_version == nslab.direct_ingest_contract.v1
+direct_ingest_contract.json.episode_id == front_matter.episode_id
+direct_ingest_contract.json.direct_brain_ingest_ready == true
+direct_ingest_contract.json.automated_import_expected_to_pass == true
+direct_ingest_contract.json.brain_eligible == true
+direct_ingest_contract.json.requires_manual_research_review == false
+direct_ingest_contract.json.requires_posthoc_prompt_repair == false
+direct_ingest_contract.json.requires_human_semantic_review == false
+direct_ingest_contract.json.fatal_blockers == []
+direct_ingest_contract.json.hard_gate_summary.schema_contract_verified == true
+direct_ingest_contract.json.hard_gate_summary.record_count_hash_parity_ready == true
+direct_ingest_contract.json.hard_gate_summary.direct_ingest_contract_validation_parity_verified == true
+direct_ingest_contract.json.hard_gate_summary.direct_ingest_contract_count_hash_parity_verified == true
+direct_ingest_contract.json.hard_gate_summary.validator_exit_code == 0
+direct_ingest_contract.json.hard_gate_summary.critical_error_count == 0
+```
+
+금지:
+
+```text
+파일이 "# NSLAB EPISODE BUNDLE" 같은 H1으로 시작함
+schema_version: nslab.episode_bundle.v1
+schema_version: nslab.episode_bundle.v11
+research_episode.json.schema_version == nslab.research_episode.v1
+bundle_manifest.json.schema_version == nslab.bundle_manifest.v1
+direct_ingest_contract.json.status == READY_FOR_FINAL_REPARSE
+direct_ingest_contract.json.status == PENDING_FINAL_REPARSE
+direct_ingest_contract.json에 direct_brain_ingest_ready 필드 없음
+direct_ingest_contract.json에 automated_import_expected_to_pass 필드 없음
+direct_ingest_contract.json에 requires_human_semantic_review 필드 없음
+자기 validation_report만 ACCEPT_FULL이고 repo import shell은 미완성
+```
+
+위 금지 패턴이 하나라도 있으면 연구 내용이 좋아도 `ACCEPT_FULL`이 아니다. 수리 가능한 렌더 오류이므로 front matter, `bundle_manifest.json`, `direct_ingest_contract.json`, `research_episode.json`을 repo-importable shell로 재렌더하고 다시 final Markdown을 re-open/re-parse한다.
+
+수리 후에도 파일이 repo-importable shell이 아니면:
+
+```text
+bundle_status = QUARANTINE_IMPORT_SHELL_CONTRACT
+brain_eligible = false
+direct_brain_ingest_ready = false
+ACCEPT_FULL 금지
+```
+
+---
+
 ## 1. 이번 파일의 사용 방식
 
 새 웹 세션은 GitHub Raw의 이 파일 전체를 MAIN EXECUTION PROMPT로 읽는다. 새 세션은 sandbox 과거 파일을 모른다. 따라서 이 파일 내용이 GitHub repo의 `docs/research_prompt.md`에 실제 반영되어 있어야 한다.
@@ -536,6 +612,19 @@ candidate_screening_include_or_watch_count =
 candidate_ranking_audit_rankable_count =
   count(candidate_ranking_audit rows whose source_screening_id maps to a rankable candidate)
 ```
+
+이 count는 raw `candidate_screening.jsonl` row 기준이다. ticker, issuer, candidate_id, company_name으로 dedupe한 뒤 expected를 줄이면 안 된다.
+
+금지:
+
+```text
+candidate_screening_include_or_watch_count를 unique ticker count로 재정의
+candidate_screening_include_or_watch_count를 candidate_ranking_audit row count에 맞춰 재작성
+INCLUDE/WATCH_SECONDARY row 143개를 unique candidate 100개로 줄이고 expected=100으로 validator 통과
+동일 ticker 중복 row를 ranking audit에서 생략하면서 source_screening_id별 탈락 사유를 남기지 않음
+```
+
+같은 ticker가 여러 source_screening_id로 등장해도 각 rankable row는 `candidate_ranking_audit.jsonl`에 별도 line으로 남긴다. 동일 ticker 중 final에 하나만 들어가는 경우, 나머지 같은 ticker rankable row는 `included_in_final=false`와 `why_not_final_if_excluded`로 중복 탈락 사유를 남긴다.
 
 각 ranking audit row는 다음을 기록한다.
 
@@ -2639,6 +2728,8 @@ expected_source == SELF_DECLARED_MANIFEST
 
 `direct_ingest_contract.json`은 `validation_report.json`의 critical 결과를 mirror해야 한다.
 
+최종 bundle에서 `direct_ingest_contract.json.status`가 `READY_FOR_FINAL_REPARSE` 또는 `PENDING_FINAL_REPARSE`이면 아직 중간 산출물이다. 이 상태로 `ACCEPT_FULL`, `brain_eligible=true`, `direct_brain_ingest_ready=true`를 선언하면 안 된다.
+
 필수 hard_gate_summary:
 
 ```json
@@ -2657,7 +2748,34 @@ expected_source == SELF_DECLARED_MANIFEST
 }
 ```
 
-`direct_brain_ingest_ready=true`인데 위 값 중 하나라도 false면 오류다.
+`direct_brain_ingest_ready=true`인데 위 값 중 하나라도 false이거나, 아래 top-level 필드 중 하나라도 없으면 오류다.
+
+필수 top-level 필드:
+
+```text
+episode_id
+trade_date
+direct_brain_ingest_ready
+brain_eligible
+automated_import_expected_to_pass
+requires_manual_research_review
+requires_posthoc_prompt_repair
+requires_human_semantic_review
+fatal_blockers
+hard_gate_summary
+record_import_manifest
+```
+
+금지 top-level 상태:
+
+```text
+status == READY_FOR_FINAL_REPARSE
+status == PENDING_FINAL_REPARSE
+direct_brain_ingest_ready missing
+automated_import_expected_to_pass missing
+requires_human_semantic_review missing
+fatal_blockers missing
+```
 
 ```text
 bundle_status = QUARANTINE_DIRECT_INGEST_CONTRACT_MISMATCH
@@ -5680,6 +5798,16 @@ brain_eligible = false
 direct_brain_ingest_ready = false
 ```
 
+최종 파일의 `direct_ingest_contract.json`은 중간 작업 영수증이 아니다. 다음 문자열은 최종 `ACCEPT_FULL` bundle 안에 남기지 않는다.
+
+```text
+READY_FOR_FINAL_REPARSE
+PENDING_FINAL_REPARSE
+READY_FOR_SCHEMA_FIX
+```
+
+위 상태가 필요했다면 repair loop 중간 artifact에만 남기고, 최종 Markdown은 repair 이후의 ready=true contract로 다시 렌더한다.
+
 ## D2. 0622 fixture parity contract
 
 `20260622_nslab_episode_bundle.example.md`는 숫자값이 아니라 구조 fixture다.
@@ -6216,11 +6344,19 @@ created_at
 금지:
 
 ```text
+파일이 YAML front matter가 아니라 H1 제목으로 시작함
 schema_version: nslab.episode_bundle.v11
+schema_version: nslab.episode_bundle.v1
+research_episode.json.schema_version: nslab.research_episode.v1
+bundle_manifest.json.schema_version: nslab.bundle_manifest.v1
 artifact_type: nslab_episode_bundle
 canonical_graph_sha256 누락
 renderer_version 누락
 validator_version 누락
+episode_id 누락
+direct_brain_ingest_ready 누락
+automated_import_expected_to_pass 누락
+requires_human_semantic_review 누락
 ```
 
 위반 시:
