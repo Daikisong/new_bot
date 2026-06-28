@@ -27,6 +27,12 @@ from news_scalping_lab.research_import.semantic import (
     SemanticResearchDraft,
     build_semantic_import_prompt,
 )
+from news_scalping_lab.research_import.versioned_bundle import (
+    BundleImportResult,
+    bundle_schema_version,
+    import_versioned_bundle,
+    parse_generic_bundle,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
@@ -72,18 +78,35 @@ class ResearchImporter:
             max_retries=llm_max_retries,
         )
 
-    def import_path(self, path: Path, *, mode: str = "auto") -> ResearchEpisode:
+    def import_path(
+        self,
+        path: Path,
+        *,
+        mode: str = "auto",
+    ) -> ResearchEpisode | BundleImportResult:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(self.import_path_async(path, mode=mode))
         raise RuntimeError("import_path cannot run inside an active event loop; use import_path_async")
 
-    async def import_path_async(self, path: Path, *, mode: str = "auto") -> ResearchEpisode:
+    async def import_path_async(
+        self,
+        path: Path,
+        *,
+        mode: str = "auto",
+    ) -> ResearchEpisode | BundleImportResult:
         if mode not in {"auto", "strict", "semantic", "bundle"}:
             raise ValueError("mode must be auto, strict, semantic, or bundle")
         resolved = path.resolve()
         preserved = self._preserve_raw(resolved)
+        if mode == "auto" and _should_use_versioned_bundle_import(preserved):
+            return import_versioned_bundle(
+                preserved,
+                root=self.root,
+                validate=True,
+                accepted=False,
+            )
         if mode == "bundle" or (mode == "auto" and looks_like_bundle(preserved)):
             episode = import_bundle_episode(preserved)
         elif mode == "strict" or (mode == "auto" and resolved.suffix.lower() == ".json"):
@@ -521,6 +544,19 @@ def _output_text_field_provenance(
             record["item_index"] = item_index
         records.append(record)
     return records
+
+
+def _should_use_versioned_bundle_import(path: Path) -> bool:
+    if not looks_like_bundle(path):
+        return False
+    try:
+        parsed = parse_generic_bundle(path)
+    except (OSError, ValueError):
+        return False
+    return bundle_schema_version(parsed) not in {
+        "nslab.bundle_manifest.v1",
+        "nslab.research_bundle.v1",
+    }
 
 
 def _source_segments(text: str) -> list[dict[str, object]]:

@@ -189,7 +189,7 @@
     "BD-000165"
   ],
   "outcome_label_quality_valid": true,
-  "path": "research/episodes/NSLAB-20241204-06A72B21/original_bundle.md",
+  "path": "docs/example2.md",
   "quarantined_bundle_count": 0,
   "quarantined_raw_record_count": 0,
   "quarantined_record_count": 0,
@@ -376,7 +376,7 @@
     "BD-000165"
   ],
   "raw_record_without_id_count": 0,
-  "raw_training_eligible_record_count": 162,
+  "raw_training_eligible_record_count": 142,
   "record_count_matches_manifest": true,
   "record_counts_by_type": {
     "blind_leader_preference_pair": 20,
@@ -398,7 +398,7 @@
   "trade_date": "2024-12-04",
   "training_eligible_count_matches_manifest": true,
   "training_eligible_count_matches_raw": true,
-  "training_eligible_record_count": 162,
+  "training_eligible_record_count": 142,
   "typed_payload_valid": true,
   "validation": {
     "adapter": "v23-direct-ingest",
@@ -822,7 +822,7 @@
       "BD-000165"
     ],
     "raw_record_without_id_count": 0,
-    "raw_training_eligible_record_count": 162,
+    "raw_training_eligible_record_count": 142,
     "record_count": 165,
     "record_count_matches_manifest": true,
     "record_id_set_comparable": true,

@@ -2,7 +2,7 @@
 
 - schema_version: `nslab.bundle_inspection_diagnostics.v1`
 - status: `validation_passed`
-- path: `research/episodes/NSLAB-20241204-06A72B21/original_bundle.md`
+- path: `docs/example2.md`
 - bundle_version: `nslab.research_bundle.v11`
 - manifest_schema_version: `nslab.bundle_manifest.v23`
 - episode_schema_version: `None`
@@ -14,7 +14,7 @@
 - raw_record_count: `165`
 - normalized_record_count: `165`
 - raw_normalized_record_count_matches: `True`
-- training_eligible_record_count: `162`
+- training_eligible_record_count: `142`
 ## raw_record_ids
 
 - `BD-000001`
@@ -377,7 +377,7 @@
 - theme_formation_case: `7`
 
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `162`
+- raw_training_eligible_record_count: `142`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 ## raw_payload_hash_mismatch_record_ids
@@ -469,7 +469,7 @@
 - extra_normalized_record_count: `0`
 - raw_record_counts_by_type: `{'blind_leader_preference_pair': 20, 'candidate_generation_error_case': 8, 'context_market_state_or_fact_case': 17, 'negative_control_case': 13, 'newsless_or_unexplained_case': 43, 'ranking_error_case': 1, 'supervised_direct_event_case': 28, 'supervised_issuer_day_case': 28, 'theme_formation_case': 7}`
 - record_type_counts_match_raw: `True`
-- raw_training_eligible_record_count: `162`
+- raw_training_eligible_record_count: `142`
 - training_eligible_count_matches_raw: `True`
 - raw_payload_hashes_match: `True`
 - raw_payload_hash_mismatch_record_ids: `[]`

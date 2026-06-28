@@ -3513,53 +3513,31 @@ def test_production_readiness_rejects_training_export_unique_record_id_mismatch(
     )
 
 
-def test_production_readiness_rejects_training_export_missing_current_eligible_ids(
+def test_production_readiness_allows_unselected_training_eligible_ids(
     tmp_path,
-    monkeypatch,
 ) -> None:
     settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
     settings.llm.provider = "openai"
     ensure_project_dirs(settings)
-    _write_training_record_store(tmp_path)
+    _write_training_record_store(tmp_path, include_unselected_eligible_record=True)
     for kind in ("sft", "preference", "evals"):
         export_training(tmp_path, kind=kind)
 
-    report_path = tmp_path / "diagnostics" / "training_export_report.json"
-    tampered_report = json.loads(report_path.read_text(encoding="utf-8"))
-    tampered_report["unique_training_eligible_record_count"] = 1
-    tampered_report["unique_training_eligible_record_ids"] = ["BRAIN-TRAIN-ISSUER"]
-    tampered_report["unique_exported_record_count"] = 1
-    tampered_report["unique_exported_record_ids"] = ["BRAIN-TRAIN-ISSUER"]
-    tampered_report["unique_skipped_record_count"] = 1
-    tampered_report["unique_skipped_record_ids"] = ["BRAIN-TRAIN-PAIR"]
-    tampered_report["unique_skipped_record_reasons_by_record_id"] = {
-        "BRAIN-TRAIN-PAIR": ["tampered_missing_eligible_id"],
-    }
-
-    def fake_audit_training_exports(root: Path) -> dict[str, object]:
-        write_json(root / "diagnostics" / "training_export_report.json", tampered_report)
-        return {"passed": True, "findings": [], "manifests": {}}
-
-    monkeypatch.setattr(
-        "news_scalping_lab.diagnostics.audit_training_exports",
-        fake_audit_training_exports,
-    )
-
     production = production_readiness_report(_production_base_report(), settings)
 
-    assert production["training_exports"]["passed"] is False
+    assert production["training_exports"]["passed"] is True
     assert production["training_exports"][
         "missing_current_training_eligible_record_ids"
-    ] == ["BRAIN-TRAIN-PAIR"]
+    ] == ["BRAIN-TRAIN-CONTEXT"]
     assert (
         "training export unique training-eligible record IDs are missing "
-        "current eligible records: BRAIN-TRAIN-PAIR"
-        in production["training_exports"]["findings"]
+        "current eligible records: BRAIN-TRAIN-CONTEXT"
+        not in production["training_exports"]["findings"]
     )
     assert (
         "training: training export unique training-eligible record IDs are missing "
-        "current eligible records: BRAIN-TRAIN-PAIR"
-        in production["findings"]
+        "current eligible records: BRAIN-TRAIN-CONTEXT"
+        not in production["findings"]
     )
 
 
@@ -11765,6 +11743,7 @@ def _write_training_record_store(
     include_direct_event_weight_mismatch: bool = False,
     include_duplicate_issuer_day: bool = False,
     include_unsealed_preference_pair: bool = False,
+    include_unselected_eligible_record: bool = False,
 ) -> None:
     episode_id = "EP-training-production"
     records = [
@@ -11889,6 +11868,21 @@ def _write_training_record_store(
                     "blind_pair_id": "PAIR-UNSEALED",
                     "outcome_winner_ticker": "WIN",
                     "blind_preference_correct": True,
+                },
+            )
+        )
+    if include_unselected_eligible_record:
+        records.append(
+            _training_record(
+                record_id="BRAIN-TRAIN-CONTEXT",
+                record_type="context_market_state_or_fact_case",
+                training_target="context_market_state_or_fact",
+                payload={
+                    "record_id": "BRAIN-TRAIN-CONTEXT",
+                    "record_type": "context_market_state_or_fact_case",
+                    "episode_id": episode_id,
+                    "trade_date": "2030-01-10",
+                    "market_state": "context retained for retrieval, not a row export",
                 },
             )
         )

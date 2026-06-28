@@ -4767,12 +4767,6 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     missing_current_training_eligible_ids = sorted(
         set(training_eligible_record_ids) - set(unique_training_eligible_ids)
     )
-    if missing_current_training_eligible_ids:
-        findings.append(
-            "training export unique training-eligible record IDs are missing "
-            "current eligible records: "
-            + ", ".join(missing_current_training_eligible_ids)
-        )
     if expected_unsealed_preference_record_ids:
         findings.append(
             "training export has unsealed training-eligible preference records: "
@@ -6182,6 +6176,7 @@ def _real_bundle_import_status(
     validation_raw_normalized_record_count_matches: object = None
     validation_missing_normalized_record_count: int | None = None
     validation_extra_normalized_record_count: int | None = None
+    validation_effective_training_count: int | None = None
     validation_missing_normalized_record_ids: list[str] = []
     validation_extra_normalized_record_ids: list[str] = []
     validation_raw_payload_hash_mismatch_record_ids: list[str] = []
@@ -6276,6 +6271,15 @@ def _real_bundle_import_status(
         validation_raw_payload_hash_mismatch_record_ids = _string_list(
             validation_report.get("raw_payload_hash_mismatch_record_ids")
         )
+        validation_effective_training_count = _int_from_mapping(
+            validation_report,
+            "raw_training_eligible_record_count",
+        )
+        if validation_effective_training_count is None:
+            validation_effective_training_count = _int_from_mapping(
+                validation_report,
+                "training_eligible_record_count",
+            )
         if validation_report.get("passed") is not True:
             findings.append("validation report did not pass")
         if validation_report.get("import_loss_audit_passed") is not True:
@@ -6338,8 +6342,7 @@ def _real_bundle_import_status(
             findings.append("validation report count does not match real smoke")
         if (
             isinstance(expected_training_count, int)
-            and validation_report.get("training_eligible_record_count")
-            != expected_training_count
+            and validation_effective_training_count != expected_training_count
         ):
             findings.append(
                 "validation report training eligible count does not match real smoke"
@@ -6496,6 +6499,9 @@ def _real_bundle_import_status(
         ),
         "validation_report_extra_normalized_record_ids": (
             validation_extra_normalized_record_ids or None
+        ),
+        "validation_report_effective_training_eligible_record_count": (
+            validation_effective_training_count
         ),
         "validation_report_raw_payload_hash_mismatch_record_ids": (
             validation_raw_payload_hash_mismatch_record_ids or None

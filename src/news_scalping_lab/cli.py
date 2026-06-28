@@ -68,6 +68,7 @@ from news_scalping_lab.research_import.bundle import (
 )
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.research_import.versioned_bundle import (
+    BundleImportResult,
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
@@ -484,18 +485,37 @@ def research_import(path: Path, mode: str = "auto") -> None:
         raise typer.Exit(code=1)
     settings = load_settings()
     try:
-        episode = ResearchImporter(
+        result = ResearchImporter(
             settings.project_root,
             llm=create_llm_provider(settings),
             llm_max_retries=settings.llm.max_retries,
         ).import_path(path, mode=mode)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
+    if isinstance(result, BundleImportResult):
+        _echo(
+            {
+                "imported": result.status == "imported",
+                "status": result.status,
+                "accepted": result.accepted,
+                "adapter": result.adapter_name,
+                "episode_id": result.episode_id,
+                "bundle_schema_version": result.bundle_schema_version,
+                "record_count": result.record_count,
+                "training_eligible_record_count": (
+                    result.training_eligible_record_count
+                ),
+                "mode": mode,
+                "source_path": path.as_posix(),
+                "version_aware_import": True,
+            }
+        )
+        return
     _echo(
         {
             "imported": True,
-            "episode_id": episode.episode_id,
-            "trade_date": episode.trade_date.isoformat(),
+            "episode_id": result.episode_id,
+            "trade_date": result.trade_date.isoformat(),
             "mode": mode,
             "source_path": path.as_posix(),
         }

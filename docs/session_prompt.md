@@ -1,7 +1,7 @@
 <!--
 유지보수 메모:
 docs/research_prompt.md가 바뀌면 이 세션 프롬프트의 MAIN EXECUTION PROMPT 섹션도 함께 갱신한다.
-반드시 commit-pinned Raw URL의 commit id, expected_sha256, expected_byte_size를 새 research_prompt.md 기준으로 맞춘다.
+반드시 main branch Raw URL, expected_sha256, expected_byte_size를 새 research_prompt.md 기준으로 맞춘다.
 웹 세션에 붙여넣기 전에는 `이번 세션 시작 파일: news_YYYYMMDD.csv`만 실행할 CSV 파일명으로 바꾼다.
 -->
 
@@ -38,7 +38,7 @@ docs/research_prompt.md가 바뀌면 이 세션 프롬프트의 MAIN EXECUTION P
 ```text
 GitHub repo `Daikisong/new_bot`의 `docs/research_prompt.md`는 gold phase machine MAIN EXECUTION PROMPT 내용으로 교체되어 있어야 한다.
 새 세션은 sandbox의 과거 파일을 모른다고 가정하지 않는다. 오히려 sandbox 잔존 파일은 오염원으로 취급한다.
-새 세션은 반드시 commit-pinned GitHub Raw의 MAIN EXECUTION PROMPT를 다시 확보한다.
+새 세션은 반드시 main branch GitHub Raw의 MAIN EXECUTION PROMPT를 다시 확보한다.
 ```
 
 ---
@@ -301,13 +301,13 @@ news_YYYYMMDD.csv
 
 [MAIN EXECUTION PROMPT]
 
-아래 commit-pinned GitHub Raw URL의 실행 프롬프트 전체를 열고 그대로 이행한다.
+아래 main branch GitHub Raw URL의 실행 프롬프트 전체를 열고 그대로 이행한다.
 
-https://raw.githubusercontent.com/Daikisong/new_bot/0ec9bcdef137518341d39e6115db8f28440e4cfe/docs/research_prompt.md
+https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md
 
-이 URL은 commit-pinned Raw URL이다.
+이 URL은 main branch Raw URL이다.
 
-branch main URL, GitHub HTML preview, 기존 로컬 파일로 대체하지 않는다.
+commit-pinned URL, GitHub HTML preview, 기존 로컬 파일로 대체하지 않는다.
 
 방금 Raw URL에서 받은 MAIN EXECUTION PROMPT는 반드시 다음 값이어야 한다.
 
@@ -333,13 +333,13 @@ MAIN EXECUTION PROMPT 상단 제목이 `NSLAB GOLD PHASE MACHINE — DIRECT CSV 
 research_prompt_revision에 `nslab.gold_phase_machine.direct_csv_research.locked`가 있어야 한다.
 ```
 
-MAIN_PROMPT_VERSION_MISMATCH Markdown은 오직 “이번 실행에서 commit-pinned Raw URL로 방금 받은 bytes”가 위 expected_title 또는 expected_sha256과 다를 때만 생성할 수 있다.
+MAIN_PROMPT_VERSION_MISMATCH Markdown은 오직 “이번 실행에서 main branch Raw URL로 방금 받은 bytes”가 위 expected_title 또는 expected_sha256과 다를 때만 생성할 수 있다.
 
-기존 `/mnt/data/research_prompt.md`, sandbox 잔존 파일, 이전 다운로드 파일, branch main 캐시 파일을 검사한 결과로는 MAIN_PROMPT_VERSION_MISMATCH를 생성할 수 없다.
+기존 `/mnt/data/research_prompt.md`, sandbox 잔존 파일, 이전 다운로드 파일을 검사한 결과로는 MAIN_PROMPT_VERSION_MISMATCH를 생성할 수 없다.
 
 expected 값이 맞으면 즉시 MAIN PROMPT acquisition은 DONE으로 처리하고, prompt 파일 검사를 반복하지 말고 CSV 확보 단계로 이동한다.
 
-만약 expected 값이 다르면 기존 로컬 파일 또는 캐시된 파일을 본 것이다. 이 경우 MAIN_PROMPT_VERSION_MISMATCH를 만들지 말고, 기존 로컬 파일을 무시하고 commit-pinned Raw URL을 다시 연다. 모든 web/browser/download fallback으로 commit-pinned Raw bytes를 새로 확보하지 못한 경우에만 ACQUIRE_FAILED를 선언한다.
+만약 expected 값이 다르면 기존 로컬 파일 또는 캐시된 파일을 본 것이다. 이 경우 MAIN_PROMPT_VERSION_MISMATCH를 만들지 말고, 기존 로컬 파일을 무시하고 main branch Raw URL을 다시 연다. 모든 web/browser/download fallback으로 main branch Raw bytes를 새로 확보하지 못한 경우에만 ACQUIRE_FAILED를 선언한다.
 
 ---
 
