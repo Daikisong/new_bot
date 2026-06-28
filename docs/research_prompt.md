@@ -962,13 +962,21 @@ issuer_day_event_weight_sum_per_ticker == 1.0 or documented no_tradable/quaranti
 
 ### 13.2 direct-event
 
-candidate_screening의 각 material event에 outcome label을 결합한다.
+candidate_screening의 각 material event는 outcome label과 결합되거나, direct-event가 될 수 없는 이유를 명시적으로 닫는다.
 
 필수:
 
 ```text
-direct_event_case_count >= candidate_screening_material_count
-case has screening_decision, sealed_fact_ids, D_response, training_eligible
+direct_event_case_count >= count(candidate_screening rows with sealed direct issuer fact and tradable D_response)
+candidate_screening_material_count ==
+  direct_event_case_count
+  + non_direct_rejection_or_audit_only_count
+  + duplicate_or_superseded_event_count
+  + unresolved_or_quarantined_event_count
+  + negative_control_source_count
+  + candidate_generation_or_ranking_error_source_count
+each direct event case has screening_decision, sealed_fact_ids, D_response, training_eligible
+every non-direct material row has no_direct_event_reason or rejection/error/negative-control linkage
 ```
 
 ### 13.3 errors and negative controls
@@ -2345,28 +2353,26 @@ actual_brain_delta_record_count = validation_report 안에 이미 쓰인 값
 
 ## V27.3 expected_brain_delta_min 계산식 고정
 
-정상 거래일이고 `outcome_ledger_count > 0`이면 expected는 다음 두 값 중 더 큰 값이다.
+정상 거래일이고 `outcome_ledger_count > 0`이면 expected는 source artifact에서 재계산한 다음 두 값 중 더 큰 값이다. 임의의 고정 floor를 넣지 않는다.
 
 ```text
-expected_brain_delta_min_full = max(
-    100,
+expected_brain_delta_min_full =
     issuer_day_case_count
   + supervised_direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
-)
   + candidate_generation_error_case_count
   + ranking_error_case_count
   + newsless_or_unexplained_case_count
-  + negative_control_case_count
+  + selected_negative_control_source_count
+  + beneficiary_discovery_case_count
+  + context_market_state_or_fact_case_count
 
-expected_brain_delta_min_conservative = max(
-    100,
+expected_brain_delta_min_conservative =
     issuer_day_case_count
   + direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
-)
 
 expected_brain_delta_min = max(
     expected_brain_delta_min_full,
@@ -2398,13 +2404,20 @@ ranking_error_case_count:
 newsless_or_unexplained_case_count:
   outcome_to_news_audit.jsonl에서 classification == NEWSLESS_OR_UNEXPLAINED인 record count
 
-negative_control_case_count:
-  candidate_screening.jsonl 또는 brain_delta에서 negative_control_case로 기록된 count. 단, expected에 넣는 경우 source artifact가 별도로 존재해야 한다.
+selected_negative_control_source_count:
+  candidate_screening.jsonl에서 negative_control_source로 선택된 대표 row count. 단, 전체 EXCLUDE row를 무한 복사하지 않고 candidate_path/rejection_reason/semantic_risk_flags별 대표 반례와 WATCH_SECONDARY 반례만 포함한다.
+
+beneficiary_discovery_case_count:
+  outcome_to_news_audit.jsonl에서 cutoff 이전 direct/body/theme bridge가 있으나 final에 없던 winner count
+
+context_market_state_or_fact_case_count:
+  market_state_override_audit.jsonl, body_table_candidate_generation_audit.jsonl, continuation/price-memory audit에서 검증된 context record count
 ```
 
 금지:
 
 ```text
+expected_brain_delta_min = 100
 expected_brain_delta_min = actual_brain_delta_record_count
 expected_brain_delta_min = len(brain_delta.jsonl)
 expected_brain_delta_min = validation_report 안에 이미 적힌 숫자
@@ -4547,32 +4560,30 @@ ACCEPT_FULL은 record 밀도와 final ranking 품질까지 통과해야 한다.
 허용 formula:
 
 ```text
-expected_brain_delta_min = max(
-    100,
+expected_brain_delta_min =
     issuer_day_case_count
   + supervised_direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
-)
   + candidate_generation_error_case_count
   + ranking_error_case_count
   + newsless_or_unexplained_case_count
-  + negative_control_case_count
+  + selected_negative_control_source_count
+  + beneficiary_discovery_case_count
+  + context_market_state_or_fact_case_count
 ```
 
 아직 error/correction population을 별도 count로 계산하지 않는 구현이라도 최소한 아래 보수식을 사용한다.
 
 ```text
-expected_brain_delta_min_conservative = max(
-    100,
+expected_brain_delta_min_conservative =
     issuer_day_case_count
   + direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
-)
 ```
 
-정상 거래일에서는 아래 hard floor도 반드시 적용한다.
+정상 거래일에서는 아래 hard gate도 반드시 적용한다.
 
 ```text
 if research_daily_access_verified == true
@@ -4586,7 +4597,7 @@ and direct_event_case_count >= 50:
 ```text
 expected_brain_delta_min = 7
 expected_brain_delta_min = 실제 생성된 brain_delta 개수
-brain_delta_record_count가 20~40개인데 issuer_day/direct_event 모집단이 100개 이상인 ACCEPT_FULL
+brain_delta_record_count가 20~40개인데 issuer_day/direct_event 모집단이 훨씬 큰 ACCEPT_FULL
 brain_delta_summary만 있고 supervised_issuer_day_case / supervised_direct_event_case record가 부족한 ACCEPT_FULL
 ```
 
@@ -6885,20 +6896,23 @@ ACCEPT_FULL 금지
 minimum count contract:
 
 ```text
-expected_brain_delta_min = max(
-    100,
+expected_brain_delta_min =
     issuer_day_case_count
   + supervised_direct_event_case_count
   + theme_formation_case_count
   + blind_leader_pair_count
-)
+  + candidate_generation_error_case_count
+  + ranking_error_case_count
+  + newsless_or_unexplained_case_count
+  + selected_negative_control_source_count
 ```
 
 validator hard check:
 
 ```python
 assert brain_delta_record_count >= expected_brain_delta_min
-assert expected_brain_delta_min >= 100
+assert expected_brain_delta_min == recomputed_required_population_count
+assert expected_brain_delta_min >= final_watchlist_count
 assert brain_delta_count_by_type["supervised_issuer_day_case"] == issuer_day_case_count
 assert brain_delta_count_by_type["supervised_direct_event_case"] == supervised_direct_event_case_count
 assert brain_delta_count_by_type["blind_leader_preference_pair"] == blind_leader_pair_count

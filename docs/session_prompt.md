@@ -327,12 +327,12 @@ expected_title:
 
 expected_sha256:
 ```text
-77f7263ed6c09af2daf8a42c8e21caf9a59c829dcbfee9271dadfce800bcc99d
+19adfaf7abd21e24d9772b1c4c0f37f825229792e00d5858c504fd793d1a16fb
 ```
 
 expected_byte_size:
 ```text
-421303
+422710
 ```
 
 필수 확인:
