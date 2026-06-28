@@ -303,7 +303,7 @@ news_YYYYMMDD.csv
 
 아래 commit-pinned GitHub Raw URL의 실행 프롬프트 전체를 열고 그대로 이행한다.
 
-https://raw.githubusercontent.com/Daikisong/new_bot/a2b60953de9a2a443d1dd0f24624099edab7fd21/docs/research_prompt.md
+https://raw.githubusercontent.com/Daikisong/new_bot/b7c8d7b4ff20c2c83a0689a453333ca46a013d99/docs/research_prompt.md
 
 이 URL은 commit-pinned Raw URL이다.
 
@@ -318,12 +318,12 @@ expected_title:
 
 expected_sha256:
 ```text
-b45eb9680c4b43b2d11161c5c931e9beac93c1b6f322547e58c90b75932e1291
+82863e5539a1314126984e04d5b9e4e8c43f0501cb72543e52d0eeee84ce2d22
 ```
 
 expected_byte_size:
 ```text
-398481
+404527
 ```
 
 필수 확인:
