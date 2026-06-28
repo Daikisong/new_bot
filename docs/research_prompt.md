@@ -1040,6 +1040,153 @@ alias를 그대로 남기면 두뇌 retrieval index가 분산되므로 `ACCEPT_F
 }
 ```
 
+### 14.0-A brain_delta enrichment population hard lock
+
+`brain_delta.jsonl`을 이미 작성된 legacy brain_delta row만 canonical type으로 바꾸고 끝내면 안 된다.  
+포장 repair는 renderer/importer 호환 문제만 고치는 마지막 단계이며, research population을 대신 만들 수 없다.
+
+정상 거래일이고 outcome snapshot이 검증되었으면 최종 `brain_delta.jsonl`은 아래 원본 artifact 전체에서 다시 생성한다.
+
+```text
+final_watchlist
+final_evidence_witness.jsonl
+candidate_screening.jsonl
+candidate_ranking_audit.jsonl
+candidate_semantic_witness.jsonl
+outcome_leader_census.jsonl
+outcome_to_news_audit.jsonl
+market_state_override_audit.jsonl
+body_table_candidate_generation_audit.jsonl
+postmortem_summary.json
+```
+
+다음 축소 패턴은 `BRAIN_DELTA_UNDERFILLED`다.
+
+```text
+brain_delta = final_watchlist 20개 + outcome_leader_census만 변환
+brain_delta = 기존 legacy brain_delta row만 canonical alias로 변환
+brain_delta = supervised_issuer_day_case 20개 + newsless leader rows만 생성
+brain_delta = postmortem 산문에서 lesson만 추출
+brain_delta = expected_brain_delta_min을 실제 생성 개수에 맞춰 낮춤
+brain_delta = candidate_screening/candidate_ranking_audit/outcome_to_news_audit를 읽지 않고 생성
+```
+
+필수 생성 모집단:
+
+```text
+1. final_watchlist issuer-day records
+   - final 후보마다 supervised_issuer_day_case 1개 이상
+   - final 후보의 ticker/company_name/source_fact_ids/source_inference_ids/outcome_audit_ids/sample_weight top-level 필수
+
+2. direct event records
+   - final_evidence_witness와 final 후보가 사용한 직접 event/fact마다 supervised_direct_event_case 생성
+   - 같은 trade_date+ticker에 event가 N개면 각 direct_event sample_weight 합이 1.0이 되도록 fractional weight 적용
+   - direct event를 만들 수 없으면 `direct_event_absence_reason`을 issuer-day record에 남기고 validation_report에 count를 기록
+
+3. rankable candidate records
+   - candidate_ranking_audit의 모든 rankable row를 읽는다
+   - included_in_final=true는 final issuer-day/direct-event/pair record와 연결
+   - included_in_final=false이고 outcome 강도가 높으면 ranking_error_case 또는 candidate_ranking_error_case 생성
+   - included_in_final=false이고 outcome 강도가 약하거나 thesis가 틀렸으면 negative_control_case 생성
+   - why_not_final_if_excluded가 빈 row는 먼저 ranking_audit를 수리한다
+
+4. outcome reverse-audit records
+   - outcome_to_news_audit row마다 최소 하나의 brain_delta record를 만든다
+   - CANDIDATE_GENERATION_MISS -> candidate_generation_error_case
+   - RANKING_MISS 또는 SCREENED_OUT_BUT_WINNER -> ranking_error_case 또는 candidate_ranking_error_case
+   - NEWSLESS_OR_UNEXPLAINED -> newsless_or_unexplained_case
+   - DIRECT_TICKER_HIT/DIRECT_NAME_HIT/BODY_TABLE_HIT인데 final에 없던 winner -> beneficiary_discovery_case 또는 candidate_generation_error_case
+   - CONTINUATION_POOL_ONLY/PRICE_MEMORY_ONLY -> context_market_state_or_fact_case 또는 newsless_or_unexplained_case
+   - cutoff 이후 원인만 있으면 training_eligible=false로 남기고 TIMING_IMPOSSIBLE reason을 기록
+
+5. blind pairwise preference records
+   - final 20개가 있으면 blind_leader_preference_pair를 20개 이상 만든다
+   - 각 pair는 BLIND 당시 선택한 후보와 POSTMORTEM outcome winner/loser 관계를 분리해서 기록
+   - pair를 만들 수 없는 후보는 pair_absence_reason을 기록하고 expected count에서 임의 제거하지 않는다
+
+6. theme and market-state records
+   - sealed peer universe, market_state_override, body-table candidate generation audit가 실제로 사용되었으면 theme_formation_case 또는 context_market_state_or_fact_case로 남긴다
+   - retrospective theme discovery는 BLIND 적중으로 승격하지 않고 RETROSPECTIVE_DISCOVERY phase로 기록한다
+```
+
+`brain_delta_population_manifest`를 `validation_report.json`과 `direct_ingest_contract.json.record_import_manifest`에 mirror한다.
+
+```json
+{
+  "brain_delta_population_manifest": {
+    "expected_source": "FINAL_MARKDOWN_BLOCK_REPARSE_AND_SOURCE_ARTIFACT_RECOUNT",
+    "final_watchlist_count": 0,
+    "final_evidence_witness_count": 0,
+    "rankable_candidate_count": 0,
+    "candidate_ranking_audit_nonfinal_count": 0,
+    "outcome_to_news_audit_count": 0,
+    "outcome_to_news_candidate_generation_miss_count": 0,
+    "outcome_to_news_ranking_miss_count": 0,
+    "outcome_to_news_newsless_count": 0,
+    "selected_negative_control_source_count": 0,
+    "required_counts_by_record_type": {
+      "supervised_issuer_day_case": 0,
+      "supervised_direct_event_case": 0,
+      "blind_leader_preference_pair": 0,
+      "candidate_generation_error_case": 0,
+      "ranking_error_case": 0,
+      "newsless_or_unexplained_case": 0,
+      "negative_control_case": 0,
+      "beneficiary_discovery_case": 0,
+      "context_market_state_or_fact_case": 0,
+      "theme_formation_case": 0
+    },
+    "actual_counts_by_record_type": {},
+    "underfilled_record_types": [],
+    "underfilled_count": 0
+  }
+}
+```
+
+검증식:
+
+```text
+required_supervised_issuer_day_case_count >= final_watchlist_count
+required_supervised_direct_event_case_count >= count(final_evidence_witness rows with direct event/fact evidence)
+required_blind_leader_preference_pair_count >= final_watchlist_count
+required_candidate_generation_error_case_count >= outcome_to_news_candidate_generation_miss_count
+required_ranking_error_case_count >= outcome_to_news_ranking_miss_count
+required_newsless_or_unexplained_case_count >= outcome_to_news_newsless_count
+required_negative_control_case_count >= selected_negative_control_source_count
+
+actual_count_by_record_type[type] >= required_counts_by_record_type[type]
+brain_delta_underfilled_count == 0
+brain_delta_population_manifest.underfilled_record_types == []
+```
+
+`selected_negative_control_source_count`는 전체 EXCLUDE row를 무한히 복사하는 숫자가 아니다. 다음을 source artifact에서 계산한다.
+
+```text
+explicit negative_control_source rows
+각 candidate_path + rejection_reason + semantic_risk_flags 조합별 대표 EXCLUDE/AUDIT_ONLY row
+final 후보와 같은 issuer/theme였지만 final에 못 들어간 WATCH_SECONDARY row
+강한 outcome이 없어서 postmortem에서 반례로 가치가 있는 rejected row
+```
+
+단, `selected_negative_control_source_count`를 0으로 두려면 candidate_screening에 EXCLUDE/AUDIT_ONLY/WATCH_SECONDARY가 없음을 숫자로 증명해야 한다.
+
+이 hard lock은 record 수를 `example2.md`의 165개에 맞추라는 뜻이 아니다. 날짜별 입력 artifact에서 계산한 모집단을 닫으라는 뜻이다. 어떤 날짜는 80개가 충분할 수 있고, 어떤 날짜는 200개가 필요할 수 있다. 그러나 `candidate_screening`, `candidate_ranking_audit`, `outcome_to_news_audit`에 추가 학습 모집단이 존재하는데 final 20개와 outcome leader만으로 끝내면 underfilled다.
+
+수리 규칙:
+
+```text
+if brain_delta_underfilled_count > 0:
+  do not lower expected counts
+  do not declare ACCEPT_FULL
+  reopen source artifacts
+  generate missing canonical brain_delta records
+  update id_registry, canonical_graph, validation_report, direct_ingest_contract, bundle_manifest
+  re-render final Markdown
+  re-open final Markdown
+  re-parse brain_delta.jsonl
+  re-run count/hash/sample_weight/provenance validation
+```
+
 ### 14.1 brain_delta canonical ticker field hard lock
 
 `brain_delta.jsonl`은 importer가 직접 읽는 record source다. `payload.code`, `payload.stock_code`, `payload.company`, `payload.name`만으로는 canonical issuer identity가 아니다.
