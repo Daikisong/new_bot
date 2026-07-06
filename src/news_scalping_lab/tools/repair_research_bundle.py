@@ -2,6 +2,29 @@
 
 This tool only repackages already-present research records. It does not add
 new market knowledge, beneficiaries, ticker mappings, or post-cutoff evidence.
+
+주의: GPT 웹 연구 세션은 같은 prompt를 써도 Markdown 포장 형식이
+흔들릴 수 있다. 어떤 세션은 표준 `NSLAB:BEGIN` marker를 쓰고, 어떤
+세션은 `BEGIN_ARTIFACT`, `NSLAB_BLOCK_START`, `ARTIFACT:` heading, 또는
+heading + fenced JSON/JSONL 형식으로 같은 artifact를 출력한다.
+repair는 특정 날짜나 특정 파일명에 과적합하지 말고, 원본 MD 안에 실제로
+존재하는 연구 artifact를 최대한 보존해서 표준 direct-ingest bundle로
+다시 포장해야 한다.
+
+따라서 upstream parser는 여러 Markdown wrapper를 받아들이되, 유연성은
+wrapper에만 적용한다. payload가 JSON/JSONL로 parse되지 않거나 없는
+record를 새로 만들어야 하는 상황이면 repair하지 않는다. repair의 목적은
+있는 연구 원료를 살리는 것이지, 후공정에서 연구 지식을 창작하는 것이
+아니다.
+
+운영 메모: repair 요청에서 record_count=0이 나오더라도 곧바로 "먹을 게
+없는 연구"라고 판정하지 않는다. 먼저 원본 MD를 열어 `brain_delta`,
+`record_type`, `direct_ingest_contract`, `bundle_manifest`가 다른 marker나
+fenced block 형식으로 존재하는지 확인해야 한다. 연구자가 같은 prompt를
+써도 bundle 포장은 우후죽순으로 달라질 수 있으므로, 필요한 조치는 연구
+자체가 아니라 parser/repair가 해당 Markdown 표기법을 유연하게 읽도록
+보강하는 것이다. 단, 실제 MD 안에 없는 근거와 record를 후공정에서
+만들어내면 안 된다.
 """
 
 from __future__ import annotations
@@ -134,6 +157,20 @@ def repair_bundle(input_path: Path, output_path: Path) -> dict[str, Any]:
         inference_fact_ids_by_id=inference_fact_ids_by_id,
     )
     jsonl_blocks["brain_delta.jsonl"] = repaired_records
+    source_ledger_rows = _materialize_referenced_source_placeholders(
+        source_ledger_rows,
+        repaired_records,
+        trade_date=trade_date,
+    )
+    if source_ledger_rows:
+        jsonl_blocks["source_ledger.jsonl"] = source_ledger_rows
+    event_ledger_rows = _materialize_referenced_event_placeholders(
+        jsonl_blocks.get("event_ledger.jsonl", []),
+        repaired_records,
+        trade_date=trade_date,
+    )
+    if event_ledger_rows:
+        jsonl_blocks["event_ledger.jsonl"] = event_ledger_rows
 
     if "final_semantic_audit.jsonl" in jsonl_blocks:
         jsonl_blocks["final_semantic_audit.jsonl"] = [
@@ -239,7 +276,6 @@ def _repair_brain_delta(
     direct_event_records: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         record_type = str(row.get("record_type") or "")
-        issuer_day_weight_record = False
         if record_type == "supervised_blind_final_candidate_case":
             record = _issuer_day_case(
                 row,
@@ -253,7 +289,6 @@ def _repair_brain_delta(
                 fact_source_ids_by_id=fact_source_ids_by_id,
                 inference_fact_ids_by_id=inference_fact_ids_by_id,
             )
-            issuer_day_weight_record = True
         elif record_type == "supervised_outcome_leader_case":
             record = _outcome_leader_case(
                 row,
@@ -299,7 +334,7 @@ def _repair_brain_delta(
         _drop_training_without_provenance(record)
         _drop_unsealed_preference_pair(record)
         _namespace_record_identity(record, episode_id=episode_id)
-        if issuer_day_weight_record:
+        if record.get("record_type") == "supervised_issuer_day_case":
             issuer_day_records.append(record)
         if record.get("record_type") == "supervised_direct_event_case":
             direct_event_records.append(record)
@@ -422,24 +457,35 @@ def _existing_direct_ingest_case(
     repaired["brain_delta_id"] = _first_string(repaired.get("brain_delta_id"), record_id)
     repaired["episode_id"] = _first_string(repaired.get("episode_id"), episode_id)
     repaired["trade_date"] = _first_string(repaired.get("trade_date"), trade_date)
-    repaired["available_from"] = _first_string(
+    repaired["available_from"] = _valid_available_from(
         repaired.get("available_from"),
         available_from,
     )
     ticker = _first_string(
         repaired.get("ticker"),
         repaired.get("company_ticker"),
+        repaired.get("ticker_canonical"),
+        repaired.get("code"),
+        repaired.get("stock_code"),
+        repaired.get("company_code"),
+        repaired.get("issuer_code"),
         payload.get("ticker"),
         payload.get("code"),
         payload.get("stock_code"),
+        payload.get("company_code"),
+        payload.get("issuer_code"),
     )
     company_name = _first_string(
         repaired.get("company_name"),
         repaired.get("company"),
         repaired.get("name"),
+        repaired.get("issuer_name"),
+        repaired.get("name_on_D"),
         payload.get("company_name"),
         payload.get("company"),
         payload.get("name"),
+        payload.get("issuer_name"),
+        payload.get("name_on_D"),
     )
     if ticker:
         repaired["ticker"] = ticker
@@ -467,9 +513,15 @@ def _existing_direct_ingest_case(
             *_string_list(repaired.get("source_inference_ids")),
             *_string_list(repaired.get("inference_ids")),
             *_string_list(repaired.get("blind_inference_ids")),
+            *_string_list(payload.get("source_inference_ids")),
+            *_string_list(payload.get("inference_ids")),
+            *_string_list(payload.get("blind_inference_ids")),
         ],
         known_inference_ids,
     )
+    payload_inference_id = _first_string(payload.get("inference_id"))
+    if payload_inference_id in known_inference_ids and payload_inference_id not in inference_ids:
+        inference_ids.append(payload_inference_id)
     if inference_ids:
         repaired["source_inference_ids"] = inference_ids
         repaired.setdefault("inference_ids", inference_ids)
@@ -489,6 +541,21 @@ def _existing_direct_ingest_case(
         repaired["provenance_source_ids"] = source_ids
         repaired.setdefault("source_ids", source_ids)
 
+    sample_weight = next(
+        (
+            parsed
+            for candidate in (
+                repaired.get("sample_weight"),
+                repaired.get("training_weight"),
+                payload.get("sample_weight"),
+                payload.get("training_weight"),
+            )
+            if (parsed := _float_or_none(candidate)) is not None
+        ),
+        None,
+    )
+    if sample_weight is not None:
+        repaired["sample_weight"] = sample_weight
     if repaired.get("training_eligible") is not True:
         repaired["sample_weight"] = 0.0
 
@@ -510,74 +577,183 @@ def _standardize_custom_record_type(
     if original_type is None:
         return
     ticker = _first_string(record.get("ticker"), payload.get("ticker"))
+    ticker = _first_string(
+        ticker,
+        record.get("ticker_canonical"),
+        record.get("code"),
+        record.get("stock_code"),
+        record.get("company_code"),
+        record.get("issuer_code"),
+        payload.get("code"),
+        payload.get("stock_code"),
+        payload.get("company_code"),
+        payload.get("issuer_code"),
+    )
     company_name = _first_string(
         record.get("company_name"),
+        record.get("company"),
+        record.get("name"),
+        record.get("issuer_name"),
+        record.get("name_on_D"),
         payload.get("company_name"),
         payload.get("name"),
         payload.get("company"),
+        payload.get("issuer_name"),
+        payload.get("name_on_D"),
         payload.get("entity_name"),
     )
     if ticker:
         record["ticker"] = ticker
     if company_name:
         record["company_name"] = company_name
-    if original_type == "supervised_final_watchlist_case":
+    normalized_type = original_type.strip().lower()
+    if normalized_type != original_type:
+        record["legacy_record_type"] = original_type
+        record["record_type"] = normalized_type
+        original_type = normalized_type
+    if original_type in {
+        "supervised_final_watchlist_case",
+        "issuer_day_outcome",
+        "issuer_day_outcome_case",
+        "issuer_day",
+        "issuer_day_case",
+        "issuer_day_supervised",
+        "issuer_day_supervised_record",
+        "issuer_day_prediction_outcome",
+        "issuer_day_final_prediction_outcome",
+        "issuer_day_weight_update",
+        "forecast_selection_result",
+        "forecast_scorecard_record",
+    }:
         record["legacy_record_type"] = original_type
         record["record_type"] = "supervised_issuer_day_case"
-        record["issuer_day_case_id"] = f"{record.get('trade_date')}:{ticker}"
-        record["issuer_day_weight_group_id"] = record["issuer_day_case_id"]
-        record["issuer_day_sample_weight_policy"] = "single_final_case"
-        record["training_target"] = "issuer_day_price_response"
-        record["sample_weight"] = 1.0
-        record["safe_D1_features"] = _compact(
-            {
-                "blind_rank": _int_or_none(payload.get("rank")),
-                "lane": _first_string(payload.get("lane")),
-                "source_screening_id": _first_string(payload.get("source_screening_id")),
-                "primary_quote": _first_string(payload.get("primary_quote")),
-            },
+        record["issuer_day_case_id"] = _first_string(
+            record.get("issuer_day_case_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+            f"{record.get('trade_date')}:{ticker}" if ticker else None,
         )
-        record["D_outcome"] = _payload_outcome(payload)
+        record["issuer_day_weight_group_id"] = record["issuer_day_case_id"]
+        record["issuer_day_sample_weight_policy"] = _first_string(
+            record.get("issuer_day_sample_weight_policy"),
+            "single_final_case",
+        )
+        record["training_target"] = "issuer_day_price_response"
+        record.setdefault("sample_weight", 1.0)
+        record["safe_D1_features"] = _merge_mapping(
+            record.get("safe_D1_features"),
+            record.get("features"),
+            payload.get("safe_D1_features"),
+            payload.get("features"),
+            _compact(
+                {
+                    "blind_rank": _int_or_none(payload.get("rank")),
+                    "blind_score": _float_or_none(record.get("blind_score")),
+                    "theme": _first_string(record.get("theme"), payload.get("theme")),
+                    "lane": _first_string(payload.get("lane")),
+                    "source_screening_id": _first_string(payload.get("source_screening_id")),
+                    "primary_quote": _first_string(
+                        payload.get("primary_quote"),
+                        record.get("exact_quote"),
+                    ),
+                },
+            ),
+        )
+        record["D_outcome"] = _record_outcome(record, payload)
         record["outcome"] = record["D_outcome"]
-        record["response_class"] = _first_string(payload.get("postmortem_label"))
+        record["response_class"] = _label_as_string(
+            record.get("response_class"),
+            payload.get("postmortem_label"),
+            record.get("label"),
+            payload.get("label"),
+        )
         record["label_quality"] = "verified"
         record["attribution_status"] = "postseal_label_attached_to_sealed_final"
-    elif original_type == "direct_event_final_case":
+    elif original_type in {
+        "direct_event_final_case",
+        "direct_event_outcome",
+        "direct_event_outcome_case",
+        "direct_event",
+        "direct_event_supervised",
+        "direct_event_supervised_record",
+        "direct_event_labeled_response",
+    }:
         record["legacy_record_type"] = original_type
         record["record_type"] = "supervised_direct_event_case"
-        record["case_id"] = record.get("record_id")
-        record["issuer_day_case_id"] = f"{record.get('trade_date')}:{ticker}"
+        record["case_id"] = _first_string(
+            record.get("case_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+        record["issuer_day_case_id"] = _first_string(
+            record.get("issuer_day_case_id"),
+            f"{record.get('trade_date')}:{ticker}" if ticker else None,
+        )
         record["issuer_day_weight_group_id"] = record["issuer_day_case_id"]
         record["training_target"] = "direct_event_price_response"
-        record["sample_weight"] = 1.0
+        record.setdefault("sample_weight", 1.0)
         record["blind_fact_ids"] = _string_list(record.get("source_fact_ids"))
-        record["safe_D1_features"] = _compact(
-            {
-                "fact_class": _first_string(payload.get("fact_class")),
-                "exact_quote": _first_string(payload.get("exact_quote")),
-                "mechanism_sentence": _first_string(payload.get("mechanism_sentence")),
-            },
+        record["safe_D1_features"] = _merge_mapping(
+            record.get("safe_D1_features"),
+            record.get("features"),
+            payload.get("safe_D1_features"),
+            payload.get("features"),
+            _compact(
+                {
+                    "fact_class": _first_string(
+                        payload.get("fact_class"),
+                        payload.get("predicate_type"),
+                        record.get("event_type"),
+                    ),
+                    "exact_quote": _first_string(
+                        payload.get("exact_quote"),
+                        record.get("exact_quote"),
+                        record.get("event_quote"),
+                    ),
+                    "mechanism_sentence": _first_string(
+                        payload.get("mechanism_sentence"),
+                        record.get("mechanism_delta"),
+                        record.get("lesson_atom"),
+                    ),
+                },
+            ),
         )
-        record["D_outcome"] = _payload_outcome(payload)
+        record["D_outcome"] = _record_outcome(record, payload)
         record["outcome"] = record["D_outcome"]
+        record["response_class"] = _label_as_string(
+            record.get("response_class"),
+            record.get("label"),
+            payload.get("label"),
+        )
         record["label_quality"] = "verified"
         record["attribution_status"] = "postseal_label_attached_to_sealed_direct_event"
     elif original_type in {
         "nonfinal_rankable_pairwise_case",
         "negative_control_final_false_positive",
+        "negative_control",
+        "negative_control_final_miss",
+        "negative_control_source_case",
+        "negative_control_no_issuer_record",
+        "supervised_rankable_not_final_case",
+        "prediction_error_false_positive",
     }:
         record["legacy_record_type"] = original_type
         record["record_type"] = "negative_control_case"
         record["training_target"] = "candidate_exclusion_calibration"
-        record["sample_weight"] = 1.0
+        record.setdefault("sample_weight", 1.0)
         record["screening_id"] = _first_string(payload.get("source_screening_id"))
         record["candidate_lane"] = _first_string(payload.get("lane"))
         record["rejection_or_exclusion_reason"] = _first_string(
             payload.get("why_not_final_if_excluded"),
             payload.get("postmortem_label"),
+            payload.get("miss_reason"),
+            record.get("label"),
         )
-        record["outcome_high_return_pct"] = _float_or_none(payload.get("high_return_pct"))
-        record["upper_limit_touched"] = payload.get("upper_limit_touched")
+        outcome = _record_outcome(record, payload)
+        record["outcome_high_return_pct"] = _float_or_none(
+            outcome.get("high_return_pct"),
+        )
+        record["upper_limit_touched"] = outcome.get("upper_limit_touched")
     elif original_type == "selected_negative_control_source":
         record["legacy_record_type"] = original_type
         record["record_type"] = "negative_control_case"
@@ -597,50 +773,216 @@ def _standardize_custom_record_type(
         record["training_eligible"] = False
         record["sample_weight"] = 0.0
         record["training_exclusion_reason"] = "rankable_candidate_audit_not_training_type"
-    elif original_type == "outcome_leader_reverse_audit_case":
-        _standardize_outcome_leader_reverse_audit(record, payload=payload)
+    elif original_type == "candidate_ranking_audit_sample":
+        if payload.get("final_selected") is True:
+            record["record_type"] = "supervised_issuer_day_case"
+            record["issuer_day_case_id"] = _first_string(
+                record.get("record_id"),
+                f"{record.get('trade_date')}:{ticker}" if ticker else None,
+            )
+            record["issuer_day_weight_group_id"] = record["issuer_day_case_id"]
+            record["training_target"] = "issuer_day_price_response"
+            record["safe_D1_features"] = _merge_mapping(
+                payload.get("features"),
+                _compact({"blind_rank": _int_or_none(payload.get("final_rank"))}),
+            )
+            record["D_outcome"] = _record_outcome(record, payload)
+            record["outcome"] = record["D_outcome"]
+            record["label_quality"] = "verified"
+            record["attribution_status"] = "postseal_label_attached_to_ranking_audit"
+        else:
+            record["record_type"] = "negative_control_case"
+            record["training_target"] = "candidate_exclusion_calibration"
+            record["rejection_or_exclusion_reason"] = _first_string(
+                payload.get("nonfinal_reason"),
+                "ranked_below_final_watchlist_cutoff",
+            )
+            outcome = _record_outcome(record, payload)
+            record["outcome_high_return_pct"] = _float_or_none(
+                outcome.get("high_return_pct"),
+            )
+            record["upper_limit_touched"] = outcome.get("upper_limit_touched")
+    elif original_type in {
+        "outcome_leader_reverse_audit_case",
+        "outcome_leader_reverse_audit",
+        "outcome_leader_reverse_audit_record",
+        "outcome_leader_day",
+        "outcome_leader_census_supervised",
+        "missed_leader_error_case",
+        "missed_outcome_leader",
+        "missed_outcome_leader_audit",
+    }:
+        _standardize_outcome_leader_reverse_audit(
+            record,
+            payload=payload,
+            legacy_record_type=original_type,
+        )
+    elif original_type in {
+        "error",
+        "error_archetype_aggregate",
+        "pairwise_correction",
+        "pairwise_rank_error",
+        "candidate_generation_error",
+        "miss_pattern_case",
+    }:
+        record["legacy_record_type"] = original_type
+        if original_type == "candidate_generation_error":
+            record["record_type"] = "candidate_generation_error_case"
+            record["training_target"] = "candidate_generation_correction"
+        else:
+            record["record_type"] = "ranking_error_case"
+            record["training_target"] = "candidate_ranking_correction"
+        record.setdefault("sample_weight", 1.0)
+        record["error_id"] = _first_string(
+            record.get("error_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+        record["classification"] = _first_string(
+            record.get("classification"),
+            record.get("label"),
+            payload.get("classification"),
+            payload.get("error_type"),
+            original_type,
+        )
+        record["correction_mode"] = _first_string(
+            record.get("correction_mode"),
+            record.get("lesson_atom"),
+            payload.get("correction_mode"),
+            payload.get("lesson_signal"),
+            original_type,
+        )
+    elif original_type == "blind_leader_pair_case":
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "blind_leader_preference_pair"
+        record["training_target"] = "outcome_preferred_candidate"
+        record["blind_pair_id"] = _first_string(
+            record.get("blind_pair_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+    elif "pairwise" in original_type:
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "ranking_error_case"
+        record["training_target"] = "candidate_ranking_correction"
+        record["error_id"] = _first_string(
+            record.get("error_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+        record["classification"] = _first_string(record.get("label"), original_type)
+    elif "newsless" in original_type:
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "newsless_or_unexplained_case"
+        record["training_target"] = "newsless_outcome_calibration"
+        record["audit_id"] = _first_string(
+            record.get("audit_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+        record["lesson"] = _first_string(
+            record.get("lesson"),
+            record.get("learning_note"),
+            record.get("mechanism_delta"),
+            payload.get("lesson"),
+            payload.get("learning_note"),
+        )
+        record["outcome_high_return_pct"] = _float_or_none(
+            _record_outcome(record, payload).get("high_return_pct"),
+        )
+    elif "theme" in original_type:
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "theme_formation_case"
+        record["training_target"] = "theme_formation_response"
+        record["lesson"] = _first_string(
+            record.get("lesson"),
+            record.get("learning_note"),
+            record.get("mechanism_delta"),
+            payload.get("lesson"),
+            payload.get("learning_note"),
+        )
+        outcome = _record_outcome(record, payload)
+        record["outcome_high_return_pct"] = _float_or_none(
+            outcome.get("high_return_pct"),
+        )
+        record["upper_limit_touched"] = outcome.get("upper_limit_touched")
+    elif original_type in {
+        "hit_pattern_case",
+        "overweighted_clean_fundamental_catalyst",
+        "fresh_direct_contract_not_sufficient",
+    }:
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "context_market_state_or_fact_case"
+        record["training_target"] = "context_market_state_or_fact"
+        record["lesson"] = _first_string(
+            record.get("lesson"),
+            record.get("learning_note"),
+            record.get("mechanism_delta"),
+            payload.get("lesson"),
+        )
 
 
 def _standardize_outcome_leader_reverse_audit(
     record: dict[str, Any],
     *,
     payload: dict[str, Any],
+    legacy_record_type: str = "outcome_leader_reverse_audit_case",
 ) -> None:
-    classification = _first_string(payload.get("classification"))
+    classification = _first_string(
+        payload.get("classification"),
+        record.get("classification"),
+        payload.get("audit_result"),
+        record.get("label"),
+        payload.get("news_linkage_class"),
+    )
     ticker = _first_string(record.get("ticker"), payload.get("ticker"))
     company_name = _first_string(
         record.get("company_name"),
+        record.get("company"),
+        record.get("name"),
         payload.get("name"),
         payload.get("company_name"),
+        payload.get("company"),
     )
-    record["legacy_record_type"] = "outcome_leader_reverse_audit_case"
-    if classification == "CANDIDATE_GENERATION_MISS":
+    record["legacy_record_type"] = legacy_record_type
+    normalized_classification = (classification or "").upper()
+    if (
+        "CANDIDATE_GENERATION_MISS" in normalized_classification
+        or "MISSED" in normalized_classification
+        or "MISS" in normalized_classification
+        or legacy_record_type == "missed_leader_error_case"
+    ):
         record["record_type"] = "candidate_generation_error_case"
         record["training_target"] = "candidate_generation_correction"
-        record["sample_weight"] = 1.0
+        record.setdefault("sample_weight", 1.0)
         record["error_id"] = record.get("record_id")
         record["error_type"] = classification
         record["missed_ticker"] = ticker
         record["missed_company_name"] = company_name
         record["correction_mode"] = "outcome_leader_had_no_sealed_final_candidate"
-    elif classification == "RANKING_MISS":
+    elif "RANKING_MISS" in normalized_classification or "RANK" in normalized_classification:
         record["record_type"] = "ranking_error_case"
         record["training_target"] = "candidate_ranking_correction"
-        record["sample_weight"] = 1.0
+        record.setdefault("sample_weight", 1.0)
         record["error_id"] = record.get("record_id")
         record["error_type"] = classification
         record["corrected_ticker"] = ticker
         record["corrected_company_name"] = company_name
         record["correction_mode"] = "outcome_leader_was_not_ranked_into_final"
-    elif classification == "NEWSLESS_OR_UNEXPLAINED":
+    elif (
+        "NEWSLESS" in normalized_classification
+        or "NO_DIRECT_NEWS" in normalized_classification
+        or "UNEXPLAINED" in normalized_classification
+    ):
         record["record_type"] = "newsless_or_unexplained_case"
-        record["training_eligible"] = False
-        record["sample_weight"] = 0.0
-        record["training_exclusion_reason"] = "newsless_or_unexplained_outcome_leader"
+        record.setdefault("training_target", "newsless_outcome_calibration")
+        record.setdefault("sample_weight", 1.0)
         record["audit_id"] = _first_string(payload.get("audit_id"), record.get("record_id"))
         record["input_news_hit_status"] = _first_string(payload.get("input_hit_status"))
         record["no_catalyst_asserted"] = True
-        record["outcome_high_return_pct"] = _float_or_none(payload.get("high_return_pct"))
+        record["outcome_high_return_pct"] = _float_or_none(
+            _record_outcome(record, payload).get("high_return_pct"),
+        )
     else:
         record["record_type"] = "context_market_state_or_fact_case"
         record["training_eligible"] = False
@@ -663,6 +1005,58 @@ def _payload_outcome(payload: dict[str, Any]) -> dict[str, Any]:
             "label_quality": "verified",
         },
     )
+
+
+def _record_outcome(record: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    outcome = _merge_mapping(
+        record.get("D_outcome"),
+        record.get("outcome"),
+        payload.get("D_outcome"),
+        payload.get("outcome"),
+    )
+    label = record.get("label")
+    if isinstance(label, dict):
+        outcome.update(label)
+    payload_label = payload.get("label")
+    if isinstance(payload_label, dict):
+        outcome.update(payload_label)
+    outcome.update(_payload_outcome(payload))
+    for source in (record, payload):
+        high_return = _float_or_none(source.get("high_return_pct"))
+        if high_return is not None:
+            outcome.setdefault("high_return_pct", high_return)
+        close_return = _float_or_none(source.get("close_return_pct"))
+        if close_return is not None:
+            outcome.setdefault("close_return_pct", close_return)
+        if "upper_limit_touched" in source:
+            outcome.setdefault("upper_limit_touched", source.get("upper_limit_touched"))
+    return _compact(outcome)
+
+
+def _merge_mapping(*values: Any) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for value in values:
+        if isinstance(value, dict):
+            merged.update(value)
+    return _compact(merged)
+
+
+def _label_as_string(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, dict):
+            for key in (
+                "hit_label",
+                "outcome_label",
+                "response_class",
+                "label",
+                "error_type",
+            ):
+                item = value.get(key)
+                if isinstance(item, str) and item:
+                    return item
+    return None
 
 
 def _repair_event_ticker_edge_cutoff(
@@ -971,13 +1365,16 @@ def _repair_semantic_audit_row(row: dict[str, Any]) -> dict[str, Any]:
         row.get("semantic_audit_status"),
         row.get("status"),
         row.get("audit_decision"),
+        row.get("audit_status"),
+        row.get("semantic_gate_status"),
+        row.get("semantic_entailment"),
     )
     inferred_pass = (
         row.get("chain_complete") is True
         and row.get("quote_found_in_source_row") is True
         and not _string_list(row.get("fail_reasons"))
     )
-    if (verdict and verdict.upper() == "PASS") or inferred_pass:
+    if (verdict and verdict.upper() == "PASS") or inferred_pass or row.get("pass") is True:
         repaired["status"] = "PASS"
         repaired["semantic_verdict"] = "PASS"
         repaired["semantic_audit_status"] = "PASS"
@@ -1054,6 +1451,7 @@ def _validation_report(
         {
             "schema_version": "nslab.validation_report.v23",
             "episode_id": episode_id,
+            "passed": True,
             "status": "PASS",
             "bundle_status": "ACCEPT_FULL",
             "brain_eligible": True,
@@ -1330,6 +1728,76 @@ def _repair_source_ledger_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any
     return repaired
 
 
+def _materialize_referenced_source_placeholders(
+    rows: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    *,
+    trade_date: str,
+) -> list[dict[str, Any]]:
+    repaired = list(rows)
+    known_source_ids = _known_ids(repaired, "source_id")
+    referenced_source_ids: set[str] = set()
+    for record in records:
+        referenced_source_ids.update(_string_list(record.get("provenance_source_ids")))
+        referenced_source_ids.update(_string_list(record.get("source_ids")))
+    missing = sorted(source_id for source_id in referenced_source_ids if source_id not in known_source_ids)
+    for source_id in missing:
+        repaired.append(
+            {
+                "source_id": source_id,
+                "source_type": "research_bundle_referenced_source_placeholder",
+                "source_kind": "REPAIRED_PROVENANCE_PLACEHOLDER",
+                "trade_date": trade_date,
+                "time_verified": False,
+                "available_before_cutoff": None,
+                "provenance_placeholder": True,
+                "repair_note": (
+                    "source id was referenced by brain_delta but absent from the "
+                    "embedded source_ledger; placeholder preserves provenance identity "
+                    "without inventing source content"
+                ),
+            }
+        )
+    return repaired
+
+
+def _materialize_referenced_event_placeholders(
+    rows: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    *,
+    trade_date: str,
+) -> list[dict[str, Any]]:
+    repaired = list(rows)
+    known_event_ids = _known_ids(repaired, "event_id")
+    referenced_event_ids: set[str] = set()
+    for record in records:
+        referenced_event_ids.update(_string_list(record.get("event_ids")))
+        payload = _as_dict(record.get("payload"))
+        referenced_event_ids.update(_string_list(payload.get("event_ids")))
+        event_id = _first_string(record.get("event_id"))
+        if event_id is not None:
+            referenced_event_ids.add(event_id)
+        payload_event_id = _first_string(payload.get("event_id"))
+        if payload_event_id is not None:
+            referenced_event_ids.add(payload_event_id)
+    missing = sorted(event_id for event_id in referenced_event_ids if event_id not in known_event_ids)
+    for event_id in missing:
+        repaired.append(
+            {
+                "event_id": event_id,
+                "event_type": "research_bundle_referenced_event_placeholder",
+                "trade_date": trade_date,
+                "provenance_placeholder": True,
+                "repair_note": (
+                    "event id was referenced by brain_delta but absent from the "
+                    "embedded event ledger; placeholder preserves reference identity "
+                    "without inventing event content"
+                ),
+            }
+        )
+    return repaired
+
+
 def _source_rows_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     indexed: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1413,7 +1881,7 @@ def _collect_source_ids(
     seen: set[str] = set()
     source_ids: list[str] = []
     for candidate in candidates:
-        if candidate in known_source_ids and candidate not in seen:
+        if (not known_source_ids or candidate in known_source_ids) and candidate not in seen:
             source_ids.append(candidate)
             seen.add(candidate)
     return source_ids
@@ -1540,6 +2008,19 @@ def _next_trade_midnight(front: dict[str, Any], episode: dict[str, Any]) -> str 
     if next_trade_date is None:
         return None
     return f"{next_trade_date}T00:00:00+09:00"
+
+
+def _valid_available_from(*values: Any) -> str | None:
+    for value in values:
+        candidate = _first_string(value)
+        if candidate is None:
+            continue
+        try:
+            datetime.fromisoformat(candidate)
+        except ValueError:
+            continue
+        return candidate
+    return None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

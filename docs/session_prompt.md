@@ -327,12 +327,12 @@ expected_title:
 
 expected_sha256:
 ```text
-48a3418387e9631f21ff8c72a8914ca9202f4643a9994d32f2bf4c15957d2cdd
+b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029
 ```
 
 expected_byte_size:
 ```text
-430066
+430485
 ```
 
 필수 확인:
@@ -454,6 +454,11 @@ previous_trade_date 또는 next_trade_date를 신뢰할 수 있게 확인하지 
 11. brain_delta uses record_type records, not lesson memo rows
 12. blind_report has sections 1~19, postmortem_report has sections 20~36
 13. final Markdown is re-opened and parsed for validation before ACCEPT_FULL
+14. `brain_delta_count`, `brain_delta_record_count`, `record_type_counts`, `bundle_manifest.files["brain_delta.jsonl"]`, `validation_report`, and `direct_ingest_contract` are invalid unless the final Markdown contains an actually parseable `brain_delta.jsonl` payload.
+15. If any manifest/validation/contract says `brain_delta_count > 0` but the final Markdown reparse extracts 0 `brain_delta.jsonl` rows, the episode is `MISSING_BRAIN_DELTA_PAYLOAD`, not `ACCEPT_FULL`.
+16. For a normal trading-day episode, `brain_eligible=true`, `direct_brain_ingest_ready=true`, and `ACCEPT_FULL` require `parsed_brain_delta_jsonl_row_count > 0`.
+17. The final validator must record `brain_delta_payload_missing_count == 0`, `brain_delta_manifest_payload_count_mismatch_count == 0`, and `brain_delta_declared_without_payload_count == 0`.
+18. Count/hash receipts cannot substitute for the actual JSONL artifact body. If the payload is missing, rerender the artifact body from the canonical graph and re-open/re-parse the Markdown before finalizing.
 ```
 
 만약 위 조건 중 하나가 실패하면 먼저 수리한다. 단순히 `ACCEPT_FULL`을 금지하는 것으로 끝내지 말고, 누락된 row/source/candidate/outcome/brain_delta population을 생성한 뒤 재검증한다.

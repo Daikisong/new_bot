@@ -12519,6 +12519,13 @@ prefix_or_substring_binding_count > 0
 group_brand_venue_product_generic_binding_count > 0
 entity_binding_regression_failure_count > 0
 canonical_graph_consistency_error_count > 0
+brain_delta_payload_missing_count > 0
+brain_delta_manifest_payload_count_mismatch_count > 0
+brain_delta_declared_without_payload_count > 0
+parsed_brain_delta_jsonl_row_count == 0 for a normal trading-day episode
+bundle_manifest_brain_delta_count_without_jsonl_payload_count > 0
+validation_report_brain_delta_count_without_jsonl_payload_count > 0
+direct_ingest_contract_brain_delta_count_without_jsonl_payload_count > 0
 validator_exit_code != 0
 critical_error_count > 0
 ```

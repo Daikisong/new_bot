@@ -56,3 +56,4 @@ training_exports/*
 !training_exports/.gitkeep
 session_packs/*
 !session_packs/.gitkeep
+docs/0708/research_md/

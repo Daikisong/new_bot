@@ -7,6 +7,7 @@ legacy ``ResearchEpisode`` schema.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time
@@ -1817,6 +1818,13 @@ def _has_blind_payload(record: dict[str, Any]) -> bool:
 
 def _extract_blocks(text: str) -> dict[str, str]:
     blocks: dict[str, str] = {}
+    _extract_standard_nslab_blocks(text, blocks)
+    _extract_alternate_marker_blocks(text, blocks)
+    _extract_heading_fenced_blocks(text, blocks)
+    return blocks
+
+
+def _extract_standard_nslab_blocks(text: str, blocks: dict[str, str]) -> None:
     lines = text.splitlines()
     index = 0
     while index < len(lines):
@@ -1835,7 +1843,139 @@ def _extract_blocks(text: str) -> dict[str, str]:
                 raise VersionedBundleImportError(f"missing END marker for block: {name}")
             blocks[name] = "\n".join(content).strip()
         index += 1
-    return blocks
+
+
+def _extract_alternate_marker_blocks(text: str, blocks: dict[str, str]) -> None:
+    # GPT web research sessions do not always preserve our canonical marker syntax.
+    # Even when the prompt asks for `<!-- NSLAB:BEGIN ... -->`, observed valid
+    # bundles may use `BEGIN_ARTIFACT` or `NSLAB_BLOCK_START:` wrappers around the
+    # exact same JSON/JSONL payload. Repair must not overfit to one lucky output
+    # shape: it should salvage every parseable artifact while still refusing to
+    # invent records or accept malformed machine payloads. These alternate marker
+    # paths are therefore tolerant only at the wrapper level; the payload itself
+    # must still be valid JSON/JSONL before it is exposed to import/repair.
+    patterns = (
+        re.compile(
+            r"<!--\s*BEGIN_ARTIFACT\s+([^>]+?)\s*-->(.*?)"
+            r"<!--\s*END_ARTIFACT\s+\1\s*-->",
+            re.DOTALL,
+        ),
+        re.compile(
+            r"<!--\s*NSLAB_BLOCK_START:\s*([^>]+?)\s*-->(.*?)"
+            r"<!--\s*NSLAB_BLOCK_END:\s*\1\s*-->",
+            re.DOTALL,
+        ),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            _store_alternate_block(
+                blocks,
+                name=match.group(1).strip(),
+                payload=match.group(2).strip(),
+            )
+
+
+def _extract_heading_fenced_blocks(text: str, blocks: dict[str, str]) -> None:
+    # Some long web outputs render the machine artifacts as Markdown sections:
+    #
+    #   ### brain_delta.jsonl
+    #   ```jsonl
+    #   ...
+    #   ```
+    #
+    # This is still a usable artifact if the heading is a real artifact filename
+    # and the fenced payload parses. The parser intentionally ignores prose-only
+    # headings, malformed fenced JSON, and duplicate names already captured by a
+    # stronger marker. That keeps the repair path flexible without letting random
+    # explanatory snippets become training data.
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        name = _heading_artifact_name(stripped)
+        if name is None:
+            index += 1
+            continue
+        fence_index = index + 1
+        while fence_index < len(lines) and not lines[fence_index].strip().startswith(
+            "```"
+        ):
+            fence_index += 1
+        if fence_index >= len(lines):
+            index += 1
+            continue
+        content: list[str] = []
+        end_index = fence_index + 1
+        while end_index < len(lines) and lines[end_index].strip() != "```":
+            content.append(lines[end_index])
+            end_index += 1
+        if end_index >= len(lines):
+            index += 1
+            continue
+        _store_alternate_block(blocks, name=name, payload="\n".join(content).strip())
+        index = end_index + 1
+
+
+def _heading_artifact_name(stripped_heading: str) -> str | None:
+    match = re.match(
+        r"^#{1,6}\s+(?:ARTIFACT:\s*)?`?([A-Za-z0-9_.\-/]+(?:\.jsonl|\.json|\.md))`?\s*$",
+        stripped_heading,
+        re.IGNORECASE,
+    )
+    if match is not None:
+        return match.group(1).strip()
+    normalized = re.sub(r"[^a-z0-9]+", " ", stripped_heading.lower()).strip()
+    appendix_names = {
+        "machine appendix c brain delta jsonl": "brain_delta.jsonl",
+        "brain delta jsonl": "brain_delta.jsonl",
+        "brain delta": "brain_delta.jsonl",
+    }
+    return appendix_names.get(normalized)
+
+
+def _store_alternate_block(
+    blocks: dict[str, str],
+    *,
+    name: str,
+    payload: str,
+) -> None:
+    if name in blocks or not _is_artifact_block_name(name):
+        return
+    payload = _strip_optional_fence(payload)
+    if not _alternate_block_payload_is_parseable(name, payload):
+        return
+    blocks[name] = payload
+
+
+def _is_artifact_block_name(name: str) -> bool:
+    return name.endswith((".json", ".jsonl", ".md"))
+
+
+def _alternate_block_payload_is_parseable(name: str, payload: str) -> bool:
+    if name.endswith(".json"):
+        try:
+            json.loads(payload)
+        except json.JSONDecodeError:
+            return False
+        return True
+    if name.endswith(".jsonl"):
+        try:
+            stripped = payload.strip()
+            if stripped.startswith("["):
+                parsed_payload = json.loads(stripped)
+                return isinstance(parsed_payload, list) and all(
+                    isinstance(item, dict) for item in parsed_payload
+                )
+            for line in payload.splitlines():
+                if not line.strip():
+                    continue
+                parsed = json.loads(line)
+                if not isinstance(parsed, dict):
+                    return False
+        except json.JSONDecodeError:
+            return False
+        return True
+    return True
 
 
 def _extract_front_matter(text: str) -> dict[str, str]:
@@ -1877,6 +2017,22 @@ def _parse_json(name: str, payload: str) -> Any:
 
 
 def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
+    stripped = payload.strip()
+    if stripped.startswith("["):
+        try:
+            parsed_payload = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise VersionedBundleImportError(f"{name} is not valid JSONL array: {exc}") from exc
+        if not isinstance(parsed_payload, list):
+            raise VersionedBundleImportError(f"{name} JSONL array payload must be a list")
+        rows_from_array: list[dict[str, Any]] = []
+        for index, item in enumerate(parsed_payload, start=1):
+            if not isinstance(item, dict):
+                raise VersionedBundleImportError(
+                    f"{name}:{index} JSONL array item must be a JSON object"
+                )
+            rows_from_array.append(item)
+        return rows_from_array
     rows: list[dict[str, Any]] = []
     for line_number, line in enumerate(payload.splitlines(), start=1):
         if not line.strip():

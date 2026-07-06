@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, time
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,7 @@ from news_scalping_lab.context.final_synthesis import (
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction, ResearchEpisode
 from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
 from news_scalping_lab.research_import.importer import ResearchImporter
+from news_scalping_lab.research_import.versioned_bundle import parse_generic_bundle
 from news_scalping_lab.utils import KST, canonical_json, sha256_text
 
 
@@ -54,6 +56,152 @@ def _episode() -> ResearchEpisode:
         ),
         available_from=_at(date(2030, 1, 11), time(0, 0, 0)),
     )
+
+
+def test_generic_bundle_parser_accepts_begin_artifact_markers(tmp_path: Path) -> None:
+    bundle = tmp_path / "begin_artifact_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-alt
+trade_date: 2030-01-10
+---
+
+<!-- BEGIN_ARTIFACT brain_delta.jsonl -->
+{"record_id":"BD-1","record_type":"memory_claim","training_eligible":false}
+<!-- END_ARTIFACT brain_delta.jsonl -->
+
+<!-- BEGIN_ARTIFACT research_episode.json -->
+{"episode_id":"NSLAB-20300110-alt","trade_date":"2030-01-10"}
+<!-- END_ARTIFACT research_episode.json -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"] == [
+        {
+            "record_id": "BD-1",
+            "record_type": "memory_claim",
+            "training_eligible": False,
+        }
+    ]
+    assert parsed.json_blocks["research_episode.json"]["episode_id"] == (
+        "NSLAB-20300110-alt"
+    )
+
+
+def test_generic_bundle_parser_accepts_nslab_block_start_markers(tmp_path: Path) -> None:
+    bundle = tmp_path / "block_start_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-block
+trade_date: 2030-01-10
+---
+
+<!-- NSLAB_BLOCK_START: brain_delta.jsonl -->
+```jsonl
+{"record_id":"BD-2","record_type":"memory_claim","training_eligible":false}
+```
+<!-- NSLAB_BLOCK_END: brain_delta.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-2"
+
+
+def test_generic_bundle_parser_accepts_heading_fenced_artifacts(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "heading_fenced_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-heading
+trade_date: 2030-01-10
+---
+
+### acquisition_receipt.json
+
+```json
+{"first": true}
+{"second": "invalid extra JSON object"}
+```
+
+### brain_delta.jsonl
+
+```jsonl
+{"record_id":"BD-3","record_type":"memory_claim","training_eligible":false}
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert "acquisition_receipt.json" not in parsed.json_blocks
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-3"
+
+
+def test_generic_bundle_parser_accepts_artifact_heading_prefix(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "artifact_heading_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-artifact
+trade_date: 2030-01-10
+---
+
+## ARTIFACT: brain_delta.jsonl
+
+```jsonl
+{"record_id":"BD-4","record_type":"memory_claim","training_eligible":false}
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-4"
+
+
+def test_generic_bundle_parser_accepts_json_array_jsonl_appendix(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "json_array_appendix_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-array
+trade_date: 2030-01-10
+---
+
+## Machine Appendix C. Brain delta JSONL
+
+```json
+[
+  {"record_id":"BD-5","record_type":"memory_claim","training_eligible":false},
+  {"record_id":"BD-6","record_type":"memory_claim","training_eligible":false}
+]
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert [row["record_id"] for row in parsed.jsonl_blocks["brain_delta.jsonl"]] == [
+        "BD-5",
+        "BD-6",
+    ]
 
 
 def _final_synthesis_payload() -> dict[str, object]:
