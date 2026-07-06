@@ -2731,11 +2731,24 @@ def test_final_synthesis_summary_counts_record_id_context() -> None:
             "excluded_retrieved_record_ids": ["REC-future"],
             "semantic_retrieval_record_ids": ["REC-positive"],
             "excluded_semantic_retrieval_record_ids": ["REC-future"],
+            "semantic_cluster_coverage_ids": ["EVCL-1"],
+            "semantic_cluster_coverage_missing_ids": [],
+            "semantic_cluster_coverage_promoted_record_ids": ["REC-cluster"],
             "additional_semantic_retrieval": {
                 "included_record_ids": ["REC-positive"],
                 "records": [{"record_id": "REC-positive"}],
                 "excluded_record_ids": ["REC-future"],
             },
+            "semantic_cluster_coverage": {
+                "covered_cluster_ids": ["EVCL-1"],
+                "missing_cluster_ids": [],
+                "promoted_record_ids": ["REC-cluster"],
+                "promoted_records": [{"record_id": "REC-cluster"}],
+                "rows": [{"cluster_id": "EVCL-1"}],
+            },
+            "candidate_expansion_cluster_coverage_ids": ["EVCL-1"],
+            "candidate_expansion_cluster_coverage_missing_ids": [],
+            "candidate_expansion_audit_only_cluster_ids": [],
             "positive_record_ids": ["REC-positive"],
             "negative_record_ids": ["REC-negative"],
             "counterexample_record_ids": ["REC-counter"],
@@ -2751,6 +2764,14 @@ def test_final_synthesis_summary_counts_record_id_context() -> None:
     assert summary["semantic_retrieval_record_count"] == 1
     assert summary["semantic_retrieval_included_record_id_count"] == 1
     assert summary["semantic_retrieval_excluded_record_id_count"] == 1
+    assert summary["semantic_cluster_coverage_row_count"] == 1
+    assert summary["semantic_cluster_coverage_id_count"] == 1
+    assert summary["semantic_cluster_coverage_missing_id_count"] == 0
+    assert summary["semantic_cluster_coverage_promoted_record_id_count"] == 1
+    assert summary["semantic_cluster_coverage_promoted_record_count"] == 1
+    assert summary["candidate_expansion_cluster_coverage_id_count"] == 1
+    assert summary["candidate_expansion_cluster_coverage_missing_id_count"] == 0
+    assert summary["candidate_expansion_audit_only_cluster_id_count"] == 0
     assert summary["positive_record_id_count"] == 1
     assert summary["negative_record_id_count"] == 1
     assert summary["counterexample_record_id_count"] == 1
@@ -3449,10 +3470,48 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     )
     semantic_plan_path = semantic_dir / "semantic_retrieval_plan.json"
     semantic_path = semantic_dir / "semantic_retrieval.jsonl"
+    semantic_cluster_path = semantic_dir / "semantic_cluster_coverage.jsonl"
     semantic_dir.mkdir(parents=True)
     write_json(semantic_plan_path, semantic_plan)
     semantic_text = canonical_json(semantic_row) + "\n"
     semantic_path.write_text(semantic_text, encoding="utf-8")
+    semantic_cluster_row = {
+        "schema_version": "nslab.semantic_cluster_coverage_result.v1",
+        "run_id": "RUN-linked",
+        "cluster_id": "EVCL-1",
+        "cluster_index": 1,
+        "query_index": 1,
+        "category": "cluster_coverage",
+        "query": "cluster coverage structural analogs cluster_id=EVCL-1",
+        "query_sha256": sha256_text(
+            "cluster coverage structural analogs cluster_id=EVCL-1"
+        ),
+        "related_cluster_ids": ["EVCL-1"],
+        "coverage_query": True,
+        "retrieval_lane": "cluster_coverage",
+        "source_cluster_indices": [1],
+        "source_event_ids": ["EVT-1"],
+        "source_ids": ["SRC-1"],
+        "included_episode_ids": [],
+        "excluded_episode_ids": [],
+        "included_record_ids": [],
+        "excluded_record_ids": [],
+        "result_count": 0,
+        "excluded_count": 0,
+        "record_result_count": 0,
+        "excluded_record_count": 0,
+    }
+    semantic_cluster_summary = {
+        "cluster_coverage_source_count": 1,
+        "cluster_coverage_query_count": 1,
+        "cluster_coverage_covered_count": 1,
+        "cluster_coverage_missing_count": 0,
+        "cluster_coverage_missing_ids": [],
+        "record_retrieval_zero_is_valid": True,
+        "retrieval_zero_is_valid": True,
+    }
+    semantic_cluster_text = canonical_json(semantic_cluster_row) + "\n"
+    semantic_cluster_path.write_text(semantic_cluster_text, encoding="utf-8")
 
     candidate_web_check = {
         "schema_version": "nslab.candidate_web_check.v1",
@@ -3669,8 +3728,20 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "records": [],
             "excluded_record_ids": [],
         },
+        "semantic_cluster_coverage": {
+            "artifact": semantic_cluster_path.relative_to(tmp_path).as_posix(),
+            "summary": semantic_cluster_summary,
+            "rows": [semantic_cluster_row],
+            "covered_cluster_ids": ["EVCL-1"],
+            "missing_cluster_ids": [],
+            "promoted_record_ids": [],
+            "promoted_records": [],
+        },
         "semantic_retrieval_record_ids": [],
         "excluded_semantic_retrieval_record_ids": [],
+        "semantic_cluster_coverage_ids": ["EVCL-1"],
+        "semantic_cluster_coverage_missing_ids": [],
+        "semantic_cluster_coverage_promoted_record_ids": [],
         "positive_cases": [],
         "negative_cases": [],
         "positive_record_ids": [],
@@ -3767,6 +3838,15 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
             "semantic_retrieval_record_ids": [],
             "excluded_semantic_retrieval_record_ids": [],
             "semantic_retrieval_summary": semantic_summary,
+            "semantic_cluster_coverage_artifact": semantic_cluster_path.relative_to(
+                tmp_path
+            ).as_posix(),
+            "semantic_cluster_coverage_sha256": sha256_text(semantic_cluster_text),
+            "semantic_cluster_coverage_query_count": 1,
+            "semantic_cluster_coverage_ids": ["EVCL-1"],
+            "semantic_cluster_coverage_missing_ids": [],
+            "semantic_cluster_coverage_promoted_record_ids": [],
+            "semantic_cluster_coverage_summary": semantic_cluster_summary,
             "candidate_web_check_artifact": candidate_web_path.relative_to(
                 tmp_path
             ).as_posix(),
@@ -3855,6 +3935,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
         **bad_payload["additional_semantic_retrieval"],
         "rows": [],
     }
+    bad_payload["semantic_cluster_coverage"] = {
+        **bad_payload["semantic_cluster_coverage"],
+        "rows": [],
+    }
     bad_payload["news_novelty_review"] = {
         **news_novelty_review,
         "findings": [],
@@ -3895,6 +3979,10 @@ def test_provenance_audit_validates_final_synthesis_context_embedded_artifacts(
     assert (
         "2030-01-10.json: final_synthesis_context "
         "additional_semantic_retrieval mismatch"
+    ) in findings
+    assert (
+        "2030-01-10.json: final_synthesis_context "
+        "semantic_cluster_coverage mismatch"
     ) in findings
     assert (
         "2030-01-10.json: final_synthesis_context candidate_web_checks mismatch"

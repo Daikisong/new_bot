@@ -839,6 +839,76 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert [record["record_id"] for record in semantic_context["records"]] == [
         "BRAIN-AVAILABLE"
     ]
+    cluster_coverage_rows = [
+        json.loads(line)
+        for line in (tmp_path / str(manifest.semantic_cluster_coverage_artifact))
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    cluster_coverage_ids = list(
+        dict.fromkeys(row["cluster_id"] for row in cluster_coverage_rows)
+    )
+    cluster_coverage_lanes = manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_lanes"
+    ]
+    assert len(cluster_coverage_rows) == (
+        manifest.event_cluster_count * len(cluster_coverage_lanes)
+    )
+    assert manifest.semantic_cluster_coverage_ids == cluster_coverage_ids
+    assert manifest.semantic_cluster_coverage_missing_ids == []
+    assert manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_source_count"
+    ] == manifest.event_cluster_count
+    assert manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_query_count"
+    ] == len(cluster_coverage_rows)
+    assert manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_lane_count"
+    ] == len(cluster_coverage_lanes)
+    assert manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_covered_count"
+    ] == len(cluster_coverage_ids)
+    assert manifest.semantic_cluster_coverage_summary[
+        "cluster_coverage_missing_count"
+    ] == 0
+    assert all(row["coverage_query"] is True for row in cluster_coverage_rows)
+    assert {row["retrieval_lane"] for row in cluster_coverage_rows} == set(
+        cluster_coverage_lanes
+    )
+    assert {row["category"] for row in cluster_coverage_rows} == set(
+        cluster_coverage_lanes
+    )
+    cluster_context = synthesis_payload["semantic_cluster_coverage"]
+    assert cluster_context["rows"] == cluster_coverage_rows
+    assert cluster_context["covered_cluster_ids"] == cluster_coverage_ids
+    assert cluster_context["missing_cluster_ids"] == []
+    assert (
+        cluster_context["promoted_record_ids"]
+        == manifest.semantic_cluster_coverage_promoted_record_ids
+    )
+    assert [record["record_id"] for record in cluster_context["promoted_records"]] == (
+        manifest.semantic_cluster_coverage_promoted_record_ids
+    )
+    assert (
+        synthesis_payload["semantic_cluster_coverage_ids"]
+        == manifest.semantic_cluster_coverage_ids
+    )
+    assert synthesis_payload["semantic_cluster_coverage_missing_ids"] == []
+    assert (
+        synthesis_context["input_summary"]["semantic_cluster_coverage_row_count"]
+        == len(cluster_coverage_rows)
+    )
+    assert (
+        synthesis_context["input_summary"]["semantic_cluster_coverage_id_count"]
+        == len(cluster_coverage_ids)
+    )
+    assert (
+        synthesis_context["input_summary"][
+            "semantic_cluster_coverage_promoted_record_id_count"
+        ]
+        == len(manifest.semantic_cluster_coverage_promoted_record_ids)
+    )
     assert synthesis_payload["brain_compiler"] == {
         "mode": "asof_context",
         "provider": "deterministic_catalog",
@@ -909,6 +979,11 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert record_sweep["cache_hits_verified"] is True
     assert record_sweep["swept_record_ids_verified"] is True
     assert record_sweep["observed_record_ids"] == ["BRAIN-AVAILABLE"]
+    cluster_coverage = inspection["supporting_artifacts"]["semantic_cluster_coverage"]
+    assert cluster_coverage["passed"] is True
+    assert cluster_coverage["cluster_ids_verified"] is True
+    assert cluster_coverage["missing_ids_verified"] is True
+    assert cluster_coverage["summary_verified"] is True
 
 
 def test_context_assembler_preserves_record_context_when_accepted_store_unreadable(

@@ -90,6 +90,20 @@
   },
   "additionalProperties": false,
   "properties": {
+    "audit_only_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Audit Only Cluster Ids",
+      "type": "array"
+    },
+    "covered_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Covered Cluster Ids",
+      "type": "array"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -137,6 +151,13 @@
       "default": "nslab.candidate_expansion.v1",
       "title": "Schema Version",
       "type": "string"
+    },
+    "uncovered_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncovered Cluster Ids",
+      "type": "array"
     }
   },
   "required": [

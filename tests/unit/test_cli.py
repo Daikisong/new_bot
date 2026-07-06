@@ -866,6 +866,12 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
         "excluded_retrieved_record_ids": ["REC-4"],
         "semantic_retrieval_record_ids": ["REC-2"],
         "excluded_semantic_retrieval_record_ids": ["REC-5"],
+        "semantic_cluster_coverage_ids": ["EVCL-1", "EVCL-2"],
+        "semantic_cluster_coverage_missing_ids": ["EVCL-2"],
+        "semantic_cluster_coverage_promoted_record_ids": ["REC-6"],
+        "candidate_expansion_cluster_coverage_ids": ["EVCL-1"],
+        "candidate_expansion_uncovered_cluster_ids": ["EVCL-2"],
+        "candidate_expansion_audit_only_cluster_ids": [],
         "counterexample_record_ids": ["REC-3"],
     }
     summary = {
@@ -883,6 +889,12 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
         "excluded_retrieved_record_id_count": 1,
         "semantic_retrieval_record_id_count": 1,
         "excluded_semantic_retrieval_record_id_count": 0,
+        "semantic_cluster_coverage_id_count": 1,
+        "semantic_cluster_coverage_missing_id_count": 0,
+        "semantic_cluster_coverage_promoted_record_id_count": 0,
+        "candidate_expansion_cluster_coverage_id_count": 0,
+        "candidate_expansion_cluster_coverage_missing_id_count": 0,
+        "candidate_expansion_audit_only_cluster_id_count": 1,
         "counterexample_record_id_count": 1,
     }
 
@@ -913,6 +925,30 @@ def test_final_synthesis_manifest_count_mismatches_include_record_coverage() -> 
     assert mismatches["excluded_semantic_retrieval_record_id_count"] == {
         "expected": 1,
         "observed": 0,
+    }
+    assert mismatches["semantic_cluster_coverage_id_count"] == {
+        "expected": 2,
+        "observed": 1,
+    }
+    assert mismatches["semantic_cluster_coverage_missing_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["semantic_cluster_coverage_promoted_record_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["candidate_expansion_cluster_coverage_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["candidate_expansion_cluster_coverage_missing_id_count"] == {
+        "expected": 1,
+        "observed": 0,
+    }
+    assert mismatches["candidate_expansion_audit_only_cluster_id_count"] == {
+        "expected": 0,
+        "observed": 1,
     }
     assert "accepted_record_count" not in mismatches
 

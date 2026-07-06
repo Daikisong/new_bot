@@ -101,6 +101,10 @@ class ExhaustiveCoverageError(RuntimeError):
     """Raised when exhaustive mode fails to sweep every required context item."""
 
 
+class ClusterCoverageError(RuntimeError):
+    """Raised when an event cluster is not covered by retrieval audit."""
+
+
 class FutureContextLeakError(RuntimeError):
     """Raised when the active brain context contains future-unavailable research."""
 
@@ -380,6 +384,10 @@ class DailyAnalyzer:
             manifest=manifest,
             cutoff_at=cutoff_at,
         )
+        self._write_semantic_cluster_coverage_artifact(
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+        )
         self._refresh_counterexample_record_ids_from_retrieval(manifest)
         manifest.token_counts["semantic_retrieval_plan_prompt"] = semantic_prompt_tokens
         _candidate_expansion, expansion_prompt_hash, expansion_prompt_tokens = (
@@ -460,8 +468,30 @@ class DailyAnalyzer:
                     manifest.excluded_semantic_retrieval_record_ids
                 ),
                 "semantic_retrieval_summary": manifest.semantic_retrieval_summary,
+                "semantic_cluster_coverage_artifact": (
+                    manifest.semantic_cluster_coverage_artifact
+                ),
+                "semantic_cluster_coverage_ids": manifest.semantic_cluster_coverage_ids,
+                "semantic_cluster_coverage_missing_ids": (
+                    manifest.semantic_cluster_coverage_missing_ids
+                ),
+                "semantic_cluster_coverage_promoted_record_ids": (
+                    manifest.semantic_cluster_coverage_promoted_record_ids
+                ),
+                "semantic_cluster_coverage_summary": (
+                    manifest.semantic_cluster_coverage_summary
+                ),
                 "candidate_expansion_artifact": manifest.candidate_expansion_artifact,
                 "candidate_expansion_summary": manifest.candidate_expansion_summary,
+                "candidate_expansion_cluster_coverage_ids": (
+                    manifest.candidate_expansion_cluster_coverage_ids
+                ),
+                "candidate_expansion_audit_only_cluster_ids": (
+                    manifest.candidate_expansion_audit_only_cluster_ids
+                ),
+                "candidate_expansion_uncovered_cluster_ids": (
+                    manifest.candidate_expansion_uncovered_cluster_ids
+                ),
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
@@ -993,6 +1023,8 @@ class DailyAnalyzer:
                     and max(cutoff_safe_published) <= cutoff_at,
                     "representative_title_sha256": sha256_text(items[0].title),
                     "representative_body_sha256": sha256_text(items[0].body),
+                    "representative_title_excerpt": items[0].title[:240],
+                    "representative_body_excerpt": items[0].body[:600],
                     "novelty": "unclear",
                     "novelty_basis": (
                         "Deterministic exact duplicate clustering only; final novelty "
@@ -1574,6 +1606,187 @@ class DailyAnalyzer:
             "retrieval_zero_is_valid": True,
         }
 
+    def _write_semantic_cluster_coverage_artifact(
+        self,
+        *,
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+    ) -> None:
+        cluster_rows = [
+            row
+            for row in self._read_event_cluster_context(manifest)
+            if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+        ]
+        rows: list[dict[str, Any]] = []
+        raw_record_ids_all: list[str] = []
+        included_record_ids_by_lane: list[list[str]] = []
+        query_index = 0
+        lanes = _cluster_coverage_lanes(self.settings.limits.cluster_coverage_lanes)
+        record_limit = (
+            self.settings.limits.cluster_coverage_record_limit_per_lane
+            if self.settings.limits.cluster_coverage_record_limit_per_lane > 0
+            else self.settings.limits.cluster_coverage_record_limit_per_query
+        )
+        for cluster_position, cluster_row in enumerate(cluster_rows, start=1):
+            cluster_id = str(cluster_row["cluster_id"])
+            title = str(cluster_row.get("representative_title_excerpt") or "")
+            body = str(cluster_row.get("representative_body_excerpt") or "")
+            for lane in lanes:
+                query_index += 1
+                query = " ".join(
+                    [
+                        "cluster coverage balanced lane",
+                        f"lane={lane}",
+                        f"cluster_id={cluster_id}",
+                        f"title={title}",
+                        f"body={body}",
+                        _cluster_coverage_lane_instruction(lane),
+                    ]
+                ).strip()
+                raw_episode_ids = self.retrieval.search_semantic(query, limit=5)
+                available_ids, unavailable_ids = self._filter_retrieved_ids_available_as_of(
+                    raw_episode_ids,
+                    cutoff_at=cutoff_at,
+                )
+                record_filters = _semantic_record_filters(lane)
+                raw_record_ids = self._search_memory_records(
+                    query=query,
+                    limit=record_limit,
+                    filters=record_filters,
+                )
+                available_record_ids, unavailable_record_ids = (
+                    self._filter_retrieved_record_ids_available_as_of(
+                        raw_record_ids,
+                        cutoff_at=cutoff_at,
+                    )
+                )
+                raw_record_ids_all.extend(raw_record_ids)
+                included_record_ids_by_lane.append(available_record_ids)
+                rows.append(
+                    {
+                        "schema_version": "nslab.semantic_cluster_coverage_result.v1",
+                        "run_id": manifest.run_id,
+                        "cluster_id": cluster_id,
+                        "cluster_index": int(
+                            cluster_row.get("cluster_index") or cluster_position
+                        ),
+                        "query_index": query_index,
+                        "category": lane,
+                        "query": query,
+                        "query_sha256": sha256_text(query),
+                        "related_cluster_ids": [cluster_id],
+                        "coverage_query": True,
+                        "retrieval_lane": lane,
+                        "source_cluster_indices": [
+                            int(cluster_row.get("cluster_index") or cluster_position)
+                        ],
+                        "source_event_ids": _string_values(cluster_row.get("event_ids")),
+                        "source_ids": _string_values(cluster_row.get("source_ids")),
+                        "raw_episode_ids": raw_episode_ids,
+                        "included_episode_ids": available_ids,
+                        "excluded_episode_ids": unavailable_ids,
+                        "raw_record_ids": raw_record_ids,
+                        "included_record_ids": available_record_ids,
+                        "excluded_record_ids": unavailable_record_ids,
+                        "record_retrieval_filters": record_filters,
+                        "result_count": len(available_ids),
+                        "record_result_count": len(available_record_ids),
+                        "excluded_count": len(unavailable_ids),
+                        "excluded_record_count": len(unavailable_record_ids),
+                        "cutoff_at": cutoff_at.isoformat(),
+                    }
+                )
+        covered_ids = _unique_preserving_order(
+            [
+                str(row["cluster_id"])
+                for row in rows
+                if isinstance(row.get("cluster_id"), str)
+            ]
+        )
+        all_cluster_ids = _unique_preserving_order(
+            [str(row["cluster_id"]) for row in cluster_rows]
+        )
+        missing_ids = [
+            cluster_id for cluster_id in all_cluster_ids if cluster_id not in covered_ids
+        ]
+        promoted_record_ids = self._promote_cluster_coverage_record_ids(
+            included_record_ids_by_lane,
+            existing_record_ids=manifest.semantic_retrieval_record_ids,
+        )
+        artifact_relative = (
+            Path("runs")
+            / "checkpoints"
+            / "semantic_retrieval"
+            / manifest.run_id
+            / "semantic_cluster_coverage.jsonl"
+        )
+        artifact_path = self.root / artifact_relative
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = "".join(canonical_json(row) + "\n" for row in rows)
+        artifact_path.write_text(payload, encoding="utf-8")
+        manifest.semantic_cluster_coverage_artifact = artifact_relative.as_posix()
+        manifest.semantic_cluster_coverage_sha256 = sha256_text(payload)
+        manifest.semantic_cluster_coverage_query_count = len(rows)
+        manifest.semantic_cluster_coverage_ids = covered_ids
+        manifest.semantic_cluster_coverage_missing_ids = missing_ids
+        manifest.semantic_cluster_coverage_promoted_record_ids = promoted_record_ids
+        manifest.semantic_cluster_coverage_summary = {
+            "cluster_coverage_source_count": len(all_cluster_ids),
+            "cluster_coverage_query_count": len(rows),
+            "cluster_coverage_lane_count": len(lanes),
+            "cluster_coverage_lanes": lanes,
+            "cluster_coverage_record_limit_per_lane": record_limit,
+            "cluster_coverage_lane_query_counts": {
+                lane: sum(1 for row in rows if row.get("retrieval_lane") == lane)
+                for lane in lanes
+            },
+            "cluster_coverage_covered_count": len(covered_ids),
+            "cluster_coverage_missing_count": len(missing_ids),
+            "cluster_coverage_missing_ids": missing_ids,
+            "cluster_coverage_raw_record_id_count": len(
+                _unique_preserving_order(raw_record_ids_all)
+            ),
+            "cluster_coverage_promoted_record_count": len(promoted_record_ids),
+            "cluster_coverage_promoted_record_ids": promoted_record_ids,
+            "cluster_coverage_promotion_limit": (
+                self.settings.limits.cluster_coverage_promoted_record_limit
+            ),
+            "record_retrieval_zero_is_valid": True,
+            "retrieval_zero_is_valid": True,
+        }
+        if missing_ids:
+            message = "semantic cluster coverage missing event clusters: " + ", ".join(
+                missing_ids
+            )
+            if message not in manifest.errors:
+                manifest.errors.append(message)
+            raise ClusterCoverageError(message)
+
+    def _promote_cluster_coverage_record_ids(
+        self,
+        record_ids_by_lane: list[list[str]],
+        *,
+        existing_record_ids: list[str],
+    ) -> list[str]:
+        limit = self.settings.limits.cluster_coverage_promoted_record_limit
+        if limit <= 0:
+            return []
+        promoted: list[str] = []
+        seen = set(existing_record_ids)
+        max_depth = max((len(ids) for ids in record_ids_by_lane), default=0)
+        for depth in range(max_depth):
+            for record_ids in record_ids_by_lane:
+                if depth >= len(record_ids):
+                    continue
+                record_id = record_ids[depth]
+                if record_id in seen:
+                    continue
+                seen.add(record_id)
+                promoted.append(record_id)
+                if len(promoted) >= limit:
+                    return promoted
+        return promoted
+
     def _refresh_counterexample_record_ids_from_retrieval(
         self,
         manifest: ContextManifest,
@@ -1692,6 +1905,19 @@ class DailyAnalyzer:
                 for finding in normalized.findings
                 if finding.path == CandidateExpansionPath.CONTINUATION
             ),
+            "cluster_coverage_source_count": manifest.event_cluster_count,
+            "cluster_coverage_covered_count": len(
+                manifest.candidate_expansion_cluster_coverage_ids
+            ),
+            "cluster_coverage_missing_count": len(
+                manifest.candidate_expansion_uncovered_cluster_ids
+            ),
+            "cluster_coverage_missing_ids": (
+                manifest.candidate_expansion_uncovered_cluster_ids
+            ),
+            "audit_only_cluster_count": len(
+                manifest.candidate_expansion_audit_only_cluster_ids
+            ),
         }
         return normalized, prompt_sha256, max(1, len(prompt) // 4)
 
@@ -1716,6 +1942,9 @@ class DailyAnalyzer:
             or first_pass_mechanisms,
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
+            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(
+                manifest
+            ),
             "d_minus_one_only_for_continuation": True,
         }
         return (
@@ -1797,6 +2026,50 @@ class DailyAnalyzer:
                 )
             )
         findings.sort(key=lambda item: CANDIDATE_EXPANSION_REQUIRED_PATHS.index(item.path))
+        all_cluster_ids = _unique_preserving_order(
+            [
+                str(row["cluster_id"])
+                for row in self._read_event_cluster_context(manifest)
+                if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+            ]
+        )
+        finding_cluster_ids = _unique_preserving_order(
+            [
+                cluster_id
+                for finding in findings
+                for cluster_id in finding.related_cluster_ids
+                if cluster_id in all_cluster_ids
+            ]
+        )
+        semantic_covered_ids = [
+            cluster_id
+            for cluster_id in manifest.semantic_cluster_coverage_ids
+            if cluster_id in all_cluster_ids
+        ]
+        covered_cluster_ids = finding_cluster_ids
+        audit_only_cluster_ids = [
+            cluster_id
+            for cluster_id in semantic_covered_ids
+            if cluster_id not in set(covered_cluster_ids)
+        ]
+        uncovered_cluster_ids = [
+            cluster_id
+            for cluster_id in all_cluster_ids
+            if cluster_id not in set(covered_cluster_ids)
+            and cluster_id not in set(audit_only_cluster_ids)
+        ]
+        manifest.candidate_expansion_cluster_coverage_ids = _unique_preserving_order(
+            [*covered_cluster_ids, *audit_only_cluster_ids]
+        )
+        manifest.candidate_expansion_audit_only_cluster_ids = audit_only_cluster_ids
+        manifest.candidate_expansion_uncovered_cluster_ids = uncovered_cluster_ids
+        if uncovered_cluster_ids:
+            message = "candidate expansion missing event cluster coverage: " + ", ".join(
+                uncovered_cluster_ids
+            )
+            if message not in manifest.errors:
+                manifest.errors.append(message)
+            raise ClusterCoverageError(message)
         return review.model_copy(
             update={
                 "run_id": manifest.run_id,
@@ -1805,6 +2078,9 @@ class DailyAnalyzer:
                 "cutoff_at": cutoff_at,
                 "required_paths": list(CANDIDATE_EXPANSION_REQUIRED_PATHS),
                 "findings": findings,
+                "covered_cluster_ids": covered_cluster_ids,
+                "audit_only_cluster_ids": audit_only_cluster_ids,
+                "uncovered_cluster_ids": uncovered_cluster_ids,
             }
         )
 
@@ -2878,6 +3154,7 @@ class DailyAnalyzer:
                 "open_world_first_analysis",
                 "news_novelty_review",
                 "additional_semantic_retrieval",
+                "semantic_cluster_coverage",
                 "open_world_candidate_expansion",
                 "web_research",
                 "global_brain",
@@ -2917,6 +3194,9 @@ class DailyAnalyzer:
             "event_clusters": self._read_event_cluster_context(manifest),
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(
+                manifest
+            ),
+            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(
                 manifest
             ),
             "open_world_candidate_expansion": self._read_candidate_expansion_context(
@@ -2962,6 +3242,25 @@ class DailyAnalyzer:
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
             "excluded_semantic_retrieval_record_ids": (
                 manifest.excluded_semantic_retrieval_record_ids
+            ),
+            "semantic_cluster_coverage_ids": manifest.semantic_cluster_coverage_ids,
+            "semantic_cluster_coverage_missing_ids": (
+                manifest.semantic_cluster_coverage_missing_ids
+            ),
+            "semantic_cluster_coverage_promoted_record_ids": (
+                manifest.semantic_cluster_coverage_promoted_record_ids
+            ),
+            "candidate_expansion_cluster_coverage_ids": (
+                manifest.candidate_expansion_cluster_coverage_ids
+            ),
+            "candidate_expansion_cluster_coverage_missing_ids": (
+                manifest.candidate_expansion_uncovered_cluster_ids
+            ),
+            "candidate_expansion_uncovered_cluster_ids": (
+                manifest.candidate_expansion_uncovered_cluster_ids
+            ),
+            "candidate_expansion_audit_only_cluster_ids": (
+                manifest.candidate_expansion_audit_only_cluster_ids
             ),
             "retrieved_raw_episodes": self._read_retrieved_episode_context(manifest),
             "retrieved_records": self._read_retrieved_record_context(manifest),
@@ -3094,6 +3393,43 @@ class DailyAnalyzer:
             "records": records,
             "excluded_record_ids": manifest.excluded_semantic_retrieval_record_ids,
         }
+
+    def _read_semantic_cluster_coverage_context(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = []
+        if manifest.semantic_cluster_coverage_artifact:
+            path = self.root / manifest.semantic_cluster_coverage_artifact
+            if path.exists():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        rows.append(json.loads(line))
+        return {
+            "artifact": manifest.semantic_cluster_coverage_artifact,
+            "summary": manifest.semantic_cluster_coverage_summary,
+            "rows": rows,
+            "covered_cluster_ids": manifest.semantic_cluster_coverage_ids,
+            "missing_cluster_ids": manifest.semantic_cluster_coverage_missing_ids,
+            "promoted_record_ids": (
+                manifest.semantic_cluster_coverage_promoted_record_ids
+            ),
+            "promoted_records": self._read_record_context_by_ids(
+                manifest.semantic_cluster_coverage_promoted_record_ids
+            ),
+        }
+
+    def _read_record_context_by_ids(self, record_ids: list[str]) -> list[dict[str, Any]]:
+        record_store = BrainRecordStore(self.root)
+        records: list[dict[str, Any]] = []
+        for record_id in record_ids:
+            try:
+                record = record_store.get_record(record_id)
+            except FileNotFoundError:
+                records.append({"record_id": record_id, "missing": True})
+                continue
+            records.append(record.model_dump(mode="json"))
+        return records
 
     def _read_candidate_expansion_context(self, manifest: ContextManifest) -> dict[str, Any]:
         if not manifest.candidate_expansion_artifact:
@@ -4362,6 +4698,33 @@ def _semantic_record_filters(category: str) -> dict[str, Any]:
     if category == "candidate_generation_errors":
         return {"record_type": sorted(CANDIDATE_ERROR_RECORD_TYPES)}
     return {}
+
+
+def _cluster_coverage_lanes(configured_lanes: Sequence[str]) -> list[str]:
+    lanes = _unique_preserving_order(
+        [
+            normalized
+            for lane in configured_lanes
+            for normalized in [_normalize_semantic_retrieval_category(lane)]
+            if normalized in SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES
+        ]
+    )
+    return lanes or list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES)
+
+
+def _cluster_coverage_lane_instruction(lane: str) -> str:
+    instructions = {
+        "positive_analogs": "retrieve prior records where a similar catalyst worked",
+        "negative_controls": "retrieve similar-looking records that did not work",
+        "near_misses": "retrieve records that almost worked but failed key conditions",
+        "counterexamples": "retrieve records contradicting the bullish interpretation",
+        "leader_selection_pairs": "retrieve records about choosing the correct leader",
+        "theme_formation_failures": "retrieve records where theme formation failed",
+        "candidate_generation_errors": (
+            "retrieve records about missed, noisy, or wrongly ranked candidates"
+        ),
+    }
+    return instructions.get(lane, "retrieve balanced historical evidence for this lane")
 
 
 def _future_unavailable_episode_ids_for_brain_context_check(

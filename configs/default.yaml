@@ -25,3 +25,15 @@ limits:
   max_concurrency: 4
   shard_episode_count: 20
   max_news_items_for_mock: 12
+  cluster_coverage_record_limit_per_query: 3
+  cluster_coverage_record_limit_per_lane: 3
+  cluster_coverage_lanes:
+    - positive_analogs
+    - negative_controls
+    - near_misses
+    - counterexamples
+    - leader_selection_pairs
+    - theme_formation_failures
+    - candidate_generation_errors
+  cluster_coverage_promoted_record_limit: 360
+  cluster_coverage_query_batch_size: 1

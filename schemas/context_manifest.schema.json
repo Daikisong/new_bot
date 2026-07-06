@@ -223,6 +223,20 @@
       "default": null,
       "title": "Candidate Expansion Artifact"
     },
+    "candidate_expansion_audit_only_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Candidate Expansion Audit Only Cluster Ids",
+      "type": "array"
+    },
+    "candidate_expansion_cluster_coverage_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Candidate Expansion Cluster Coverage Ids",
+      "type": "array"
+    },
     "candidate_expansion_count": {
       "default": 0,
       "title": "Candidate Expansion Count",
@@ -244,6 +258,13 @@
       "additionalProperties": true,
       "title": "Candidate Expansion Summary",
       "type": "object"
+    },
+    "candidate_expansion_uncovered_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Candidate Expansion Uncovered Cluster Ids",
+      "type": "array"
     },
     "candidate_verification_artifact": {
       "anyOf": [
@@ -919,6 +940,61 @@
       "default": "nslab.context_manifest.v1",
       "title": "Schema Version",
       "type": "string"
+    },
+    "semantic_cluster_coverage_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Cluster Coverage Artifact"
+    },
+    "semantic_cluster_coverage_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Semantic Cluster Coverage Ids",
+      "type": "array"
+    },
+    "semantic_cluster_coverage_missing_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Semantic Cluster Coverage Missing Ids",
+      "type": "array"
+    },
+    "semantic_cluster_coverage_promoted_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Semantic Cluster Coverage Promoted Record Ids",
+      "type": "array"
+    },
+    "semantic_cluster_coverage_query_count": {
+      "default": 0,
+      "title": "Semantic Cluster Coverage Query Count",
+      "type": "integer"
+    },
+    "semantic_cluster_coverage_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Cluster Coverage Sha256"
+    },
+    "semantic_cluster_coverage_summary": {
+      "additionalProperties": true,
+      "title": "Semantic Cluster Coverage Summary",
+      "type": "object"
     },
     "semantic_retrieval_artifact": {
       "anyOf": [

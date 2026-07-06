@@ -3077,6 +3077,12 @@ def _check_manifest_record_count_contract(
         "excluded_semantic_retrieval_record_ids",
         findings,
     )
+    semantic_cluster_coverage_promoted_record_ids = _optional_manifest_string_list(
+        prediction_path,
+        manifest,
+        "semantic_cluster_coverage_promoted_record_ids",
+        findings,
+    )
     if available_record_ids is not None and training_eligible_record_ids is not None:
         missing = sorted(set(training_eligible_record_ids) - set(available_record_ids))
         if missing:
@@ -3117,6 +3123,19 @@ def _check_manifest_record_count_contract(
             findings.append(
                 f"{prediction_path.name}: context manifest "
                 "semantic_retrieval_record_ids are not a subset of "
+                "available_record_ids"
+            )
+    if (
+        available_record_ids is not None
+        and semantic_cluster_coverage_promoted_record_ids is not None
+    ):
+        missing = sorted(
+            set(semantic_cluster_coverage_promoted_record_ids) - set(available_record_ids)
+        )
+        if missing:
+            findings.append(
+                f"{prediction_path.name}: context manifest "
+                "semantic_cluster_coverage_promoted_record_ids are not a subset of "
                 "available_record_ids"
             )
     if (
@@ -3334,6 +3353,25 @@ def _check_manifest_output_artifacts(
             prediction_path,
             manifest,
             semantic_retrieval_rows,
+            findings,
+        )
+    semantic_cluster_coverage_rows = _check_manifest_jsonl_artifact(
+        root,
+        prediction_path,
+        manifest,
+        artifact_field="semantic_cluster_coverage_artifact",
+        sha_field="semantic_cluster_coverage_sha256",
+        count_field="semantic_cluster_coverage_query_count",
+        expected_schema="nslab.semantic_cluster_coverage_result.v1",
+        label="semantic_cluster_coverage",
+        findings=findings,
+    )
+    if semantic_cluster_coverage_rows is not None:
+        _check_semantic_cluster_coverage_artifact_summary(
+            root,
+            prediction_path,
+            manifest,
+            semantic_cluster_coverage_rows,
             findings,
         )
     _check_candidate_expansion_artifact(root, prediction_path, manifest, findings)
@@ -4202,6 +4240,89 @@ def _check_semantic_retrieval_artifact_summary(
         )
     for index, row in enumerate(rows, start=1):
         _check_semantic_retrieval_row(prediction_path, index, row, findings)
+
+
+def _event_cluster_ids_from_manifest(root: Path, manifest: dict[str, Any]) -> list[str]:
+    rows = _read_optional_manifest_jsonl_rows(root, manifest.get("event_cluster_artifact"))
+    if rows is None:
+        return []
+    return _unique_strings(
+        row.get("cluster_id")
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+    )
+
+
+def _check_semantic_cluster_coverage_artifact_summary(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    summary = manifest.get("semantic_cluster_coverage_summary")
+    if not isinstance(summary, dict):
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage_summary invalid"
+        )
+        return
+    event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
+    covered_ids = _unique_strings(
+        cluster_id
+        for row in rows
+        for cluster_id in _string_list(row.get("related_cluster_ids"))
+    )
+    if not covered_ids:
+        covered_ids = _unique_strings(
+            row.get("cluster_id")
+            for row in rows
+            if isinstance(row.get("cluster_id"), str)
+        )
+    missing_ids = [
+        cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)
+    ]
+    if _string_list(manifest.get("semantic_cluster_coverage_ids")) != covered_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage_ids mismatch"
+        )
+    if _string_list(manifest.get("semantic_cluster_coverage_missing_ids")) != missing_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage_missing_ids mismatch"
+        )
+    expected_source_count = len(event_cluster_ids) if event_cluster_ids else len(rows)
+    checks = {
+        "cluster_coverage_source_count": expected_source_count,
+        "cluster_coverage_query_count": len(rows),
+        "cluster_coverage_covered_count": len(covered_ids),
+        "cluster_coverage_missing_count": len(missing_ids),
+    }
+    for field, expected in checks.items():
+        _check_summary_int(
+            prediction_path,
+            summary,
+            field,
+            expected,
+            label="semantic_cluster_coverage",
+            findings=findings,
+        )
+    if _string_list(summary.get("cluster_coverage_missing_ids")) != missing_ids:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage missing_ids mismatch"
+        )
+    if summary.get("retrieval_zero_is_valid") is not True:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage zero_policy missing"
+        )
+    if summary.get("record_retrieval_zero_is_valid") is not True:
+        findings.append(
+            f"{prediction_path.name}: context manifest "
+            "semantic_cluster_coverage record_zero_policy missing"
+        )
 
 
 def _manifest_has_semantic_retrieval_miss(manifest: dict[str, Any]) -> bool:
@@ -5414,6 +5535,7 @@ def _check_manifest_final_synthesis_context_artifact(
             )
         _check_final_synthesis_required_input_fields(
             prediction_path,
+            manifest,
             context_payload,
             required_inputs,
             findings,
@@ -5459,6 +5581,7 @@ def _check_manifest_final_synthesis_context_artifact(
 
 def _check_final_synthesis_required_input_fields(
     prediction_path: Path,
+    manifest: dict[str, Any],
     context_payload: dict[str, Any],
     required_inputs: list[str],
     findings: list[str],
@@ -5467,6 +5590,7 @@ def _check_final_synthesis_required_input_fields(
         required_input
         for required_input in required_inputs
         if required_input not in context_payload
+        and not _optional_missing_final_synthesis_input_allowed(required_input, manifest)
     ]
     if missing_inputs:
         findings.append(
@@ -5474,6 +5598,17 @@ def _check_final_synthesis_required_input_fields(
             "input fields: "
             + ", ".join(missing_inputs)
         )
+
+
+def _optional_missing_final_synthesis_input_allowed(
+    key: str,
+    manifest: dict[str, Any],
+) -> bool:
+    return (
+        key == "semantic_cluster_coverage"
+        and "semantic_cluster_coverage_artifact" not in manifest
+        and "semantic_cluster_coverage_summary" not in manifest
+    )
 
 
 def _check_final_synthesis_manifest_record_ids(
@@ -5487,6 +5622,12 @@ def _check_final_synthesis_manifest_record_ids(
         "excluded_retrieved_record_ids",
         "semantic_retrieval_record_ids",
         "excluded_semantic_retrieval_record_ids",
+        "semantic_cluster_coverage_ids",
+        "semantic_cluster_coverage_missing_ids",
+        "semantic_cluster_coverage_promoted_record_ids",
+        "candidate_expansion_cluster_coverage_ids",
+        "candidate_expansion_uncovered_cluster_ids",
+        "candidate_expansion_audit_only_cluster_ids",
         "counterexample_record_ids",
     ):
         if field not in manifest and field not in context_payload:
@@ -5637,6 +5778,7 @@ def _check_final_synthesis_record_id_availability(
     for field in (
         "retrieved_record_ids",
         "semantic_retrieval_record_ids",
+        "semantic_cluster_coverage_promoted_record_ids",
         "counterexample_record_ids",
         "positive_record_ids",
         "negative_record_ids",
@@ -5838,6 +5980,20 @@ def _check_final_synthesis_embedded_artifacts(
             findings,
         )
 
+    semantic_cluster_coverage_rows = _read_optional_manifest_jsonl_rows(
+        root,
+        manifest.get("semantic_cluster_coverage_artifact"),
+    )
+    if semantic_cluster_coverage_rows is not None:
+        _check_final_synthesis_semantic_cluster_coverage_context(
+            root,
+            prediction_path,
+            manifest,
+            context_payload,
+            semantic_cluster_coverage_rows,
+            findings,
+        )
+
     web_source_rows = _read_web_source_context_rows(
         root,
         manifest.get("web_source_artifact"),
@@ -5962,9 +6118,19 @@ def _semantic_retrieval_record_context(
     root: Path,
     manifest: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    return _record_context_for_ids(
+        root,
+        _string_list(manifest.get("semantic_retrieval_record_ids")),
+    )
+
+
+def _record_context_for_ids(
+    root: Path,
+    record_ids: list[str],
+) -> list[dict[str, Any]]:
     store = BrainRecordStore(root)
     records: list[dict[str, Any]] = []
-    for record_id in _string_list(manifest.get("semantic_retrieval_record_ids")):
+    for record_id in record_ids:
         try:
             record = store.get_record(record_id)
         except FileNotFoundError:
@@ -6043,6 +6209,42 @@ def _check_final_synthesis_semantic_retrieval_context(
         findings.append(
             f"{prediction_path.name}: final_synthesis_context "
             "additional_semantic_retrieval mismatch"
+        )
+
+
+def _check_final_synthesis_semantic_cluster_coverage_context(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    semantic_cluster_coverage_rows: list[dict[str, Any]],
+    findings: list[str],
+) -> None:
+    context = context_payload.get("semantic_cluster_coverage")
+    if not isinstance(context, dict):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "semantic_cluster_coverage mismatch"
+        )
+        return
+    expected = {
+        "artifact": manifest.get("semantic_cluster_coverage_artifact"),
+        "summary": manifest.get("semantic_cluster_coverage_summary"),
+        "rows": semantic_cluster_coverage_rows,
+        "covered_cluster_ids": manifest.get("semantic_cluster_coverage_ids"),
+        "missing_cluster_ids": manifest.get("semantic_cluster_coverage_missing_ids"),
+        "promoted_record_ids": manifest.get(
+            "semantic_cluster_coverage_promoted_record_ids"
+        ),
+        "promoted_records": _record_context_for_ids(
+            root,
+            _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
+        ),
+    }
+    if any(context.get(field) != value for field, value in expected.items()):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context "
+            "semantic_cluster_coverage mismatch"
         )
 
 

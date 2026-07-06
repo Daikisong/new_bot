@@ -7,6 +7,11 @@
           "title": "Category",
           "type": "string"
         },
+        "coverage_query": {
+          "default": false,
+          "title": "Coverage Query",
+          "type": "boolean"
+        },
         "query": {
           "title": "Query",
           "type": "string"
@@ -15,6 +20,13 @@
           "default": "",
           "title": "Rationale",
           "type": "string"
+        },
+        "related_cluster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Cluster Ids",
+          "type": "array"
         }
       },
       "required": [

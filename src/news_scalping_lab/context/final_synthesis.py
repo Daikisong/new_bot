@@ -13,6 +13,7 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "open_world_first_analysis",
     "news_novelty_review",
     "additional_semantic_retrieval",
+    "semantic_cluster_coverage",
     "open_world_candidate_expansion",
     "web_research",
     "global_brain",
@@ -46,6 +47,9 @@ RECORD_ID_FINAL_SYNTHESIS_INPUTS = {
     "positive_record_ids",
     "negative_record_ids",
 }
+CLUSTER_COVERAGE_FINAL_SYNTHESIS_INPUTS = {
+    "semantic_cluster_coverage",
+}
 PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
     item
     for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
@@ -56,6 +60,25 @@ LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
     for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
     if item not in RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS
 )
+PRE_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
+    item
+    for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+    if item not in CLUSTER_COVERAGE_FINAL_SYNTHESIS_INPUTS
+)
+PRE_RECORD_ID_AND_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
+    tuple(
+        item
+        for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+        if item not in RECORD_ID_FINAL_SYNTHESIS_INPUTS
+        and item not in CLUSTER_COVERAGE_FINAL_SYNTHESIS_INPUTS
+    )
+)
+LEGACY_PRE_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = tuple(
+    item
+    for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+    if item not in RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS
+    and item not in CLUSTER_COVERAGE_FINAL_SYNTHESIS_INPUTS
+)
 
 
 def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +86,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     news_novelty = _dict_value(payload.get("news_novelty_review"))
     first_pass = _dict_value(payload.get("open_world_first_analysis"))
     semantic = _dict_value(payload.get("additional_semantic_retrieval"))
+    cluster_coverage = _dict_value(payload.get("semantic_cluster_coverage"))
     expansion = _dict_value(payload.get("open_world_candidate_expansion"))
     web_research = _dict_value(payload.get("web_research"))
     candidate_research = _dict_value(payload.get("candidate_research"))
@@ -79,6 +103,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "news_novelty_finding_count": _list_len(news_novelty.get("findings")),
         "semantic_retrieval_row_count": _list_len(semantic.get("rows")),
         "semantic_retrieval_episode_count": _list_len(semantic.get("episodes")),
+        "semantic_cluster_coverage_row_count": _list_len(cluster_coverage.get("rows")),
         "candidate_expansion_finding_count": _list_len(expansion.get("findings")),
         "web_source_count": _list_len(web_research.get("sources")),
         "candidate_web_check_count": _list_len(payload.get("candidate_web_checks")),
@@ -172,6 +197,34 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         summary["semantic_retrieval_excluded_record_id_count"] = _list_len(
             semantic.get("excluded_record_ids")
         )
+    if "semantic_cluster_coverage_ids" in payload:
+        summary["semantic_cluster_coverage_id_count"] = _list_len(
+            payload.get("semantic_cluster_coverage_ids")
+        )
+    if "semantic_cluster_coverage_missing_ids" in payload:
+        summary["semantic_cluster_coverage_missing_id_count"] = _list_len(
+            payload.get("semantic_cluster_coverage_missing_ids")
+        )
+    if "semantic_cluster_coverage_promoted_record_ids" in payload:
+        summary["semantic_cluster_coverage_promoted_record_id_count"] = _list_len(
+            payload.get("semantic_cluster_coverage_promoted_record_ids")
+        )
+    if "promoted_records" in cluster_coverage:
+        summary["semantic_cluster_coverage_promoted_record_count"] = _list_len(
+            cluster_coverage.get("promoted_records")
+        )
+    if "candidate_expansion_cluster_coverage_ids" in payload:
+        summary["candidate_expansion_cluster_coverage_id_count"] = _list_len(
+            payload.get("candidate_expansion_cluster_coverage_ids")
+        )
+    if "candidate_expansion_cluster_coverage_missing_ids" in payload:
+        summary["candidate_expansion_cluster_coverage_missing_id_count"] = _list_len(
+            payload.get("candidate_expansion_cluster_coverage_missing_ids")
+        )
+    if "candidate_expansion_audit_only_cluster_ids" in payload:
+        summary["candidate_expansion_audit_only_cluster_id_count"] = _list_len(
+            payload.get("candidate_expansion_audit_only_cluster_ids")
+        )
     if "positive_record_ids" in payload:
         summary["positive_record_id_count"] = _list_len(
             payload.get("positive_record_ids")
@@ -196,6 +249,9 @@ def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bo
         FINAL_SYNTHESIS_REQUIRED_INPUTS,
         PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS,
         LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS,
+        PRE_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS,
+        PRE_RECORD_ID_AND_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS,
+        LEGACY_PRE_CLUSTER_COVERAGE_FINAL_SYNTHESIS_REQUIRED_INPUTS,
     }
 
 
@@ -223,7 +279,13 @@ def final_synthesis_context_contract_verified(
         return False
     if not final_synthesis_required_inputs_compatible(required_input_strings):
         return False
-    if any(key not in payload for key in required_input_strings):
+    missing_required_inputs = [
+        key
+        for key in required_input_strings
+        if key not in payload
+        and not _optional_missing_required_input_allowed(key, manifest)
+    ]
+    if missing_required_inputs:
         return False
     expected_summary = final_synthesis_input_summary(payload)
     if context.get("input_summary") != expected_summary:
@@ -234,6 +296,17 @@ def final_synthesis_context_contract_verified(
     return final_synthesis_price_context_compatible(
         manifest, payload
     ) and final_synthesis_manifest_record_metadata_compatible(manifest, payload)
+
+
+def _optional_missing_required_input_allowed(
+    key: str,
+    manifest: Mapping[str, Any],
+) -> bool:
+    return (
+        key == "semantic_cluster_coverage"
+        and "semantic_cluster_coverage_artifact" not in manifest
+        and "semantic_cluster_coverage_summary" not in manifest
+    )
 
 
 def final_synthesis_manifest_record_metadata_compatible(
@@ -251,6 +324,12 @@ def final_synthesis_manifest_record_metadata_compatible(
         "excluded_retrieved_record_ids",
         "semantic_retrieval_record_ids",
         "excluded_semantic_retrieval_record_ids",
+        "semantic_cluster_coverage_ids",
+        "semantic_cluster_coverage_missing_ids",
+        "semantic_cluster_coverage_promoted_record_ids",
+        "candidate_expansion_cluster_coverage_ids",
+        "candidate_expansion_uncovered_cluster_ids",
+        "candidate_expansion_audit_only_cluster_ids",
         "counterexample_record_ids",
     ):
         if field not in manifest and field not in payload:

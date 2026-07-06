@@ -249,6 +249,8 @@ class SemanticRetrievalQuery(StrictModel):
     category: str
     query: str
     rationale: str = ""
+    related_cluster_ids: list[str] = Field(default_factory=list)
+    coverage_query: bool = False
 
 
 class SemanticRetrievalPlan(StrictModel):
@@ -286,6 +288,9 @@ class CandidateExpansionReview(StrictModel):
     cutoff_at: datetime
     required_paths: list[CandidateExpansionPath] = Field(default_factory=list)
     findings: list[CandidateExpansionFinding] = Field(default_factory=list)
+    covered_cluster_ids: list[str] = Field(default_factory=list)
+    audit_only_cluster_ids: list[str] = Field(default_factory=list)
+    uncovered_cluster_ids: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -663,10 +668,20 @@ class ContextManifest(StrictModel):
     semantic_retrieval_record_ids: list[str] = Field(default_factory=list)
     excluded_semantic_retrieval_record_ids: list[str] = Field(default_factory=list)
     semantic_retrieval_summary: dict[str, Any] = Field(default_factory=dict)
+    semantic_cluster_coverage_artifact: str | None = None
+    semantic_cluster_coverage_sha256: str | None = None
+    semantic_cluster_coverage_query_count: int = 0
+    semantic_cluster_coverage_ids: list[str] = Field(default_factory=list)
+    semantic_cluster_coverage_missing_ids: list[str] = Field(default_factory=list)
+    semantic_cluster_coverage_promoted_record_ids: list[str] = Field(default_factory=list)
+    semantic_cluster_coverage_summary: dict[str, Any] = Field(default_factory=dict)
     candidate_expansion_artifact: str | None = None
     candidate_expansion_sha256: str | None = None
     candidate_expansion_count: int = 0
     candidate_expansion_summary: dict[str, Any] = Field(default_factory=dict)
+    candidate_expansion_cluster_coverage_ids: list[str] = Field(default_factory=list)
+    candidate_expansion_audit_only_cluster_ids: list[str] = Field(default_factory=list)
+    candidate_expansion_uncovered_cluster_ids: list[str] = Field(default_factory=list)
     source_ledger_artifact: str | None = None
     source_ledger_sha256: str | None = None
     source_ledger_entry_count: int = 0

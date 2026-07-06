@@ -1593,6 +1593,12 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
             True,
         ),
         (
+            "semantic_cluster_coverage",
+            "semantic_cluster_coverage_artifact",
+            "semantic_cluster_coverage_sha256",
+            False,
+        ),
+        (
             "candidate_expansion",
             "candidate_expansion_artifact",
             "candidate_expansion_sha256",
@@ -1660,6 +1666,9 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
         root, manifest
     )
     statuses["semantic_retrieval"] = _inspect_semantic_retrieval_artifact(root, manifest)
+    statuses["semantic_cluster_coverage"] = _inspect_semantic_cluster_coverage_artifact(
+        root, manifest
+    )
     statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(
         root, manifest
     )
@@ -2417,6 +2426,155 @@ def _inspect_semantic_retrieval_artifact(
     return status
 
 
+def _event_cluster_ids_from_manifest(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[str]:
+    artifact_ref = manifest.get("event_cluster_artifact")
+    artifact_path = (
+        _resolve_project_artifact(root, artifact_ref)
+        if isinstance(artifact_ref, str)
+        else None
+    )
+    if artifact_path is None or not artifact_path.exists():
+        return []
+    try:
+        rows = [
+            json.loads(line)
+            for line in artifact_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return []
+    cluster_ids: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        cluster_id = row.get("cluster_id")
+        if isinstance(cluster_id, str):
+            cluster_ids.append(cluster_id)
+    return _unique_strings(cluster_ids)
+
+
+def _inspect_semantic_cluster_coverage_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="semantic_cluster_coverage_artifact",
+        hash_field="semantic_cluster_coverage_sha256",
+        required=False,
+    )
+    status.update(
+        {
+            "schema_version_verified": None,
+            "run_id_verified": None,
+            "query_count_verified": None,
+            "cluster_ids_verified": None,
+            "missing_ids_verified": None,
+            "summary_verified": None,
+        }
+    )
+    artifact_ref = manifest.get("semantic_cluster_coverage_artifact")
+    artifact_path = (
+        _resolve_project_artifact(root, artifact_ref)
+        if isinstance(artifact_ref, str)
+        else None
+    )
+    if artifact_path is None or not artifact_path.exists():
+        status["passed"] = not any(
+            key in manifest
+            for key in (
+                "semantic_cluster_coverage_artifact",
+                "semantic_cluster_coverage_ids",
+                "semantic_cluster_coverage_summary",
+            )
+        )
+        return status
+    try:
+        rows = [
+            json.loads(line)
+            for line in artifact_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        status["errors"].append("semantic_cluster_coverage_invalid_jsonl")
+        status["passed"] = False
+        return status
+    if not all(isinstance(row, dict) for row in rows):
+        status["errors"].append("semantic_cluster_coverage_rows_not_objects")
+        status["passed"] = False
+        return status
+
+    status["row_count"] = len(rows)
+    run_id = manifest.get("run_id")
+    status["schema_version_verified"] = all(
+        row.get("schema_version") == "nslab.semantic_cluster_coverage_result.v1"
+        for row in rows
+    )
+    if not status["schema_version_verified"]:
+        status["errors"].append("semantic_cluster_coverage_schema_version_mismatch")
+    status["run_id_verified"] = not isinstance(run_id, str) or all(
+        row.get("run_id") == run_id for row in rows
+    )
+    if not status["run_id_verified"]:
+        status["errors"].append("semantic_cluster_coverage_run_id_mismatch")
+    expected_query_count = manifest.get("semantic_cluster_coverage_query_count")
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
+        rows
+    ) == expected_query_count
+    if not status["query_count_verified"]:
+        status["errors"].append("semantic_cluster_coverage_query_count_mismatch")
+
+    event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
+    covered_ids = _unique_strings(
+        cluster_id
+        for row in rows
+        for cluster_id in _string_list(row.get("related_cluster_ids"))
+    )
+    if not covered_ids:
+        covered_ids = _unique_strings(
+            cluster_id
+            for row in rows
+            for cluster_id in [row.get("cluster_id")]
+            if isinstance(cluster_id, str)
+        )
+    expected_covered_ids = _string_list(manifest.get("semantic_cluster_coverage_ids"))
+    status["cluster_ids_verified"] = (
+        (not expected_covered_ids or covered_ids == expected_covered_ids)
+        and (not event_cluster_ids or set(covered_ids) == set(event_cluster_ids))
+    )
+    if not status["cluster_ids_verified"]:
+        status["errors"].append("semantic_cluster_coverage_cluster_ids_mismatch")
+    missing_ids = [
+        cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)
+    ]
+    expected_missing_ids = _string_list(
+        manifest.get("semantic_cluster_coverage_missing_ids")
+    )
+    status["missing_ids_verified"] = missing_ids == expected_missing_ids
+    if not status["missing_ids_verified"]:
+        status["errors"].append("semantic_cluster_coverage_missing_ids_mismatch")
+    summary = manifest.get("semantic_cluster_coverage_summary")
+    status["summary_verified"] = (
+        isinstance(summary, dict)
+        and summary.get("cluster_coverage_source_count")
+        == (len(event_cluster_ids) if event_cluster_ids else len(rows))
+        and summary.get("cluster_coverage_query_count") == len(rows)
+        and summary.get("cluster_coverage_covered_count") == len(covered_ids)
+        and summary.get("cluster_coverage_missing_count") == len(missing_ids)
+        and _string_list(summary.get("cluster_coverage_missing_ids")) == missing_ids
+        and summary.get("record_retrieval_zero_is_valid") is True
+        and summary.get("retrieval_zero_is_valid") is True
+    )
+    if not status["summary_verified"]:
+        status["errors"].append("semantic_cluster_coverage_summary_mismatch")
+    status["passed"] = not status["errors"]
+    return status
+
+
 def _inspect_candidate_expansion_artifact(
     root: Path,
     manifest: dict[str, Any],
@@ -2439,6 +2597,9 @@ def _inspect_candidate_expansion_artifact(
             "path_counts_verified": None,
             "manifest_count_verified": None,
             "continuation_d_minus_one_verified": None,
+            "cluster_coverage_verified": None,
+            "audit_only_clusters_verified": None,
+            "uncovered_clusters_verified": None,
         }
     )
     payload = _read_artifact_object(root, manifest.get("candidate_expansion_artifact"), status)
@@ -2528,6 +2689,60 @@ def _inspect_candidate_expansion_artifact(
     )
     if not status["continuation_d_minus_one_verified"]:
         status["errors"].append("candidate_expansion_continuation_d_minus_one_missing")
+
+    event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
+    finding_cluster_ids = _unique_strings(
+        cluster_id
+        for finding in findings
+        for cluster_id in _string_list(finding.get("related_cluster_ids"))
+    )
+    covered_cluster_ids = _string_list(payload.get("covered_cluster_ids"))
+    audit_only_cluster_ids = _string_list(payload.get("audit_only_cluster_ids"))
+    uncovered_cluster_ids = _string_list(payload.get("uncovered_cluster_ids"))
+    manifest_covered_ids = _string_list(
+        manifest.get("candidate_expansion_cluster_coverage_ids")
+    )
+    manifest_audit_only_ids = _string_list(
+        manifest.get("candidate_expansion_audit_only_cluster_ids")
+    )
+    manifest_uncovered_ids = _string_list(
+        manifest.get("candidate_expansion_uncovered_cluster_ids")
+    )
+    has_cluster_contract = any(
+        field in payload or field in manifest
+        for field in (
+            "covered_cluster_ids",
+            "audit_only_cluster_ids",
+            "uncovered_cluster_ids",
+            "candidate_expansion_cluster_coverage_ids",
+        )
+    )
+    status["cluster_coverage_verified"] = not has_cluster_contract or (
+        covered_cluster_ids == finding_cluster_ids
+        and (
+            not manifest_covered_ids
+            or manifest_covered_ids == [*covered_cluster_ids, *audit_only_cluster_ids]
+        )
+        and (
+            not event_cluster_ids
+            or {*covered_cluster_ids, *audit_only_cluster_ids}
+            == set(event_cluster_ids)
+        )
+    )
+    if not status["cluster_coverage_verified"]:
+        status["errors"].append("candidate_expansion_cluster_coverage_mismatch")
+    status["audit_only_clusters_verified"] = (
+        not has_cluster_contract
+        or not manifest_audit_only_ids
+        or manifest_audit_only_ids == audit_only_cluster_ids
+    )
+    if not status["audit_only_clusters_verified"]:
+        status["errors"].append("candidate_expansion_audit_only_cluster_ids_mismatch")
+    status["uncovered_clusters_verified"] = (
+        not has_cluster_contract or uncovered_cluster_ids == manifest_uncovered_ids == []
+    )
+    if not status["uncovered_clusters_verified"]:
+        status["errors"].append("candidate_expansion_uncovered_cluster_ids_mismatch")
 
     status["passed"] = _candidate_expansion_status_passed(status)
     return status
@@ -3532,6 +3747,7 @@ def _inspect_final_synthesis_context_artifact(
             "semantic_retrieval_excluded_record_ids_verified": None,
             "semantic_retrieval_records_verified": None,
             "semantic_retrieval_context_verified": None,
+            "semantic_cluster_coverage_context_verified": None,
             "web_research_queries_verified": None,
             "web_research_source_ids_verified": None,
             "web_research_sources_verified": None,
@@ -3608,7 +3824,10 @@ def _inspect_final_synthesis_context_artifact(
     if not status["required_input_set_verified"]:
         status["errors"].append("final_synthesis_context_required_input_set_mismatch")
     missing_payload_keys = [
-        key for key in required_input_list if key not in context_payload
+        key
+        for key in required_input_list
+        if key not in context_payload
+        and not _optional_missing_final_synthesis_input_allowed(key, manifest)
     ]
     status["missing_payload_keys"] = missing_payload_keys
     status["payload_keys_verified"] = not missing_payload_keys
@@ -3651,6 +3870,12 @@ def _inspect_final_synthesis_context_artifact(
         status,
     )
     _inspect_final_synthesis_semantic_retrieval_context(
+        root,
+        manifest,
+        context_payload,
+        status,
+    )
+    _inspect_final_synthesis_semantic_cluster_coverage_context(
         root,
         manifest,
         context_payload,
@@ -3921,6 +4146,94 @@ def _inspect_final_synthesis_semantic_retrieval_context(
     status["semantic_retrieval_context_verified"] = all(checks.values())
 
 
+def _inspect_final_synthesis_semantic_cluster_coverage_context(
+    root: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    status: dict[str, Any],
+) -> None:
+    has_cluster_contract = any(
+        field in manifest or field in context_payload
+        for field in (
+            "semantic_cluster_coverage_artifact",
+            "semantic_cluster_coverage",
+            "semantic_cluster_coverage_ids",
+        )
+    )
+    context = context_payload.get("semantic_cluster_coverage")
+    if not has_cluster_contract:
+        status["semantic_cluster_coverage_context_verified"] = True
+        return
+    if not isinstance(context, dict):
+        status["semantic_cluster_coverage_context_verified"] = False
+        status["errors"].append(
+            "final_synthesis_context_semantic_cluster_coverage_context_invalid"
+        )
+        return
+    rows = _read_final_synthesis_jsonl_context_rows(
+        root,
+        manifest.get("semantic_cluster_coverage_artifact"),
+        status,
+        label="semantic_cluster_coverage",
+    )
+    promoted_records = _record_context_for_ids(
+        root,
+        _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
+    )
+    checks = {
+        "semantic_cluster_coverage_artifact_verified": (
+            context.get("artifact") == manifest.get("semantic_cluster_coverage_artifact")
+        ),
+        "semantic_cluster_coverage_summary_verified": (
+            context.get("summary") == manifest.get("semantic_cluster_coverage_summary")
+        ),
+        "semantic_cluster_coverage_rows_verified": context.get("rows") == rows,
+        "semantic_cluster_coverage_ids_verified": (
+            context.get("covered_cluster_ids")
+            == manifest.get("semantic_cluster_coverage_ids")
+        ),
+        "semantic_cluster_coverage_missing_ids_verified": (
+            context.get("missing_cluster_ids")
+            == manifest.get("semantic_cluster_coverage_missing_ids")
+        ),
+        "semantic_cluster_coverage_promoted_record_ids_verified": (
+            context.get("promoted_record_ids")
+            == manifest.get("semantic_cluster_coverage_promoted_record_ids")
+        ),
+        "semantic_cluster_coverage_promoted_records_verified": (
+            context.get("promoted_records") == promoted_records
+        ),
+    }
+    status.update(checks)
+    error_by_field = {
+        "semantic_cluster_coverage_artifact_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_artifact_mismatch"
+        ),
+        "semantic_cluster_coverage_summary_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_summary_mismatch"
+        ),
+        "semantic_cluster_coverage_rows_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_rows_mismatch"
+        ),
+        "semantic_cluster_coverage_ids_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_ids_mismatch"
+        ),
+        "semantic_cluster_coverage_missing_ids_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_missing_ids_mismatch"
+        ),
+        "semantic_cluster_coverage_promoted_record_ids_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_promoted_ids_mismatch"
+        ),
+        "semantic_cluster_coverage_promoted_records_verified": (
+            "final_synthesis_context_semantic_cluster_coverage_records_mismatch"
+        ),
+    }
+    for field, error in error_by_field.items():
+        if not status[field]:
+            status["errors"].append(error)
+    status["semantic_cluster_coverage_context_verified"] = all(checks.values())
+
+
 def _inspect_final_synthesis_web_research_context(
     root: Path,
     manifest: dict[str, Any],
@@ -4128,9 +4441,19 @@ def _semantic_retrieval_record_context(
     root: Path,
     manifest: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    return _record_context_for_ids(
+        root,
+        _string_list(manifest.get("semantic_retrieval_record_ids")),
+    )
+
+
+def _record_context_for_ids(
+    root: Path,
+    record_ids: list[str],
+) -> list[dict[str, Any]]:
     store = BrainRecordStore(root)
     records: list[dict[str, Any]] = []
-    for record_id in _string_list(manifest.get("semantic_retrieval_record_ids")):
+    for record_id in record_ids:
         try:
             record = store.get_record(record_id)
         except FileNotFoundError:
@@ -6173,6 +6496,9 @@ def _candidate_expansion_status_passed(status: dict[str, Any]) -> bool:
         and status.get("path_counts_verified")
         and status.get("manifest_count_verified")
         and status.get("continuation_d_minus_one_verified")
+        and status.get("cluster_coverage_verified")
+        and status.get("audit_only_clusters_verified")
+        and status.get("uncovered_clusters_verified")
     )
 
 
@@ -6316,6 +6642,7 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("manifest_record_ids_verified")
         and status.get("event_clusters_verified")
         and status.get("semantic_retrieval_context_verified")
+        and status.get("semantic_cluster_coverage_context_verified")
         and status.get("web_research_verified")
         and status.get("candidate_verification_context_verified")
         and status.get("candidate_web_checks_context_verified")
@@ -6726,6 +7053,17 @@ def _final_synthesis_required_inputs() -> list[str]:
     return list(FINAL_SYNTHESIS_REQUIRED_INPUTS)
 
 
+def _optional_missing_final_synthesis_input_allowed(
+    key: str,
+    manifest: dict[str, Any],
+) -> bool:
+    return (
+        key == "semantic_cluster_coverage"
+        and "semantic_cluster_coverage_artifact" not in manifest
+        and "semantic_cluster_coverage_summary" not in manifest
+    )
+
+
 def _final_synthesis_manifest_count_mismatches(
     manifest: dict[str, Any],
     summary: dict[str, Any],
@@ -6857,6 +7195,46 @@ def _final_synthesis_manifest_count_mismatches(
             "excluded_semantic_retrieval_record_id_count",
             len(_string_list(manifest.get("excluded_semantic_retrieval_record_ids"))),
         )
+    if "semantic_cluster_coverage_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "semantic_cluster_coverage_id_count",
+            len(_string_list(manifest.get("semantic_cluster_coverage_ids"))),
+        )
+    if "semantic_cluster_coverage_missing_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "semantic_cluster_coverage_missing_id_count",
+            len(_string_list(manifest.get("semantic_cluster_coverage_missing_ids"))),
+        )
+    if "semantic_cluster_coverage_promoted_record_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "semantic_cluster_coverage_promoted_record_id_count",
+            len(
+                _string_list(
+                    manifest.get("semantic_cluster_coverage_promoted_record_ids")
+                )
+            ),
+        )
+    if "candidate_expansion_cluster_coverage_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "candidate_expansion_cluster_coverage_id_count",
+            len(_string_list(manifest.get("candidate_expansion_cluster_coverage_ids"))),
+        )
+    if "candidate_expansion_uncovered_cluster_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "candidate_expansion_cluster_coverage_missing_id_count",
+            len(_string_list(manifest.get("candidate_expansion_uncovered_cluster_ids"))),
+        )
+    if "candidate_expansion_audit_only_cluster_ids" in manifest:
+        _add_expected_count(
+            expected_counts,
+            "candidate_expansion_audit_only_cluster_id_count",
+            len(_string_list(manifest.get("candidate_expansion_audit_only_cluster_ids"))),
+        )
     _add_expected_count(
         expected_counts,
         "counterexample_count",
@@ -6921,6 +7299,12 @@ def _final_synthesis_manifest_record_id_mismatches(
         "excluded_retrieved_record_ids",
         "semantic_retrieval_record_ids",
         "excluded_semantic_retrieval_record_ids",
+        "semantic_cluster_coverage_ids",
+        "semantic_cluster_coverage_missing_ids",
+        "semantic_cluster_coverage_promoted_record_ids",
+        "candidate_expansion_cluster_coverage_ids",
+        "candidate_expansion_uncovered_cluster_ids",
+        "candidate_expansion_audit_only_cluster_ids",
         "counterexample_record_ids",
     ):
         if field not in manifest and field not in payload:

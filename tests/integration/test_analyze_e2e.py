@@ -774,6 +774,83 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert all(row["included_episode_ids"] == [] for row in semantic_rows)
     assert all(row["included_record_ids"] == [] for row in semantic_rows)
     assert all("record_retrieval_filters" in row for row in semantic_rows)
+    assert saved_manifest["semantic_cluster_coverage_artifact"]
+    expected_cluster_lanes = [
+        "positive_analogs",
+        "negative_controls",
+        "near_misses",
+        "counterexamples",
+        "leader_selection_pairs",
+        "theme_formation_failures",
+        "candidate_generation_errors",
+    ]
+    assert saved_manifest["semantic_cluster_coverage_query_count"] == len(
+        expected_cluster_lanes
+    )
+    assert saved_manifest["semantic_cluster_coverage_ids"] == [
+        event_clusters[0]["cluster_id"]
+    ]
+    assert saved_manifest["semantic_cluster_coverage_missing_ids"] == []
+    assert saved_manifest["semantic_cluster_coverage_promoted_record_ids"] == []
+    assert saved_manifest["semantic_cluster_coverage_summary"] == {
+        "cluster_coverage_source_count": 1,
+        "cluster_coverage_query_count": len(expected_cluster_lanes),
+        "cluster_coverage_lane_count": len(expected_cluster_lanes),
+        "cluster_coverage_lanes": expected_cluster_lanes,
+        "cluster_coverage_record_limit_per_lane": 3,
+        "cluster_coverage_lane_query_counts": dict.fromkeys(expected_cluster_lanes, 1),
+        "cluster_coverage_covered_count": 1,
+        "cluster_coverage_missing_count": 0,
+        "cluster_coverage_missing_ids": [],
+        "cluster_coverage_raw_record_id_count": 0,
+        "cluster_coverage_promoted_record_count": 0,
+        "cluster_coverage_promoted_record_ids": [],
+        "cluster_coverage_promotion_limit": 360,
+        "record_retrieval_zero_is_valid": True,
+        "retrieval_zero_is_valid": True,
+    }
+    semantic_cluster_path = tmp_path / saved_manifest["semantic_cluster_coverage_artifact"]
+    semantic_cluster_text = semantic_cluster_path.read_text(encoding="utf-8")
+    semantic_cluster_rows = [
+        json.loads(line)
+        for line in semantic_cluster_text.splitlines()
+        if line.strip()
+    ]
+    assert (
+        sha256_text(semantic_cluster_text)
+        == saved_manifest["semantic_cluster_coverage_sha256"]
+    )
+    assert len(semantic_cluster_rows) == len(expected_cluster_lanes)
+    assert all(
+        row["schema_version"] == "nslab.semantic_cluster_coverage_result.v1"
+        for row in semantic_cluster_rows
+    )
+    assert {row["cluster_id"] for row in semantic_cluster_rows} == {
+        event_clusters[0]["cluster_id"]
+    }
+    assert all(row["coverage_query"] is True for row in semantic_cluster_rows)
+    assert {row["category"] for row in semantic_cluster_rows} == set(
+        expected_cluster_lanes
+    )
+    assert {row["retrieval_lane"] for row in semantic_cluster_rows} == set(
+        expected_cluster_lanes
+    )
+    assert all(row["included_record_ids"] == [] for row in semantic_cluster_rows)
+    semantic_cluster_context = final_context["payload"]["semantic_cluster_coverage"]
+    assert semantic_cluster_context["rows"] == semantic_cluster_rows
+    assert semantic_cluster_context["covered_cluster_ids"] == [
+        event_clusters[0]["cluster_id"]
+    ]
+    assert semantic_cluster_context["missing_cluster_ids"] == []
+    assert semantic_cluster_context["promoted_record_ids"] == []
+    assert final_context["input_summary"]["semantic_cluster_coverage_row_count"] == len(
+        expected_cluster_lanes
+    )
+    assert final_context["input_summary"]["semantic_cluster_coverage_id_count"] == 1
+    assert (
+        final_context["input_summary"]["semantic_cluster_coverage_missing_id_count"]
+        == 0
+    )
     assert saved_manifest["candidate_expansion_artifact"]
     assert saved_manifest["candidate_expansion_count"] == 4
     assert saved_manifest["candidate_expansion_summary"] == {
@@ -793,6 +870,11 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "candidate_name_count": 4,
         "requires_web_company_discovery_count": 3,
         "continuation_d_minus_one_only_verified": True,
+        "cluster_coverage_source_count": 1,
+        "cluster_coverage_covered_count": 1,
+        "cluster_coverage_missing_count": 0,
+        "cluster_coverage_missing_ids": [],
+        "audit_only_cluster_count": 0,
     }
     candidate_expansion_path = tmp_path / saved_manifest["candidate_expansion_artifact"]
     candidate_expansion_text = candidate_expansion_path.read_text(encoding="utf-8")

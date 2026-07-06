@@ -28,6 +28,21 @@ class Limits(BaseModel):
     shard_episode_count: int = 20
     max_news_items_for_mock: int = 12
     session_pack_token_budget: int = 60_000
+    cluster_coverage_record_limit_per_query: int = 3
+    cluster_coverage_record_limit_per_lane: int = 3
+    cluster_coverage_lanes: list[str] = Field(
+        default_factory=lambda: [
+            "positive_analogs",
+            "negative_controls",
+            "near_misses",
+            "counterexamples",
+            "leader_selection_pairs",
+            "theme_formation_failures",
+            "candidate_generation_errors",
+        ]
+    )
+    cluster_coverage_promoted_record_limit: int = 360
+    cluster_coverage_query_batch_size: int = 1
 
 
 class LLMModelSettings(BaseModel):
@@ -153,6 +168,19 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "shard_episode_count": 20,
             "max_news_items_for_mock": 12,
             "session_pack_token_budget": 60_000,
+            "cluster_coverage_record_limit_per_query": 3,
+            "cluster_coverage_record_limit_per_lane": 3,
+            "cluster_coverage_lanes": [
+                "positive_analogs",
+                "negative_controls",
+                "near_misses",
+                "counterexamples",
+                "leader_selection_pairs",
+                "theme_formation_failures",
+                "candidate_generation_errors",
+            ],
+            "cluster_coverage_promoted_record_limit": 360,
+            "cluster_coverage_query_batch_size": 1,
         },
     },
     "models.yaml": {

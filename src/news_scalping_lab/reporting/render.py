@@ -283,6 +283,15 @@ def render_preopen_report(prediction: BlindPrediction, manifest: ContextManifest
                 "- Excluded semantic episodes: "
                 f"{list_text(manifest.excluded_semantic_retrieval_episode_ids)}"
             ),
+            f"- Cluster coverage artifact: {manifest.semantic_cluster_coverage_artifact or 'none'}",
+            (
+                "- Cluster coverage missing: "
+                f"{list_text(manifest.semantic_cluster_coverage_missing_ids)}"
+            ),
+            (
+                "- Cluster coverage promoted records: "
+                f"{len(manifest.semantic_cluster_coverage_promoted_record_ids)}"
+            ),
             "",
             "Candidate expansion:",
             "",
