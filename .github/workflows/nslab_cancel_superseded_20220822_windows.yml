@@ -1,0 +1,21 @@
+name: NSLAB cancel superseded 20220822 run
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: windows-latest
+    steps:
+      - name: Cancel superseded high-concurrency run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh api -X POST "/repos/$env:GITHUB_REPOSITORY/actions/runs/29320429517/cancel"
