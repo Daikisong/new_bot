@@ -1,0 +1,360 @@
+name: NSLAB accepted gold run 20220819 20260714t144700
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  blind:
+    if: github.head_ref == 'nslab-accepted-20220819-20260714t144700'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout exact main-branch research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: main_inputs
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220819.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout compile-verified pipeline source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout blind-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220819.json
+            atlas/research_daily/snapshots/2022/08/20220818.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Verify fresh input bytes, official trading day, and preseal allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RUN_ROOT="$GITHUB_WORKSPACE/nslab_run_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_20220819"
+          mkdir -p "$RUN_ROOT/blind_input" "$RUN_ROOT/blind_output"
+          cp main_inputs/docs/research_prompt.md "$RUN_ROOT/blind_input/prompt_tmp.md"
+          cp main_inputs/docs/csv/news_20220819.csv "$RUN_ROOT/blind_input/news_20220819_tmp.csv"
+          cp main_inputs/docs/example2.md "$RUN_ROOT/blind_input/example2.md"
+          cp stock_blind/atlas/research_daily/manifest.json "$RUN_ROOT/blind_input/manifest.json"
+          cp stock_blind/atlas/research_daily/schema.json "$RUN_ROOT/blind_input/schema.json"
+          cp stock_blind/atlas/research_daily/trading_calendar.csv "$RUN_ROOT/blind_input/trading_calendar.csv"
+          cp stock_blind/atlas/research_daily/access/2022/08/20220819.json "$RUN_ROOT/blind_input/access_20220819.json"
+          cp stock_blind/atlas/research_daily/snapshots/2022/08/20220818.csv "$RUN_ROOT/blind_input/blind_snapshot_20220818.csv"
+          test ! -e stock_blind/atlas/research_daily/snapshots/2022/08/20220819.csv
+          python - <<'PY'
+          import csv, hashlib, json, os
+          from pathlib import Path
+          root=Path(os.environ['RUN_ROOT'])/'blind_input'
+          expected={
+            'prompt_tmp.md':('b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029',430485),
+            'news_20220819_tmp.csv':('ec55b86339923c35db8c7b31e01f1706213afa3ffdb535aac243f2fd56a454fb',3039039),
+            'blind_snapshot_20220818.csv':('adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d',818663),
+          }
+          receipt={}
+          for name,(sha,size) in expected.items():
+            data=(root/name).read_bytes()
+            actual=hashlib.sha256(data).hexdigest()
+            if actual!=sha or len(data)!=size:
+              raise SystemExit(f'fresh byte mismatch {name}: {actual} {len(data)}')
+            receipt[name]={'sha256':actual,'byte_size':len(data)}
+          if (root/'prompt_tmp.md').read_text(encoding='utf-8').splitlines()[0] != '# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER':
+            raise SystemExit('locked prompt title mismatch')
+          with (root/'news_20220819_tmp.csv').open(encoding='utf-8-sig',newline='') as f:
+            news=list(csv.DictReader(f))
+          if len(news)!=1113:
+            raise SystemExit(f'news row mismatch {len(news)}')
+          with (root/'blind_snapshot_20220818.csv').open(encoding='utf-8-sig',newline='') as f:
+            blind=list(csv.DictReader(f))
+          if len(blind)!=2430:
+            raise SystemExit(f'blind row mismatch {len(blind)}')
+          with (root/'trading_calendar.csv').open(encoding='utf-8-sig',newline='') as f:
+            calendar=list(csv.DictReader(f))
+          date_keys=('trade_date','calendar_date','date','Date')
+          matches=[r for r in calendar if any(r.get(k)=='2022-08-19' for k in date_keys)]
+          if not matches:
+            raise SystemExit('2022-08-19 absent from official trading calendar')
+          explicit=[]
+          for row in matches:
+            for key in ('is_trading_day','is_trade_day','trading_day','is_open','open'):
+              if key in row and row[key] not in ('',None): explicit.append(str(row[key]).strip().lower())
+          if explicit and all(v in {'0','false','no','closed','holiday'} for v in explicit):
+            raise SystemExit(f'official calendar marks date closed: {explicit}')
+          access=json.loads((root/'access_20220819.json').read_text(encoding='utf-8'))
+          required={'trade_date':'2022-08-19','previous_trade_date':'2022-08-18','next_trade_date':'2022-08-22','blind_snapshot_sha256':'adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d'}
+          for k,v in required.items():
+            if access.get(k)!=v: raise SystemExit(f'access mismatch {k}: {access.get(k)}')
+          receipt.update({'news_row_count':len(news),'blind_row_count':len(blind),'calendar_match_count':len(matches),'access_metadata':access,'preseal_outcome_file_present':False})
+          (root/'fresh_input_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
+          echo "RUN_ROOT=$RUN_ROOT" >> "$GITHUB_ENV"
+
+      - name: Full CSV semantic review and BLIND candidate population closure
+        env:
+          GH_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        working-directory: pipeline/temp/nslab_20220819_pipeline
+        run: |
+          set -euo pipefail
+          python blind.py \
+            --prompt "$RUN_ROOT/blind_input/prompt_tmp.md" \
+            --news "$RUN_ROOT/blind_input/news_20220819_tmp.csv" \
+            --access "$RUN_ROOT/blind_input/access_20220819.json" \
+            --manifest "$RUN_ROOT/blind_input/manifest.json" \
+            --schema "$RUN_ROOT/blind_input/schema.json" \
+            --blind-snapshot "$RUN_ROOT/blind_input/blind_snapshot_20220818.csv" \
+            --example "$RUN_ROOT/blind_input/example2.md" \
+            --output "$RUN_ROOT/blind_output" \
+            --token "$GH_MODELS_TOKEN" \
+            --run-id "accepted-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Deterministic clean reseal and independent seal verification
+        shell: bash
+        working-directory: pipeline/temp/nslab_20220819_pipeline
+        run: |
+          set -euo pipefail
+          python reseal.py --blind-dir "$RUN_ROOT/blind_output" --run-id "accepted-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" > "$RUN_ROOT/blind_output/reseal_manifest_sha256.txt"
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path(os.environ['RUN_ROOT'])/'blind_output'
+          artifacts=root/'artifacts'
+          manifest=json.loads((artifacts/'blind_packet_manifest.json').read_text(encoding='utf-8'))
+          receipt=json.loads((artifacts/'blind_seal_receipt.json').read_text(encoding='utf-8'))
+          canonical=json.dumps(manifest,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+          actual=hashlib.sha256(canonical).hexdigest()
+          if actual!=receipt.get('blind_packet_manifest_sha256'):
+            raise SystemExit('blind manifest/receipt hash mismatch')
+          if receipt.get('seal_status')!='VERIFIED_CLEAN' or receipt.get('preseal_outcome_access_all_zero') is not True:
+            raise SystemExit('blind seal not clean')
+          counters=['preseal_outcome_download_count','preseal_outcome_header_read_count','preseal_outcome_sha256_count','preseal_outcome_row_count_count','preseal_outcome_parse_count','preseal_outcome_winner_census_count']
+          if any(receipt.get(k)!=0 for k in counters): raise SystemExit('non-zero preseal outcome counter')
+          for name,meta in manifest['files'].items():
+            p=artifacts/name
+            if not p.exists(): raise SystemExit(f'missing sealed artifact {name}')
+            data=p.read_bytes()
+            if hashlib.sha256(data).hexdigest()!=meta['sha256'] or len(data)!=meta['byte_size']:
+              raise SystemExit(f'sealed artifact mismatch {name}')
+          state=json.loads((root/'blind_state.json').read_text(encoding='utf-8'))
+          if state.get('blind_packet_manifest_sha256')!=actual or state.get('outcome_access_allowed_after_verification') is not True:
+            raise SystemExit('blind state verification failed')
+          print(json.dumps({'seal_status':'VERIFIED_CLEAN','manifest_sha256':actual,'sealed_file_count':len(manifest['files'])},sort_keys=True))
+          PY
+
+      - name: Upload sealed BLIND packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-accepted-20220819-${{ github.run_id }}
+          path: |
+            ${{ env.RUN_ROOT }}/blind_input/fresh_input_receipt.json
+            ${{ env.RUN_ROOT }}/blind_output/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  postmortem:
+    needs: blind
+    if: github.head_ref == 'nslab-accepted-20220819-20260714t144700'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout compile-verified pipeline source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+
+      - name: Download sealed BLIND packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-accepted-20220819-${{ github.run_id }}
+          path: accepted_blind
+
+      - name: Verify blind seal before any outcome checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          BLIND_DIR="$GITHUB_WORKSPACE/accepted_blind/blind_output"
+          if [ ! -d "$BLIND_DIR" ]; then BLIND_DIR="$GITHUB_WORKSPACE/accepted_blind"; fi
+          export BLIND_DIR
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path(os.environ['BLIND_DIR'])
+          artifacts=root/'artifacts'
+          manifest=json.loads((artifacts/'blind_packet_manifest.json').read_text(encoding='utf-8'))
+          receipt=json.loads((artifacts/'blind_seal_receipt.json').read_text(encoding='utf-8'))
+          actual=hashlib.sha256(json.dumps(manifest,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+          if actual!=receipt.get('blind_packet_manifest_sha256'): raise SystemExit('seal hash mismatch before outcome')
+          if receipt.get('seal_status')!='VERIFIED_CLEAN' or receipt.get('preseal_outcome_access_all_zero') is not True: raise SystemExit('unclean seal')
+          if any(receipt.get(k)!=0 for k in ['preseal_outcome_download_count','preseal_outcome_header_read_count','preseal_outcome_sha256_count','preseal_outcome_row_count_count','preseal_outcome_parse_count','preseal_outcome_winner_census_count']): raise SystemExit('preseal outcome counter nonzero')
+          state=json.loads((root/'blind_state.json').read_text(encoding='utf-8'))
+          if state.get('blind_packet_manifest_sha256')!=actual: raise SystemExit('blind state mismatch')
+          (root/'POSTSEAL_OUTCOME_ACCESS_AUTHORIZED').write_text(actual+'\n',encoding='utf-8')
+          print(actual)
+          PY
+          echo "BLIND_DIR=$BLIND_DIR" >> "$GITHUB_ENV"
+
+      - name: Checkout exact main repository for importer validation
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: repo_main
+
+      - name: Checkout D outcome snapshot only after verified blind seal
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_outcome
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220819.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Verify freshly checked-out outcome bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$BLIND_DIR/POSTSEAL_OUTCOME_ACCESS_AUTHORIZED"
+          export OUTCOME="$GITHUB_WORKSPACE/stock_outcome/atlas/research_daily/snapshots/2022/08/20220819.csv"
+          python - <<'PY'
+          import csv,hashlib,os
+          from pathlib import Path
+          p=Path(os.environ['OUTCOME']); data=p.read_bytes()
+          if hashlib.sha256(data).hexdigest()!='68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32': raise SystemExit('outcome sha mismatch')
+          if len(data)!=817772: raise SystemExit(f'outcome byte mismatch {len(data)}')
+          with p.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          if len(rows)!=2432: raise SystemExit(f'outcome row mismatch {len(rows)}')
+          print({'sha256':hashlib.sha256(data).hexdigest(),'byte_size':len(data),'row_count':len(rows),'header':list(rows[0])})
+          PY
+          echo "OUTCOME=$OUTCOME" >> "$GITHUB_ENV"
+
+      - name: Build full-market postmortem, supervised populations, and record-level bundle
+        env:
+          GH_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        working-directory: pipeline/temp/nslab_20220819_pipeline
+        run: |
+          set -euo pipefail
+          FINAL_DIR="$GITHUB_WORKSPACE/final_output"
+          mkdir -p "$FINAL_DIR"
+          python postmortem.py \
+            --blind-dir "$BLIND_DIR" \
+            --outcome "$OUTCOME" \
+            --output "$FINAL_DIR" \
+            --token "$GH_MODELS_TOKEN" \
+            --run-id "accepted-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "FINAL_DIR=$FINAL_DIR" >> "$GITHUB_ENV"
+          echo "BUNDLE=$FINAL_DIR/20220819_nslab_episode_bundle.md" >> "$GITHUB_ENV"
+
+      - name: Repo importer validation and packaging repair loop
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip >/dev/null
+          python -m pip install -e repo_main >/dev/null
+          set +e
+          nslab research smoke-bundle --path "$BUNDLE" --require-valid > "$FINAL_DIR/repo_smoke_initial.json" 2> "$FINAL_DIR/repo_smoke_initial.stderr"
+          initial_status=$?
+          set -e
+          if [ "$initial_status" -ne 0 ]; then
+            PYTHONPATH=repo_main/src python -m news_scalping_lab.tools.repair_research_bundle "$BUNDLE" -o "$FINAL_DIR/20220819_nslab_episode_bundle.repaired.md" > "$FINAL_DIR/repair_tool_receipt.json"
+            mv "$FINAL_DIR/20220819_nslab_episode_bundle.repaired.md" "$BUNDLE"
+          else
+            printf '{"repair_required":false}\n' > "$FINAL_DIR/repair_tool_receipt.json"
+          fi
+          nslab research inspect-bundle "$BUNDLE" > "$FINAL_DIR/repo_inspect_final.json"
+          nslab research smoke-bundle --path "$BUNDLE" --require-valid > "$FINAL_DIR/repo_smoke_final.json"
+          nslab research import-bundle "$BUNDLE" --validate --no-accept > "$FINAL_DIR/repo_import_final.json"
+
+      - name: Independent final Markdown re-open and payload validation
+        shell: bash
+        working-directory: pipeline/temp/nslab_20220819_pipeline
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,os
+          from collections import Counter
+          from pathlib import Path
+          from common import CANONICAL_RECORD_TYPES, REQUIRED_BLOCKS, parse_block, parse_markdown_blocks
+          p=Path(os.environ['BUNDLE']); text=p.read_text(encoding='utf-8')
+          if not text.startswith('---\n'): raise SystemExit('front matter does not start at first byte')
+          payloads,counts=parse_markdown_blocks(text)
+          bad=[name for name in REQUIRED_BLOCKS if counts.get(name)!=1]
+          if bad: raise SystemExit(f'required marker count failure: {bad}')
+          parsed={name:parse_block(name,payloads[name]) for name in REQUIRED_BLOCKS}
+          source_count=sum(1 for row in parsed['source_ledger.jsonl'] if row.get('source_type')=='NEWS_CSV_ROW')
+          checks={
+            'source_ledger_news_row_count':source_count,
+            'row_disposition_count':len(parsed['row_disposition.jsonl']),
+            'material_review_queue_count':len(parsed['material_review_queue.jsonl']),
+            'material_reviewed_count':len(parsed['material_review.jsonl']),
+            'outcome_ledger_count':len(parsed['outcome_ledger.jsonl']),
+            'outcome_leader_census_count':len(parsed['outcome_leader_census.jsonl']),
+            'outcome_to_news_audit_count':len(parsed['outcome_to_news_audit.jsonl']),
+            'brain_delta_count':len(parsed['brain_delta.jsonl']),
+            'record_provenance_closure_audit_count':len(parsed['record_provenance_closure_audit.jsonl']),
+          }
+          if checks['source_ledger_news_row_count']!=1113 or checks['row_disposition_count']!=1113: raise SystemExit(checks)
+          if checks['material_review_queue_count']!=checks['material_reviewed_count']: raise SystemExit(checks)
+          if checks['outcome_ledger_count']!=2432: raise SystemExit(checks)
+          if checks['outcome_leader_census_count']!=checks['outcome_to_news_audit_count']: raise SystemExit(checks)
+          if checks['brain_delta_count']<=0 or checks['record_provenance_closure_audit_count']!=checks['brain_delta_count']: raise SystemExit(checks)
+          noncanonical=[row.get('record_type') for row in parsed['brain_delta.jsonl'] if row.get('record_type') not in CANONICAL_RECORD_TYPES]
+          if noncanonical: raise SystemExit(f'noncanonical record types {Counter(noncanonical)}')
+          missing_payload=sum(1 for row in parsed['brain_delta.jsonl'] if not isinstance(row.get('payload'),dict))
+          if missing_payload: raise SystemExit(f'missing brain payload {missing_payload}')
+          direct=parsed['direct_ingest_contract.json']; manifest=parsed['bundle_manifest.json']; validation=parsed['validation_report.json']
+          if direct.get('direct_brain_ingest_ready') is not True or direct.get('automated_import_expected_to_pass') is not True: raise SystemExit('direct contract not ready')
+          if direct.get('brain_delta_count')!=checks['brain_delta_count']: raise SystemExit('direct contract brain count mismatch')
+          if manifest.get('files',{}).get('brain_delta.jsonl',{}).get('row_count')!=checks['brain_delta_count']: raise SystemExit('manifest brain count mismatch')
+          if validation.get('validator_exit_code')!=0 or validation.get('critical_error_count')!=0: raise SystemExit('validation report failed')
+          receipt={'status':'ACCEPT_FULL','path':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'byte_size':p.stat().st_size,'required_block_missing_count':0,'json_parse_error_count':0,'jsonl_parse_error_count':0,'brain_delta_payload_missing_count':0,'brain_delta_manifest_payload_count_mismatch_count':0,'brain_delta_declared_without_payload_count':0,**checks,'record_type_counts':dict(Counter(row['record_type'] for row in parsed['brain_delta.jsonl']))}
+          (Path(os.environ['FINAL_DIR'])/'final_independent_reparse_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True),encoding='utf-8')
+          print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          PY
+
+      - name: Upload final accepted episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-accepted-20220819-${{ github.run_id }}
+          path: |
+            ${{ env.FINAL_DIR }}/20220819_nslab_episode_bundle.md
+            ${{ env.FINAL_DIR }}/final_reparse_receipt.json
+            ${{ env.FINAL_DIR }}/final_independent_reparse_receipt.json
+            ${{ env.FINAL_DIR }}/repo_inspect_final.json
+            ${{ env.FINAL_DIR }}/repo_smoke_final.json
+            ${{ env.FINAL_DIR }}/repo_import_final.json
+            ${{ env.FINAL_DIR }}/repair_tool_receipt.json
+            ${{ env.FINAL_DIR }}/model_call_log.jsonl
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
