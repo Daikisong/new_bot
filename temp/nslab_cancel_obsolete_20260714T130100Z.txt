@@ -1,1 +1,1 @@
-trigger cancellation of obsolete superseded model runs
+trigger Windows cancellation of obsolete superseded model runs
