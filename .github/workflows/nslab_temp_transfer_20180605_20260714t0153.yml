@@ -1,0 +1,39 @@
+name: NSLAB temp transfer 20180605 20260714t0153
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch exact main Raw inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md' \
+            -o payload/prompt_tmp.md
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20180605.csv' \
+            -o payload/news_20180605_tmp.csv
+          {
+            sha256sum payload/prompt_tmp.md
+            wc -c payload/prompt_tmp.md
+            head -n 1 payload/prompt_tmp.md
+            sha256sum payload/news_20180605_tmp.csv
+            wc -c payload/news_20180605_tmp.csv
+            head -n 1 payload/news_20180605_tmp.csv
+          } > payload/acquisition_receipt.txt
+      - name: Upload exact bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquire-20180605-20260714t0153
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
