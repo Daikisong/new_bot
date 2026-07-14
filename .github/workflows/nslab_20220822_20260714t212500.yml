@@ -20,7 +20,7 @@ concurrency:
 jobs:
   blind:
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: windows-latest
+    runs-on: macos-latest
     timeout-minutes: 180
     steps:
       - name: Acquire isolated orchestration source
@@ -70,13 +70,13 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Compile isolated orchestration source
-        run: python -m py_compile runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py
+        run: python3 -m py_compile runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py
 
       - name: Full CSV semantic review, denominator closure, BLIND ranking, and clean seal
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py blind \
+          python3 runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py blind \
             --new-bot new_bot_main \
             --stock stock_web_blind \
             --pipeline-source pipeline_source \
@@ -86,7 +86,7 @@ jobs:
         run: |
           test ! -e stock_web_blind/atlas/research_daily/snapshots/2022/08/20220822.csv
           test ! -e work/inputs/outcome_snapshot_20220822.csv
-          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root work
+          python3 runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root work
 
       - name: Upload sealed BLIND packet
         uses: actions/upload-artifact@v4
@@ -100,7 +100,7 @@ jobs:
   postmortem:
     needs: blind
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: windows-latest
+    runs-on: macos-latest
     timeout-minutes: 90
     steps:
       - name: Acquire isolated validator source
@@ -120,7 +120,7 @@ jobs:
           path: blind_packet
 
       - name: Independently verify BLIND seal before outcome checkout
-        run: python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root blind_packet
+        run: python3 runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root blind_packet
 
       - name: Acquire D outcome snapshot only after verified seal
         uses: actions/checkout@v4
@@ -136,7 +136,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py postmortem \
+          python3 runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py postmortem \
             --blind-root blind_packet \
             --stock stock_web_outcome \
             --output post_output
@@ -145,7 +145,7 @@ jobs:
         run: |
           test -s post_output/20220822_nslab_episode_bundle.md
           test -s post_output/independent_final_validation_receipt.json
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           from pathlib import Path
           receipt = json.loads(Path('post_output/independent_final_validation_receipt.json').read_text(encoding='utf-8'))
