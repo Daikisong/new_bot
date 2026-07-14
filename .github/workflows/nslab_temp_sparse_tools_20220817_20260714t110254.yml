@@ -1,0 +1,42 @@
+name: NSLAB temp sparse tools 20220817 20260714t110254
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  package_sparse_tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sparse checkout exact main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            src
+            tests
+            docs/example2.md
+            docs/example.md
+            pyproject.toml
+            README.md
+          sparse-checkout-cone-mode: false
+      - name: Package sparse repo tools and gold shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          tar --exclude='./.git' -czf payload/new_bot_sparse_tools_main.tar.gz src tests docs pyproject.toml README.md
+          sha256sum payload/new_bot_sparse_tools_main.tar.gz > payload/repo_tools_receipt.txt
+          wc -c payload/new_bot_sparse_tools_main.tar.gz >> payload/repo_tools_receipt.txt
+      - name: Upload sparse current repo tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-sparse-tools-20220817-20260714t110254
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
