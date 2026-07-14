@@ -1,1 +1,2 @@
-temporary one-shot Raw acquisition trigger for news_20180614.csv
+temporary post-seal outcome Raw acquisition trigger for news_20180614.csv
+blind_seal_sha256=496edcb90850e959fd98aaea014046fa4785ac6322f77d50793cc949281be449
