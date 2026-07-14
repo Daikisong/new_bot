@@ -1,0 +1,81 @@
+name: NSLAB micro full-row review 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-review-micro-20220824-20260715t024535-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  micro:
+    if: github.head_ref == 'nslab-review-micro-20220824-20260715t024535kst'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include:
+          - {start: 1, end: 28, os: macos-latest, model: openai/gpt-4o-mini}
+          - {start: 29, end: 56, os: ubuntu-latest, model: mistral-ai/mistral-medium-2505}
+          - {start: 57, end: 84, os: windows-latest, model: meta/llama-3.3-70b-instruct}
+          - {start: 85, end: 112, os: macos-latest, model: mistral-ai/mistral-small-2503}
+          - {start: 113, end: 140, os: ubuntu-latest, model: openai/gpt-4.1-nano}
+          - {start: 701, end: 728, os: windows-latest, model: openai/gpt-4o-mini}
+          - {start: 729, end: 756, os: macos-latest, model: mistral-ai/mistral-medium-2505}
+          - {start: 757, end: 784, os: ubuntu-latest, model: meta/llama-3.3-70b-instruct}
+          - {start: 785, end: 812, os: windows-latest, model: mistral-ai/mistral-small-2503}
+          - {start: 813, end: 840, os: macos-latest, model: openai/gpt-4.1-nano}
+    steps:
+      - name: Checkout micro worker
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-review-micro-20220824-20260715t024535kst
+          path: micro
+          sparse-checkout: |
+            temp/nslab_review_micro_20220824_20260715t024535/micro.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout exact current-run review source commit
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact current-run prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-news-prepared-20220824-20260715t024535
+          path: prepared
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+          run-id: 29358558986
+      - name: Review every complete title and body in micro range
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+          NSLAB_MICRO_PRIMARY: ${{ matrix.model }}
+        run: |
+          set -euo pipefail
+          python micro/temp/nslab_review_micro_20220824_20260715t024535/micro.py \
+            --prepared prepared \
+            --output review_out \
+            --start ${{ matrix.start }} \
+            --end ${{ matrix.end }}
+      - name: Upload current-run micro review range
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-news-micro-20220824-20260715t024535-${{ matrix.start }}-${{ matrix.end }}
+          path: review_out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
