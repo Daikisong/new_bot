@@ -1,0 +1,295 @@
+name: NSLAB exec 20180620 20260714T223000Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-exec-20180620-20260714T223000Z-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-exec-20180620-20260714T223000Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pinned orchestration scripts
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: nslab-gold-20180619-20260714T172911Z
+          path: runner_checkout
+          sparse-checkout: temp/nslab_20180619_20260714T172911Z
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_checkout
+          sparse-checkout: temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+
+      - name: Fresh exact Raw acquisition
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acquired/new_bot/docs/csv acquired/stock/atlas/research_daily/snapshots/2018/06 acquired/stock/atlas/research_daily/access/2018/06 acquired/stock/atlas/research_daily acquired/pipeline_source/temp acquired/run_inputs
+          : > acquired/new_bot/docs/example2.md
+          cp -R pipeline_checkout/temp/nslab_20220819_pipeline acquired/pipeline_source/temp/
+          node <<'NODE'
+          const fs=require('fs'),crypto=require('crypto'),path=require('path');
+          const raw='https://raw.githubusercontent.com';
+          const token=process.env.GH_TOKEN;
+          const targets={
+            prompt:{url:`${raw}/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md`,out:'acquired/new_bot/docs/research_prompt.md',auth:true},
+            news:{url:`${raw}/Daikisong/new_bot/refs/heads/main/docs/csv/news_20180620.csv`,out:'acquired/new_bot/docs/csv/news_20180620.csv',auth:true},
+            access:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/access/2018/06/20180620.json`,out:'acquired/stock/atlas/research_daily/access/2018/06/20180620.json',auth:false},
+            manifest:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/manifest.json`,out:'acquired/stock/atlas/research_daily/manifest.json',auth:false},
+            schema:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/schema.json`,out:'acquired/stock/atlas/research_daily/schema.json',auth:false},
+            calendar:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/trading_calendar.csv`,out:'acquired/stock/atlas/research_daily/trading_calendar.csv',auth:false},
+            blind:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180619.csv`,out:'acquired/stock/atlas/research_daily/snapshots/2018/06/20180619.csv',auth:false}
+          };
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          async function download(name,spec){let last='';for(let attempt=1;attempt<=7;attempt++){try{const headers={'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-current-run-20180620-20260714T223000Z'};if(spec.auth)headers.authorization=`Bearer ${token}`;const sep=spec.url.includes('?')?'&':'?';const response=await fetch(spec.url+sep+`nslab_current_run=20260714T223000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers});if(!response.ok)throw new Error(`HTTP ${response.status}`);const bytes=Buffer.from(await response.arrayBuffer());fs.mkdirSync(path.dirname(spec.out),{recursive:true});fs.writeFileSync(spec.out,bytes);const meta={url:spec.url,byte_size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),fetched_at:new Date().toISOString(),attempt,authenticated:spec.auth};console.log(JSON.stringify({name,...meta}));return meta;}catch(error){last=String(error);console.error(JSON.stringify({name,attempt,error:last}));if(attempt<7)await sleep(1500*attempt);}}throw new Error(`${name} failed: ${last}`);}
+          (async()=>{const receipt={schema_version:'nslab.raw_download_receipt.v8',run_id:'NSLAB-WEB-20180620-20260714T223000Z'};for(const [name,spec] of Object.entries(targets))receipt[name]=await download(name,spec);fs.writeFileSync('acquired/raw_download_receipt.json',JSON.stringify(receipt,null,2)+'\n');})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Adapt and verify current-run phase machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -R runner_checkout/temp/nslab_20180619_20260714T172911Z runner_current
+          python <<'PY'
+          from pathlib import Path
+          import csv, hashlib, json, re, shutil
+          from datetime import datetime
+          root=Path('acquired')
+          prompt=root/'new_bot/docs/research_prompt.md'
+          news=root/'new_bot/docs/csv/news_20180620.csv'
+          blind=root/'stock/atlas/research_daily/snapshots/2018/06/20180619.csv'
+          access_path=root/'stock/atlas/research_daily/access/2018/06/20180620.json'
+          calendar=root/'stock/atlas/research_daily/trading_calendar.csv'
+          pb=prompt.read_bytes(); nb=news.read_bytes(); bb=blind.read_bytes()
+          psha=hashlib.sha256(pb).hexdigest(); nsha=hashlib.sha256(nb).hexdigest(); bsha=hashlib.sha256(bb).hexdigest()
+          assert psha=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029' and len(pb)==430485
+          pt=pb.decode('utf-8'); assert pt.splitlines()[0]=='# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'
+          assert 'nslab.gold_phase_machine.direct_csv_research.locked' in pt
+          with news.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          with blind.open(encoding='utf-8-sig',newline='') as f: brows=list(csv.DictReader(f))
+          ts=[]; bad=[]
+          for i,r in enumerate(rows,1):
+              try: ts.append(datetime.fromisoformat(f"{r['date']}T{r['time']}+09:00"))
+              except Exception: bad.append(i)
+          access=json.loads(access_path.read_text(encoding='utf-8'))
+          def find(obj,*names):
+              if isinstance(obj,dict):
+                  for n in names:
+                      if n in obj: return obj[n]
+                  for v in obj.values():
+                      r=find(v,*names)
+                      if r is not None: return r
+              return None
+          trade=find(access,'trade_date','date'); prev=find(access,'previous_trade_date','previous_trading_date'); nxt=find(access,'next_trade_date','next_trading_date')
+          blind_path=find(access,'blind_snapshot_path','previous_snapshot_path','p_snapshot_path')
+          outcome_path=find(access,'outcome_snapshot_path','d_snapshot_path','snapshot_path')
+          blind_sha=find(access,'blind_snapshot_sha256','previous_snapshot_sha256','p_snapshot_sha256')
+          blind_count=find(access,'blind_snapshot_row_count','previous_snapshot_row_count','p_snapshot_row_count')
+          assert trade is None or str(trade).replace('-','')=='20180620'
+          assert prev is None or str(prev).replace('-','')=='20180619'
+          assert blind_path is None or '20180619.csv' in str(blind_path)
+          assert outcome_path is None or '20180620.csv' in str(outcome_path)
+          if blind_sha: assert bsha==str(blind_sha)
+          if blind_count is not None: assert len(brows)==int(blind_count)
+          cal=calendar.read_text(encoding='utf-8-sig'); assert '2018-06-20' in cal or '20180620' in cal
+          expected_start=datetime.fromisoformat('2018-06-19T15:30:00+09:00'); expected_end=datetime.fromisoformat('2018-06-20T08:59:59+09:00')
+          uncovered=[]
+          if ts and min(ts)>expected_start: uncovered.append(f'{expected_start.isoformat()}..{min(ts).isoformat()}')
+          if ts and max(ts)<expected_end: uncovered.append(f'{max(ts).isoformat()}..{expected_end.isoformat()}')
+          # Adapt every current-run orchestration text file simultaneously.
+          replacements={
+            '20260714T172911Z':'20260714T223000Z',
+            '3b5712940be4426bc6e31434d85a364074f33a300bead25b7e264cd66e87807a':nsha,
+            '2379689':str(len(nb)),
+            '43cd5a9efcf00e8d972666c84c2d750081d20244ef329dd4a9daf1796abb5071':bsha,
+            '718749':str(len(bb)),
+            '2018-06-18T15:30:00+09:00':min(ts).isoformat() if ts else '2018-06-19T15:30:00+09:00',
+            '2018-06-19T08:57:58+09:00':max(ts).isoformat() if ts else '2018-06-20T08:59:59+09:00'
+          }
+          for p in Path('runner_current').iterdir():
+              if not p.is_file(): continue
+              try: text=p.read_text(encoding='utf-8')
+              except UnicodeDecodeError: continue
+              text=text.replace('2018-06-18','__OLD_P_DASH__').replace('20180618','__OLD_P_COMPACT__')
+              text=text.replace('2018-06-19','2018-06-20').replace('20180619','20180620')
+              text=text.replace('__OLD_P_DASH__','2018-06-19').replace('__OLD_P_COMPACT__','20180619')
+              for old,new in replacements.items(): text=text.replace(old,new)
+              text=text.replace('len(rows)==819',f'len(rows)=={len(rows)}').replace('len(rows) == 819',f'len(rows) == {len(rows)}')
+              text=text.replace('len(brows)==2124',f'len(brows)=={len(brows)}').replace('len(brows) == 2124',f'len(brows) == {len(brows)}')
+              p.write_text(text,encoding='utf-8')
+          unique_prompt=root/f'run_inputs/research_prompt_20260714T223000Z_{psha[:8]}.md'
+          unique_news=root/f'run_inputs/news_20180620_20260714T223000Z_{nsha[:8]}.csv'
+          unique_blind=root/f'run_inputs/blind_snapshot_20180619_20260714T223000Z_{bsha[:8]}.csv'
+          shutil.copyfile(prompt,unique_prompt); shutil.copyfile(news,unique_news); shutil.copyfile(blind,unique_blind)
+          receipt={
+            'schema_version':'nslab.acquisition_verification.v8','run_id':'NSLAB-WEB-20180620-20260714T223000Z',
+            'input_file':'news_20180620.csv','input_sha256':nsha,'input_byte_size':len(nb),'csv_row_count':len(rows),'parsed_row_count':len(rows),'columns':list(rows[0]),
+            'min_published_at':min(ts).isoformat() if ts else None,'max_published_at':max(ts).isoformat() if ts else None,'time_unverified_rows':bad,
+            'main_prompt_sha256':psha,'main_prompt_byte_size':len(pb),'calendar_date':'2018-06-20','trade_date':'2018-06-20','previous_trade_date':'2018-06-19','next_trade_date':nxt,
+            'blind_snapshot_path':blind_path or 'atlas/research_daily/snapshots/2018/06/20180619.csv','blind_snapshot_sha256':bsha,'blind_snapshot_row_count':len(brows),
+            'outcome_snapshot_path':outcome_path or 'atlas/research_daily/snapshots/2018/06/20180620.csv','preseal_outcome_content_access_count':0,
+            'input_coverage_warning':bool(uncovered or bad),'uncovered_time_ranges':uncovered,'access_sha256_status':'FRESH_RAW_BYTES_HASHED','acquisition_warnings':[]
+          }
+          (root/'acquisition_verification.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+          cat runner_current/orchestrate.part0* > runner_current/orchestrate.py
+          python -m py_compile runner_current/*.py acquired/pipeline_source/temp/nslab_20220819_pipeline/{common.py,blind.py,reseal.py,postmortem.py}
+          test ! -e acquired/stock/atlas/research_daily/snapshots/2018/06/20180620.csv
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-inputs-20180620-20260714T223000Z
+          path: |
+            acquired/
+            runner_current/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    needs: acquire
+    if: github.head_ref == 'nslab-exec-20180620-20260714T223000Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nslab-inputs-20180620-20260714T223000Z
+          path: input_artifact
+      - name: Full title-body semantic adjudication
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review_output
+          python input_artifact/runner_current/review_shard.py --pipeline input_artifact/acquired/pipeline_source/temp/nslab_20220819_pipeline --news input_artifact/acquired/new_bot/docs/csv/news_20180620.csv --blind input_artifact/acquired/stock/atlas/research_daily/snapshots/2018/06/20180619.csv --shard '${{ matrix.shard }}' --shard-count 64 --output "review_output/review_shard_$(printf '%03d' '${{ matrix.shard }}').jsonl"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-20180620-20260714T223000Z-${{ matrix.shard }}
+          path: review_output/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  finalize:
+    needs: [acquire, review]
+    if: github.head_ref == 'nslab-exec-20180620-20260714T223000Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nslab-inputs-20180620-20260714T223000Z
+          path: input_artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-20180620-20260714T223000Z-*
+          path: review_shards
+          merge-multiple: true
+      - name: Close semantic review population
+        shell: bash
+        run: |
+          set -euo pipefail
+          python input_artifact/runner_current/combine_reviews.py review_shards combined
+          python -m py_compile input_artifact/runner_current/orchestrate.py
+      - name: PHASE 1 closure candidate closure and verified BLIND seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python input_artifact/runner_current/orchestrate.py blind --input-root input_artifact/acquired --pipeline-source input_artifact/acquired/pipeline_source --reviews combined/reviews.jsonl --work current_work
+          python input_artifact/runner_current/orchestrate.py verify-seal --blind-root current_work
+          test ! -e stock_outcome/atlas/research_daily/snapshots/2018/06/20180620.csv
+      - name: Fresh D outcome acquisition after verified seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stock_outcome/atlas/research_daily/snapshots/2018/06 stock_outcome/run_inputs
+          node <<'NODE'
+          const fs=require('fs'),crypto=require('crypto');const url='https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180620.csv';const sleep=ms=>new Promise(r=>setTimeout(r,ms));(async()=>{let last='';for(let attempt=1;attempt<=7;attempt++){try{const r=await fetch(url+`?nslab_postseal=20260714T223000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers:{'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-postseal-20180620-20260714T223000Z'}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const b=Buffer.from(await r.arrayBuffer()),sha=crypto.createHash('sha256').update(b).digest('hex');fs.writeFileSync('stock_outcome/atlas/research_daily/snapshots/2018/06/20180620.csv',b);fs.writeFileSync(`stock_outcome/run_inputs/outcome_snapshot_20180620_20260714T223000Z_${sha.slice(0,8)}.csv`,b);fs.writeFileSync('stock_outcome/outcome_raw_receipt.json',JSON.stringify({url,byte_size:b.length,sha256:sha,fetched_at:new Date().toISOString(),attempt,opened_after_verified_blind_seal:true},null,2)+'\n');return;}catch(e){last=String(e);if(attempt<7)await sleep(1500*attempt);}}throw new Error(last);})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+          python <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          access=json.loads(Path('input_artifact/acquired/stock/atlas/research_daily/access/2018/06/20180620.json').read_text())
+          p=Path('stock_outcome/atlas/research_daily/snapshots/2018/06/20180620.csv'); b=p.read_bytes(); sha=hashlib.sha256(b).hexdigest()
+          with p.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          def find(obj,*names):
+              if isinstance(obj,dict):
+                  for n in names:
+                      if n in obj:return obj[n]
+                  for v in obj.values():
+                      r=find(v,*names)
+                      if r is not None:return r
+              return None
+          expected_sha=find(access,'outcome_snapshot_sha256','d_snapshot_sha256','snapshot_sha256')
+          expected_count=find(access,'outcome_snapshot_row_count','d_snapshot_row_count','row_count')
+          if expected_sha: assert sha==str(expected_sha)
+          if expected_count is not None: assert len(rows)==int(expected_count)
+          receipt=json.loads(Path('stock_outcome/outcome_raw_receipt.json').read_text()); receipt.update({'row_count':len(rows),'header':list(rows[0]) if rows else [],'metadata_sha256_match':expected_sha is None or sha==str(expected_sha),'metadata_row_count_match':expected_count is None or len(rows)==int(expected_count)}); Path('stock_outcome/outcome_raw_receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+          PY
+      - name: Full-market outcome research brain delta and final reparse
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python input_artifact/runner_current/orchestrate.py postmortem --blind-root current_work --stock stock_outcome --output final_output --required-blocks input_artifact/runner_current/required_blocks.json
+          test -s final_output/20180620_nslab_episode_bundle.md
+      - name: Checkout current importer
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: validator_repo
+      - name: Independent current importer validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -e validator_repo
+          python input_artifact/runner_current/import_validate.py final_output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180620-20260714T223000Z
+          path: |
+            final_output/20180620_nslab_episode_bundle.md
+            final_output/independent_final_validation_receipt.json
+            final_output/final_reparse_receipt.json
+            final_output/repo_import_inspection.json
+            final_output/outcome_receipt.json
+            current_work/blind_completion_receipt.json
+            current_work/seal_independent_verification.json
+            combined/semantic_review_population_receipt.json
+            input_artifact/acquired/acquisition_verification.json
+            input_artifact/acquired/raw_download_receipt.json
+            stock_outcome/outcome_raw_receipt.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
