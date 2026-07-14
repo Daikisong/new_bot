@@ -15,7 +15,7 @@ defaults:
 
 concurrency:
   group: nslab-isolated-20220822-20260714t212500-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   blind:
