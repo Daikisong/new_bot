@@ -1,1 +1,1 @@
-temporary one-shot Raw acquisition trigger for news_20180614.csv
+temporary post-seal outcome acquisition trigger for news_20180614.csv
