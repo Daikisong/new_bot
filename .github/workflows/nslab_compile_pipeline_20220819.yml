@@ -1,0 +1,25 @@
+name: NSLAB compile pipeline 20220819
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    if: github.head_ref == 'nslab-20220819-20260714t131120'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nslab-20220819-20260714t131120
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+      - name: Compile all pipeline modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile temp/nslab_20220819_pipeline/common.py temp/nslab_20220819_pipeline/blind.py temp/nslab_20220819_pipeline/reseal.py temp/nslab_20220819_pipeline/postmortem.py
