@@ -1,0 +1,2 @@
+triggered_at_kst=2026-07-14T21:50:00+09:00
+runner_pool=macos-14
