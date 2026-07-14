@@ -1,0 +1,171 @@
+name: NSLAB isolated gold 20220822 20260714t212500
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-isolated-20220822-20260714t212500-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  blind:
+    if: github.head_ref == 'nslab-run-20220822-20260714t203602'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Acquire isolated orchestration source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/seo_daiki
+          ref: nslab-run-20220822-20260714t203602
+          path: runner
+          sparse-checkout: |
+            temp/nslab_run_20220822_20260714t203602
+          sparse-checkout-cone-mode: false
+
+      - name: Acquire exact fresh new_bot main inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: new_bot_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220822.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+
+      - name: Acquire blind-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_web_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220822.json
+            atlas/research_daily/snapshots/2022/08/20220819.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Acquire compile-verified generic phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+
+      - name: Compile isolated orchestration source
+        run: python -m py_compile runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py
+
+      - name: Full CSV semantic review, denominator closure, BLIND ranking, and clean seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py blind \
+            --new-bot new_bot_main \
+            --stock stock_web_blind \
+            --pipeline-source pipeline_source \
+            --work work
+
+      - name: Verify no outcome snapshot exists in BLIND workspace
+        run: |
+          test ! -e stock_web_blind/atlas/research_daily/snapshots/2022/08/20220822.csv
+          test ! -e work/inputs/outcome_snapshot_20220822.csv
+          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root work
+
+      - name: Upload sealed BLIND packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-20220822-20260714t212500
+          path: work/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  postmortem:
+    needs: blind
+    if: github.head_ref == 'nslab-run-20220822-20260714t203602'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Acquire isolated validator source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/seo_daiki
+          ref: nslab-run-20220822-20260714t203602
+          path: runner
+          sparse-checkout: |
+            temp/nslab_run_20220822_20260714t203602
+          sparse-checkout-cone-mode: false
+
+      - name: Download verified BLIND packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-20220822-20260714t212500
+          path: blind_packet
+
+      - name: Independently verify BLIND seal before outcome checkout
+        run: python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py verify-seal --blind-root blind_packet
+
+      - name: Acquire D outcome snapshot only after verified seal
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_web_outcome
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220822.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Full-market outcome ledger, reverse audit, supervised populations, brain delta, render, and reparse
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python runner/temp/nslab_run_20220822_20260714t203602/run_pipeline.py postmortem \
+            --blind-root blind_packet \
+            --stock stock_web_outcome \
+            --output post_output
+
+      - name: Final artifact hard gate
+        run: |
+          test -s post_output/20220822_nslab_episode_bundle.md
+          test -s post_output/independent_final_validation_receipt.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('post_output/independent_final_validation_receipt.json').read_text(encoding='utf-8'))
+          assert receipt['status'] == 'ACCEPT_FULL'
+          assert receipt['csv_row_count'] == 1733
+          assert receipt['outcome_ledger_count'] == 2434
+          assert receipt['brain_delta_record_count'] > 0
+          assert receipt['brain_delta_payload_missing_count'] == 0
+          assert receipt['brain_delta_manifest_payload_count_mismatch_count'] == 0
+          assert receipt['brain_delta_declared_without_payload_count'] == 0
+          PY
+
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20220822-20260714t212500
+          path: |
+            post_output/20220822_nslab_episode_bundle.md
+            post_output/independent_final_validation_receipt.json
+            post_output/final_reparse_receipt.json
+            blind_packet/metadata.json
+            blind_packet/blind_completion_receipt.json
+            blind_packet/semantic_review/semantic_review_receipt.json
+            blind_packet/blind_output/artifacts/blind_seal_receipt.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
