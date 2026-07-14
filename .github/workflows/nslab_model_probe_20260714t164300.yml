@@ -1,0 +1,51 @@
+name: NSLAB GitHub Models quota probe 20260714t164300
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'nslab-model-probe-20260714t164300'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe one structured response
+        env:
+          GH_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          body={
+            'model':'openai/gpt-4.1-mini',
+            'messages':[{'role':'system','content':'Return strict JSON only.'},{'role':'user','content':'Return {"ok":true}.'}],
+            'temperature':0,
+            'max_tokens':50,
+          }
+          req=urllib.request.Request('https://models.github.ai/inference/chat/completions', data=json.dumps(body).encode(), headers={
+            'Authorization':'Bearer '+os.environ['GH_MODELS_TOKEN'],
+            'Content-Type':'application/json',
+            'Accept':'application/vnd.github+json',
+            'X-GitHub-Api-Version':'2022-11-28',
+          })
+          result={}
+          try:
+            with urllib.request.urlopen(req, timeout=120) as response:
+              raw=response.read().decode('utf-8')
+              result={'status':response.status,'headers':dict(response.headers.items()),'body':json.loads(raw)}
+          except urllib.error.HTTPError as exc:
+            result={'status':exc.code,'headers':dict(exc.headers.items()),'body':exc.read().decode('utf-8',errors='replace')}
+          open('probe/result.json','w',encoding='utf-8').write(json.dumps(result,indent=2,sort_keys=True,default=str)+'\n')
+          print(json.dumps({'status':result.get('status'),'headers':result.get('headers')},sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-model-probe-20260714t164300
+          path: probe/result.json
+          retention-days: 1
