@@ -1,0 +1,348 @@
+name: NSLAB gold retry 20220822 20260714t183938
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: write
+  models: read
+
+jobs:
+  cancel_old:
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel superseded high-concurrency run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api -X POST /repos/${GITHUB_REPOSITORY}/actions/runs/29320429517/cancel || true
+
+  review:
+    needs: cancel_old
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+    steps:
+      - name: Checkout current semantic helpers
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-20220822-retry-20260714t183938
+          path: runner_branch
+          sparse-checkout: |
+            temp/nslab_20220822_20260714t174230
+          sparse-checkout-cone-mode: false
+
+      - name: Download current-execution fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-prepared-20220822-20260714t174230
+          path: prepared
+          run-id: 29320429517
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+
+      - name: Semantically review assigned full title/body rows with staggered request pressure
+        env:
+          GH_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep $(( (${{ matrix.shard }} % 3) * 12 ))
+          NEWS_FILE="$(find prepared/new_bot -maxdepth 1 -name 'news_20220822_*.csv' -print -quit)"
+          BLIND_FILE="$(find prepared/stock_web -maxdepth 1 -name 'blind_snapshot_20220819_*.csv' -print -quit)"
+          test -n "$NEWS_FILE" && test -n "$BLIND_FILE"
+          python runner_branch/temp/nslab_20220822_20260714t174230/review_shard.py \
+            --pipeline prepared/pipeline \
+            --news "$NEWS_FILE" \
+            --blind-snapshot "$BLIND_FILE" \
+            --output review_output \
+            --token "$GH_MODELS_TOKEN" \
+            --shard-index '${{ matrix.shard }}' \
+            --shard-count 24
+
+      - name: Upload semantic review shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-review-retry-20220822-${{ matrix.shard }}
+          path: review_output/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  blind:
+    needs: review
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current semantic helpers
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-20220822-retry-20260714t183938
+          path: runner_branch
+          sparse-checkout: |
+            temp/nslab_20220822_20260714t174230
+          sparse-checkout-cone-mode: false
+
+      - name: Download current-execution fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-prepared-20220822-20260714t174230
+          path: prepared
+          run-id: 29320429517
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+
+      - name: Download all reviewed row shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: semantic-review-retry-20220822-*
+          path: reviews
+          merge-multiple: true
+
+      - name: Close denominator, create candidate population, rank, render, and cleanly reseal BLIND packet
+        env:
+          GH_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROMPT_FILE="$(find prepared/new_bot -maxdepth 1 -name 'research_prompt_*.md' -print -quit)"
+          NEWS_FILE="$(find prepared/new_bot -maxdepth 1 -name 'news_20220822_*.csv' -print -quit)"
+          BLIND_FILE="$(find prepared/stock_web -maxdepth 1 -name 'blind_snapshot_20220819_*.csv' -print -quit)"
+          python runner_branch/temp/nslab_20220822_20260714t174230/merge_and_blind.py \
+            --pipeline prepared/pipeline \
+            --reviews-dir reviews \
+            --prompt "$PROMPT_FILE" \
+            --news "$NEWS_FILE" \
+            --access prepared/stock_web/access_20220822.json \
+            --manifest prepared/stock_web/manifest.json \
+            --schema prepared/stock_web/schema.json \
+            --blind-snapshot "$BLIND_FILE" \
+            --example prepared/new_bot/example2.md \
+            --output blind_packet \
+            --token "$GH_MODELS_TOKEN" \
+            --run-id nslab_run_20260714T174230KST_20220822_retry_20260714T183938KST \
+            --shard-count 24
+          python prepared/pipeline/reseal.py \
+            --blind-dir blind_packet \
+            --run-id nslab_run_20260714T174230KST_20220822_retry_20260714T183938KST
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('prepared/pipeline').resolve()))
+          import postmortem
+          _, _, receipt = postmortem.verify_blind(Path('blind_packet'))
+          assert receipt['preseal_outcome_access_all_zero'] is True
+          assert receipt['seal_status'] == 'VERIFIED_CLEAN'
+          print(json.dumps({'status':'BLIND_SEAL_VERIFIED','manifest_sha256':receipt['blind_packet_manifest_sha256']}, sort_keys=True))
+          PY
+
+      - name: Upload verified sealed BLIND packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-sealed-retry-20220822-20260714t183938
+          path: blind_packet/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  outcome:
+    needs: blind
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download current-execution fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-prepared-20220822-20260714t174230
+          path: prepared
+          run-id: 29320429517
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+
+      - name: Download verified sealed BLIND packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-sealed-retry-20220822-20260714t183938
+          path: blind_packet
+
+      - name: Verify seal before D outcome checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('prepared/pipeline').resolve()))
+          import postmortem
+          _, _, receipt = postmortem.verify_blind(Path('blind_packet'))
+          assert receipt['preseal_outcome_access_all_zero'] is True
+          assert all(receipt.get(key) == 0 for key in [
+              'preseal_outcome_download_count', 'preseal_outcome_header_read_count',
+              'preseal_outcome_sha256_count', 'preseal_outcome_row_count_count',
+              'preseal_outcome_parse_count', 'preseal_outcome_winner_census_count',
+          ])
+          Path('blind_seal_verified_before_outcome.txt').write_text(receipt['blind_packet_manifest_sha256']+'\n', encoding='utf-8')
+          PY
+
+      - name: Acquire exact D snapshot only after seal verification
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: outcome_source
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220822.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Verify outcome and execute postmortem factory
+        env:
+          GH_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p outcome_input final_output
+          cp outcome_source/atlas/research_daily/snapshots/2022/08/20220822.csv outcome_input/outcome_snapshot_20220822_tmp.csv
+          python - <<'PY'
+          import csv, hashlib, json
+          from pathlib import Path
+          metadata=json.loads(Path('prepared/metadata.json').read_text(encoding='utf-8'))
+          path=Path('outcome_input/outcome_snapshot_20220822_tmp.csv')
+          raw=path.read_bytes()
+          rows=list(csv.DictReader(raw.decode('utf-8-sig').splitlines()))
+          assert hashlib.sha256(raw).hexdigest()==metadata['outcome_snapshot_sha256']
+          assert len(raw)==metadata['outcome_snapshot_byte_size']
+          assert len(rows)==metadata['outcome_snapshot_row_count']
+          unique=path.with_name(f"outcome_snapshot_20220822_20260714T183938KST_{metadata['outcome_snapshot_sha256'][:8]}.csv")
+          path.rename(unique)
+          Path('outcome_input/outcome_receipt.json').write_text(json.dumps({
+              'sha256':metadata['outcome_snapshot_sha256'], 'byte_size':len(raw),
+              'row_count':len(rows), 'postseal_only':True,
+              'blind_seal_verified_before_checkout':True, 'file':unique.name,
+          }, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          PY
+          OUTCOME_FILE="$(find outcome_input -maxdepth 1 -name 'outcome_snapshot_20220822_*.csv' -print -quit)"
+          python prepared/pipeline/postmortem.py \
+            --blind-dir blind_packet \
+            --outcome "$OUTCOME_FILE" \
+            --output final_output \
+            --token "$GH_MODELS_TOKEN" \
+            --run-id nslab_run_20260714T174230KST_20220822_retry_20260714T183938KST
+          test -s final_output/20220822_nslab_episode_bundle.md
+
+      - name: Upload postmortem-complete artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-stage-retry-20220822-20260714t183938
+          path: |
+            final_output/
+            outcome_input/outcome_receipt.json
+            blind_seal_verified_before_outcome.txt
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  validate:
+    needs: outcome
+    if: github.head_ref == 'nslab-20220822-retry-20260714t183938'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current independent validator
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-20220822-retry-20260714t183938
+          path: runner_branch
+          sparse-checkout: |
+            temp/nslab_20220822_20260714t174230
+          sparse-checkout-cone-mode: false
+
+      - name: Download current-execution fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-prepared-20220822-20260714t174230
+          path: prepared
+          run-id: 29320429517
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+
+      - name: Download postmortem-complete artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-final-stage-retry-20220822-20260714t183938
+          path: final_stage
+
+      - name: Acquire exact outcome bytes for independent validation
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: validation_outcome_source
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220822.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Reopen and independently reparse all critical populations
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEWS_FILE="$(find prepared/new_bot -maxdepth 1 -name 'news_20220822_*.csv' -print -quit)"
+          BUNDLE_FILE="$(find final_stage -type f -name '20220822_nslab_episode_bundle.md' -print -quit)"
+          test -n "$NEWS_FILE" && test -n "$BUNDLE_FILE"
+          mkdir -p validated
+          python runner_branch/temp/nslab_20220822_20260714t174230/validate_final.py \
+            --pipeline prepared/pipeline \
+            --bundle "$BUNDLE_FILE" \
+            --news "$NEWS_FILE" \
+            --outcome validation_outcome_source/atlas/research_daily/snapshots/2022/08/20220822.csv \
+            --output validated/20220822_independent_final_validation.json
+          cp "$BUNDLE_FILE" validated/20220822_nslab_episode_bundle.md
+          sha256sum validated/20220822_nslab_episode_bundle.md > validated/20220822_nslab_episode_bundle.sha256
+          cp prepared/acquisition_receipt.txt validated/20220822_acquisition_receipt.txt
+
+      - name: Checkout current main importer
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: importer_main
+          sparse-checkout: |
+            pyproject.toml
+            src/news_scalping_lab
+            configs
+          sparse-checkout-cone-mode: false
+
+      - name: Run version-aware importer inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q -e importer_main
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
+          bundle=Path('validated/20220822_nslab_episode_bundle.md')
+          result=inspect_versioned_bundle(bundle)
+          assert result.get('adapter') == 'v23-direct-ingest', result
+          assert result.get('supported') is True, result
+          assert result.get('validation_passed') is True, result
+          assert result.get('raw_normalized_record_count_matches') is True, result
+          assert result.get('import_loss_audit_passed') is True, result
+          assert result.get('record_count', 0) > 0, result
+          Path('validated/20220822_importer_inspection.json').write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          PY
+
+      - name: Upload independently validated final Markdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-validated-final-retry-20220822-20260714t183938
+          path: validated/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
