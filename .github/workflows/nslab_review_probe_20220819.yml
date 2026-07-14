@@ -1,0 +1,53 @@
+name: NSLAB semantic review probe 20220819
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'nslab-20220819-20260714t131120'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: source
+          sparse-checkout: |
+            docs/csv/news_20220819.csv
+          sparse-checkout-cone-mode: false
+      - name: Run full-body semantic review for first 20 rows
+        env:
+          GH_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          python - <<'PY'
+          import csv,json,os,urllib.request,re
+          p='source/docs/csv/news_20220819.csv'
+          with open(p,encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))[:20]
+          records=[]
+          for i,r in enumerate(rows,1):
+            records.append({'source_id':f'SRC-NEWS-{i:06d}','published_at':r['date']+'T'+r['time']+'+09:00','title':r['title'],'body':r['body']})
+          system='''You are the semantic row-reviewer for a Korean pre-open stock-news research ledger. Read every full title and body. Do not use ticker-string shortcuts. Adjudicate article subject, local predicate owner, and whether the row belongs in the material review queue. Return JSON only.'''
+          user='''Allowed disposition values: DIRECT_ISSUER_MATERIAL, DIRECT_ISSUER_SECONDARY, THEME_POLICY_INDUSTRY_EVENT, MARKET_STATE_REGIME, D1_CONTINUATION_SIGNAL, DISCLOSURE_OR_MARKET_NOTICE, BODY_TABLE_OR_LIST_AUDIT, DUPLICATE, LOW_SIGNAL_CONTEXT, NON_MARKET_NEWS, NON_KR_OR_NON_LISTED_CONTEXT, TIME_UNVERIFIED_RETAINED, PARSER_AMBIGUOUS_REVIEWED.\nMaterial queue values are all except DUPLICATE, LOW_SIGNAL_CONTEXT, NON_MARKET_NEWS, NON_KR_OR_NON_LISTED_CONTEXT, TIME_UNVERIFIED_RETAINED.\nFor each input row return exactly one record with source_id, disposition, material_queue_member, article_subject_company_or_null, local_predicate_owner_or_null, direct_issuer_relation (DIRECT_SUBJECT|DIRECT_PREDICATE_OWNER|NAMED_BENEFICIARY|OTHER_COMPANY_MENTION|LIST_MEMBER|GENERIC_OR_NONCOMPANY|NON_KR_OR_NONLISTED|NONE), and a specific rationale under 35 Korean words. Err toward material review when uncertain.\nINPUT_ROWS:\n'''+json.dumps(records,ensure_ascii=False)
+          body={'model':'openai/gpt-4.1-mini','messages':[{'role':'system','content':system},{'role':'user','content':user}],'temperature':0,'max_tokens':8000}
+          req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['GH_MODELS_TOKEN'],'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          with urllib.request.urlopen(req,timeout=180) as resp: data=json.loads(resp.read().decode())
+          content=data['choices'][0]['message']['content'].strip()
+          if content.startswith('```'): content=re.sub(r'^```(?:json)?\s*|\s*```$','',content,flags=re.S)
+          parsed=json.loads(content)
+          open('payload/review_probe.json','w',encoding='utf-8').write(json.dumps({'raw_model':data.get('model'),'parsed':parsed},ensure_ascii=False,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-semantic-review-probe-20220819
+          path: payload/review_probe.json
+          retention-days: 1
+          if-no-files-found: error
