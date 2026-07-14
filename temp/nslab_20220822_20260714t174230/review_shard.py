@@ -71,7 +71,7 @@ def main() -> None:
                 label=label,
                 log_path=log_path,
                 max_tokens=15000,
-                attempts=10,
+                attempts=6,
             )
             records = parsed.get("records") if isinstance(parsed, dict) else parsed
             if not isinstance(records, list):
@@ -107,7 +107,7 @@ def main() -> None:
                 f"single-row semantic review failed for {source_id}: {type(exc).__name__}: {exc}"
             ) from exc
 
-    batches = common.row_batches(model_inputs, max_items=8, max_chars=52000)
+    batches = common.row_batches(model_inputs, max_items=16, max_chars=78000)
     for batch_index, batch in enumerate(batches, start=1):
         process(
             batch,
