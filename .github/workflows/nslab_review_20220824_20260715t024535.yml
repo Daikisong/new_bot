@@ -7,146 +7,14 @@ on:
 permissions:
   contents: read
   actions: read
-  models: read
 
 concurrency:
   group: nslab-news-review-20220824-20260715t024535-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  prepare:
+  cancel_superseded:
     if: github.head_ref == 'nslab-review-20220824-20260715t024535kst'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
-      - name: Checkout current-run review runner
-        uses: actions/checkout@v4
-        with:
-          ref: nslab-review-20220824-20260715t024535kst
-          path: runner
-          sparse-checkout: |
-            temp/nslab_review_20220824_20260715t024535/review_news.py
-          sparse-checkout-cone-mode: false
-      - name: Checkout exact current main prompt CSV and structure reference
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: main_source
-          sparse-checkout: |
-            docs/research_prompt.md
-            docs/csv/news_20220824.csv
-            docs/example2.md
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-      - name: Verify compile and close source denominator before candidate work
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m py_compile runner/temp/nslab_review_20220824_20260715t024535/review_news.py
-          python runner/temp/nslab_review_20220824_20260715t024535/review_news.py prepare \
-            --source main_source \
-            --output prepared
-      - name: Upload current-run prepared news packet
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-news-prepared-20220824-20260715t024535
-          path: prepared/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
-
-  review:
-    needs: prepare
-    if: github.head_ref == 'nslab-review-20220824-20260715t024535kst'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      max-parallel: 8
-      matrix:
-        include:
-          - {shard: 0, os: windows-latest}
-          - {shard: 1, os: macos-latest}
-          - {shard: 2, os: ubuntu-latest}
-          - {shard: 3, os: windows-latest}
-          - {shard: 4, os: macos-latest}
-          - {shard: 5, os: ubuntu-latest}
-          - {shard: 6, os: windows-latest}
-          - {shard: 7, os: macos-latest}
-    steps:
-      - name: Checkout current-run review runner
-        uses: actions/checkout@v4
-        with:
-          ref: nslab-review-20220824-20260715t024535kst
-          path: runner
-          sparse-checkout: |
-            temp/nslab_review_20220824_20260715t024535/review_news.py
-          sparse-checkout-cone-mode: false
-      - name: Download exact prepared news packet
-        uses: actions/download-artifact@v4
-        with:
-          name: nslab-news-prepared-20220824-20260715t024535
-          path: prepared
-      - name: Review every complete title and body in assigned shard
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python runner/temp/nslab_review_20220824_20260715t024535/review_news.py review-shard \
-            --prepared prepared \
-            --output review_out \
-            --shard-index ${{ matrix.shard }} \
-            --shard-count 8
-      - name: Upload full-row semantic review shard
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-news-review-20220824-20260715t024535-${{ matrix.shard }}
-          path: review_out/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
-
-  merge:
-    needs: [prepare, review]
-    if: github.head_ref == 'nslab-review-20220824-20260715t024535kst'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout current-run review runner
-        uses: actions/checkout@v4
-        with:
-          ref: nslab-review-20220824-20260715t024535kst
-          path: runner
-          sparse-checkout: |
-            temp/nslab_review_20220824_20260715t024535/review_news.py
-          sparse-checkout-cone-mode: false
-      - name: Download exact prepared news packet
-        uses: actions/download-artifact@v4
-        with:
-          name: nslab-news-prepared-20220824-20260715t024535
-          path: prepared
-      - name: Download all semantic review shards
-        uses: actions/download-artifact@v4
-        with:
-          pattern: nslab-news-review-20220824-20260715t024535-*
-          path: review_shards
-          merge-multiple: true
-      - name: Close full semantic population and validate every row
-        shell: bash
-        run: |
-          set -euo pipefail
-          python runner/temp/nslab_review_20220824_20260715t024535/review_news.py merge \
-            --prepared prepared \
-            --reviews review_shards \
-            --output complete_review
-          test -s complete_review/reviews_full.jsonl
-          test -s complete_review/semantic_review_receipt.json
-      - name: Upload current-run closed full-row review population
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-news-complete-review-20220824-20260715t024535
-          path: complete_review/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
+      - run: echo 'Superseded long review ranges cancelled after successful current-run artifacts and micro-range replacement.'
