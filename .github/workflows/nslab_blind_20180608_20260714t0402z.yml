@@ -1,0 +1,55 @@
+name: NSLAB blind 20180608 20260714t0402z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_blind:
+    if: github.head_ref == 'nslab-blind-20180608-20260714t0402z'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch fresh blind snapshot Raw bytes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acquired
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const url = 'https://raw.githubusercontent.com/Songdaiki/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180607.csv';
+          const path = 'acquired/blind_snapshot_20180607_tmp.csv';
+          (async () => {
+            const response = await fetch(url, {
+              redirect: 'follow',
+              headers: {
+                'cache-control': 'no-cache',
+                'pragma': 'no-cache',
+                'user-agent': 'nslab-gold-phase-machine/blind-20180608'
+              }
+            });
+            if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+            const bytes = Buffer.from(await response.arrayBuffer());
+            fs.writeFileSync(path, bytes);
+            const manifest = {
+              url,
+              path,
+              byte_size: bytes.length,
+              sha256: crypto.createHash('sha256').update(bytes).digest('hex')
+            };
+            fs.writeFileSync('acquired/blind_acquisition_manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+      - name: Upload freshly acquired blind snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-20180608-20260714t0402z
+          path: acquired/
+          if-no-files-found: error
+          retention-days: 1
