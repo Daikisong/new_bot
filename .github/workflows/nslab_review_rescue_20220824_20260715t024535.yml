@@ -1,0 +1,73 @@
+name: NSLAB review rescue 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-review-rescue-20220824-20260715t024535-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rescue:
+    if: github.head_ref == 'nslab-review-rescue-20220824-20260715t024535kst'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {shard: 0, os: macos-latest, model: openai/gpt-4o-mini}
+          - {shard: 3, os: ubuntu-latest, model: mistral-ai/mistral-medium-2505}
+          - {shard: 5, os: windows-latest, model: meta/llama-3.3-70b-instruct}
+    steps:
+      - name: Checkout rescue wrapper
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-review-rescue-20220824-20260715t024535kst
+          path: rescue
+          sparse-checkout: |
+            temp/nslab_review_rescue_20220824_20260715t024535/rescue.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout exact current-run review source commit
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact current-run prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-news-prepared-20220824-20260715t024535
+          path: prepared
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+          run-id: 29358558986
+      - name: Review complete title and body for rescue shard
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+          NSLAB_RESCUE_PRIMARY: ${{ matrix.model }}
+        run: |
+          set -euo pipefail
+          python rescue/temp/nslab_review_rescue_20220824_20260715t024535/rescue.py review-shard \
+            --prepared prepared \
+            --output review_out \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 8
+      - name: Upload rescued current-run shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-news-rescue-20220824-20260715t024535-${{ matrix.shard }}
+          path: review_out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
