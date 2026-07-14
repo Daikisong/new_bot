@@ -1,0 +1,66 @@
+name: NSLAB final micro range 113-140 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-last-range-113-140-20220824-20260715t024535-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  last_range:
+    if: github.head_ref == 'nslab-review-last-113-140-20220824-20260715t024535kst'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout current-run micro worker commit
+        uses: actions/checkout@v4
+        with:
+          ref: 50d987ee2d96d4512f32e833a8f57f9decfdd512
+          path: micro
+          sparse-checkout: |
+            temp/nslab_review_micro_20220824_20260715t024535/micro.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout exact current-run review source commit
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact current-run prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-news-prepared-20220824-20260715t024535
+          path: prepared
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+          run-id: 29358558986
+      - name: Review complete title and body for rows 113 through 140
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+          NSLAB_MICRO_PRIMARY: openai/gpt-4o-mini
+        run: |
+          set -euo pipefail
+          python micro/temp/nslab_review_micro_20220824_20260715t024535/micro.py \
+            --prepared prepared \
+            --output review_out \
+            --start 113 \
+            --end 140
+      - name: Upload current-run final micro range
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-news-last-range-20220824-20260715t024535-113-140
+          path: review_out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
