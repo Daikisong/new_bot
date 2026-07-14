@@ -1,0 +1,57 @@
+name: NSLAB current-run pipeline acquisition 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nslab-pipeline-acquire-20220824-20260715t024535-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  acquire_pipeline:
+    if: github.head_ref == 'nslab-pipeline-acquire-20220824-20260715t024535kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout compile-verified generic phase-machine source
+        uses: actions/checkout@v4
+        with:
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Verify Python sources and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p packet/pipeline
+          cp source/temp/nslab_20220819_pipeline/*.py packet/pipeline/
+          python -m py_compile packet/pipeline/*.py
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          root=Path('packet/pipeline')
+          files={}
+          for p in sorted(root.glob('*.py')):
+              b=p.read_bytes(); files[p.name]={'sha256':hashlib.sha256(b).hexdigest(),'byte_size':len(b)}
+          commit=subprocess.check_output(['git','-C','source','rev-parse','HEAD'],text=True).strip()
+          Path('packet/pipeline_acquisition_receipt.json').write_text(json.dumps({
+            'schema_version':'nslab.pipeline_acquisition.v1','run_id':'nslab_run_20260715T024535KST_20220824',
+            'source_commit':commit,'files':files,'status':'COMPILE_VERIFIED'
+          },indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+      - name: Upload current-run pipeline packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-pipeline-20220824-20260715t024535
+          path: packet/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
