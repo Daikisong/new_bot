@@ -1,0 +1,99 @@
+===== SRC-000521 | CSV_ROW 521 | 2022-08-18 20:26:15 =====
+TITLE: Brief-Leeport(보유)는 유닛이 조건부로 649,921주의 프라이마 주식을 매각하기로 합의했다고 말한다.
+BODY:
+BRIEF-Leeport (Holdings) Says Unit Conditionally Agreed To Sell 649,921 Prima Shares .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18 일 (로이터) - 리포트 (홀딩스) Ltd.0387.HK:  유닛은 조건부로 1620만 유로를 고려하여 649,921주의 프라이마 주식을 파는 것에 동의했다.   처분 결과, 그룹은 약 2,090만 홍콩달러의 공정가치 이익을 인식할 것으로 예상된다.    Further company coverage: 0387.HK  Reuters.Briefs@thomsonreuters.com        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000522 | CSV_ROW 522 | 2022-08-18 20:26:05 =====
+TITLE: NHC 열대기상전망
+BODY:
+NHC Tropical Weather Outlook  열대 날씨 전망  NWS 국립 허리케인 센터 마이애미 FL  500 AM PDT 2022년 8월 18일 목요일     북태평양 동부의 경우...서위 140도 동쪽:     앞으로 5일 동안은 열대성 저기압의 형성이 예상되지 않는다.   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000523 | CSV_ROW 523 | 2022-08-18 20:25:41 =====
+TITLE: 모닝 뉴스 콜 - 미국, 8월 18일
+BODY:
+Morning News Call - U.S., August 18 .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 이 뉴스레터의 PDF 버전에 액세스하려면,click here  TOPNEWS U.S. Companies 페이지를 통해 Morning News Call -- US를 읽을 수 있습니다.  이메일을 통해 이 뉴스레터를 받으려면 다음 주소로 등록하십시오.  https://solutions.refinitiv.com/MorningNewsCallENsubscriptionpage  캐나다 모닝 뉴스 콜(Morning News Call Canada) - 거래일 시장 동향 뉴스 미리보기:  - Eikon 사용자인 경우 뉴스 브라우저에 CA/MNC를 입력하고 Thomson One 사용자인 경우 뉴스 브라우저에 RT/CA/MNC를 입력합니다.     아침 뉴스 Call Canadienne (프랑스어) -- 거래일 시장 동향 뉴스 미리보기:  - Eikon 사용자인 경우 뉴스 브라우저에 CA/MNC를 입력하고 Thomson One 사용자인 경우 뉴스 브라우저에 RT/CA/MNC를 입력합니다.     다음 거래일 미리보기 - 오늘의 이벤트와 다음 거래일의 미리보기 내용을 요약합니다.  - Eikon 사용자인경우 뉴스 브라우저에 DAY/US를 입력하고 Thomson One 사용자인 경우 뉴스 브라우저에 RT/DAY/US를 입력합니다.     뉴스레터색인을 보려면 다음을 클릭하십시오.NEWSLETTERS        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000524 | CSV_ROW 524 | 2022-08-18 20:25:31 =====
+TITLE: 미국 주식-미래는 주간 실업수당 청구 데이터를 앞두고 더 높은 수준을 보이고 있다.
+BODY:
+US STOCKS-Futures tick higher ahead of weekly jobless claims data .storyContent * {border-color:inherit !important;outline-color:inherit !important;}  8월 18일 (로이터) - 미국 주가지수 선물은 목요일 노동시장 데이터를 앞두고 소폭 상승했으며, 투자자들은 중앙은행이 덜 공격적인 통화정책 긴축 경로를 추구할 수 있음을 시사한 연방준비제도이사회(FRB)의 7월 회의록을 평가했다.  트레이더들은 FRB가 수요일 회의록 이후 세 번째 75베이시스 포인트 인상보다는 9월에 금리를 50베이시스 포인트 인상할 가능성이 약간 더 높다고 보고 있다.FEDWATCH  골드만삭스는 메모에서 "7월 FOMC 회의록은 참가자들이 긴축 재정 상황의 영향을 평가하면서 '어느 시점에' 상승 속도를 늦추는 것이 적절해질 것으로 생각했음을 시사했다"고 말했다.  국채 수익률이 소폭 하락하며 시장 전 거래에서 일부 고성장주와 기술주에 힘을실어줬다.  연준은 올해 들어 지금까지 기준금리를 225bps 인상해 40년 만의 높은 물가상승률을 조절하고 있어 투자자들이 긴축금융 여건에 적응하면서 주식시장에서 급격한 매도세를 보이고 있다.  노동부 자료, 오전 8시 30분에 제출해야 합니다. ET는 8월 13일에 끝나는 주에 대한 국가 실업 수당에 대한 초기 청구가 전주의 262,000명에서 계절 조정된 265,000명으로 3,000명 증가할 것으로 예상된다.  7 월 인플레이션이 예상보다 완만하다는 것을 보여주는 데이터가 다음 주 연준의 연례 잭슨홀 심포지엄에서 금리에 대한 추가 단서를 기다리며지난 몇 주 동안 월가의 위험 반등을 촉발시켰다.  기술 집약적인 나스닥.IXIC6월 중순의 최저치에서 거의 22% 반등한 반면, 벤치마크 S&P 500은 하락했다..SPX17% 상승했으며 미국 기업의 긍정적인 성과에 힘입어 상승했습니다.  오전 7시 1분. ET, 다우미니스1YMcv128포인트(0.08%) 오른 S&P 500 e-mins.EScv1나스닥 100 e-minis는 3.25포인트(0.08%) 올랐다.NQcv14%포인트(0.03%) 올랐다.  리테일러 콜스 코퍼레이션KSS.N대폭적인 할인 및 비용 인상으로 압박된 연간 매출 및 이익 전망치를 7.5% 줄인 반면, 에스티 로더 코스 Inc.EL.N연간 매출이 예상치를 밑돌면서 1.6% 하락했다. () (  (Reporting by Bansari Mayur Kamdar in Bengaluru; Editing by Shounak Dasgupta)  BansariMayur.Kamdar@thomsonreuters.com     (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html        Keywords: USA-STOCKS/   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000525 | CSV_ROW 525 | 2022-08-18 20:25:20 =====
+TITLE: 美 밀워키 개폐식 다리서…아이패드 보던 70대 여행객 추락사
+BODY:
+미국 위스콘신주 최대 도시 밀워키에서 70대 여행객이 개폐식 다리를 건너다 추락해 사망했다.  17일(현지시간) AP통신은 지난15일 오후 밀워키 도심 명소 킬번 애비뉴 다리에서 로드아일랜드주 프로비던스 주민 리처드 두자딘(77)이 부인과 함께 밀워키강의 다리를 건너던 중 사고가 발생했다고 보도했다.  보도에 따르면 부부가 다리 중간쯤 다다랐을 때 다리 양편에서 경고음과 경광등이 켜지며상판이 양쪽으로 나뉘어 올라가기 시작했고, 두자딘은 90도 각도로 들어 올려진 다리의 난간을 붙잡고 1~2분간 버티다가 20m 아래 땅으로 떨어졌다.  두자딘은 머리에 큰 상처를 입고 현장에서 숨졌다고 검시소 측은 전했다. 신고를 받고 출동한 응급구조대가 심폐소생술과 제세동기 처치를 시행했지만, 소용이 없었던 것으로 알려졌다.  경찰은 "부인은 다리가 들어 올려지기 전에 가까스로 건너편에 닿았으나 두자딘은 여전히 다리 위에 있었다"며 "그는 아이패드를 들여다보며 천천히 걷고 있었다"고 설명했다.  가족들은 "두자딘은 걸음이 느리고 한쪽 귀에 보청기를 끼고 있었으며, 청력이 약해 경고음을 듣지 못한데다 아이패드를 보느라 경광등도 감지하지 못했을 것"이라고 추정했다.  밀워키 당국에 따르면 다리는 원격으로 작동되고, 사고 당시 4년 경력의 직원이원거리에서 현장에 설치된 2대의 카메라 영상을 보면서 제어한 것으로 알려졌다.  한편, 이번 사고로 사망한 두자딘은 로드아일랜드 지역신문에서 47년간 근무했으며 종교 담당 기자로 36년간 활동했다. 그는 부인과 함께 지난 12일부터 밀워키에 머물렀으며 사고 당일 프로비던스로 돌아갈 계획이었다.  이보배 한경닷컴 객원기자 newsinfo@hankyung.com    관련기사 "주가 빠질 때마다 사둬라"…'강추 종목' 1년뒤 한병에 무려 10만원…'서민 대표 술' 인기 조짐 제니가 입어도 '불편하고 괴상'…"힙한데 왜?" 개콘 끝나고 막막했는데…160만 유튜버로 '대박' 걷고 자고 운전하고…'평범한 일상'으로 돈 번다    ⓒ 한국경제 & hankyung.com, 무단전재 및 재배포금지
+
+===== SRC-000526 | CSV_ROW 526 | 2022-08-18 20:17:51 =====
+TITLE: 연간 수익 전망치 인하 후 버즈콜의 부진
+BODY:
+BUZZ-Kohl's slumps after annual profit forecast cut .storyContent * {border-color:inherit !important;outline-color:inherit !important;} ** 소매업자 콜스 주식회사KSS.N9.6%하락한 30.69달러에 거래되다.  ** KSS는 연간 EPS 전망치를 종전 6.45달러에서 6.85달러로 하향 조정했다. $4.06의 EPS - Refinitiv 데이터(  ** Co는 현재 2022 회계연도의 순매출이 5%에서 6% 사이로 감소할 것으로 예상하며, 이는 기존 예상 성장률에서 1%로 하향조정된 것과 비교된다.  ** 2분기 동일 점포 매출은 7.7%, 순매출은 8.5% 감소했다.  ** "2분기 결과는 약화된 거시 환경, 높은 인플레이션 및 소비 지출 위축으로 인해 영향을 받았으며, 이는 특히 중산층 고객을 압박했습니다." - CEO Michelle Gass  ** 마지막 마감까지 31% 이상 재고 감소     (Reporting by Chavi Mehta in Bengaluru)  Chavi.Mehta@thomsonreuters.com        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000527 | CSV_ROW 527 | 2022-08-18 20:17:45 =====
+TITLE: Brief-스웨덴 스털링 Q2 순매출 33,000 SEK
+BODY:
+BRIEF-Swedish Stirling Q2 Net Sales At SEK 33,000 .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - 스웨덴 스털링 ABSTRLNG.ST:  스웨덴 스털링 랩: 2022년 반기 보고서.   q2 분기 순매출 총 tsek 33 (tsek -)   해당 분기의 총 수익 및 자본화된 작업은 tsek 461에 달했다(tsek 16484).   분기 희석 전 주당 q2 손실은 -0.37(섹 -0.13)이었다.    Further company coverage: STRLNG.ST  (Gdansk Newsroom)  gdansk.newsroom@thomsonreuters.com ; +48 58 7696600; ))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000528 | CSV_ROW 528 | 2022-08-18 20:17:25 =====
+TITLE: 카난(ADR)(CAN) 영업이익 대폭증가 +298.37%
+BODY:
+카난(ADR)(CAN) 영업이익 대폭증가 +298.37%   8월18일, 카난(ADR)(CAN, 나스닥)은 2022년 6월기준으로 실적을 발표함(6-K).   1) 카난(ADR) 주요실적   - 매출액 : 16억 5266만달러(+52.78%)   - 영업이익 : 6억 5925만달러(+298.37%)   - 당기순이익 : 6억 891만달러(+148.57%)   - 주당순이익(EPS) : 23.56$(+142.64%)  (*증감률은 전년동기대비 기준임)  2) 카난(ADR) 재무비율과 투자지표   - 영업이익률 : 39.9%   - EPS(주당순이익) : 23.56$   - PER(주가수익비율) : 0.3배   * 이용상의 주의 사항  금융시장의 변동에 따라 실적 발표 일정과 공시는 지속적으로 변동됩니다. 본 서비스는 미국 실적 공시를 실시간 데이터화 하여 제공함에 있어 공시의 오류, 데이터 수집 프로세스상의 에러 및 지연 등 다양한 서비스상의 오류와 지연이 있을 수 있습니다. 본 서비스를 이용함에 있어 그 이용에 따르는 책임은 이용자 본인에게 있으며, 어떠한 거래 손실이나 다른 손실에 대해서도 책임지지 않습니다.
+
+===== SRC-000529 | CSV_ROW 529 | 2022-08-18 20:17:25 =====
+TITLE: SQM우선주B(ADR)(SQM) 영업이익 대폭증가 +857.17%
+BODY:
+SQM우선주B(ADR)(SQM) 영업이익 대폭증가 +857.17%   8월18일, SQM우선주B(ADR)(SQM, 뉴욕증권거래소)는 2022년 6월기준으로 실적을 발표함(6-K).   1) SQM우선주B(ADR) 주요실적   - 매출액 : 25억 9880만달러(+341.97%)   - 영업이익 : 12억 1560만달러(+857.17%)   - 당기순이익 : 8억 5930만달러(+856.9%)   - 주당순이익(EPS) : 3.01$(+870.97%)  (*증감률은 전년동기대비 기준임)  2) SQM우선주B(ADR) 재무비율과 투자지표   - 영업이익률 : 46.8%   - EPS(주당순이익) : 3.01$   - PER(주가수익비율) : 17.4배   * 이용상의 주의 사항  금융시장의 변동에 따라 실적 발표 일정과 공시는 지속적으로 변동됩니다. 본 서비스는 미국 실적 공시를 실시간 데이터화 하여 제공함에 있어 공시의 오류, 데이터 수집 프로세스상의 에러 및 지연 등 다양한 서비스상의 오류와 지연이 있을 수 있습니다. 본 서비스를 이용함에 있어 그 이용에 따르는 책임은 이용자 본인에게 있으며, 어떠한 거래 손실이나 다른 손실에 대해서도 책임지지 않습니다.
+
+===== SRC-000530 | CSV_ROW 530 | 2022-08-18 20:17:08 =====
+TITLE: Brief-Poland의 KGHM은 2023년 계획된 전력 소비의 25-30%가 회피되었다고 말한다.
+BODY:
+BRIEF-Poland's KGHM Says 25-30% Of Planned Electricity Consumption In 2023 Hedged .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - KGHM 폴스카 미에즈 SAKGH.WA:  폴란드의 kghm cfo는 2023년 계획 전력 소비의 25-30%가 위험회피되었다고 말한다.   폴란드의 kghm cfo는 회사가 배당 정책을 유지한다고 말한다.      Further company coverage: KGH.WA  (Warsaw Newsroom)  warsaw.newsroom@thomsonreuters.com ; +48 22 6539700; Reuters Messaging: warsaw.newsroom.reuters.com@thomsonreuters.net        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000531 | CSV_ROW 531 | 2022-08-18 20:17:00 =====
+TITLE: Transalta Ontario 200 MW Melancton (Amaranth) 풍력 발전소가 서비스를 재개합니다 - Ontario IESO
+BODY:
+Transalta Ontario 200 MW Melancthon (Amaranth) wind power plant returns to service - Ontario IESO  8월 18일(로이터) - 트란살타 온타리오 200MW 멜란톤(아마란스) 풍력 발전소가 가동에 복귀한다고 온타리오 IESO가 목요일에 밝혔다.((북미 파워 데스크: 휴스턴 +1713 210 8522, 뉴욕 +646 223 6072, 벵갈루루 +91 80 6749 1298)        Keywords: UTILITIES-ONTARIOIESO/   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000532 | CSV_ROW 532 | 2022-08-18 20:16:59 =====
+TITLE: Brief-Curevac은 수정된 오미크론 표적 코로나19 백신 후보자에 대한 1단계 임상 연구를 시작합니다.
+BODY:
+BRIEF-Curevac Starts Phase 1 Clinical Study Of Modified, Omicron-Targeting Covid-19 Vaccine Candidate .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - CureVac NV5CV.DE:  curevac은 수정된 오미크론 감염 코로나19 백신 후보의 임상 1단계 연구를시작합니다.    Further company coverage: 5CV.DE  frankfurt.newsroom@thomsonreuters.com ; +49 69 7565 1270; ))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000533 | CSV_ROW 533 | 2022-08-18 20:12:26 =====
+TITLE: 차이나인덱스홀딩(CIH) 영업이익 대폭감소 -37.57%
+BODY:
+차이나인덱스홀딩(CIH) 영업이익 대폭감소 -37.57%   8월18일, 차이나인덱스홀딩(CIH, 나스닥)은 2022년 6월기준으로 실적을 발표함(6-K).   1) 차이나인덱스홀딩 주요실적   - 매출액 : 1억 1021만달러(-27.8%)   - 영업이익 : 4500.5만달러(-37.57%)   - 당기순이익 : 2117.6만달러(-68.56%)   - 주당순이익(EPS) : 0.23$(-69.33%)  (*증감률은 전년동기대비 기준임)  2) 차이나인덱스홀딩 재무비율과 투자지표   - 영업이익률 : 40.8%   - EPS(주당순이익) : 0.23$   - PER(주가수익비율) : 6.7배   * 이용상의 주의 사항  금융시장의 변동에 따라 실적 발표 일정과 공시는 지속적으로 변동됩니다. 본 서비스는 미국 실적 공시를 실시간 데이터화 하여 제공함에 있어 공시의 오류, 데이터 수집 프로세스상의 에러 및 지연 등 다양한 서비스상의 오류와 지연이 있을 수 있습니다. 본 서비스를 이용함에 있어 그 이용에 따르는 책임은 이용자 본인에게 있으며, 어떠한 거래 손실이나 다른 손실에 대해서도 책임지지 않습니다.
+
+===== SRC-000534 | CSV_ROW 534 | 2022-08-18 20:12:15 =====
+TITLE: "계곡살인 이은해 남편, 수영 전혀 못해···물 무서워 벌벌 떨었다"
+BODY:
+‘계곡 살인 사건’ 피해자인 이은해(31)씨 남편이 수영을 전혀 할 줄 몰랐을 뿐 아니라 물을 극도로 무서워했다는 법정 증언이 나왔다.   18일 인천지법 형사15부(이규훈 부장판사)는 살인과 살인미수 등 혐의로 기소된 이씨와 공범 조현수(30)씨의 7차 공판에서 증인신문을 진행했다.   이날 법정에는 경기 가평의 수상레저업체의 전직 직원 A씨가 검찰 측 증인으로 나왔다. 이 업체는 이씨와 조씨가 피해자인 윤모(사망 당시 39세)씨와 몇 차례 방문해 물놀이 기구를 탄 곳이다.   A씨는 "피해자는 물을 매우 무서워하는 분이었다"며 "웨이크 보드를 타다가 물에 빠지면 구명조끼를 입고도 계속 허우적거렸다"고 말했다.   이어 "제가 (과거에) 수영선수 생활을 했는데 물을 좋아하는 분과 무서워하는 분을 안다"며 "(윤씨는) 보통 무서워하는 정도가 아니고 말그대로 패닉 상태에서 아무것도 못 하는 사람이었고 물에서 건져드리면 무서워 벌벌 떨었다"고 기억했다.   A씨는 이씨가 남편인 윤씨에게 웨이크 보드를 계속 타라고 강요했다고 했다. 이 과정에서 공범인 조씨가 옆에서 부추겼다고도 말했다.    검찰 측이 "이씨가 '오빠 웨이크 보드 배워야지'라는 말을 하고 조씨가 옆에서 '형님. 타세요. 쪽팔리게 뭐하냐'면서 거들었느냐"고 묻자"네"라고 답했다. 이어 A씨는 "피해자는 '수영 못한다. 물이 무섭다'는 말을 (내게) 했다"며 "이씨가 강요도 했고, (조씨 등 일행과) 같이 어울리고 싶어서 물놀이한 것 같다"고 말했다.   검찰 측이 "왜 강요한다고 생각했느냐"는 질문에 A씨는 "(피해자가) 굳이 타기 싫다는데 계속 타라고 했다"고 증언했고, "이씨가 시키면피해자는 다 했느냐"는 물음에는 "거의 그랬던 것 같다"고 말했다.   아울러 A씨는 "(업체 사장으로부터 피해자가 사망했다는 말을 듣고) 직원들끼리 물주 같은 피해자를 살해해 보험사기를 친 것 같다고 얘기하기도 했다"고 덧붙였다.   A씨의 증인신문이 끝난 뒤에는 2016∼2019년께 이씨와 동거한 전 남자친구 B씨가 법정에 출석했다. 그는 "이씨와 동거할 당시인 2017년 3 월 이씨와 윤씨가 혼인신고를 한 사실을 알았느냐"는 검찰의 질문에 "몰랐다"고 했다.    하지만 이씨의 변호인이 "동거기간에 이씨가 윤씨와 증인을 동시에 만나는 사실을 알고 있었느냐"고 묻자 B씨는 "알고 있었고, 이씨의 과거 남자친구들도 윤씨의 존재를 다 알고 있었다"고 답했다.   이씨와 조씨는 이날 법정에서 증인신문이 진행되는 동안 미리 준비한 종이나 노트에 볼펜으로 무언가를 적기도 했다.   한편 이씨와 조씨는 2019년 6월 경기 가평의 한 계곡에서 윤모(당시 39세)씨를 살해한 혐의 등으로 재판에 넘겨졌다. 불구속 상태로 조사를 받던 두 사람은 지난해 12월 14일 검찰의 2차 조사를 앞두고 잠적한 지 4개월 만인 지난 4월 경기 고양시 삼송역 인근의 오피스텔에서 검거됐다. /김민혁 기자 minegi@sedaily.com  >>[무료 공개]<<지금 "1,000만원"만 있어도 당장 "이것"부터 사라!! >>>(무료 체험)  이제는 코인이다! "급상승 코인종목" 시장가보다 싸게 살 수 있다!!! >>> (무료확인)  ◑급등 시그널 포착◐ 바닥권에서 선취매할 최적의 타이밍과 종목공개! [참여코드:7777]  [ⓒ 서울경제, 무단 전재 및 재배포 금지]
+
+===== SRC-000535 | CSV_ROW 535 | 2022-08-18 20:11:59 =====
+TITLE: Brief-Fubon Financial, 푸본 보험에 150억 대만 달러 투자
+BODY:
+BRIEF-Fubon Financial To Invest T$15 Bln In Fubon Insurance .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - 푸본 파이낸셜 홀딩 주식회사2881.TW:  주식 청약을 통해 유닛 푸본 보험에 150억 달러(5억 달러)를 투자할 계획이라고 밝혔습니다.    Further company coverage: 2881.TW  ($1 = 30.0000 대만 달러)     (Reporting by Hong Kong newsroom)  meg.shen@thomsonreuters.com ; 852-39525805; ))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000536 | CSV_ROW 536 | 2022-08-18 20:11:38 =====
+TITLE: Brief-JCET 그룹의 H1 순이익은 전년 대비 16.7% 증가했습니다.
+BODY:
+BRIEF-JCET Group's H1 Net Profit Up 16.7% Y/Y .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - JCET 그룹 주식회사600584.SS:  H1 순이익이 전년 대비 16.7% 증가한 15억 위안(2억2092만 달러)을 기록했다고 밝혔습니다.   Source text  Further company coverage: 600584.SS  ($1 = 6.7898 중국 위안화)     (Reporting by Hong Kong newsroom)  twinnie.siu@tr.com ; 852-3462 7715; ))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000537 | CSV_ROW 537 | 2022-08-18 20:11:34 =====
+TITLE: '의료과실 은폐 의혹' 의료중재원 감정위원 무혐의
+BODY:
+의료 과실을 은폐했다는 의혹을 받던 한국의료분쟁조정중재원(의료중재원) 전직 상임감정위원들이 무혐의 처분을 받았다.   18일 경찰에 따르면 서울경찰청 강력범죄수사대는 이날 업무방해 혐의로 고발된 전직 상임감정위원 3명을 증거불충분으로 불송치했다.   앞서 경제정의실천시민연합(경실련)은 올해 1월 이들이 최종 감정서에 소수 의견을 누락하고 감정부 회의 결과와 반대되는 사실을 적시하는 등 의료중재원의 업무를 방해한 의혹이 있다며 경찰에 고발했다.   고발을 접수한 경찰은 올해 2월 고발인 조사를 하고 6월 의료중재원 사무실을 압수수색하는 등 수사를 벌여왔다. /이건율 기자 yul@sedaily.com  >>[무료 공개]<<지금 "1,000만원"만있어도 당장 "이것"부터 사라!! >>>(무료 체험)  이제는 코인이다! "급상승 코인종목" 시장가보다 싸게 살 수 있다!!! >>> (무료확인)  ◑급등 시그널 포착◐ 바닥권에서 선취매할 최적의 타이밍과 종목 공개! [참여코드:7777]  [ⓒ 서울경제, 무단 전재 및 재배포 금지]
+
+===== SRC-000538 | CSV_ROW 538 | 2022-08-18 20:11:26 =====
+TITLE: Brief-Merus Power Signs 배달 계약서 유럽 서비스 센터와 체결
+BODY:
+BRIEF-Merus Power Signs Delivery Agreement With European Services Centre .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - 메루스 파워 OyjMERUS.HE:  유럽 서비스 센터와 납품 계약을 체결합니다.   Further company coverage: MERUS.HE  (Gdansk Newsroom)  gdansk.newsroom@thomsonreuters.com ; +48 58 7696600; ))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000539 | CSV_ROW 539 | 2022-08-18 20:11:23 =====
+TITLE: 터키 중앙은행은 치솟는 인플레이션에도 불구하고 예상외로 금리를 13%로 인하했다.
+BODY:
+Turkey's cenbank unexpectedly cuts rate to 13% despite soaring inflation .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 앙카라, 8월 18일(로이터) - 터키 중앙은행은 7월 인플레이션이 80% 가까이 치솟은 상황에서도 글로벌 긴축 추세에 역행하며 경제활동 둔화를 이유로 목요일 정책금리를 13%로 전격 인하했다.  한은은 지난해 말 이미 물가가 오르고 있는데도 500베이시스포인트 인하한 뒤 지난 7개월간 정책금리를 14%로 유지해왔다. 타이이프 에르도안 대통령이 주창하는 비정통 정책은 실질금리를 심각하게 부정적으로 만들었다.  터키 리라는 직전 17.97에서 결정 이후 달러 대비 18.15까지 하락했다.     (Reporting by Ali Kucukgocmen; Editing by Jonathan Spicer)  ali.kucukgocmen@thomsonreuters.com , @alikucukgocmen; +905319306206; Reuters Messaging: Reuters Messaging: ali.kucukgocmen.thomsonreuters.com@reuters.net     (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html        Keywords: TURKEY-CENBANK/RATES (URGENT)   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
+
+===== SRC-000540 | CSV_ROW 540 | 2022-08-18 20:06:55 =====
+TITLE: Brief-Algernon Pharmacics, 개인 배치 발표
+BODY:
+BRIEF-Algernon Pharmaceuticals Announces Private Placement .storyContent * {border-color:inherit !important;outline-color:inherit !important;} 8월 18일 (로이터) - 알제논 제약사AGN.CD:  알제논 제약, 개인 배치 발표    Further company coverage: AGN.CD  Reuters.Briefs@thomsonreuters.com ;;))        (c) Copyright Thomson Reuters 2020. Click For Restrictions - https://agency.reuters.com/en/copyright.html   원문 바로가기    DISCLAIMER  레피니티브의 사전, 서면 승인 없는 톰슨로이터 콘텐츠의 재생산이나 재배포는 금지되어 있습니다. 이 기사의 한국어 번역은 에프앤가이드가 사용하는 기계적 번역에 의한 것으로 톰슨로이터와 레피니티브는 번역의 정확성을 보증하지 않습니다.
