@@ -1,0 +1,61 @@
+name: NSLAB acquire 20180611 20260714t044918z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acquire-20180611-20260714t044918z'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch fresh main-branch Raw bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acquired
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const targets = [
+            ['https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md', 'acquired/prompt_tmp.md'],
+            ['https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20180611.csv', 'acquired/news_20180611_tmp.csv']
+          ];
+          (async () => {
+            const manifest = {};
+            for (const [url, path] of targets) {
+              const response = await fetch(url, {
+                redirect: 'follow',
+                headers: {
+                  'cache-control': 'no-cache',
+                  'pragma': 'no-cache',
+                  'user-agent': 'nslab-gold-phase-machine/20180611'
+                }
+              });
+              if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+              const bytes = Buffer.from(await response.arrayBuffer());
+              fs.writeFileSync(path, bytes);
+              manifest[path] = {
+                url,
+                byte_size: bytes.length,
+                sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+                first_line: bytes.toString('utf8').split(/\r?\n/, 1)[0]
+              };
+            }
+            fs.writeFileSync('acquired/acquisition_manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Upload freshly acquired bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquire-20180611-20260714t044918z
+          path: acquired/
+          if-no-files-found: error
+          retention-days: 1
