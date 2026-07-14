@@ -16,7 +16,7 @@ concurrency:
 jobs:
   gold:
     if: github.head_ref == 'nslab-exec-20180619-20260714T200000Z'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     env:
       RUN_ROOT: run_root/nslab_run_20260714T200000Z
