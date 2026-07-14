@@ -1,0 +1,83 @@
+name: NSLAB current-run raw acquisition 20220824 20260715T062318
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acq-current-20220824-20260715t062318kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Acquire exact main Raw bytes into unique packet
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_STAMP=20260715T062318KST
+          mkdir -p packet/inputs
+          prompt_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md'
+          csv_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220824.csv'
+          example_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md'
+          curl -fsSL --retry 2 -H "Authorization: Bearer ${GH_TOKEN}" "$prompt_url" -o packet/prompt_tmp.md
+          curl -fsSL --retry 2 -H "Authorization: Bearer ${GH_TOKEN}" "$csv_url" -o packet/news_20220824_tmp.csv
+          curl -fsSL --retry 2 -H "Authorization: Bearer ${GH_TOKEN}" "$example_url" -o packet/example2_tmp.md
+          python - <<'PY'
+          import csv, hashlib, json
+          from datetime import datetime
+          from pathlib import Path
+          p=Path('packet')
+          prompt=p/'prompt_tmp.md'; news=p/'news_20220824_tmp.csv'; example=p/'example2_tmp.md'
+          pb=prompt.read_bytes(); nb=news.read_bytes(); eb=example.read_bytes()
+          psha=hashlib.sha256(pb).hexdigest(); nsha=hashlib.sha256(nb).hexdigest(); esha=hashlib.sha256(eb).hexdigest()
+          assert len(pb)==430485, (len(pb), psha)
+          assert psha=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029'
+          text=pb.decode('utf-8')
+          assert text.splitlines()[0].startswith('# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER')
+          assert 'nslab.gold_phase_machine.direct_csv_research.locked' in text
+          with news.open('r',encoding='utf-8-sig',newline='') as f:
+              rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          times=[]; time_unverified=[]
+          for i,r in enumerate(rows,1):
+              try: times.append(datetime.fromisoformat(f"{r['date']}T{r['time']}"))
+              except Exception: time_unverified.append(i)
+          prompt_name=f'research_prompt_20260715T062318KST_{psha[:8]}.md'
+          news_name=f'news_20220824_20260715T062318KST_{nsha[:8]}.csv'
+          example_name=f'example2_20260715T062318KST_{esha[:8]}.md'
+          prompt.rename(p/'inputs'/prompt_name)
+          news.rename(p/'inputs'/news_name)
+          example.rename(p/'inputs'/example_name)
+          meta={
+            'schema_version':'nslab.current_run_raw_acquisition.v1',
+            'run_id':'nslab_run_20260715T062318KST_20220824',
+            'prompt_file':prompt_name,'prompt_sha256':psha,'prompt_byte_size':len(pb),
+            'news_file':news_name,'news_sha256':nsha,'news_byte_size':len(nb),
+            'example_file':example_name,'example_sha256':esha,'example_byte_size':len(eb),
+            'csv_row_count':len(rows),'parsed_row_count':len(rows),'columns':list(rows[0]),
+            'min_published_at':min(times).isoformat() if times else None,
+            'max_published_at':max(times).isoformat() if times else None,
+            'time_unverified_rows':time_unverified,
+            'control_char_count':sum(1 for ch in nb.decode('utf-8-sig') if ord(ch)<32 and ch not in '\n\r\t'),
+            'raw_prompt_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md',
+            'raw_csv_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220824.csv',
+            'raw_example_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md',
+            'raw_bytes_acquired_at':'2026-07-15T06:23:18+09:00'
+          }
+          (p/'acquisition_receipt.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(meta,ensure_ascii=False,sort_keys=True))
+          PY
+      - name: Upload current-run raw packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-currentrun-raw-20220824-20260715T062318
+          path: packet/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
