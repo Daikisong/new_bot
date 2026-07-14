@@ -1,0 +1,83 @@
+name: NSLAB acquire 20180620 20260714T233600Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'temp/nslab_acquire_20180620_20260714T233600Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nslab-acquire-20180620-20260714T233600Z-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  RUN_STAMP: 20260714T233600Z
+  RUN_ID: NSLAB-WEB-20180620-20260714T233600Z
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acquire-20180620-20260714T233600Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Fresh authenticated main-branch Raw download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p current_inputs/docs/csv current_inputs/run_inputs
+          node <<'NODE'
+          const fs=require('fs'),crypto=require('crypto'),path=require('path');
+          const token=process.env.GH_TOKEN, stamp=process.env.RUN_STAMP;
+          const raw='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main';
+          const targets={
+            prompt:{url:`${raw}/docs/research_prompt.md`,out:'current_inputs/docs/research_prompt.md'},
+            news:{url:`${raw}/docs/csv/news_20180620.csv`,out:'current_inputs/docs/csv/news_20180620.csv'},
+            example:{url:`${raw}/docs/example2.md`,out:'current_inputs/docs/example2.md'}
+          };
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          async function download(name,spec){let last='';for(let attempt=1;attempt<=7;attempt++){try{const r=await fetch(spec.url+`?nslab_current_run=${stamp}_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers:{authorization:`Bearer ${token}`,'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-current-run-20180620-'+stamp}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const b=Buffer.from(await r.arrayBuffer());fs.mkdirSync(path.dirname(spec.out),{recursive:true});fs.writeFileSync(spec.out,b);const meta={url:spec.url,byte_size:b.length,sha256:crypto.createHash('sha256').update(b).digest('hex'),fetched_at:new Date().toISOString(),attempt,authenticated:true};console.log(JSON.stringify({name,...meta}));return meta;}catch(e){last=String(e);console.error(JSON.stringify({name,attempt,error:last}));if(attempt<7)await sleep(1200*attempt);}}throw new Error(`${name} failed: ${last}`)}
+          (async()=>{const receipt={schema_version:'nslab.current_run_raw_input_receipt.v1',run_id:process.env.RUN_ID};for(const [name,spec] of Object.entries(targets))receipt[name]=await download(name,spec);fs.writeFileSync('current_inputs/raw_download_receipt.json',JSON.stringify(receipt,null,2)+'\n');})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+
+      - name: Verify prompt and full CSV population from saved Raw bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,hashlib,json,os,shutil
+          from datetime import datetime
+          from pathlib import Path
+          root=Path('current_inputs'); prompt=root/'docs/research_prompt.md'; news=root/'docs/csv/news_20180620.csv'; example=root/'docs/example2.md'
+          p=prompt.read_bytes(); n=news.read_bytes(); e=example.read_bytes(); psha=hashlib.sha256(p).hexdigest(); nsha=hashlib.sha256(n).hexdigest(); esha=hashlib.sha256(e).hexdigest()
+          assert psha=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029' and len(p)==430485
+          text=p.decode('utf-8'); assert text.splitlines()[0]=='# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'; assert 'nslab.gold_phase_machine.direct_csv_research.locked' in text
+          assert nsha=='78b4f43f6c589d55b8ef5b4d591710f632d787e94ff282d734e7c3bb37dc9f9d'
+          with news.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert len(rows)==826 and list(rows[0])==['page','row','date','time','title','body']
+          stamps=[]; bad=[]
+          for i,r in enumerate(rows,1):
+              try: stamps.append(datetime.fromisoformat(f"{r['date']}T{r['time']}+09:00"))
+              except Exception: bad.append(i)
+          assert stamps
+          control=sum(1 for ch in n.decode('utf-8-sig') if ord(ch)<32 and ch not in '\n\r\t'); assert control==0
+          receipt=json.loads((root/'raw_download_receipt.json').read_text())
+          for name,sha,size in [('prompt',psha,len(p)),('news',nsha,len(n)),('example',esha,len(e))]: assert receipt[name]['sha256']==sha and receipt[name]['byte_size']==size
+          verification={'schema_version':'nslab.current_run_input_verification.v1','status':'CURRENT_RUN_FRESH_RAW_INPUTS_VERIFIED','run_id':os.environ['RUN_ID'],'prompt_sha256':psha,'prompt_byte_size':len(p),'news_sha256':nsha,'news_byte_size':len(n),'csv_row_count':len(rows),'columns':list(rows[0]),'min_published_at':min(stamps).isoformat(),'max_published_at':max(stamps).isoformat(),'time_unverified_rows':bad,'control_char_count':control,'example_sha256':esha,'example_byte_size':len(e)}
+          (root/'acquisition_verification.json').write_text(json.dumps(verification,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
+          stamp=os.environ['RUN_STAMP']; shutil.copyfile(prompt,root/f'run_inputs/research_prompt_{stamp}_{psha[:8]}.md'); shutil.copyfile(news,root/f'run_inputs/news_20180620_{stamp}_{nsha[:8]}.csv'); shutil.copyfile(example,root/f'run_inputs/example2_{stamp}_{esha[:8]}.md')
+          print(json.dumps(verification,ensure_ascii=False,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-current-inputs-20180620-20260714T233600Z
+          path: current_inputs/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
