@@ -20,7 +20,7 @@ concurrency:
 jobs:
   blind:
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     steps:
       - name: Acquire isolated orchestration source
@@ -100,7 +100,7 @@ jobs:
   postmortem:
     needs: blind
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     steps:
       - name: Acquire isolated validator source
