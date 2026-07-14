@@ -1,0 +1,74 @@
+name: NSLAB current-run micro full-row review 20220824 20260715T045906
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-currentrun-micro-20220824-20260715T045906-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  micro:
+    if: github.head_ref == 'nslab-currentrun-micro-20220824-20260715t045906kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        range: ["1-28","29-56","57-84","85-112","113-140","141-168","169-196","197-224","225-252","253-280","281-308","309-336","337-364","365-392","393-420","421-448","449-476","477-504","505-532","533-560","561-588","589-616","617-644","645-672","673-700","701-728","729-756","757-784","785-812","813-840","841-868","869-896","897-924","925-952","953-980","981-1008","1009-1036","1037-1064","1065-1092","1093-1120"]
+    steps:
+      - name: Checkout current-run micro worker
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-currentrun-micro-20220824-20260715t045906kst
+          path: worker
+          sparse-checkout: |
+            temp/nslab_currentrun_micro_20220824_20260715t045906/micro.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout compile-verified semantic source only
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact current-run prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-currentrun-prepared-20220824-20260715T045906
+          path: prepared
+          github-token: ${{ github.token }}
+          repository: Daikisong/new_bot
+          run-id: 29364336964
+      - name: Review every complete title and body in micro range
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+          NSLAB_MICRO_PRIMARY: openai/gpt-4o-mini
+        run: |
+          set -euo pipefail
+          RANGE='${{ matrix.range }}'
+          START="${RANGE%-*}"
+          END="${RANGE#*-}"
+          python worker/temp/nslab_currentrun_micro_20220824_20260715t045906/micro.py \
+            --prepared prepared \
+            --output review_out \
+            --start "$START" \
+            --end "$END"
+      - name: Upload current-run micro review range
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-currentrun-micro-20220824-20260715T045906-${{ matrix.range }}
+          path: review_out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
