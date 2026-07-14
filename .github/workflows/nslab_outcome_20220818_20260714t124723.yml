@@ -1,0 +1,61 @@
+name: NSLAB outcome 20220818 seal 798b8ff8
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_outcome_postseal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record verified blind seal provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          cat > payload/postseal_unlock_receipt.txt <<'EOF'
+          trade_date=2022-08-18
+          blind_seal_receipt_sha256=798b8ff86ab55cd3d14bc1eec566138c42ad69d5b93b504cbba4d00800bb2666
+          outcome_unlock_allowed=true
+          expected_outcome_sha256=adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d
+          expected_outcome_byte_size=818663
+          expected_outcome_row_count=2430
+          EOF
+      - name: Fetch exact outcome Raw bytes after seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2022/08/20220818.csv' \
+            -o payload/outcome_snapshot_20220818_tmp.csv
+          python - <<'PY'
+          import csv, hashlib, json, pathlib
+          p=pathlib.Path('payload/outcome_snapshot_20220818_tmp.csv')
+          raw=p.read_bytes()
+          actual_sha=hashlib.sha256(raw).hexdigest()
+          assert actual_sha == 'adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d', actual_sha
+          assert len(raw) == 818663, len(raw)
+          with p.open('r', encoding='utf-8-sig', newline='') as f:
+              rows=list(csv.DictReader(f))
+          assert len(rows) == 2430, len(rows)
+          receipt={
+            'trade_date':'2022-08-18',
+            'blind_seal_receipt_sha256':'798b8ff86ab55cd3d14bc1eec566138c42ad69d5b93b504cbba4d00800bb2666',
+            'downloaded_after_verified_blind_seal':True,
+            'outcome_sha256':actual_sha,
+            'outcome_byte_size':len(raw),
+            'outcome_row_count':len(rows),
+            'columns':list(rows[0].keys()) if rows else []
+          }
+          pathlib.Path('payload/outcome_acquisition_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
+      - name: Upload exact post-seal outcome bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-outcome-20220818-seal-798b8ff8
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
