@@ -1,0 +1,44 @@
+name: NSLAB sparse tools 20220819 20260714t144535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  package_tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sparse checkout current main tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir repo && cd repo
+          git init -q
+          git remote add origin https://github.com/Daikisong/new_bot.git
+          git config core.sparseCheckout true
+          mkdir -p .git/info
+          cat > .git/info/sparse-checkout <<'EOF'
+          /src/news_scalping_lab/
+          /pyproject.toml
+          /README.md
+          EOF
+          git fetch --depth=1 origin main
+          git checkout -q FETCH_HEAD
+          cd ..
+          mkdir -p payload
+          cp -R repo/src payload/src
+          cp repo/pyproject.toml payload/pyproject.toml
+          cp repo/README.md payload/README.md
+          git -C repo rev-parse HEAD > payload/main_commit_sha.txt
+          find payload -type f -print0 | sort -z | xargs -0 sha256sum > payload/tools_file_sha256.txt
+
+      - name: Upload fresh sparse repo tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-sparse-tools-20220819-20260714t144535
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
