@@ -1,0 +1,62 @@
+name: NSLAB acquire ARM 20180620 20260714T234100Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'temp/nslab_acquire_arm_20180620_20260714T234100Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nslab-acquire-arm-20180620-20260714T234100Z-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  RUN_STAMP: 20260714T234100Z
+  RUN_ID: NSLAB-WEB-20180620-20260714T234100Z
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acquire-arm-20180620-20260714T234100Z'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Fresh authenticated Raw input download and verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p current_inputs/docs/csv current_inputs/run_inputs
+          node <<'NODE'
+          const fs=require('fs'),crypto=require('crypto'),path=require('path');const token=process.env.GH_TOKEN,stamp=process.env.RUN_STAMP,raw='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main';const targets={prompt:{url:`${raw}/docs/research_prompt.md`,out:'current_inputs/docs/research_prompt.md'},news:{url:`${raw}/docs/csv/news_20180620.csv`,out:'current_inputs/docs/csv/news_20180620.csv'},example:{url:`${raw}/docs/example2.md`,out:'current_inputs/docs/example2.md'}};const sleep=ms=>new Promise(r=>setTimeout(r,ms));async function get(name,s){let last='';for(let a=1;a<=7;a++){try{const r=await fetch(s.url+`?nslab_current_run=${stamp}_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers:{authorization:`Bearer ${token}`,'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-current-run-20180620-'+stamp}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const b=Buffer.from(await r.arrayBuffer());fs.mkdirSync(path.dirname(s.out),{recursive:true});fs.writeFileSync(s.out,b);return {url:s.url,byte_size:b.length,sha256:crypto.createHash('sha256').update(b).digest('hex'),fetched_at:new Date().toISOString(),attempt:a,authenticated:true};}catch(e){last=String(e);if(a<7)await sleep(1200*a);}}throw new Error(`${name}: ${last}`)}(async()=>{const rec={schema_version:'nslab.current_run_raw_input_receipt.v1',run_id:process.env.RUN_ID};for(const [n,s] of Object.entries(targets))rec[n]=await get(n,s);fs.writeFileSync('current_inputs/raw_download_receipt.json',JSON.stringify(rec,null,2)+'\n');})().catch(e=>{console.error(e);process.exit(1)});
+          NODE
+          python - <<'PY'
+          import csv,hashlib,json,os,shutil
+          from datetime import datetime
+          from pathlib import Path
+          root=Path('current_inputs'); p=root/'docs/research_prompt.md'; n=root/'docs/csv/news_20180620.csv'; e=root/'docs/example2.md'; pb=p.read_bytes(); nb=n.read_bytes(); eb=e.read_bytes(); ps=hashlib.sha256(pb).hexdigest(); ns=hashlib.sha256(nb).hexdigest(); es=hashlib.sha256(eb).hexdigest()
+          assert ps=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029' and len(pb)==430485
+          text=pb.decode(); assert text.splitlines()[0]=='# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER' and 'nslab.gold_phase_machine.direct_csv_research.locked' in text
+          assert ns=='78b4f43f6c589d55b8ef5b4d591710f632d787e94ff282d734e7c3bb37dc9f9d'
+          with n.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert len(rows)==826 and list(rows[0])==['page','row','date','time','title','body']
+          ts=[]; bad=[]
+          for i,r in enumerate(rows,1):
+              try: ts.append(datetime.fromisoformat(f"{r['date']}T{r['time']}+09:00"))
+              except Exception: bad.append(i)
+          control=sum(1 for c in nb.decode('utf-8-sig') if ord(c)<32 and c not in '\n\r\t'); assert control==0
+          rec=json.loads((root/'raw_download_receipt.json').read_text()); assert rec['prompt']['sha256']==ps and rec['news']['sha256']==ns and rec['example']['sha256']==es
+          v={'schema_version':'nslab.current_run_input_verification.v1','status':'CURRENT_RUN_FRESH_RAW_INPUTS_VERIFIED','run_id':os.environ['RUN_ID'],'prompt_sha256':ps,'prompt_byte_size':len(pb),'news_sha256':ns,'news_byte_size':len(nb),'csv_row_count':len(rows),'columns':list(rows[0]),'min_published_at':min(ts).isoformat(),'max_published_at':max(ts).isoformat(),'time_unverified_rows':bad,'control_char_count':control,'example_sha256':es,'example_byte_size':len(eb)}
+          (root/'acquisition_verification.json').write_text(json.dumps(v,ensure_ascii=False,indent=2,sort_keys=True)+'\n'); stamp=os.environ['RUN_STAMP']; shutil.copyfile(p,root/f'run_inputs/research_prompt_{stamp}_{ps[:8]}.md'); shutil.copyfile(n,root/f'run_inputs/news_20180620_{stamp}_{ns[:8]}.csv'); shutil.copyfile(e,root/f'run_inputs/example2_{stamp}_{es[:8]}.md')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-current-inputs-arm-20180620-20260714T234100Z
+          path: current_inputs/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
