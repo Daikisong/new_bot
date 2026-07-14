@@ -1,4 +1,4 @@
-name: NSLAB exec 20180619 20260714T194000Z
+name: NSLAB exec 20180619 20260714T200000Z
 
 on:
   pull_request:
@@ -10,12 +10,12 @@ permissions:
   models: read
 
 concurrency:
-  group: nslab-exec-20180619-20260714T194000Z-${{ github.event.pull_request.number }}
+  group: nslab-exec-20180619-20260714T200000Z-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   acquire:
-    if: github.head_ref == 'nslab-exec-20180619-20260714T194000Z'
+    if: github.head_ref == 'nslab-exec-20180619-20260714T200000Z'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -60,8 +60,8 @@ jobs:
             blind:{url:`${raw}/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180618.csv`,out:'acquired/stock/atlas/research_daily/snapshots/2018/06/20180618.csv',auth:false}
           };
           const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-          async function download(name,spec){let last='';for(let attempt=1;attempt<=7;attempt++){try{const headers={'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-current-run-20180619-20260714T194000Z'};if(spec.auth)headers.authorization=`Bearer ${token}`;const sep=spec.url.includes('?')?'&':'?';const response=await fetch(spec.url+sep+`nslab_current_run=20260714T194000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers});if(!response.ok)throw new Error(`HTTP ${response.status}`);const bytes=Buffer.from(await response.arrayBuffer());fs.mkdirSync(path.dirname(spec.out),{recursive:true});fs.writeFileSync(spec.out,bytes);const meta={url:spec.url,byte_size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),fetched_at:new Date().toISOString(),attempt,authenticated:spec.auth};console.log(JSON.stringify({name,...meta}));return meta;}catch(error){last=String(error);console.error(JSON.stringify({name,attempt,error:last}));if(attempt<7)await sleep(1500*attempt);}}throw new Error(`${name} failed: ${last}`);}
-          (async()=>{const receipt={schema_version:'nslab.raw_download_receipt.v6',run_id:'NSLAB-WEB-20180619-20260714T194000Z'};for(const [name,spec] of Object.entries(targets))receipt[name]=await download(name,spec);fs.writeFileSync('acquired/raw_download_receipt.json',JSON.stringify(receipt,null,2)+'\n');})().catch(e=>{console.error(e);process.exit(1)});
+          async function download(name,spec){let last='';for(let attempt=1;attempt<=7;attempt++){try{const headers={'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-current-run-20180619-20260714T200000Z'};if(spec.auth)headers.authorization=`Bearer ${token}`;const sep=spec.url.includes('?')?'&':'?';const response=await fetch(spec.url+sep+`nslab_current_run=20260714T200000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers});if(!response.ok)throw new Error(`HTTP ${response.status}`);const bytes=Buffer.from(await response.arrayBuffer());fs.mkdirSync(path.dirname(spec.out),{recursive:true});fs.writeFileSync(spec.out,bytes);const meta={url:spec.url,byte_size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),fetched_at:new Date().toISOString(),attempt,authenticated:spec.auth};console.log(JSON.stringify({name,...meta}));return meta;}catch(error){last=String(error);console.error(JSON.stringify({name,attempt,error:last}));if(attempt<7)await sleep(1500*attempt);}}throw new Error(`${name} failed: ${last}`);}
+          (async()=>{const receipt={schema_version:'nslab.raw_download_receipt.v6',run_id:'NSLAB-WEB-20180619-20260714T200000Z'};for(const [name,spec] of Object.entries(targets))receipt[name]=await download(name,spec);fs.writeFileSync('acquired/raw_download_receipt.json',JSON.stringify(receipt,null,2)+'\n');})().catch(e=>{console.error(e);process.exit(1)});
           NODE
 
       - name: Verify fresh bytes full parse routing and preseal allowlist
@@ -85,14 +85,14 @@ jobs:
           with blind.open(encoding='utf-8-sig',newline='') as f: brows=list(csv.DictReader(f))
           assert bsha==access['blind_snapshot_sha256']=='43cd5a9efcf00e8d972666c84c2d750081d20244ef329dd4a9daf1796abb5071' and len(b)==718749 and len(brows)==2124
           assert not (root/'stock/atlas/research_daily/snapshots/2018/06/20180619.csv').exists()
-          shutil.copyfile(prompt,root/f'run_inputs/research_prompt_20260714T194000Z_{psha[:8]}.md'); shutil.copyfile(news,root/f'run_inputs/news_20180619_20260714T194000Z_{nsha[:8]}.csv'); shutil.copyfile(blind,root/f'run_inputs/blind_snapshot_20180618_20260714T194000Z_{bsha[:8]}.csv')
-          receipt=json.loads((root/'acquisition_verification.json').read_text(encoding='utf-8')); receipt.update({'run_id':'NSLAB-WEB-20180619-20260714T194000Z','input_coverage_warning':'CSV actual max timestamp 2018-06-19T08:57:58+09:00 is before cutoff 2018-06-19T08:59:59+09:00.','uncovered_time_ranges':['2018-06-19T08:57:59+09:00..2018-06-19T08:59:59+09:00'],'preseal_outcome_content_access_count':0}); (root/'acquisition_verification.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          shutil.copyfile(prompt,root/f'run_inputs/research_prompt_20260714T200000Z_{psha[:8]}.md'); shutil.copyfile(news,root/f'run_inputs/news_20180619_20260714T200000Z_{nsha[:8]}.csv'); shutil.copyfile(blind,root/f'run_inputs/blind_snapshot_20180618_20260714T200000Z_{bsha[:8]}.csv')
+          receipt=json.loads((root/'acquisition_verification.json').read_text(encoding='utf-8')); receipt.update({'run_id':'NSLAB-WEB-20180619-20260714T200000Z','input_coverage_warning':'CSV actual max timestamp 2018-06-19T08:57:58+09:00 is before cutoff 2018-06-19T08:59:59+09:00.','uncovered_time_ranges':['2018-06-19T08:57:59+09:00..2018-06-19T08:59:59+09:00'],'preseal_outcome_content_access_count':0}); (root/'acquisition_verification.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           PY
           python -m py_compile acquired/pipeline_source/temp/nslab_20220819_pipeline/{common.py,blind.py,reseal.py,postmortem.py}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nslab-inputs-20180619-20260714T194000Z
+          name: nslab-inputs-20180619-20260714T200000Z
           path: acquired/
           retention-days: 1
           compression-level: 0
@@ -100,7 +100,7 @@ jobs:
 
   review:
     needs: acquire
-    if: github.head_ref == 'nslab-exec-20180619-20260714T194000Z'
+    if: github.head_ref == 'nslab-exec-20180619-20260714T200000Z'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -118,7 +118,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
-          name: nslab-inputs-20180619-20260714T194000Z
+          name: nslab-inputs-20180619-20260714T200000Z
           path: acquired
       - name: Full title-body semantic adjudication
         env:
@@ -130,7 +130,7 @@ jobs:
           python runner/temp/nslab_20180619_20260714T172911Z/review_shard.py --pipeline acquired/pipeline_source/temp/nslab_20220819_pipeline --news acquired/new_bot/docs/csv/news_20180619.csv --blind acquired/stock/atlas/research_daily/snapshots/2018/06/20180618.csv --shard '${{ matrix.shard }}' --shard-count 64 --output "review_output/review_shard_$(printf '%03d' '${{ matrix.shard }}').jsonl"
       - uses: actions/upload-artifact@v4
         with:
-          name: nslab-review-20180619-20260714T194000Z-${{ matrix.shard }}
+          name: nslab-review-20180619-20260714T200000Z-${{ matrix.shard }}
           path: review_output/
           retention-days: 1
           compression-level: 0
@@ -138,7 +138,7 @@ jobs:
 
   finalize:
     needs: [acquire, review]
-    if: github.head_ref == 'nslab-exec-20180619-20260714T194000Z'
+    if: github.head_ref == 'nslab-exec-20180619-20260714T200000Z'
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -151,11 +151,11 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
-          name: nslab-inputs-20180619-20260714T194000Z
+          name: nslab-inputs-20180619-20260714T200000Z
           path: acquired
       - uses: actions/download-artifact@v4
         with:
-          pattern: nslab-review-20180619-20260714T194000Z-*
+          pattern: nslab-review-20180619-20260714T200000Z-*
           path: review_shards
           merge-multiple: true
       - name: Close review population and reconstruct orchestrator
@@ -164,7 +164,7 @@ jobs:
           set -euo pipefail
           python runner/temp/nslab_20180619_20260714T172911Z/combine_reviews.py review_shards combined
           cat runner/temp/nslab_20180619_20260714T172911Z/orchestrate.part0* > runner/temp/nslab_20180619_20260714T172911Z/orchestrate.py
-          sed -i 's/20260714T172911Z/20260714T194000Z/g' runner/temp/nslab_20180619_20260714T172911Z/orchestrate.py
+          sed -i 's/20260714T172911Z/20260714T200000Z/g' runner/temp/nslab_20180619_20260714T172911Z/orchestrate.py
           python -m py_compile runner/temp/nslab_20180619_20260714T172911Z/orchestrate.py
       - name: PHASE 1 closure candidate closure and verified BLIND seal
         env:
@@ -181,7 +181,7 @@ jobs:
           set -euo pipefail
           mkdir -p stock_outcome/atlas/research_daily/snapshots/2018/06 stock_outcome/run_inputs
           node <<'NODE'
-          const fs=require('fs'),crypto=require('crypto');const url='https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180619.csv';const sleep=ms=>new Promise(r=>setTimeout(r,ms));(async()=>{let last='';for(let attempt=1;attempt<=7;attempt++){try{const r=await fetch(url+`?nslab_postseal=20260714T194000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers:{'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-postseal-20180619-20260714T194000Z'}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const b=Buffer.from(await r.arrayBuffer()),sha=crypto.createHash('sha256').update(b).digest('hex');fs.writeFileSync('stock_outcome/atlas/research_daily/snapshots/2018/06/20180619.csv',b);fs.writeFileSync(`stock_outcome/run_inputs/outcome_snapshot_20180619_20260714T194000Z_${sha.slice(0,8)}.csv`,b);fs.writeFileSync('stock_outcome/outcome_raw_receipt.json',JSON.stringify({url,byte_size:b.length,sha256:sha,fetched_at:new Date().toISOString(),attempt,opened_after_verified_blind_seal:true},null,2)+'\n');return;}catch(e){last=String(e);if(attempt<7)await sleep(1500*attempt);}}throw new Error(last);})().catch(e=>{console.error(e);process.exit(1)});
+          const fs=require('fs'),crypto=require('crypto');const url='https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180619.csv';const sleep=ms=>new Promise(r=>setTimeout(r,ms));(async()=>{let last='';for(let attempt=1;attempt<=7;attempt++){try{const r=await fetch(url+`?nslab_postseal=20260714T200000Z_${Date.now()}_${Math.random()}`,{redirect:'follow',cache:'no-store',signal:AbortSignal.timeout(120000),headers:{'cache-control':'no-cache, no-store, max-age=0','pragma':'no-cache','user-agent':'nslab-gold-postseal-20180619-20260714T200000Z'}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const b=Buffer.from(await r.arrayBuffer()),sha=crypto.createHash('sha256').update(b).digest('hex');fs.writeFileSync('stock_outcome/atlas/research_daily/snapshots/2018/06/20180619.csv',b);fs.writeFileSync(`stock_outcome/run_inputs/outcome_snapshot_20180619_20260714T200000Z_${sha.slice(0,8)}.csv`,b);fs.writeFileSync('stock_outcome/outcome_raw_receipt.json',JSON.stringify({url,byte_size:b.length,sha256:sha,fetched_at:new Date().toISOString(),attempt,opened_after_verified_blind_seal:true},null,2)+'\n');return;}catch(e){last=String(e);if(attempt<7)await sleep(1500*attempt);}}throw new Error(last);})().catch(e=>{console.error(e);process.exit(1)});
           NODE
       - name: Full-market outcome research brain delta and final reparse
         env:
@@ -205,7 +205,7 @@ jobs:
           python runner/temp/nslab_20180619_20260714T172911Z/import_validate.py final_output
       - uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20180619-20260714T194000Z
+          name: nslab-final-20180619-20260714T200000Z
           path: |
             final_output/20180619_nslab_episode_bundle.md
             final_output/independent_final_validation_receipt.json
