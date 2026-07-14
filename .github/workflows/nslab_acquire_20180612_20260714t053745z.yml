@@ -1,4 +1,4 @@
-name: NSLAB blind snapshot 20180612 20260714t053745z
+name: NSLAB outcome snapshot 20180612 20260714t053745z
 
 on:
   pull_request:
@@ -8,40 +8,40 @@ permissions:
   contents: read
 
 jobs:
-  acquire_blind:
+  acquire_outcome:
     if: github.head_ref == 'nslab-acquire-20180612-20260714t053745z'
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch fresh blind snapshot Raw bytes only
+      - name: Fetch post-seal outcome snapshot Raw bytes
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p blind
+          mkdir -p outcome
           node <<'NODE'
           const fs = require('fs');
           const crypto = require('crypto');
-          const url = 'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180611.csv';
+          const url = 'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180612.csv';
           (async () => {
-            const response = await fetch(url + '?nslab_run=20260714t053745z_blind', {
+            const response = await fetch(url + '?nslab_run=20260714t053745z_outcome', {
               redirect: 'follow',
-              headers: {'cache-control':'no-cache','pragma':'no-cache','user-agent':'nslab-gold-phase-machine/20180612-blind'}
+              headers: {'cache-control':'no-cache','pragma':'no-cache','user-agent':'nslab-gold-phase-machine/20180612-outcome'}
             });
             if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
             const bytes = Buffer.from(await response.arrayBuffer());
-            fs.writeFileSync('blind/blind_20180611_tmp.csv', bytes);
+            fs.writeFileSync('outcome/outcome_20180612_tmp.csv', bytes);
             const manifest = {
               url,
               byte_size: bytes.length,
               sha256: crypto.createHash('sha256').update(bytes).digest('hex')
             };
-            fs.writeFileSync('blind/blind_manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+            fs.writeFileSync('outcome/outcome_manifest.json', JSON.stringify(manifest, null, 2) + '\n');
           })().catch((error) => { console.error(error); process.exit(1); });
           NODE
 
-      - name: Upload freshly acquired blind snapshot
+      - name: Upload freshly acquired outcome snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-blind-20180612-20260714t053745z
-          path: blind/
+          name: nslab-outcome-20180612-20260714t053745z
+          path: outcome/
           if-no-files-found: error
           retention-days: 1
