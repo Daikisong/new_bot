@@ -1,0 +1,137 @@
+name: NSLAB acquire 20220822 20260714t161527
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-20220822-20260714t161527'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact main branch files for independent byte comparison
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: new_bot_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220822.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout blind-safe stock-web main files
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_web_main
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220822.json
+            atlas/research_daily/snapshots/2022/08/20220819.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch exact fresh main Raw inputs and stage blind-safe market context
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload/new_bot payload/stock_web
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md' \
+            -o payload/new_bot/prompt_tmp.md
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220822.csv' \
+            -o payload/new_bot/news_20220822_tmp.csv
+          cp new_bot_main/docs/example2.md payload/new_bot/example2.md
+          cp stock_web_main/atlas/research_daily/manifest.json payload/stock_web/manifest.json
+          cp stock_web_main/atlas/research_daily/schema.json payload/stock_web/schema.json
+          cp stock_web_main/atlas/research_daily/trading_calendar.csv payload/stock_web/trading_calendar.csv
+          cp stock_web_main/atlas/research_daily/access/2022/08/20220822.json payload/stock_web/access_20220822.json
+          cp stock_web_main/atlas/research_daily/snapshots/2022/08/20220819.csv payload/stock_web/blind_snapshot_20220819_tmp.csv
+          cmp payload/new_bot/prompt_tmp.md new_bot_main/docs/research_prompt.md
+          cmp payload/new_bot/news_20220822_tmp.csv new_bot_main/docs/csv/news_20220822.csv
+
+      - name: Verify prompt, fully parse CSV, and record fresh receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' > payload/acquisition_parse_receipt.json
+          import csv, hashlib, json
+          from pathlib import Path
+          prompt = Path('payload/new_bot/prompt_tmp.md').read_bytes()
+          news_path = Path('payload/new_bot/news_20220822_tmp.csv')
+          news = news_path.read_bytes()
+          with news_path.open(encoding='utf-8-sig', newline='') as f:
+              rows = list(csv.DictReader(f))
+          def stamp(row):
+              return f"{row.get('date','')}T{row.get('time','')}+09:00"
+          payload = {
+              'prompt_sha256': hashlib.sha256(prompt).hexdigest(),
+              'prompt_byte_size': len(prompt),
+              'prompt_title': prompt.decode('utf-8').splitlines()[0],
+              'prompt_expected_sha256_match': hashlib.sha256(prompt).hexdigest() == 'b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029',
+              'prompt_expected_byte_size_match': len(prompt) == 430485,
+              'news_sha256': hashlib.sha256(news).hexdigest(),
+              'news_byte_size': len(news),
+              'news_row_count': len(rows),
+              'columns': list(rows[0].keys()) if rows else [],
+              'min_published_at': min((stamp(r) for r in rows), default=None),
+              'max_published_at': max((stamp(r) for r in rows), default=None),
+              'first_row_published_at': stamp(rows[0]) if rows else None,
+              'last_row_published_at': stamp(rows[-1]) if rows else None,
+              'control_char_count': sum(sum(1 for ch in (r.get('title','') + r.get('body','')) if ord(ch) < 32 and ch not in '\n\r\t') for r in rows),
+              'new_bot_main_commit': Path('new_bot_main/.git/HEAD').read_text().strip() if Path('new_bot_main/.git/HEAD').exists() else None,
+          }
+          print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+          assert payload['prompt_expected_sha256_match']
+          assert payload['prompt_expected_byte_size_match']
+          assert payload['prompt_title'] == '# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'
+          assert rows
+          PY
+          python - <<'PY' > payload/stock_web_receipt.json
+          import csv, hashlib, json
+          from pathlib import Path
+          access = json.loads(Path('payload/stock_web/access_20220822.json').read_text(encoding='utf-8'))
+          blind_path = Path('payload/stock_web/blind_snapshot_20220819_tmp.csv')
+          raw = blind_path.read_bytes()
+          with blind_path.open(encoding='utf-8-sig', newline='') as f:
+              rows = list(csv.DictReader(f))
+          payload = {
+              'access': access,
+              'blind_snapshot_sha256_actual': hashlib.sha256(raw).hexdigest(),
+              'blind_snapshot_byte_size_actual': len(raw),
+              'blind_snapshot_row_count_actual': len(rows),
+              'blind_snapshot_header': list(rows[0].keys()) if rows else [],
+              'blind_snapshot_max_source_date': max((r.get('max_source_date','') for r in rows), default=None),
+          }
+          print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+          assert access['trade_date'] == '2022-08-22'
+          assert access['previous_trade_date'] == '2022-08-19'
+          assert access['blind_snapshot_path'].endswith('/20220819.csv')
+          assert payload['blind_snapshot_sha256_actual'] == access['blind_snapshot_sha256']
+          assert payload['blind_snapshot_row_count_actual'] == access['blind_snapshot_row_count']
+          PY
+          {
+            echo "new_bot_main_commit=$(git -C new_bot_main rev-parse HEAD)"
+            echo "stock_web_main_commit=$(git -C stock_web_main rev-parse HEAD)"
+            find payload -type f -print0 | sort -z | xargs -0 sha256sum
+            find payload -type f -printf '%s %p\n' | sort -k2
+            head -n 1 payload/new_bot/prompt_tmp.md
+            head -n 1 payload/new_bot/news_20220822_tmp.csv
+          } > payload/acquisition_receipt.txt
+
+      - name: Upload exact fresh acquisition payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquire-20220822-20260714t161527
+          path: payload/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
