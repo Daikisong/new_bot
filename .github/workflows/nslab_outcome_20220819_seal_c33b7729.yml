@@ -1,0 +1,66 @@
+name: NSLAB outcome 20220819 seal c33b7729
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_outcome:
+    if: github.head_ref == 'nslab-20220819-20260714t131120'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify accepted blind seal identifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test 'c33b77294ba3da16ed7d9f467267f22cb51c4fdd33586a55c7cb674529bbb18b' = 'c33b77294ba3da16ed7d9f467267f22cb51c4fdd33586a55c7cb674529bbb18b'
+
+      - name: Checkout exact D outcome snapshot from stock-web main
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_web_main
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220819.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Stage and verify D outcome bytes after seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          cp stock_web_main/atlas/research_daily/snapshots/2022/08/20220819.csv payload/outcome_snapshot_20220819_tmp.csv
+          actual_sha="$(sha256sum payload/outcome_snapshot_20220819_tmp.csv | awk '{print $1}')"
+          actual_bytes="$(wc -c < payload/outcome_snapshot_20220819_tmp.csv | tr -d ' ')"
+          actual_rows="$(python - <<'PY'
+          import csv
+          from pathlib import Path
+          p=Path('payload/outcome_snapshot_20220819_tmp.csv')
+          with p.open(encoding='utf-8-sig',newline='') as f:
+              print(sum(1 for _ in csv.DictReader(f)))
+          PY
+          )"
+          test "$actual_sha" = '68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32'
+          test "$actual_bytes" = '817772'
+          test "$actual_rows" = '2432'
+          {
+            echo 'blind_packet_manifest_sha256=c33b77294ba3da16ed7d9f467267f22cb51c4fdd33586a55c7cb674529bbb18b'
+            echo "stock_web_main_commit=$(git -C stock_web_main rev-parse HEAD)"
+            echo "sha256=$actual_sha"
+            echo "byte_size=$actual_bytes"
+            echo "row_count=$actual_rows"
+            head -n 1 payload/outcome_snapshot_20220819_tmp.csv
+          } > payload/outcome_acquisition_receipt.txt
+
+      - name: Upload verified post-seal outcome artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-outcome-20220819-seal-c33b7729
+          path: payload/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
