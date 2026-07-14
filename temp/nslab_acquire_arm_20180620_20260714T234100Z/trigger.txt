@@ -1,0 +1,1 @@
+Trigger ARM fresh authenticated main-branch Raw input acquisition for news_20180620.csv.
