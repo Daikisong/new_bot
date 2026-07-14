@@ -9,6 +9,10 @@ permissions:
   actions: read
   models: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: nslab-isolated-20220822-20260714t212500-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -16,7 +20,7 @@ concurrency:
 jobs:
   blind:
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 180
     steps:
       - name: Acquire isolated orchestration source
@@ -96,7 +100,7 @@ jobs:
   postmortem:
     needs: blind
     if: github.head_ref == 'nslab-run-20220822-20260714t203602'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - name: Acquire isolated validator source
