@@ -1,1 +1,0 @@
-"""Tool adapter package."""
