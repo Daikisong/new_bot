@@ -1,0 +1,470 @@
+name: NSLAB accepted gold run 20220822 20260714t161527
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+jobs:
+  blind:
+    if: github.head_ref == 'nslab-20220822-20260714t161527'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout exact main-branch structure input
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 8e0a32f25b360260c83df8bb3c139753e66b93c7
+          path: main_inputs
+          sparse-checkout: |
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout compile-verified semantic pipeline source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: nslab-20220819-20260714t131120
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline/common.py
+            temp/nslab_20220819_pipeline/blind.py
+            temp/nslab_20220819_pipeline/reseal.py
+            temp/nslab_20220819_pipeline/postmortem.py
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout blind-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: ba6cb2e7f8a26a98a328a6ff3e9286905b3eb1f5
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/access/2022/08/20220822.json
+            atlas/research_daily/snapshots/2022/08/20220819.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch exact fresh main Raw prompt and news bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p run/inputs run/pipeline run/blind
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md' \
+            -o run/inputs/prompt_tmp.md
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220822.csv' \
+            -o run/inputs/news_20220822_tmp.csv
+          cp main_inputs/docs/example2.md run/inputs/example2.md
+          cp stock_blind/atlas/research_daily/manifest.json run/inputs/manifest.json
+          cp stock_blind/atlas/research_daily/schema.json run/inputs/schema.json
+          cp stock_blind/atlas/research_daily/access/2022/08/20220822.json run/inputs/access_20220822.json
+          cp stock_blind/atlas/research_daily/snapshots/2022/08/20220819.csv run/inputs/blind_snapshot_20220819_tmp.csv
+
+      - name: Verify fresh inputs and enforce preseal outcome allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, hashlib, json
+          from pathlib import Path
+          prompt = Path('run/inputs/prompt_tmp.md').read_bytes()
+          news_path = Path('run/inputs/news_20220822_tmp.csv')
+          news = news_path.read_bytes()
+          blind_path = Path('run/inputs/blind_snapshot_20220819_tmp.csv')
+          blind = blind_path.read_bytes()
+          access = json.loads(Path('run/inputs/access_20220822.json').read_text(encoding='utf-8'))
+          with news_path.open(encoding='utf-8-sig', newline='') as f:
+              news_rows = list(csv.DictReader(f))
+          with blind_path.open(encoding='utf-8-sig', newline='') as f:
+              blind_rows = list(csv.DictReader(f))
+          assert hashlib.sha256(prompt).hexdigest() == 'b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029'
+          assert len(prompt) == 430485
+          assert prompt.decode('utf-8').splitlines()[0] == '# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'
+          assert hashlib.sha256(news).hexdigest() == 'bbd59110e6d0bf4d46961f642c2077865315be2b31562ccbc0ab6299854cad80'
+          assert len(news) == 5157399 and len(news_rows) == 1733
+          assert min(f"{r['date']}T{r['time']}+09:00" for r in news_rows) == '2022-08-19T15:30:27+09:00'
+          assert max(f"{r['date']}T{r['time']}+09:00" for r in news_rows) == '2022-08-22T08:59:59+09:00'
+          assert access['trade_date'] == '2022-08-22'
+          assert access['previous_trade_date'] == '2022-08-19'
+          assert access['next_trade_date'] == '2022-08-23'
+          assert access['blind_snapshot_path'] == 'atlas/research_daily/snapshots/2022/08/20220819.csv'
+          assert access['outcome_snapshot_path'] == 'atlas/research_daily/snapshots/2022/08/20220822.csv'
+          assert hashlib.sha256(blind).hexdigest() == '68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32'
+          assert len(blind_rows) == 2432
+          assert max(r.get('max_source_date','') for r in blind_rows) <= '2022-08-19'
+          Path('run/inputs/fresh_input_receipt.json').write_text(json.dumps({
+              'prompt_sha256': hashlib.sha256(prompt).hexdigest(),
+              'prompt_byte_size': len(prompt),
+              'news_sha256': hashlib.sha256(news).hexdigest(),
+              'news_byte_size': len(news),
+              'news_row_count': len(news_rows),
+              'min_published_at': min(f"{r['date']}T{r['time']}+09:00" for r in news_rows),
+              'max_published_at': max(f"{r['date']}T{r['time']}+09:00" for r in news_rows),
+              'blind_snapshot_sha256': hashlib.sha256(blind).hexdigest(),
+              'blind_snapshot_row_count': len(blind_rows),
+              'preseal_outcome_content_access_count': 0,
+          }, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+          test ! -e stock_blind/atlas/research_daily/snapshots/2022/08/20220822.csv
+          test ! -e run/inputs/outcome_snapshot_20220822_tmp.csv
+
+      - name: Prepare date-specific pipeline without predeclared candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp pipeline_source/temp/nslab_20220819_pipeline/common.py run/pipeline/common.py
+          cp pipeline_source/temp/nslab_20220819_pipeline/blind.py run/pipeline/blind.py
+          cp pipeline_source/temp/nslab_20220819_pipeline/reseal.py run/pipeline/reseal.py
+          cp pipeline_source/temp/nslab_20220819_pipeline/postmortem.py run/pipeline/postmortem.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          pdir = Path('run/pipeline')
+          files = [pdir / name for name in ('common.py','blind.py','reseal.py','postmortem.py')]
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              replacements_to_tokens = [
+                  ('2022-08-19', '__OLD_TRADE_DASH__'),
+                  ('2022-08-18', '__OLD_PREV_DASH__'),
+                  ('2022-08-22', '__OLD_NEXT_DASH__'),
+                  ('20220819', '__OLD_TRADE_COMPACT__'),
+                  ('20220818', '__OLD_PREV_COMPACT__'),
+                  ('20220822', '__OLD_NEXT_COMPACT__'),
+                  ('ec55b86339923c35db8c7b31e01f1706213afa3ffdb535aac243f2fd56a454fb', '__OLD_INPUT_HASH__'),
+                  ('adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d', '__OLD_BLIND_HASH__'),
+                  ('68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32', '__OLD_OUTCOME_HASH__'),
+              ]
+              for old, token in replacements_to_tokens:
+                  text = text.replace(old, token)
+              replacements_from_tokens = [
+                  ('__OLD_TRADE_DASH__', '2022-08-22'),
+                  ('__OLD_PREV_DASH__', '2022-08-19'),
+                  ('__OLD_NEXT_DASH__', '2022-08-23'),
+                  ('__OLD_TRADE_COMPACT__', '20220822'),
+                  ('__OLD_PREV_COMPACT__', '20220819'),
+                  ('__OLD_NEXT_COMPACT__', '20220823'),
+                  ('__OLD_INPUT_HASH__', 'bbd59110e6d0bf4d46961f642c2077865315be2b31562ccbc0ab6299854cad80'),
+                  ('__OLD_BLIND_HASH__', '68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32'),
+                  ('__OLD_OUTCOME_HASH__', '0921527d31b4c856578a067c58230a43c261c5d584f65964fe0bc398b963f2a7'),
+              ]
+              for token, new in replacements_from_tokens:
+                  text = text.replace(token, new)
+              text = text.replace('1,113', '1,733')
+              path.write_text(text, encoding='utf-8')
+          common = pdir / 'common.py'
+          text = common.read_text(encoding='utf-8')
+          assignments = {
+              'TRADE_DATE': '"2022-08-22"',
+              'PREVIOUS_TRADE_DATE': '"2022-08-19"',
+              'NEXT_TRADE_DATE': '"2022-08-23"',
+              'CUTOFF_AT': '"2022-08-22T08:59:59+09:00"',
+              'WINDOW_START': '"2022-08-19T15:30:00+09:00"',
+              'AVAILABLE_FROM': '"2022-08-23T00:00:00+09:00"',
+              'INPUT_SHA256': '"bbd59110e6d0bf4d46961f642c2077865315be2b31562ccbc0ab6299854cad80"',
+              'INPUT_BYTE_SIZE': '5157399',
+              'INPUT_ROW_COUNT': '1733',
+              'BLIND_SNAPSHOT_SHA256': '"68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32"',
+              'BLIND_SNAPSHOT_ROWS': '2432',
+              'OUTCOME_SNAPSHOT_SHA256': '"0921527d31b4c856578a067c58230a43c261c5d584f65964fe0bc398b963f2a7"',
+              'OUTCOME_SNAPSHOT_BYTES': '825701',
+              'OUTCOME_SNAPSHOT_ROWS': '2434',
+          }
+          for name, value in assignments.items():
+              text, count = re.subn(rf'^{name}\s*=.*$', f'{name} = {value}', text, flags=re.M)
+              assert count == 1, (name, count)
+          common.write_text(text, encoding='utf-8')
+          blind = pdir / 'blind.py'
+          text = blind.read_text(encoding='utf-8')
+          text = text.replace('row_batches(model_inputs, max_items=18, max_chars=78000)', 'row_batches(model_inputs, max_items=24, max_chars=100000)')
+          text, count = re.subn(
+              r'    warnings = \[\n        \{"warning_id": "INPUT_COVERAGE_SHORT_OF_085959".*?\n    \]\n',
+              '    warnings: list[dict[str, Any]] = []\n',
+              text,
+              flags=re.S,
+          )
+          assert count == 1, count
+          blind.write_text(text, encoding='utf-8')
+          for path in files:
+              assert 'news_20220819.csv' not in path.read_text(encoding='utf-8')
+          PY
+          python -m py_compile run/pipeline/common.py run/pipeline/blind.py run/pipeline/reseal.py run/pipeline/postmortem.py
+
+      - name: Full CSV semantic review, denominator closure, candidate closure, and BLIND ranking
+        env:
+          GITHUB_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python run/pipeline/blind.py \
+            --prompt run/inputs/prompt_tmp.md \
+            --news run/inputs/news_20220822_tmp.csv \
+            --access run/inputs/access_20220822.json \
+            --manifest run/inputs/manifest.json \
+            --schema run/inputs/schema.json \
+            --blind-snapshot run/inputs/blind_snapshot_20220819_tmp.csv \
+            --example run/inputs/example2.md \
+            --output run/blind \
+            --token "$GITHUB_MODELS_TOKEN" \
+            --run-id 'NSLAB-WEB-20220822-20260714T161527KST'
+
+      - name: Deterministic clean reseal and independent verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python run/pipeline/reseal.py \
+            --blind-dir run/blind \
+            --run-id 'NSLAB-WEB-20220822-20260714T161527KST'
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('run/blind')
+          art = root / 'artifacts'
+          manifest = json.loads((art/'blind_packet_manifest.json').read_text(encoding='utf-8'))
+          receipt = json.loads((art/'blind_seal_receipt.json').read_text(encoding='utf-8'))
+          canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+          assert hashlib.sha256(canonical.encode()).hexdigest() == receipt['blind_packet_manifest_sha256']
+          assert receipt['blind_packet_manifest_verified'] is True
+          assert receipt['preseal_outcome_access_all_zero'] is True
+          for field in ('preseal_outcome_download_count','preseal_outcome_header_read_count','preseal_outcome_sha256_count','preseal_outcome_row_count_count','preseal_outcome_parse_count','preseal_outcome_winner_census_count'):
+              assert receipt[field] == 0
+          for name, meta in manifest['files'].items():
+              p = art / name
+              assert p.exists()
+              assert hashlib.sha256(p.read_bytes()).hexdigest() == meta['sha256']
+              assert p.stat().st_size == meta['byte_size']
+          state = json.loads((root/'blind_state.json').read_text(encoding='utf-8'))
+          assert state['blind_packet_manifest_sha256'] == receipt['blind_packet_manifest_sha256']
+          assert state['outcome_access_allowed_after_verification'] is True
+          PY
+
+      - name: Upload sealed BLIND packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-20220822-20260714t161527
+          path: |
+            run/blind
+            run/pipeline
+            run/inputs/fresh_input_receipt.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  postmortem:
+    needs: blind
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Download sealed BLIND packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-20220822-20260714t161527
+          path: run
+
+      - name: Verify BLIND seal before any D-outcome checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          blind = Path('run/blind')
+          art = blind/'artifacts'
+          manifest = json.loads((art/'blind_packet_manifest.json').read_text(encoding='utf-8'))
+          receipt = json.loads((art/'blind_seal_receipt.json').read_text(encoding='utf-8'))
+          canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+          assert hashlib.sha256(canonical.encode()).hexdigest() == receipt['blind_packet_manifest_sha256']
+          assert receipt['seal_status'] == 'VERIFIED_CLEAN'
+          assert receipt['preseal_outcome_access_all_zero'] is True
+          assert all(receipt.get(k) == 0 for k in (
+              'preseal_outcome_download_count','preseal_outcome_header_read_count','preseal_outcome_sha256_count',
+              'preseal_outcome_row_count_count','preseal_outcome_parse_count','preseal_outcome_winner_census_count'))
+          for name, meta in manifest['files'].items():
+              path = art/name
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == meta['sha256']
+              assert path.stat().st_size == meta['byte_size']
+          Path('run/SEAL_VERIFIED_BEFORE_OUTCOME').write_text(receipt['blind_packet_manifest_sha256']+'\n', encoding='utf-8')
+          PY
+          test -s run/SEAL_VERIFIED_BEFORE_OUTCOME
+
+      - name: Checkout exact D outcome only after verified seal
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: ba6cb2e7f8a26a98a328a6ff3e9286905b3eb1f5
+          path: stock_outcome
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2022/08/20220822.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Verify exact post-seal outcome bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, hashlib, json
+          from pathlib import Path
+          assert Path('run/SEAL_VERIFIED_BEFORE_OUTCOME').is_file()
+          path = Path('stock_outcome/atlas/research_daily/snapshots/2022/08/20220822.csv')
+          raw = path.read_bytes()
+          with path.open(encoding='utf-8-sig', newline='') as f:
+              rows = list(csv.DictReader(f))
+          assert hashlib.sha256(raw).hexdigest() == '0921527d31b4c856578a067c58230a43c261c5d584f65964fe0bc398b963f2a7'
+          assert len(raw) == 825701
+          assert len(rows) == 2434
+          assert max(r.get('max_source_date','') for r in rows) <= '2022-08-22'
+          Path('run/outcome_receipt.json').write_text(json.dumps({
+              'sha256': hashlib.sha256(raw).hexdigest(),
+              'byte_size': len(raw),
+              'row_count': len(rows),
+              'opened_after_verified_blind_seal': True,
+          }, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Full-market outcome ledger, reverse audit, supervised populations, and brain delta
+        env:
+          GITHUB_MODELS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p run/final
+          python run/pipeline/postmortem.py \
+            --blind-dir run/blind \
+            --outcome stock_outcome/atlas/research_daily/snapshots/2022/08/20220822.csv \
+            --output run/final \
+            --token "$GITHUB_MODELS_TOKEN" \
+            --run-id 'NSLAB-WEB-20220822-20260714T161527KST'
+
+      - name: Independent final Markdown reopen and contract validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          path = Path('run/final/20220822_nslab_episode_bundle.md')
+          text = path.read_text(encoding='utf-8')
+          assert text.startswith('---\n')
+          fm = re.match(r'^---\n(.*?)\n---\n', text, re.S)
+          assert fm
+          front = {}
+          for line in fm.group(1).splitlines():
+              if ':' in line:
+                  k,v=line.split(':',1); front[k.strip()]=v.strip().strip('"\'')
+          assert front['schema_version'] == 'nslab.research_bundle.v11'
+          assert front['artifact_type'] == 'research_episode_bundle'
+          assert front['trade_date'] == '2022-08-22'
+          assert front['input_sha256'] == 'bbd59110e6d0bf4d46961f642c2077865315be2b31562ccbc0ab6299854cad80'
+          assert front['bundle_status'] == 'ACCEPT_FULL'
+          assert front['brain_eligible'].lower() == 'true'
+          assert front['direct_brain_ingest_ready'].lower() == 'true'
+          def payload(name):
+              m=re.search(rf'<!-- NSLAB:BEGIN {re.escape(name)} -->\s*(.*?)\s*<!-- NSLAB:END {re.escape(name)} -->', text, re.S)
+              assert m, name
+              return m.group(1).strip()
+          def jsonl(name):
+              return [json.loads(line) for line in payload(name).splitlines() if line.strip()]
+          source=jsonl('source_ledger.jsonl')
+          rows=jsonl('row_disposition.jsonl')
+          queue=jsonl('material_review_queue.jsonl')
+          reviewed=jsonl('material_review.jsonl')
+          screening=jsonl('candidate_screening.jsonl')
+          outcome=jsonl('outcome_ledger.jsonl')
+          leaders=jsonl('outcome_leader_census.jsonl')
+          reverse=jsonl('outcome_to_news_audit.jsonl')
+          brain=jsonl('brain_delta.jsonl')
+          closure=jsonl('record_provenance_closure_audit.jsonl')
+          final_witness=jsonl('final_evidence_witness.jsonl')
+          semantic=jsonl('semantic_regression_tests.jsonl')
+          assert sum(1 for r in source if r.get('source_type') == 'NEWS_CSV_ROW') == 1733
+          assert len(rows) == 1733
+          assert len(queue) == len(reviewed)
+          assert len(screening) == len(reviewed)
+          assert len(outcome) == 2434
+          assert len(leaders) == len(reverse)
+          assert brain
+          assert len(closure) == len(brain)
+          assert all(r.get('semantic_verdict') == 'PASS' for r in final_witness)
+          assert len(semantic) >= 13 and all(r.get('passed') is True for r in semantic)
+          validation=json.loads(payload('validation_report.json'))
+          direct=json.loads(payload('direct_ingest_contract.json'))
+          manifest=json.loads(payload('bundle_manifest.json'))
+          assert direct['direct_brain_ingest_ready'] is True
+          assert direct['automated_import_expected_to_pass'] is True
+          assert direct['brain_eligible'] is True
+          assert direct['fatal_blockers'] == []
+          assert direct['brain_delta_count'] == len(brain)
+          assert manifest['files']['brain_delta.jsonl']['row_count'] == len(brain)
+          for key in ('brain_delta_payload_missing_count','brain_delta_manifest_payload_count_mismatch_count','brain_delta_declared_without_payload_count'):
+              assert validation[key] == 0
+          report={
+              'status':'ACCEPT_FULL_REOPEN_REPARSE_PASSED',
+              'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+              'byte_size':path.stat().st_size,
+              'news_row_count':1733,
+              'row_disposition_count':len(rows),
+              'material_review_count':len(reviewed),
+              'candidate_screening_count':len(screening),
+              'outcome_ledger_count':len(outcome),
+              'outcome_leader_census_count':len(leaders),
+              'outcome_to_news_audit_count':len(reverse),
+              'parsed_brain_delta_jsonl_row_count':len(brain),
+          }
+          Path('run/final/final_external_reparse_receipt.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Validate with current repository v23 importer
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 8e0a32f25b360260c83df8bb3c139753e66b93c7
+          path: validator_repo
+
+      - name: Run repo import-ready inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -e validator_repo
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
+          path = Path('run/final/20220822_nslab_episode_bundle.md')
+          result = inspect_versioned_bundle(path)
+          Path('run/final/repo_import_inspection.json').write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True, default=str)+'\n', encoding='utf-8')
+          assert result['adapter'] == 'v23-direct-ingest', result
+          assert result['supported'] is True, result
+          assert result['validation_passed'] is True, result
+          assert result['import_loss_audit_passed'] is True, result
+          assert result['raw_normalized_record_count_matches'] is True, result
+          assert result['record_id_set_matches_raw'] is True, result
+          assert result['record_type_counts_match_raw'] is True, result
+          assert result['training_eligible_count_matches_raw'] is True, result
+          assert result['hash_mismatch_count'] == 0, result
+          assert result['hash_expectation_conflict_count'] == 0, result
+          assert result['missing_source_reference_count'] == 0, result
+          assert result['missing_payload_reference_count'] == 0, result
+          assert result['parsed_brain_delta_jsonl_row_count'] > 0 if 'parsed_brain_delta_jsonl_row_count' in result else result['raw_record_count'] > 0
+          PY
+
+      - name: Upload validated final episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20220822-20260714t161527
+          path: |
+            run/final/20220822_nslab_episode_bundle.md
+            run/final/final_reparse_receipt.json
+            run/final/final_external_reparse_receipt.json
+            run/final/repo_import_inspection.json
+            run/outcome_receipt.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
