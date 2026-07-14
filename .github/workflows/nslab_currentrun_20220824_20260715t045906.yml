@@ -1,0 +1,214 @@
+name: NSLAB current-run fresh full-row review 20220824 20260715T045906
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-currentrun-20220824-20260715T045906-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.head_ref == 'nslab-currentrun-20220824-20260715t045906kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current-run wrapper
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-currentrun-20220824-20260715t045906kst
+          path: wrapper
+          sparse-checkout: |
+            temp/nslab_currentrun_20220824_20260715t045906/wrapper.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout compile-verified semantic source only
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout exact current main files
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main_source
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220824.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Fresh Raw URL acquisition and checkout parity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p rawcheck
+          python - <<'PY'
+          import hashlib, json, os, urllib.request
+          from pathlib import Path
+          token=os.environ['GITHUB_TOKEN']
+          specs=[
+            ('docs/research_prompt.md','https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md','https://api.github.com/repos/Daikisong/new_bot/contents/docs/research_prompt.md?ref=main'),
+            ('docs/csv/news_20220824.csv','https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220824.csv','https://api.github.com/repos/Daikisong/new_bot/contents/docs/csv/news_20220824.csv?ref=main'),
+            ('docs/example2.md','https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md','https://api.github.com/repos/Daikisong/new_bot/contents/docs/example2.md?ref=main'),
+          ]
+          receipt=[]
+          for rel,raw_url,api_url in specs:
+            errors=[]; data=None; method=None
+            for url,m in ((raw_url,'RAW_URL_AUTHENTICATED'),(api_url,'CONTENTS_API_RAW_FALLBACK')):
+              try:
+                req=urllib.request.Request(url,headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github.raw+json','Cache-Control':'no-cache','Pragma':'no-cache','User-Agent':'nslab-currentrun-20220824','X-GitHub-Api-Version':'2022-11-28'})
+                with urllib.request.urlopen(req,timeout=180) as r: data=r.read()
+                if not data: raise RuntimeError('empty')
+                method=m; break
+              except Exception as e: errors.append(f'{m}:{type(e).__name__}:{e}')
+            if data is None: raise RuntimeError(' | '.join(errors))
+            checkout=Path('main_source')/rel
+            if checkout.read_bytes()!=data: raise RuntimeError(f'raw/checkout byte mismatch: {rel}')
+            checkout.write_bytes(data)
+            receipt.append({'path':rel,'raw_url':raw_url,'method':method,'byte_size':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          Path('rawcheck/acquisition_receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          PY
+      - name: Close fresh source denominator
+        shell: bash
+        env:
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+        run: |
+          set -euo pipefail
+          python -m py_compile source/temp/nslab_review_20220824_20260715t024535/review_news.py
+          python wrapper/temp/nslab_currentrun_20220824_20260715t045906/wrapper.py prepare --source main_source --output prepared
+          cp rawcheck/acquisition_receipt.json prepared/raw_acquisition_receipt.json
+      - name: Upload fresh prepared packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-currentrun-prepared-20220824-20260715T045906
+          path: prepared/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    needs: prepare
+    if: github.head_ref == 'nslab-currentrun-20220824-20260715t045906kst'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        include:
+          - {shard: 0, os: ubuntu-latest}
+          - {shard: 1, os: macos-latest}
+          - {shard: 2, os: windows-latest}
+          - {shard: 3, os: ubuntu-latest}
+          - {shard: 4, os: macos-latest}
+          - {shard: 5, os: windows-latest}
+          - {shard: 6, os: ubuntu-latest}
+          - {shard: 7, os: macos-latest}
+          - {shard: 8, os: windows-latest}
+          - {shard: 9, os: ubuntu-latest}
+          - {shard: 10, os: macos-latest}
+          - {shard: 11, os: windows-latest}
+          - {shard: 12, os: ubuntu-latest}
+          - {shard: 13, os: macos-latest}
+          - {shard: 14, os: windows-latest}
+          - {shard: 15, os: ubuntu-latest}
+    steps:
+      - name: Checkout current-run wrapper
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-currentrun-20220824-20260715t045906kst
+          path: wrapper
+          sparse-checkout: |
+            temp/nslab_currentrun_20220824_20260715t045906/wrapper.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout semantic source only
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-currentrun-prepared-20220824-20260715T045906
+          path: prepared
+      - name: Review every complete title and body in shard
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+        run: |
+          set -euo pipefail
+          python wrapper/temp/nslab_currentrun_20220824_20260715t045906/wrapper.py review-shard --prepared prepared --output review_out --shard-index ${{ matrix.shard }} --shard-count 16
+      - name: Upload fresh semantic shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-currentrun-review-20220824-20260715T045906-${{ matrix.shard }}
+          path: review_out/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  merge:
+    needs: [prepare, review]
+    if: github.head_ref == 'nslab-currentrun-20220824-20260715t045906kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current-run wrapper
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-currentrun-20220824-20260715t045906kst
+          path: wrapper
+          sparse-checkout: |
+            temp/nslab_currentrun_20220824_20260715t045906/wrapper.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout semantic source only
+        uses: actions/checkout@v4
+        with:
+          ref: 8961fc474ead2e7fcf5b10e0ab7b8cebb17be636
+          path: source
+          sparse-checkout: |
+            temp/nslab_review_20220824_20260715t024535/review_news.py
+          sparse-checkout-cone-mode: false
+      - name: Download exact fresh prepared packet
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-currentrun-prepared-20220824-20260715T045906
+          path: prepared
+      - name: Download all fresh review shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-currentrun-review-20220824-20260715T045906-*
+          path: reviews
+          merge-multiple: true
+      - name: Close row disposition and material review populations
+        shell: bash
+        env:
+          NSLAB_REVIEW_SOURCE: source/temp/nslab_review_20220824_20260715t024535/review_news.py
+        run: |
+          set -euo pipefail
+          python wrapper/temp/nslab_currentrun_20220824_20260715t045906/wrapper.py merge --prepared prepared --reviews reviews --output complete_review
+          test -s complete_review/reviews_full.jsonl
+          test -s complete_review/semantic_review_receipt.json
+      - name: Upload closed current-run semantic population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-currentrun-complete-review-20220824-20260715T045906
+          path: complete_review/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
