@@ -1,0 +1,1 @@
+temporary trigger for blind snapshot acquisition; do not merge
