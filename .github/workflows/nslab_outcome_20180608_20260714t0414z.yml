@@ -1,0 +1,55 @@
+name: NSLAB outcome 20180608 20260714t0414z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_outcome:
+    if: github.head_ref == 'nslab-outcome-20180608-20260714t0414z'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch fresh post-seal outcome snapshot Raw bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acquired
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const url = 'https://raw.githubusercontent.com/Songdaiki/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180608.csv';
+          const path = 'acquired/outcome_snapshot_20180608_tmp.csv';
+          (async () => {
+            const response = await fetch(url, {
+              redirect: 'follow',
+              headers: {
+                'cache-control': 'no-cache',
+                'pragma': 'no-cache',
+                'user-agent': 'nslab-gold-phase-machine/post-seal-outcome-20180608'
+              }
+            });
+            if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+            const bytes = Buffer.from(await response.arrayBuffer());
+            fs.writeFileSync(path, bytes);
+            const manifest = {
+              url,
+              path,
+              byte_size: bytes.length,
+              sha256: crypto.createHash('sha256').update(bytes).digest('hex')
+            };
+            fs.writeFileSync('acquired/outcome_acquisition_manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+      - name: Upload freshly acquired outcome snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-outcome-20180608-20260714t0414z
+          path: acquired/
+          if-no-files-found: error
+          retention-days: 1
