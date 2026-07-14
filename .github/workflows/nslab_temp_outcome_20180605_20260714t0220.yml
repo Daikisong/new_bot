@@ -1,0 +1,33 @@
+name: NSLAB temp outcome 20180605 20260714t0220
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_outcome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch exact post-seal outcome Raw bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180605.csv' \
+            -o payload/outcome_snapshot_20180605_tmp.csv
+          {
+            sha256sum payload/outcome_snapshot_20180605_tmp.csv
+            wc -c payload/outcome_snapshot_20180605_tmp.csv
+            head -n 1 payload/outcome_snapshot_20180605_tmp.csv
+          } > payload/outcome_acquisition_receipt.txt
+      - name: Upload post-seal exact bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-outcome-20180605-20260714t0220
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
