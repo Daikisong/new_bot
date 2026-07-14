@@ -1,0 +1,92 @@
+name: NSLAB acquire 20220819 20260714t131120
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-20220819-20260714t131120'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact new_bot main inputs and tools
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: new_bot_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220819.csv
+            docs/example2.md
+            pyproject.toml
+            src/news_scalping_lab
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout blind-safe stock-web main inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_web_main
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220819.json
+            atlas/research_daily/snapshots/2022/08/20220818.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Stage exact fresh bytes and receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload/new_bot payload/stock_web payload/repo_tools
+          cp new_bot_main/docs/research_prompt.md payload/new_bot/prompt_tmp.md
+          cp new_bot_main/docs/csv/news_20220819.csv payload/new_bot/news_20220819_tmp.csv
+          cp new_bot_main/docs/example2.md payload/new_bot/example2.md
+          cp new_bot_main/pyproject.toml payload/repo_tools/pyproject.toml
+          cp -R new_bot_main/src/news_scalping_lab payload/repo_tools/news_scalping_lab
+          cp stock_web_main/atlas/research_daily/manifest.json payload/stock_web/manifest.json
+          cp stock_web_main/atlas/research_daily/schema.json payload/stock_web/schema.json
+          cp stock_web_main/atlas/research_daily/trading_calendar.csv payload/stock_web/trading_calendar.csv
+          cp stock_web_main/atlas/research_daily/access/2022/08/20220819.json payload/stock_web/access_20220819.json
+          cp stock_web_main/atlas/research_daily/snapshots/2022/08/20220818.csv payload/stock_web/blind_snapshot_20220818.csv
+          python - <<'PY' > payload/csv_parse_receipt.txt
+          import csv, hashlib, json
+          from pathlib import Path
+          p = Path('payload/new_bot/news_20220819_tmp.csv')
+          raw = p.read_bytes()
+          text = raw.decode('utf-8-sig')
+          rows = list(csv.DictReader(text.splitlines()))
+          print(json.dumps({
+              'sha256': hashlib.sha256(raw).hexdigest(),
+              'byte_size': len(raw),
+              'row_count': len(rows),
+              'columns': list(rows[0].keys()) if rows else [],
+              'first_date': rows[0].get('date') if rows else None,
+              'first_time': rows[0].get('time') if rows else None,
+              'last_date': rows[-1].get('date') if rows else None,
+              'last_time': rows[-1].get('time') if rows else None,
+          }, ensure_ascii=False, sort_keys=True))
+          PY
+          {
+            echo "new_bot_main_commit=$(git -C new_bot_main rev-parse HEAD)"
+            echo "stock_web_main_commit=$(git -C stock_web_main rev-parse HEAD)"
+            find payload -type f -print0 | sort -z | xargs -0 sha256sum
+            find payload -type f -printf '%s %p\n' | sort -k2
+            head -n 1 payload/new_bot/prompt_tmp.md
+            head -n 1 payload/new_bot/news_20220819_tmp.csv
+          } > payload/acquisition_receipt.txt
+
+      - name: Upload fresh blind-safe acquisition artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquire-20220819-20260714t131120
+          path: payload/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
