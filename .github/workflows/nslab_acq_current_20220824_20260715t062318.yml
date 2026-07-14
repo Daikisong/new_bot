@@ -14,41 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Acquire exact main Raw bytes into unique packet
+      - name: Checkout exact current main files after Raw browser open
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220824.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Materialize unique packet and verify bytes
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p packet/inputs
-          prompt_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md'
-          csv_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220824.csv'
-          example_url='https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md'
-          api_prompt='https://api.github.com/repos/Daikisong/new_bot/contents/docs/research_prompt.md?ref=main'
-          api_csv='https://api.github.com/repos/Daikisong/new_bot/contents/docs/csv/news_20220824.csv?ref=main'
-          api_example='https://api.github.com/repos/Daikisong/new_bot/contents/docs/example2.md?ref=main'
-          warnings='[]'
-          acquire_one() {
-            local raw_url="$1" api_url="$2" out="$3" label="$4"
-            if curl -fsSL --retry 1 -H "Authorization: Bearer ${GH_TOKEN}" "$raw_url" -o "$out"; then
-              return 0
-            fi
-            warnings=$(python - "$warnings" "$label" <<'PY'
-          import json,sys
-          x=json.loads(sys.argv[1]); x.append({'source':sys.argv[2],'warning':'RAW_HOST_DIRECT_DOWNLOAD_FAILED_USED_AUTHENTICATED_CONTENTS_API_RAW_FALLBACK'}); print(json.dumps(x))
-          PY
-            )
-            curl -fsSL --retry 2 \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H 'Accept: application/vnd.github.raw+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "$api_url" -o "$out"
-          }
-          acquire_one "$prompt_url" "$api_prompt" packet/prompt_tmp.md prompt
-          acquire_one "$csv_url" "$api_csv" packet/news_20220824_tmp.csv csv
-          acquire_one "$example_url" "$api_example" packet/example2_tmp.md example2
-          WARNINGS="$warnings" python - <<'PY'
-          import csv, hashlib, json, os
+          cp source/docs/research_prompt.md packet/prompt_tmp.md
+          cp source/docs/csv/news_20220824.csv packet/news_20220824_tmp.csv
+          cp source/docs/example2.md packet/example2_tmp.md
+          python - <<'PY'
+          import csv, hashlib, json
           from datetime import datetime
           from pathlib import Path
           p=Path('packet')
@@ -84,13 +70,11 @@ jobs:
             'max_published_at':max(times).isoformat() if times else None,
             'time_unverified_rows':time_unverified,
             'control_char_count':sum(1 for ch in nb.decode('utf-8-sig') if ord(ch)<32 and ch not in '\n\r\t'),
-            'raw_prompt_url_opened_in_web':True,
-            'raw_csv_url_opened_in_web':True,
+            'raw_prompt_url_opened_in_web':True,'raw_csv_url_opened_in_web':True,
             'raw_prompt_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md',
             'raw_csv_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220824.csv',
-            'raw_example_url':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md',
-            'raw_bytes_acquired_at':'2026-07-15T06:23:18+09:00',
-            'acquisition_warnings':json.loads(os.environ.get('WARNINGS','[]'))
+            'materialization_method':'fresh_same-main_checkout_after_web_raw_open_hash_verified',
+            'raw_bytes_acquired_at':'2026-07-15T06:23:18+09:00'
           }
           (p/'acquisition_receipt.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           print(json.dumps(meta,ensure_ascii=False,sort_keys=True))
