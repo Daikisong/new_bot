@@ -11,7 +11,7 @@ permissions:
 jobs:
   acquire:
     if: github.head_ref == 'nslab-acq-current-20220824-20260715t062318kst'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 20
     steps:
       - name: Checkout exact current main files after Raw browser open
@@ -33,7 +33,7 @@ jobs:
           cp source/docs/research_prompt.md packet/prompt_tmp.md
           cp source/docs/csv/news_20220824.csv packet/news_20220824_tmp.csv
           cp source/docs/example2.md packet/example2_tmp.md
-          python - <<'PY'
+          python3 - <<'PY'
           import csv, hashlib, json
           from datetime import datetime
           from pathlib import Path
