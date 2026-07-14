@@ -1,1 +1,1 @@
-temporary one-shot pre-seal blind snapshot trigger for news_20180611.csv
+temporary one-shot post-seal outcome snapshot trigger for news_20180611.csv
