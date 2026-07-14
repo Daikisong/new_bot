@@ -1,0 +1,186 @@
+name: NSLAB publish accepted artifact 20220819
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: github.head_ref == 'nslab-accepted-20220819-20260714t144700'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout accepted temporary branch
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-accepted-20220819-20260714t144700
+          fetch-depth: 0
+
+      - name: Retrieve latest successful accepted-run artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_WORKFLOW_NAME: NSLAB accepted gold run 20220819 20260714t144700
+          SOURCE_BRANCH: nslab-accepted-20220819-20260714t144700
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -s published/20220819_nslab_episode_bundle.md; then
+            echo 'validated artifact already published on temporary branch'
+            exit 0
+          fi
+          mkdir -p retrieved published
+          source_run_id=''
+          for attempt in $(seq 1 240); do
+            source_run_id="$(gh api --paginate \
+              -H 'Accept: application/vnd.github+json' \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs?branch=${SOURCE_BRANCH}&event=pull_request&per_page=100" \
+              --jq ".workflow_runs | map(select(.name == env.SOURCE_WORKFLOW_NAME and .status == \"completed\" and .conclusion == \"success\")) | sort_by(.created_at) | reverse | .[0].id // empty")"
+            if test -n "$source_run_id"; then
+              break
+            fi
+            sleep 15
+          done
+          test -n "$source_run_id"
+          echo "source_run_id=$source_run_id"
+          gh run download "$source_run_id" --repo "$GITHUB_REPOSITORY" --dir retrieved
+          bundle="$(find retrieved -type f -name '20220819_nslab_episode_bundle.md' -print -quit)"
+          test -n "$bundle"
+          cp "$bundle" published/20220819_nslab_episode_bundle.md
+
+      - name: Independently reopen and reparse final Markdown
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+
+          path = Path('published/20220819_nslab_episode_bundle.md')
+          text = path.read_text(encoding='utf-8')
+          assert text.startswith('---\n'), 'front matter does not begin at first byte'
+          front_match = re.match(r'^---\n(.*?)\n---\n', text, re.S)
+          assert front_match, 'front matter missing'
+          front = {}
+          for raw_line in front_match.group(1).splitlines():
+              if ':' not in raw_line or raw_line.lstrip().startswith('#'):
+                  continue
+              key, value = raw_line.split(':', 1)
+              front[key.strip()] = value.strip().strip('"\'')
+          assert front.get('schema_version') == 'nslab.research_bundle.v11'
+          assert front.get('artifact_type') == 'research_episode_bundle'
+          assert front.get('bundle_status') == 'ACCEPT_FULL'
+          assert front.get('brain_eligible', '').lower() == 'true'
+          assert front.get('direct_brain_ingest_ready', '').lower() == 'true'
+
+          def payload(name: str) -> str:
+              pattern = re.compile(
+                  rf'<!-- NSLAB:BEGIN {re.escape(name)} -->\s*(.*?)\s*<!-- NSLAB:END {re.escape(name)} -->',
+                  re.S,
+              )
+              match = pattern.search(text)
+              assert match, f'missing block {name}'
+              return match.group(1).strip()
+
+          def parse_jsonl(name: str) -> list[dict]:
+              rows = []
+              for line_no, line in enumerate(payload(name).splitlines(), start=1):
+                  if not line.strip():
+                      continue
+                  item = json.loads(line)
+                  assert isinstance(item, dict), (name, line_no)
+                  rows.append(item)
+              return rows
+
+          required_jsonl = [
+              'source_ledger.jsonl',
+              'row_disposition.jsonl',
+              'material_review_queue.jsonl',
+              'candidate_screening.jsonl',
+              'outcome_ledger.jsonl',
+              'outcome_leader_census.jsonl',
+              'outcome_to_news_audit.jsonl',
+              'brain_delta.jsonl',
+              'final_evidence_witness.jsonl',
+              'candidate_semantic_witness.jsonl',
+              'semantic_regression_tests.jsonl',
+          ]
+          parsed = {name: parse_jsonl(name) for name in required_jsonl}
+          assert parsed['brain_delta.jsonl'], 'brain_delta payload empty'
+          assert len(parsed['outcome_leader_census.jsonl']) == len(parsed['outcome_to_news_audit.jsonl'])
+          material = parsed['material_review_queue.jsonl']
+          assert all(row.get('material_reviewed') is True or row.get('reviewed') is True for row in material)
+
+          validation = json.loads(payload('validation_report.json'))
+          direct = json.loads(payload('direct_ingest_contract.json'))
+          manifest = json.loads(payload('bundle_manifest.json'))
+          assert direct.get('direct_brain_ingest_ready') is True
+          assert direct.get('automated_import_expected_to_pass') is True
+          assert direct.get('brain_eligible') is True
+          assert not direct.get('fatal_blockers')
+
+          def find_key(obj, key):
+              values = []
+              if isinstance(obj, dict):
+                  for k, v in obj.items():
+                      if k == key:
+                          values.append(v)
+                      values.extend(find_key(v, key))
+              elif isinstance(obj, list):
+                  for item in obj:
+                      values.extend(find_key(item, key))
+              return values
+
+          zero_keys = [
+              'brain_delta_payload_missing_count',
+              'brain_delta_manifest_payload_count_mismatch_count',
+              'brain_delta_declared_without_payload_count',
+          ]
+          for key in zero_keys:
+              values = find_key(validation, key) + find_key(direct, key)
+              assert values, f'{key} not recorded'
+              assert all(value == 0 for value in values), (key, values)
+
+          declared_counts = []
+          for key in ('brain_delta_count', 'brain_delta_record_count', 'parsed_brain_delta_jsonl_row_count'):
+              declared_counts += [v for v in find_key(validation, key) + find_key(direct, key) + find_key(manifest, key) if isinstance(v, int)]
+          assert declared_counts, 'brain_delta count not declared'
+          assert len(parsed['brain_delta.jsonl']) in declared_counts, (len(parsed['brain_delta.jsonl']), declared_counts)
+
+          report = {
+              'path': str(path),
+              'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+              'byte_size': path.stat().st_size,
+              'parsed_brain_delta_jsonl_row_count': len(parsed['brain_delta.jsonl']),
+              'outcome_leader_census_count': len(parsed['outcome_leader_census.jsonl']),
+              'outcome_to_news_audit_count': len(parsed['outcome_to_news_audit.jsonl']),
+              'status': 'ACCEPT_FULL_REOPEN_REPARSE_PASSED',
+          }
+          Path('published/20220819_publish_validation.json').write_text(
+              json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          Path('published/20220819_nslab_episode_bundle.sha256').write_text(
+              report['sha256'] + '  20220819_nslab_episode_bundle.md\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Commit validated artifact to temporary branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add published/20220819_nslab_episode_bundle.md published/20220819_publish_validation.json published/20220819_nslab_episode_bundle.sha256
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'temp: publish validated 20220819 NSLAB bundle'
+          git push origin HEAD:nslab-accepted-20220819-20260714t144700
