@@ -1,0 +1,63 @@
+name: NSLAB transient acquisition 20180604
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-transient-acquire-20180604-20260714t004318z'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected new_bot inputs
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180604.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout selected stock-web inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock-web
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/access/2018/06/20180604.json
+            atlas/research_daily/snapshots/2018/06/20180601.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Stage exact bytes and receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staged/new_bot staged/stock-web
+          cp docs/research_prompt.md staged/new_bot/research_prompt.md
+          cp docs/csv/news_20180604.csv staged/new_bot/news_20180604.csv
+          cp docs/example2.md staged/new_bot/example2.md
+          cp stock-web/atlas/research_daily/manifest.json staged/stock-web/manifest.json
+          cp stock-web/atlas/research_daily/schema.json staged/stock-web/schema.json
+          cp stock-web/atlas/research_daily/access/2018/06/20180604.json staged/stock-web/access_20180604.json
+          cp stock-web/atlas/research_daily/snapshots/2018/06/20180601.csv staged/stock-web/blind_snapshot_20180601.csv
+          {
+            echo 'source_commit_new_bot='"$(git rev-parse HEAD)"
+            echo 'source_commit_stock_web='"$(git -C stock-web rev-parse HEAD)"
+            find staged -type f -print0 | sort -z | xargs -0 sha256sum
+            find staged -type f -printf '%s %p\n' | sort -k2
+          } > staged/acquisition_receipt.txt
+
+      - name: Upload acquisition artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-input-20180604-20260714t004318z
+          path: staged/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
