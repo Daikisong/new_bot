@@ -1,0 +1,149 @@
+name: NSLAB current-run semantic review 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-review-20220824-20260715t024535-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.head_ref == 'nslab-acq-20220824-20260715t024535kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current-run reviewer
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-acq-20220824-20260715t024535kst
+          path: runner
+          sparse-checkout: |
+            temp/nslab_current_20220824_20260715t024535/review.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout exact main news CSV
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main_input
+          sparse-checkout: |
+            docs/csv/news_20220824.csv
+          sparse-checkout-cone-mode: false
+      - name: Close source denominator before semantic review
+        run: |
+          python -m py_compile runner/temp/nslab_current_20220824_20260715t024535/review.py
+          python runner/temp/nslab_current_20220824_20260715t024535/review.py prepare \
+            --news main_input/docs/csv/news_20220824.csv \
+            --output prepared
+      - name: Upload prepared source population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-prepared-20220824-20260715t024535
+          path: prepared/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    needs: prepare
+    if: github.head_ref == 'nslab-acq-20220824-20260715t024535kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - name: Checkout current-run reviewer
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-acq-20220824-20260715t024535kst
+          path: runner
+          sparse-checkout: |
+            temp/nslab_current_20220824_20260715t024535/review.py
+          sparse-checkout-cone-mode: false
+      - name: Download prepared source population
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-review-prepared-20220824-20260715t024535
+          path: prepared
+      - name: Review every assigned complete title and body row
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python runner/temp/nslab_current_20220824_20260715t024535/review.py review-shard \
+            --prepared prepared \
+            --output shard_output \
+            --shard-index ${{ matrix.shard }}
+      - name: Upload complete review shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-shard-20220824-20260715t024535-${{ matrix.shard }}
+          path: shard_output/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  merge:
+    needs: [prepare, review]
+    if: github.head_ref == 'nslab-acq-20220824-20260715t024535kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current-run reviewer
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-acq-20220824-20260715t024535kst
+          path: runner
+          sparse-checkout: |
+            temp/nslab_current_20220824_20260715t024535/review.py
+          sparse-checkout-cone-mode: false
+      - name: Download prepared source population
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-review-prepared-20220824-20260715t024535
+          path: prepared
+      - name: Download all semantic review shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-shard-20220824-20260715t024535-*
+          path: shards
+          merge-multiple: true
+      - name: Merge and validate full denominator
+        run: |
+          python runner/temp/nslab_current_20220824_20260715t024535/review.py merge \
+            --prepared prepared \
+            --shards shards \
+            --output merged
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('merged/semantic_review_receipt.json').read_text())
+          assert r['csv_row_count']==r['reviewed_row_count']==r['row_disposition_count']==1120
+          assert r['material_review_queue_count']==r['material_reviewed_count']
+          assert r['material_review_unreviewed_count']==0
+          assert r['full_title_body_reviewed_count']==1120
+          assert r['quote_found_count']==1120
+          PY
+      - name: Upload closed semantic population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-semantic-closed-20220824-20260715t024535
+          path: |
+            prepared/source_ledger.jsonl
+            prepared/prepared.json
+            merged/reviews.jsonl
+            merged/row_disposition.jsonl
+            merged/material_review_queue.jsonl
+            merged/material_review.jsonl
+            merged/semantic_review_receipt.json
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
