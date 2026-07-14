@@ -1,0 +1,2 @@
+triggered_at_kst=2026-07-14T21:36:00+09:00
+workflow_source=main/.github/workflows/nslab_acquire_20180614_20260714t064102z.yml
