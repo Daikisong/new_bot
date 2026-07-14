@@ -1,0 +1,27 @@
+name: NSLAB cancel obsolete model runs Windows 20260714T131600Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel:
+    if: github.head_ref == 'nslab-cancel-obsolete-20260714T130100Z'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Cancel obsolete superseded model runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          foreach ($runId in @(29314630814, 29323399485)) {
+            gh api -X POST "/repos/$env:GITHUB_REPOSITORY/actions/runs/$runId/cancel"
+            Write-Host "cancel requested for $runId; exit=$LASTEXITCODE"
+          }
+          exit 0
