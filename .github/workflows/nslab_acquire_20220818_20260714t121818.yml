@@ -1,0 +1,82 @@
+name: NSLAB acquire 20220818 20260714t121818
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  acquire_blind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch exact fresh Raw inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md' \
+            -o payload/prompt_tmp.md
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220818.csv' \
+            -o payload/news_20220818_tmp.csv
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/trading_calendar.csv' \
+            -o payload/trading_calendar_tmp.csv
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/access/2022/08/20220818.json' \
+            -o payload/access_20220818_tmp.json
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2022/08/20220817.csv' \
+            -o payload/blind_snapshot_20220817_tmp.csv
+          curl -L --fail --retry 3 --retry-delay 2 \
+            'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md' \
+            -o payload/example2_tmp.md
+          python - <<'PY'
+          import csv, hashlib, json, pathlib
+          p = pathlib.Path('payload')
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+          prompt = p/'prompt_tmp.md'
+          news = p/'news_20220818_tmp.csv'
+          blind = p/'blind_snapshot_20220817_tmp.csv'
+          access = p/'access_20220818_tmp.json'
+          calendar = p/'trading_calendar_tmp.csv'
+          with news.open('r', encoding='utf-8-sig', newline='') as f:
+              nr = list(csv.DictReader(f))
+              news_fields = list(nr[0].keys()) if nr else []
+          with blind.open('r', encoding='utf-8-sig', newline='') as f:
+              br = list(csv.DictReader(f))
+              blind_fields = list(br[0].keys()) if br else []
+          obj = json.loads(access.read_text(encoding='utf-8'))
+          receipt = {
+              'prompt_sha256': sha(prompt),
+              'prompt_byte_size': prompt.stat().st_size,
+              'prompt_first_line': prompt.read_text(encoding='utf-8').splitlines()[0],
+              'news_sha256': sha(news),
+              'news_byte_size': news.stat().st_size,
+              'news_row_count': len(nr),
+              'news_columns': news_fields,
+              'calendar_sha256': sha(calendar),
+              'calendar_byte_size': calendar.stat().st_size,
+              'access_sha256': sha(access),
+              'access_byte_size': access.stat().st_size,
+              'access': obj,
+              'blind_sha256': sha(blind),
+              'blind_byte_size': blind.stat().st_size,
+              'blind_row_count': len(br),
+              'blind_columns': blind_fields,
+              'example2_sha256': sha(p/'example2_tmp.md'),
+              'example2_byte_size': (p/'example2_tmp.md').stat().st_size,
+          }
+          (p/'acquisition_receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+      - name: Upload exact blind-safe bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquire-20220818-20260714t121818
+          path: payload/
+          if-no-files-found: error
+          retention-days: 1
