@@ -1,1 +1,1 @@
-temporary one-shot Raw acquisition trigger for news_20180618.csv
+temporary one-shot blind snapshot trigger for news_20180618.csv
