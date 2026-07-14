@@ -1,0 +1,35 @@
+name: NSLAB current-run package pipeline code 20220824 20260715t024535
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    if: github.head_ref == 'nslab-acq-20220824-20260715t024535kst'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+      - name: Compile source
+        run: |
+          python -m py_compile source/temp/nslab_20220819_pipeline/*.py
+      - name: Upload pipeline code
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-current-pipeline-code-20260715t024535
+          path: source/temp/nslab_20220819_pipeline/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
