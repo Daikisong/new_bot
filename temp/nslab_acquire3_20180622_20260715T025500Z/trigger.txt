@@ -1,0 +1,1 @@
+Trigger third exact current-main acquisition for news_20180622.csv.
