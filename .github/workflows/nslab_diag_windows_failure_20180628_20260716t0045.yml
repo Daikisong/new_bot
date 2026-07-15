@@ -1,0 +1,51 @@
+name: NSLAB diagnose Windows failure 20180628 20260716T0045
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: nslab-diag-windows-20180628-20260716T0045-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'nslab-clean-run-20180628-20260716t0029'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and publish failed job tail
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JOB_ID: '87406776443'
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${REPO}/actions/jobs/${JOB_ID}/logs" -o joblogs.bin
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          p=Path('joblogs.bin')
+          if zipfile.is_zipfile(p):
+              with zipfile.ZipFile(p) as z:
+                  parts=[]
+                  for n in z.namelist():
+                      if not n.endswith('/'):
+                          parts.append(z.read(n).decode('utf-8',errors='replace'))
+                  text='\n'.join(parts)
+          else:
+              text=p.read_text(encoding='utf-8',errors='replace')
+          lines=text.splitlines()
+          tail='\n'.join(lines[-260:])
+          Path('tail.md').write_text('## Failed 20180628 Windows job tail\n\n```text\n'+tail[-55000:]+'\n```\n',encoding='utf-8')
+          PY
+          gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body-file tail.md
