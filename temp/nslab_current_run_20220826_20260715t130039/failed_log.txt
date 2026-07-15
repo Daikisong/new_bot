@@ -1,0 +1,22 @@
+execute	Execute full gold phase machine	﻿2026-07-15T04:10:33.2555347Z ##[group]Run python temp/nslab_runner_20220826_20260715t130039.py
+execute	Execute full gold phase machine	2026-07-15T04:10:33.2555856Z ^[[36;1mpython temp/nslab_runner_20220826_20260715t130039.py^[[0m
+execute	Execute full gold phase machine	2026-07-15T04:10:33.5806754Z shell: /usr/bin/bash -e {0}
+execute	Execute full gold phase machine	2026-07-15T04:10:33.5807336Z env:
+execute	Execute full gold phase machine	2026-07-15T04:10:33.5809895Z   GITHUB_TOKEN: ***
+execute	Execute full gold phase machine	2026-07-15T04:10:33.5810158Z ##[endgroup]
+execute	Execute full gold phase machine	2026-07-15T04:10:34.3065201Z From https://github.com/Daikisong/new_bot
+execute	Execute full gold phase machine	2026-07-15T04:10:34.3066240Z  * branch            38299bfe2d296e4a8dbbaad04de2001fd63ba88a -> FETCH_HEAD
+execute	Execute full gold phase machine	2026-07-15T04:10:34.3201445Z Cloning into '/home/runner/work/new_bot/new_bot/stock_web_20220826_20260715t130039'...
+execute	Execute full gold phase machine	2026-07-15T04:10:37.7294509Z fatal: 'atlas/research_daily/manifest.json' is not a directory; to treat it as a directory anyway, rerun with --skip-checks
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8492338Z Traceback (most recent call last):
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8493100Z   File "/home/runner/work/new_bot/new_bot/temp/nslab_runner_20220826_20260715t130039.py", line 459, in <module>
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8493952Z     acquisition = prepare_inputs_and_pipeline()
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8494525Z                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8495133Z   File "/home/runner/work/new_bot/new_bot/temp/nslab_runner_20220826_20260715t130039.py", line 109, in prepare_inputs_and_pipeline
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8495842Z     run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8496447Z   File "/home/runner/work/new_bot/new_bot/temp/nslab_runner_20220826_20260715t130039.py", line 38, in run
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8497113Z     subprocess.run(cmd, check=True, env=env, cwd=str(cwd) if cwd else None)
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8497561Z   File "/usr/lib/python3.12/subprocess.py", line 571, in run
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8500396Z     raise CalledProcessError(retcode, process.args,
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8501953Z subprocess.CalledProcessError: Command '['git', '-C', '/home/runner/work/new_bot/new_bot/stock_web_20220826_20260715t130039', 'sparse-checkout', 'set', 'atlas/research_daily/manifest.json', 'atlas/research_daily/schema.json', 'atlas/research_daily/trading_calendar.csv', 'atlas/research_daily/access/2022/08/20220826.json', 'atlas/research_daily/snapshots/2022/08/20220825.csv']' returned non-zero exit status 128.
+execute	Execute full gold phase machine	2026-07-15T04:10:37.8645492Z ##[error]Process completed with exit code 1.
