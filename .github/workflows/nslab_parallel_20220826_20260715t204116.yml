@@ -1,4 +1,4 @@
-name: NSLAB parallel gold 20220826 20260715T211013
+name: NSLAB parallel gold 20220826 20260715T213806
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
         with:
           sparse-checkout: |
             temp/nslab_parallel_runner_20220826_20260715t174533.py
-            temp/nslab_parallel_wrapper_20220826_20260715t211013.py
+            temp/nslab_parallel_wrapper_20220826_20260715t213806.py
             .github/workflows/nslab_parallel_20220826_20260715t204116.yml
           sparse-checkout-cone-mode: false
           fetch-depth: 1
@@ -71,13 +71,13 @@ jobs:
       - name: Execute fresh full gold phase machine
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python temp/nslab_parallel_wrapper_20220826_20260715t211013.py
+        run: python temp/nslab_parallel_wrapper_20220826_20260715t213806.py
 
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20220826-20260715T211013
-          path: final_artifact_20220826_20260715t211013/
+          name: nslab-final-20220826-20260715T213806
+          path: final_artifact_20220826_20260715t213806/
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
