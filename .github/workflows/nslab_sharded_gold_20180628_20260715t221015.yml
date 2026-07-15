@@ -1,0 +1,224 @@
+name: NSLAB sharded gold 20180628 20260715T221015
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+jobs:
+  setup:
+    if: github.head_ref == 'nslab-sharded-20180628-20260715t221015'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout current execution script
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_sharded_runner_20180628_20260715t221015.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current-main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Fresh-acquire and verify pre-seal inputs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_sharded_runner_20180628_20260715t221015.py setup
+          --current-main current_main
+          --pipeline-source pipeline_source
+          --stock-source stock_blind
+          --shard-count 16
+
+      - name: Upload current-run setup stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    needs: setup
+    if: github.head_ref == 'nslab-sharded-20180628-20260715t221015'
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout current execution script
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_sharded_runner_20180628_20260715t221015.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download current-run setup stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015
+
+      - name: Review complete title/body shard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_sharded_runner_20180628_20260715t221015.py review
+          --stage nslab_stage_20180628_20260715t221015
+          --shard-index ${{ matrix.shard }}
+          --shard-count 16
+          --output review_output_${{ matrix.shard }}
+
+      - name: Upload semantic review shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-20180628-20260715T221015-${{ matrix.shard }}
+          path: review_output_${{ matrix.shard }}/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  blind:
+    needs: review
+    if: github.head_ref == 'nslab-sharded-20180628-20260715t221015'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout current execution script
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_sharded_runner_20180628_20260715t221015.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download current-run setup stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015
+
+      - name: Download all completed semantic review shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-20180628-20260715T221015-*
+          path: review_inputs
+          merge-multiple: true
+
+      - name: Close BLIND denominator, rank, render, and seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_sharded_runner_20180628_20260715t221015.py blind
+          --stage nslab_stage_20180628_20260715t221015
+          --reviews review_inputs
+
+      - name: Upload verified clean BLIND stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  postmortem:
+    needs: blind
+    if: github.head_ref == 'nslab-sharded-20180628-20260715t221015'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout current execution script
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_sharded_runner_20180628_20260715t221015.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download verified clean BLIND stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015
+
+      - name: Verify seal, acquire D outcome, build postmortem, and reparse final bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_sharded_runner_20180628_20260715t221015.py post
+          --stage nslab_stage_20180628_20260715t221015
+
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180628-20260715T221015
+          path: final_artifact_20180628_20260715t221015/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload postmortem failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-post-failure-20180628-20260715T221015
+          path: nslab_stage_20180628_20260715t221015/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
