@@ -1,0 +1,71 @@
+name: NSLAB exact current-main input export 20220825
+
+description: Copy exact current-main prompt, selected news CSV, and example shell into the caller workspace.
+
+inputs:
+  output-dir:
+    description: Destination directory in the caller workspace
+    required: false
+    default: nslab_export_packet
+
+runs:
+  using: composite
+  steps:
+    - name: Copy and verify exact current-main files
+      shell: bash
+      run: |
+        set -euo pipefail
+        out='${{ inputs.output-dir }}'
+        mkdir -p "$out/inputs"
+        root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        cp "$root/docs/research_prompt.md" "$out/prompt_tmp.md"
+        cp "$root/docs/csv/news_20220825.csv" "$out/news_20220825_tmp.csv"
+        cp "$root/docs/example2.md" "$out/example2_tmp.md"
+        python - "$out" <<'PY'
+        import csv, hashlib, json, sys
+        from datetime import datetime
+        from pathlib import Path
+        out = Path(sys.argv[1])
+        prompt = out / 'prompt_tmp.md'
+        news = out / 'news_20220825_tmp.csv'
+        example = out / 'example2_tmp.md'
+        pb = prompt.read_bytes(); nb = news.read_bytes(); eb = example.read_bytes()
+        psha = hashlib.sha256(pb).hexdigest(); nsha = hashlib.sha256(nb).hexdigest(); esha = hashlib.sha256(eb).hexdigest()
+        assert psha == 'b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029', psha
+        assert len(pb) == 430485, len(pb)
+        text = pb.decode('utf-8')
+        assert text.splitlines()[0] == '# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'
+        assert 'nslab.gold_phase_machine.direct_csv_research.locked' in text
+        with news.open('r', encoding='utf-8-sig', newline='') as f:
+            rows = list(csv.DictReader(f))
+        assert rows and list(rows[0]) == ['page','row','date','time','title','body']
+        times=[]; bad=[]
+        for i,r in enumerate(rows,1):
+            try: times.append(datetime.fromisoformat(f"{r['date']}T{r['time']}"))
+            except Exception: bad.append(i)
+        stamp='20260715T090105KST'
+        pn=f'research_prompt_{stamp}_{psha[:8]}.md'
+        nn=f'news_20220825_{stamp}_{nsha[:8]}.csv'
+        en=f'example2_{stamp}_{esha[:8]}.md'
+        prompt.rename(out/'inputs'/pn)
+        news.rename(out/'inputs'/nn)
+        example.rename(out/'inputs'/en)
+        receipt={
+          'schema_version':'nslab.current_run_raw_acquisition.v1',
+          'run_id':'nslab_run_20260715T090105KST_20220825',
+          'prompt_file':pn,'prompt_sha256':psha,'prompt_byte_size':len(pb),
+          'news_file':nn,'news_sha256':nsha,'news_byte_size':len(nb),
+          'example_file':en,'example_sha256':esha,'example_byte_size':len(eb),
+          'csv_row_count':len(rows),'parsed_row_count':len(rows),'columns':list(rows[0]),
+          'min_published_at':min(times).isoformat(),'max_published_at':max(times).isoformat(),
+          'time_unverified_rows':bad,
+          'control_char_count':sum(1 for ch in nb.decode('utf-8-sig') if ord(ch)<32 and ch not in '\n\r\t'),
+          'raw_prompt_url_opened':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md',
+          'raw_csv_url_opened':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220825.csv',
+          'acquisition_method':'WEB_RAW_OPEN_THEN_GITHUB_PRIVATE_ACTION_CURRENT_MAIN_ARCHIVE',
+          'current_main_commit_context':'action_ref_main',
+          'raw_bytes_acquired_at':'2026-07-15T09:01:05+09:00'
+        }
+        (out/'acquisition_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+        print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+        PY
