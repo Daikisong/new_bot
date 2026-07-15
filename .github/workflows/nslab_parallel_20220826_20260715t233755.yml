@@ -1,106 +1,16 @@
-name: NSLAB parallel gold 20220826 20260715T233755
+name: NSLAB parallel gold 20220826 20260715T233755 retired
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-
-permissions:
-  contents: read
-  actions: read
-  models: read
 
 concurrency:
   group: nslab-parallel-gold-20220826-20260715T233755-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  execute:
-    if: github.head_ref == 'nslab-run-20220826-20260715t233755'
+  stop:
+    if: false
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 360
     steps:
-      - name: Checkout execution branch
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            temp/nslab_parallel_wrapper_20220826_20260715t233755.py
-            .github/workflows/nslab_parallel_20220826_20260715t233755.yml
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout isolated verified runner source
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: 69fa30e64f80014c9f275dd09540297a6a167cf5
-          path: runner_source
-          sparse-checkout: |
-            temp/nslab_parallel_runner_20220826_20260715t174533.py
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout exact current main research inputs
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: main
-          path: main_inputs
-          sparse-checkout: |
-            docs/research_prompt.md
-            docs/csv/news_20220826.csv
-            docs/example2.md
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout compile-verified phase-machine source
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
-          path: pipeline_source
-          sparse-checkout: |
-            temp/nslab_20220819_pipeline
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout BLIND-safe stock-web routing and P snapshot only
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/stock-web
-          ref: main
-          path: stock_blind
-          sparse-checkout: |
-            atlas/research_daily/manifest.json
-            atlas/research_daily/schema.json
-            atlas/research_daily/trading_calendar.csv
-            atlas/research_daily/access/2022/08/20220826.json
-            atlas/research_daily/snapshots/2022/08/20220825.csv
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Execute fresh full gold phase machine
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -o pipefail
-          python temp/nslab_parallel_wrapper_20220826_20260715t233755.py 2>&1 | tee nslab_execution.log
-
-      - name: Upload failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-failure-20220826-20260715T233755
-          path: nslab_execution.log
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: warn
-
-      - name: Upload independently validated episode bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-final-20220826-20260715T233755
-          path: final_artifact_20220826_20260715t233755/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
+      - run: echo retired
