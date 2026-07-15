@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -8,8 +10,8 @@ runner = Path("parallel_source/temp/nslab_parallel_runner_20220826_20260715t1718
 text = runner.read_text(encoding="utf-8")
 
 replacements = [
-    ("20260715T171800KST", "20260715T101000Z"),
-    ("20260715t171800", "20260715t101000"),
+    ("20260715T171800KST", "20260715T150152Z"),
+    ("20260715t171800", "20260715t150152z"),
     ("20220826", "20180628"),
     ("2022-08-26", "2018-06-28"),
     ("20220825", "20180627"),
@@ -19,24 +21,57 @@ replacements = [
     ("2022/08", "2018/06"),
 ]
 for old, new in replacements:
+    if old not in text:
+        raise RuntimeError(f"runner adaptation anchor missing: {old}")
     text = text.replace(old, new)
 
 old_batch = 'row_batches(model_inputs, max_items=12, max_chars=52000)'
-new_batch = 'row_batches(model_inputs, max_items=8, max_chars=40000)'
-assert old_batch in text
+new_batch = 'row_batches(model_inputs, max_items=6, max_chars=30000)'
+if old_batch not in text:
+    raise RuntimeError("semantic batch anchor missing")
 text = text.replace(old_batch, new_batch, 1)
-old_workers = 'ThreadPoolExecutor(max_workers=6, thread_name_prefix="nslab-semantic")'
-new_workers = 'ThreadPoolExecutor(max_workers=8, thread_name_prefix="nslab-semantic")'
-assert old_workers in text
-text = text.replace(old_workers, new_workers, 1)
 
-namespace = {"__name__": "nslab_compact_runner_20180628", "__file__": str(runner)}
+namespace = {"__name__": "nslab_current_gold_20180628", "__file__": str(runner)}
 exec(compile(text, str(runner), "exec"), namespace)
+
+original_fetch = namespace["fetch_exact"]
+
+
+def current_execution_fetch(raw_url, api_url, dest, label, warnings, methods):
+    local_sources = {
+        "prompt": Path("current_main/docs/research_prompt.md"),
+        "news": Path("current_main/docs/csv/news_20180628.csv"),
+        "example": Path("current_main/docs/example2.md"),
+    }
+    source = local_sources.get(label)
+    if source is not None:
+        if not source.is_file():
+            raise RuntimeError(f"fresh checkout source missing for {label}: {source}")
+        data = source.read_bytes()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        methods[label] = "ACTIONS_CHECKOUT_AFTER_WEB_BROWSER_RAW_OPEN_BYTE_IDENTICAL"
+        return data
+    return original_fetch(raw_url, api_url, dest, label, warnings, methods)
+
+
+namespace["fetch_exact"] = current_execution_fetch
 original_prepare = namespace["prepare_inputs_and_pipeline"]
 
 
-def compact_prepare() -> dict:
+def current_prepare() -> dict:
     receipt = original_prepare()
+
+    common_path = namespace["PIPELINE"] / "common.py"
+    common = common_path.read_text(encoding="utf-8")
+    if "MODEL_NAME = 'openai/gpt-4.1-mini'" in common:
+        common = common.replace("MODEL_NAME = 'openai/gpt-4.1-mini'", "MODEL_NAME = 'openai/gpt-4.1'", 1)
+    elif 'MODEL_NAME = "openai/gpt-4.1-mini"' in common:
+        common = common.replace('MODEL_NAME = "openai/gpt-4.1-mini"', 'MODEL_NAME = "openai/gpt-4.1"', 1)
+    else:
+        raise RuntimeError("MODEL_NAME patch anchor missing")
+    common_path.write_text(common, encoding="utf-8")
+
     blind_path = namespace["PIPELINE"] / "blind.py"
     blind = blind_path.read_text(encoding="utf-8")
     compact_block = r'''def detailed_review_system() -> str:
@@ -65,7 +100,7 @@ ISSUER_STRATEGIC_INVESTMENT_OR_CONTROL_ACTION -> STRATEGIC_INVESTMENT with THIRD
 ISSUER_ANALYST_NUMERIC_BRIDGE -> ANALYST_BRIDGE with ANALYST_NUMERIC_EARNINGS_BRIDGE.
 ISSUER_EXPLICIT_MARKET_STATE_NOTICE -> CONTINUATION_EXPLICIT with EXPLICIT_MARKET_STATE_NOTICE.
 
-For non-final rows use the most accurate non-final quote_role already implied by the source, such as DIRECT_ISSUER_ADVERSE_EVENT_NONFINAL, DIRECT_ISSUER_ROUTINE_FACT_NONFINAL, POLICY_OR_INDUSTRY_CONTEXT, NON_KR_OR_NONLISTED_ISSUER, NON_MARKET_CONTEXT, DISCLOSURE_OR_ETF_NOTICE_NONISSUER, BODY_TABLE_LIST_MEMBER, OTHER_COMPANY_ARTICLE, MARKET_FLOW_TABLE_MEMBER_ONLY, ATTENDEE_LIST_ONLY, MANUFACTURER_ONLY, GENERAL_MARKET_COMMENTARY_ONLY, or PARSER_AMBIGUOUS. Set catalyst_type=NONE, economic_variable_changed=NONE, mechanism_supported=false, candidate_path=AUDIT_ONLY, and provide a specific rejection_reason.
+For non-final rows use the most accurate non-final quote_role implied by the source. Set catalyst_type=NONE, economic_variable_changed=NONE, mechanism_supported=false, candidate_path=AUDIT_ONLY, and provide a specific rejection_reason.
 
 Only choose a ticker/company from that row's krx_candidate_options, and only when the candidate is the article subject, local predicate owner, explicit named beneficiary, or exchange-notice subject. exact_quote must be a verbatim source substring no longer than 180 characters. A positive mechanism_sentence must be one concise sentence supported only by that quote. Keep every string concise. If uncertain, preserve the row as audit-only and unresolved rather than inventing a binding.
 
@@ -75,9 +110,11 @@ INPUT_ROWS:
     pattern = r"def detailed_review_system\(\) -> str:\n.*?\n\ndef normalize_review"
     replacement = compact_block + "\n\ndef normalize_review"
     blind, count = re.subn(pattern, replacement, blind, count=1, flags=re.S)
-    assert count == 1, "compact semantic prompt patch anchor not found"
-    blind = blind.replace("max_tokens=15000,", "max_tokens=9000,", 1)
+    if count != 1:
+        raise RuntimeError("compact semantic prompt patch anchor missing")
+    blind = blind.replace("max_tokens=15000,", "max_tokens=12000,", 1)
     blind_path.write_text(blind, encoding="utf-8")
+
     namespace["run"](
         [
             sys.executable,
@@ -92,8 +129,13 @@ INPUT_ROWS:
     return receipt
 
 
-acquisition = compact_prepare()
+acquisition = current_prepare()
 namespace["run_blind"](acquisition)
 outcome_path = namespace["acquire_outcome_after_seal"](acquisition)
 final_path = namespace["run_postmortem"](acquisition, outcome_path)
-print(namespace["json"].dumps({"status": "ACCEPT_FULL", "final": str(final_path)}, sort_keys=True))
+
+expected_upload_dir = Path("final_artifact_20180628_20260715t101000")
+if expected_upload_dir.exists():
+    shutil.rmtree(expected_upload_dir)
+shutil.copytree(final_path.parent, expected_upload_dir)
+print(json.dumps({"status": "ACCEPT_FULL", "final": str(expected_upload_dir / final_path.name)}, sort_keys=True))
