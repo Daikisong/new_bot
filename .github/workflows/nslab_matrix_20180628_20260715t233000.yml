@@ -1,0 +1,192 @@
+name: NSLAB matrix GOLD 20180628 20260715T233000
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t233000'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout current matrix runner branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_matrix_runner_20180628_20260715t233000.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout verified parallel runner source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: nslab-run-20220826-20260715t171800-parallel
+          path: parallel_source
+          sparse-checkout: |
+            temp/nslab_parallel_runner_20220826_20260715t171800.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Fresh Raw acquisition and pre-seal verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -u branch_code/temp/nslab_matrix_runner_20180628_20260715t233000.py acquire
+
+      - name: Upload current-run fresh pre-seal package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-acquisition-20180628-20260715T233000
+          path: |
+            work_parallel_20180628_20260715t233000/
+            stock_blind/atlas/research_daily/manifest.json
+            stock_blind/atlas/research_daily/schema.json
+            stock_blind/atlas/research_daily/trading_calendar.csv
+            stock_blind/atlas/research_daily/access/2018/06/20180628.json
+            stock_blind/atlas/research_daily/snapshots/2018/06/20180627.csv
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t233000'
+    needs: acquire
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - name: Checkout current matrix runner branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_matrix_runner_20180628_20260715t233000.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download current-run fresh pre-seal package
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-acquisition-20180628-20260715T233000
+          path: .
+
+      - name: Review complete title and body for assigned row population
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -u branch_code/temp/nslab_matrix_runner_20180628_20260715t233000.py review --shard ${{ matrix.shard }} --shards 10
+
+      - name: Upload sealed-input semantic shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-20180628-20260715T233000-${{ matrix.shard }}
+          path: review_output/shard_*/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  aggregate:
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t233000'
+    needs: [acquire, review]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - name: Checkout current matrix runner branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_matrix_runner_20180628_20260715t233000.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download current-run fresh pre-seal package
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-acquisition-20180628-20260715T233000
+          path: .
+
+      - name: Download all completed semantic shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-20180628-20260715T233000-*
+          path: review_parts
+          merge-multiple: true
+
+      - name: Close BLIND population, seal, acquire outcome, and render final bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -u branch_code/temp/nslab_matrix_runner_20180628_20260715t233000.py aggregate --review-dir review_parts --shards 10
+
+      - name: Upload independently validated episode bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180628-20260715T233000
+          path: final_artifact_20180628_20260715t233000/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload aggregate diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-failure-20180628-20260715T233000
+          path: |
+            work_parallel_20180628_20260715t233000/
+            review_parts/
+            final_artifact_20180628_20260715t233000/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
