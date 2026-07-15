@@ -21,7 +21,7 @@ permissions:
 jobs:
   monitor:
     if: github.event_name != 'issues' || github.event.issue.title == 'NSLAB_MONITOR_20220829_20260715T172100Z'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
