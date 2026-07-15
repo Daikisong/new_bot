@@ -1,0 +1,20 @@
+name: NSLAB slim runner probe 20180628 20260716T0100
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nslab-slim-probe-20180628-20260716T0100-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    if: github.head_ref == 'nslab-clean-run-20180628-20260716t0029'
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    steps:
+      - run: python -c "import platform; print(platform.platform())"
