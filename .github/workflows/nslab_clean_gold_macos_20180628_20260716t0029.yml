@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: nslab-isolated-gold-macos-20180628-20260716T0029-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   execute:
