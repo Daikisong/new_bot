@@ -23,7 +23,7 @@ jobs:
           import json, os, urllib.request, urllib.error
           body={
             'model':'openai/gpt-4.1',
-            'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only.'}],
+            'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only. Probe 204116.'}],
             'temperature':0,
             'max_tokens':15000,
           }
