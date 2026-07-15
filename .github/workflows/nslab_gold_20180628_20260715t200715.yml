@@ -1,4 +1,4 @@
-name: NSLAB gold fresh 20180628 20260715T201300
+name: NSLAB gold fresh 20180628 20260715T211800
 
 on:
   pull_request:
@@ -86,8 +86,8 @@ jobs:
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20180628-20260715T201300
-          path: final_artifact_20180628_20260715t201300/
+          name: nslab-final-20180628-20260715T211800
+          path: final_artifact_20180628_20260715t211800/
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
@@ -96,8 +96,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-failure-20180628-20260715T201300
-          path: work_parallel_20180628_20260715t201300/
+          name: nslab-failure-20180628-20260715T211800
+          path: work_parallel_20180628_20260715t211800/
           retention-days: 1
           compression-level: 0
           if-no-files-found: ignore
