@@ -15,27 +15,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe GitHub Models request limits
+      - name: Probe candidate GitHub Models
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
           import json, os, urllib.request, urllib.error
-          body={
-            'model':'openai/gpt-4.1',
-            'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only. Probe 204116.'}],
-            'temperature':0,
-            'max_tokens':15000,
-          }
-          req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
-          try:
-            with urllib.request.urlopen(req,timeout=120) as r:
-              print('STATUS',r.status)
-              print('HEADERS',dict(r.headers))
-              print('BODY',r.read().decode()[:4000])
-          except urllib.error.HTTPError as e:
-            print('HTTP_ERROR',e.code)
-            print('HEADERS',dict(e.headers))
-            print('BODY',e.read().decode(errors='replace')[:4000])
-            raise
+          models = [
+            'openai/gpt-5',
+            'openai/gpt-5-mini',
+            'openai/gpt-5-nano',
+            'openai/o4-mini',
+            'openai/o3-mini',
+            'openai/gpt-4o',
+            'openai/gpt-4o-mini',
+            'openai/gpt-4.1-nano',
+          ]
+          for model in models:
+            body={
+              'model':model,
+              'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only.'}],
+              'temperature':0,
+              'max_tokens':100,
+            }
+            req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+            try:
+              with urllib.request.urlopen(req,timeout=120) as r:
+                raw=r.read().decode()
+                print(json.dumps({'model':model,'status':r.status,'rate_type':r.headers.get('x-ratelimit-type'),'remaining_requests':r.headers.get('x-ratelimit-remaining-requests'),'remaining_tokens':r.headers.get('x-ratelimit-remaining-tokens'),'served_model':r.headers.get('x-ms-served-model'),'body':raw[:300]},sort_keys=True))
+            except urllib.error.HTTPError as e:
+              detail=e.read().decode(errors='replace')[:300]
+              print(json.dumps({'model':model,'status':e.code,'rate_type':e.headers.get('x-ratelimit-type'),'retry_after':e.headers.get('Retry-After'),'error_code':e.headers.get('x-ms-error-code'),'body':detail},sort_keys=True))
+            except Exception as e:
+              print(json.dumps({'model':model,'status':'EXCEPTION','error':f'{type(e).__name__}: {e}'},sort_keys=True))
           PY
