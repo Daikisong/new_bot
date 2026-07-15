@@ -1,25 +1,25 @@
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	﻿2026-07-15T04:02:13.7435126Z ##[group]Run set -euo pipefail
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7435465Z ^[[36;1mset -euo pipefail^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7436000Z ^[[36;1mPROMPT=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['prompt_file'])")^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7436845Z ^[[36;1mNEWS=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['news_file'])")^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7437667Z ^[[36;1mEXAMPLE=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['example_file'])")^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7438237Z ^[[36;1mpython work/pipeline/blind.py \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7438555Z ^[[36;1m  --prompt "$PROMPT" \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7438806Z ^[[36;1m  --news "$NEWS" \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7439163Z ^[[36;1m  --access stock_blind/atlas/research_daily/access/2022/08/20220826.json \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7439651Z ^[[36;1m  --manifest stock_blind/atlas/research_daily/manifest.json \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7440411Z ^[[36;1m  --schema stock_blind/atlas/research_daily/schema.json \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7440955Z ^[[36;1m  --blind-snapshot stock_blind/atlas/research_daily/snapshots/2022/08/20220825.csv \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7441404Z ^[[36;1m  --example "$EXAMPLE" \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7441675Z ^[[36;1m  --output work/blind \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7441931Z ^[[36;1m  --token "$GITHUB_TOKEN" \^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7442247Z ^[[36;1m  --run-id nslab_run_20260715T125244KST_20220826^[[0m
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7474779Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7475128Z env:
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7477539Z   GITHUB_TOKEN: ***
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7477776Z   PYTHONPATH: work/pipeline
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:13.7478007Z ##[endgroup]
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:15.0203439Z Traceback (most recent call last):
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:15.0211387Z   File "<string>", line 1, in <module>
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:15.0212114Z KeyError: 'example_file'
-blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:02:15.0359101Z ##[error]Process completed with exit code 1.
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	﻿2026-07-15T04:08:46.8177873Z ##[group]Run set -euo pipefail
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8178226Z ^[[36;1mset -euo pipefail^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8178633Z ^[[36;1mPROMPT=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['prompt_file'])")^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8179233Z ^[[36;1mNEWS=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['news_file'])")^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8179775Z ^[[36;1mEXAMPLE=$(python -c "import json;print('work/inputs/'+json.load(open('work/acquisition_receipt.json'))['example_file'])")^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8180205Z ^[[36;1mpython work/pipeline/blind.py \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8180512Z ^[[36;1m  --prompt "$PROMPT" \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8180737Z ^[[36;1m  --news "$NEWS" \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8181030Z ^[[36;1m  --access stock_blind/atlas/research_daily/access/2022/08/20220826.json \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8181398Z ^[[36;1m  --manifest stock_blind/atlas/research_daily/manifest.json \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8181759Z ^[[36;1m  --schema stock_blind/atlas/research_daily/schema.json \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8182358Z ^[[36;1m  --blind-snapshot stock_blind/atlas/research_daily/snapshots/2022/08/20220825.csv \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8182750Z ^[[36;1m  --example "$EXAMPLE" \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8182992Z ^[[36;1m  --output work/blind \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8183221Z ^[[36;1m  --token "$GITHUB_TOKEN" \^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8183487Z ^[[36;1m  --run-id nslab_run_20260715T125244KST_20220826^[[0m
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8200924Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8201246Z env:
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8203128Z   GITHUB_TOKEN: ***
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8203332Z   PYTHONPATH: work/pipeline
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.8203575Z ##[endgroup]
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.9488021Z Traceback (most recent call last):
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.9488686Z   File "<string>", line 1, in <module>
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.9489179Z KeyError: 'example_file'
+blind	Full CSV semantic review, denominator closure, BLIND ranking, and clean seal	2026-07-15T04:08:46.9613952Z ##[error]Process completed with exit code 1.
