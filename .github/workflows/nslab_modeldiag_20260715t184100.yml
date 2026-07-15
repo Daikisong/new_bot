@@ -20,6 +20,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
+          # Fresh exact-pipeline diagnostic trigger at 2026-07-15T22:32:00+09:00.
           import csv, io, json, os, sys, time, urllib.request
           from pathlib import Path
           root=Path('/tmp/nslab_exact_probe'); root.mkdir(parents=True,exist_ok=True)
