@@ -2,7 +2,7 @@ name: NSLAB current fast matrix gold 20180628 20260715T151200Z
 
 on:
   pull_request:
-    types: [synchronize]
+    types: [opened, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   cleanup:
-    if: github.head_ref == 'nslab-current-20180628-20260715t144120z'
+    if: github.head_ref == 'nslab-current-fast-20180628-20260715t151200z'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -49,7 +49,7 @@ jobs:
 
   review:
     needs: cleanup
-    if: github.head_ref == 'nslab-current-20180628-20260715t144120z'
+    if: github.head_ref == 'nslab-current-fast-20180628-20260715t151200z'
     strategy:
       fail-fast: false
       max-parallel: 16
@@ -138,7 +138,7 @@ jobs:
 
   aggregate:
     needs: review
-    if: github.head_ref == 'nslab-current-20180628-20260715t144120z' && needs.review.result == 'success'
+    if: github.head_ref == 'nslab-current-fast-20180628-20260715t151200z' && needs.review.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
