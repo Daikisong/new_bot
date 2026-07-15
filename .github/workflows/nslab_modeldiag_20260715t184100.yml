@@ -22,10 +22,10 @@ jobs:
           python - <<'PY'
           import json, os, urllib.request, urllib.error
           body={
-            'model':'openai/gpt-4.1-nano',
+            'model':'openai/gpt-4.1',
             'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only.'}],
             'temperature':0,
-            'max_tokens':4000,
+            'max_tokens':15000,
           }
           req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
           try:
