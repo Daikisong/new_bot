@@ -19,4 +19,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh run view 29388726090 --repo Daikisong/new_bot --log-failed 2>&1 | tail -n 80
+          gh run view 29388886153 --repo Daikisong/new_bot --log-failed 2>&1 | tail -n 100
