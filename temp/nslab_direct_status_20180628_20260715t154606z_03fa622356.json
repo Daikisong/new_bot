@@ -1,0 +1,12 @@
+{
+  "aggregate_result": "cancelled",
+  "artifact_name": "nslab-direct-final-20180628-20260715T154606Z-03fa622356",
+  "head_sha": "1dd9d3f87b512849dd640906271be0eb0bbce848",
+  "review_result": "cancelled",
+  "run_attempt": 1,
+  "run_id": 29429856507,
+  "schema_version": "nslab.direct_push_status.v1",
+  "status": "FAILURE",
+  "trade_date": "2018-06-28",
+  "workflow": "NSLAB direct push GOLD 20180628 20260715T154606Z 03fa622356"
+}
