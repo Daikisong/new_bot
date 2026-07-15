@@ -19,6 +19,6 @@ jobs:
         shell: bash
         run: |
           set -u
-          for run_id in 29406819899 29404871314 29403008696; do
+          for run_id in 29406819899 29404871314 29403008696 29411074918 29413052881; do
             gh api --method POST "repos/Daikisong/new_bot/actions/runs/${run_id}/cancel" || true
           done
