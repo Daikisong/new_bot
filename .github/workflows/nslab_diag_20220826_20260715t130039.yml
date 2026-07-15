@@ -1,0 +1,32 @@
+name: NSLAB diagnostic 20220826 20260715T130039
+
+on:
+  pull_request:
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'nslab-run-20220826-20260715t130039'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nslab-run-20220826-20260715t130039
+          fetch-depth: 1
+      - name: Persist failed log tail
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p temp/nslab_run_20220826_20260715t130039
+          gh run view 29388551861 --repo Daikisong/new_bot --log-failed > temp/nslab_run_20220826_20260715t130039/failed_run_29388551861.log 2>&1 || true
+          tail -n 160 temp/nslab_run_20220826_20260715t130039/failed_run_29388551861.log > temp/nslab_run_20220826_20260715t130039/failed_tail.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add temp/nslab_run_20220826_20260715t130039/failed_tail.txt
+          git commit -m 'temp: persist NSLAB failed run diagnostics' || exit 0
+          git push origin HEAD:nslab-run-20220826-20260715t130039
