@@ -1,4 +1,4 @@
-name: NSLAB isolated gold Windows 20180628 20260716T0029
+name: NSLAB diagnose Windows failure 20180628
 
 on:
   pull_request:
@@ -7,100 +7,45 @@ on:
 permissions:
   contents: read
   actions: read
-  models: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: nslab-isolated-gold-macos-20180628-20260716T0029-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  execute:
+  diagnose:
     if: github.head_ref == 'nslab-clean-run-20180628-20260716t0029'
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 10
     steps:
-      - name: Checkout current execution wrapper branch
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: nslab-run-20180628-20260715t101000-compact
-          path: branch_code
-          sparse-checkout: |
-            temp/nslab_compact_wrapper_20180628_20260715t101000.py
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout verified parallel runner source
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: nslab-run-20220826-20260715t171800-parallel
-          path: parallel_source
-          sparse-checkout: |
-            temp/nslab_parallel_runner_20220826_20260715t171800.py
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout exact current-main research inputs
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: main
-          path: current_main
-          sparse-checkout: |
-            docs/research_prompt.md
-            docs/csv/news_20180628.csv
-            docs/example2.md
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout compile-verified phase-machine source
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/new_bot
-          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
-          path: pipeline_source
-          sparse-checkout: |
-            temp/nslab_20220819_pipeline
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Checkout BLIND-safe stock-web routing and P snapshot only
-        uses: actions/checkout@v4
-        with:
-          repository: Daikisong/stock-web
-          ref: main
-          path: stock_blind
-          sparse-checkout: |
-            atlas/research_daily/manifest.json
-            atlas/research_daily/schema.json
-            atlas/research_daily/trading_calendar.csv
-            atlas/research_daily/access/2018/06/20180628.json
-            atlas/research_daily/snapshots/2018/06/20180627.csv
-          sparse-checkout-cone-mode: false
-          fetch-depth: 1
-
-      - name: Execute complete fresh gold phase machine
+      - name: Download and publish failed job tail
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PYTHONUNBUFFERED: '1'
-        run: python branch_code/temp/nslab_compact_wrapper_20180628_20260715t101000.py
-
-      - name: Upload independently validated episode bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-final-isolated-windows-20180628-20260716T0029
-          path: final_artifact_20180628_20260715t101000/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
-
-      - name: Upload failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nslab-failure-isolated-windows-20180628-20260716T0029
-          path: work_parallel_20180628_20260715t150152z/
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: ignore
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JOB_ID: '87406776443'
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${REPO}/actions/jobs/${JOB_ID}/logs" -o joblogs.bin
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          p=Path('joblogs.bin')
+          if zipfile.is_zipfile(p):
+              with zipfile.ZipFile(p) as z:
+                  parts=[]
+                  for n in z.namelist():
+                      if not n.endswith('/'):
+                          parts.append(z.read(n).decode('utf-8',errors='replace'))
+                  text='\n'.join(parts)
+          else:
+              text=p.read_text(encoding='utf-8',errors='replace')
+          lines=text.splitlines()
+          tail='\n'.join(lines[-220:])
+          Path('tail.md').write_text('## Failed 20180628 Windows job tail\n\n```text\n'+tail[-50000:]+'\n```\n',encoding='utf-8')
+          PY
+          gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body-file tail.md
