@@ -1,0 +1,119 @@
+name: NSLAB slim-persist gold 20180628 20260716T0125
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-slim-persist-gold-20180628-20260716T0125-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  execute:
+    if: github.head_ref == 'nslab-slim-persist-20180628-20260716t0125'
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONUNBUFFERED: '1'
+      RESULT_BRANCH: nslab-result-20180628-20260716t0125
+    steps:
+      - name: Checkout isolated current runner
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-slim-persist-20180628-20260716t0125
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_clean_bootstrap_20180628_20260716t0029.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current main inputs, importer, and successful protocol
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: input_src
+          fetch-depth: 1
+          sparse-checkout: |
+            .github/workflows/nslab_gold_20180621_20260715T002346Z.yml
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+            pyproject.toml
+            README.md
+            src/news_scalping_lab
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: nslab-pack-pipeline-20180620-20260714T232000Z
+          path: pipeline_transport
+          fetch-depth: 1
+          sparse-checkout: |
+            temp/nslab_shared_20180620_20260714T232000Z/pipeline_source/temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout BLIND-safe routing metadata and P snapshot only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_preseal
+          fetch-depth: 1
+          sparse-checkout: |
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Execute fresh full GOLD phase machine and independent reparse
+        run: python branch_code/temp/nslab_clean_bootstrap_20180628_20260716t0029.py
+
+      - name: Upload independently validated episode bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-slim-persist-20180628-20260716T0125
+          path: final_artifact_20180628_20260716t001004/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Persist result or failure diagnostics to fixed branch
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          PERSIST="${RUNNER_TEMP}/nslab_persist_20180628"
+          rm -rf "$PERSIST"
+          mkdir -p "$PERSIST/result"
+          printf '%s\n' "$JOB_STATUS" > "$PERSIST/result/job_status.txt"
+          if [[ -d final_artifact_20180628_20260716t001004 ]]; then
+            cp -R final_artifact_20180628_20260716t001004/. "$PERSIST/result/"
+          fi
+          if [[ -d failure_artifact_20180628_20260716t001004 ]]; then
+            mkdir -p "$PERSIST/result/failure_artifact"
+            cp -R failure_artifact_20180628_20260716t001004/. "$PERSIST/result/failure_artifact/"
+          fi
+          cd branch_code
+          git config user.name 'NSLAB Runner'
+          git config user.email 'nslab-runner@users.noreply.github.com'
+          git checkout --orphan "$RESULT_BRANCH"
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p result
+          cp -R "$PERSIST/result/." result/
+          git add -f result
+          git commit -m 'temp: persist 20180628 execution result [skip ci]'
+          git push --force origin "HEAD:refs/heads/${RESULT_BRANCH}"
