@@ -1,0 +1,35 @@
+name: NSLAB probe 20220826 20260715T130039
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/nslab_probe_20220826_20260715t130039.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Record latest target workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out='temp/nslab_current_run_20220826_20260715t130039'
+          mkdir -p "$out"
+          gh run list --repo Daikisong/new_bot --workflow nslab_gold_20220826_20260715t130039.yml --limit 3 --json databaseId,status,conclusion,createdAt,updatedAt,headSha,event,url > "$out/probe.json"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$out/probe.json"
+          git commit -m 'temp: record NSLAB 20220826 workflow status' || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
