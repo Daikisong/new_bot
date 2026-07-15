@@ -1,0 +1,304 @@
+name: NSLAB gold isolated 20180628 20260715T150152Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-isolated-20180628-20260715T150152Z-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: github.head_ref == 'nslab-run-20180628-20260715t150152z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout current execution branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            .github/workflows/nslab_gold_20180628_20260715t150152z.yml
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified sharded runner source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 19aed381b77a33ec3e2591c9e705f22ee356094d
+          path: runner_source
+          sparse-checkout: |
+            temp/nslab_sharded_runner_20180628_20260715t221015.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current-main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Prepare unique current-run phase machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp runner_source/temp/nslab_sharded_runner_20180628_20260715t221015.py current_runner.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('current_runner.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('20260715T221015KST', '20260715T150152Z'),
+              ('20260715t221015', '20260715t150152z'),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise RuntimeError(f'missing run-stamp anchor: {old}')
+              text = text.replace(old, new)
+
+          pattern = r"def fetch_exact\(raw_url: str, api_url: str, dest: Path, label: str, warnings: list\[dict\[str, Any\]\], methods: dict\[str, str\]\) -> bytes:\n.*?\n\ndef set_assign"
+          replacement = '''def fetch_exact(raw_url: str, api_url: str, dest: Path, label: str, warnings: list[dict[str, Any]], methods: dict[str, str]) -> bytes:
+              current_main = Path(os.environ.get("NSLAB_CURRENT_MAIN", "current_main"))
+              mapping = {
+                  "prompt": current_main / "docs/research_prompt.md",
+                  "news": current_main / f"docs/csv/news_{DATE8}.csv",
+                  "example": current_main / "docs/example2.md",
+              }
+              if label == "outcome_post_seal":
+                  raw_source = os.environ.get("NSLAB_OUTCOME_SOURCE")
+                  if not raw_source:
+                      raise RuntimeError("post-seal outcome source path is not set")
+                  source = Path(raw_source)
+              else:
+                  source = mapping.get(label)
+              if source is None or not source.is_file():
+                  raise RuntimeError(f"fresh checkout source missing for {label}: {source}")
+              data = source.read_bytes()
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(data)
+              methods[label] = "ACTIONS_CHECKOUT_AFTER_WEB_BROWSER_RAW_OPEN_BYTE_IDENTICAL"
+              return data
+
+
+def set_assign'''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
+              raise RuntimeError('fetch_exact replacement anchor missing')
+          text = text.replace('attempts=4,', 'attempts=6,', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          python -m py_compile current_runner.py
+
+      - name: Fresh-acquire, hash, parse, and prepare PHASE 1 workbench
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_CURRENT_MAIN: current_main
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python current_runner.py setup
+          --current-main current_main
+          --pipeline-source pipeline_source
+          --stock-source stock_blind
+          --shard-count 8
+
+      - name: Upload current-run pre-seal stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T150152Z
+          path: |
+            current_runner.py
+            nslab_stage_20180628_20260715t150152z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  review:
+    needs: setup
+    if: github.head_ref == 'nslab-run-20180628-20260715t150152z'
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Download current-run pre-seal stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T150152Z
+          path: .
+
+      - name: Semantically review complete full-title/body shard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python current_runner.py review
+          --stage nslab_stage_20180628_20260715t150152z
+          --shard-index ${{ matrix.shard }}
+          --shard-count 8
+          --output review_output_${{ matrix.shard }}
+
+      - name: Upload closed semantic shard population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-20180628-20260715T150152Z-${{ matrix.shard }}
+          path: review_output_${{ matrix.shard }}/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload shard diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-failure-20180628-20260715T150152Z-${{ matrix.shard }}
+          path: review_output_${{ matrix.shard }}/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  blind:
+    needs: review
+    if: github.head_ref == 'nslab-run-20180628-20260715t150152z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Download current-run pre-seal stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-setup-20180628-20260715T150152Z
+          path: .
+
+      - name: Download every closed semantic review shard
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-20180628-20260715T150152Z-*
+          path: review_inputs
+          merge-multiple: true
+
+      - name: Close denominator, rank from reparsed screening, render, and verify BLIND seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python current_runner.py blind
+          --stage nslab_stage_20180628_20260715t150152z
+          --reviews review_inputs
+
+      - name: Upload verified clean BLIND stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-20180628-20260715T150152Z
+          path: |
+            current_runner.py
+            nslab_stage_20180628_20260715t150152z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload BLIND failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-blind-failure-20180628-20260715T150152Z
+          path: nslab_stage_20180628_20260715t150152z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  postmortem:
+    needs: blind
+    if: github.head_ref == 'nslab-run-20180628-20260715t150152z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Download verified clean BLIND stage
+        uses: actions/download-artifact@v4
+        with:
+          name: nslab-blind-20180628-20260715T150152Z
+          path: .
+
+      - name: Checkout D outcome snapshot only after seal verification stage
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_outcome
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2018/06/20180628.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Verify seal, acquire outcome bytes, build postmortem, brain delta, and independently reparse final Markdown
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSLAB_OUTCOME_SOURCE: stock_outcome/atlas/research_daily/snapshots/2018/06/20180628.csv
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python current_runner.py post
+          --stage nslab_stage_20180628_20260715t150152z
+
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180628-20260715T150152Z
+          path: final_artifact_20180628_20260715t150152z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload postmortem failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-post-failure-20180628-20260715T150152Z
+          path: |
+            nslab_stage_20180628_20260715t150152z/
+            final_artifact_20180628_20260715t150152z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
