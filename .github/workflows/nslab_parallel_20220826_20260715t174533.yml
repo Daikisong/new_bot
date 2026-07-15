@@ -1,4 +1,4 @@
-name: NSLAB parallel gold 20220826 20260715T191521
+name: NSLAB parallel gold 20220826 20260715T201109
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   models: read
 
 concurrency:
-  group: nslab-parallel-gold-20220826-20260715T191521-${{ github.event.pull_request.number }}
+  group: nslab-parallel-gold-20220826-20260715T201109-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -76,8 +76,8 @@ jobs:
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20220826-20260715T191521
-          path: final_artifact_20220826_20260715t191521/
+          name: nslab-final-20220826-20260715T201109
+          path: final_artifact_20220826_20260715t201109/
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
