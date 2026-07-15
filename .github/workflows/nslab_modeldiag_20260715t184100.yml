@@ -1,0 +1,42 @@
+name: NSLAB model limits diagnostic 20260715T184100
+
+on:
+  push:
+    branches: [nslab-modeldiag-20260715t184100]
+    paths:
+      - '.github/workflows/nslab_modeldiag_20260715t184100.yml'
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe GitHub Models request limits
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+          body={
+            'model':'openai/gpt-4.1-mini',
+            'messages':[{'role':'system','content':'Return strict JSON.'},{'role':'user','content':'Return {"ok":true} only.'}],
+            'temperature':0,
+            'max_tokens':15000,
+          }
+          req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          try:
+            with urllib.request.urlopen(req,timeout=120) as r:
+              print('STATUS',r.status)
+              print('HEADERS',dict(r.headers))
+              print('BODY',r.read().decode()[:4000])
+          except urllib.error.HTTPError as e:
+            print('HTTP_ERROR',e.code)
+            print('HEADERS',dict(e.headers))
+            print('BODY',e.read().decode(errors='replace')[:4000])
+            raise
+          PY
