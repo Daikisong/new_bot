@@ -28,19 +28,25 @@ jobs:
             -D headers.txt -o /dev/null "$API" || test "$?" -eq 47
           LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); print; exit}' headers.txt)"
           test -n "$LOCATION"
-          curl --silent --show-error --fail --location "$LOCATION" -o joblogs.zip
-          wc -c joblogs.zip
-          unzip -l joblogs.zip
-          mkdir -p extracted
-          unzip -o joblogs.zip -d extracted
-          find extracted -maxdepth 3 -type f -print -exec wc -c {} \;
+          curl --silent --show-error --fail --location "$LOCATION" -o joblogs.txt
+          file joblogs.txt
+          wc -c joblogs.txt
+          tail -n 260 joblogs.txt > tail.txt
+          grep -Ein 'error|exception|traceback|cancel|semantic|FULL_ROW|blind|seal|outcome|postmortem|brain_delta|ACCEPT_FULL|HTTP 4|HTTP 5|rate|retry' joblogs.txt > signals.txt || true
+          tail -n 260 signals.txt > signals_tail.txt
+          printf '%s\n' '===== JOB LOG TAIL ====='
+          cat tail.txt
+          printf '%s\n' '===== SIGNAL TAIL ====='
+          cat signals_tail.txt
       - name: Upload diagnostic logs
         uses: actions/upload-artifact@v4
         with:
           name: nslab-joblogs-20180628-20260715T135844
           path: |
-            joblogs.zip
-            extracted/
+            joblogs.txt
+            tail.txt
+            signals.txt
+            signals_tail.txt
             headers.txt
           retention-days: 1
           compression-level: 0
