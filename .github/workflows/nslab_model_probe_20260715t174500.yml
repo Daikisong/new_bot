@@ -1,0 +1,45 @@
+name: NSLAB model probe 20260715T174500
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'nslab-model-probe-20260715t174500'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe GitHub Models once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.error, urllib.request
+          endpoint='https://models.github.ai/inference/chat/completions'
+          body={'model':'openai/gpt-4.1-mini','messages':[{'role':'user','content':'Return strict JSON: {"ok":true}'}],'temperature':0,'max_tokens':32}
+          req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          start=time.monotonic(); result={}
+          try:
+              with urllib.request.urlopen(req,timeout=120) as r:
+                  raw=r.read().decode('utf-8',errors='replace')
+                  result={'status':r.status,'elapsed_seconds':round(time.monotonic()-start,3),'headers':dict(r.headers),'body':raw[:4000]}
+          except urllib.error.HTTPError as e:
+              result={'status':e.code,'elapsed_seconds':round(time.monotonic()-start,3),'headers':dict(e.headers),'body':e.read().decode('utf-8',errors='replace')[:4000]}
+          except Exception as e:
+              result={'status':'exception','elapsed_seconds':round(time.monotonic()-start,3),'error':f'{type(e).__name__}: {e}'}
+          open('model_probe.json','w',encoding='utf-8').write(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,sort_keys=True))
+          PY
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-model-probe-20260715T174500
+          path: model_probe.json
+          retention-days: 1
