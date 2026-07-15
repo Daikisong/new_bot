@@ -16,7 +16,7 @@ concurrency:
 jobs:
   execute:
     if: github.head_ref == 'nslab-run-20220826-20260715t233755'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     steps:
       - name: Checkout execution branch
