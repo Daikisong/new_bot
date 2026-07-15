@@ -71,7 +71,20 @@ jobs:
       - name: Execute fresh full gold phase machine
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python temp/nslab_parallel_wrapper_20220826_20260715t233755.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python temp/nslab_parallel_wrapper_20220826_20260715t233755.py 2>&1 | tee nslab_execution.log
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-failure-20220826-20260715T233755
+          path: nslab_execution.log
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: warn
 
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
