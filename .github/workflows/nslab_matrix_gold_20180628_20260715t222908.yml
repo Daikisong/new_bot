@@ -1,0 +1,236 @@
+name: NSLAB matrix gold 20180628 20260715T222908
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: write
+  models: read
+
+concurrency:
+  group: nslab-matrix-gold-20180628-20260715T222908-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t222908'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Cancel superseded 20180628 attempts only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, urllib.error, urllib.request
+          old_run_ids = [29406819899, 29410737040, 29411074918, 29413052293, 29413384857, 29414798836]
+          for run_id in old_run_ids:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{os.environ['REPO']}/actions/runs/{run_id}/cancel",
+                  data=b"{}",
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      print(json.dumps({"run_id": run_id, "status": response.status, "action": "cancelled"}))
+              except urllib.error.HTTPError as exc:
+                  print(json.dumps({"run_id": run_id, "status": exc.code, "action": "already_terminal_or_unavailable"}))
+          PY
+
+  review:
+    needs: cleanup
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t222908'
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout current matrix runner branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_review_shard_20180628_20260715t222908.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout semantic phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web routing and P snapshot only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Review complete row shard semantically
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_review_shard_20180628_20260715t222908.py
+          --shard ${{ matrix.shard }}
+          --shards 32
+          --output shard_output
+
+      - name: Upload closed semantic shard population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-20180628-${{ matrix.shard }}
+          path: |
+            shard_output/reviews_shard_*.jsonl
+            shard_output/acquisition_shard_*.json
+            shard_output/model_call_log_shard_*.jsonl
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload shard failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-review-failure-20180628-${{ matrix.shard }}
+          path: |
+            shard_output/
+            fresh_shard_20180628_20260715T222908KST_*/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  aggregate:
+    needs: review
+    if: github.head_ref == 'nslab-matrix-20180628-20260715t222908'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout current matrix aggregate branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_matrix_aggregate_20180628_20260715t222908.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout verified parallel runner source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: nslab-run-20220826-20260715t171800-parallel
+          path: parallel_source
+          sparse-checkout: |
+            temp/nslab_parallel_runner_20220826_20260715t171800.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Download every semantic review shard
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-review-20180628-*
+          path: precomputed_reviews
+          merge-multiple: true
+
+      - name: Build, seal, postmortem, and independently reparse bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: python branch_code/temp/nslab_matrix_aggregate_20180628_20260715t222908.py
+
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180628-20260715T222908
+          path: final_artifact_20180628_20260715t222908/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload aggregate failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-aggregate-failure-20180628-20260715T222908
+          path: |
+            precomputed_reviews/
+            matrix_precomputed_20180628_20260715t222908/
+            work_parallel_20180628_20260715t222908/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
