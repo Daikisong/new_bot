@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Fresh execution trigger 2026-07-15T22:20:00+09:00.
 runner = Path("temp/nslab_parallel_runner_20220826_20260715t174533.py")
 text = runner.read_text(encoding="utf-8")
 replacements = {
