@@ -1,0 +1,92 @@
+name: NSLAB gold parallel 20220826 20260715T171800
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-parallel-20220826-20260715T171800-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  execute:
+    if: github.head_ref == 'nslab-run-20220826-20260715t171800-parallel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout isolated runner branch
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_parallel_runner_20220826_20260715t171800.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220826.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220826.json
+            atlas/research_daily/snapshots/2022/08/20220825.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Execute full parallel gold phase machine
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python branch_code/temp/nslab_parallel_runner_20220826_20260715t171800.py
+
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20220826-20260715T171800
+          path: final_artifact_20220826_20260715t171800/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-failure-20220826-20260715T171800
+          path: |
+            work_parallel_20220826_20260715t171800/
+          retention-days: 1
+          if-no-files-found: ignore
