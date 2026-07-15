@@ -1,0 +1,280 @@
+name: NSLAB direct push GOLD 20180628 20260715T154606Z 03fa622356
+
+on:
+  push:
+    branches:
+      - nslab-direct-20180628-20260715t154606z-03fa622356
+    paths:
+      - .github/workflows/nslab_direct_push_gold_20180628_20260715t154606z_03fa622356.yml
+      - temp/nslab_direct_review_shard_20180628_20260715t154606z_03fa622356.py
+      - temp/nslab_direct_matrix_aggregate_20180628_20260715t154606z_03fa622356.py
+      - temp/nslab_direct_trigger_20180628_20260715t154606z_03fa622356.txt
+
+permissions:
+  contents: write
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-direct-push-gold-20180628-20260715T154606Z-03fa622356
+  cancel-in-progress: false
+
+jobs:
+  announce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout direct execution branch
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-direct-20180628-20260715t154606z-03fa622356
+          path: status_repo
+          fetch-depth: 1
+      - name: Publish current workflow run pointer
+        shell: bash
+        env:
+          DIRECT_BRANCH: nslab-direct-20180628-20260715t154606z-03fa622356
+          STATUS_PATH: temp/nslab_direct_status_20180628_20260715t154606z_03fa622356.json
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('status_repo') / os.environ['STATUS_PATH']
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps({
+              'schema_version': 'nslab.direct_push_status.v1',
+              'status': 'RUNNING',
+              'trade_date': '2018-06-28',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'workflow': os.environ['GITHUB_WORKFLOW'],
+              'head_sha': os.environ['GITHUB_SHA'],
+              'artifact_name': 'nslab-direct-final-20180628-20260715T154606Z-03fa622356',
+          }, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+          git -C status_repo config user.name github-actions[bot]
+          git -C status_repo config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C status_repo add "$STATUS_PATH"
+          git -C status_repo commit -m "Record direct NSLAB 20180628 workflow run pointer" || true
+          git -C status_repo push origin "HEAD:${DIRECT_BRANCH}"
+
+  review:
+    needs: announce
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout direct shard runner
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_direct_review_shard_20180628_20260715t154606z_03fa622356.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout semantic phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout BLIND-safe routing and P snapshot only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Review complete row shard semantically
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: >-
+          python branch_code/temp/nslab_direct_review_shard_20180628_20260715t154606z_03fa622356.py
+          --shard ${{ matrix.shard }}
+          --shards 32
+          --output shard_output
+      - name: Upload closed semantic shard population
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-direct-review-20180628-${{ matrix.shard }}-03fa622356
+          path: |
+            shard_output/reviews_shard_*.jsonl
+            shard_output/acquisition_shard_*.json
+            shard_output/model_call_log_shard_*.jsonl
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload shard failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-direct-review-failure-20180628-${{ matrix.shard }}-03fa622356
+          path: |
+            shard_output/
+            fresh_shard_20180628_20260715T154606Z_*/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  aggregate:
+    needs: review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout direct aggregate runner
+        uses: actions/checkout@v4
+        with:
+          path: branch_code
+          sparse-checkout: |
+            temp/nslab_direct_matrix_aggregate_20180628_20260715t154606z_03fa622356.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout verified parallel runner source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: nslab-run-20220826-20260715t171800-parallel
+          path: parallel_source
+          sparse-checkout: |
+            temp/nslab_parallel_runner_20220826_20260715t171800.py
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout exact current main research inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: 38299bfe2d296e4a8dbbaad04de2001fd63ba88a
+          path: pipeline_source
+          sparse-checkout: |
+            temp/nslab_20220819_pipeline
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Download every direct semantic review shard
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nslab-direct-review-20180628-*-03fa622356
+          path: precomputed_reviews
+          merge-multiple: true
+      - name: Build, seal, postmortem, and independently reparse bundle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
+        run: python branch_code/temp/nslab_direct_matrix_aggregate_20180628_20260715t154606z_03fa622356.py
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-direct-final-20180628-20260715T154606Z-03fa622356
+          path: final_artifact_20180628_20260715t154606z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+      - name: Upload aggregate failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-direct-aggregate-failure-20180628-20260715T154606Z-03fa622356
+          path: |
+            precomputed_reviews/
+            matrix_precomputed_20180628_20260715t154606z/
+            work_parallel_20180628_20260715t154606z/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: ignore
+
+  finalize:
+    if: always()
+    needs: [review, aggregate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout latest direct execution branch
+        uses: actions/checkout@v4
+        with:
+          ref: nslab-direct-20180628-20260715t154606z-03fa622356
+          path: status_repo
+          fetch-depth: 1
+      - name: Publish terminal direct execution status
+        shell: bash
+        env:
+          DIRECT_BRANCH: nslab-direct-20180628-20260715t154606z-03fa622356
+          STATUS_PATH: temp/nslab_direct_status_20180628_20260715t154606z_03fa622356.json
+          REVIEW_RESULT: ${{ needs.review.result }}
+          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+        run: |
+          set -euo pipefail
+          git -C status_repo pull --rebase origin "$DIRECT_BRANCH"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          ok = os.environ['REVIEW_RESULT'] == 'success' and os.environ['AGGREGATE_RESULT'] == 'success'
+          path = Path('status_repo') / os.environ['STATUS_PATH']
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps({
+              'schema_version': 'nslab.direct_push_status.v1',
+              'status': 'SUCCESS' if ok else 'FAILURE',
+              'trade_date': '2018-06-28',
+              'run_id': int(os.environ['GITHUB_RUN_ID']),
+              'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+              'workflow': os.environ['GITHUB_WORKFLOW'],
+              'head_sha': os.environ['GITHUB_SHA'],
+              'review_result': os.environ['REVIEW_RESULT'],
+              'aggregate_result': os.environ['AGGREGATE_RESULT'],
+              'artifact_name': 'nslab-direct-final-20180628-20260715T154606Z-03fa622356',
+          }, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+          git -C status_repo config user.name github-actions[bot]
+          git -C status_repo config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C status_repo add "$STATUS_PATH"
+          git -C status_repo commit -m "Record terminal direct NSLAB 20180628 workflow status" || true
+          git -C status_repo push origin "HEAD:${DIRECT_BRANCH}"
