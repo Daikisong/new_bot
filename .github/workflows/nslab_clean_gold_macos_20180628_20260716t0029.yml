@@ -1,4 +1,4 @@
-name: NSLAB isolated gold slim 20180628 20260716T0029
+name: NSLAB isolated gold ubuntu 20180628 20260716T0029
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   execute:
     if: github.head_ref == 'nslab-clean-run-20180628-20260716t0029'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
       GITHUB_TOKEN: ${{ github.token }}
@@ -80,7 +80,7 @@ jobs:
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-isolated-slim-20180628-20260716T0029
+          name: nslab-final-isolated-ubuntu-20180628-20260716T0029
           path: final_artifact_20180628_20260716t001004/
           retention-days: 1
           compression-level: 0
@@ -90,7 +90,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-failure-isolated-slim-20180628-20260716T0029
+          name: nslab-failure-isolated-ubuntu-20180628-20260716T0029
           path: failure_artifact_20180628_20260716t001004/
           retention-days: 1
           compression-level: 0
