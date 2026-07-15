@@ -1,0 +1,48 @@
+name: NSLAB acquire3 20180622 20260715T025500Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'temp/nslab_acquire3_20180622_20260715T025500Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acquire3-20180622-20260715T025500Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Copy exact main files
+        run: |
+          set -euo pipefail
+          mkdir -p fresh/docs/csv
+          cp docs/research_prompt.md fresh/docs/research_prompt.md
+          cp docs/csv/news_20180622.csv fresh/docs/csv/news_20180622.csv
+          cp docs/example2.md fresh/docs/example2.md
+          python - <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          p=Path('fresh/docs/research_prompt.md').read_bytes(); npath=Path('fresh/docs/csv/news_20180622.csv'); n=npath.read_bytes()
+          assert hashlib.sha256(p).hexdigest()=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029'
+          assert len(p)==430485
+          with npath.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          r={'prompt_sha256':hashlib.sha256(p).hexdigest(),'prompt_byte_size':len(p),'news_sha256':hashlib.sha256(n).hexdigest(),'news_byte_size':len(n),'csv_row_count':len(rows)}
+          Path('fresh/acquisition_receipt.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(r,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-fresh-inputs3-20180622-20260715T025500Z
+          path: fresh/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
