@@ -1,1 +1,2 @@
 NSLAB monitor probe for the 20220829 current run.
+macOS probe revision 2.
