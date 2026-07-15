@@ -1,10 +1,8 @@
 name: NSLAB model limits diagnostic 20260715T184100
 
 on:
-  push:
-    branches: [nslab-modeldiag-20260715t184100]
-    paths:
-      - '.github/workflows/nslab_modeldiag_20260715t184100.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -13,6 +11,7 @@ permissions:
 
 jobs:
   diagnose:
+    if: github.head_ref == 'nslab-modeldiag-20260715t184100'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
