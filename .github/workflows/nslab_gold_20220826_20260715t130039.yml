@@ -1,0 +1,38 @@
+name: NSLAB gold 20220826 20260715T130039
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/nslab_gold_20220826_20260715t130039.yml'
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-20220826-20260715T130039
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Execute full gold phase machine
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python temp/nslab_runner_20220826_20260715t130039.py
+      - name: Upload independently validated episode bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20220826-20260715T130039
+          path: final_artifact_20220826_20260715t130039/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
