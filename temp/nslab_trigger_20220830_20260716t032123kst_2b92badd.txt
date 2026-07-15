@@ -1,2 +1,2 @@
 NSLAB one-off research trigger for news_20220830.csv.
-Diagnostic attempt: 2.
+Diagnostic attempt: 3 (macOS).
