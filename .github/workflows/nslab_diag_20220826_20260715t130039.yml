@@ -8,6 +8,10 @@ permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: nslab-diag-20220826-20260715T130039-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   diagnose:
     if: github.head_ref == 'nslab-run-20220826-20260715t130039'
@@ -17,14 +21,17 @@ jobs:
         with:
           ref: nslab-run-20220826-20260715t130039
           fetch-depth: 1
+          sparse-checkout: |
+            temp/nslab_run_20220826_20260715t130039/trigger.txt
+          sparse-checkout-cone-mode: false
       - name: Persist failed log tail
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p temp/nslab_run_20220826_20260715t130039
-          gh run view 29388551861 --repo Daikisong/new_bot --log-failed > temp/nslab_run_20220826_20260715t130039/failed_run_29388551861.log 2>&1 || true
-          tail -n 160 temp/nslab_run_20220826_20260715t130039/failed_run_29388551861.log > temp/nslab_run_20220826_20260715t130039/failed_tail.txt
+          gh run view 29388641528 --repo Daikisong/new_bot --log-failed > temp/nslab_run_20220826_20260715t130039/failed_run_29388641528.log 2>&1 || true
+          tail -n 220 temp/nslab_run_20220826_20260715t130039/failed_run_29388641528.log > temp/nslab_run_20220826_20260715t130039/failed_tail.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add temp/nslab_run_20220826_20260715t130039/failed_tail.txt
