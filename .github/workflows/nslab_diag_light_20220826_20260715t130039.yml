@@ -13,10 +13,10 @@ jobs:
     if: github.head_ref == 'nslab-run-20220826-20260715t130039'
     runs-on: ubuntu-latest
     steps:
-      - name: Print compact failed log
+      - name: Print latest target runs
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh run view 29388886153 --repo Daikisong/new_bot --log-failed 2>&1 | tail -n 100
+          gh run list --repo Daikisong/new_bot --workflow nslab_gold_pr_20220826_20260715t130039.yml --limit 12 --json databaseId,status,conclusion,headSha,createdAt,updatedAt,url
