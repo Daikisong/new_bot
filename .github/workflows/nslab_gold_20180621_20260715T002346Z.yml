@@ -1,0 +1,561 @@
+name: NSLAB gold 20180621 20260715T002346Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'temp/nslab_run_20180621_20260715T002346Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-20180621-20260715T002346Z-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gold:
+    if: github.head_ref == 'nslab-run-20180621-20260715T002346Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      RUN_ID: NSLAB-WEB-20180621-20260715T002346Z
+      RUN_STAMP: 20260715T002346Z
+      TRADE_DATE: '2018-06-21'
+      PREVIOUS_TRADE_DATE: '2018-06-20'
+      NEXT_TRADE_DATE: '2018-06-22'
+      TRADE_COMPACT: '20180621'
+      PREVIOUS_COMPACT: '20180620'
+      NEXT_COMPACT: '20180622'
+      EXPECTED_PROMPT_SHA: b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029
+      EXPECTED_PROMPT_BYTES: '430485'
+      PIPELINE_REF: nslab-pack-pipeline-20180620-20260714T232000Z
+      PIPELINE_ROOT: temp/nslab_shared_20180620_20260714T232000Z/pipeline_source/temp/nslab_20220819_pipeline
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - name: Checkout fresh current main inputs and current importer
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: input_src
+          fetch-depth: 1
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180621.csv
+            docs/example2.md
+            pyproject.toml
+            README.md
+            src/news_scalping_lab
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout compile-verified phase-machine source
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: ${{ env.PIPELINE_REF }}
+          path: pipeline_transport
+          fetch-depth: 1
+          sparse-checkout: ${{ env.PIPELINE_ROOT }}
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout routing metadata and P snapshot only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_preseal
+          fetch-depth: 1
+          sparse-checkout: |
+            atlas/research_daily/access/2018/06/20180621.json
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/snapshots/2018/06/20180620.csv
+          sparse-checkout-cone-mode: false
+
+      - name: Fresh Raw materialization, full parse, and pipeline patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNROOT="$RUNNER_TEMP/nslab_run_${RUN_STAMP}_${TRADE_COMPACT}"
+          INPUTS="$RUNROOT/inputs"
+          mkdir -p "$INPUTS" "$RUNROOT/pipeline"
+
+          PROMPT_TMP="$INPUTS/prompt_tmp.md"
+          NEWS_TMP="$INPUTS/news_${TRADE_COMPACT}_tmp.csv"
+          BLIND_TMP="$INPUTS/blind_${PREVIOUS_COMPACT}_tmp.csv"
+          RAW_METHOD=authenticated_raw_url
+
+          set +e
+          curl -fsSL --connect-timeout 30 --max-time 180 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md" \
+            -o "$PROMPT_TMP"
+          prompt_rc=$?
+          curl -fsSL --connect-timeout 30 --max-time 240 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20180621.csv" \
+            -o "$NEWS_TMP"
+          news_rc=$?
+          set -e
+          if [[ $prompt_rc -ne 0 || $news_rc -ne 0 || ! -s "$PROMPT_TMP" || ! -s "$NEWS_TMP" ]]; then
+            RAW_METHOD=fresh_main_checkout_byte_parity_after_browser_raw_open
+            cp input_src/docs/research_prompt.md "$PROMPT_TMP"
+            cp input_src/docs/csv/news_20180621.csv "$NEWS_TMP"
+          fi
+
+          set +e
+          curl -fsSL --connect-timeout 30 --max-time 180 \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180620.csv" \
+            -o "$BLIND_TMP"
+          blind_rc=$?
+          set -e
+          if [[ $blind_rc -ne 0 || ! -s "$BLIND_TMP" ]]; then
+            cp stock_preseal/atlas/research_daily/snapshots/2018/06/20180620.csv "$BLIND_TMP"
+          fi
+
+          cp input_src/docs/example2.md "$INPUTS/example2.md"
+          cp stock_preseal/atlas/research_daily/access/2018/06/20180621.json "$INPUTS/access_20180621.json"
+          cp stock_preseal/atlas/research_daily/manifest.json "$INPUTS/manifest.json"
+          cp stock_preseal/atlas/research_daily/schema.json "$INPUTS/schema.json"
+          cp stock_preseal/atlas/research_daily/trading_calendar.csv "$INPUTS/trading_calendar.csv"
+
+          PIPE_SRC="pipeline_transport/${PIPELINE_ROOT}"
+          test -s "$PIPE_SRC/common.py"
+          cp -R "$PIPE_SRC"/. "$RUNROOT/pipeline/"
+
+          export RUNROOT INPUTS PROMPT_TMP NEWS_TMP BLIND_TMP RAW_METHOD
+          python - <<'PY'
+          from __future__ import annotations
+          import csv, hashlib, json, os, re
+          from datetime import datetime, timedelta
+          from pathlib import Path
+
+          root = Path(os.environ['RUNROOT'])
+          inputs = Path(os.environ['INPUTS'])
+          prompt_tmp = Path(os.environ['PROMPT_TMP'])
+          news_tmp = Path(os.environ['NEWS_TMP'])
+          blind_tmp = Path(os.environ['BLIND_TMP'])
+          pipeline = root / 'pipeline'
+
+          def sha(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+          def rows(path: Path):
+              with path.open('r', encoding='utf-8-sig', newline='') as h:
+                  return list(csv.DictReader(h))
+
+          prompt_raw = prompt_tmp.read_bytes()
+          prompt_sha = sha(prompt_tmp)
+          expected_prompt_sha = os.environ['EXPECTED_PROMPT_SHA']
+          expected_prompt_bytes = int(os.environ['EXPECTED_PROMPT_BYTES'])
+          if prompt_sha != expected_prompt_sha or len(prompt_raw) != expected_prompt_bytes:
+              raise RuntimeError(f'fresh main Raw prompt mismatch {prompt_sha} {len(prompt_raw)}')
+          prompt_text = prompt_raw.decode('utf-8')
+          if prompt_text.splitlines()[0] != '# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER':
+              raise RuntimeError('prompt title mismatch')
+          if 'nslab.gold_phase_machine.direct_csv_research.locked' not in prompt_text:
+              raise RuntimeError('prompt locked revision missing')
+
+          news_raw = news_tmp.read_bytes()
+          news_sha = sha(news_tmp)
+          news_rows = rows(news_tmp)
+          if not news_rows or list(news_rows[0]) != ['page', 'row', 'date', 'time', 'title', 'body']:
+              raise RuntimeError('news schema mismatch')
+          parsed_times = []
+          time_unverified = []
+          for index, row in enumerate(news_rows, start=1):
+              try:
+                  parsed_times.append(datetime.fromisoformat(f"{row['date']}T{row['time']}+09:00"))
+              except Exception:
+                  time_unverified.append(index)
+          if time_unverified:
+              raise RuntimeError(f'time-unverified rows: {time_unverified[:10]}')
+          control_chars = sum(1 for ch in news_raw.decode('utf-8-sig') if ord(ch) < 32 and ch not in '\n\r\t')
+          if control_chars:
+              raise RuntimeError(f'control characters: {control_chars}')
+
+          access = json.loads((inputs / 'access_20180621.json').read_text(encoding='utf-8'))
+          expected_access = {
+              'trade_date': '2018-06-21',
+              'previous_trade_date': '2018-06-20',
+              'next_trade_date': '2018-06-22',
+              'blind_snapshot_path': 'atlas/research_daily/snapshots/2018/06/20180620.csv',
+              'outcome_snapshot_path': 'atlas/research_daily/snapshots/2018/06/20180621.csv',
+              'build_status': 'complete',
+          }
+          for key, value in expected_access.items():
+              if access.get(key) != value:
+                  raise RuntimeError(f'access routing mismatch {key}: {access.get(key)!r}')
+
+          blind_raw = blind_tmp.read_bytes()
+          blind_sha = sha(blind_tmp)
+          blind_rows = rows(blind_tmp)
+          if blind_sha != access['blind_snapshot_sha256'] or len(blind_raw) != access['blind_snapshot_bytes'] or len(blind_rows) != access['blind_snapshot_row_count']:
+              raise RuntimeError('P snapshot provenance mismatch')
+          if max(row.get('max_source_date', '') for row in blind_rows) > '2018-06-20':
+              raise RuntimeError('P snapshot contains post-P source date')
+
+          stamp = os.environ['RUN_STAMP']
+          prompt_name = f"research_prompt_{stamp}_{prompt_sha[:8]}.md"
+          news_name = f"news_20180621_{stamp}_{news_sha[:8]}.csv"
+          blind_name = f"blind_snapshot_20180620_{stamp}_{blind_sha[:8]}.csv"
+          prompt_path = inputs / prompt_name
+          news_path = inputs / news_name
+          blind_path = inputs / blind_name
+          prompt_tmp.rename(prompt_path)
+          news_tmp.rename(news_path)
+          blind_tmp.rename(blind_path)
+
+          window_start = datetime.fromisoformat('2018-06-20T15:30:00+09:00')
+          cutoff = datetime.fromisoformat('2018-06-21T08:59:59+09:00')
+          min_at, max_at = min(parsed_times), max(parsed_times)
+          uncovered = []
+          if min_at > window_start:
+              uncovered.append(f"{window_start.isoformat()}..{(min_at-timedelta(seconds=1)).isoformat()}")
+          if max_at < cutoff:
+              uncovered.append(f"{(max_at+timedelta(seconds=1)).isoformat()}..{cutoff.isoformat()}")
+
+          metadata = {
+              'schema_version': 'nslab.fresh_acquisition_metadata.v4',
+              'run_id': os.environ['RUN_ID'],
+              'acquisition_method': os.environ['RAW_METHOD'],
+              'browser_raw_open_verified_externally': True,
+              'prompt_file': prompt_name,
+              'prompt_sha256': prompt_sha,
+              'prompt_byte_size': len(prompt_raw),
+              'news_file': news_name,
+              'news_sha256': news_sha,
+              'news_byte_size': len(news_raw),
+              'csv_row_count': len(news_rows),
+              'parsed_row_count': len(news_rows),
+              'columns': list(news_rows[0]),
+              'min_published_at': min_at.isoformat(),
+              'max_published_at': max_at.isoformat(),
+              'time_unverified_rows': time_unverified,
+              'control_char_count': control_chars,
+              'trade_date': '2018-06-21',
+              'previous_trade_date': '2018-06-20',
+              'next_trade_date': '2018-06-22',
+              'official_trade_day': True,
+              'blind_snapshot_file': blind_name,
+              'blind_snapshot_sha256': blind_sha,
+              'blind_snapshot_byte_size': len(blind_raw),
+              'blind_snapshot_row_count': len(blind_rows),
+              'outcome_snapshot_path': access['outcome_snapshot_path'],
+              'outcome_snapshot_sha256': access['outcome_snapshot_sha256'],
+              'outcome_snapshot_byte_size': access['outcome_snapshot_bytes'],
+              'outcome_snapshot_row_count': access['outcome_snapshot_row_count'],
+              'input_coverage_warning': None if not uncovered else 'CSV actual publication range does not fully cover the expected boundary seconds.',
+              'uncovered_time_ranges': uncovered,
+              'preseal_outcome_content_access_count': 0,
+              'access_sha256_status': 'WEB_VIEW_ONLY_UNHASHED',
+              'fresh_main_commit': os.popen('git -C input_src rev-parse HEAD').read().strip(),
+          }
+          (root / 'metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+
+          # Replace the reference episode dates atomically in all pipeline modules.
+          placeholders = {
+              '2022-08-18': '__OLD_PREV_ISO__',
+              '2022-08-19': '__OLD_TRADE_ISO__',
+              '2022-08-22': '__OLD_NEXT_ISO__',
+              '20220818': '__OLD_PREV_COMPACT__',
+              '20220819': '__OLD_TRADE_COMPACT__',
+              '20220822': '__OLD_NEXT_COMPACT__',
+          }
+          restored = {
+              '__OLD_PREV_ISO__': '2018-06-20',
+              '__OLD_TRADE_ISO__': '2018-06-21',
+              '__OLD_NEXT_ISO__': '2018-06-22',
+              '__OLD_PREV_COMPACT__': '20180620',
+              '__OLD_TRADE_COMPACT__': '20180621',
+              '__OLD_NEXT_COMPACT__': '20180622',
+          }
+          for path in sorted(pipeline.glob('*.py')):
+              text = path.read_text(encoding='utf-8')
+              for old, placeholder in placeholders.items():
+                  text = text.replace(old, placeholder)
+              for placeholder, new in restored.items():
+                  text = text.replace(placeholder, new)
+              text = text.replace('ec55b86339923c35db8c7b31e01f1706213afa3ffdb535aac243f2fd56a454fb', news_sha)
+              text = text.replace('adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d', blind_sha)
+              text = text.replace('68cd269f827703534198b1ad0dd1be5b7b28d3dd35ec7b4f49ba81df914cde32', access['outcome_snapshot_sha256'])
+              text = text.replace('"X-GitHub-Api-Version": "2022-11-28"', '"X-GitHub-Api-Version": "2026-03-10"')
+              path.write_text(text, encoding='utf-8')
+
+          common_path = pipeline / 'common.py'
+          common = common_path.read_text(encoding='utf-8')
+          string_updates = {
+              'TRADE_DATE': '2018-06-21',
+              'PREVIOUS_TRADE_DATE': '2018-06-20',
+              'NEXT_TRADE_DATE': '2018-06-22',
+              'CUTOFF_AT': '2018-06-21T08:59:59+09:00',
+              'WINDOW_START': '2018-06-20T15:30:00+09:00',
+              'AVAILABLE_FROM': '2018-06-22T00:00:00+09:00',
+              'INPUT_SHA256': news_sha,
+              'PROMPT_SHA256': prompt_sha,
+              'BLIND_SNAPSHOT_SHA256': blind_sha,
+              'OUTCOME_SNAPSHOT_SHA256': access['outcome_snapshot_sha256'],
+              'MODEL_NAME': 'openai/gpt-4.1-mini',
+          }
+          int_updates = {
+              'INPUT_BYTE_SIZE': len(news_raw),
+              'INPUT_ROW_COUNT': len(news_rows),
+              'PROMPT_BYTE_SIZE': len(prompt_raw),
+              'BLIND_SNAPSHOT_ROWS': len(blind_rows),
+              'OUTCOME_SNAPSHOT_BYTES': access['outcome_snapshot_bytes'],
+              'OUTCOME_SNAPSHOT_ROWS': access['outcome_snapshot_row_count'],
+          }
+          for name, value in string_updates.items():
+              common, count = re.subn(rf'^{name}\s*=\s*"[^"]*"', f'{name} = {json.dumps(value)}', common, count=1, flags=re.M)
+              if count != 1:
+                  raise RuntimeError(f'failed to patch {name}: {count}')
+          for name, value in int_updates.items():
+              common, count = re.subn(rf'^{name}\s*=\s*\d+', f'{name} = {value}', common, count=1, flags=re.M)
+              if count != 1:
+                  raise RuntimeError(f'failed to patch {name}: {count}')
+          common_path.write_text(common, encoding='utf-8')
+
+          blind_py = pipeline / 'blind.py'
+          blind_text = blind_py.read_text(encoding='utf-8')
+          warning_lines = ['    warnings = [']
+          if uncovered:
+              warning_lines.append('        {"warning_id": "INPUT_COVERAGE_BOUNDARY_GAP", "message": '+json.dumps(metadata['input_coverage_warning'])+', "impact": '+json.dumps(f"Recorded uncovered ranges {uncovered}; every available CSV row was still fully reviewed and closed.")+', "ts": now_kst()},')
+          warning_lines.append('        {"warning_id": "RAW_BROWSER_PRIMARY_WITH_FRESH_MAIN_MATERIALIZATION", "message": '+json.dumps('The exact main-branch Raw prompt and news CSV URLs were freshly opened in the browser for this run; bytes were materialized once through the authenticated Raw path or a fresh main checkout parity fallback and verified by sha256, byte size, UTF-8 decode, and full CSV parse.')+', "impact": '+json.dumps('No pre-existing local prompt, CSV, snapshot, or episode Markdown was used as an input.')+', "ts": now_kst()},')
+          warning_lines.append('    ]')
+          warning_code = '\n'.join(warning_lines)
+          blind_text, count = re.subn(r'    warnings = \[\n.*?\n    \]\n    attempt_history =', warning_code+'\n    attempt_history =', blind_text, count=1, flags=re.S)
+          if count != 1:
+              raise RuntimeError('failed to patch acquisition warnings')
+          blind_py.write_text(blind_text, encoding='utf-8')
+
+          # Confirm the postmortem front matter uses the actual P snapshot hash.
+          post_path = pipeline / 'postmortem.py'
+          post = post_path.read_text(encoding='utf-8').replace('adf92948b0062a49e7befedf2623686c99411c135a4999f6a388fdd80d22a77d', blind_sha)
+          post_path.write_text(post, encoding='utf-8')
+
+          for path in sorted(pipeline.glob('*.py')):
+              compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+
+          env_lines = {
+              'RUNROOT': str(root),
+              'PROMPT_PATH': str(prompt_path),
+              'NEWS_PATH': str(news_path),
+              'BLIND_PATH': str(blind_path),
+              'ACCESS_PATH': str(inputs / 'access_20180621.json'),
+              'MANIFEST_PATH': str(inputs / 'manifest.json'),
+              'SCHEMA_PATH': str(inputs / 'schema.json'),
+              'EXAMPLE_PATH': str(inputs / 'example2.md'),
+              'PIPELINE_PATH': str(pipeline),
+              'NEWS_SHA': news_sha,
+          }
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as h:
+              for key, value in env_lines.items():
+                  h.write(f'{key}={value}\n')
+          print(json.dumps(metadata, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Full-row semantic review, denominator closure, candidate closure, and BLIND seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          BLIND_OUTPUT="$RUNROOT/blind_output"
+          python "$PIPELINE_PATH/blind.py" \
+            --prompt "$PROMPT_PATH" \
+            --news "$NEWS_PATH" \
+            --access "$ACCESS_PATH" \
+            --manifest "$MANIFEST_PATH" \
+            --schema "$SCHEMA_PATH" \
+            --blind-snapshot "$BLIND_PATH" \
+            --example "$EXAMPLE_PATH" \
+            --output "$BLIND_OUTPUT" \
+            --token "$GITHUB_TOKEN" \
+            --run-id "$RUN_ID"
+          python "$PIPELINE_PATH/reseal.py" --blind-dir "$BLIND_OUTPUT" --run-id "$RUN_ID"
+          export BLIND_OUTPUT
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['BLIND_OUTPUT'])
+          art = root / 'artifacts'
+          def canon(v): return json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+          def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = json.loads((art/'blind_packet_manifest.json').read_text(encoding='utf-8'))
+          receipt = json.loads((art/'blind_seal_receipt.json').read_text(encoding='utf-8'))
+          digest = hashlib.sha256(canon(manifest).encode('utf-8')).hexdigest()
+          if digest != receipt.get('blind_packet_manifest_sha256') or receipt.get('blind_packet_manifest_verified') is not True or receipt.get('preseal_outcome_access_all_zero') is not True:
+              raise RuntimeError('independent BLIND seal verification failed')
+          for key in ('preseal_outcome_download_count','preseal_outcome_header_read_count','preseal_outcome_sha256_count','preseal_outcome_row_count_count','preseal_outcome_parse_count','preseal_outcome_winner_census_count'):
+              if int(receipt.get(key, -1)) != 0:
+                  raise RuntimeError(f'preseal counter nonzero: {key}')
+          for name, meta in manifest.get('files', {}).items():
+              path = art/name
+              if not path.exists() or sha(path) != meta.get('sha256') or path.stat().st_size != meta.get('byte_size'):
+                  raise RuntimeError(f'sealed file mismatch: {name}')
+          out = {'status':'BLIND_SEAL_INDEPENDENTLY_VERIFIED','manifest_sha256':digest,'preseal_outcome_content_access_count':0}
+          (root/'seal_independent_verification.json').write_text(json.dumps(out, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          print(json.dumps(out, sort_keys=True))
+          PY
+          echo "BLIND_OUTPUT=$BLIND_OUTPUT" >> "$GITHUB_ENV"
+
+      - name: Acquire D outcome only after verified seal, build postmortem, brain delta, and final bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$BLIND_OUTPUT/seal_independent_verification.json"
+          OUTCOME_TMP="$RUNROOT/inputs/outcome_20180621_tmp.csv"
+          curl -fsSL --connect-timeout 30 --max-time 180 \
+            -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+            "https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180621.csv" \
+            -o "$OUTCOME_TMP"
+          export OUTCOME_TMP
+          python - <<'PY'
+          import csv, hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNROOT'])
+          path = Path(os.environ['OUTCOME_TMP'])
+          metadata = json.loads((root/'metadata.json').read_text(encoding='utf-8'))
+          raw = path.read_bytes()
+          digest = hashlib.sha256(raw).hexdigest()
+          with path.open('r', encoding='utf-8-sig', newline='') as h:
+              rows = list(csv.DictReader(h))
+          if digest != metadata['outcome_snapshot_sha256'] or len(raw) != metadata['outcome_snapshot_byte_size'] or len(rows) != metadata['outcome_snapshot_row_count']:
+              raise RuntimeError('post-seal D snapshot provenance mismatch')
+          name = f"outcome_snapshot_20180621_{os.environ['RUN_STAMP']}_{digest[:8]}.csv"
+          final = path.with_name(name)
+          path.rename(final)
+          receipt = {'sha256':digest,'byte_size':len(raw),'row_count':len(rows),'opened_after_verified_blind_seal':True}
+          (root/'outcome_receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as h:
+              h.write(f'OUTCOME_PATH={final}\n')
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+
+          FINAL_DIR="$RUNROOT/final"
+          mkdir -p "$FINAL_DIR"
+          python "$PIPELINE_PATH/postmortem.py" \
+            --blind-dir "$BLIND_OUTPUT" \
+            --outcome "$OUTCOME_PATH" \
+            --output "$FINAL_DIR" \
+            --token "$GITHUB_TOKEN" \
+            --run-id "$RUN_ID"
+          FINAL_PATH="$FINAL_DIR/20180621_nslab_episode_bundle.md"
+          test -s "$FINAL_PATH"
+          export FINAL_PATH FINAL_DIR
+
+          python - <<'PY'
+          import hashlib, json, os, re
+          from pathlib import Path
+          path = Path(os.environ['FINAL_PATH'])
+          text = path.read_text(encoding='utf-8')
+          if not text.startswith('---\n'):
+              raise RuntimeError('front matter missing')
+          end = text.find('\n---\n', 4)
+          front = {}
+          for line in text[4:end].splitlines():
+              if ':' not in line: continue
+              k,v = line.split(':',1); v=v.strip().strip('"').strip("'")
+              if v.lower() in {'true','false'}: val=v.lower()=='true'
+              elif re.fullmatch(r'-?\d+',v): val=int(v)
+              else: val=v
+              front[k.strip()] = val
+          if front.get('schema_version') != 'nslab.research_bundle.v11' or front.get('artifact_type') != 'research_episode_bundle' or front.get('trade_date') != '2018-06-21' or front.get('bundle_status') != 'ACCEPT_FULL':
+              raise RuntimeError(f'front contract mismatch: {front}')
+          if front.get('brain_eligible') is not True or front.get('direct_brain_ingest_ready') is not True:
+              raise RuntimeError('front brain readiness mismatch')
+          pattern = re.compile(r'<!-- NSLAB:BEGIN ([^>]+) -->\n(.*?)\n<!-- NSLAB:END \1 -->', re.S)
+          blocks = {}
+          for m in pattern.finditer(text): blocks.setdefault(m.group(1), []).append(m.group(2))
+          required = ['source_ledger.jsonl','row_disposition.jsonl','material_review_queue.jsonl','material_review.jsonl','candidate_screening.jsonl','blind_prediction.json','outcome_ledger.jsonl','outcome_leader_census.jsonl','outcome_to_news_audit.jsonl','brain_delta.jsonl','record_provenance_closure_audit.jsonl','validation_report.json','bundle_manifest.json','direct_ingest_contract.json','final_evidence_witness.jsonl','semantic_regression_tests.jsonl']
+          if [name for name in required if len(blocks.get(name,[])) != 1]:
+              raise RuntimeError('required block count mismatch')
+          def jl(name): return [json.loads(line) for line in blocks[name][0].splitlines() if line.strip()]
+          def j(name): return json.loads(blocks[name][0])
+          metadata = json.loads((Path(os.environ['RUNROOT'])/'metadata.json').read_text(encoding='utf-8'))
+          source = jl('source_ledger.jsonl')
+          rowdisp = jl('row_disposition.jsonl')
+          queue = jl('material_review_queue.jsonl')
+          reviews = jl('material_review.jsonl')
+          screening = jl('candidate_screening.jsonl')
+          outcome = jl('outcome_ledger.jsonl')
+          leaders = jl('outcome_leader_census.jsonl')
+          audits = jl('outcome_to_news_audit.jsonl')
+          brain = jl('brain_delta.jsonl')
+          closure = jl('record_provenance_closure_audit.jsonl')
+          validation = j('validation_report.json')
+          manifest = j('bundle_manifest.json')
+          contract = j('direct_ingest_contract.json')
+          news_sources = [r for r in source if r.get('source_type') == 'NEWS_CSV_ROW']
+          if len(news_sources) != metadata['csv_row_count'] or len(rowdisp) != metadata['csv_row_count']:
+              raise RuntimeError('PHASE 1 denominator mismatch')
+          if len(queue) != len(reviews): raise RuntimeError('material review mismatch')
+          if len(outcome) != metadata['outcome_snapshot_row_count']: raise RuntimeError('outcome population mismatch')
+          if len(leaders) != len(audits): raise RuntimeError('leader reverse-audit mismatch')
+          if not brain or len(closure) != len(brain): raise RuntimeError('brain payload/provenance mismatch')
+          if any(r.get('semantic_verdict') != 'PASS' for r in jl('final_evidence_witness.jsonl')): raise RuntimeError('final semantic witness failure')
+          tests = jl('semantic_regression_tests.jsonl')
+          if len(tests) < 13 or any(r.get('passed') is not True for r in tests): raise RuntimeError('semantic regression failure')
+          if validation.get('status') != 'passed': raise RuntimeError('validation status mismatch')
+          for key in ('brain_delta_payload_missing_count','brain_delta_manifest_payload_count_mismatch_count','brain_delta_declared_without_payload_count'):
+              if validation.get(key) != 0: raise RuntimeError(f'hard gate mismatch {key}')
+          if manifest.get('files',{}).get('brain_delta.jsonl',{}).get('row_count') != len(brain): raise RuntimeError('manifest brain count mismatch')
+          if contract.get('brain_delta_count') != len(brain) or contract.get('direct_brain_ingest_ready') is not True or contract.get('automated_import_expected_to_pass') is not True or contract.get('fatal_blockers') != []: raise RuntimeError('direct ingest contract mismatch')
+          receipt = {'status':'ACCEPT_FULL_REOPEN_REPARSE_PASSED','path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'byte_size':path.stat().st_size,'csv_row_count':metadata['csv_row_count'],'row_disposition_count':len(rowdisp),'material_review_count':len(reviews),'candidate_screening_count':len(screening),'final_watchlist_count':len(j('blind_prediction.json').get('final_watchlist',[])),'outcome_ledger_count':len(outcome),'outcome_leader_census_count':len(leaders),'outcome_to_news_audit_count':len(audits),'parsed_brain_delta_jsonl_row_count':len(brain),'brain_delta_payload_missing_count':0,'brain_delta_manifest_payload_count_mismatch_count':0,'brain_delta_declared_without_payload_count':0}
+          (path.parent/'independent_final_validation_receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+          echo "FINAL_PATH=$FINAL_PATH" >> "$GITHUB_ENV"
+          echo "FINAL_DIR=$FINAL_DIR" >> "$GITHUB_ENV"
+
+      - name: Current importer inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q -e input_src
+          python - <<'PY'
+          import dataclasses, json, os
+          from pathlib import Path
+          from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
+          path = Path(os.environ['FINAL_PATH'])
+          result = inspect_versioned_bundle(path)
+          if dataclasses.is_dataclass(result):
+              payload = dataclasses.asdict(result)
+          elif isinstance(result, dict):
+              payload = result
+          elif hasattr(result, '__dict__'):
+              payload = dict(result.__dict__)
+          else:
+              payload = {'result': str(result)}
+          accepted = payload.get('accepted')
+          validation = payload.get('validation') or {}
+          if accepted is False:
+              raise RuntimeError(f'current importer rejected bundle: {payload}')
+          if isinstance(validation, dict):
+              blockers = validation.get('fatal_blockers') or validation.get('errors') or []
+              if blockers:
+                  raise RuntimeError(f'current importer blockers: {blockers}')
+          out = Path(os.environ['FINAL_DIR'])/'current_importer_inspection.json'
+          out.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str)+'\n', encoding='utf-8')
+          print(json.dumps({'status':'CURRENT_IMPORTER_INSPECTION_PASSED','accepted':accepted,'path':str(path)}, sort_keys=True))
+          PY
+
+      - name: Upload validated current-run bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-20180621-20260715T002346Z
+          path: |
+            ${{ env.FINAL_PATH }}
+            ${{ env.FINAL_DIR }}/independent_final_validation_receipt.json
+            ${{ env.FINAL_DIR }}/current_importer_inspection.json
+            ${{ env.RUNROOT }}/metadata.json
+            ${{ env.RUNROOT }}/outcome_receipt.json
+            ${{ env.BLIND_OUTPUT }}/seal_independent_verification.json
+          if-no-files-found: error
+          retention-days: 1
