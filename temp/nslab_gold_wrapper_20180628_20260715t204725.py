@@ -36,16 +36,22 @@ def current_prepare() -> dict:
     blind = blind_path.read_text(encoding="utf-8")
 
     old_batch = "row_batches(model_inputs, max_items=12, max_chars=52000)"
-    new_batch = "row_batches(model_inputs, max_items=10, max_chars=45000)"
+    new_batch = "row_batches(model_inputs, max_items=1, max_chars=60000)"
     if old_batch not in blind:
         raise RuntimeError("semantic batch patch anchor not found")
     blind = blind.replace(old_batch, new_batch, 1)
 
     old_workers = 'ThreadPoolExecutor(max_workers=6, thread_name_prefix="nslab-semantic")'
-    new_workers = 'ThreadPoolExecutor(max_workers=20, thread_name_prefix="nslab-semantic")'
+    new_workers = 'ThreadPoolExecutor(max_workers=6, thread_name_prefix="nslab-semantic")'
     if old_workers not in blind:
         raise RuntimeError("semantic worker patch anchor not found")
     blind = blind.replace(old_workers, new_workers, 1)
+
+    old_tokens = "max_tokens=15000,"
+    new_tokens = "max_tokens=3500,"
+    if old_tokens not in blind:
+        raise RuntimeError("semantic token patch anchor not found")
+    blind = blind.replace(old_tokens, new_tokens, 1)
 
     blind_path.write_text(blind, encoding="utf-8")
     namespace["run"](
