@@ -1,4 +1,4 @@
-name: NSLAB gold fresh 20180628 20260715T200715
+name: NSLAB gold fresh 20180628 20260715T201300
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   models: read
 
 concurrency:
-  group: nslab-gold-fresh-20180628-20260715T200715-${{ github.event.pull_request.number }}
+  group: nslab-gold-fresh-20180628-20260715T201300-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -86,8 +86,8 @@ jobs:
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20180628-20260715T200715
-          path: final_artifact_20180628_20260715t200715/
+          name: nslab-final-20180628-20260715T201300
+          path: final_artifact_20180628_20260715t201300/
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
@@ -96,8 +96,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-failure-20180628-20260715T200715
-          path: work_parallel_20180628_20260715t200715/
+          name: nslab-failure-20180628-20260715T201300
+          path: work_parallel_20180628_20260715t201300/
           retention-days: 1
           compression-level: 0
           if-no-files-found: ignore
