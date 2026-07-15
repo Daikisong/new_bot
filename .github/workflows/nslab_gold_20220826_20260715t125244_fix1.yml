@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/nslab_gold_20220826_20260715t125244_fix1.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: write
@@ -12,11 +14,12 @@ permissions:
   models: read
 
 concurrency:
-  group: nslab-gold-20220826-20260715T125244-fix1
+  group: nslab-gold-20220826-20260715T125244-fix1-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   gold:
+    if: github.event_name == 'push' || github.head_ref == 'nslab-run-20220826-20260715t125244-fix1'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -301,5 +304,3 @@ jobs:
           git commit -m 'temp: persist repaired NSLAB 20220826 result' || exit 0
           git pull --rebase origin main
           git push origin HEAD:main
-
-# trigger: 20260715T130700KST
