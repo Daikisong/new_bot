@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   research:
-    runs-on: macos-latest
+    runs-on: windows-latest
     timeout-minutes: 360
     steps:
       - name: Checkout current main only
@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python - <<'PY'
           from pathlib import Path
           import re
 
@@ -102,7 +102,7 @@ jobs:
           target.write_text(text, encoding='utf-8')
           print(target)
           PY
-          python3 -m py_compile temp/nslab_runner_20220830_20260716t032123kst_2b92badd.py
+          python -m py_compile temp/nslab_runner_20220830_20260716t032123kst_2b92badd.py
 
       - name: Run full clean BLIND seal, post-seal outcome, postmortem, and final reparse
         shell: bash
@@ -110,9 +110,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 temp/nslab_runner_20220830_20260716t032123kst_2b92badd.py 2>&1 | tee nslab_runner_20220830_2b92badd.log
+          python temp/nslab_runner_20220830_20260716t032123kst_2b92badd.py 2>&1 | tee nslab_runner_20220830_2b92badd.log
           test -s final_artifact_20220830_20260716t032123kst_2b92badd/20220830_nslab_episode_bundle.md
-          python3 - <<'PY'
+          python - <<'PY'
           import json
           from pathlib import Path
           root = Path('final_artifact_20220830_20260716t032123kst_2b92badd')
