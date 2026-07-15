@@ -1,0 +1,18 @@
+name: NSLAB runner smoke 20180621 20260715T003600Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'temp/nslab_smoke_20180621_20260715T003600Z/trigger.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.head_ref == 'nslab-smoke-20180621-20260715T003600Z'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - run: echo smoke-ok
