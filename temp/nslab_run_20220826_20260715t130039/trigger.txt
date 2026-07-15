@@ -1,3 +1,3 @@
 nslab_run_20260715T130039KST_20220826
-retry=sparse
+retry=noncone
 diagnostic=3
