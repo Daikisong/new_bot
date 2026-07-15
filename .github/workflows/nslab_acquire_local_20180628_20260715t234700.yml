@@ -1,0 +1,132 @@
+name: NSLAB fresh local acquisition 20180628 20260715T234700
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-acquire-local-20180628-20260715t234700'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact current new_bot main inputs
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180628.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout exact current stock-web BLIND inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_main
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2018/06/20180628.json
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Freshly acquire and verify current-run Raw bytes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import csv, hashlib, json, os, shutil, urllib.request
+          from datetime import datetime
+          from pathlib import Path
+
+          STAMP='20260715T234700KST'
+          EXPECTED_PROMPT_SHA='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029'
+          EXPECTED_PROMPT_BYTES=430485
+          token=os.environ['GITHUB_TOKEN']
+          root=Path('fresh_current_run')
+          if root.exists(): shutil.rmtree(root)
+          (root/'new_bot/docs/csv').mkdir(parents=True)
+          (root/'stock_web/atlas/research_daily/access/2018/06').mkdir(parents=True)
+          (root/'stock_web/atlas/research_daily/snapshots/2018/06').mkdir(parents=True)
+          (root/'stock_web/atlas/research_daily').mkdir(parents=True, exist_ok=True)
+          warnings=[]; methods={}
+
+          def fetch_exact(raw_url, api_url, label):
+              headers={'Authorization':f'Bearer {token}','User-Agent':f'NSLAB-{STAMP}-{label}','Cache-Control':'no-cache, no-store, max-age=0','Pragma':'no-cache'}
+              try:
+                  req=urllib.request.Request(raw_url,headers=headers)
+                  with urllib.request.urlopen(req,timeout=180) as response: data=response.read()
+                  methods[label]='GITHUB_RAW_EXACT_AFTER_BROWSER_OPEN'
+              except Exception as exc:
+                  warnings.append({'label':label,'warning':f'{type(exc).__name__}: {exc}','fallback':'GITHUB_CONTENTS_API_RAW_AFTER_BROWSER_OPEN'})
+                  req=urllib.request.Request(api_url,headers={'Authorization':f'Bearer {token}','User-Agent':f'NSLAB-{STAMP}-{label}','Accept':'application/vnd.github.raw+json','Cache-Control':'no-cache, no-store, max-age=0','Pragma':'no-cache'})
+                  with urllib.request.urlopen(req,timeout=180) as response: data=response.read()
+                  methods[label]='GITHUB_CONTENTS_API_RAW_AFTER_BROWSER_OPEN'
+              return data
+
+          prompt=fetch_exact(f'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md?run={STAMP}','https://api.github.com/repos/Daikisong/new_bot/contents/docs/research_prompt.md?ref=main','prompt')
+          news=fetch_exact(f'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20180628.csv?run={STAMP}','https://api.github.com/repos/Daikisong/new_bot/contents/docs/csv/news_20180628.csv?ref=main','news')
+          example=fetch_exact(f'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md?run={STAMP}','https://api.github.com/repos/Daikisong/new_bot/contents/docs/example2.md?ref=main','example')
+          blind=fetch_exact(f'https://raw.githubusercontent.com/Daikisong/stock-web/refs/heads/main/atlas/research_daily/snapshots/2018/06/20180627.csv?run={STAMP}','https://api.github.com/repos/Daikisong/stock-web/contents/atlas/research_daily/snapshots/2018/06/20180627.csv?ref=main','blind_snapshot')
+
+          assert prompt==(Path('current_main/docs/research_prompt.md').read_bytes())
+          assert news==(Path('current_main/docs/csv/news_20180628.csv').read_bytes())
+          assert example==(Path('current_main/docs/example2.md').read_bytes())
+          assert blind==(Path('stock_main/atlas/research_daily/snapshots/2018/06/20180627.csv').read_bytes())
+          sha=lambda data: hashlib.sha256(data).hexdigest()
+          ps,ns,es,bs=map(sha,(prompt,news,example,blind))
+          assert ps==EXPECTED_PROMPT_SHA and len(prompt)==EXPECTED_PROMPT_BYTES
+          ptext=prompt.decode('utf-8')
+          assert ptext.splitlines()[0]=='# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'
+          assert 'nslab.gold_phase_machine.direct_csv_research.locked' in ptext
+
+          prompt_name=f'research_prompt_{STAMP}_{ps[:8]}.md'
+          news_name=f'news_20180628_{STAMP}_{ns[:8]}.csv'
+          example_name=f'example2_{STAMP}_{es[:8]}.md'
+          blind_name=f'blind_snapshot_20180627_{STAMP}_{bs[:8]}.csv'
+          (root/'new_bot/docs'/prompt_name).write_bytes(prompt)
+          (root/'new_bot/docs/csv'/news_name).write_bytes(news)
+          (root/'new_bot/docs'/example_name).write_bytes(example)
+          (root/'stock_web/atlas/research_daily/snapshots/2018/06'/blind_name).write_bytes(blind)
+
+          for rel in ['manifest.json','schema.json','trading_calendar.csv']:
+              shutil.copy2(Path('stock_main/atlas/research_daily')/rel, root/'stock_web/atlas/research_daily'/rel)
+          shutil.copy2(Path('stock_main/atlas/research_daily/access/2018/06/20180628.json'),root/'stock_web/atlas/research_daily/access/2018/06/20180628.json')
+          access=json.loads((root/'stock_web/atlas/research_daily/access/2018/06/20180628.json').read_text(encoding='utf-8'))
+          assert access['trade_date']=='2018-06-28' and access['previous_trade_date']=='2018-06-27'
+          assert access['blind_snapshot_sha256']==bs and access['blind_snapshot_bytes']==len(blind)
+          with (root/'new_bot/docs/csv'/news_name).open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          times=[]; bad=[]
+          for idx,row in enumerate(rows,1):
+              try: times.append(datetime.fromisoformat(f"{row['date']}T{row['time']}+09:00"))
+              except Exception: bad.append(idx)
+          with (root/'stock_web/atlas/research_daily/snapshots/2018/06'/blind_name).open(encoding='utf-8-sig',newline='') as f: blind_rows=list(csv.DictReader(f))
+          assert len(blind_rows)==access['blind_snapshot_row_count']
+          receipt={'schema_version':'nslab.current_run_raw_acquisition.v1','status':'VERIFIED','acquisition_phase':'PRESEAL','stamp':STAMP,'prompt_file':prompt_name,'prompt_sha256':ps,'prompt_byte_size':len(prompt),'news_file':news_name,'news_sha256':ns,'news_byte_size':len(news),'example_file':example_name,'example_sha256':es,'example_byte_size':len(example),'csv_row_count':len(rows),'parsed_row_count':len(rows),'columns':list(rows[0]),'min_published_at':min(times).isoformat() if times else None,'max_published_at':max(times).isoformat() if times else None,'time_unverified_rows':bad,'blind_snapshot_file':blind_name,'blind_snapshot_sha256':bs,'blind_snapshot_byte_size':len(blind),'blind_snapshot_row_count':len(blind_rows),'access_sha256':sha((root/'stock_web/atlas/research_daily/access/2018/06/20180628.json').read_bytes()),'outcome_snapshot_path':access['outcome_snapshot_path'],'outcome_snapshot_sha256_expected':access['outcome_snapshot_sha256'],'outcome_snapshot_byte_size_expected':access['outcome_snapshot_bytes'],'outcome_snapshot_row_count_expected':access['outcome_snapshot_row_count'],'preseal_outcome_download_count':0,'preseal_outcome_header_read_count':0,'preseal_outcome_sha256_count':0,'preseal_outcome_row_count_count':0,'preseal_outcome_parse_count':0,'acquisition_methods':methods,'acquisition_warnings':warnings}
+          (root/'acquisition_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          PY
+
+      - name: Upload fresh current-run pre-seal inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-fresh-local-20180628-20260715T234700
+          path: fresh_current_run/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
