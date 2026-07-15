@@ -12,15 +12,14 @@ permissions:
 jobs:
   diagnose:
     if: github.head_ref == 'nslab-modeldiag-20260715t184100'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
-      - name: Probe exact pipeline gpt-4o semantic request
+      - name: Probe exact pipeline gpt-4.1 semantic request
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          # Fresh exact-pipeline diagnostic trigger at 2026-07-15T22:32:00+09:00.
           import csv, io, json, os, sys, time, urllib.request
           from pathlib import Path
           root=Path('/tmp/nslab_exact_probe'); root.mkdir(parents=True,exist_ok=True)
@@ -29,16 +28,21 @@ jobs:
             with urllib.request.urlopen(base+name,timeout=120) as r: (root/name).write_bytes(r.read())
           sys.path.insert(0,str(root))
           import common, blind
-          common.MODEL_NAME='openai/gpt-4o'
-          with urllib.request.urlopen('https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220826.csv',timeout=120) as r:
+          common.MODEL_NAME='openai/gpt-4.1'
+          with urllib.request.urlopen('https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220826.csv?probe=20260715T234000KST',timeout=120) as r:
             text=r.read().decode('utf-8-sig')
           raw_rows=list(csv.DictReader(io.StringIO(text)))[:18]
           batch=[]
           for i,row in enumerate(raw_rows,1):
             batch.append({'source_id':f'SRC-NEWS-{i:06d}','published_at_kst':f"{row['date']}T{row['time']}+09:00",'title':row['title'],'body':row['body'],'krx_candidate_options':[]})
           started=time.monotonic()
-          parsed=common.model_json(os.environ['GITHUB_TOKEN'],system=blind.detailed_review_system(),user=blind.detailed_review_user(batch),label='EXACT_PIPELINE_PROBE',log_path=root/'model_call_log.jsonl',max_tokens=15000,attempts=1)
-          records=parsed.get('records') if isinstance(parsed,dict) else parsed
-          expected={x['source_id'] for x in batch}; actual={str(x.get('source_id')) for x in records if isinstance(x,dict)} if isinstance(records,list) else set()
-          print(json.dumps({'elapsed':round(time.monotonic()-started,3),'records_type':type(records).__name__,'record_count':len(records) if isinstance(records,list) else None,'expected_count':len(expected),'actual_id_count':len(actual),'coverage_equal':expected==actual,'sample':records[0] if isinstance(records,list) and records else None},ensure_ascii=False,sort_keys=True))
+          try:
+            parsed=common.model_json(os.environ['GITHUB_TOKEN'],system=blind.detailed_review_system(),user=blind.detailed_review_user(batch),label='EXACT_PIPELINE_GPT41_PROBE',log_path=root/'model_call_log.jsonl',max_tokens=15000,attempts=1)
+            records=parsed.get('records') if isinstance(parsed,dict) else parsed
+            expected={x['source_id'] for x in batch}; actual={str(x.get('source_id')) for x in records if isinstance(x,dict)} if isinstance(records,list) else set()
+            result={'status':'ok','elapsed':round(time.monotonic()-started,3),'records_type':type(records).__name__,'record_count':len(records) if isinstance(records,list) else None,'expected_count':len(expected),'actual_id_count':len(actual),'coverage_equal':expected==actual}
+          except Exception as exc:
+            result={'status':'error','elapsed':round(time.monotonic()-started,3),'error_type':type(exc).__name__,'error':str(exc)}
+          print(json.dumps(result,ensure_ascii=False,sort_keys=True))
+          print((root/'model_call_log.jsonl').read_text(encoding='utf-8') if (root/'model_call_log.jsonl').exists() else '')
           PY
