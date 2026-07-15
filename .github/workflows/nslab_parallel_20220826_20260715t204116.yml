@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   execute:
-    if: github.head_ref == 'nslab-run-20220826-20260715t204116'
+    if: github.head_ref == 'nslab-run-20220826-disabled-after-handoff'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
