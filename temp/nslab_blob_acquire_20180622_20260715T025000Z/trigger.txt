@@ -1,0 +1,1 @@
+Trigger exact main blob acquisition for prompt and news_20180622.csv.
