@@ -1,0 +1,1 @@
+fresh direct push execution trigger for news_20180628.csv
