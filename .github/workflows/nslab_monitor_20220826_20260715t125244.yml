@@ -1,0 +1,44 @@
+name: NSLAB monitor 20220826 20260715T125244
+
+on:
+  workflow_run:
+    workflows: ["NSLAB gold 20220826 20260715T125244"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Persist run result and validated artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out='temp/nslab_current_run_20220826_20260715t125244'
+          rm -rf "$out" downloaded
+          mkdir -p "$out"
+          printf '{"run_id":%s,"conclusion":"%s","workflow":"NSLAB gold 20220826 20260715T125244"}\n' "$RUN_ID" "$CONCLUSION" > "$out/workflow_status.json"
+          if [ "$CONCLUSION" = success ]; then
+            gh run download "$RUN_ID" --repo Daikisong/new_bot --name nslab-final-20220826-20260715T125244 --dir downloaded
+            cp -a downloaded/. "$out/"
+          else
+            gh run view "$RUN_ID" --repo Daikisong/new_bot --log-failed > "$out/failed_log.txt" 2>&1 || true
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$out"
+          git commit -m "temp: persist NSLAB 20220826 run ${RUN_ID} result" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
