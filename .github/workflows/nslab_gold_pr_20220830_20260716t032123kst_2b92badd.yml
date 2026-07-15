@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   research:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - name: Checkout current main only
@@ -108,6 +108,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: '1'
         run: |
           set -euo pipefail
           python temp/nslab_runner_20220830_20260716t032123kst_2b92badd.py 2>&1 | tee nslab_runner_20220830_2b92badd.log
