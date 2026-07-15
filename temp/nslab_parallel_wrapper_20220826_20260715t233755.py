@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-RUNNER_PATH = Path("temp/nslab_parallel_runner_20220826_20260715t174533.py")
+RUNNER_PATH = Path("runner_source/temp/nslab_parallel_runner_20220826_20260715t174533.py")
 spec = importlib.util.spec_from_file_location("nslab_parallel_runner_20220826_fresh", RUNNER_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError(f"unable to load runner: {RUNNER_PATH}")
