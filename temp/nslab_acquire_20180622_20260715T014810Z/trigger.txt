@@ -1,0 +1,1 @@
+Trigger fresh current-main NSLAB acquisition for news_20180622.csv.
