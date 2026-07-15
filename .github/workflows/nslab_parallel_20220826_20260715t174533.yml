@@ -24,6 +24,7 @@ jobs:
         with:
           sparse-checkout: |
             temp/nslab_parallel_runner_20220826_20260715t174533.py
+            temp/nslab_parallel_wrapper_20220826_20260715t174533.py
             .github/workflows/nslab_parallel_20220826_20260715t174533.yml
           sparse-checkout-cone-mode: false
           fetch-depth: 1
@@ -70,7 +71,7 @@ jobs:
       - name: Execute fresh full gold phase machine
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python temp/nslab_parallel_runner_20220826_20260715t174533.py
+        run: python temp/nslab_parallel_wrapper_20220826_20260715t174533.py
 
       - name: Upload independently validated episode bundle
         uses: actions/upload-artifact@v4
