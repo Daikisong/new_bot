@@ -30,6 +30,18 @@ jobs:
             docs/example2.md
             temp/nslab_runner_20220826_20260715t130039.py
           sparse-checkout-cone-mode: false
+      - name: Repair non-cone stock-web sparse paths
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('temp/nslab_runner_20220826_20260715t130039.py')
+          text=path.read_text(encoding='utf-8')
+          old='run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          new='run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          assert old in text
+          path.write_text(text.replace(old,new,1),encoding='utf-8')
+          PY
       - name: Execute full gold phase machine
         env:
           GITHUB_TOKEN: ${{ github.token }}
