@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: nslab-gold-pr-20220826-20260715T130039-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   execute:
@@ -24,6 +24,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220826.csv
+            docs/example2.md
+            temp/nslab_runner_20220826_20260715t130039.py
+          sparse-checkout-cone-mode: false
       - name: Execute full gold phase machine
         env:
           GITHUB_TOKEN: ${{ github.token }}
