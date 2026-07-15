@@ -1,0 +1,53 @@
+name: NSLAB semantic model probe 20180628 20260715T235500
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'nslab-acquire-local-20180628-20260715t234700'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout current news input
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: current_main
+          sparse-checkout: |
+            docs/csv/news_20180628.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Probe full-row semantic JSON response
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import csv,json,os,urllib.request
+          from pathlib import Path
+          with Path('current_main/docs/csv/news_20180628.csv').open(encoding='utf-8-sig',newline='') as f: row=next(csv.DictReader(f))
+          system='Read the complete Korean stock-news title and body. Return strict JSON only. Identify whether there is a direct Korean listed issuer catalyst, policy/market context, or no actionable issuer event. Never infer an issuer from list membership or a mere mention.'
+          user=json.dumps({'source_id':'SRC-NEWS-000001','title':row['title'],'body':row['body'],'required_fields':['source_id','disposition','article_subject_company_or_null','local_predicate_owner_or_null','direct_issuer_relation','review_decision','exact_quote','issuer_binding_status','quote_role','material_fact_class','catalyst_type','economic_variable_changed','mechanism_sentence','mechanism_supported','candidate_path','screening_recommendation','rejection_reason_or_null','theme_name_or_null']},ensure_ascii=False)
+          body={'model':'openai/gpt-4.1','messages':[{'role':'system','content':system},{'role':'user','content':user}],'temperature':0,'max_tokens':3500}
+          req=urllib.request.Request('https://models.github.ai/inference/chat/completions',data=json.dumps(body,ensure_ascii=False).encode(),headers={'Authorization':f"Bearer {os.environ['GITHUB_TOKEN']}",'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+          with urllib.request.urlopen(req,timeout=180) as response:
+              data=json.loads(response.read().decode())
+          content=data['choices'][0]['message']['content']
+          Path('probe').mkdir()
+          Path('probe/response.json').write_text(content+'\n',encoding='utf-8')
+          Path('probe/envelope.json').write_text(json.dumps({'model':data.get('model'),'usage':data.get('usage'),'content_length':len(content)},indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(content)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-semantic-probe-20180628-20260715T235500
+          path: probe/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
