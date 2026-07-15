@@ -7,15 +7,20 @@ on:
       - '.github/workflows/nslab_monitor_20220829_20260715t172100z.yml'
   issues:
     types: [opened]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'temp/nslab_monitor_probe_20220829_20260715t172100z.txt'
 
 permissions:
-  contents: write
+  contents: read
   actions: read
   issues: read
 
 jobs:
   monitor:
-    if: github.event_name == 'push' || github.event.issue.title == 'NSLAB_MONITOR_20220829_20260715T172100Z'
+    if: github.event_name != 'issues' || github.event.issue.title == 'NSLAB_MONITOR_20220829_20260715T172100Z'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,12 +33,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out='temp/nslab_monitor_20220829_20260715t172100z'
-          mkdir -p "$out"
-          gh run list --repo Daikisong/new_bot --workflow nslab_gold_20220829_20260715t165500z.yml --limit 10 --json databaseId,status,conclusion,createdAt,updatedAt,headSha,event,url,workflowName > "$out/runs.json"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$out/runs.json"
-          git commit -m 'temp: record NSLAB 20220829 run status' || exit 0
-          git pull --rebase origin main
-          git push origin HEAD:main
+          mkdir -p monitor_output
+          gh run list --repo Daikisong/new_bot --workflow nslab_gold_20220829_20260715t165500z.yml --limit 20 --json databaseId,status,conclusion,createdAt,updatedAt,headSha,event,url,workflowName > monitor_output/runs.json
+          cat monitor_output/runs.json
+      - name: Upload monitor result
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-monitor-20220829-20260715T172100Z
+          path: monitor_output/runs.json
+          retention-days: 1
+          if-no-files-found: error
