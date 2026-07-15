@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# Current-run trigger: 2026-07-15T21:43:00+09:00
 import importlib.util
 import sys
 from pathlib import Path
