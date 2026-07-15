@@ -1,0 +1,59 @@
+name: NSLAB outcome 20180627 20260715T084631Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'temp/nslab_outcome_20180627_20260715T084631Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-outcome-20180627-20260715T084631Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact current stock-web main outcome bytes
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          fetch-depth: 1
+          sparse-checkout: |
+            atlas/research_daily/snapshots/2018/06/20180627.csv
+          sparse-checkout-cone-mode: false
+          path: stock_web
+      - name: Verify and package fresh post-seal outcome bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fresh/stock_web/atlas/research_daily/snapshots/2018/06
+          cp stock_web/atlas/research_daily/snapshots/2018/06/20180627.csv fresh/stock_web/atlas/research_daily/snapshots/2018/06/20180627.csv
+          python - <<'PY'
+          import csv, hashlib, json
+          from pathlib import Path
+          root=Path('fresh')
+          outcome=root/'stock_web/atlas/research_daily/snapshots/2018/06/20180627.csv'
+          b=outcome.read_bytes()
+          sha=hashlib.sha256(b).hexdigest()
+          assert sha=='b9830047f6dbdfd9ec6d239edcc5f0b48d32ef1cf4eac6f61b52a9feac785db8'
+          assert len(b)==717625
+          with outcome.open(encoding='utf-8',newline='') as f:
+              rows=list(csv.DictReader(f))
+          assert len(rows)==2126
+          assert {r['snapshot_date'] for r in rows}=={'2018-06-27'}
+          receipt={'schema_version':'nslab.current_run_raw_acquisition.v1','status':'VERIFIED','acquisition_phase':'POSTSEAL','outcome_sha256':sha,'outcome_byte_size':len(b),'outcome_row_count':len(rows),'outcome_columns':list(rows[0]),'outcome_snapshot_date':'2018-06-27'}
+          (root/'outcome_acquisition_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          PY
+      - name: Upload fresh post-seal outcome
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-fresh-outcome-20180627-20260715T084631Z
+          path: fresh/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
