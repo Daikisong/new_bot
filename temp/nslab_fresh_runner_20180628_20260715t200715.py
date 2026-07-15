@@ -7,8 +7,8 @@ runner = Path("parallel_source/temp/nslab_parallel_runner_20220826_20260715t1718
 text = runner.read_text(encoding="utf-8")
 
 replacements = [
-    ("20260715T171800KST", "20260715T200715KST"),
-    ("20260715t171800", "20260715t200715"),
+    ("20260715T171800KST", "20260715T201300KST"),
+    ("20260715t171800", "20260715t201300"),
     ("20220826", "20180628"),
     ("2022-08-26", "2018-06-28"),
     ("20220825", "20180627"),
@@ -38,8 +38,13 @@ def fresh_prepare() -> dict:
     receipt = original_prepare()
     common_path = namespace["PIPELINE"] / "common.py"
     common = common_path.read_text(encoding="utf-8")
+    if "MODEL_NAME = 'openai/gpt-4.1-mini'" in common:
+        common = common.replace("MODEL_NAME = 'openai/gpt-4.1-mini'", "MODEL_NAME = 'openai/gpt-4.1'", 1)
+    elif 'MODEL_NAME = "openai/gpt-4.1-mini"' in common:
+        common = common.replace('MODEL_NAME = "openai/gpt-4.1-mini"', 'MODEL_NAME = "openai/gpt-4.1"', 1)
+    else:
+        raise AssertionError("MODEL_NAME patch anchor not found")
     substitutions = [
-        ('MODEL_NAME = "openai/gpt-4.1-mini"', 'MODEL_NAME = "openai/gpt-4.1"'),
         ('attempts: int = 8,', 'attempts: int = 4,'),
         ('urllib.request.urlopen(req, timeout=300)', 'urllib.request.urlopen(req, timeout=150)'),
         ('min(90.0, 5.0 * (2 ** (attempt - 1)))', 'min(45.0, 4.0 * (2 ** (attempt - 1)))'),
