@@ -9,6 +9,8 @@ on:
       - temp/nslab_direct_review_shard_20180628_20260715t154606z_03fa622356.py
       - temp/nslab_direct_matrix_aggregate_20180628_20260715t154606z_03fa622356.py
       - temp/nslab_direct_trigger_20180628_20260715t154606z_03fa622356.txt
+  pull_request:
+    types: [opened]
 
 permissions:
   contents: write
@@ -17,7 +19,7 @@ permissions:
 
 concurrency:
   group: nslab-direct-push-gold-20180628-20260715T154606Z-03fa622356
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   announce:
