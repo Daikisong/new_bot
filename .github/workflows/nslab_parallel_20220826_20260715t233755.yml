@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Daikisong/new_bot
-          ref: f97da6608c531cdab379c314e38aa5cc6823d834
+          ref: 69fa30e64f80014c9f275dd09540297a6a167cf5
           path: runner_source
           sparse-checkout: |
             temp/nslab_parallel_runner_20220826_20260715t174533.py
