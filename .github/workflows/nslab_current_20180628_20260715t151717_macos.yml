@@ -1,10 +1,8 @@
 name: NSLAB current fresh gold 20180628 macOS 20260715T151717
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/nslab_current_20180628_20260715t151717_macos.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -12,11 +10,12 @@ permissions:
   models: read
 
 concurrency:
-  group: nslab-current-fresh-gold-20180628-macos-20260715T151717
+  group: nslab-current-fresh-gold-20180628-macos-20260715T151717-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   execute:
+    if: github.head_ref == 'nslab-trigger-20180628-20260715t151717-macos'
     runs-on: macos-latest
     timeout-minutes: 360
     steps:
