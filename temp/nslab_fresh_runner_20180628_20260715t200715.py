@@ -7,8 +7,8 @@ runner = Path("parallel_source/temp/nslab_parallel_runner_20220826_20260715t1718
 text = runner.read_text(encoding="utf-8")
 
 replacements = [
-    ("20260715T171800KST", "20260715T201300KST"),
-    ("20260715t171800", "20260715t201300"),
+    ("20260715T171800KST", "20260715T211800KST"),
+    ("20260715t171800", "20260715t211800"),
     ("20220826", "20180628"),
     ("2022-08-26", "2018-06-28"),
     ("20220825", "20180627"),
@@ -21,11 +21,11 @@ for old, new in replacements:
     text = text.replace(old, new)
 
 old_batch = 'row_batches(model_inputs, max_items=12, max_chars=52000)'
-new_batch = 'row_batches(model_inputs, max_items=6, max_chars=32000)'
+new_batch = 'row_batches(model_inputs, max_items=1, max_chars=24000)'
 assert old_batch in text
 text = text.replace(old_batch, new_batch, 1)
 old_workers = 'ThreadPoolExecutor(max_workers=6, thread_name_prefix="nslab-semantic")'
-new_workers = 'ThreadPoolExecutor(max_workers=24, thread_name_prefix="nslab-semantic")'
+new_workers = 'ThreadPoolExecutor(max_workers=32, thread_name_prefix="nslab-semantic")'
 assert old_workers in text
 text = text.replace(old_workers, new_workers, 1)
 
@@ -45,15 +45,22 @@ def fresh_prepare() -> dict:
     else:
         raise AssertionError("MODEL_NAME patch anchor not found")
     substitutions = [
-        ('attempts: int = 8,', 'attempts: int = 4,'),
-        ('urllib.request.urlopen(req, timeout=300)', 'urllib.request.urlopen(req, timeout=150)'),
-        ('min(90.0, 5.0 * (2 ** (attempt - 1)))', 'min(45.0, 4.0 * (2 ** (attempt - 1)))'),
-        ('time.sleep(min(45.0, 3.0 * attempt))', 'time.sleep(min(25.0, 2.0 * attempt))'),
+        ('attempts: int = 8,', 'attempts: int = 3,'),
+        ('urllib.request.urlopen(req, timeout=300)', 'urllib.request.urlopen(req, timeout=90)'),
+        ('min(90.0, 5.0 * (2 ** (attempt - 1)))', 'min(30.0, 3.0 * (2 ** (attempt - 1)))'),
+        ('time.sleep(min(45.0, 3.0 * attempt))', 'time.sleep(min(15.0, 2.0 * attempt))'),
     ]
     for old, new in substitutions:
         assert old in common, old
         common = common.replace(old, new, 1)
     common_path.write_text(common, encoding="utf-8")
+
+    blind_path = namespace["PIPELINE"] / "blind.py"
+    blind = blind_path.read_text(encoding="utf-8")
+    assert "max_tokens=15000," in blind
+    blind = blind.replace("max_tokens=15000,", "max_tokens=4000,", 1)
+    blind_path.write_text(blind, encoding="utf-8")
+
     namespace["run"](
         [
             sys.executable,
