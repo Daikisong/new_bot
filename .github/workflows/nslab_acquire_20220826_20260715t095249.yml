@@ -1,0 +1,105 @@
+name: NSLAB acquire 20220826 20260715T095249
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-run-20220826-20260715t095249'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact current main input paths
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/new_bot
+          ref: main
+          path: new_bot_main
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20220826.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Checkout BLIND-safe stock-web inputs only
+        uses: actions/checkout@v4
+        with:
+          repository: Daikisong/stock-web
+          ref: main
+          path: stock_blind
+          sparse-checkout: |
+            atlas/research_daily/manifest.json
+            atlas/research_daily/schema.json
+            atlas/research_daily/trading_calendar.csv
+            atlas/research_daily/access/2022/08/20220826.json
+            atlas/research_daily/snapshots/2022/08/20220825.csv
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
+      - name: Fresh exact Raw acquisition and full parse
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p packet/inputs
+          python - <<'PY'
+          import csv,hashlib,json,os,shutil,urllib.request
+          from datetime import datetime
+          from pathlib import Path
+          token=os.environ['GITHUB_TOKEN']; warnings=[]; methods={}
+          def fetch_exact(raw_url,api_url,dest,label):
+              headers={'Authorization':f'Bearer {token}','User-Agent':'NSLAB-current-run'}
+              try:
+                  req=urllib.request.Request(raw_url,headers=headers)
+                  with urllib.request.urlopen(req,timeout=180) as r: data=r.read()
+                  methods[label]='GITHUB_RAW_EXACT_URL'
+              except Exception as exc:
+                  warnings.append({'stage':'RAW_ACQUISITION','label':label,'warning':f'{type(exc).__name__}: {exc}','fallback':'GITHUB_API_RAW'})
+                  req=urllib.request.Request(api_url,headers={**headers,'Accept':'application/vnd.github.raw+json'})
+                  with urllib.request.urlopen(req,timeout=180) as r: data=r.read()
+                  methods[label]='GITHUB_API_RAW_FALLBACK_AFTER_EXACT_RAW_OPEN'
+              dest.write_bytes(data); return data
+          p=Path('packet'); prompt=p/'prompt_tmp.md'; news=p/'news_20220826_tmp.csv'; example=p/'example2_tmp.md'
+          pb=fetch_exact('https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md','https://api.github.com/repos/Daikisong/new_bot/contents/docs/research_prompt.md?ref=main',prompt,'prompt')
+          nb=fetch_exact('https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220826.csv','https://api.github.com/repos/Daikisong/new_bot/contents/docs/csv/news_20220826.csv?ref=main',news,'news')
+          eb=fetch_exact('https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/example2.md','https://api.github.com/repos/Daikisong/new_bot/contents/docs/example2.md?ref=main',example,'example')
+          assert pb==Path('new_bot_main/docs/research_prompt.md').read_bytes()
+          assert nb==Path('new_bot_main/docs/csv/news_20220826.csv').read_bytes()
+          assert eb==Path('new_bot_main/docs/example2.md').read_bytes()
+          psha=hashlib.sha256(pb).hexdigest(); nsha=hashlib.sha256(nb).hexdigest(); esha=hashlib.sha256(eb).hexdigest()
+          assert psha=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029' and len(pb)==430485
+          text=pb.decode('utf-8'); assert text.splitlines()[0]=='# NSLAB GOLD PHASE MACHINE — DIRECT CSV RESEARCH RUNNER'; assert 'nslab.gold_phase_machine.direct_csv_research.locked' in text
+          with news.open('r',encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          times=[]; bad=[]
+          for i,r in enumerate(rows,1):
+              try: times.append(datetime.fromisoformat(f"{r['date']}T{r['time']}"))
+              except Exception: bad.append(i)
+          access=json.loads(Path('stock_blind/atlas/research_daily/access/2022/08/20220826.json').read_text(encoding='utf-8'))
+          blind=Path('stock_blind/atlas/research_daily/snapshots/2022/08/20220825.csv'); br=blind.read_bytes(); bsha=hashlib.sha256(br).hexdigest()
+          with blind.open('r',encoding='utf-8-sig',newline='') as f: brows=list(csv.DictReader(f))
+          assert bsha==access['blind_snapshot_sha256'] and len(br)==access['blind_snapshot_bytes'] and len(brows)==access['blind_snapshot_row_count']
+          stamp='20260715T095249KST'; pn=f'research_prompt_{stamp}_{psha[:8]}.md'; nn=f'news_20220826_{stamp}_{nsha[:8]}.csv'; en=f'example2_{stamp}_{esha[:8]}.md'; bn=f'blind_snapshot_20220825_{stamp}_{bsha[:8]}.csv'
+          prompt.rename(p/'inputs'/pn); news.rename(p/'inputs'/nn); example.rename(p/'inputs'/en); shutil.copyfile(blind,p/'inputs'/bn)
+          for src,name in [('stock_blind/atlas/research_daily/access/2022/08/20220826.json','access_20220826.json'),('stock_blind/atlas/research_daily/manifest.json','manifest.json'),('stock_blind/atlas/research_daily/schema.json','schema.json'),('stock_blind/atlas/research_daily/trading_calendar.csv','trading_calendar.csv')]: shutil.copyfile(src,p/name)
+          receipt={'schema_version':'nslab.current_run_raw_acquisition.v1','run_id':'nslab_run_20260715T095249KST_20220826','prompt_file':pn,'prompt_sha256':psha,'prompt_byte_size':len(pb),'news_file':nn,'news_sha256':nsha,'news_byte_size':len(nb),'example_file':en,'example_sha256':esha,'example_byte_size':len(eb),'csv_row_count':len(rows),'parsed_row_count':len(rows),'columns':list(rows[0]),'min_published_at':min(times).isoformat(),'max_published_at':max(times).isoformat(),'time_unverified_rows':bad,'control_char_count':sum(1 for ch in nb.decode('utf-8-sig') if ord(ch)<32 and ch not in '\n\r\t'),'trade_date':'2022-08-26','previous_trade_date':'2022-08-25','next_trade_date':'2022-08-29','blind_snapshot_file':bn,'blind_snapshot_sha256':bsha,'blind_snapshot_byte_size':len(br),'blind_snapshot_row_count':len(brows),'outcome_snapshot_sha256_expected':access['outcome_snapshot_sha256'],'outcome_snapshot_byte_size_expected':access['outcome_snapshot_bytes'],'outcome_snapshot_row_count_expected':access['outcome_snapshot_row_count'],'raw_urls_opened':{'prompt':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/research_prompt.md','news':'https://raw.githubusercontent.com/Daikisong/new_bot/refs/heads/main/docs/csv/news_20220826.csv'},'acquisition_methods':methods,'acquisition_warnings':warnings,'preseal_outcome_download_count':0,'preseal_outcome_header_read_count':0,'preseal_outcome_sha256_count':0,'preseal_outcome_row_count_count':0,'preseal_outcome_parse_count':0}
+          (p/'acquisition_receipt.json').write_text(json.dumps(receipt,ensure_ascii=False,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          (p/'acquisition_warnings.jsonl').write_text('\n'.join(json.dumps(x,ensure_ascii=False,sort_keys=True) for x in warnings)+('\n' if warnings else ''),encoding='utf-8')
+          print(json.dumps(receipt,ensure_ascii=False,sort_keys=True))
+          PY
+
+      - name: Upload fresh current-run input packet
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-inputs-20220826-20260715T095249
+          path: packet/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
