@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: nslab-parallel-gold-20220826-20260715T174533-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   execute:
@@ -22,6 +22,10 @@ jobs:
       - name: Checkout execution branch
         uses: actions/checkout@v4
         with:
+          sparse-checkout: |
+            temp/nslab_parallel_runner_20220826_20260715t174533.py
+            .github/workflows/nslab_parallel_20220826_20260715t174533.yml
+          sparse-checkout-cone-mode: false
           fetch-depth: 1
 
       - name: Checkout exact current main research inputs
