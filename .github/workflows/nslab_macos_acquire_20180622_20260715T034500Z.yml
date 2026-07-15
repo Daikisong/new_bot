@@ -1,0 +1,53 @@
+name: NSLAB macOS acquire 20180622 20260715T034500Z
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'temp/nslab_macos_acquire_20180622_20260715T034500Z/trigger.txt'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  acquire:
+    if: github.head_ref == 'nslab-macos-acquire-20180622-20260715T034500Z'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180622.csv
+            docs/example2.md
+          sparse-checkout-cone-mode: false
+      - name: Verify exact current main files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fresh/docs/csv
+          cp docs/research_prompt.md fresh/docs/research_prompt.md
+          cp docs/csv/news_20180622.csv fresh/docs/csv/news_20180622.csv
+          cp docs/example2.md fresh/docs/example2.md
+          python3 - <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          p=Path('fresh/docs/research_prompt.md').read_bytes(); np=Path('fresh/docs/csv/news_20180622.csv'); n=np.read_bytes()
+          assert hashlib.sha256(p).hexdigest()=='b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029' and len(p)==430485
+          with np.open(encoding='utf-8-sig',newline='') as f: rows=list(csv.DictReader(f))
+          assert rows and list(rows[0])==['page','row','date','time','title','body']
+          r={'status':'VERIFIED','prompt_sha256':hashlib.sha256(p).hexdigest(),'prompt_byte_size':len(p),'news_sha256':hashlib.sha256(n).hexdigest(),'news_byte_size':len(n),'csv_row_count':len(rows)}
+          Path('fresh/acquisition_receipt.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(r,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nslab-macos-fresh-inputs-20180622-20260715T034500Z
+          path: fresh/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
