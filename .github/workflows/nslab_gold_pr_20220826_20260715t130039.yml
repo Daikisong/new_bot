@@ -30,7 +30,7 @@ jobs:
             docs/example2.md
             temp/nslab_runner_20220826_20260715t130039.py
           sparse-checkout-cone-mode: false
-      - name: Repair non-cone stock-web sparse paths
+      - name: Repair current-run runner invariants
         shell: bash
         run: |
           python - <<'PY'
@@ -40,7 +40,21 @@ jobs:
           old='run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
           new='run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
           assert old in text
-          path.write_text(text.replace(old,new,1),encoding='utf-8')
+          text=text.replace(old,new,1)
+          old_receipt='''        "news_file": news_name,
+        "news_sha256": news_sha,
+        "news_byte_size": len(news_raw),
+        "csv_row_count": len(news_rows),'''
+          new_receipt='''        "news_file": news_name,
+        "news_sha256": news_sha,
+        "news_byte_size": len(news_raw),
+        "example_file": example_name,
+        "example_sha256": example_sha,
+        "example_byte_size": len(example_raw),
+        "csv_row_count": len(news_rows),'''
+          assert old_receipt in text
+          text=text.replace(old_receipt,new_receipt,1)
+          path.write_text(text,encoding='utf-8')
           PY
       - name: Execute full gold phase machine
         env:
