@@ -16,14 +16,14 @@ concurrency:
 jobs:
   diagnose:
     if: github.head_ref == 'nslab-modeldiag-20260715t184100'
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     timeout-minutes: 10
     steps:
       - name: Probe exact pipeline gpt-4.1 semantic request
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import csv, io, json, os, sys, time, urllib.request
           from pathlib import Path
           root=Path('/tmp/nslab_exact_probe'); root.mkdir(parents=True,exist_ok=True)
