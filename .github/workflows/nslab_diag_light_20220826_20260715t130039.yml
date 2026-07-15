@@ -1,0 +1,22 @@
+name: NSLAB diagnostic light 20220826 20260715T130039
+
+on:
+  pull_request:
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'nslab-run-20220826-20260715t130039'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print compact failed log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run view 29388726090 --repo Daikisong/new_bot --log-failed 2>&1 | tail -n 80
