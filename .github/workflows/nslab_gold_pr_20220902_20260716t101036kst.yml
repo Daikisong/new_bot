@@ -1,0 +1,151 @@
+name: NSLAB gold PR 20220902 20260716T101036KST
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'temp/nslab_trigger_20220902_20260716t101036kst.txt'
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-pr-20220902-20260716T101036KST
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout current main only
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Materialize date-specific runner from current repository source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp temp/nslab_runner_20220826_20260715t130039.py /tmp/nslab_runner_20220902.py
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('/tmp/nslab_runner_20220902.py')
+          text = p.read_text(encoding='utf-8')
+          replacements = [
+              ('20260715T130039KST', '20260716T101036KST'),
+              ('20260715t130039', '20260716t101036'),
+              ('2022/08', '2022/09'),
+              ('2022-08-26', '2022-09-02'),
+              ('20220826', '20220902'),
+              ('2022-08-25', '2022-09-01'),
+              ('20220825', '20220901'),
+              ('2022-08-29', '2022-09-05'),
+              ('20220829', '20220905'),
+          ]
+          for old, new in replacements:
+              text = text.replace(old, new)
+
+          old_sparse = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          new_sparse = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          if old_sparse not in text:
+              raise RuntimeError('sparse-checkout patch target missing')
+          text = text.replace(old_sparse, new_sparse, 1)
+
+          needle = '        "news_byte_size": len(news_raw),\n        "csv_row_count": len(news_rows),'
+          replacement = (
+              '        "news_byte_size": len(news_raw),\n'
+              '        "example_file": example_name,\n'
+              '        "example_sha256": example_sha,\n'
+              '        "example_byte_size": len(example_raw),\n'
+              '        "csv_row_count": len(news_rows),'
+          )
+          if needle not in text:
+              raise RuntimeError('example receipt insertion point missing')
+          text = text.replace(needle, replacement, 1)
+
+          forbidden = [
+              'news_20220826.csv',
+              'access/2022/08/20220826.json',
+              'snapshots/2022/08/20220825.csv',
+              'snapshots/2022/08/20220826.csv',
+              '20220826_nslab_episode_bundle.md',
+              '20260715T130039KST',
+              '20260715t130039',
+          ]
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise RuntimeError(f'stale selected-date route survived: {present}')
+
+          required = [
+              'news_20220902.csv',
+              'access/2022/09/20220902.json',
+              'snapshots/2022/09/20220901.csv',
+              'snapshots/2022/09/20220902.csv',
+              '20220902_nslab_episode_bundle.md',
+              '2022-09-02T08:59:59+09:00',
+              '2022-09-01T15:30:00+09:00',
+              '2022-09-05T00:00:00+09:00',
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise RuntimeError(f'new selected-date route missing: {missing}')
+
+          p.write_text(text, encoding='utf-8')
+          compile(text, str(p), 'exec')
+          PY
+          python -m py_compile /tmp/nslab_runner_20220902.py
+
+      - name: Run full BLIND seal, post-seal outcome, postmortem, and final reparse
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python /tmp/nslab_runner_20220902.py 2>&1 | tee nslab_20220902_action.log
+
+      - name: Verify independently reparsed ACCEPT_FULL bundle
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s final_artifact_20220902_20260716t101036/20220902_nslab_episode_bundle.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('final_artifact_20220902_20260716t101036')
+          final = root / '20220902_nslab_episode_bundle.md'
+          receipt = json.loads((root / 'independent_final_validation_receipt.json').read_text(encoding='utf-8'))
+          acquisition = json.loads((root / 'acquisition_receipt.json').read_text(encoding='utf-8'))
+          assert receipt['status'] == 'ACCEPT_FULL'
+          assert receipt['csv_row_count'] == acquisition['csv_row_count'] > 0
+          assert receipt['outcome_ledger_count'] == acquisition['outcome_snapshot_row_count_expected'] > 0
+          assert receipt['brain_delta_record_count'] > 0
+          assert receipt['brain_delta_payload_missing_count'] == 0
+          assert receipt['brain_delta_manifest_payload_count_mismatch_count'] == 0
+          assert receipt['brain_delta_declared_without_payload_count'] == 0
+          text = final.read_text(encoding='utf-8')
+          assert text.startswith('---\n')
+          assert '<!-- NSLAB:BEGIN brain_delta.jsonl -->' in text
+          assert '<!-- NSLAB:BEGIN validation_report.json -->' in text
+          assert '<!-- NSLAB:BEGIN direct_ingest_contract.json -->' in text
+          print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Upload independently validated episode bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20220902-20260716T101036KST
+          path: |
+            final_artifact_20220902_20260716t101036/
+            work_20220902_20260716t101036/
+            nslab_20220902_action.log
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: warn
