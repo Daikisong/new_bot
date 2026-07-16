@@ -1,10 +1,12 @@
 {
+  "aggregate_result": "skipped",
   "artifact_name": "nslab-direct-final-20180628-20260715T154606Z-03fa622356",
-  "head_sha": "611c54f0027259fc5b184c9a3150ec4f28165523",
+  "head_sha": "10f804ea83930fee776e79cad5647812efc1a754",
+  "review_result": "cancelled",
   "run_attempt": 1,
-  "run_id": 29430685328,
+  "run_id": 29431132192,
   "schema_version": "nslab.direct_push_status.v1",
-  "status": "RUNNING",
+  "status": "FAILURE",
   "trade_date": "2018-06-28",
-  "workflow": "NSLAB direct push GOLD 20180628 20260715T154606Z 03fa622356"
+  "workflow": "NSLAB direct PR GOLD 20180628 20260715T154606Z 03fa622356"
 }
