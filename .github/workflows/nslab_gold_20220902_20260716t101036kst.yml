@@ -1,4 +1,4 @@
-name: NSLAB Gold 20220902 20260716T101036KST
+name: NSLAB Gold 20220902 20260716T101036KST sync1
 
 on:
   push:
@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - .github/workflows/nslab_gold_20220902_20260716t101036kst.yml
 
@@ -39,7 +40,6 @@ jobs:
           cp temp/nslab_runner_20220826_20260715t130039.py /tmp/nslab_runner_20220902.py
           python - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path('/tmp/nslab_runner_20220902.py')
           text = p.read_text(encoding='utf-8')
