@@ -1,0 +1,70 @@
+name: NSLAB Gold 20180706 20260716T094853KST
+
+on:
+  push:
+    branches:
+      - nslab-run-20180706-20260716t094853kst
+    paths:
+      - .github/workflows/nslab_gold_20180706_20260716t094853kst.yml
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  run-gold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout current main inputs
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Build date-specific runner from repository template
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp temp/nslab_runner_20220826_20260715t130039.py /tmp/nslab_runner_20180706.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/nslab_runner_20180706.py')
+          text = p.read_text(encoding='utf-8')
+          replacements = [
+              ('20260715T130039KST', '20260716T094853KST'),
+              ('20260715t130039', '20260716t094853'),
+              ('2022/08', '2018/07'),
+              ('2022-08-26', '2018-07-06'),
+              ('20220826', '20180706'),
+              ('2022-08-25', '2018-07-05'),
+              ('20220825', '20180705'),
+              ('2022-08-29', '2018-07-09'),
+              ('20220829', '20180709'),
+          ]
+          for old, new in replacements:
+              text = text.replace(old, new)
+          p.write_text(text, encoding='utf-8')
+          compile(text, str(p), 'exec')
+          PY
+
+      - name: Execute locked gold phase machine
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python /tmp/nslab_runner_20180706.py 2>&1 | tee nslab_20180706_action.log
+
+      - name: Upload complete run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-gold-20180706-20260716t094853kst
+          if-no-files-found: warn
+          retention-days: 1
+          compression-level: 0
+          path: |
+            final_artifact_20180706_20260716t094853/
+            work_20180706_20260716t094853/
+            nslab_20180706_action.log
