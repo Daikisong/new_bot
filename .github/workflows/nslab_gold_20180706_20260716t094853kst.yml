@@ -6,6 +6,11 @@ on:
       - nslab-run-20180706-20260716t094853kst
     paths:
       - .github/workflows/nslab_gold_20180706_20260716t094853kst.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/nslab_gold_20180706_20260716t094853kst.yml
 
 permissions:
   contents: read
