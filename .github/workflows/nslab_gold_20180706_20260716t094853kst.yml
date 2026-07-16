@@ -1,11 +1,6 @@
-name: NSLAB Gold 20180706 20260716T094853KST
+name: NSLAB Gold 20180706 20260716T094853KST A3
 
 on:
-  push:
-    branches:
-      - nslab-run-20180706-20260716t094853kst
-    paths:
-      - .github/workflows/nslab_gold_20180706_20260716t094853kst.yml
   pull_request:
     branches:
       - main
@@ -26,6 +21,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180706.csv
+            docs/example2.md
+            temp/nslab_runner_20220826_20260715t130039.py
 
       - name: Build date-specific runner from repository template
         shell: bash
@@ -49,11 +50,19 @@ jobs:
           ]
           for old, new in replacements:
               text = text.replace(old, new)
-          old = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
-          new = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
-          if old not in text:
+
+          sparse_old = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          sparse_new = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          if sparse_old not in text:
               raise RuntimeError('sparse-checkout patch target missing')
-          text = text.replace(old, new, 1)
+          text = text.replace(sparse_old, sparse_new, 1)
+
+          receipt_old = '        "news_file": news_name,\n        "news_sha256": news_sha,'
+          receipt_new = '        "news_file": news_name,\n        "example_file": example_name,\n        "news_sha256": news_sha,'
+          if receipt_old not in text:
+              raise RuntimeError('example_file receipt patch target missing')
+          text = text.replace(receipt_old, receipt_new, 1)
+
           p.write_text(text, encoding='utf-8')
           compile(text, str(p), 'exec')
           PY
@@ -70,11 +79,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-gold-20180706-20260716t094853kst
+          name: nslab-gold-20180706-20260716t094853kst-a3
           if-no-files-found: warn
           retention-days: 1
           compression-level: 0
           path: |
             final_artifact_20180706_20260716t094853/
             work_20180706_20260716t094853/
+            stock_web_20180706_20260716t094853/atlas/research_daily/
             nslab_20180706_action.log
