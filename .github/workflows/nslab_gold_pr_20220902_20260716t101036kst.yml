@@ -1,4 +1,4 @@
-name: NSLAB gold PR 20220902 20260716T101036KST
+name: NSLAB gold PR 20220902 20260716T101036KST macos
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   research:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 360
     steps:
       - name: Checkout current main only
@@ -141,7 +141,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20220902-20260716T101036KST
+          name: nslab-final-20220902-20260716T101036KST-macos
           path: |
             final_artifact_20220902_20260716t101036/
             work_20220902_20260716t101036/
