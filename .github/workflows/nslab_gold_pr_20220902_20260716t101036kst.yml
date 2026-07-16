@@ -1,4 +1,4 @@
-name: NSLAB gold PR 20220902 20260716T101036KST ubuntu2
+name: NSLAB gold PR 20220902 20260716T101036KST pollinations
 
 on:
   pull_request:
@@ -69,6 +69,23 @@ jobs:
               raise RuntimeError('example receipt insertion point missing')
           text = text.replace(needle, replacement, 1)
 
+          common_write = '    common_path.write_text(common, encoding="utf-8")'
+          common_patch = '\n'.join([
+              '    common = common.replace(\'MODEL_NAME = "openai/gpt-4.1-mini"\', \'MODEL_NAME = "openai"\')',
+              '    common = common.replace(\'endpoint = "https://models.github.ai/inference/chat/completions"\', \'endpoint = "https://text.pollinations.ai/openai"\')',
+              '    common = common.replace(\'attempts: int = 8,\', \'attempts: int = 4,\')',
+              '    common = common.replace(\'timeout=300\', \'timeout=180\')',
+              '    old_headers = "            headers={\\n                \\\"Authorization\\\": f\\\"Bearer {token}\\\",\\n                \\\"Content-Type\\\": \\\"application/json\\\",\\n                \\\"Accept\\\": \\\"application/vnd.github+json\\\",\\n                \\\"X-GitHub-Api-Version\\\": \\\"2022-11-28\\\",\\n            },"',
+              '    new_headers = "            headers={\\n                \\\"Content-Type\\\": \\\"application/json\\\",\\n                \\\"Accept\\\": \\\"application/json\\\",\\n                \\\"User-Agent\\\": \\\"NSLAB-Gold-Research/20220902\\\",\\n            },"',
+              '    if old_headers not in common:',
+              '        raise RuntimeError("GitHub Models header patch target missing")',
+              '    common = common.replace(old_headers, new_headers, 1)',
+              '    common_path.write_text(common, encoding="utf-8")',
+          ])
+          if common_write not in text:
+              raise RuntimeError('common.py transport patch insertion point missing')
+          text = text.replace(common_write, common_patch, 1)
+
           forbidden = [
               'news_20220826.csv',
               'access/2022/08/20220826.json',
@@ -91,6 +108,7 @@ jobs:
               '2022-09-02T08:59:59+09:00',
               '2022-09-01T15:30:00+09:00',
               '2022-09-05T00:00:00+09:00',
+              'https://text.pollinations.ai/openai',
           ]
           missing = [item for item in required if item not in text]
           if missing:
@@ -100,6 +118,43 @@ jobs:
           compile(text, str(p), 'exec')
           PY
           python -m py_compile /tmp/nslab_runner_20220902.py
+
+      - name: Probe semantic model transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          payload = {
+              'model': 'openai',
+              'messages': [
+                  {'role': 'system', 'content': 'Return strict JSON only.'},
+                  {'role': 'user', 'content': 'Return {"ok":true,"records":[{"source_id":"PROBE"}]} exactly.'},
+              ],
+              'temperature': 0,
+              'max_tokens': 300,
+              'stream': False,
+              'seed': 20220902,
+          }
+          req = urllib.request.Request(
+              'https://text.pollinations.ai/openai',
+              data=json.dumps(payload).encode('utf-8'),
+              headers={
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'User-Agent': 'NSLAB-Gold-Probe/20220902',
+              },
+          )
+          with urllib.request.urlopen(req, timeout=180) as response:
+              raw = response.read().decode('utf-8')
+          data = json.loads(raw)
+          content = str(data['choices'][0]['message']['content'])
+          if 'PROBE' not in content:
+              raise RuntimeError(content[:500])
+          print(json.dumps({'transport': 'pollinations-openai', 'probe': 'passed', 'response_chars': len(content)}))
+          PY
 
       - name: Run full BLIND seal, post-seal outcome, postmortem, and final reparse
         shell: bash
@@ -141,7 +196,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nslab-final-20220902-20260716T101036KST-ubuntu2
+          name: nslab-final-20220902-20260716T101036KST-pollinations
           path: |
             final_artifact_20220902_20260716t101036/
             work_20220902_20260716t101036/
