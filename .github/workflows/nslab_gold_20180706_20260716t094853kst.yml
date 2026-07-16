@@ -49,6 +49,11 @@ jobs:
           ]
           for old, new in replacements:
               text = text.replace(old, new)
+          old = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          new = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          if old not in text:
+              raise RuntimeError('sparse-checkout patch target missing')
+          text = text.replace(old, new, 1)
           p.write_text(text, encoding='utf-8')
           compile(text, str(p), 'exec')
           PY
