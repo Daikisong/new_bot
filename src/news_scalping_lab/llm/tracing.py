@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
 from news_scalping_lab.utils import (
     canonical_json,
     now_kst,
@@ -49,9 +49,17 @@ class TracingLLMProvider:
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    def count_tokens(self, text: str) -> int:
+        return count_provider_tokens(self.provider, text)
+
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         started_at = now_kst()
-        input_payload = {"prompt_sha256": sha256_text(prompt), "prompt_chars": len(prompt)}
+        input_payload = {
+            "prompt_sha256": sha256_text(prompt),
+            "prompt_chars": len(prompt),
+            "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+            "prompt_tokens_counted": self.count_tokens(prompt),
+        }
         checkpoint = self._read_ok_checkpoint(
             operation="generate_text", purpose=purpose, input_payload=input_payload
         )
@@ -66,7 +74,7 @@ class TracingLLMProvider:
                     input_payload=input_payload,
                     output=output,
                     token_usage={
-                        "prompt_tokens_estimate": _estimate_tokens(prompt),
+                        "prompt_tokens_estimate": self.count_tokens(prompt),
                         "completion_tokens_estimate": _estimate_tokens(output),
                     },
                     checkpoint_id=str(checkpoint["checkpoint_id"]),
@@ -85,7 +93,7 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
-                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
+                token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -95,7 +103,7 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
-                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
+                token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
                 error=exc.original,
                 checkpoint_id=checkpoint_id,
                 retries=exc.retries,
@@ -109,7 +117,7 @@ class TracingLLMProvider:
             input_payload=input_payload,
             output=provider_output,
             token_usage={
-                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "prompt_tokens_estimate": self.count_tokens(prompt),
                 "completion_tokens_estimate": _estimate_tokens(provider_output),
             },
             retries=retries,
@@ -123,7 +131,7 @@ class TracingLLMProvider:
             input_payload=input_payload,
             output=provider_output,
             token_usage={
-                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "prompt_tokens_estimate": self.count_tokens(prompt),
                 "completion_tokens_estimate": _estimate_tokens(provider_output),
             },
             checkpoint_id=checkpoint_id,
@@ -139,6 +147,8 @@ class TracingLLMProvider:
         input_payload = {
             "prompt_sha256": sha256_text(prompt),
             "prompt_chars": len(prompt),
+            "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+            "prompt_tokens_counted": self.count_tokens(prompt),
             "response_model": response_model.__name__,
         }
         checkpoint = self._read_ok_checkpoint(
@@ -158,7 +168,7 @@ class TracingLLMProvider:
                     input_payload=input_payload,
                     output=output,
                     token_usage={
-                        "prompt_tokens_estimate": _estimate_tokens(prompt),
+                        "prompt_tokens_estimate": self.count_tokens(prompt),
                         "completion_tokens_estimate": _estimate_tokens(canonical_json(output)),
                     },
                     checkpoint_id=str(checkpoint["checkpoint_id"]),
@@ -181,7 +191,7 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
-                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
+                token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -191,7 +201,7 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
-                token_usage={"prompt_tokens_estimate": _estimate_tokens(prompt)},
+                token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
                 error=exc.original,
                 checkpoint_id=checkpoint_id,
                 retries=exc.retries,
@@ -206,7 +216,7 @@ class TracingLLMProvider:
             input_payload=input_payload,
             output=json_output,
             token_usage={
-                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "prompt_tokens_estimate": self.count_tokens(prompt),
                 "completion_tokens_estimate": _estimate_tokens(canonical_json(json_output)),
             },
             retries=retries,
@@ -220,7 +230,7 @@ class TracingLLMProvider:
             input_payload=input_payload,
             output=json_output,
             token_usage={
-                "prompt_tokens_estimate": _estimate_tokens(prompt),
+                "prompt_tokens_estimate": self.count_tokens(prompt),
                 "completion_tokens_estimate": _estimate_tokens(canonical_json(json_output)),
             },
             checkpoint_id=checkpoint_id,

@@ -619,6 +619,47 @@
       "title": "Included News Row Count",
       "type": "integer"
     },
+    "memory_coverage_cache_hit": {
+      "default": false,
+      "title": "Memory Coverage Cache Hit",
+      "type": "boolean"
+    },
+    "memory_coverage_corpus_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Coverage Corpus Sha256"
+    },
+    "memory_coverage_manifest_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Coverage Manifest Artifact"
+    },
+    "memory_coverage_manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Memory Coverage Manifest Sha256"
+    },
     "memory_sweep_artifact_hashes": {
       "additionalProperties": {
         "type": "string"

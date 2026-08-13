@@ -34,6 +34,7 @@ class Limits(BaseModel):
     open_world_cluster_batch_size: int = 12
     novelty_cluster_batch_size: int = 12
     session_pack_token_budget: int = 60_000
+    final_synthesis_token_budget: int = 80_000
     cluster_coverage_record_limit_per_query: int = 3
     cluster_coverage_record_limit_per_lane: int = 3
     cluster_coverage_lanes: list[str] = Field(
@@ -181,6 +182,7 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "open_world_cluster_batch_size": 12,
             "novelty_cluster_batch_size": 12,
             "session_pack_token_budget": 60_000,
+            "final_synthesis_token_budget": 80_000,
             "cluster_coverage_record_limit_per_query": 3,
             "cluster_coverage_record_limit_per_lane": 3,
             "cluster_coverage_lanes": [

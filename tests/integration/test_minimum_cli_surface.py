@@ -541,14 +541,13 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     assert supporting["red_team"]["attack_check_coverage_verified"] is True
     assert supporting["red_team"]["passed_to_synthesis_verified"] is True
     assert supporting["red_team"]["summary_verified"] is True
-    memory_sweep = inspection["memory_sweep"]
-    assert memory_sweep["passed"] is True
-    assert memory_sweep["hashes_verified"] is True
-    assert memory_sweep["metadata_verified"] is True
-    assert memory_sweep["shard_count_verified"] is True
-    assert memory_sweep["cache_hits_verified"] is True
-    assert memory_sweep["swept_episode_ids_verified"] is True
-    assert memory_sweep["artifact_count"] >= 1
+    memory_coverage = inspection["memory_coverage"]
+    assert memory_coverage["passed"] is True
+    assert memory_coverage["manifest_hash_verified"] is True
+    assert memory_coverage["contract_verified"] is True
+    assert memory_coverage["references_verified"] is True
+    assert memory_coverage["record_sets_verified"] is True
+    assert memory_coverage["cutoff_verified"] is True
     llm_traces = inspection["llm_traces"]
     assert llm_traces["passed"] is True
     assert llm_traces["matched_prompt_count"] == 7
@@ -2158,23 +2157,32 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
     )
     write_json(final_context_file, original_final_context)
     write_json(manifest_file, original_manifest)
-    memory_sweep_file = tmp_path / context_payload["memory_sweep_artifacts"][0]
-    original_memory_sweep = memory_sweep_file.read_text(encoding="utf-8")
-    memory_sweep_file.write_text(
-        original_memory_sweep.replace(
-            "nslab.memory_sweep_contribution.v1",
-            "tampered.memory_sweep",
+    memory_coverage_file = (
+        tmp_path / context_payload["memory_coverage_manifest_artifact"]
+    )
+    original_memory_coverage_bytes = memory_coverage_file.read_bytes()
+    original_memory_coverage = original_memory_coverage_bytes.decode("utf-8")
+    memory_coverage_file.write_text(
+        original_memory_coverage.replace(
+            "nslab.memory_coverage_manifest.v2",
+            "tampered.memory_coverage",
             1,
         ),
         encoding="utf-8",
     )
-    tampered_sweep_context = RUNNER.invoke(app, ["context", "inspect", run_id])
-    _assert_ok("context inspect tampered memory sweep", tampered_sweep_context)
-    tampered_sweep_inspection = json.loads(tampered_sweep_context.output)["inspection"]
-    assert tampered_sweep_inspection["reproducibility_checks_passed"] is False
-    assert tampered_sweep_inspection["memory_sweep"]["hashes_verified"] is False
-    assert tampered_sweep_inspection["memory_sweep"]["metadata_verified"] is False
-    memory_sweep_file.write_text(original_memory_sweep, encoding="utf-8")
+    tampered_coverage_context = RUNNER.invoke(app, ["context", "inspect", run_id])
+    _assert_ok("context inspect tampered memory coverage", tampered_coverage_context)
+    tampered_coverage_inspection = json.loads(tampered_coverage_context.output)[
+        "inspection"
+    ]
+    assert tampered_coverage_inspection["reproducibility_checks_passed"] is False
+    assert tampered_coverage_inspection["memory_coverage"][
+        "manifest_hash_verified"
+    ] is False
+    assert tampered_coverage_inspection["memory_coverage"][
+        "contract_verified"
+    ] is False
+    memory_coverage_file.write_bytes(original_memory_coverage_bytes)
     daily_trace_file = (
         tmp_path
         / llm_traces["purposes"]["daily_blind_analysis"]["matching_trace_paths"][0]

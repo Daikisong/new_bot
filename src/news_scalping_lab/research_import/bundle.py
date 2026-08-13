@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -12,7 +13,9 @@ from pydantic import ValidationError
 
 from news_scalping_lab.context.final_synthesis import (
     final_synthesis_context_contract_verified,
+    phase2_memory_coverage_required,
 )
+from news_scalping_lab.contracts.memory_context import MemoryCoverageManifest
 from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
 from news_scalping_lab.utils import (
     canonical_json,
@@ -176,6 +179,8 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
         raise BundleImportError(
             "final_synthesis_context.json content does not match bundle_manifest.json"
         )
+    if not parsed.validation.get("memory_coverage_bundle_verified", True):
+        raise BundleImportError("embedded memory coverage evidence is invalid")
     if not parsed.validation.get(
         "final_synthesis_context_candidate_web_checks_verified",
         True,
@@ -396,6 +401,10 @@ def parse_bundle(path: Path) -> BundleParseResult:
         )
         validation["final_synthesis_context_candidate_verification_verified"] = (
             _verify_final_synthesis_candidate_verification_context(json_blocks)
+        )
+    if phase2_memory_coverage_required(_manifest_payload(json_blocks)):
+        validation["memory_coverage_bundle_verified"] = (
+            _verify_memory_coverage_bundle(json_blocks, jsonl_blocks, payload_blocks)
         )
     _add_optional_jsonl_validation(
         validation,
@@ -627,10 +636,10 @@ def _validate_jsonl_contracts(
             raise BundleImportError("candidate_verification.json findings must be a list")
     final_synthesis_context = json_blocks.get("final_synthesis_context.json")
     if isinstance(final_synthesis_context, dict):
-        if (
-            final_synthesis_context.get("schema_version")
-            != "nslab.final_synthesis_context.v1"
-        ):
+        if final_synthesis_context.get("schema_version") not in {
+            "nslab.final_synthesis_context.v1",
+            "nslab.final_synthesis_context.v2",
+        }:
             raise BundleImportError("final_synthesis_context.json invalid schema_version")
         if not isinstance(final_synthesis_context.get("payload"), dict):
             raise BundleImportError("final_synthesis_context.json payload must be an object")
@@ -689,6 +698,151 @@ def _bundle_manifest_string(json_blocks: dict[str, Any], field_name: str) -> str
         return None
     value = manifest.get(field_name)
     return value if isinstance(value, str) and value else None
+
+
+def _manifest_payload(json_blocks: dict[str, Any]) -> dict[str, Any]:
+    manifest = json_blocks.get("bundle_manifest.json")
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def _verify_memory_coverage_bundle(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+    payload_blocks: dict[str, str],
+) -> bool:
+    manifest = _manifest_payload(json_blocks)
+    embedded = manifest.get("embedded_memory_coverage")
+    coverage_payload = json_blocks.get("memory_coverage_manifest.json")
+    required_blocks = {
+        "memory_coverage_manifest.json",
+        "memory_coverage_accepted_records.jsonl",
+        "memory_coverage_available_records.jsonl",
+        "memory_coverage_available_ids.jsonl",
+    }
+    if not isinstance(embedded, dict) or set(embedded) != required_blocks:
+        return False
+    if not isinstance(coverage_payload, dict):
+        return False
+    try:
+        coverage = MemoryCoverageManifest.model_validate(coverage_payload)
+    except ValidationError:
+        return False
+    for name in required_blocks:
+        metadata = embedded.get(name)
+        payload = payload_blocks.get(name)
+        if not isinstance(metadata, dict) or not isinstance(payload, str):
+            return False
+        if metadata.get("sha256") != sha256_text(payload):
+            return False
+        expected_items = 1 if name.endswith(".json") else len(jsonl_blocks.get(name, []))
+        if metadata.get("item_count") != expected_items:
+            return False
+    accepted_ref = coverage.accepted_record_hash_manifest
+    if accepted_ref is None:
+        return False
+    reference_blocks = {
+        "memory_coverage_accepted_records.jsonl": accepted_ref,
+        "memory_coverage_available_records.jsonl": coverage.record_hash_manifest,
+        "memory_coverage_available_ids.jsonl": coverage.available_record_ids,
+    }
+    for name, reference in reference_blocks.items():
+        payload = payload_blocks[name]
+        reconstructed = payload + ("\n" if payload else "")
+        if sha256_text(reconstructed) != reference.sha256:
+            return False
+        if len(jsonl_blocks[name]) != reference.item_count:
+            return False
+    coverage_manifest_text = payload_blocks["memory_coverage_manifest.json"] + "\n"
+    if sha256_text(coverage_manifest_text) != manifest.get(
+        "memory_coverage_manifest_sha256"
+    ):
+        return False
+    accepted_rows = jsonl_blocks["memory_coverage_accepted_records.jsonl"]
+    available_rows = jsonl_blocks["memory_coverage_available_records.jsonl"]
+    available_id_rows = jsonl_blocks["memory_coverage_available_ids.jsonl"]
+    if not _coverage_record_hash_rows_valid(accepted_rows) or not (
+        _coverage_record_hash_rows_valid(available_rows)
+    ):
+        return False
+    available_pairs = Counter(
+        (row.get("record_id"), row.get("record_sha256")) for row in available_rows
+    )
+    available_ids = [row.get("record_id") for row in available_id_rows]
+    if any(not isinstance(value, str) or not value for value in available_ids):
+        return False
+    duplicate_count = sum(
+        count - 1
+        for count in Counter(row.get("record_id") for row in accepted_rows).values()
+        if count > 1
+    )
+    try:
+        accepted_available_from = [
+            parse_datetime(str(row["available_from"])) for row in accepted_rows
+        ]
+        available_available_from = [
+            parse_datetime(str(row["available_from"])) for row in available_rows
+        ]
+    except (KeyError, ValueError):
+        return False
+    expected_available_rows = [
+        row
+        for row, available_from in zip(
+            accepted_rows,
+            accepted_available_from,
+            strict=True,
+        )
+        if available_from <= coverage.cutoff_at
+    ]
+    expected_available_pairs = Counter(
+        (row.get("record_id"), row.get("record_sha256"))
+        for row in expected_available_rows
+    )
+    return (
+        coverage.run_id == manifest.get("run_id")
+        and coverage.cutoff_at.isoformat() == manifest.get("cutoff_at")
+        and coverage.corpus_manifest_sha256
+        == manifest.get("memory_coverage_corpus_sha256")
+        and coverage.accepted_record_count == len(accepted_rows)
+        and coverage.available_record_count == len(available_rows)
+        and coverage.future_record_count
+        == len(accepted_rows) - len(expected_available_rows)
+        and coverage.duplicate_record_count == duplicate_count == 0
+        and coverage.coverage_complete
+        and available_pairs == expected_available_pairs
+        and available_ids == [row.get("record_id") for row in available_rows]
+        and all(value <= coverage.cutoff_at for value in available_available_from)
+    )
+
+
+def _coverage_record_hash_rows_valid(rows: list[dict[str, Any]]) -> bool:
+    required = {
+        "available_from",
+        "episode_id",
+        "evidence_phase",
+        "record_id",
+        "record_sha256",
+        "record_type",
+        "training_eligible",
+    }
+    for row in rows:
+        if set(row) != required:
+            return False
+        if not all(
+            isinstance(row.get(field), str) and bool(row.get(field))
+            for field in required - {"training_eligible"}
+        ):
+            return False
+        record_sha256 = row.get("record_sha256")
+        if not isinstance(record_sha256, str) or len(record_sha256) != 64:
+            return False
+        try:
+            int(record_sha256, 16)
+            parse_datetime(str(row["available_from"]))
+        except ValueError:
+            return False
+        if not isinstance(row.get("training_eligible"), bool):
+            return False
+    return True
 
 
 def _validate_blind_published_at_before_cutoff(

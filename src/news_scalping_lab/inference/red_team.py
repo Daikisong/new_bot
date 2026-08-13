@@ -13,7 +13,7 @@ from news_scalping_lab.contracts.models import (
     RedTeamAttackCheck,
     RedTeamFinding,
 )
-from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
 from news_scalping_lab.utils import (
     canonical_json,
     now_kst,
@@ -98,7 +98,7 @@ async def run_red_team_pass(
     return RedTeamPassResult(
         artifact=artifact,
         artifact_path=relative_to_root(artifact_path, root),
-        prompt_token_estimate=max(1, len(prompt) // 4),
+        prompt_token_estimate=count_provider_tokens(llm, prompt),
         used_fallback=used_fallback,
     )
 

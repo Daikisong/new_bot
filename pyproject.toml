@@ -26,6 +26,7 @@ dev = [
 ]
 openai = [
     "openai>=1.50",
+    "tiktoken>=0.8",
 ]
 ui = [
     "streamlit>=1.36",

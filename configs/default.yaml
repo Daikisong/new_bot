@@ -31,6 +31,7 @@ limits:
   open_world_max_prompt_chars: 120000
   open_world_cluster_batch_size: 12
   novelty_cluster_batch_size: 12
+  final_synthesis_token_budget: 80000
   cluster_coverage_record_limit_per_query: 3
   cluster_coverage_record_limit_per_lane: 3
   cluster_coverage_lanes:

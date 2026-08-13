@@ -40,6 +40,17 @@
       "title": "Accepted Record Count",
       "type": "integer"
     },
+    "accepted_record_hash_manifest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "available_record_count": {
       "minimum": 0,
       "title": "Available Record Count",

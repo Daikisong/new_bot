@@ -830,30 +830,33 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.brain_compiler_provider == "deterministic_catalog"
     assert manifest.brain_compiler_model == CATALOG_COMPILER_VERSION
     assert manifest.brain_compiler_catalog_only is False
-    assert manifest.record_sweep_artifacts
-    assert manifest.record_sweep_shard_count == 1
+    assert manifest.record_sweep_artifacts == []
+    assert manifest.record_sweep_shard_count == 0
+    assert manifest.memory_coverage_manifest_artifact
+    assert manifest.memory_coverage_manifest_sha256
     assert manifest.errors == []
-    record_sweep_payload = read_json(tmp_path / manifest.record_sweep_artifacts[0])
-    assert record_sweep_payload["record_ids"] == ["BRAIN-AVAILABLE"]
+    coverage_manifest = read_json(
+        tmp_path / str(manifest.memory_coverage_manifest_artifact)
+    )
+    assert coverage_manifest["accepted_record_count"] == 2
+    assert coverage_manifest["available_record_count"] == 1
+    assert coverage_manifest["future_record_count"] == 1
+    assert coverage_manifest["coverage_complete"] is True
     synthesis_context = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))
     synthesis_payload = synthesis_context["payload"]
-    assert synthesis_payload["accepted_record_count"] == 2
-    assert synthesis_payload["available_record_count"] == 1
-    assert synthesis_payload["training_eligible_available_record_count"] == 1
-    assert synthesis_payload["swept_record_count"] == 1
-    assert synthesis_payload["swept_record_ids"] == ["BRAIN-AVAILABLE"]
-    assert synthesis_payload["missing_swept_record_ids"] == []
-    assert synthesis_payload["unexpected_swept_record_ids"] == []
-    assert synthesis_payload["duplicate_swept_record_ids"] == []
-    assert synthesis_context["input_summary"]["missing_swept_record_id_count"] == 0
-    assert synthesis_context["input_summary"]["unexpected_swept_record_id_count"] == 0
-    assert synthesis_context["input_summary"]["duplicate_swept_record_id_count"] == 0
+    synthesis_coverage = synthesis_payload["memory_coverage_manifest"]
+    assert synthesis_coverage["accepted_record_count"] == 2
+    assert synthesis_coverage["available_record_count"] == 1
+    assert synthesis_coverage["training_eligible_available_record_count"] == 1
+    assert synthesis_coverage["coverage_complete"] is True
+    assert synthesis_context["input_summary"][
+        "memory_coverage_accepted_record_count"
+    ] == 2
+    assert synthesis_context["input_summary"][
+        "memory_coverage_available_record_count"
+    ] == 1
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
-    assert synthesis_payload["available_record_ids"] == ["BRAIN-AVAILABLE"]
-    assert synthesis_payload["training_eligible_available_record_ids"] == [
-        "BRAIN-AVAILABLE"
-    ]
     assert synthesis_payload["semantic_retrieval_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == [
         "BRAIN-FUTURE"
@@ -940,16 +943,10 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
         "model": CATALOG_COMPILER_VERSION,
         "catalog_only": False,
     }
-    assert synthesis_payload["record_level_shard_contributions"][0]["payload"][
-        "record_ids"
-    ] == ["BRAIN-AVAILABLE"]
-    assert synthesis_payload["record_sweep_artifacts"] == manifest.record_sweep_artifacts
-    assert (
-        synthesis_payload["record_sweep_artifact_hashes"]
-        == manifest.record_sweep_artifact_hashes
-    )
-    assert synthesis_payload["record_sweep_shard_count"] == 1
-    assert synthesis_payload["record_sweep_cache_hits"] == 0
+    assert "record_level_shard_contributions" not in synthesis_payload
+    assert "all_shard_contributions" not in synthesis_payload
+    assert "record_sweep_artifacts" not in synthesis_payload
+    assert "available_record_ids" not in synthesis_payload
     semantic_rows = [
         json.loads(line)
         for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
@@ -991,15 +988,8 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
         saved_manifest_path,
         read_json(saved_manifest_path),
     )
-    record_sweep = inspection["record_sweep"]
-    assert record_sweep["passed"] is True
-    assert record_sweep["hashes_verified"] is True
-    assert record_sweep["metadata_verified"] is True
-    assert record_sweep["source_hashes_verified"] is True
-    assert record_sweep["shard_count_verified"] is True
-    assert record_sweep["cache_hits_verified"] is True
-    assert record_sweep["swept_record_ids_verified"] is True
-    assert record_sweep["observed_record_ids"] == ["BRAIN-AVAILABLE"]
+    assert inspection["memory_coverage"]["passed"] is True
+    assert inspection["reproducibility_checks_passed"] is True
     cluster_coverage = inspection["supporting_artifacts"]["semantic_cluster_coverage"]
     assert cluster_coverage["passed"] is True
     assert cluster_coverage["cluster_ids_verified"] is True
@@ -1103,9 +1093,8 @@ async def test_daily_analyzer_preserves_record_sweep_when_accepted_store_unreada
     assert manifest["available_record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
     assert manifest["swept_record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
     assert manifest["excluded_retrieved_record_ids"] == ["BRAIN-ANALYZE-FUTURE"]
-    assert manifest["record_sweep_artifacts"]
-    record_sweep = read_json(tmp_path / manifest["record_sweep_artifacts"][0])
-    assert record_sweep["record_ids"] == ["BRAIN-ANALYZE-AVAILABLE"]
+    assert manifest["record_sweep_artifacts"] == []
+    assert manifest["memory_coverage_manifest_artifact"]
 
 
 @pytest.mark.asyncio
@@ -1342,13 +1331,13 @@ async def test_no_future_record_in_historical_context(tmp_path) -> None:
     assert manifest.available_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert manifest.retrieved_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert manifest.excluded_retrieved_record_ids == ["BRAIN-HISTORICAL-FUTURE"]
-    assert synthesis_payload["available_record_ids"] == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == [
         "BRAIN-HISTORICAL-FUTURE"
     ]
+    assert "record_level_shard_contributions" not in synthesis_payload
     assert "BRAIN-HISTORICAL-FUTURE" not in json.dumps(
-        synthesis_payload["record_level_shard_contributions"],
+        synthesis_payload["retrieved_records"],
         ensure_ascii=False,
     )
 
@@ -1727,18 +1716,11 @@ async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episode
     assert manifest.brain_compiler_provider == "deterministic_catalog"
     assert manifest.brain_compiler_model == CATALOG_COMPILER_VERSION
     assert manifest.brain_compiler_catalog_only is True
-    assert manifest.memory_sweep_artifacts
+    assert manifest.memory_sweep_artifacts == []
+    assert manifest.memory_coverage_manifest_artifact
     assert manifest.shard_brain_files
     assert manifest.shard_brain_file_hashes
     assert manifest.errors == []
-    sweep_payloads = [
-        read_json(tmp_path / relative_path)
-        for relative_path in manifest.memory_sweep_artifacts
-    ]
-    assert [payload["episode_ids"] for payload in sweep_payloads] == [
-        ["EP-brain-mode-0", "EP-brain-mode-1"]
-    ]
-    assert all(payload["mode"] == "brain" for payload in sweep_payloads)
     assert all((tmp_path / relative_path).exists() for relative_path in manifest.shard_brain_files)
     synthesis_payload = read_json(
         tmp_path / str(manifest.final_synthesis_context_artifact)

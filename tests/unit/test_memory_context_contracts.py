@@ -3,6 +3,9 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
+from news_scalping_lab.context.final_synthesis import (
+    phase2_memory_coverage_required,
+)
 from news_scalping_lab.contracts.memory_context import (
     ArtifactReference,
     DailyMemoryContext,
@@ -68,6 +71,16 @@ def test_daily_memory_context_contains_hash_references_not_raw_corpus() -> None:
     assert dumped["schema_version"] == "nslab.daily_memory_context.v1"
     assert "records" not in dumped
     assert dumped["memory_coverage_manifest"]["sha256"] == "a" * 64
+
+
+def test_phase2_marker_requires_memory_coverage_without_artifact_self_declaration() -> None:
+    assert phase2_memory_coverage_required(
+        {
+            "model_config": {
+                "final_synthesis_prompt_version": "synthesis.final.v2"
+            }
+        }
+    )
 
 
 def test_hashes_and_datetimes_reject_unsafe_values() -> None:

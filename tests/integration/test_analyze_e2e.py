@@ -15,7 +15,7 @@ from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.cli import _inspect_context_manifest
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
-from news_scalping_lab.context.sweep import MEMORY_SWEEP_PROMPT_VERSION, SweepResult
+from news_scalping_lab.context.sweep import SweepResult
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
     NewsCoverageManifest,
@@ -48,9 +48,12 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
     ExhaustiveCoverageError,
+    FinalSynthesisBudgetError,
     OpenWorldCoverageError,
 )
 from news_scalping_lab.prices.base import PriceRecord
+from news_scalping_lab.reporting.bundle import export_analysis_bundle
+from news_scalping_lab.research_import.bundle import parse_bundle
 from news_scalping_lab.research_import.importer import ResearchImporter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
@@ -128,6 +131,9 @@ class RecordingBlindLLM:
         self.expected_final_prompt_substring = expected_final_prompt_substring
         self.forbidden_final_prompt_substrings = forbidden_final_prompt_substrings or []
         self.fail_embedding = fail_embedding
+
+    def count_tokens(self, text: str) -> int:
+        return max(1, len(text) // 4) if text else 0
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         raise AssertionError("daily analyzer should request structured output")
@@ -296,7 +302,9 @@ class RecordingBlindLLM:
             assert "NEWS_ONLY_STRICT_NO_PRICE_ACCESS" in prompt
             assert "retrieved_raw_episodes" in prompt
             assert "all_shard_brains" in prompt
-            assert "all_shard_contributions" in prompt
+            assert "memory_coverage_manifest" in prompt
+            assert "all_shard_contributions" not in prompt
+            assert "record_level_shard_contributions" not in prompt
             if self.expected_final_prompt_substring is not None:
                 assert self.expected_final_prompt_substring in prompt
             for forbidden in self.forbidden_final_prompt_substrings:
@@ -628,6 +636,8 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "event_cluster_max_semantic_variants": 32,
         "event_cluster_similarity_threshold": 0.9,
         "event_clustering_version": "semantic_complete_link_v1",
+        "final_synthesis_prompt_version": "synthesis.final.v2",
+        "final_synthesis_token_budget": 80000,
         "max_output_tokens": 4096,
         "max_concurrency": 4,
         "max_retries": 0,
@@ -638,6 +648,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "novelty_cluster_batch_size": 12,
         "reasoning_effort": "low",
         "shard_episode_count": 20,
+        "token_counting_version": "provider_tokenizer_or_utf8_upper_bound.v1",
     }
     assert saved_manifest["red_team_artifacts"] == analysis.context_manifest.red_team_artifacts
     assert saved_manifest["prompt_hashes"]["red_team_candidate_review"]
@@ -649,9 +660,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         sha256_text(final_context_path.read_text(encoding="utf-8"))
         == saved_manifest["final_synthesis_context_sha256"]
     )
-    assert final_context["schema_version"] == "nslab.final_synthesis_context.v1"
+    assert final_context["schema_version"] == "nslab.final_synthesis_context.v2"
     assert final_context["run_id"] == analysis.run_id
-    assert final_context["prompt_version"] == "synthesis.final.v1"
+    assert final_context["prompt_version"] == "synthesis.final.v2"
     assert final_context["payload_sha256"] == sha256_text(
         canonical_json(final_context["payload"])
     )
@@ -1518,7 +1529,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v2"
-    assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
+    assert prompt_versions["final_synthesis"] == "synthesis.final.v2"
 
 
 @pytest.mark.asyncio
@@ -1565,7 +1576,9 @@ async def test_analyze_batches_every_material_cluster_beyond_legacy_twelve_cap(
     assert len(manifest["prompt_batch_hashes"]["news_novelty_review"]) == 3
     manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
     inspection = _inspect_context_manifest(tmp_path, manifest_path, manifest)
-    assert inspection["reproducibility_checks_passed"] is True
+    assert inspection["reproducibility_checks_passed"] is True, json.dumps(
+        inspection, ensure_ascii=False, indent=2, default=str
+    )
     assert audit_provenance(tmp_path)["passed"] is True
     purposes = [str(call["purpose"]) for call in llm.calls]
     assert sum(purpose.startswith("open_world_first_analysis.batch_") for purpose in purposes) == 3
@@ -2287,7 +2300,7 @@ def test_daily_analyzer_uses_configured_stock_web_price_source(tmp_path) -> None
 
 
 @pytest.mark.asyncio
-async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> None:
+async def test_exhaustive_analyze_persists_compact_memory_coverage(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     settings.limits.shard_episode_count = 1
     ensure_project_dirs(settings)
@@ -2326,37 +2339,41 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
         for shard_path in manifest.shard_brain_files
     )
     assert all(episode_id in shard_brain_text for episode_id in manifest.swept_episode_ids)
-    assert manifest.memory_sweep_shard_count == 2
+    assert manifest.memory_sweep_shard_count == 0
     assert manifest.memory_sweep_cache_hits == 0
-    assert len(manifest.memory_sweep_artifacts) == 2
-    assert set(manifest.memory_sweep_artifact_hashes) == set(
-        manifest.memory_sweep_artifacts
+    assert manifest.memory_sweep_artifacts == []
+    assert manifest.memory_coverage_manifest_artifact
+    assert manifest.memory_coverage_cache_hit is False
+    coverage = read_json(tmp_path / str(manifest.memory_coverage_manifest_artifact))
+    assert coverage["coverage_complete"] is True
+    assert coverage["accepted_record_count"] == 0
+
+    exported = parse_bundle(
+        export_analysis_bundle(settings, run_id=manifest.run_id)
     )
-    swept_from_artifacts: set[str] = set()
-    for artifact in manifest.memory_sweep_artifacts:
-        payload = read_json(tmp_path / artifact)
-        assert payload["cache_key"]
-        assert payload["episode_shard_sha256"]
-        source_hashes = payload["episode_shard_source_hashes"]
-        assert sorted(source_hashes) == sorted(payload["episode_ids"])
-        assert payload["episode_shard_sha256"] == sha256_text(
-            canonical_json(
-                [
-                    {
-                        "episode_id": episode_id,
-                        "source_sha256": source_hash,
-                    }
-                    for episode_id, source_hash in sorted(source_hashes.items())
-                ]
-            )
-        )
-        for episode_id in payload["episode_ids"]:
-            assert source_hashes[episode_id] == file_sha256(
-                tmp_path / "research" / "accepted" / f"{episode_id}.json"
-            )
-        assert payload["from_cache"] is False
-        swept_from_artifacts.update(payload["episode_ids"])
-    assert swept_from_artifacts == set(manifest.swept_episode_ids)
+    assert exported.validation["memory_coverage_bundle_verified"] is True
+    assert {
+        "memory_coverage_manifest.json",
+        "memory_coverage_accepted_records.jsonl",
+        "memory_coverage_available_records.jsonl",
+        "memory_coverage_available_ids.jsonl",
+    }.issubset(exported.blocks)
+
+    missing_coverage_manifest = manifest.model_dump(mode="json")
+    for field in (
+        "memory_coverage_manifest_artifact",
+        "memory_coverage_manifest_sha256",
+        "memory_coverage_corpus_sha256",
+    ):
+        missing_coverage_manifest.pop(field, None)
+    assert (
+        _inspect_context_manifest(
+            tmp_path,
+            tmp_path / "missing-coverage.json",
+            missing_coverage_manifest,
+        )["reproducibility_checks_passed"]
+        is False
+    )
 
     repeated = await DailyAnalyzer(settings).analyze(
         news_csv=csv_path,
@@ -2371,14 +2388,9 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json")
     assert saved_manifest["shard_brain_files"] == manifest.shard_brain_files
     assert set(saved_manifest["shard_brain_file_hashes"]) == set(manifest.shard_brain_files)
-    assert set(saved_manifest["memory_sweep_artifact_hashes"]) == set(
-        manifest.memory_sweep_artifacts
-    )
-    assert repeated_manifest.memory_sweep_shard_count == 2
-    assert repeated_manifest.memory_sweep_cache_hits == 2
-    for artifact in repeated_manifest.memory_sweep_artifacts:
-        payload = read_json(tmp_path / artifact)
-        assert payload["from_cache"] is True
+    assert saved_manifest["memory_sweep_artifacts"] == []
+    assert repeated_manifest.memory_sweep_shard_count == 0
+    assert repeated_manifest.memory_coverage_cache_hit is True
 
     changed_settings = Settings(project_root=tmp_path)
     changed_settings.limits.shard_episode_count = 1
@@ -2396,13 +2408,14 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
 
     changed_manifest = changed_model.context_manifest
     assert changed_manifest.run_id != manifest.run_id
-    assert changed_manifest.memory_sweep_shard_count == 2
+    assert changed_manifest.memory_sweep_shard_count == 0
     assert changed_manifest.memory_sweep_cache_hits == 0
-    for artifact in changed_manifest.memory_sweep_artifacts:
-        payload = read_json(tmp_path / artifact)
-        assert payload["from_cache"] is False
-        assert payload["prompt_version"] == MEMORY_SWEEP_PROMPT_VERSION
-        assert payload["model_config_sha256"]
+    assert changed_manifest.memory_sweep_artifacts == []
+    assert changed_manifest.memory_coverage_cache_hit is True
+    assert (
+        changed_manifest.memory_coverage_corpus_sha256
+        == manifest.memory_coverage_corpus_sha256
+    )
 
 
 @pytest.mark.asyncio
@@ -2429,9 +2442,7 @@ async def test_brain_mode_loads_shard_brains_and_sweeps_available_episodes(
         '"Brain mode must carry shard summaries and swept memory."\n',
         encoding="utf-8",
     )
-    llm = RecordingBlindLLM(
-        expected_final_prompt_substring="Brain mode lesson 0 should reach shard context."
-    )
+    llm = RecordingBlindLLM()
 
     analysis = await DailyAnalyzer(settings, llm=llm).analyze(
         news_csv=csv_path,
@@ -2448,11 +2459,9 @@ async def test_brain_mode_loads_shard_brains_and_sweeps_available_episodes(
     assert manifest.swept_episode_count == 2
     assert set(manifest.swept_episode_ids) == expected_ids
     assert manifest.errors == []
-    assert manifest.memory_sweep_shard_count == 2
-    assert len(manifest.memory_sweep_artifacts) == 2
-    assert set(manifest.memory_sweep_artifact_hashes) == set(
-        manifest.memory_sweep_artifacts
-    )
+    assert manifest.memory_sweep_shard_count == 0
+    assert manifest.memory_sweep_artifacts == []
+    assert manifest.memory_coverage_manifest_artifact
     shard_brain_text = "\n".join(
         (tmp_path / path).read_text(encoding="utf-8")
         for path in manifest.shard_brain_files
@@ -2460,12 +2469,10 @@ async def test_brain_mode_loads_shard_brains_and_sweeps_available_episodes(
     assert expected_ids <= {
         episode_id for episode_id in expected_ids if episode_id in shard_brain_text
     }
-    swept_from_artifacts: set[str] = set()
-    for artifact in manifest.memory_sweep_artifacts:
-        payload = read_json(tmp_path / artifact)
-        assert payload["mode"] == "brain"
-        swept_from_artifacts.update(payload["episode_ids"])
-    assert swept_from_artifacts == expected_ids
+    final_context = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))
+    shard_refs = final_context["payload"]["all_shard_brains"]
+    assert shard_refs
+    assert all("text" not in row for row in shard_refs)
 
 
 @pytest.mark.asyncio
@@ -2514,14 +2521,39 @@ async def test_exhaustive_analyze_sweeps_one_hundred_accepted_episodes(tmp_path)
     assert manifest.accepted_episode_count == 100
     assert manifest.swept_episode_count == 100
     assert set(manifest.swept_episode_ids) == expected_ids
-    assert manifest.memory_sweep_shard_count == 10
-    assert len(manifest.memory_sweep_artifacts) == 10
-    swept_from_artifacts: set[str] = set()
-    for artifact in manifest.memory_sweep_artifacts:
-        payload = read_json(tmp_path / artifact)
-        assert payload["episode_count"] == 10
-        swept_from_artifacts.update(payload["episode_ids"])
-    assert swept_from_artifacts == expected_ids
+    assert manifest.memory_sweep_shard_count == 0
+    assert manifest.memory_sweep_artifacts == []
+    assert manifest.memory_coverage_manifest_artifact
+    final_context = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))
+    assert final_context["input_summary"]["memory_coverage_complete"] is True
+    assert final_context["input_summary"]["shard_contribution_count"] == 0
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{manifest.run_id}.json")
     assert saved_manifest["accepted_episode_count"] == 100
     assert saved_manifest["swept_episode_count"] == 100
+
+
+@pytest.mark.asyncio
+async def test_final_synthesis_fails_closed_above_token_budget(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.final_synthesis_token_budget = 1
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    csv_path = tmp_path / "budget_news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","BudgetCo catalyst",'
+        '"Current event needs bounded synthesis."\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        FinalSynthesisBudgetError,
+        match="final synthesis prompt exceeds token budget",
+    ):
+        await DailyAnalyzer(settings).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="exhaustive",
+            web_search=False,
+        )

@@ -8,6 +8,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
+from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    final_synthesis_context_contract_verified,
+    phase2_memory_coverage_required,
+)
+from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.ingest.news import NewsBatch, load_news_csv
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.research_import.bundle import (
@@ -161,6 +167,15 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_candidate_web_check_artifact(root, manifest_name, manifest, findings)
         _check_candidate_verification_artifact(root, manifest_name, manifest, findings)
         _check_final_synthesis_context_artifact(root, manifest_name, manifest, findings)
+        if phase2_memory_coverage_required(manifest):
+            coverage = inspect_memory_coverage_manifest(
+                root,
+                cast(dict[str, object], manifest),
+                verify_current_store=False,
+            )
+            if not coverage.get("passed"):
+                for error in coverage.get("errors", []):
+                    findings.append(f"{manifest_name}: {error}")
         _check_blind_seal(root, manifest_name, manifest, findings)
         _check_news_only_blind_protocol(manifest_name, manifest, findings)
     return {
@@ -2337,12 +2352,35 @@ def _check_final_synthesis_context_artifact(
     )
     if artifact is None:
         return
-    if artifact.get("schema_version") != "nslab.final_synthesis_context.v1":
+    if artifact.get("schema_version") not in {
+        "nslab.final_synthesis_context.v1",
+        "nslab.final_synthesis_context.v2",
+    }:
         findings.append(f"{manifest_name}: final_synthesis_context schema_version invalid")
+    if (
+        phase2_memory_coverage_required(cast(dict[str, object], manifest))
+        and artifact.get("schema_version") != "nslab.final_synthesis_context.v2"
+    ):
+        findings.append(f"{manifest_name}: final_synthesis_context Phase 2 downgrade")
     payload = artifact.get("payload")
     if not isinstance(payload, dict):
         findings.append(f"{manifest_name}: final_synthesis_context payload must be object")
         return
+    if artifact.get("schema_version") == "nslab.final_synthesis_context.v2":
+        forbidden = sorted(
+            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(payload)
+        )
+        if forbidden:
+            findings.append(
+                f"{manifest_name}: final_synthesis_context contains exhaustive payload"
+            )
+        if not final_synthesis_context_contract_verified(
+            cast(dict[str, object], manifest),
+            artifact,
+        ):
+            findings.append(
+                f"{manifest_name}: final_synthesis_context v2 contract mismatch"
+            )
     manifest_cutoff_at = _manifest_cutoff_at(manifest)
     if manifest_cutoff_at is None:
         return

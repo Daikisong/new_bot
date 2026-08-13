@@ -964,3 +964,6 @@ class DeterministicMockLLMProvider:
                 int(compact_match.group(3)),
             )
         return None
+
+    def count_tokens(self, text: str) -> int:
+        return max(1, len(text) // 4) if text else 0

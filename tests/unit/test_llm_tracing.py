@@ -6,6 +6,7 @@ from typing import TypeVar
 import pytest
 from pydantic import BaseModel
 
+from news_scalping_lab.llm.base import conservative_token_upper_bound
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
@@ -107,6 +108,9 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert text_trace["prompt_version"] == "test-v1"
     assert structured["model_config"] == {"provider": "mock", "model": "deterministic"}
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
+    assert structured["input"]["prompt_utf8_bytes"] == len(
+        b"Research 2030-01-10\n---SOURCE_TEXT---\nnotes"
+    )
     assert structured["token_usage"]["completion_tokens_estimate"] > 0
     assert text_trace["token_usage"]["completion_tokens_estimate"] > 0
     assert embed_trace["input"]["text_count"] == 2
@@ -119,6 +123,13 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert structured["tool_calls"] == []
     assert structured["retries"] == 0
     assert structured["retry_errors"] == []
+
+
+def test_conservative_token_upper_bound_does_not_underestimate_korean() -> None:
+    prompt = "한글 최종 판단" * 100
+
+    assert conservative_token_upper_bound(prompt) == len(prompt.encode("utf-8"))
+    assert conservative_token_upper_bound(prompt) > len(prompt) // 4
 
 
 @pytest.mark.asyncio

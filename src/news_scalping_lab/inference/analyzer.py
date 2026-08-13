@@ -15,8 +15,13 @@ from pydantic import ValidationError
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
+    FINAL_SYNTHESIS_V2_PROMPT_VERSION,
     final_synthesis_input_summary,
     string_list,
+)
+from news_scalping_lab.context.memory_coverage import (
+    inspect_memory_coverage_manifest,
 )
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.sweep import MemorySweeper
@@ -70,7 +75,11 @@ from news_scalping_lab.inference.red_team import (
     run_red_team_pass,
 )
 from news_scalping_lab.ingest.news import load_news_csv
-from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.base import (
+    TOKEN_COUNTING_VERSION,
+    LLMProvider,
+    count_provider_tokens,
+)
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
@@ -131,12 +140,16 @@ class FutureContextLeakError(RuntimeError):
     """Raised when the active brain context contains future-unavailable research."""
 
 
+class FinalSynthesisBudgetError(RuntimeError):
+    """Raised when bounded reasoning context exceeds the configured prompt budget."""
+
+
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
 OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION = "open_world_first_analysis.v2"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
 SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v2"
 CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
-FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
+FINAL_SYNTHESIS_PROMPT_VERSION = FINAL_SYNTHESIS_V2_PROMPT_VERSION
 SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = MEMORY_RETRIEVAL_LANES
 CANDIDATE_EXPANSION_REQUIRED_PATHS = (
     CandidateExpansionPath.SINGLE_EVENT,
@@ -397,6 +410,7 @@ class DailyAnalyzer:
             first_pass_mechanisms=first_pass_mechanisms,
             model_config=self.llm_model_config,
             brain_version=manifest.brain_version,
+            emit_legacy_contributions=False,
         )
         manifest.accepted_episode_count = sweep.accepted_episode_count
         manifest.swept_episode_count = len(sweep.swept_episode_ids)
@@ -412,6 +426,14 @@ class DailyAnalyzer:
         )
         manifest.swept_record_count = len(sweep.swept_record_ids)
         manifest.swept_record_ids = sweep.swept_record_ids
+        manifest.memory_coverage_manifest_artifact = (
+            sweep.memory_coverage_manifest_path
+        )
+        manifest.memory_coverage_manifest_sha256 = (
+            sweep.memory_coverage_manifest_sha256
+        )
+        manifest.memory_coverage_corpus_sha256 = sweep.corpus_manifest_sha256
+        manifest.memory_coverage_cache_hit = sweep.memory_coverage_cache_hit
         manifest.memory_sweep_artifacts = sweep.artifact_paths
         manifest.record_sweep_artifacts = sweep.record_artifact_paths
         manifest.memory_sweep_artifact_hashes = {
@@ -432,6 +454,7 @@ class DailyAnalyzer:
             if error not in manifest.errors:
                 manifest.errors.append(error)
         self._fail_if_exhaustive_coverage_incomplete(manifest)
+        self._fail_if_memory_coverage_incomplete(manifest)
         _semantic_plan, semantic_prompt_hash, semantic_prompt_tokens = (
             await self._run_semantic_retrieval_plan(
                 news_texts=news_texts,
@@ -491,20 +514,12 @@ class DailyAnalyzer:
                 "prediction_retrieved_record_ids": prediction_retrieved_record_ids,
                 "accepted_record_count": manifest.accepted_record_count,
                 "available_record_count": manifest.available_record_count,
-                "available_record_ids": manifest.available_record_ids,
-                "swept_record_count": manifest.swept_record_count,
-                "swept_record_ids": manifest.swept_record_ids,
                 "training_eligible_available_record_count": (
                     manifest.training_eligible_available_record_count
                 ),
-                "training_eligible_available_record_ids": (
-                    manifest.training_eligible_available_record_ids
+                "memory_coverage_manifest": self._memory_coverage_context(
+                    manifest
                 ),
-                "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
-                "record_sweep_artifacts": manifest.record_sweep_artifacts,
-                "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
-                "record_sweep_shard_count": manifest.record_sweep_shard_count,
-                "record_sweep_cache_hits": manifest.record_sweep_cache_hits,
                 "event_cluster_artifact": manifest.event_cluster_artifact,
                 "event_cluster_summary": manifest.event_cluster_summary,
                 "open_world_first_analysis_artifact": (
@@ -728,7 +743,7 @@ class DailyAnalyzer:
                 )
             prompt_sha256 = sha256_text(prompt)
             prompt_hashes.append(prompt_sha256)
-            token_count += max(1, len(prompt) // 4)
+            token_count += count_provider_tokens(self.llm, prompt)
             try:
                 analysis = await self.llm.generate_structured(
                     prompt=prompt,
@@ -1423,7 +1438,7 @@ class DailyAnalyzer:
             )
             prompt_sha256 = sha256_text(prompt)
             prompt_hashes.append(prompt_sha256)
-            token_count += max(1, len(prompt) // 4)
+            token_count += count_provider_tokens(self.llm, prompt)
             try:
                 review = await self.llm.generate_structured(
                     prompt=prompt,
@@ -1776,7 +1791,7 @@ class DailyAnalyzer:
         manifest.semantic_retrieval_plan_artifact = artifact_relative.as_posix()
         manifest.semantic_retrieval_plan_sha256 = sha256_text(artifact_text)
         manifest.semantic_retrieval_query_count = len(normalized.queries)
-        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+        return normalized, prompt_sha256, count_provider_tokens(self.llm, prompt)
 
     def _build_semantic_retrieval_plan_prompt(
         self,
@@ -2315,7 +2330,7 @@ class DailyAnalyzer:
                 manifest.candidate_expansion_audit_only_cluster_ids
             ),
         }
-        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+        return normalized, prompt_sha256, count_provider_tokens(self.llm, prompt)
 
     def _build_candidate_expansion_prompt(
         self,
@@ -3492,6 +3507,13 @@ class DailyAnalyzer:
             payload=payload,
         )
         prompt = self._build_final_synthesis_prompt(payload)
+        prompt_tokens = count_provider_tokens(self.llm, prompt)
+        if prompt_tokens > self.settings.limits.final_synthesis_token_budget:
+            manifest.errors.append(
+                "final synthesis prompt exceeds token budget: "
+                f"{prompt_tokens} > {self.settings.limits.final_synthesis_token_budget}"
+            )
+            raise FinalSynthesisBudgetError(manifest.errors[-1])
         prompt_sha256 = sha256_text(prompt)
         try:
             synthesized = await self.llm.generate_structured(
@@ -3529,7 +3551,7 @@ class DailyAnalyzer:
                     )
                 }
             )
-        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+        return normalized, prompt_sha256, prompt_tokens
 
     def _build_final_synthesis_payload(
         self,
@@ -3546,34 +3568,7 @@ class DailyAnalyzer:
         payload: dict[str, Any] = {
             "schema": "nslab.blind_prediction.v1",
             "prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION,
-            "required_inputs": [
-                "current_news",
-                "open_world_first_analysis",
-                "news_novelty_review",
-                "additional_semantic_retrieval",
-                "semantic_cluster_coverage",
-                "open_world_candidate_expansion",
-                "web_research",
-                "global_brain",
-                "all_shard_brains",
-                "all_shard_contributions",
-                "record_level_shard_contributions",
-                "retrieved_raw_episodes",
-                "retrieved_records",
-                "positive_cases",
-                "negative_cases",
-                "positive_record_ids",
-                "negative_record_ids",
-                "counterexamples",
-                "counterexample_records",
-                "candidate_research",
-                "candidate_web_checks",
-                "candidate_verification",
-                "red_team_output",
-                "d_minus_one_market_data",
-                "company_memory",
-                "market_memory",
-            ],
+            "required_inputs": list(FINAL_SYNTHESIS_REQUIRED_INPUTS_V2),
             "run_id": manifest.run_id,
             "trade_date": prediction.trade_date.isoformat(),
             "cutoff_at": prediction.cutoff_at.isoformat(),
@@ -3607,35 +3602,11 @@ class DailyAnalyzer:
             },
             "global_brain": self._read_brain_context(manifest),
             "all_shard_brains": self._read_shard_brain_context(manifest),
-            "all_shard_contributions": self._read_json_artifacts(
-                manifest.memory_sweep_artifacts
-            ),
-            "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
-            "record_level_shard_contributions": self._read_json_artifacts(
-                manifest.record_sweep_artifacts
-            ),
-            "record_sweep_artifacts": manifest.record_sweep_artifacts,
-            "record_sweep_artifact_hashes": manifest.record_sweep_artifact_hashes,
-            "record_sweep_shard_count": manifest.record_sweep_shard_count,
-            "record_sweep_cache_hits": manifest.record_sweep_cache_hits,
-            "accepted_record_count": manifest.accepted_record_count,
-            "available_record_count": manifest.available_record_count,
+            "memory_coverage_manifest": self._memory_coverage_context(manifest),
             "retrieved_raw_episode_ids": manifest.retrieved_episode_ids,
             "excluded_retrieved_episode_ids": manifest.excluded_retrieved_episode_ids,
             "retrieved_record_ids": manifest.retrieved_record_ids,
             "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
-            "available_record_ids": manifest.available_record_ids,
-            "training_eligible_available_record_count": (
-                manifest.training_eligible_available_record_count
-            ),
-            "training_eligible_available_record_ids": (
-                manifest.training_eligible_available_record_ids
-            ),
-            "swept_record_count": manifest.swept_record_count,
-            "swept_record_ids": manifest.swept_record_ids,
-            "missing_swept_record_ids": manifest.missing_swept_record_ids,
-            "unexpected_swept_record_ids": manifest.unexpected_swept_record_ids,
-            "duplicate_swept_record_ids": manifest.duplicate_swept_record_ids,
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
             "excluded_semantic_retrieval_record_ids": (
                 manifest.excluded_semantic_retrieval_record_ids
@@ -3683,6 +3654,33 @@ class DailyAnalyzer:
             "market_memory": market_memory_context,
         }
         return payload
+
+    def _memory_coverage_context(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "artifact_path": manifest.memory_coverage_manifest_artifact,
+            "sha256": manifest.memory_coverage_manifest_sha256,
+            "corpus_manifest_sha256": manifest.memory_coverage_corpus_sha256,
+            "accepted_record_count": manifest.accepted_record_count,
+            "available_record_count": manifest.available_record_count,
+            "training_eligible_available_record_count": (
+                manifest.training_eligible_available_record_count
+            ),
+            "coverage_complete": False,
+        }
+        artifact_ref = manifest.memory_coverage_manifest_artifact
+        if not artifact_ref:
+            return context
+        artifact_path = self.root / artifact_ref
+        if not artifact_path.exists():
+            return context
+        payload = read_json(artifact_path)
+        if isinstance(payload, dict):
+            context["manifest"] = payload
+            context["coverage_complete"] = payload.get("coverage_complete") is True
+        return context
 
     def _build_final_synthesis_prompt(self, payload: dict[str, Any]) -> str:
         return (
@@ -4118,6 +4116,8 @@ class DailyAnalyzer:
         return files
 
     def _read_shard_brain_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
+        """Return immutable shard references; raw shard bodies stay off the prompt path."""
+
         files: list[dict[str, Any]] = []
         for relative_path in manifest.shard_brain_files:
             path = self.root / relative_path
@@ -4128,7 +4128,7 @@ class DailyAnalyzer:
                 {
                     "path": relative_path,
                     "sha256": manifest.shard_brain_file_hashes.get(relative_path),
-                    "text": path.read_text(encoding="utf-8"),
+                    "byte_size": path.stat().st_size,
                 }
             )
         return files
@@ -4426,6 +4426,26 @@ class DailyAnalyzer:
             f"{manifest_path.relative_to(self.root).as_posix()}"
         )
 
+    def _fail_if_memory_coverage_incomplete(self, manifest: ContextManifest) -> None:
+        inspection = inspect_memory_coverage_manifest(
+            self.root,
+            manifest.model_dump(mode="json"),
+            verify_current_store=True,
+        )
+        if inspection.get("passed") is True:
+            return
+        for error in inspection.get("errors", []):
+            message = f"memory coverage: {error}"
+            if message not in manifest.errors:
+                manifest.errors.append(message)
+        manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
+        manifest_path = manifest_dir / f"{manifest.run_id}.json"
+        write_json(manifest_path, manifest.model_dump(mode="json"))
+        raise ExhaustiveCoverageError(
+            f"{manifest.mode} memory coverage failed before reasoning; see "
+            f"{manifest_path.relative_to(self.root).as_posix()}"
+        )
+
     @staticmethod
     def _exhaustive_record_coverage_delta(
         manifest: ContextManifest,
@@ -4516,7 +4536,7 @@ class DailyAnalyzer:
             )[:5],
             default_negative_record_ids=counterexample_record_ids[:5],
         )
-        return normalized, sha256_text(prompt), max(1, len(prompt) // 4)
+        return normalized, sha256_text(prompt), count_provider_tokens(self.llm, prompt)
 
     def _build_blind_prediction_prompt(
         self,
@@ -4816,6 +4836,11 @@ class DailyAnalyzer:
             "novelty_cluster_batch_size": (
                 self.settings.limits.novelty_cluster_batch_size
             ),
+            "final_synthesis_prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION,
+            "final_synthesis_token_budget": (
+                self.settings.limits.final_synthesis_token_budget
+            ),
+            "token_counting_version": TOKEN_COUNTING_VERSION,
         }
         if isinstance(provider, TracingLLMProvider):
             traced_config = {**dict(provider.model_config), **phase1_config}

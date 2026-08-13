@@ -31,7 +31,8 @@
       "type": "string"
     },
     "schema_version": {
-      "default": "nslab.final_synthesis_context.v1",
+      "const": "nslab.final_synthesis_context.v2",
+      "default": "nslab.final_synthesis_context.v2",
       "title": "Schema Version",
       "type": "string"
     }

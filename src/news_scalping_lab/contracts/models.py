@@ -363,7 +363,9 @@ class CandidateVerificationReview(StrictModel):
 
 
 class FinalSynthesisContextArtifact(StrictModel):
-    schema_version: str = "nslab.final_synthesis_context.v1"
+    schema_version: Literal["nslab.final_synthesis_context.v2"] = (
+        "nslab.final_synthesis_context.v2"
+    )
     run_id: str
     prompt_version: str
     required_inputs: list[str] = Field(default_factory=list)
@@ -662,6 +664,10 @@ class ContextManifest(StrictModel):
     missing_swept_record_ids: list[str] = Field(default_factory=list)
     unexpected_swept_record_ids: list[str] = Field(default_factory=list)
     duplicate_swept_record_ids: list[str] = Field(default_factory=list)
+    memory_coverage_manifest_artifact: str | None = None
+    memory_coverage_manifest_sha256: str | None = None
+    memory_coverage_corpus_sha256: str | None = None
+    memory_coverage_cache_hit: bool = False
     retrieved_record_ids: list[str] = Field(default_factory=list)
     excluded_retrieved_record_ids: list[str] = Field(default_factory=list)
     counterexample_record_ids: list[str] = Field(default_factory=list)

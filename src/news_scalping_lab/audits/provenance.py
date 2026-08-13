@@ -13,9 +13,13 @@ from pydantic import ValidationError
 
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    final_synthesis_context_contract_verified,
     final_synthesis_input_summary,
     final_synthesis_required_inputs_compatible,
+    phase2_memory_coverage_required,
 )
+from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
     NewsCoverageManifest,
@@ -178,8 +182,18 @@ def audit_provenance(root: Path) -> dict[str, object]:
             if not isinstance(manifest.get("brain_file_hashes"), dict):
                 findings.append(f"{path.name}: context manifest missing brain_file_hashes")
             _check_manifest_context_file_hashes(root, path, manifest, findings)
-            _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
-            _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
+            if phase2_memory_coverage_required(manifest):
+                coverage = inspect_memory_coverage_manifest(
+                    root,
+                    manifest,
+                    verify_current_store=True,
+                )
+                if not coverage.get("passed"):
+                    for error in coverage.get("errors", []):
+                        findings.append(f"{path.name}: {error}")
+            else:
+                _check_manifest_memory_sweep_artifacts(root, path, manifest, findings)
+                _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_record_count_contract(root, path, manifest, findings)
             _check_manifest_record_id_availability(root, path, manifest, findings)
             _check_manifest_output_artifacts(root, path, manifest, findings)
@@ -5880,9 +5894,20 @@ def _check_manifest_final_synthesis_context_artifact(
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
-    if payload.get("schema_version") != "nslab.final_synthesis_context.v1":
+    schema_version = payload.get("schema_version")
+    if schema_version not in {
+        "nslab.final_synthesis_context.v1",
+        "nslab.final_synthesis_context.v2",
+    }:
         findings.append(
             f"{prediction_path.name}: final_synthesis_context invalid schema_version"
+        )
+    if (
+        phase2_memory_coverage_required(manifest)
+        and schema_version != "nslab.final_synthesis_context.v2"
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context Phase 2 downgrade"
         )
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
@@ -5960,6 +5985,20 @@ def _check_manifest_final_synthesis_context_artifact(
         context_payload,
         findings,
     )
+    if schema_version == "nslab.final_synthesis_context.v2":
+        forbidden = sorted(
+            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload)
+        )
+        if forbidden:
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context contains "
+                "exhaustive payload fields: "
+                + ", ".join(forbidden)
+            )
+        if not final_synthesis_context_contract_verified(manifest, payload):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context v2 contract mismatch"
+            )
 
 
 def _check_final_synthesis_required_input_fields(
@@ -6044,6 +6083,8 @@ def _check_final_synthesis_manifest_record_coverage_metadata(
     context_payload: dict[str, Any],
     findings: list[str],
 ) -> None:
+    if "memory_coverage_manifest" in context_payload:
+        return
     for field in (
         "available_record_ids",
         "training_eligible_available_record_ids",
@@ -7023,13 +7064,12 @@ def _check_batch_trace_prompt_token_counts_match_manifest(
         token_usage = payload.get("token_usage")
         trace_input = payload.get("input")
         observed = token_usage.get("prompt_tokens_estimate") if isinstance(token_usage, dict) else None
-        prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
-        expected_from_chars = _estimate_prompt_tokens_from_chars(prompt_chars)
+        expected_from_input = _estimate_prompt_tokens_from_trace_input(trace_input)
         if (
             not isinstance(observed, int)
             or isinstance(observed, bool)
-            or expected_from_chars is None
-            or observed != expected_from_chars
+            or expected_from_input is None
+            or observed != expected_from_input
         ):
             findings.append(
                 f"{prediction_path.name}: trace prompt token count mismatch for {purpose}: {trace_record['path'].name}"
@@ -7064,6 +7104,7 @@ def _check_trace_model_config_matches_manifest(
         "open_world_cluster_batch_size",
         "open_world_max_prompt_chars",
         "novelty_cluster_batch_size",
+        "token_counting_version",
     ]
     expected = {
         key: manifest_model_config[key]
@@ -7142,24 +7183,32 @@ def _trace_prompt_token_count_mismatch(
         if isinstance(token_usage, dict)
         else None
     )
-    prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
+    prompt_tokens_from_input = _estimate_prompt_tokens_from_trace_input(trace_input)
     if not isinstance(observed_prompt_tokens, int) or isinstance(
         observed_prompt_tokens, bool
     ):
         return True
     if observed_prompt_tokens != expected_prompt_tokens:
         return True
-    prompt_chars_token_estimate = _estimate_prompt_tokens_from_chars(prompt_chars)
     return (
-        prompt_chars_token_estimate is None
-        or observed_prompt_tokens != prompt_chars_token_estimate
+        prompt_tokens_from_input is None
+        or observed_prompt_tokens != prompt_tokens_from_input
     )
 
 
-def _estimate_prompt_tokens_from_chars(value: object) -> int | None:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+def _estimate_prompt_tokens_from_trace_input(value: object) -> int | None:
+    if not isinstance(value, dict):
         return None
-    return max(1, value // 4) if value else 0
+    counted = value.get("prompt_tokens_counted")
+    if isinstance(counted, int) and not isinstance(counted, bool) and counted >= 0:
+        return counted
+    utf8_bytes = value.get("prompt_utf8_bytes")
+    if isinstance(utf8_bytes, int) and not isinstance(utf8_bytes, bool) and utf8_bytes >= 0:
+        return max(1, utf8_bytes) if utf8_bytes else 0
+    chars = value.get("prompt_chars")
+    if not isinstance(chars, int) or isinstance(chars, bool) or chars < 0:
+        return None
+    return max(1, chars // 4) if chars else 0
 
 
 def _check_context_manifest(

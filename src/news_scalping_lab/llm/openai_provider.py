@@ -35,6 +35,17 @@ class OpenAIResponsesProvider:
         self.max_output_tokens = max_output_tokens
         self.api_key = api_key
 
+    def count_tokens(self, text: str) -> int:
+        try:
+            tiktoken = import_module("tiktoken")
+            try:
+                encoding = tiktoken.encoding_for_model(self.model)
+            except KeyError:
+                encoding = tiktoken.get_encoding("o200k_base")
+            return len(encoding.encode(text))
+        except (ImportError, AttributeError):
+            return max(1, len(text.encode("utf-8"))) if text else 0
+
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         client_class = _async_openai_class()
         client = self._client(client_class)

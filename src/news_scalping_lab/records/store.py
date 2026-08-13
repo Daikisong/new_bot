@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -264,13 +265,21 @@ class BrainRecordStore:
         )
         return target_dir
 
-    def list_records(self, *, accepted_only: bool = True) -> list[BrainRecordEnvelope]:
-        records: list[BrainRecordEnvelope] = []
+    def iter_records(
+        self,
+        *,
+        accepted_only: bool = True,
+    ) -> Iterator[BrainRecordEnvelope]:
         for path in sorted(self.records_dir.glob("*.jsonl")):
             if accepted_only and not self.episode_records_accepted(path.stem):
                 continue
-            records.extend(self.read_episode_records(path.stem))
-        return sorted(records, key=lambda record: (record.trade_date, record.record_id))
+            yield from self.read_episode_records(path.stem)
+
+    def list_records(self, *, accepted_only: bool = True) -> list[BrainRecordEnvelope]:
+        return sorted(
+            self.iter_records(accepted_only=accepted_only),
+            key=lambda record: (record.trade_date, record.record_id),
+        )
 
     def episode_records_accepted(self, episode_id: str) -> bool:
         manifest_path = self.record_manifests_dir / f"{episode_id}.json"

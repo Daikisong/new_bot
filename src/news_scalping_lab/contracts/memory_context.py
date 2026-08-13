@@ -227,6 +227,7 @@ class MemoryCoverageManifest(StrictMemoryContextModel):
     duplicate_record_count: int = Field(ge=0)
     available_record_ids: ArtifactReference
     record_hash_manifest: ArtifactReference
+    accepted_record_hash_manifest: ArtifactReference | None = None
     coverage_complete: bool
 
     @model_validator(mode="after")
@@ -237,6 +238,12 @@ class MemoryCoverageManifest(StrictMemoryContextModel):
             raise ValueError("available record artifact count mismatch")
         if self.record_hash_manifest.item_count != self.available_record_count:
             raise ValueError("record hash artifact count mismatch")
+        if (
+            self.accepted_record_hash_manifest is not None
+            and self.accepted_record_hash_manifest.item_count
+            != self.accepted_record_count
+        ):
+            raise ValueError("accepted record hash artifact count mismatch")
         expected_complete = all(
             count == 0
             for count in (

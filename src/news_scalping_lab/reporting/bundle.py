@@ -10,7 +10,10 @@ from typing import Any
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.final_synthesis import (
     final_synthesis_context_contract_verified,
+    phase2_memory_coverage_required,
 )
+from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
+from news_scalping_lab.contracts.memory_context import MemoryCoverageManifest
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
     EligibilityMatrix,
@@ -53,6 +56,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         manifest,
         "final_synthesis_context_artifact",
     )
+    memory_coverage_blocks = _read_memory_coverage_blocks(settings, manifest)
     excluded_candidate_web_checks = _read_optional_manifest_artifact(
         settings,
         manifest,
@@ -123,6 +127,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         phase_state=phase_state,
         brain_delta=brain_delta,
         research_episode=research_episode,
+        memory_coverage_blocks=memory_coverage_blocks,
     )
     output_path = settings.path(settings.output_dirs.reports) / (
         f"{compact_trade_date}_nslab_episode_bundle.md"
@@ -144,6 +149,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             excluded_candidate_web_checks=excluded_candidate_web_checks,
             phase_state=phase_state,
             bundle_manifest=bundle_manifest,
+            memory_coverage_blocks=memory_coverage_blocks,
         ),
         encoding="utf-8",
     )
@@ -406,6 +412,7 @@ def _build_bundle_manifest(
     phase_state: str,
     brain_delta: str,
     research_episode: ResearchEpisode,
+    memory_coverage_blocks: dict[str, str] | None,
 ) -> dict[str, Any]:
     prediction_payload = prediction.model_dump(mode="json")
     observed_blind_hash = prediction.blind_artifact_sha256
@@ -486,6 +493,10 @@ def _build_bundle_manifest(
             "missing_swept_record_ids",
             "unexpected_swept_record_ids",
             "duplicate_swept_record_ids",
+            "memory_coverage_manifest_artifact",
+            "memory_coverage_manifest_sha256",
+            "memory_coverage_corpus_sha256",
+            "memory_coverage_cache_hit",
             "retrieved_record_ids",
             "excluded_retrieved_record_ids",
             "semantic_retrieval_record_ids",
@@ -551,7 +562,58 @@ def _build_bundle_manifest(
         )
         validation["excluded_candidate_web_check_hash_verified"] = True
         validation["excluded_candidate_web_check_count_verified"] = True
+    if memory_coverage_blocks is not None:
+        payload["embedded_memory_coverage"] = {
+            name: {
+                "sha256": sha256_text(content.strip()),
+                "item_count": _jsonl_item_count(content) if name.endswith(".jsonl") else 1,
+            }
+            for name, content in sorted(memory_coverage_blocks.items())
+        }
+        validation["memory_coverage_bundle_verified"] = True
     return payload
+
+
+def _read_memory_coverage_blocks(
+    settings: Settings,
+    manifest: dict[str, Any],
+) -> dict[str, str] | None:
+    if not phase2_memory_coverage_required(manifest):
+        return None
+    inspection = inspect_memory_coverage_manifest(
+        settings.project_root,
+        manifest,
+        verify_current_store=True,
+    )
+    if inspection.get("passed") is not True:
+        raise ValueError(
+            "memory coverage cannot be exported: "
+            + ", ".join(str(value) for value in inspection.get("errors", []))
+        )
+    manifest_ref = manifest.get("memory_coverage_manifest_artifact")
+    if not isinstance(manifest_ref, str) or not manifest_ref:
+        raise ValueError("memory coverage manifest path is missing")
+    manifest_path = settings.project_root / manifest_ref
+    coverage = MemoryCoverageManifest.model_validate(read_json(manifest_path))
+    accepted_ref = coverage.accepted_record_hash_manifest
+    if accepted_ref is None:
+        raise ValueError("accepted memory coverage evidence is missing")
+    references = {
+        "memory_coverage_accepted_records.jsonl": accepted_ref,
+        "memory_coverage_available_records.jsonl": coverage.record_hash_manifest,
+        "memory_coverage_available_ids.jsonl": coverage.available_record_ids,
+    }
+    blocks = {
+        "memory_coverage_manifest.json": manifest_path.read_text(encoding="utf-8")
+    }
+    for name, reference in references.items():
+        path = settings.project_root / reference.artifact_path
+        blocks[name] = path.read_text(encoding="utf-8")
+    return blocks
+
+
+def _jsonl_item_count(content: str) -> int:
+    return sum(1 for line in content.splitlines() if line.strip())
 
 
 def _copy_manifest_fields(
@@ -733,6 +795,7 @@ def _render_bundle(
     excluded_candidate_web_checks: str | None,
     phase_state: str,
     bundle_manifest: dict[str, Any],
+    memory_coverage_blocks: dict[str, str] | None,
 ) -> str:
     blind_json = _prediction_json_text(prediction)
     episode_json = research_episode.model_dump_json(indent=2)
@@ -759,6 +822,10 @@ def _render_bundle(
         optional_blocks += (
             f"{_block('excluded_candidate_web_checks.jsonl', excluded_candidate_web_checks, fence='jsonl')}\n\n"
         )
+    if memory_coverage_blocks is not None:
+        for name, content in sorted(memory_coverage_blocks.items()):
+            fence = "jsonl" if name.endswith(".jsonl") else "json"
+            optional_blocks += f"{_block(name, content, fence=fence)}\n\n"
     return (
         "---\n"
         f"schema_version: {BUNDLE_SCHEMA_VERSION}\n"

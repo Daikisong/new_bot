@@ -8,6 +8,8 @@ from typing import Any, cast
 
 from news_scalping_lab.utils import canonical_json, sha256_text
 
+FINAL_SYNTHESIS_V2_PROMPT_VERSION = "synthesis.final.v2"
+
 FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "current_news",
     "open_world_first_analysis",
@@ -36,6 +38,44 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "company_memory",
     "market_memory",
 )
+FINAL_SYNTHESIS_REQUIRED_INPUTS_V2: tuple[str, ...] = tuple(
+    "memory_coverage_manifest"
+    if item == "all_shard_contributions"
+    else item
+    for item in FINAL_SYNTHESIS_REQUIRED_INPUTS
+    if item != "record_level_shard_contributions"
+)
+FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS = frozenset(
+    {
+        "all_shard_contributions",
+        "record_level_shard_contributions",
+        "memory_sweep_artifacts",
+        "record_sweep_artifacts",
+        "record_sweep_artifact_hashes",
+        "available_record_ids",
+        "training_eligible_available_record_ids",
+        "swept_record_ids",
+    }
+)
+
+
+def phase2_memory_coverage_required(manifest: Mapping[str, Any]) -> bool:
+    """Identify Phase 2 runs from configuration or persisted coverage evidence."""
+
+    model_config = manifest.get("model_config")
+    configured_v2 = (
+        isinstance(model_config, Mapping)
+        and model_config.get("final_synthesis_prompt_version")
+        == FINAL_SYNTHESIS_V2_PROMPT_VERSION
+    )
+    return configured_v2 or any(
+        manifest.get(field) is not None
+        for field in (
+            "memory_coverage_manifest_artifact",
+            "memory_coverage_manifest_sha256",
+            "memory_coverage_corpus_sha256",
+        )
+    )
 RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS = {
     "record_level_shard_contributions",
     "retrieved_records",
@@ -93,6 +133,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     candidate_verification = _dict_value(payload.get("candidate_verification"))
     red_team_output = _dict_value(payload.get("red_team_output"))
     d_minus_one = _dict_value(payload.get("d_minus_one_market_data"))
+    memory_coverage = _dict_value(payload.get("memory_coverage_manifest"))
     summary: dict[str, Any] = {
         "required_input_count": _list_len(payload.get("required_inputs")),
         "current_news_count": _list_len(payload.get("current_news")),
@@ -126,6 +167,16 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     if "record_level_shard_contributions" in payload:
         summary["record_shard_contribution_count"] = _list_len(
             payload.get("record_level_shard_contributions")
+        )
+    if memory_coverage:
+        summary["memory_coverage_accepted_record_count"] = _int_value(
+            memory_coverage.get("accepted_record_count")
+        )
+        summary["memory_coverage_available_record_count"] = _int_value(
+            memory_coverage.get("available_record_count")
+        )
+        summary["memory_coverage_complete"] = (
+            memory_coverage.get("coverage_complete") is True
         )
     if "accepted_record_count" in payload:
         summary["accepted_record_count"] = _int_value(
@@ -246,6 +297,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bool:
     return tuple(required_inputs) in {
+        FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
         FINAL_SYNTHESIS_REQUIRED_INPUTS,
         PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS,
         LEGACY_FINAL_SYNTHESIS_REQUIRED_INPUTS,
@@ -259,7 +311,11 @@ def final_synthesis_context_contract_verified(
     manifest: Mapping[str, Any],
     context: Mapping[str, Any],
 ) -> bool:
-    if context.get("schema_version") != "nslab.final_synthesis_context.v1":
+    schema_version = context.get("schema_version")
+    if schema_version not in {
+        "nslab.final_synthesis_context.v1",
+        "nslab.final_synthesis_context.v2",
+    }:
         return False
     manifest_run_id = manifest.get("run_id")
     if isinstance(manifest_run_id, str) and context.get("run_id") != manifest_run_id:
@@ -279,6 +335,13 @@ def final_synthesis_context_contract_verified(
         return False
     if not final_synthesis_required_inputs_compatible(required_input_strings):
         return False
+    if schema_version == "nslab.final_synthesis_context.v2":
+        if tuple(required_input_strings) != FINAL_SYNTHESIS_REQUIRED_INPUTS_V2:
+            return False
+        if FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(payload):
+            return False
+        if not _memory_coverage_context_compatible(manifest, payload):
+            return False
     missing_required_inputs = [
         key
         for key in required_input_strings
@@ -298,6 +361,34 @@ def final_synthesis_context_contract_verified(
     ) and final_synthesis_manifest_record_metadata_compatible(manifest, payload)
 
 
+def _memory_coverage_context_compatible(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> bool:
+    coverage = payload.get("memory_coverage_manifest")
+    if not isinstance(coverage, Mapping):
+        return False
+    if coverage.get("artifact_path") != manifest.get(
+        "memory_coverage_manifest_artifact"
+    ):
+        return False
+    if coverage.get("sha256") != manifest.get("memory_coverage_manifest_sha256"):
+        return False
+    if coverage.get("corpus_manifest_sha256") != manifest.get(
+        "memory_coverage_corpus_sha256"
+    ):
+        return False
+    if coverage.get("accepted_record_count") != manifest.get(
+        "accepted_record_count"
+    ):
+        return False
+    if coverage.get("available_record_count") != manifest.get(
+        "available_record_count"
+    ):
+        return False
+    return coverage.get("coverage_complete") is True
+
+
 def _optional_missing_required_input_allowed(
     key: str,
     manifest: Mapping[str, Any],
@@ -313,6 +404,7 @@ def final_synthesis_manifest_record_metadata_compatible(
     manifest: Mapping[str, Any],
     payload: Mapping[str, Any],
 ) -> bool:
+    compact_coverage = "memory_coverage_manifest" in payload
     for field in (
         "available_record_ids",
         "training_eligible_available_record_ids",
@@ -332,6 +424,15 @@ def final_synthesis_manifest_record_metadata_compatible(
         "candidate_expansion_audit_only_cluster_ids",
         "counterexample_record_ids",
     ):
+        if compact_coverage and field in {
+            "available_record_ids",
+            "training_eligible_available_record_ids",
+            "swept_record_ids",
+            "missing_swept_record_ids",
+            "unexpected_swept_record_ids",
+            "duplicate_swept_record_ids",
+        }:
+            continue
         if field not in manifest and field not in payload:
             continue
         if not _same_string_list_field(manifest, payload, field):
@@ -342,6 +443,13 @@ def final_synthesis_manifest_record_metadata_compatible(
         "training_eligible_available_record_count",
         "swept_record_count",
     ):
+        if compact_coverage and field in {
+            "accepted_record_count",
+            "available_record_count",
+            "training_eligible_available_record_count",
+            "swept_record_count",
+        }:
+            continue
         if field not in manifest and field not in payload:
             continue
         if not _same_nonnegative_int_field(manifest, payload, field):

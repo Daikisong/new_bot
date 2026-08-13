@@ -27,9 +27,13 @@ from news_scalping_lab.config import ensure_project_dirs, load_settings, write_d
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
+    FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    final_synthesis_context_contract_verified,
     final_synthesis_input_summary,
     final_synthesis_required_inputs_compatible,
+    phase2_memory_coverage_required,
 )
+from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.context.session_pack import (
     SessionPackBudgetExceededError,
     SessionPackFutureContextError,
@@ -1063,6 +1067,14 @@ def _inspect_context_manifest(
     supporting_artifacts = _inspect_supporting_artifacts(root, manifest)
     memory_sweep = _inspect_memory_sweep_artifacts(root, manifest)
     record_sweep = _inspect_record_sweep_artifacts(root, manifest)
+    memory_coverage = inspect_memory_coverage_manifest(
+        root,
+        manifest,
+        verify_current_store=True,
+    )
+    uses_memory_coverage = phase2_memory_coverage_required(manifest) or bool(
+        memory_coverage.get("configured")
+    )
     llm_traces = _inspect_llm_traces(root, manifest)
     manifest_reproducibility = _inspect_manifest_reproducibility_fields(root, manifest)
     return {
@@ -1084,6 +1096,7 @@ def _inspect_context_manifest(
         "supporting_artifacts": supporting_artifacts,
         "memory_sweep": memory_sweep,
         "record_sweep": record_sweep,
+        "memory_coverage": memory_coverage,
         "llm_traces": llm_traces,
         "reproducibility_checks_passed": _prediction_artifact_status_passed(prediction)
         and _artifact_status_passed(report, required_extra_key="contains_run_id")
@@ -1091,8 +1104,14 @@ def _inspect_context_manifest(
         and _context_file_group_status_passed(brain_files)
         and _context_file_group_status_passed(shard_brain_files)
         and _supporting_artifacts_status_passed(supporting_artifacts)
-        and _memory_sweep_status_passed(memory_sweep)
-        and _record_sweep_status_passed(record_sweep)
+        and (
+            bool(memory_coverage.get("passed"))
+            if uses_memory_coverage
+            else (
+                _memory_sweep_status_passed(memory_sweep)
+                and _record_sweep_status_passed(record_sweep)
+            )
+        )
         and _llm_trace_status_passed(llm_traces)
         and _manifest_reproducibility_status_passed(manifest_reproducibility),
     }
@@ -3640,6 +3659,7 @@ def _inspect_final_synthesis_context_artifact(
             "manifest_summary_verified": None,
             "manifest_counts_verified": None,
             "manifest_record_ids_verified": None,
+            "memory_coverage_context_verified": None,
             "event_clusters_verified": None,
             "semantic_retrieval_plan_artifact_verified": None,
             "semantic_retrieval_artifact_verified": None,
@@ -3686,9 +3706,19 @@ def _inspect_final_synthesis_context_artifact(
         status["passed"] = _final_synthesis_context_status_passed(status)
         return status
 
-    status["schema_version_verified"] = payload.get("schema_version") == "nslab.final_synthesis_context.v1"
+    schema_version = payload.get("schema_version")
+    status["schema_version_verified"] = schema_version in {
+        "nslab.final_synthesis_context.v1",
+        "nslab.final_synthesis_context.v2",
+    }
     if not status["schema_version_verified"]:
         status["errors"].append("final_synthesis_context_schema_version_mismatch")
+    if (
+        phase2_memory_coverage_required(manifest)
+        and schema_version != "nslab.final_synthesis_context.v2"
+    ):
+        status["schema_version_verified"] = False
+        status["errors"].append("final_synthesis_context_phase2_downgrade")
 
     run_id = manifest.get("run_id")
     status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
@@ -3790,6 +3820,29 @@ def _inspect_final_synthesis_context_artifact(
         context_payload,
         status,
     )
+
+    if schema_version == "nslab.final_synthesis_context.v2":
+        forbidden = sorted(
+            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload)
+        )
+        status["forbidden_exhaustive_payload_keys"] = forbidden
+        status["memory_coverage_context_verified"] = (
+            not forbidden
+            and final_synthesis_context_contract_verified(
+                manifest,
+                payload,
+            )
+        )
+        if forbidden:
+            status["errors"].append(
+                "final_synthesis_context_contains_exhaustive_payload"
+            )
+        if not status["memory_coverage_context_verified"]:
+            status["errors"].append(
+                "final_synthesis_context_memory_coverage_mismatch"
+            )
+    else:
+        status["memory_coverage_context_verified"] = True
 
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
@@ -5246,6 +5299,7 @@ _TRACE_MODEL_CONFIG_KEYS = (
     "open_world_cluster_batch_size",
     "open_world_max_prompt_chars",
     "novelty_cluster_batch_size",
+    "token_counting_version",
 )
 
 
@@ -5545,17 +5599,17 @@ def _trace_prompt_token_count_mismatch(
     token_usage = payload.get("token_usage")
     observed_prompt_tokens = token_usage.get("prompt_tokens_estimate") if isinstance(token_usage, dict) else None
     prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
-    prompt_chars_token_estimate = _estimate_prompt_tokens_from_chars(prompt_chars)
+    prompt_tokens_from_input = _estimate_prompt_tokens_from_trace_input(trace_input)
     reasons: list[str] = []
     if not isinstance(observed_prompt_tokens, int) or isinstance(observed_prompt_tokens, bool):
         reasons.append("prompt_tokens_estimate_missing_or_invalid")
     else:
         if expected_prompt_tokens is not None and observed_prompt_tokens != expected_prompt_tokens:
             reasons.append("manifest_token_count_mismatch")
-        if prompt_chars_token_estimate is not None and observed_prompt_tokens != prompt_chars_token_estimate:
-            reasons.append("prompt_chars_token_count_mismatch")
-    if prompt_chars_token_estimate is None:
-        reasons.append("prompt_chars_missing_or_invalid")
+        if prompt_tokens_from_input is not None and observed_prompt_tokens != prompt_tokens_from_input:
+            reasons.append("prompt_input_token_count_mismatch")
+    if prompt_tokens_from_input is None:
+        reasons.append("prompt_size_missing_or_invalid")
     if not reasons:
         return None
     return {
@@ -5565,14 +5619,23 @@ def _trace_prompt_token_count_mismatch(
         if isinstance(observed_prompt_tokens, int) and not isinstance(observed_prompt_tokens, bool)
         else None,
         "prompt_chars": prompt_chars if isinstance(prompt_chars, int) and not isinstance(prompt_chars, bool) else None,
-        "prompt_chars_token_estimate": prompt_chars_token_estimate,
+        "prompt_input_token_estimate": prompt_tokens_from_input,
     }
 
 
-def _estimate_prompt_tokens_from_chars(value: object) -> int | None:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+def _estimate_prompt_tokens_from_trace_input(value: object) -> int | None:
+    if not isinstance(value, dict):
         return None
-    return max(1, value // 4) if value else 0
+    counted = value.get("prompt_tokens_counted")
+    if isinstance(counted, int) and not isinstance(counted, bool) and counted >= 0:
+        return counted
+    utf8_bytes = value.get("prompt_utf8_bytes")
+    if isinstance(utf8_bytes, int) and not isinstance(utf8_bytes, bool) and utf8_bytes >= 0:
+        return max(1, utf8_bytes) if utf8_bytes else 0
+    chars = value.get("prompt_chars")
+    if not isinstance(chars, int) or isinstance(chars, bool) or chars < 0:
+        return None
+    return max(1, chars // 4) if chars else 0
 
 
 def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
@@ -6454,6 +6517,7 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("manifest_summary_verified")
         and status.get("manifest_counts_verified")
         and status.get("manifest_record_ids_verified")
+        and status.get("memory_coverage_context_verified")
         and status.get("event_clusters_verified")
         and status.get("semantic_retrieval_context_verified")
         and status.get("semantic_cluster_coverage_context_verified")
@@ -6948,6 +7012,7 @@ def _final_synthesis_manifest_count_mismatches(
     summary: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     expected_counts: dict[str, int] = {}
+    uses_compact_coverage = "memory_coverage_accepted_record_count" in summary
     _add_expected_count(expected_counts, "event_cluster_count", manifest.get("event_cluster_count"))
     _add_expected_count(
         expected_counts,
@@ -6975,62 +7040,77 @@ def _final_synthesis_manifest_count_mismatches(
         manifest.get("candidate_verification_count"),
     )
     _add_expected_count(expected_counts, "shard_contribution_count", manifest.get("memory_sweep_shard_count"))
-    _add_expected_count(
-        expected_counts,
-        "record_shard_contribution_count",
-        manifest.get("record_sweep_shard_count"),
-    )
-    _add_expected_count(
-        expected_counts,
-        "accepted_record_count",
-        manifest.get("accepted_record_count"),
-    )
-    _add_expected_count(
-        expected_counts,
-        "available_record_count",
-        manifest.get("available_record_count"),
-    )
-    if "available_record_ids" in manifest:
+    if not uses_compact_coverage:
+        _add_expected_count(
+            expected_counts,
+            "record_shard_contribution_count",
+            manifest.get("record_sweep_shard_count"),
+        )
+    if uses_compact_coverage:
+        _add_expected_count(
+            expected_counts,
+            "memory_coverage_accepted_record_count",
+            manifest.get("accepted_record_count"),
+        )
+        _add_expected_count(
+            expected_counts,
+            "memory_coverage_available_record_count",
+            manifest.get("available_record_count"),
+        )
+    else:
+        _add_expected_count(
+            expected_counts,
+            "accepted_record_count",
+            manifest.get("accepted_record_count"),
+        )
+        _add_expected_count(
+            expected_counts,
+            "available_record_count",
+            manifest.get("available_record_count"),
+        )
+    if not uses_compact_coverage and "available_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "available_record_id_count",
             len(_string_list(manifest.get("available_record_ids"))),
         )
-    _add_expected_count(
+    if not uses_compact_coverage:
+        _add_expected_count(
         expected_counts,
         "training_eligible_available_record_count",
         manifest.get("training_eligible_available_record_count"),
-    )
-    if "training_eligible_available_record_ids" in manifest:
+        )
+    if not uses_compact_coverage and "training_eligible_available_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "training_eligible_available_record_id_count",
             len(_string_list(manifest.get("training_eligible_available_record_ids"))),
         )
-    _add_expected_count(
+    if not uses_compact_coverage:
+        _add_expected_count(
         expected_counts,
         "swept_record_count",
         manifest.get("swept_record_count"),
-    )
-    if "swept_record_ids" in manifest:
+        )
+    if not uses_compact_coverage and "swept_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "swept_record_id_count",
             len(_string_list(manifest.get("swept_record_ids"))),
         )
-    if "missing_swept_record_ids" in manifest:
+    if not uses_compact_coverage and "missing_swept_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "missing_swept_record_id_count",
             len(_string_list(manifest.get("missing_swept_record_ids"))),
         )
-    if "unexpected_swept_record_ids" in manifest:
+    if not uses_compact_coverage and "unexpected_swept_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "unexpected_swept_record_id_count",
             len(_string_list(manifest.get("unexpected_swept_record_ids"))),
         )
-    if "duplicate_swept_record_ids" in manifest:
+    if not uses_compact_coverage and "duplicate_swept_record_ids" in manifest:
         _add_expected_count(
             expected_counts,
             "duplicate_swept_record_id_count",
@@ -7155,6 +7235,7 @@ def _final_synthesis_manifest_record_id_mismatches(
     payload: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     mismatches: dict[str, dict[str, Any]] = {}
+    uses_compact_coverage = "memory_coverage_manifest" in payload
     for field in (
         "available_record_ids",
         "training_eligible_available_record_ids",
@@ -7174,6 +7255,15 @@ def _final_synthesis_manifest_record_id_mismatches(
         "candidate_expansion_audit_only_cluster_ids",
         "counterexample_record_ids",
     ):
+        if uses_compact_coverage and field in {
+            "available_record_ids",
+            "training_eligible_available_record_ids",
+            "swept_record_ids",
+            "missing_swept_record_ids",
+            "unexpected_swept_record_ids",
+            "duplicate_swept_record_ids",
+        }:
+            continue
         if field not in manifest and field not in payload:
             continue
         manifest_ids = manifest.get(field)

@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import current_brain_version
+from news_scalping_lab.context.memory_coverage import build_memory_coverage_manifest
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
@@ -67,6 +68,10 @@ class SweepResult:
     record_cache_hits: int
     token_counts: dict[str, int]
     errors: list[str]
+    memory_coverage_manifest_path: str | None = None
+    memory_coverage_manifest_sha256: str | None = None
+    memory_coverage_cache_hit: bool = False
+    corpus_manifest_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,7 +102,7 @@ class MemorySweeper:
         records = BrainRecordStore(self.root).list_records()
         episodes, _findings = self._available_episodes(
             datetime.max.replace(tzinfo=KST),
-            records=records,
+            records_present=bool(records),
         )
         trade_date = max(
             (
@@ -182,14 +187,63 @@ class MemorySweeper:
         model_config: dict[str, object] | None = None,
         brain_version: str | None = None,
         prompt_version: str = MEMORY_SWEEP_PROMPT_VERSION,
+        emit_legacy_contributions: bool = True,
     ) -> SweepResult:
         mode = normalize_analysis_mode(mode)
         cache_model_config = model_config or {}
         model_config_hash = sha256_text(canonical_json(cache_model_config))
-        all_records = BrainRecordStore(self.root).list_records()
+        record_store = BrainRecordStore(self.root)
+        if not emit_legacy_contributions:
+            coverage = build_memory_coverage_manifest(
+                self.root,
+                records=record_store.iter_records(),
+                cutoff_at=cutoff_at,
+                run_id=run_id,
+            )
+            accepted, accepted_store_findings = self._available_episodes(
+                cutoff_at,
+                records_present=coverage.manifest.accepted_record_count > 0,
+            )
+            coverage_errors = list(accepted_store_findings)
+            if not coverage.manifest.coverage_complete:
+                coverage_errors.append("memory coverage manifest is incomplete")
+            swept_episode_ids = (
+                [] if mode == "fast" else [episode.episode_id for episode in accepted]
+            )
+            production_swept_record_ids = (
+                [] if mode == "fast" else coverage.available_record_ids
+            )
+            return SweepResult(
+                accepted_episode_count=len(accepted),
+                swept_episode_ids=swept_episode_ids,
+                accepted_record_count=coverage.manifest.accepted_record_count,
+                available_record_count=coverage.manifest.available_record_count,
+                available_record_ids=coverage.available_record_ids,
+                training_eligible_available_record_count=len(
+                    coverage.training_eligible_available_record_ids
+                ),
+                training_eligible_available_record_ids=(
+                    coverage.training_eligible_available_record_ids
+                ),
+                swept_record_ids=production_swept_record_ids,
+                artifact_paths=[],
+                record_artifact_paths=[],
+                shard_count=0,
+                record_shard_count=0,
+                cache_hits=0,
+                record_cache_hits=0,
+                token_counts={"memory_sweep": 0, "record_memory_sweep": 0},
+                errors=coverage_errors,
+                memory_coverage_manifest_path=coverage.manifest_path,
+                memory_coverage_manifest_sha256=coverage.manifest_sha256,
+                memory_coverage_cache_hit=coverage.cache_hit,
+                corpus_manifest_sha256=coverage.manifest.corpus_manifest_sha256,
+            )
+
+        all_records = record_store.list_records()
         accepted, accepted_store_findings = self._available_episodes(
             cutoff_at,
-            records=all_records,
+            records_present=bool(all_records),
         )
         available_records = [
             record
@@ -200,6 +254,12 @@ class MemorySweeper:
         training_eligible_available_record_ids = [
             record.record_id for record in available_records if record.training_eligible
         ]
+        coverage = build_memory_coverage_manifest(
+            self.root,
+            records=all_records,
+            cutoff_at=cutoff_at,
+            run_id=run_id,
+        )
         if mode == "fast":
             return SweepResult(
                 accepted_episode_count=len(accepted),
@@ -222,6 +282,10 @@ class MemorySweeper:
                 record_cache_hits=0,
                 token_counts={"memory_sweep": 0, "record_memory_sweep": 0},
                 errors=accepted_store_findings,
+                memory_coverage_manifest_path=coverage.manifest_path,
+                memory_coverage_manifest_sha256=coverage.manifest_sha256,
+                memory_coverage_cache_hit=coverage.cache_hit,
+                corpus_manifest_sha256=coverage.manifest.corpus_manifest_sha256,
             )
 
         artifacts: list[str] = []
@@ -424,13 +488,17 @@ class MemorySweeper:
                 "record_memory_sweep": self._estimate_tokens(record_artifacts),
             },
             errors=errors,
+            memory_coverage_manifest_path=coverage.manifest_path,
+            memory_coverage_manifest_sha256=coverage.manifest_sha256,
+            memory_coverage_cache_hit=coverage.cache_hit,
+            corpus_manifest_sha256=coverage.manifest.corpus_manifest_sha256,
         )
 
     def _available_episodes(
         self,
         cutoff_at: datetime,
         *,
-        records: list[BrainRecordEnvelope],
+        records_present: bool,
     ) -> tuple[list[ResearchEpisode], list[str]]:
         try:
             accepted = [
@@ -446,7 +514,7 @@ class MemorySweeper:
             TypeError,
             ValueError,
         ):
-            if records:
+            if records_present:
                 return [], ["accepted episode store is unreadable"]
             raise
         return accepted, []
