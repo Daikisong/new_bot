@@ -8,6 +8,7 @@ This directory mixes production prompts, automation prompts, gold bundles, and a
 - current repair operation = sequential one-bundle convergence described in `docs/설명서.md`
 - current repair-only Codex goal = `docs/codex_goal_repair_only.md`
 - post-repair import operations = `docs/설명서.md`
+- current long-term memory usage design review = `docs/0813/brain_memory_usage_design_review.md`
 - do not use `example.md` as gold
 - do not use archived prompts or archived examples for production
 
