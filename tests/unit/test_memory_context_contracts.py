@@ -14,6 +14,7 @@ from news_scalping_lab.contracts.memory_context import (
     NewsCoverageManifest,
     NewsRowCoverage,
     PopulationManifest,
+    PopulationObservedRate,
     PopulationOutcomeSummary,
     RecordRoutingMetadata,
 )
@@ -201,13 +202,24 @@ def test_memory_coverage_rejects_false_complete_claim() -> None:
 
 
 def test_population_rejects_impossible_outcome_counts() -> None:
+    artifact = ArtifactReference(
+        artifact_path="runs/population.jsonl",
+        sha256="c" * 64,
+        item_count=2,
+    )
     with pytest.raises(ValidationError):
         PopulationManifest(
             population_id="POP-1",
             run_id="RUN-1",
             cluster_id="CL-1",
             cutoff_at=datetime(2030, 1, 10, 8, 59, tzinfo=KST),
+            memory_snapshot_id="MEMIDX-1",
+            source_generation_sha256="d" * 64,
             corpus_manifest_sha256="a" * 64,
+            statistics_version="population_statistics.v1",
+            cube_version="population_cube.v1",
+            selected_cell_ids=["CELL-1"],
+            routing_dispositions=["REASONING"],
             membership_manifest_sha256="b" * 64,
             independent_unit_type="issuer-day",
             raw_record_count=2,
@@ -216,6 +228,8 @@ def test_population_rejects_impossible_outcome_counts() -> None:
             polarity_counts={"POSITIVE": 2},
             eligibility_counts={"eligible": 2},
             label_quality_counts={"verified": 2},
+            time_slice_counts={"ALL_HISTORY": 2},
+            regime_counts={"UNKNOWN": 2},
             outcome_summary=PopulationOutcomeSummary(
                 observed_unit_count=1,
                 missing_outcome_unit_count=0,
@@ -224,6 +238,25 @@ def test_population_rejects_impossible_outcome_counts() -> None:
                 high_return_10_count=0,
                 high_return_20_count=0,
             ),
+            observed_rates=[
+                PopulationObservedRate(
+                    metric=metric,
+                    numerator=0,
+                    denominator=0,
+                    weighted_numerator=0.0,
+                    weighted_denominator=0.0,
+                    bootstrap_iterations=1_000,
+                )
+                for metric in (
+                    "upper_limit_touched",
+                    "high_return_5",
+                    "high_return_10",
+                    "high_return_20",
+                )
+            ],
+            member_records=artifact,
+            independent_units=artifact,
+            cube_rows=artifact.model_copy(update={"item_count": 1}),
         )
 
 

@@ -135,6 +135,106 @@ def test_production_index_rejects_provider_name_spoofing(tmp_path) -> None:
         )
 
 
+def test_unsupported_reasoning_record_blocks_production_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutoff = datetime(2030, 1, 10, tzinfo=KST)
+    record = _record(
+        "REC-UNSUPPORTED-UNIT",
+        available_from=cutoff,
+        ticker="000001",
+        response_class="POSITIVE",
+        high_return_pct=12.0,
+    )
+    payload = dict(record.payload)
+    payload.pop("event_id")
+    digest = sha256_text(canonical_json(payload))
+    record = record.model_copy(
+        update={
+            "payload": payload,
+            "raw_payload_sha256": digest,
+            "normalized_payload_sha256": digest,
+        }
+    )
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
+    BrainRecordStore(tmp_path).rebuild_indexes()
+    index = ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=DeterministicHashEmbeddingProvider(),
+        production=False,
+    )
+
+    manifest = index.build(as_of=cutoff)
+
+    assert manifest.unsupported_reasoning_record_count == 1
+    assert manifest.unsupported_reasoning_record_ids_sha256 == sha256_text(
+        canonical_json([record.record_id])
+    )
+    assert manifest.production_ready is False
+    inspection = inspect_memory_snapshot(tmp_path, manifest.snapshot_id)
+    assert inspection["passed"] is True, inspection["errors"]
+
+
+def test_fact_id_is_not_promoted_to_an_independent_event_unit() -> None:
+    cutoff = datetime(2030, 1, 10, tzinfo=KST)
+    record = _record(
+        "REC-FACT-NOT-EVENT",
+        available_from=cutoff,
+        ticker="000001",
+        response_class="POSITIVE",
+        high_return_pct=12.0,
+    )
+    payload = dict(record.payload)
+    payload.pop("event_id")
+    payload["fact_id"] = "FACT-1"
+    digest = sha256_text(canonical_json(payload))
+    record = record.model_copy(
+        update={
+            "payload": payload,
+            "raw_payload_sha256": digest,
+            "normalized_payload_sha256": digest,
+        }
+    )
+
+    assert record_independent_unit_id(record) == (
+        f"UNSUPPORTED_RECORD:{record.record_id}"
+    )
+
+
+def test_v1_snapshot_manifest_is_reported_as_legacy_stale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutoff = datetime(2030, 1, 10, tzinfo=KST)
+    record = _record(
+        "REC-LEGACY-SNAPSHOT",
+        available_from=cutoff,
+        ticker="000001",
+        response_class="POSITIVE",
+        high_return_pct=12.0,
+    )
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
+    BrainRecordStore(tmp_path).rebuild_indexes()
+    manifest = ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=DeterministicHashEmbeddingProvider(),
+        production=False,
+    ).build(as_of=cutoff)
+    manifest_path = tmp_path / "memory" / "retrieval_index" / "snapshots" / (
+        manifest.snapshot_id
+    ) / "manifest.json"
+    payload = read_json(manifest_path)
+    payload["schema_version"] = "nslab.memory_cell_snapshot_manifest.v1"
+    write_json(manifest_path, payload)
+
+    inspection = inspect_memory_snapshot(tmp_path, manifest.snapshot_id)
+
+    assert inspection["status"] == "stale"
+    assert inspection["errors"] == ["snapshot_schema_legacy_v1"]
+    assert inspection["legacy_read_compatible"] is True
+
+
 def test_memory_document_ignores_identity_routing_and_outcome_but_keeps_structure() -> None:
     base = _record(
         "REC-BASE",
@@ -199,6 +299,8 @@ def test_fallback_evidence_rejects_postmortem_and_cutoff_after_rows(
     )
     payload = {
         "training_eligible": True,
+        "ticker": "000001",
+        "event_id": "EVENT-REC-EVIDENCE-GENERATION",
         "response_class": "POSITIVE",
         "high_return_pct": 12.0,
         "label_quality": "verified",
@@ -282,6 +384,8 @@ def test_fallback_evidence_change_invalidates_runtime_snapshot(
     )
     payload = {
         "training_eligible": True,
+        "ticker": "000001",
+        "event_id": "EVENT-REC-EVIDENCE-GENERATION",
         "response_class": "POSITIVE",
         "high_return_pct": 12.0,
         "label_quality": "verified",
@@ -350,6 +454,8 @@ def test_bundle_cutoff_change_invalidates_fallback_snapshot(
     )
     payload = {
         "training_eligible": True,
+        "ticker": "000001",
+        "event_id": "EVENT-REC-CUTOFF-EVIDENCE",
         "response_class": "POSITIVE",
         "high_return_pct": 12.0,
         "label_quality": "verified",

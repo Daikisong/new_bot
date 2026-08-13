@@ -36,6 +36,7 @@ from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSIO
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.memory.index import inspect_current_memory_index
+from news_scalping_lab.memory.statistics import POPULATION_STATISTICS_VERSION
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
@@ -3470,6 +3471,17 @@ def _production_memory_index_status(
         manifest = {}
     if manifest.get("production_ready") is not True:
         findings.append("production memory index is not marked production ready")
+    unsupported_reasoning_record_count = _int_from_mapping(
+        manifest,
+        "unsupported_reasoning_record_count",
+    )
+    if unsupported_reasoning_record_count is None:
+        findings.append("production memory index unsupported record count is missing")
+    elif unsupported_reasoning_record_count:
+        findings.append(
+            "production memory index contains unsupported reasoning records: "
+            f"{unsupported_reasoning_record_count}"
+        )
     brain_manifest = _read_optional_json(
         settings.project_root / "brain" / "current" / "brain_manifest.json"
     )
@@ -3526,6 +3538,8 @@ def _production_memory_index_status(
         findings.append("production memory index source partition does not match coverage")
     if manifest.get("polarity_classifier_version") != POLARITY_CLASSIFIER_VERSION:
         findings.append("production memory index routing classifier version is stale")
+    if manifest.get("population_projection_version") != POPULATION_STATISTICS_VERSION:
+        findings.append("production memory index population projection version is stale")
     return {
         "schema_version": "nslab.production_semantic_index.v2",
         "status": "ready" if not findings else "attention",
@@ -3538,6 +3552,7 @@ def _production_memory_index_status(
         "configured_embedding_model": configured_embedding_model,
         "record_count": record_count,
         "excluded_future_record_count": excluded_future_record_count,
+        "unsupported_reasoning_record_count": unsupported_reasoning_record_count,
         "as_of_cutoff": manifest.get("as_of_cutoff"),
         "expected_source_record_count": expected_source_record_count,
         "source_partition_verified": (

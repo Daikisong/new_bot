@@ -1,6 +1,6 @@
 # NSLAB 장기기억 두뇌 구현 단계
 
-상태: Phase 0~4 구현·검증·독립감사 승인 완료, Phase 5 착수 전
+상태: Phase 0~4 구현·검증·독립감사 승인 완료, Phase 5 bounded 구현·내부 검증 완료 및 독립감사 중
 
 기준 문서:
 
@@ -422,6 +422,8 @@ Phase 4 독립감사는 `APPROVE`이며 P0/P1 잔여 이슈는 없다. 600k 1536
 
 ## 8. Phase 5: PopulationRetriever와 통계 cube
 
+진행 상태: APPROVE (bounded implementation), 현재 corpus production 승격 차단
+
 ### 목적
 
 관련 memory cell의 cutoff-safe 전체 member를 사용해 deterministic 관측 모집단을 만든다.
@@ -491,6 +493,50 @@ outcome missing을 negative로 처리하지 않음
 issuer-day overcount 0
 incremental update와 full rebuild 결과 동일
 walk-forward 이전에는 probability 표현 금지
+```
+
+### 구현 결과
+
+```text
+ANN/FTS = 관련 cell 선택만 담당
+선택 cell의 primary/secondary cutoff-safe 전체 member = 모집단 후보
+요청한 independent unit type으로 분리 후 동일 unit 중복 제거
+outcome 없음/충돌 = missing, negative로 변환하지 않음
+newsless = ticker-day 전용 unit이므로 issuer/event 모집단에서 자동 제외
+관측률 = observed_population_rate로만 표기
+```
+
+산출물:
+
+```text
+runs/populations/<run_id>/<cluster_id>/<population_id>/member_records.jsonl
+runs/populations/<run_id>/<cluster_id>/<population_id>/independent_units.jsonl
+runs/populations/<run_id>/<cluster_id>/<population_id>/population_cube.jsonl
+runs/populations/<run_id>/<cluster_id>/<population_id>/population_manifest.json
+```
+
+`population_id`는 run/cluster, cutoff, selected cells, memory snapshot, corpus/source generation,
+unit/routing 선택, 통계·cube·bootstrap version에 결속된다. `inspect-population`은 현재 snapshot
+DB에서 전 구성원·unit·cube·summary를 다시 계산해 세 artifact와 정확히 비교한다.
+
+내부 검증:
+
+```text
+3 reasoning issuer-day records -> 2 independent units 중복 제거
+newsless record의 issuer-day 분모 유입 0
+missing outcome의 high-return denominator 유입 0
+incremental snapshot과 fresh full snapshot의 population/artifact hash 동일
+artifact 변조 시 독립 inspection 실패
+purpose별 lane/unit 분리 및 REASONING-only 분모
+50,000 selected records hard budget
+50,000 end-to-end: 약 343.5초, peak 1,080 MiB
+50,000 초과는 표본 추출 없이 fail-closed, Phase 6 세분화 전 production blocker
+strict unit 계약상 REASONING unsupported 64건은 통계 분모에서 제외하고 readiness 차단
+250,000 cube-row 상한은 고카디널리티 end-to-end 미검증, Phase 6 운영 blocker
+ruff PASS
+mypy 98 modules PASS
+pytest 1,397 PASS
+외부 독립감사 APPROVE (bounded implementation)
 ```
 
 ## 9. Phase 6: diverse representatives와 adaptive drill-down

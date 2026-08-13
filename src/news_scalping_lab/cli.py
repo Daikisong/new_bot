@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from datetime import date, datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any, NoReturn, cast
 
 import typer
 from pydantic import ValidationError
@@ -45,7 +45,10 @@ from news_scalping_lab.context.sweep import (
 )
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
+    IndependentUnitType,
     NewsCoverageManifest,
+    PopulationPurpose,
+    RoutingDisposition,
 )
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
@@ -68,6 +71,7 @@ from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
     inspect_current_memory_index,
 )
+from news_scalping_lab.memory.population import PopulationRetriever
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -8137,6 +8141,96 @@ def memory_search_cells(
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
     _echo(payload)
+
+
+@memory_app.command("build-population")
+def memory_build_population(
+    run_id: Annotated[str, typer.Option("--run-id")],
+    cluster_id: Annotated[str, typer.Option("--cluster-id")],
+    cutoff_at: Annotated[str, typer.Option("--cutoff-at")],
+    cell_ids: Annotated[list[str], typer.Option("--cell-id")],
+    independent_unit_type: Annotated[
+        str,
+        typer.Option("--independent-unit-type"),
+    ] = "event-issuer-day",
+    population_purpose: Annotated[
+        str,
+        typer.Option("--population-purpose"),
+    ] = "catalyst_response",
+    routing_dispositions: Annotated[
+        list[str] | None,
+        typer.Option("--routing-disposition"),
+    ] = None,
+    query_regime_cluster: Annotated[
+        str | None,
+        typer.Option("--query-regime-cluster"),
+    ] = None,
+) -> None:
+    settings = load_settings()
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = PopulationRetriever(
+            settings.project_root,
+            memory_index=index,
+        ).build(
+            run_id=run_id,
+            cluster_id=cluster_id,
+            cutoff_at=parse_datetime(cutoff_at),
+            selected_cell_ids=cell_ids,
+            independent_unit_type=cast(
+                IndependentUnitType,
+                independent_unit_type,
+            ),
+            population_purpose=cast(PopulationPurpose, population_purpose),
+            routing_dispositions=cast(
+                tuple[RoutingDisposition, ...],
+                tuple(routing_dispositions or ["REASONING"]),
+            ),
+            query_regime_cluster=query_regime_cluster,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "manifest_path": relative_to_root(
+                result.manifest_path,
+                settings.project_root,
+            ),
+            "manifest": result.manifest.model_dump(mode="json"),
+        }
+    )
+
+
+@memory_app.command("inspect-population")
+def memory_inspect_population(
+    manifest_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = PopulationRetriever(
+            settings.project_root,
+            memory_index=index,
+        ).inspect(manifest_path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
 
 
 @memory_app.command("apply-company-deltas")

@@ -7,6 +7,7 @@ research corpus so a daily context remains bounded as the corpus grows.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from datetime import date
 from typing import Annotated, Literal, Self
@@ -63,6 +64,39 @@ IndependentUnitType = Literal[
     "theme-day-pair",
     "ticker-day",
 ]
+PopulationPurpose = Literal[
+    "catalyst_response",
+    "candidate_error",
+    "newsless",
+    "leader_selection",
+]
+POPULATION_PURPOSE_LANES: dict[str, tuple[str, ...]] = {
+    "catalyst_response": (
+        "positive_analogs",
+        "negative_controls",
+        "near_misses",
+        "counterexamples",
+        "theme_formation_failures",
+    ),
+    "candidate_error": ("candidate_generation_errors",),
+    "newsless": ("newsless_or_unexplained",),
+    "leader_selection": ("leader_selection_pairs",),
+}
+POPULATION_PURPOSE_UNIT_TYPES: dict[str, frozenset[str]] = {
+    "catalyst_response": frozenset(
+        {
+            "event-issuer-day",
+            "issuer-day",
+            "theme-day",
+            "theme-day-ticker-day",
+        }
+    ),
+    "candidate_error": frozenset(
+        {"event-issuer-day", "issuer-day", "theme-day-ticker-day"}
+    ),
+    "newsless": frozenset({"ticker-day"}),
+    "leader_selection": frozenset({"theme-day-pair"}),
+}
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
@@ -356,8 +390,8 @@ class MemoryCellEntry(StrictMemoryContextModel):
 class MemoryCellSnapshotManifest(StrictMemoryContextModel):
     """Immutable logical identity for metadata, FTS, HNSW, and cell membership."""
 
-    schema_version: Literal["nslab.memory_cell_snapshot_manifest.v1"] = (
-        "nslab.memory_cell_snapshot_manifest.v1"
+    schema_version: Literal["nslab.memory_cell_snapshot_manifest.v2"] = (
+        "nslab.memory_cell_snapshot_manifest.v2"
     )
     snapshot_id: str
     corpus_manifest_sha256: Sha256
@@ -373,6 +407,7 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
     normalizer_version: str
     cell_schema_version: str
     polarity_classifier_version: str
+    population_projection_version: str
     routing_metadata_sha256: Sha256
     record_hash_kind: Literal["canonical_full_envelope_sha256"] = (
         "canonical_full_envelope_sha256"
@@ -388,6 +423,8 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
     primary_membership_count: int = Field(ge=0)
     secondary_membership_count: int = Field(ge=0)
     independent_unit_count: int = Field(ge=0)
+    unsupported_reasoning_record_count: int = Field(ge=0)
+    unsupported_reasoning_record_ids_sha256: Sha256
     parent_snapshot_id: str | None = None
     retained_record_count: int = Field(ge=0)
     added_record_count: int = Field(ge=0)
@@ -415,6 +452,7 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
             self.normalizer_version,
             self.cell_schema_version,
             self.polarity_classifier_version,
+            self.population_projection_version,
         )
         if any(not value.strip() for value in required):
             raise ValueError("memory cell snapshot identifiers must be non-empty")
@@ -462,6 +500,7 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
         readiness = (
             self.real_embedding
             and self.record_count > 0
+            and self.unsupported_reasoning_record_count == 0
             and self.metadata_index_ready
             and self.fts_index_ready
             and self.hnsw_index_ready
@@ -473,6 +512,9 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
 
 
 class PopulationOutcomeSummary(StrictMemoryContextModel):
+    distribution_weighting: Literal["independent_unit_sample_weight.v1"] = (
+        "independent_unit_sample_weight.v1"
+    )
     observed_unit_count: int = Field(ge=0)
     missing_outcome_unit_count: int = Field(ge=0)
     upper_limit_touched_count: int = Field(ge=0)
@@ -481,34 +523,185 @@ class PopulationOutcomeSummary(StrictMemoryContextModel):
     high_return_20_count: int = Field(ge=0)
     mean_high_return_pct: float | None = None
     median_high_return_pct: float | None = None
+    p10_high_return_pct: float | None = None
+    p25_high_return_pct: float | None = None
+    p75_high_return_pct: float | None = None
+    p90_high_return_pct: float | None = None
     mean_close_return_pct: float | None = None
     median_close_return_pct: float | None = None
+    p10_close_return_pct: float | None = None
+    p25_close_return_pct: float | None = None
+    p75_close_return_pct: float | None = None
+    p90_close_return_pct: float | None = None
 
     @model_validator(mode="after")
     def validate_outcome_counts(self) -> Self:
+        if any(
+            value is not None and not math.isfinite(value)
+            for value in (
+                self.mean_high_return_pct,
+                self.median_high_return_pct,
+                self.p10_high_return_pct,
+                self.p25_high_return_pct,
+                self.p75_high_return_pct,
+                self.p90_high_return_pct,
+                self.mean_close_return_pct,
+                self.median_close_return_pct,
+                self.p10_close_return_pct,
+                self.p25_close_return_pct,
+                self.p75_close_return_pct,
+                self.p90_close_return_pct,
+            )
+        ):
+            raise ValueError("population outcome means and medians must be finite")
+        for values in (
+            (
+                self.p10_high_return_pct,
+                self.p25_high_return_pct,
+                self.p75_high_return_pct,
+                self.p90_high_return_pct,
+            ),
+            (
+                self.p10_close_return_pct,
+                self.p25_close_return_pct,
+                self.p75_close_return_pct,
+                self.p90_close_return_pct,
+            ),
+        ):
+            observed = [value for value in values if value is not None]
+            if observed and (len(observed) != 4 or observed != sorted(observed)):
+                raise ValueError("population outcome percentiles must be complete and ordered")
         if not (
-            self.upper_limit_touched_count
-            <= self.high_return_20_count
+            self.high_return_20_count
             <= self.high_return_10_count
             <= self.high_return_5_count
             <= self.observed_unit_count
+            and self.upper_limit_touched_count <= self.observed_unit_count
         ):
             raise ValueError("outcome threshold counts must be nested")
         return self
 
 
+class PopulationObservedRate(StrictMemoryContextModel):
+    metric: Literal[
+        "upper_limit_touched",
+        "high_return_5",
+        "high_return_10",
+        "high_return_20",
+    ]
+    numerator: int = Field(ge=0)
+    denominator: int = Field(ge=0)
+    weighted_numerator: float = Field(ge=0.0)
+    weighted_denominator: float = Field(ge=0.0)
+    observed_population_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    lower_bound: float | None = Field(default=None, ge=0.0, le=1.0)
+    upper_bound: float | None = Field(default=None, ge=0.0, le=1.0)
+    interval_method: Literal["trade_date_block_bootstrap.v1"] = (
+        "trade_date_block_bootstrap.v1"
+    )
+    bootstrap_iterations: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_rate(self) -> Self:
+        if any(
+            not math.isfinite(value)
+            for value in (self.weighted_numerator, self.weighted_denominator)
+        ):
+            raise ValueError("weighted observed population counts must be finite")
+        if self.numerator > self.denominator:
+            raise ValueError("rate numerator cannot exceed denominator")
+        if self.weighted_numerator > self.weighted_denominator:
+            raise ValueError("weighted rate numerator cannot exceed denominator")
+        if (self.denominator == 0) is not (self.weighted_denominator == 0.0):
+            raise ValueError("count and weighted denominators must both be empty or non-empty")
+        if self.denominator == 0:
+            if any(
+                value is not None
+                for value in (
+                    self.observed_population_rate,
+                    self.lower_bound,
+                    self.upper_bound,
+                )
+            ):
+                raise ValueError("empty observed population cannot have a rate")
+        else:
+            if self.observed_population_rate is None:
+                raise ValueError("non-empty observed population requires a rate")
+            expected = self.weighted_numerator / self.weighted_denominator
+            if abs(self.observed_population_rate - expected) > 1e-12:
+                raise ValueError("observed rate must equal the weighted observed rate")
+            if not (
+                self.lower_bound is not None
+                and self.upper_bound is not None
+                and self.lower_bound <= self.upper_bound
+            ):
+                raise ValueError("observed rate interval bounds are invalid")
+        return self
+
+
+class PopulationCubeRow(StrictMemoryContextModel):
+    cell_id: str
+    memory_lane: str
+    time_slice: str
+    regime_cluster: str
+    record_type: str
+    path_type: str
+    label_quality: str
+    raw_record_count: int = Field(ge=0)
+    independent_unit_count: int = Field(ge=0)
+    effective_sample_size: float = Field(ge=0.0)
+    polarity_counts: dict[str, int] = Field(default_factory=dict)
+    outcome_summary: PopulationOutcomeSummary
+    member_record_ids_sha256: Sha256
+    independent_unit_ids_sha256: Sha256
+
+    @model_validator(mode="after")
+    def validate_cube_row(self) -> Self:
+        if not math.isfinite(self.effective_sample_size):
+            raise ValueError("cube effective sample size must be finite")
+        if self.independent_unit_count > self.raw_record_count:
+            raise ValueError("cube independent units cannot exceed raw records")
+        if self.effective_sample_size > self.independent_unit_count:
+            raise ValueError("cube effective sample size cannot exceed units")
+        if sum(_positive_counts(self.polarity_counts).values()) != (
+            self.independent_unit_count
+        ):
+            raise ValueError("cube polarity counts must equal units")
+        if self.outcome_summary.observed_unit_count + (
+            self.outcome_summary.missing_outcome_unit_count
+        ) != self.independent_unit_count:
+            raise ValueError("cube outcome counts must equal units")
+        return self
+
+
 class PopulationManifest(StrictMemoryContextModel):
-    schema_version: Literal["nslab.population_manifest.v1"] = (
-        "nslab.population_manifest.v1"
+    schema_version: Literal["nslab.population_manifest.v2"] = (
+        "nslab.population_manifest.v2"
     )
     population_id: str
     run_id: str
     cluster_id: str
     cutoff_at: AwareDatetime
+    memory_snapshot_id: str
+    source_generation_sha256: Sha256
     corpus_manifest_sha256: Sha256
+    statistics_version: str
+    cube_version: str
+    selection_budget_version: str
+    purpose_classifier_version: str
+    purpose_record_types_sha256: Sha256
+    max_selected_record_count: int = Field(ge=1)
+    max_cube_row_count: int = Field(ge=1)
+    bootstrap_version: Literal["trade_date_block_bootstrap.v1"] = (
+        "trade_date_block_bootstrap.v1"
+    )
     selected_cell_ids: list[str] = Field(default_factory=list)
+    routing_dispositions: list[RoutingDisposition] = Field(default_factory=list)
     membership_manifest_sha256: Sha256
     independent_unit_type: IndependentUnitType
+    population_purpose: PopulationPurpose
+    included_memory_lanes: list[str] = Field(default_factory=list)
+    query_regime_cluster: str | None = None
     raw_record_count: int = Field(ge=0)
     independent_unit_count: int = Field(ge=0)
     effective_sample_size: float = Field(ge=0.0)
@@ -518,16 +711,56 @@ class PopulationManifest(StrictMemoryContextModel):
     time_slice_counts: dict[str, int] = Field(default_factory=dict)
     regime_counts: dict[str, int] = Field(default_factory=dict)
     outcome_summary: PopulationOutcomeSummary
+    observed_rates: list[PopulationObservedRate] = Field(default_factory=list)
+    member_records: ArtifactReference
+    independent_units: ArtifactReference
+    cube_rows: ArtifactReference
     observed_population_rate_label: Literal["observed_population_rate"] = (
         "observed_population_rate"
     )
 
     @model_validator(mode="after")
     def validate_population_counts(self) -> Self:
+        if not math.isfinite(self.effective_sample_size):
+            raise ValueError("population effective sample size must be finite")
         if self.independent_unit_count > self.raw_record_count:
             raise ValueError("independent units cannot exceed raw records")
         if self.effective_sample_size > self.independent_unit_count:
             raise ValueError("effective sample size cannot exceed independent units")
+        if not self.selected_cell_ids or len(self.selected_cell_ids) != len(
+            set(self.selected_cell_ids)
+        ):
+            raise ValueError("selected cells must be non-empty and unique")
+        if not self.routing_dispositions or len(self.routing_dispositions) != len(
+            set(self.routing_dispositions)
+        ):
+            raise ValueError("routing dispositions must be non-empty and unique")
+        if self.routing_dispositions != ["REASONING"]:
+            raise ValueError("observed populations require REASONING disposition only")
+        if not self.included_memory_lanes or len(self.included_memory_lanes) != len(
+            set(self.included_memory_lanes)
+        ):
+            raise ValueError("included memory lanes must be non-empty and unique")
+        if self.query_regime_cluster is not None and (
+            not self.query_regime_cluster
+            or self.query_regime_cluster != self.query_regime_cluster.strip().upper()
+        ):
+            raise ValueError("query regime cluster must be canonical uppercase text")
+        expected_lanes = POPULATION_PURPOSE_LANES[self.population_purpose]
+        if tuple(sorted(self.included_memory_lanes)) != tuple(sorted(expected_lanes)):
+            raise ValueError("included memory lanes conflict with population purpose")
+        if self.independent_unit_type not in POPULATION_PURPOSE_UNIT_TYPES[
+            self.population_purpose
+        ]:
+            raise ValueError("independent unit type conflicts with population purpose")
+        if self.member_records.item_count != self.raw_record_count:
+            raise ValueError("member record artifact count mismatch")
+        if self.raw_record_count > self.max_selected_record_count:
+            raise ValueError("population exceeds selected record budget")
+        if self.cube_rows.item_count > self.max_cube_row_count:
+            raise ValueError("population exceeds cube row budget")
+        if self.independent_units.item_count != self.independent_unit_count:
+            raise ValueError("independent unit artifact count mismatch")
         if self.outcome_summary.observed_unit_count + (
             self.outcome_summary.missing_outcome_unit_count
         ) != self.independent_unit_count:
@@ -539,6 +772,15 @@ class PopulationManifest(StrictMemoryContextModel):
         ):
             if sum(_positive_counts(counts).values()) != self.independent_unit_count:
                 raise ValueError(f"{name} counts must equal independent units")
+        if len(self.observed_rates) != 4 or {
+            item.metric for item in self.observed_rates
+        } != {
+            "upper_limit_touched",
+            "high_return_5",
+            "high_return_10",
+            "high_return_20",
+        }:
+            raise ValueError("all observed population rate metrics are required")
         return self
 
 

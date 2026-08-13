@@ -24,10 +24,10 @@ from news_scalping_lab.records.routing import record_routing_metadata
 from news_scalping_lab.utils import as_kst, canonical_json, parse_datetime, sha256_text
 
 MEMORY_CELL_CLUSTERING_VERSION = "semantic_sign_lsh.v1"
-MEMORY_CELL_NORMALIZER_VERSION = "cutoff_safe_structural_projection.v3"
-MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v1"
+MEMORY_CELL_NORMALIZER_VERSION = "cutoff_safe_structural_projection.v4"
+MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v2"
 MEMORY_CELL_MEMBERSHIP_RULE = "semantic_sign_primary_adjacent_secondary"
-MEMORY_CELL_MEMBERSHIP_RULE_VERSION = "v1"
+MEMORY_CELL_MEMBERSHIP_RULE_VERSION = "v2"
 MEMORY_CELL_SIGNATURE_BITS = 10
 MEMORY_CELL_SECONDARY_LIMIT = 2
 MEMORY_VECTOR_QUANTIZATION_SCALE = 10_000_000
@@ -152,6 +152,7 @@ _EVENT_KEYS = (
     "observation_id",
     "fact_id",
 )
+_UNIT_EVENT_KEYS = ("event_id", "source_event_id", "direct_event_case_id")
 _PAIR_KEYS = ("blind_pair_id", "preference_pair_id", "pair_id")
 
 
@@ -606,29 +607,38 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
     ticker = _first_text(mappings, _TICKER_KEYS)
     company = _first_text(mappings, _COMPANY_KEYS)
     theme = _first_text(mappings, _THEME_KEYS)
-    event = _first_text(mappings, _EVENT_KEYS)
+    event = _first_text(mappings, _UNIT_EVENT_KEYS)
     pair = _first_text(mappings, _PAIR_KEYS)
     day = record.trade_date.isoformat()
     issuer = ticker.upper() if ticker else _normalized_key(company) if company else None
     record_type = record.record_type.lower()
     if "leader_preference_pair" in record_type:
-        pair_key = _normalized_key(pair) if pair else _normalized_key(record.record_id)
-        theme_key = _normalized_key(theme) if theme else "UNSCOPED_THEME"
-        return f"THEME_DAY_PAIR:{day}:{theme_key}:{pair_key}"
+        if theme and pair:
+            return (
+                f"THEME_DAY_PAIR:{day}:{_normalized_key(theme)}:"
+                f"{_normalized_key(pair)}"
+            )
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "theme_formation" in record_type:
         if theme:
             return f"THEME_DAY:{day}:{_normalized_key(theme)}"
-        return f"THEME_DAY_FALLBACK_RECORD:{day}:{record.record_id}"
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
+    if "beneficiary" in record_type:
+        if theme and issuer:
+            return f"THEME_DAY_TICKER_DAY:{day}:{_normalized_key(theme)}:{issuer}"
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "newsless_or_unexplained" in record_type:
         if issuer:
             return f"TICKER_DAY:{day}:{issuer}"
-        return f"TICKER_DAY_FALLBACK_RECORD:{day}:{record.record_id}"
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "direct_event" in record_type:
         if event and issuer:
             return f"EVENT_ISSUER_DAY:{day}:{_normalized_key(event)}:{issuer}"
-        return f"EVENT_ISSUER_DAY_FALLBACK_RECORD:{day}:{record.record_id}"
-    if "issuer_day" in record_type and issuer:
-        return f"ISSUER_DAY:{day}:{issuer}"
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
+    if "issuer_day" in record_type:
+        if issuer:
+            return f"ISSUER_DAY:{day}:{issuer}"
+        return f"UNSUPPORTED_RECORD:{record.record_id}"
     if theme:
         return f"THEME_DAY:{day}:{_normalized_key(theme)}"
     if event and issuer:
@@ -637,7 +647,22 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
         return f"ISSUER_DAY:{day}:{issuer}"
     if event:
         return f"EVENT_DAY:{day}:{_normalized_key(event)}"
-    return f"RECORD_FALLBACK:{record.record_id}"
+    return f"UNSUPPORTED_RECORD:{record.record_id}"
+
+
+def independent_unit_type(independent_unit_id: str) -> str | None:
+    prefixes = {
+        "EVENT_ISSUER_DAY": "event-issuer-day",
+        "ISSUER_DAY": "issuer-day",
+        "THEME_DAY_TICKER_DAY": "theme-day-ticker-day",
+        "THEME_DAY_PAIR": "theme-day-pair",
+        "THEME_DAY": "theme-day",
+        "TICKER_DAY": "ticker-day",
+    }
+    for prefix, unit_type in prefixes.items():
+        if independent_unit_id.startswith(f"{prefix}:"):
+            return unit_type
+    return None
 
 
 def _validate_inputs(
@@ -790,12 +815,19 @@ def _payload_mappings(payload: dict[str, Any]) -> list[dict[str, Any]]:
     seen = {id(payload)}
     while queue:
         current = queue.pop(0)
-        for key in _NESTED_PAYLOAD_KEYS:
-            nested = current.get(key)
-            if isinstance(nested, dict) and id(nested) not in seen:
-                seen.add(id(nested))
-                mappings.append(nested)
-                queue.append(nested)
+        for nested in current.values():
+            candidates = (
+                [nested]
+                if isinstance(nested, dict)
+                else [item for item in nested if isinstance(item, dict)]
+                if isinstance(nested, list)
+                else []
+            )
+            for candidate in candidates:
+                if id(candidate) not in seen:
+                    seen.add(id(candidate))
+                    mappings.append(candidate)
+                    queue.append(candidate)
     return mappings
 
 

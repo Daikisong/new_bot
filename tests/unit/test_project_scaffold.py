@@ -42,6 +42,7 @@ EXPECTED_SCHEMA_FILES = {
     "news_novelty_review.schema.json",
     "open_world_first_analysis.schema.json",
     "postmortem.schema.json",
+    "population_cube_row.schema.json",
     "population_manifest.schema.json",
     "red_team_artifact.schema.json",
     "record_routing_metadata.schema.json",

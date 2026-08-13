@@ -1,0 +1,282 @@
+{
+  "$defs": {
+    "PopulationOutcomeSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "distribution_weighting": {
+          "const": "independent_unit_sample_weight.v1",
+          "default": "independent_unit_sample_weight.v1",
+          "title": "Distribution Weighting",
+          "type": "string"
+        },
+        "high_return_10_count": {
+          "minimum": 0,
+          "title": "High Return 10 Count",
+          "type": "integer"
+        },
+        "high_return_20_count": {
+          "minimum": 0,
+          "title": "High Return 20 Count",
+          "type": "integer"
+        },
+        "high_return_5_count": {
+          "minimum": 0,
+          "title": "High Return 5 Count",
+          "type": "integer"
+        },
+        "mean_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Close Return Pct"
+        },
+        "mean_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean High Return Pct"
+        },
+        "median_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Close Return Pct"
+        },
+        "median_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median High Return Pct"
+        },
+        "missing_outcome_unit_count": {
+          "minimum": 0,
+          "title": "Missing Outcome Unit Count",
+          "type": "integer"
+        },
+        "observed_unit_count": {
+          "minimum": 0,
+          "title": "Observed Unit Count",
+          "type": "integer"
+        },
+        "p10_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P10 Close Return Pct"
+        },
+        "p10_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P10 High Return Pct"
+        },
+        "p25_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P25 Close Return Pct"
+        },
+        "p25_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P25 High Return Pct"
+        },
+        "p75_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P75 Close Return Pct"
+        },
+        "p75_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P75 High Return Pct"
+        },
+        "p90_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Close Return Pct"
+        },
+        "p90_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 High Return Pct"
+        },
+        "upper_limit_touched_count": {
+          "minimum": 0,
+          "title": "Upper Limit Touched Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observed_unit_count",
+        "missing_outcome_unit_count",
+        "upper_limit_touched_count",
+        "high_return_5_count",
+        "high_return_10_count",
+        "high_return_20_count"
+      ],
+      "title": "PopulationOutcomeSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cell_id": {
+      "title": "Cell Id",
+      "type": "string"
+    },
+    "effective_sample_size": {
+      "minimum": 0.0,
+      "title": "Effective Sample Size",
+      "type": "number"
+    },
+    "independent_unit_count": {
+      "minimum": 0,
+      "title": "Independent Unit Count",
+      "type": "integer"
+    },
+    "independent_unit_ids_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Independent Unit Ids Sha256",
+      "type": "string"
+    },
+    "label_quality": {
+      "title": "Label Quality",
+      "type": "string"
+    },
+    "member_record_ids_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Member Record Ids Sha256",
+      "type": "string"
+    },
+    "memory_lane": {
+      "title": "Memory Lane",
+      "type": "string"
+    },
+    "outcome_summary": {
+      "$ref": "#/$defs/PopulationOutcomeSummary"
+    },
+    "path_type": {
+      "title": "Path Type",
+      "type": "string"
+    },
+    "polarity_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Polarity Counts",
+      "type": "object"
+    },
+    "raw_record_count": {
+      "minimum": 0,
+      "title": "Raw Record Count",
+      "type": "integer"
+    },
+    "record_type": {
+      "title": "Record Type",
+      "type": "string"
+    },
+    "regime_cluster": {
+      "title": "Regime Cluster",
+      "type": "string"
+    },
+    "time_slice": {
+      "title": "Time Slice",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cell_id",
+    "memory_lane",
+    "time_slice",
+    "regime_cluster",
+    "record_type",
+    "path_type",
+    "label_quality",
+    "raw_record_count",
+    "independent_unit_count",
+    "effective_sample_size",
+    "outcome_summary",
+    "member_record_ids_sha256",
+    "independent_unit_ids_sha256"
+  ],
+  "title": "PopulationCubeRow",
+  "type": "object"
+}

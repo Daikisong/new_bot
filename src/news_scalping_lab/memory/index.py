@@ -12,9 +12,9 @@ import tempfile
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, BinaryIO, Literal
+from typing import Any, BinaryIO, Literal, cast
 
 import duckdb
 import numpy as np
@@ -42,9 +42,14 @@ from news_scalping_lab.memory.cells import (
     _secondary_cells,
     build_memory_cells,
     build_record_memory_documents,
+    independent_unit_type,
     normalized_quantized_sum,
     record_independent_unit_id,
     vector_signatures_and_margins,
+)
+from news_scalping_lab.memory.statistics import (
+    POPULATION_STATISTICS_VERSION,
+    project_population_record,
 )
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
@@ -73,7 +78,7 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-MEMORY_INDEX_SCHEMA_VERSION = "nslab.production_memory_index.v1"
+MEMORY_INDEX_SCHEMA_VERSION = "nslab.production_memory_index.v2"
 MEMORY_INDEX_ROOT = Path("memory/retrieval_index")
 MEMORY_SNAPSHOT_DIR = "snapshots"
 MEMORY_CURRENT_POINTER = "current.json"
@@ -116,6 +121,65 @@ class MemoryCellMember:
 
 
 @dataclass(frozen=True)
+class PopulationCellMember:
+    record_id: str
+    independent_unit_id: str
+    independent_unit_type: str
+    primary_cell_id: str
+    matched_cell_ids: tuple[str, ...]
+    trade_date: date
+    record_type: str
+    training_eligible: bool
+    routing_disposition: str
+    evidence_polarity: str
+    label_quality: str
+    memory_lanes: tuple[str, ...]
+    path_type: str
+    regime_cluster: str
+    high_return_pct: float | None
+    close_return_pct: float | None
+    upper_limit_touched: bool | None
+    outcome_observed: bool
+    sample_weight: float
+    high_return_status: str
+    close_return_status: str
+    upper_limit_status: str
+    sample_weight_status: str
+
+    def __post_init__(self) -> None:
+        valid_statuses = {"VALID", "MISSING", "INVALID_CONFLICT"}
+        for value, status, name in (
+            (self.high_return_pct, self.high_return_status, "high_return"),
+            (self.close_return_pct, self.close_return_status, "close_return"),
+            (self.upper_limit_touched, self.upper_limit_status, "upper_limit"),
+        ):
+            if status not in valid_statuses:
+                raise ValueError(f"unsupported {name} population status")
+            if (value is not None) is not (status == "VALID"):
+                raise ValueError(f"{name} value conflicts with population status")
+        if self.sample_weight_status not in {
+            "VALID",
+            "DEFAULT",
+            "INVALID_CONFLICT",
+        }:
+            raise ValueError("unsupported sample weight population status")
+        if (self.sample_weight > 0.0) is not (
+            self.sample_weight_status in {"VALID", "DEFAULT"}
+        ):
+            raise ValueError("sample weight value conflicts with population status")
+        observed = any(
+            status == "VALID"
+            for status in (
+                self.high_return_status,
+                self.close_return_status,
+                self.upper_limit_status,
+            )
+        )
+        if self.outcome_observed is not observed:
+            raise ValueError("outcome_observed conflicts with metric statuses")
+
+
+@dataclass(frozen=True)
 class _StreamingBuildState:
     record_count: int
     future_record_count: int
@@ -127,6 +191,8 @@ class _StreamingBuildState:
     cell_count: int
     secondary_membership_count: int
     independent_unit_count: int
+    unsupported_reasoning_record_count: int
+    unsupported_reasoning_record_ids_sha256: str
     readiness: dict[str, bool]
 
 
@@ -135,6 +201,8 @@ class _FinalizedDatabaseState:
     cell_count: int
     secondary_membership_count: int
     independent_unit_count: int
+    unsupported_reasoning_record_count: int
+    unsupported_reasoning_record_ids_sha256: str
     readiness: dict[str, bool]
 
 
@@ -159,7 +227,7 @@ class ProductionMemoryIndex:
         self.snapshots_root = self.index_root / MEMORY_SNAPSHOT_DIR
         self.current_pointer_path = self.index_root / MEMORY_CURRENT_POINTER
         self.as_of_registry_path = self.index_root / MEMORY_AS_OF_REGISTRY
-        self._verified_database_files: dict[str, tuple[int, int]] = {}
+        self._verified_database_files: dict[str, tuple[int, int, int]] = {}
         if production and not _is_production_embedding_provider(embedding_provider):
             raise ValueError(
                 "production memory index requires an attested real embedding provider"
@@ -228,6 +296,13 @@ class ProductionMemoryIndex:
                 "normalizer_version": MEMORY_CELL_NORMALIZER_VERSION,
                 "cell_schema_version": MEMORY_CELL_SCHEMA_VERSION,
                 "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
+                "population_projection_version": POPULATION_STATISTICS_VERSION,
+                "unsupported_reasoning_record_count": (
+                    state.unsupported_reasoning_record_count
+                ),
+                "unsupported_reasoning_record_ids_sha256": (
+                    state.unsupported_reasoning_record_ids_sha256
+                ),
                 "routing_metadata_sha256": routing_metadata_sha256,
                 "future_hashes_sha256": file_sha256(future_hash_path),
                 "cells_sha256": file_sha256(cell_path),
@@ -241,6 +316,7 @@ class ProductionMemoryIndex:
             production_ready = (
                 real_embedding
                 and state.record_count > 0
+                and state.unsupported_reasoning_record_count == 0
                 and all(state.readiness.values())
             )
             manifest = MemoryCellSnapshotManifest(
@@ -258,6 +334,7 @@ class ProductionMemoryIndex:
                 normalizer_version=MEMORY_CELL_NORMALIZER_VERSION,
                 cell_schema_version=MEMORY_CELL_SCHEMA_VERSION,
                 polarity_classifier_version=POLARITY_CLASSIFIER_VERSION,
+                population_projection_version=POPULATION_STATISTICS_VERSION,
                 routing_metadata_sha256=routing_metadata_sha256,
                 record_count=state.record_count,
                 excluded_future_record_count=state.future_record_count,
@@ -270,6 +347,12 @@ class ProductionMemoryIndex:
                 primary_membership_count=state.record_count,
                 secondary_membership_count=state.secondary_membership_count,
                 independent_unit_count=state.independent_unit_count,
+                unsupported_reasoning_record_count=(
+                    state.unsupported_reasoning_record_count
+                ),
+                unsupported_reasoning_record_ids_sha256=(
+                    state.unsupported_reasoning_record_ids_sha256
+                ),
                 parent_snapshot_id=parent.snapshot_id if parent is not None else None,
                 retained_record_count=state.retained_record_count,
                 added_record_count=state.record_count - state.retained_record_count,
@@ -466,6 +549,12 @@ class ProductionMemoryIndex:
                 cell_count=state.cell_count,
                 secondary_membership_count=state.secondary_membership_count,
                 independent_unit_count=state.independent_unit_count,
+                unsupported_reasoning_record_count=(
+                    state.unsupported_reasoning_record_count
+                ),
+                unsupported_reasoning_record_ids_sha256=(
+                    state.unsupported_reasoning_record_ids_sha256
+                ),
                 readiness=state.readiness,
             )
         finally:
@@ -581,6 +670,8 @@ class ProductionMemoryIndex:
             routing = routing_by_id[record.record_id]
             cell_id = _cell_id(signature)
             independent_unit_id = record_independent_unit_id(record)
+            unit_type = independent_unit_type(independent_unit_id) or "unsupported"
+            population = project_population_record(record)
             source_hash = source_hashes[record.record_id]
             routing_json = canonical_json(routing.model_dump(mode="json"))
             embedding_hash = sha256_text(canonical_json(vector))
@@ -604,6 +695,18 @@ class ProductionMemoryIndex:
                     signature,
                     margins,
                     independent_unit_id,
+                    unit_type,
+                    population.path_type,
+                    population.regime_cluster,
+                    population.high_return_pct,
+                    population.close_return_pct,
+                    population.upper_limit_touched,
+                    population.outcome_observed,
+                    population.sample_weight,
+                    population.high_return_status,
+                    population.close_return_status,
+                    population.upper_limit_status,
+                    population.sample_weight_status,
                     source_hash,
                     routing_json,
                     embedding_hash,
@@ -642,7 +745,8 @@ class ProductionMemoryIndex:
                 reasoning_counts[signature] += 1
         connection.executemany(
             "INSERT INTO records VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             record_rows,
         )
         if provenance_rows:
@@ -769,17 +873,240 @@ class ProductionMemoryIndex:
         finally:
             connection.close()
 
+    def population_members_for_cells(
+        self,
+        cell_ids: list[str],
+        *,
+        cutoff_at: datetime,
+        independent_unit_type: str,
+        routing_dispositions: tuple[str, ...] = ("REASONING",),
+        included_memory_lanes: tuple[str, ...] | None = None,
+        included_record_types: tuple[str, ...] | None = None,
+        excluded_record_types: tuple[str, ...] = (),
+        max_records: int | None = None,
+        force_database_verification: bool = False,
+    ) -> tuple[MemoryCellSnapshotManifest, list[PopulationCellMember]]:
+        """Return every cutoff-safe member of selected cells for a unit kind."""
+
+        selected_cells = sorted(set(cell_ids))
+        if not selected_cells:
+            raise ValueError("population retrieval requires selected cells")
+        if not routing_dispositions:
+            raise ValueError("population retrieval requires routing dispositions")
+        if max_records is not None and max_records < 1:
+            raise ValueError("population record budget must be positive")
+        if included_memory_lanes is not None and not included_memory_lanes:
+            raise ValueError("population memory lane filter cannot be empty")
+        purpose_filter_sql = ""
+        purpose_parameters: list[object] = []
+        if included_memory_lanes is not None:
+            purpose_filter_sql += (
+                " AND list_has_any(from_json(r.memory_lanes, '[\"VARCHAR\"]'), "
+                "?::VARCHAR[])"
+            )
+            purpose_parameters.append(sorted(set(included_memory_lanes)))
+        if included_record_types is not None:
+            if not included_record_types:
+                raise ValueError("population record type filter cannot be empty")
+            purpose_filter_sql += " AND r.record_type IN (SELECT UNNEST(?::VARCHAR[]))"
+            purpose_parameters.append(sorted(set(included_record_types)))
+        if excluded_record_types:
+            purpose_filter_sql += " AND r.record_type NOT IN (SELECT UNNEST(?::VARCHAR[]))"
+            purpose_parameters.append(sorted(set(excluded_record_types)))
+        manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
+        database_path = self.root / manifest.database.artifact_path
+        self._verify_runtime_database(
+            manifest,
+            force=force_database_verification,
+        )
+        connection = _connect_index(database_path, read_only=True)
+        try:
+            known_cell_ids = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT cell_id FROM cells "
+                    "WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))",
+                    [selected_cells],
+                ).fetchall()
+            }
+            missing_cell_ids = sorted(set(selected_cells) - known_cell_ids)
+            if missing_cell_ids:
+                raise ValueError(
+                    "selected population cells are absent from the snapshot: "
+                    + ", ".join(missing_cell_ids)
+                )
+            future_trade_date_count = _fetch_count(
+                connection,
+                """
+                WITH matched AS (
+                    SELECT record_id FROM memberships
+                    WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                    UNION
+                    SELECT record_id FROM secondary_memberships
+                    WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                )
+                SELECT COUNT(*)
+                FROM records r JOIN matched USING (record_id)
+                WHERE r.available_from <= ?
+                  AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
+                  AND r.independent_unit_type = ?
+                  AND r.trade_date > ?
+                """ + purpose_filter_sql,
+                [
+                    selected_cells,
+                    selected_cells,
+                    as_kst(cutoff_at).isoformat(),
+                    sorted(set(routing_dispositions)),
+                    independent_unit_type,
+                    as_kst(cutoff_at).date(),
+                    *purpose_parameters,
+                ],
+            )
+            if future_trade_date_count:
+                raise ValueError(
+                    "selected population contains a trade date after the cutoff"
+                )
+            if max_records is not None:
+                selected_record_count = _fetch_count(
+                    connection,
+                    """
+                    WITH matched AS (
+                        SELECT record_id FROM memberships
+                        WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                        UNION
+                        SELECT record_id FROM secondary_memberships
+                        WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                    )
+                    SELECT COUNT(*)
+                    FROM records r JOIN matched USING (record_id)
+                    WHERE r.available_from <= ?
+                      AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
+                      AND r.independent_unit_type = ?
+                    """ + purpose_filter_sql,
+                    [
+                        selected_cells,
+                        selected_cells,
+                        as_kst(cutoff_at).isoformat(),
+                        sorted(set(routing_dispositions)),
+                        independent_unit_type,
+                        *purpose_parameters,
+                    ],
+                )
+                if selected_record_count > max_records:
+                    raise ValueError(
+                        "selected population exceeds the operational record budget: "
+                        f"{selected_record_count} > {max_records}"
+                    )
+            rows = connection.execute(
+                f"""
+                WITH matched AS (
+                    SELECT record_id, primary_cell_id AS cell_id
+                    FROM memberships
+                    WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                    UNION
+                    SELECT record_id, cell_id
+                    FROM secondary_memberships
+                    WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))
+                )
+                SELECT r.record_id,
+                       r.independent_unit_id,
+                       r.independent_unit_type,
+                       r.primary_cell_id,
+                       matched.cell_id,
+                       r.trade_date,
+                       r.record_type,
+                       r.training_eligible,
+                       r.routing_disposition,
+                       r.evidence_polarity,
+                       r.label_quality,
+                       r.memory_lanes,
+                       r.path_type,
+                       r.regime_cluster,
+                       r.high_return_pct,
+                       r.close_return_pct,
+                       r.upper_limit_touched,
+                       r.outcome_observed,
+                       r.sample_weight,
+                       r.high_return_status,
+                       r.close_return_status,
+                       r.upper_limit_status,
+                       r.sample_weight_status
+                FROM records r
+                JOIN matched USING (record_id)
+                WHERE r.available_from <= ?
+                  AND r.trade_date <= ?
+                  AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
+                  AND r.independent_unit_type = ?
+                  {purpose_filter_sql}
+                ORDER BY r.record_id, matched.cell_id
+                """,
+                [
+                    selected_cells,
+                    selected_cells,
+                    as_kst(cutoff_at).isoformat(),
+                    as_kst(cutoff_at).date(),
+                    sorted(set(routing_dispositions)),
+                    independent_unit_type,
+                    *purpose_parameters,
+                ],
+            ).fetchall()
+        finally:
+            connection.close()
+        grouped: dict[str, tuple[tuple[object, ...], set[str]]] = {}
+        for row in rows:
+            record_id = str(row[0])
+            if record_id not in grouped:
+                grouped[record_id] = (row, set())
+            grouped[record_id][1].add(str(row[4]))
+        return manifest, [
+            PopulationCellMember(
+                record_id=str(row[0]),
+                independent_unit_id=str(row[1]),
+                independent_unit_type=str(row[2]),
+                primary_cell_id=str(row[3]),
+                matched_cell_ids=tuple(sorted(matched_cells)),
+                trade_date=cast(date, row[5]),
+                record_type=str(row[6]),
+                training_eligible=bool(row[7]),
+                routing_disposition=str(row[8]),
+                evidence_polarity=str(row[9]),
+                label_quality=str(row[10]),
+                memory_lanes=tuple(json.loads(str(row[11]))),
+                path_type=str(row[12]),
+                regime_cluster=str(row[13]),
+                high_return_pct=(
+                    float(cast(float, row[14])) if row[14] is not None else None
+                ),
+                close_return_pct=(
+                    float(cast(float, row[15])) if row[15] is not None else None
+                ),
+                upper_limit_touched=(bool(row[16]) if row[16] is not None else None),
+                outcome_observed=bool(row[17]),
+                sample_weight=float(cast(float, row[18])),
+                high_return_status=str(row[19]),
+                close_return_status=str(row[20]),
+                upper_limit_status=str(row[21]),
+                sample_weight_status=str(row[22]),
+            )
+            for row, matched_cells in (grouped[key] for key in sorted(grouped))
+        ]
+
     def _verify_runtime_database(
         self,
         manifest: MemoryCellSnapshotManifest,
+        *,
+        force: bool = False,
     ) -> None:
         path = self.root / manifest.database.artifact_path
         try:
             stat = path.stat()
         except OSError as exc:
             raise ValueError("memory snapshot database is unavailable") from exc
-        observed_state = (stat.st_size, stat.st_mtime_ns)
-        if self._verified_database_files.get(manifest.snapshot_id) == observed_state:
+        observed_state = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if (
+            not force
+            and self._verified_database_files.get(manifest.snapshot_id) == observed_state
+        ):
             return
         if file_sha256(path) != manifest.database.sha256:
             raise ValueError("memory snapshot database hash mismatch")
@@ -813,6 +1140,8 @@ class ProductionMemoryIndex:
                 and manifest is not None
                 and _registry_entry_matches_manifest(entry, manifest, self.root)
                 and _manifest_versions_current(manifest)
+                and manifest.snapshot_id
+                == _snapshot_id(_snapshot_identity_from_manifest(manifest))
                 and (not self.production or manifest.production_ready)
             ):
                 candidates.append((requested_cutoff, manifest))
@@ -1076,6 +1405,13 @@ class ProductionMemoryIndex:
                 "normalizer_version": manifest.normalizer_version,
                 "cell_schema_version": manifest.cell_schema_version,
                 "polarity_classifier_version": manifest.polarity_classifier_version,
+                "population_projection_version": manifest.population_projection_version,
+                "unsupported_reasoning_record_count": (
+                    manifest.unsupported_reasoning_record_count
+                ),
+                "unsupported_reasoning_record_ids_sha256": (
+                    manifest.unsupported_reasoning_record_ids_sha256
+                ),
             }
         )
         entries.sort(key=lambda item: (str(item["embedding_model"]), str(item["requested_cutoff"])))
@@ -1201,8 +1537,25 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
     if not manifest_path.exists():
         return base
     try:
-        manifest = MemoryCellSnapshotManifest.model_validate(read_json(manifest_path))
+        raw_manifest = read_json(manifest_path)
     except (OSError, ValueError) as exc:
+        return {**base, "status": "invalid", "errors": [f"manifest_invalid:{exc}"]}
+    if (
+        isinstance(raw_manifest, dict)
+        and raw_manifest.get("schema_version")
+        == "nslab.memory_cell_snapshot_manifest.v1"
+    ):
+        return {
+            **base,
+            "status": "stale",
+            "errors": ["snapshot_schema_legacy_v1"],
+            "manifest": raw_manifest,
+            "production_ready": False,
+            "legacy_read_compatible": True,
+        }
+    try:
+        manifest = MemoryCellSnapshotManifest.model_validate(raw_manifest)
+    except ValueError as exc:
         return {**base, "status": "invalid", "errors": [f"manifest_invalid:{exc}"]}
     errors: list[str] = []
     if manifest.snapshot_id != snapshot_id:
@@ -1532,7 +1885,19 @@ def _streaming_snapshot_integrity_errors(
                 document VARCHAR,
                 source_sha256 VARCHAR,
                 routing_json VARCHAR,
-                independent_unit_id VARCHAR
+                independent_unit_id VARCHAR,
+                independent_unit_type VARCHAR,
+                path_type VARCHAR,
+                regime_cluster VARCHAR,
+                high_return_pct DOUBLE,
+                close_return_pct DOUBLE,
+                upper_limit_touched BOOLEAN,
+                outcome_observed BOOLEAN,
+                sample_weight DOUBLE,
+                high_return_status VARCHAR,
+                close_return_status VARCHAR,
+                upper_limit_status VARCHAR,
+                sample_weight_status VARCHAR
             )
             """
         )
@@ -1560,6 +1925,8 @@ def _streaming_snapshot_integrity_errors(
                 )
             else:
                 routing = record_routing_metadata(record)
+                independent_unit_id = record_independent_unit_id(record)
+                population = project_population_record(record)
                 record_rows.append(
                     (
                         record.record_id,
@@ -1577,7 +1944,19 @@ def _streaming_snapshot_integrity_errors(
                         resolver.document(record),
                         source_hash,
                         canonical_json(routing.model_dump(mode="json")),
-                        record_independent_unit_id(record),
+                        independent_unit_id,
+                        independent_unit_type(independent_unit_id) or "unsupported",
+                        population.path_type,
+                        population.regime_cluster,
+                        population.high_return_pct,
+                        population.close_return_pct,
+                        population.upper_limit_touched,
+                        population.outcome_observed,
+                        population.sample_weight,
+                        population.high_return_status,
+                        population.close_return_status,
+                        population.upper_limit_status,
+                        population.sample_weight_status,
                     )
                 )
                 provenance_rows.extend(
@@ -1587,7 +1966,8 @@ def _streaming_snapshot_integrity_errors(
             if len(record_rows) >= 512:
                 connection.executemany(
                     "INSERT INTO expected_records VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     record_rows,
                 )
                 record_rows.clear()
@@ -1606,7 +1986,8 @@ def _streaming_snapshot_integrity_errors(
         if record_rows:
             connection.executemany(
                 "INSERT INTO expected_records VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 record_rows,
             )
         if provenance_rows:
@@ -1664,7 +2045,10 @@ def _streaming_snapshot_integrity_errors(
             "record_id, episode_id, record_type, training_target, trade_date, "
             "available_from, training_eligible, evidence_phase, evidence_polarity, "
             "label_quality, routing_disposition, memory_lanes, document, source_sha256, "
-            "routing_json, independent_unit_id"
+            "routing_json, independent_unit_id, independent_unit_type, path_type, "
+            "regime_cluster, high_return_pct, close_return_pct, upper_limit_touched, "
+            "outcome_observed, sample_weight, high_return_status, close_return_status, "
+            "upper_limit_status, sample_weight_status"
         )
         if _sql_symmetric_difference_count(
             connection,
@@ -2103,6 +2487,12 @@ def _database_index_readiness_errors(
     manifest: MemoryCellSnapshotManifest,
 ) -> list[str]:
     errors: list[str] = []
+    unsupported_count, unsupported_hash = _unsupported_reasoning_identity(connection)
+    if (
+        unsupported_count != manifest.unsupported_reasoning_record_count
+        or unsupported_hash != manifest.unsupported_reasoning_record_ids_sha256
+    ):
+        errors.append("database_unsupported_reasoning_units_mismatch")
     index_names = {
         str(row[0])
         for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()
@@ -2141,6 +2531,20 @@ def _database_index_readiness_errors(
     return errors
 
 
+def _unsupported_reasoning_identity(
+    connection: duckdb.DuckDBPyConnection,
+) -> tuple[int, str]:
+    record_ids = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT record_id FROM records "
+            "WHERE routing_disposition = 'REASONING' "
+            "AND independent_unit_type = 'unsupported' ORDER BY record_id"
+        ).fetchall()
+    ]
+    return len(record_ids), sha256_text(canonical_json(record_ids))
+
+
 def _database_integrity_errors(
     connection: duckdb.DuckDBPyConnection,
     *,
@@ -2176,13 +2580,17 @@ def _database_integrity_errors(
         current_records,
     )
     database_record_projection = {
-        str(row[0]): tuple(row[1:14])
+        str(row[0]): tuple(row[1:26])
         for row in connection.execute(
             """
             SELECT record_id, episode_id, record_type, training_target,
                    trade_date, available_from, training_eligible, evidence_phase,
                    evidence_polarity, label_quality, routing_disposition,
-                   memory_lanes, document, primary_cell_id
+                   memory_lanes, document, primary_cell_id,
+                   independent_unit_type, path_type, regime_cluster,
+                   high_return_pct, close_return_pct, upper_limit_touched,
+                   outcome_observed, sample_weight, high_return_status,
+                   close_return_status, upper_limit_status, sample_weight_status
             FROM records
             """
         ).fetchall()
@@ -2191,6 +2599,8 @@ def _database_integrity_errors(
     membership_primary = {item.record_id: item.primary_cell_id for item in memberships}
     for record_id, record in source_by_id.items():
         routing = record_routing_metadata(record)
+        population = project_population_record(record)
+        unit_id = record_independent_unit_id(record)
         expected_record_projection[record_id] = (
             record.episode_id,
             record.record_type,
@@ -2205,6 +2615,18 @@ def _database_integrity_errors(
             canonical_json(routing.memory_lanes),
             source_documents[record_id],
             membership_primary.get(record_id),
+            independent_unit_type(unit_id) or "unsupported",
+            population.path_type,
+            population.regime_cluster,
+            population.high_return_pct,
+            population.close_return_pct,
+            population.upper_limit_touched,
+            population.outcome_observed,
+            population.sample_weight,
+            population.high_return_status,
+            population.close_return_status,
+            population.upper_limit_status,
+            population.sample_weight_status,
         )
     if database_record_projection != expected_record_projection:
         errors.append("database_record_projection_mismatch")
@@ -2373,6 +2795,7 @@ def _database_integrity_errors(
         "records_disposition_idx",
         "records_type_idx",
         "records_primary_cell_idx",
+        "records_unit_type_idx",
         "secondary_cell_idx",
         "provenance_source_idx",
     }
@@ -2391,6 +2814,12 @@ def _database_integrity_errors(
         and "fts_main_reasoning_records" not in schema_names
     ):
         errors.append("database_fts_index_missing")
+    unsupported_count, unsupported_hash = _unsupported_reasoning_identity(connection)
+    if (
+        unsupported_count != manifest.unsupported_reasoning_record_count
+        or unsupported_hash != manifest.unsupported_reasoning_record_ids_sha256
+    ):
+        errors.append("database_unsupported_reasoning_units_mismatch")
     return errors
 
 
@@ -2422,6 +2851,18 @@ def _create_streaming_database(
             signature VARCHAR NOT NULL,
             margins FLOAT[{MEMORY_CELL_SIGNATURE_BITS}] NOT NULL,
             independent_unit_id VARCHAR NOT NULL,
+            independent_unit_type VARCHAR NOT NULL,
+            path_type VARCHAR NOT NULL,
+            regime_cluster VARCHAR NOT NULL,
+            high_return_pct DOUBLE,
+            close_return_pct DOUBLE,
+            upper_limit_touched BOOLEAN,
+            outcome_observed BOOLEAN NOT NULL,
+            sample_weight DOUBLE NOT NULL,
+            high_return_status VARCHAR NOT NULL,
+            close_return_status VARCHAR NOT NULL,
+            upper_limit_status VARCHAR NOT NULL,
+            sample_weight_status VARCHAR NOT NULL,
             source_sha256 VARCHAR NOT NULL,
             routing_json VARCHAR NOT NULL,
             embedding_sha256 VARCHAR NOT NULL
@@ -2667,10 +3108,18 @@ def _finalize_streaming_database(
         connection,
         "SELECT COUNT(DISTINCT independent_unit_id) FROM memberships",
     )
+    (
+        unsupported_reasoning_record_count,
+        unsupported_reasoning_record_ids_sha256,
+    ) = _unsupported_reasoning_identity(connection)
     return _FinalizedDatabaseState(
         cell_count=len(cell_entries),
         secondary_membership_count=secondary_count,
         independent_unit_count=independent_unit_count,
+        unsupported_reasoning_record_count=unsupported_reasoning_record_count,
+        unsupported_reasoning_record_ids_sha256=(
+            unsupported_reasoning_record_ids_sha256
+        ),
         readiness=readiness,
     )
 
@@ -2691,6 +3140,7 @@ def _finalize_database_indexes(
         "CREATE INDEX records_disposition_idx ON records(routing_disposition)",
         "CREATE INDEX records_type_idx ON records(record_type)",
         "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
+        "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
         "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
         "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
     ):
@@ -2808,6 +3258,18 @@ def _build_database(
                 memory_lanes VARCHAR NOT NULL,
                 document VARCHAR NOT NULL,
                 primary_cell_id VARCHAR NOT NULL,
+                independent_unit_type VARCHAR NOT NULL,
+                path_type VARCHAR NOT NULL,
+                regime_cluster VARCHAR NOT NULL,
+                high_return_pct DOUBLE,
+                close_return_pct DOUBLE,
+                upper_limit_touched BOOLEAN,
+                outcome_observed BOOLEAN NOT NULL,
+                sample_weight DOUBLE NOT NULL,
+                high_return_status VARCHAR NOT NULL,
+                close_return_status VARCHAR NOT NULL,
+                upper_limit_status VARCHAR NOT NULL,
+                sample_weight_status VARCHAR NOT NULL,
                 embedding {vector_type} NOT NULL
             )
             """
@@ -2817,6 +3279,7 @@ def _build_database(
         for record, vector in zip(records, vectors, strict=True):
             routing = record_routing_metadata(record)
             membership = membership_by_record[record.record_id]
+            population = project_population_record(record)
             record_rows.append(
                 (
                     record.record_id,
@@ -2833,12 +3296,27 @@ def _build_database(
                     canonical_json(routing.memory_lanes),
                     cells.documents[record.record_id],
                     membership.primary_cell_id,
+                    independent_unit_type(membership.independent_unit_id)
+                    or "unsupported",
+                    population.path_type,
+                    population.regime_cluster,
+                    population.high_return_pct,
+                    population.close_return_pct,
+                    population.upper_limit_touched,
+                    population.outcome_observed,
+                    population.sample_weight,
+                    population.high_return_status,
+                    population.close_return_status,
+                    population.upper_limit_status,
+                    population.sample_weight_status,
                     vector,
                 )
             )
         if record_rows:
             connection.executemany(
-                "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO records VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?)",
                 record_rows,
             )
         connection.execute(
@@ -2961,6 +3439,7 @@ def _build_database(
             "CREATE INDEX records_disposition_idx ON records(routing_disposition)",
             "CREATE INDEX records_type_idx ON records(record_type)",
             "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
+            "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
             "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
             "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
         ):
@@ -3116,6 +3595,13 @@ def _snapshot_identity_from_manifest(
         "normalizer_version": manifest.normalizer_version,
         "cell_schema_version": manifest.cell_schema_version,
         "polarity_classifier_version": manifest.polarity_classifier_version,
+        "population_projection_version": manifest.population_projection_version,
+        "unsupported_reasoning_record_count": (
+            manifest.unsupported_reasoning_record_count
+        ),
+        "unsupported_reasoning_record_ids_sha256": (
+            manifest.unsupported_reasoning_record_ids_sha256
+        ),
         "routing_metadata_sha256": manifest.routing_metadata_sha256,
         "future_hashes_sha256": manifest.excluded_future_record_hashes.sha256,
         "cells_sha256": manifest.cell_entries.sha256,
@@ -3126,10 +3612,12 @@ def _snapshot_identity_from_manifest(
 
 def _manifest_versions_current(manifest: MemoryCellSnapshotManifest) -> bool:
     return (
-        manifest.clustering_version == MEMORY_CELL_CLUSTERING_VERSION
+        manifest.schema_version == "nslab.memory_cell_snapshot_manifest.v2"
+        and manifest.clustering_version == MEMORY_CELL_CLUSTERING_VERSION
         and manifest.normalizer_version == MEMORY_CELL_NORMALIZER_VERSION
         and manifest.cell_schema_version == MEMORY_CELL_SCHEMA_VERSION
         and manifest.polarity_classifier_version == POLARITY_CLASSIFIER_VERSION
+        and manifest.population_projection_version == POPULATION_STATISTICS_VERSION
         and manifest.record_hash_kind == "canonical_full_envelope_sha256"
     )
 
@@ -3195,6 +3683,12 @@ def _registry_entry_matches_manifest(
         and entry.get("cell_schema_version") == manifest.cell_schema_version
         and entry.get("polarity_classifier_version")
         == manifest.polarity_classifier_version
+        and entry.get("population_projection_version")
+        == manifest.population_projection_version
+        and entry.get("unsupported_reasoning_record_count")
+        == manifest.unsupported_reasoning_record_count
+        and entry.get("unsupported_reasoning_record_ids_sha256")
+        == manifest.unsupported_reasoning_record_ids_sha256
     )
 
 

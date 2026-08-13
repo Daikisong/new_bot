@@ -154,6 +154,8 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
                 response_class="positive_high10",
                 payload_extra={
                     "issuer_day_case_id": "20300110:000001",
+                    "ticker": "000001",
+                    "event_id": "EVT-1",
                     "path_type": "SINGLE_EVENT",
                     "event_ids": ["EVT-1", "EVT-2"],
                     "safe_D1_features": {"gap_rate": 0.03, "volume_rank": 2},

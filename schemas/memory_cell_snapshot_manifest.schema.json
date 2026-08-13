@@ -166,6 +166,10 @@
       "title": "Polarity Classifier Version",
       "type": "string"
     },
+    "population_projection_version": {
+      "title": "Population Projection Version",
+      "type": "string"
+    },
     "primary_membership_count": {
       "minimum": 0,
       "title": "Primary Membership Count",
@@ -218,8 +222,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.memory_cell_snapshot_manifest.v1",
-      "default": "nslab.memory_cell_snapshot_manifest.v1",
+      "const": "nslab.memory_cell_snapshot_manifest.v2",
+      "default": "nslab.memory_cell_snapshot_manifest.v2",
       "title": "Schema Version",
       "type": "string"
     },
@@ -239,6 +243,16 @@
     },
     "source_record_hashes": {
       "$ref": "#/$defs/ArtifactReference"
+    },
+    "unsupported_reasoning_record_count": {
+      "minimum": 0,
+      "title": "Unsupported Reasoning Record Count",
+      "type": "integer"
+    },
+    "unsupported_reasoning_record_ids_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Unsupported Reasoning Record Ids Sha256",
+      "type": "string"
     }
   },
   "required": [
@@ -256,6 +270,7 @@
     "normalizer_version",
     "cell_schema_version",
     "polarity_classifier_version",
+    "population_projection_version",
     "routing_metadata_sha256",
     "record_count",
     "excluded_future_record_count",
@@ -267,6 +282,8 @@
     "primary_membership_count",
     "secondary_membership_count",
     "independent_unit_count",
+    "unsupported_reasoning_record_count",
+    "unsupported_reasoning_record_ids_sha256",
     "retained_record_count",
     "added_record_count",
     "source_record_hashes",
