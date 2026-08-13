@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted_record_count": {
+      "minimum": 0,
+      "title": "Accepted Record Count",
+      "type": "integer"
+    },
+    "available_record_count": {
+      "minimum": 0,
+      "title": "Available Record Count",
+      "type": "integer"
+    },
+    "available_record_ids": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "corpus_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Corpus Manifest Sha256",
+      "type": "string"
+    },
+    "coverage_complete": {
+      "title": "Coverage Complete",
+      "type": "boolean"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "duplicate_record_count": {
+      "minimum": 0,
+      "title": "Duplicate Record Count",
+      "type": "integer"
+    },
+    "future_record_count": {
+      "minimum": 0,
+      "title": "Future Record Count",
+      "type": "integer"
+    },
+    "missing_record_count": {
+      "minimum": 0,
+      "title": "Missing Record Count",
+      "type": "integer"
+    },
+    "record_hash_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.memory_coverage_manifest.v2",
+      "default": "nslab.memory_coverage_manifest.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "unexpected_record_count": {
+      "minimum": 0,
+      "title": "Unexpected Record Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "cutoff_at",
+    "corpus_manifest_sha256",
+    "accepted_record_count",
+    "available_record_count",
+    "future_record_count",
+    "missing_record_count",
+    "unexpected_record_count",
+    "duplicate_record_count",
+    "available_record_ids",
+    "record_hash_manifest",
+    "coverage_complete"
+  ],
+  "title": "MemoryCoverageManifest",
+  "type": "object"
+}

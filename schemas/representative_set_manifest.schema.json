@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "RepresentativeStratum": {
+      "additionalProperties": false,
+      "properties": {
+        "independent_unit_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Independent Unit Ids",
+          "type": "array"
+        },
+        "record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Record Ids",
+          "type": "array"
+        },
+        "stratum": {
+          "title": "Stratum",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stratum"
+      ],
+      "title": "RepresentativeStratum",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "diversity_coverage_ratio": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Diversity Coverage Ratio",
+      "type": "number"
+    },
+    "estimated_token_count": {
+      "minimum": 0,
+      "title": "Estimated Token Count",
+      "type": "integer"
+    },
+    "omitted_population_record_count": {
+      "minimum": 0,
+      "title": "Omitted Population Record Count",
+      "type": "integer"
+    },
+    "population_id": {
+      "title": "Population Id",
+      "type": "string"
+    },
+    "population_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Population Manifest Sha256",
+      "type": "string"
+    },
+    "representative_set_id": {
+      "title": "Representative Set Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.representative_set_manifest.v1",
+      "default": "nslab.representative_set_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_record_count": {
+      "minimum": 0,
+      "title": "Selected Record Count",
+      "type": "integer"
+    },
+    "selected_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Record Ids",
+      "type": "array"
+    },
+    "selection_version": {
+      "title": "Selection Version",
+      "type": "string"
+    },
+    "strata": {
+      "items": {
+        "$ref": "#/$defs/RepresentativeStratum"
+      },
+      "title": "Strata",
+      "type": "array"
+    }
+  },
+  "required": [
+    "representative_set_id",
+    "population_id",
+    "population_manifest_sha256",
+    "selection_version",
+    "selected_record_count",
+    "omitted_population_record_count",
+    "estimated_token_count",
+    "diversity_coverage_ratio"
+  ],
+  "title": "RepresentativeSetManifest",
+  "type": "object"
+}

@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "AdaptiveRetrievalIteration": {
+      "additionalProperties": false,
+      "properties": {
+        "added_cell_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Added Cell Ids",
+          "type": "array"
+        },
+        "added_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Added Record Ids",
+          "type": "array"
+        },
+        "cumulative_token_count": {
+          "minimum": 0,
+          "title": "Cumulative Token Count",
+          "type": "integer"
+        },
+        "information_gain": {
+          "minimum": 0.0,
+          "title": "Information Gain",
+          "type": "number"
+        },
+        "iteration": {
+          "minimum": 0,
+          "title": "Iteration",
+          "type": "integer"
+        },
+        "trigger_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Trigger Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "iteration",
+        "information_gain",
+        "cumulative_token_count"
+      ],
+      "title": "AdaptiveRetrievalIteration",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "initial_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Initial Cell Ids",
+      "type": "array"
+    },
+    "iterations": {
+      "items": {
+        "$ref": "#/$defs/AdaptiveRetrievalIteration"
+      },
+      "title": "Iterations",
+      "type": "array"
+    },
+    "max_cell_count": {
+      "minimum": 0,
+      "title": "Max Cell Count",
+      "type": "integer"
+    },
+    "max_depth": {
+      "minimum": 0,
+      "title": "Max Depth",
+      "type": "integer"
+    },
+    "max_record_count": {
+      "minimum": 0,
+      "title": "Max Record Count",
+      "type": "integer"
+    },
+    "max_token_count": {
+      "minimum": 0,
+      "title": "Max Token Count",
+      "type": "integer"
+    },
+    "policy_version": {
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.adaptive_retrieval_trace.v1",
+      "default": "nslab.adaptive_retrieval_trace.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stopped_reason": {
+      "title": "Stopped Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "cluster_id",
+    "policy_version",
+    "max_depth",
+    "max_cell_count",
+    "max_record_count",
+    "max_token_count",
+    "stopped_reason"
+  ],
+  "title": "AdaptiveRetrievalTrace",
+  "type": "object"
+}

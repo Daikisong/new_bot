@@ -19,6 +19,7 @@ from news_scalping_lab.contracts.schemas import SCHEMA_MODELS, export_json_schem
 from news_scalping_lab.utils import read_json
 
 EXPECTED_SCHEMA_FILES = {
+    "adaptive_retrieval_trace.schema.json",
     "blind_prediction.schema.json",
     "brain_manifest.schema.json",
     "candidate.schema.json",
@@ -26,15 +27,23 @@ EXPECTED_SCHEMA_FILES = {
     "candidate_verification_review.schema.json",
     "company_memory.schema.json",
     "context_manifest.schema.json",
+    "daily_memory_context.schema.json",
     "daily_analysis.schema.json",
     "event_ticker_edge.schema.json",
+    "event_cluster_manifest.schema.json",
     "final_synthesis_context.schema.json",
     "mechanism_memory.schema.json",
+    "memory_cell_manifest.schema.json",
     "memory_claim.schema.json",
+    "memory_coverage_manifest.schema.json",
+    "news_coverage_manifest.schema.json",
     "news_novelty_review.schema.json",
     "open_world_first_analysis.schema.json",
     "postmortem.schema.json",
+    "population_manifest.schema.json",
     "red_team_artifact.schema.json",
+    "record_routing_metadata.schema.json",
+    "representative_set_manifest.schema.json",
     "research_episode.schema.json",
     "semantic_retrieval_plan.schema.json",
     "semantic_research_draft.schema.json",
@@ -64,9 +73,10 @@ def test_repository_agent_guidance_stays_short_and_operational() -> None:
         "python -m pytest",
     ):
         assert command in guidance
-    assert len([line for line in guidance.splitlines() if line.startswith("- ")]) == len(
-        required_rules
-    )
+    repository_rules = guidance.split("Record rules:", maxsplit=1)[0]
+    assert len(
+        [line for line in repository_rules.splitlines() if line.startswith("- ")]
+    ) == len(required_rules)
     assert "episode_id" not in guidance
     assert "ticker:" not in guidance.lower()
     assert re.search(r"\b\d{6}\b", guidance) is None

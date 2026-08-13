@@ -1,0 +1,122 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cell_id": {
+      "title": "Cell Id",
+      "type": "string"
+    },
+    "cell_schema_version": {
+      "title": "Cell Schema Version",
+      "type": "string"
+    },
+    "child_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Child Cell Ids",
+      "type": "array"
+    },
+    "clustering_version": {
+      "title": "Clustering Version",
+      "type": "string"
+    },
+    "corpus_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Corpus Manifest Sha256",
+      "type": "string"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "independent_unit_count": {
+      "minimum": 0,
+      "title": "Independent Unit Count",
+      "type": "integer"
+    },
+    "max_available_from": {
+      "format": "date-time",
+      "title": "Max Available From",
+      "type": "string"
+    },
+    "membership_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "normalizer_version": {
+      "title": "Normalizer Version",
+      "type": "string"
+    },
+    "parent_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Parent Cell Ids",
+      "type": "array"
+    },
+    "primary_member_count": {
+      "minimum": 0,
+      "title": "Primary Member Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "nslab.memory_cell_manifest.v1",
+      "default": "nslab.memory_cell_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secondary_member_count": {
+      "minimum": 0,
+      "title": "Secondary Member Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "cell_id",
+    "corpus_manifest_sha256",
+    "max_available_from",
+    "embedding_model",
+    "clustering_version",
+    "normalizer_version",
+    "cell_schema_version",
+    "primary_member_count",
+    "secondary_member_count",
+    "independent_unit_count",
+    "membership_manifest"
+  ],
+  "title": "MemoryCellManifest",
+  "type": "object"
+}

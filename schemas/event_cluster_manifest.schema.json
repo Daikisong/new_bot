@@ -1,0 +1,151 @@
+{
+  "$defs": {
+    "EventClusterEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_id": {
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "cluster_signature_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Cluster Signature Sha256",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "MATERIAL_FULL_RETRIEVAL",
+            "MARKET_CONTEXT",
+            "AUDIT_ONLY",
+            "DUPLICATE"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "exact_duplicate_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Exact Duplicate Count",
+          "type": "integer"
+        },
+        "member_event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Member Event Ids",
+          "type": "array"
+        },
+        "member_row_numbers": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Member Row Numbers",
+          "type": "array"
+        },
+        "representative_event_id": {
+          "title": "Representative Event Id",
+          "type": "string"
+        },
+        "semantic_duplicate_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Semantic Duplicate Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cluster_id",
+        "representative_event_id",
+        "disposition",
+        "cluster_signature_sha256"
+      ],
+      "title": "EventClusterEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cluster_count": {
+      "minimum": 0,
+      "title": "Cluster Count",
+      "type": "integer"
+    },
+    "clustering_version": {
+      "title": "Clustering Version",
+      "type": "string"
+    },
+    "clusters": {
+      "items": {
+        "$ref": "#/$defs/EventClusterEntry"
+      },
+      "title": "Clusters",
+      "type": "array"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "duplicate_assignment_count": {
+      "minimum": 0,
+      "title": "Duplicate Assignment Count",
+      "type": "integer"
+    },
+    "embedding_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Provider"
+    },
+    "input_row_count": {
+      "minimum": 0,
+      "title": "Input Row Count",
+      "type": "integer"
+    },
+    "material_cluster_count": {
+      "minimum": 0,
+      "title": "Material Cluster Count",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.event_cluster_manifest.v2",
+      "default": "nslab.event_cluster_manifest.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    },
+    "unassigned_row_count": {
+      "minimum": 0,
+      "title": "Unassigned Row Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "trade_date",
+    "cutoff_at",
+    "clustering_version",
+    "input_row_count",
+    "cluster_count",
+    "material_cluster_count",
+    "unassigned_row_count",
+    "duplicate_assignment_count"
+  ],
+  "title": "EventClusterManifest",
+  "type": "object"
+}

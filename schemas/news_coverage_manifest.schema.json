@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "NewsRowCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "disposition": {
+          "enum": [
+            "MATERIAL_FULL_RETRIEVAL",
+            "MARKET_CONTEXT",
+            "AUDIT_ONLY",
+            "DUPLICATE"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "duplicate_parent_cluster_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duplicate Parent Cluster Id"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "primary_cluster_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Cluster Id"
+        },
+        "row_number": {
+          "minimum": 1,
+          "title": "Row Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "row_number",
+        "event_id",
+        "disposition"
+      ],
+      "title": "NewsRowCoverage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "covered_row_count": {
+      "minimum": 0,
+      "title": "Covered Row Count",
+      "type": "integer"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "disposition_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Disposition Counts",
+      "type": "object"
+    },
+    "duplicate_assignment_count": {
+      "minimum": 0,
+      "title": "Duplicate Assignment Count",
+      "type": "integer"
+    },
+    "input_news_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Input News Sha256",
+      "type": "string"
+    },
+    "input_row_count": {
+      "minimum": 0,
+      "title": "Input Row Count",
+      "type": "integer"
+    },
+    "missing_row_count": {
+      "minimum": 0,
+      "title": "Missing Row Count",
+      "type": "integer"
+    },
+    "row_coverage_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Row Coverage Sha256",
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/NewsRowCoverage"
+      },
+      "title": "Rows",
+      "type": "array"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.news_coverage_manifest.v1",
+      "default": "nslab.news_coverage_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "trade_date",
+    "cutoff_at",
+    "input_news_sha256",
+    "input_row_count",
+    "covered_row_count",
+    "missing_row_count",
+    "duplicate_assignment_count",
+    "row_coverage_sha256"
+  ],
+  "title": "NewsCoverageManifest",
+  "type": "object"
+}

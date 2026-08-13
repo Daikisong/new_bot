@@ -4,6 +4,18 @@
 
 작성일: 2026-08-13
 
+외부 검토 반영 문서:
+
+```text
+docs/0813/external_brain_design_feedback.md
+docs/0813/brain_memory_implementation_phases.md
+```
+
+외부 총괄 판정은 `ACCEPT_WITH_CHANGES`다. 특히 뉴스 12개 제한, exact-only event
+clustering, 선형 전수 record 검색, exhaustive shard 본문의 final prompt 전달,
+eligibility와 polarity 혼합을 선행 P0로 확인했다. 이 문서의 방향은 유지하되 상세 구현은
+위 두 문서의 수정사항과 phase 순서를 따른다.
+
 검토 대상:
 
 ```text

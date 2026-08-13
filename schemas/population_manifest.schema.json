@@ -1,0 +1,226 @@
+{
+  "$defs": {
+    "PopulationOutcomeSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "high_return_10_count": {
+          "minimum": 0,
+          "title": "High Return 10 Count",
+          "type": "integer"
+        },
+        "high_return_20_count": {
+          "minimum": 0,
+          "title": "High Return 20 Count",
+          "type": "integer"
+        },
+        "high_return_5_count": {
+          "minimum": 0,
+          "title": "High Return 5 Count",
+          "type": "integer"
+        },
+        "mean_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean Close Return Pct"
+        },
+        "mean_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mean High Return Pct"
+        },
+        "median_close_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Close Return Pct"
+        },
+        "median_high_return_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median High Return Pct"
+        },
+        "missing_outcome_unit_count": {
+          "minimum": 0,
+          "title": "Missing Outcome Unit Count",
+          "type": "integer"
+        },
+        "observed_unit_count": {
+          "minimum": 0,
+          "title": "Observed Unit Count",
+          "type": "integer"
+        },
+        "upper_limit_touched_count": {
+          "minimum": 0,
+          "title": "Upper Limit Touched Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observed_unit_count",
+        "missing_outcome_unit_count",
+        "upper_limit_touched_count",
+        "high_return_5_count",
+        "high_return_10_count",
+        "high_return_20_count"
+      ],
+      "title": "PopulationOutcomeSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "corpus_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Corpus Manifest Sha256",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "effective_sample_size": {
+      "minimum": 0.0,
+      "title": "Effective Sample Size",
+      "type": "number"
+    },
+    "eligibility_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Eligibility Counts",
+      "type": "object"
+    },
+    "independent_unit_count": {
+      "minimum": 0,
+      "title": "Independent Unit Count",
+      "type": "integer"
+    },
+    "independent_unit_type": {
+      "enum": [
+        "event-issuer-day",
+        "issuer-day",
+        "theme-day",
+        "theme-day-ticker-day",
+        "theme-day-pair",
+        "ticker-day"
+      ],
+      "title": "Independent Unit Type",
+      "type": "string"
+    },
+    "label_quality_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Label Quality Counts",
+      "type": "object"
+    },
+    "membership_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Membership Manifest Sha256",
+      "type": "string"
+    },
+    "observed_population_rate_label": {
+      "const": "observed_population_rate",
+      "default": "observed_population_rate",
+      "title": "Observed Population Rate Label",
+      "type": "string"
+    },
+    "outcome_summary": {
+      "$ref": "#/$defs/PopulationOutcomeSummary"
+    },
+    "polarity_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Polarity Counts",
+      "type": "object"
+    },
+    "population_id": {
+      "title": "Population Id",
+      "type": "string"
+    },
+    "raw_record_count": {
+      "minimum": 0,
+      "title": "Raw Record Count",
+      "type": "integer"
+    },
+    "regime_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Regime Counts",
+      "type": "object"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.population_manifest.v1",
+      "default": "nslab.population_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Cell Ids",
+      "type": "array"
+    },
+    "time_slice_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Time Slice Counts",
+      "type": "object"
+    }
+  },
+  "required": [
+    "population_id",
+    "run_id",
+    "cluster_id",
+    "cutoff_at",
+    "corpus_manifest_sha256",
+    "membership_manifest_sha256",
+    "independent_unit_type",
+    "raw_record_count",
+    "independent_unit_count",
+    "effective_sample_size",
+    "outcome_summary"
+  ],
+  "title": "PopulationManifest",
+  "type": "object"
+}

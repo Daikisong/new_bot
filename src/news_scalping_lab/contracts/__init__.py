@@ -1,5 +1,16 @@
 """Public data contracts."""
 
+from news_scalping_lab.contracts.memory_context import (
+    AdaptiveRetrievalTrace,
+    DailyMemoryContext,
+    EventClusterManifest,
+    MemoryCellManifest,
+    MemoryCoverageManifest,
+    NewsCoverageManifest,
+    PopulationManifest,
+    RecordRoutingMetadata,
+    RepresentativeSetManifest,
+)
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
@@ -24,24 +35,33 @@ from news_scalping_lab.contracts.models import (
 )
 
 __all__ = [
+    "AdaptiveRetrievalTrace",
     "BlindAnalysis",
     "BlindPrediction",
     "Candidate",
     "CompanyMemory",
     "ConfidenceLabel",
     "ContextManifest",
+    "DailyMemoryContext",
     "DailyAnalysis",
     "DominantSectorHypothesis",
     "EligibilityMatrix",
     "EventTickerEdge",
+    "EventClusterManifest",
     "FinalSynthesisContextArtifact",
     "MechanismMemory",
+    "MemoryCellManifest",
     "MemoryClaim",
+    "MemoryCoverageManifest",
+    "NewsCoverageManifest",
     "OutcomeLabels",
     "PathType",
     "PriceSnapshot",
+    "PopulationManifest",
     "Provenance",
     "RedTeamArtifact",
     "RedTeamFinding",
+    "RecordRoutingMetadata",
+    "RepresentativeSetManifest",
     "ResearchEpisode",
 ]

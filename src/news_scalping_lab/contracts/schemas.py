@@ -6,6 +6,17 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from news_scalping_lab.contracts.memory_context import (
+    AdaptiveRetrievalTrace,
+    DailyMemoryContext,
+    EventClusterManifest,
+    MemoryCellManifest,
+    MemoryCoverageManifest,
+    NewsCoverageManifest,
+    PopulationManifest,
+    RecordRoutingMetadata,
+    RepresentativeSetManifest,
+)
 from news_scalping_lab.contracts.models import (
     BlindPrediction,
     BrainManifest,
@@ -49,6 +60,15 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "news_novelty_review.schema.json": NewsNoveltyReview,
     "semantic_retrieval_plan.schema.json": SemanticRetrievalPlan,
     "semantic_research_draft.schema.json": SemanticResearchDraft,
+    "record_routing_metadata.schema.json": RecordRoutingMetadata,
+    "news_coverage_manifest.schema.json": NewsCoverageManifest,
+    "event_cluster_manifest.schema.json": EventClusterManifest,
+    "memory_coverage_manifest.schema.json": MemoryCoverageManifest,
+    "memory_cell_manifest.schema.json": MemoryCellManifest,
+    "population_manifest.schema.json": PopulationManifest,
+    "representative_set_manifest.schema.json": RepresentativeSetManifest,
+    "adaptive_retrieval_trace.schema.json": AdaptiveRetrievalTrace,
+    "daily_memory_context.schema.json": DailyMemoryContext,
 }
 
 

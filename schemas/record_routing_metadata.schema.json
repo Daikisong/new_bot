@@ -1,0 +1,99 @@
+{
+  "additionalProperties": false,
+  "description": "Four independent axes for using a stored brain record.",
+  "properties": {
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "evidence_polarity": {
+      "enum": [
+        "POSITIVE",
+        "NEGATIVE",
+        "NEAR_MISS",
+        "UNEXPLAINED",
+        "CONTEXT",
+        "UNKNOWN"
+      ],
+      "title": "Evidence Polarity",
+      "type": "string"
+    },
+    "label_quality": {
+      "title": "Label Quality",
+      "type": "string"
+    },
+    "memory_lanes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Memory Lanes",
+      "type": "array"
+    },
+    "polarity_classifier_version": {
+      "title": "Polarity Classifier Version",
+      "type": "string"
+    },
+    "provenance_source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Provenance Source Ids",
+      "type": "array"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_type": {
+      "title": "Record Type",
+      "type": "string"
+    },
+    "routing_disposition": {
+      "enum": [
+        "REASONING",
+        "CONTEXT",
+        "AUDIT",
+        "QUARANTINED"
+      ],
+      "title": "Routing Disposition",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.record_routing_metadata.v1",
+      "default": "nslab.record_routing_metadata.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "threshold_role": {
+      "enum": [
+        "retrieval_calibration_only",
+        "explicit_label"
+      ],
+      "title": "Threshold Role",
+      "type": "string"
+    },
+    "threshold_source": {
+      "title": "Threshold Source",
+      "type": "string"
+    },
+    "training_eligible": {
+      "title": "Training Eligible",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "record_id",
+    "record_type",
+    "available_from",
+    "evidence_polarity",
+    "training_eligible",
+    "label_quality",
+    "routing_disposition",
+    "polarity_classifier_version",
+    "threshold_source",
+    "threshold_role"
+  ],
+  "title": "RecordRoutingMetadata",
+  "type": "object"
+}

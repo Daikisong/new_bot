@@ -43,6 +43,7 @@ news_scalping_lab = ["py.typed"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+extend-exclude = ["temp"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]

@@ -37,6 +37,7 @@ from news_scalping_lab.records.routing import (
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
+    KST,
     canonical_json,
     is_available_as_of,
     read_json,
@@ -68,6 +69,18 @@ class SweepResult:
     errors: list[str]
 
 
+@dataclass(frozen=True)
+class SweepPayloadBurden:
+    accepted_episode_count: int
+    accepted_record_count: int
+    episode_shard_count: int
+    record_shard_count: int
+    episode_artifact_bytes: int
+    record_artifact_bytes: int
+    episode_artifact_tokens: int
+    record_artifact_tokens: int
+
+
 class MemorySweeper:
     def __init__(self, root: Path, *, shard_episode_count: int) -> None:
         self.root = root
@@ -77,6 +90,85 @@ class MemorySweeper:
         self.checkpoint_dir = root / "runs" / "checkpoints" / "memory_sweep"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def estimate_payload_burden(self) -> SweepPayloadBurden:
+        """Serialize current sweep payloads in memory without writing artifacts."""
+
+        records = BrainRecordStore(self.root).list_records()
+        episodes, _findings = self._available_episodes(
+            datetime.max.replace(tzinfo=KST),
+            records=records,
+        )
+        trade_date = max(
+            (
+                *(episode.trade_date for episode in episodes),
+                *(record.trade_date for record in records),
+            ),
+            default=date(1970, 1, 1),
+        )
+        cutoff_at = datetime.max.replace(tzinfo=KST)
+        brain_version = current_brain_version(self.root) or "none"
+        news_hash = sha256_text("")
+        model_config_hash = sha256_text(canonical_json({}))
+        episode_payloads: list[dict[str, object]] = []
+        for shard_index, episode_shard in enumerate(self._shards(episodes), start=1):
+            source_hashes = _episode_source_hashes(
+                episode_shard, self.store.accepted_hashes()
+            )
+            shard_hash = _episode_shard_hash(source_hashes)
+            episode_payloads.append(
+                self._build_contribution(
+                    cache_key=stable_id("PROFILE-SWEEP", shard_hash, length=16),
+                    mode="exhaustive",
+                    trade_date=trade_date,
+                    cutoff_at=cutoff_at,
+                    brain_version=brain_version,
+                    news_hash=news_hash,
+                    shard_hash=shard_hash,
+                    shard_index=shard_index,
+                    episode_count=len(episode_shard),
+                    episodes=episode_shard,
+                    episode_source_hashes=source_hashes,
+                    first_pass_mechanisms=[],
+                    prompt_version=MEMORY_SWEEP_PROMPT_VERSION,
+                    model_config_hash=model_config_hash,
+                )
+            )
+        record_payloads: list[dict[str, object]] = []
+        for shard_index, record_shard in enumerate(
+            self._record_shards(records), start=1
+        ):
+            source_hashes = _record_source_hashes(record_shard)
+            shard_hash = _record_shard_hash(source_hashes)
+            record_payloads.append(
+                self._build_record_contribution(
+                    cache_key=stable_id("PROFILE-RECSWEEP", shard_hash, length=16),
+                    mode="exhaustive",
+                    trade_date=trade_date,
+                    cutoff_at=cutoff_at,
+                    brain_version=brain_version,
+                    news_hash=news_hash,
+                    shard_hash=shard_hash,
+                    shard_index=shard_index,
+                    records=record_shard,
+                    record_source_hashes=source_hashes,
+                    first_pass_mechanisms=[],
+                    prompt_version=MEMORY_SWEEP_PROMPT_VERSION,
+                    model_config_hash=model_config_hash,
+                )
+            )
+        episode_bytes, episode_tokens = _serialized_payload_burden(episode_payloads)
+        record_bytes, record_tokens = _serialized_payload_burden(record_payloads)
+        return SweepPayloadBurden(
+            accepted_episode_count=len(episodes),
+            accepted_record_count=len(records),
+            episode_shard_count=len(episode_payloads),
+            record_shard_count=len(record_payloads),
+            episode_artifact_bytes=episode_bytes,
+            record_artifact_bytes=record_bytes,
+            episode_artifact_tokens=episode_tokens,
+            record_artifact_tokens=record_tokens,
+        )
 
     def sweep(
         self,
@@ -696,6 +788,19 @@ def _record_shard_hash(record_source_hashes: dict[str, str]) -> str:
                 for record_id, source_hash in sorted(record_source_hashes.items())
             ]
         )
+    )
+
+
+def _serialized_payload_burden(
+    payloads: list[dict[str, object]],
+) -> tuple[int, int]:
+    serialized = [
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        for payload in payloads
+    ]
+    return (
+        sum(len(payload.encode("utf-8")) for payload in serialized),
+        sum(max(1, len(payload) // 4) for payload in serialized),
     )
 
 
