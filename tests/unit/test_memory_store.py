@@ -13,7 +13,7 @@ from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.retrieval.embedding import DeterministicHashEmbeddingProvider
 from news_scalping_lab.retrieval.store import LocalRetrievalStore, inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, sha256_text, write_json
 
 
 def _episode(
@@ -62,7 +62,7 @@ def _store_retrieval_records(tmp_path) -> None:
             record_type="candidate_generation_error_case",
             ticker="000003",
             theme_id="theme-error",
-            response_class="candidate_missed",
+            response_class="negative",
             available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
         ),
         _retrieval_record(
@@ -70,7 +70,7 @@ def _store_retrieval_records(tmp_path) -> None:
             record_type="candidate_ranking_error_case",
             ticker="000004",
             theme_id="theme-error",
-            response_class="leader_missed",
+            response_class="negative",
             available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
         ),
         _retrieval_record(
@@ -78,7 +78,7 @@ def _store_retrieval_records(tmp_path) -> None:
             record_type="row_disposition_error_case",
             ticker="000005",
             theme_id="theme-error",
-            response_class="row_misclassified",
+            response_class="negative",
             available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
         ),
         _retrieval_record(
@@ -86,7 +86,7 @@ def _store_retrieval_records(tmp_path) -> None:
             record_type="entity_resolution_error_case",
             ticker="000006",
             theme_id="theme-error",
-            response_class="entity_misresolved",
+            response_class="negative",
             available_from=datetime(2030, 1, 10, 0, 0, 0, tzinfo=KST),
         ),
         _retrieval_record(
@@ -144,6 +144,7 @@ def _store_retrieval_records(tmp_path) -> None:
                 "outcome_ticker": "000012",
                 "outcome_company_name": "Rich Outcome Co",
                 "candidate_path_type": "INFERRED_NEW",
+                "response_class": "positive_high10",
             },
         ),
     ]
@@ -209,6 +210,7 @@ def _retrieval_record(
     available_from: datetime,
     payload_updates: dict[str, object] | None = None,
 ) -> BrainRecordEnvelope:
+    training_eligible = record_type != "counterexample"
     payload = {
         "record_id": record_id,
         "record_type": record_type,
@@ -221,13 +223,19 @@ def _retrieval_record(
         "company_name": f"{ticker} Test Co",
         "theme_id": theme_id,
         "path_type": "single_event",
-        "response_class": response_class,
+        "training_eligible": training_eligible,
     }
+    if response_class:
+        payload["response_class"] = response_class
     if payload_updates:
         payload.update(payload_updates)
-    raw_payload_hash = sha256_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    )
+    if record_type in {
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+        "beneficiary_discovery_case",
+    }:
+        payload.setdefault("outcome_high_return_pct", 12.0)
+    raw_payload_hash = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
@@ -237,9 +245,9 @@ def _retrieval_record(
         available_from=available_from,
         training_target="direct_event_response",
         evidence_phase="BLIND_SAFE",
-        training_eligible=record_type != "counterexample",
+        training_eligible=training_eligible,
         eligibility_reason="unit test retrieval record",
-        status="tentative",
+        status="supported",
         confidence_label="low",
         provenance_source_ids=["SRC-RETRIEVAL"],
         raw_payload_sha256=raw_payload_hash,
@@ -325,12 +333,7 @@ def test_catalog_only_record_store_audit_checks_raw_block_hash(tmp_path) -> None
         validation_report={"passed": True, "catalog_only": True},
     )
     raw_block_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "EP-catalog-only"
-        / "raw_blocks"
-        / "legacy_research_episode.json"
+        tmp_path / "research" / "episodes" / "EP-catalog-only" / "raw_blocks" / "legacy_research_episode.json"
     )
     raw_block_path.write_text('{"tampered": true}', encoding="utf-8")
 
@@ -371,9 +374,7 @@ def _store_single_edge_record(
         "training_eligible": True,
         "eligibility_reason": "unit test edge record",
     }
-    raw_payload_hash = sha256_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    )
+    raw_payload_hash = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_hash = sha256_text(canonical_json(payload))
     record = BrainRecordEnvelope(
         record_id="BRAIN-EDGE",
@@ -475,9 +476,7 @@ def _store_single_company_memory_delta_record(
         "training_eligible": False,
         "eligibility_reason": "company memory delta is audit memory",
     }
-    raw_payload_hash = sha256_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    )
+    raw_payload_hash = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_hash = sha256_text(canonical_json(payload))
     record = BrainRecordEnvelope(
         record_id="BRAIN-COMPANY",
@@ -565,9 +564,7 @@ def _store_single_issuer_day_record(
         "training_eligible": True,
         "eligibility_reason": "unit test issuer-day record",
     }
-    raw_payload_hash = sha256_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    )
+    raw_payload_hash = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_hash = sha256_text(canonical_json(payload))
     record = BrainRecordEnvelope(
         record_id="BRAIN-ISSUER",
@@ -675,13 +672,8 @@ def test_record_store_audit_rejects_outcome_only_training_eligible_edge(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
-        "BRAIN-EDGE"
-    ]
-    assert (
-        "training-eligible event_ticker_edge records require cutoff provenance"
-        in audit["findings"]
-    )
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == ["BRAIN-EDGE"]
+    assert "training-eligible event_ticker_edge records require cutoff provenance" in audit["findings"]
 
 
 def test_record_store_audit_rejects_after_cutoff_training_eligible_edge(
@@ -696,9 +688,7 @@ def test_record_store_audit_rejects_after_cutoff_training_eligible_edge(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
-        "BRAIN-EDGE"
-    ]
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == ["BRAIN-EDGE"]
 
 
 def test_record_store_audit_rejects_unverified_training_eligible_edge(
@@ -714,9 +704,7 @@ def test_record_store_audit_rejects_unverified_training_eligible_edge(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == [
-        "BRAIN-EDGE"
-    ]
+    assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == ["BRAIN-EDGE"]
 
 
 def test_record_store_audit_rejects_edge_without_cutoff_safe_source_ledger(
@@ -735,13 +723,8 @@ def test_record_store_audit_rejects_edge_without_cutoff_safe_source_ledger(
 
     assert audit["passed"] is False
     assert audit["event_ticker_edge_cutoff_provenance_violation_record_ids"] == []
-    assert audit["event_ticker_edge_source_ledger_cutoff_violation_record_ids"] == [
-        "BRAIN-EDGE"
-    ]
-    assert (
-        "training-eligible event_ticker_edge provenance sources must be cutoff-safe"
-        in audit["findings"]
-    )
+    assert audit["event_ticker_edge_source_ledger_cutoff_violation_record_ids"] == ["BRAIN-EDGE"]
+    assert "training-eligible event_ticker_edge provenance sources must be cutoff-safe" in audit["findings"]
 
 
 def test_record_store_audit_rejects_backdated_company_memory_delta_known_at(
@@ -756,13 +739,8 @@ def test_record_store_audit_rejects_backdated_company_memory_delta_known_at(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["backdated_company_memory_delta_known_at_record_ids"] == [
-        "BRAIN-COMPANY"
-    ]
-    assert (
-        "company_memory_delta known_at values precede record available_from"
-        in audit["findings"]
-    )
+    assert audit["backdated_company_memory_delta_known_at_record_ids"] == ["BRAIN-COMPANY"]
+    assert "company_memory_delta known_at values precede record available_from" in audit["findings"]
 
 
 def test_record_store_audit_rejects_naive_company_memory_delta_known_at(
@@ -777,9 +755,7 @@ def test_record_store_audit_rejects_naive_company_memory_delta_known_at(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["invalid_company_memory_delta_known_at_record_ids"] == [
-        "BRAIN-COMPANY"
-    ]
+    assert audit["invalid_company_memory_delta_known_at_record_ids"] == ["BRAIN-COMPANY"]
     assert "company_memory_delta known_at values are invalid" in audit["findings"]
 
 
@@ -810,9 +786,7 @@ def test_record_store_audit_rejects_issuer_day_event_level_weight_mismatch(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["issuer_day_event_level_weight_mismatch_record_ids"] == [
-        "BRAIN-ISSUER"
-    ]
+    assert audit["issuer_day_event_level_weight_mismatch_record_ids"] == ["BRAIN-ISSUER"]
     assert "issuer-day event_level_weights must sum to 1" in audit["findings"]
 
 
@@ -883,12 +857,11 @@ def test_semantic_search_keeps_research_available_without_exact_keyword_gate(tmp
         )
     )
 
-    assert memory.search_semantic("unseen wording with no shared tokens", limit=5) == [
-        "EP-abstract"
-    ]
-    assert LocalRetrievalStore(tmp_path, force_empty=True).search_semantic(
-        "unseen wording with no shared tokens", limit=5
-    ) == []
+    assert memory.search_semantic("unseen wording with no shared tokens", limit=5) == ["EP-abstract"]
+    assert (
+        LocalRetrievalStore(tmp_path, force_empty=True).search_semantic("unseen wording with no shared tokens", limit=5)
+        == []
+    )
 
 
 def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
@@ -912,12 +885,18 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
         training_eligible=True,
         available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
     ) == ["BRAIN-REC-DIRECT"]
-    assert memory.search_records(
-        "unseen wording",
-        memory_lane="positive_analogs",
-        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-        limit=10,
-    ) == ["BRAIN-REC-DIRECT", "BRAIN-REC-THEME-RICH"]
+    assert set(
+        memory.search_records(
+            "unseen wording",
+            memory_lane="positive_analogs",
+            available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            limit=10,
+        )
+    ) == {
+        "BRAIN-REC-DIRECT",
+        "BRAIN-REC-THEME-RICH",
+        "BRAIN-REC-BENEFICIARY-RICH",
+    }
     assert set(
         memory.search_records(
             "unseen wording",
@@ -931,26 +910,61 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
         "BRAIN-REC-RANK-ERROR",
         "BRAIN-REC-ROW-ERROR",
     }
+    assert (
+        memory.search_records(
+            "unseen wording",
+            record_type="counterexample",
+            training_eligible=False,
+            available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        )
+        == []
+    )
     assert memory.search_records(
         "unseen wording",
         record_type="counterexample",
         training_eligible=False,
-        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-    ) == []
-    assert memory.search_records(
-        "unseen wording",
-        record_type="counterexample",
-        training_eligible=False,
+        routing_disposition="AUDIT",
         available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
     ) == ["BRAIN-REC-COUNTER"]
+    assert set(
+        memory.search_records(
+            "unseen wording",
+            evidence_polarity="POSITIVE",
+            label_quality="verified",
+            routing_disposition="REASONING",
+            available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            limit=10,
+        )
+    ) == {
+        "BRAIN-REC-DIRECT",
+        "BRAIN-REC-THEME-RICH",
+        "BRAIN-REC-BENEFICIARY-RICH",
+    }
     assert memory.search_records(
         "unseen wording",
-        record_type="supervised_direct_event_case",
-        trade_date_from="2030-01-11",
-        trade_date_to="2030-01-11",
-        training_eligible=True,
+        evidence_polarity="NEGATIVE",
+        routing_disposition="AUDIT",
         available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
-    ) == []
+    ) == ["BRAIN-REC-COUNTER"]
+    assert (
+        memory.search_records(
+            "unseen wording",
+            memory_lane="negative_controls",
+            available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+        )
+        == []
+    )
+    assert (
+        memory.search_records(
+            "unseen wording",
+            record_type="supervised_direct_event_case",
+            trade_date_from="2030-01-11",
+            trade_date_to="2030-01-11",
+            training_eligible=True,
+            available_from=datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST),
+        )
+        == []
+    )
     assert set(
         memory.search_records(
             "unseen wording",
@@ -975,12 +989,7 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
 def test_record_vector_index_ignores_unreadable_legacy_episode(tmp_path) -> None:
     _store_retrieval_records(tmp_path)
     memory = LocalRetrievalStore(tmp_path)
-    accepted_path = (
-        tmp_path
-        / "research"
-        / "accepted"
-        / "NSLAB-20300110-RETRIEVAL.json"
-    )
+    accepted_path = tmp_path / "research" / "accepted" / "NSLAB-20300110-RETRIEVAL.json"
     accepted_path.parent.mkdir(parents=True, exist_ok=True)
     accepted_path.write_text("{not valid json", encoding="utf-8")
 
@@ -989,9 +998,7 @@ def test_record_vector_index_ignores_unreadable_legacy_episode(tmp_path) -> None
     assert manifest["record_count"] == 0
     assert manifest["brain_record_count"] == 9
     assert manifest["accepted_episode_count"] == 1
-    assert manifest["accepted_episode_store_findings"] == [
-        "accepted episode store is unreadable"
-    ]
+    assert manifest["accepted_episode_store_findings"] == ["accepted episode store is unreadable"]
     assert memory.inspect_index()["status"] == "current"
     assert memory.search_records(
         "direct positive",
@@ -1067,6 +1074,65 @@ def test_vector_index_marks_stale_when_accepted_episode_changes_without_rebuild(
     assert stale["status"] == "stale"
     assert rebuilt["record_count"] == 2
     assert inspect_vector_index(tmp_path)["status"] == "current"
+
+
+def test_vector_index_stales_when_only_envelope_routing_input_changes(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    manifest = memory.rebuild_index()
+    records_path = next((tmp_path / "memory" / "records").glob("*.jsonl"))
+    rows = [json.loads(line) for line in records_path.read_text(encoding="utf-8").splitlines() if line]
+    direct = next(row for row in rows if row["record_id"] == "BRAIN-REC-DIRECT")
+    original_payload_hash = direct["normalized_payload_sha256"]
+    direct["training_eligible"] = False
+    records_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_vector_index(tmp_path)
+
+    assert direct["normalized_payload_sha256"] == original_payload_hash
+    assert manifest["brain_record_hash_kind"] == "canonical_full_envelope_sha256"
+    assert inspection["status"] == "stale"
+    assert "BRAIN-REC-DIRECT" not in memory.search_records(
+        "unseen wording",
+        memory_lane="positive_analogs",
+        limit=10,
+    )
+    assert inspect_vector_index(tmp_path)["status"] == "current"
+
+
+def test_vector_index_stales_when_routing_classifier_version_changes(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    memory.rebuild_index()
+    manifest_path = tmp_path / "memory" / "vector_index" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["routing_classifier_version"] = "record_polarity.stale"
+    write_json(manifest_path, manifest)
+
+    assert inspect_vector_index(tmp_path)["status"] == "stale"
+
+
+def test_vector_index_rejects_tampered_indexed_routing_projection(tmp_path) -> None:
+    _store_retrieval_records(tmp_path)
+    memory = LocalRetrievalStore(tmp_path)
+    memory.rebuild_index()
+    index_dir = tmp_path / "memory" / "vector_index"
+    rows_path = index_dir / "brain_records.jsonl"
+    rows = [json.loads(line) for line in rows_path.read_text(encoding="utf-8").splitlines() if line]
+    direct = next(row for row in rows if row["record_id"] == "BRAIN-REC-DIRECT")
+    direct["evidence_polarity"] = "NEGATIVE"
+    direct["memory_lanes"] = ["negative_controls"]
+    payload = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows)
+    rows_path.write_text(payload, encoding="utf-8")
+    manifest_path = index_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["brain_records_sha256"] = sha256_text(payload)
+    write_json(manifest_path, manifest)
+
+    assert inspect_vector_index(tmp_path)["status"] == "invalid"
 
 
 def test_local_retrieval_store_uses_injected_embedding_provider(tmp_path) -> None:

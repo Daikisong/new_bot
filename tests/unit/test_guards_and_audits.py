@@ -18,6 +18,7 @@ from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
     final_synthesis_input_summary,
 )
+from news_scalping_lab.context.sweep import record_sweep_lane_projection
 from news_scalping_lab.contracts.models import BlindAnalysis, OutcomeLabels, ResearchEpisode
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.prices.base import (
@@ -25,11 +26,16 @@ from news_scalping_lab.prices.base import (
     BlindPriceGuard,
     PriceRecord,
 )
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import (
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.routing import POLARITY_CLASSIFIER_VERSION
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.sections import PREOPEN_REPORT_SECTION_HEADINGS
 from news_scalping_lab.research_import.semantic import (
@@ -97,6 +103,7 @@ def _brain_record_for_sweep_audit(
         "ticker": "000001",
         "company_name": "Record Sweep Audit Co",
         "response_class": "positive_high10",
+        "outcome_high_return_pct": 12.0,
         "training_eligible": True,
         "provenance_source_ids": ["SRC-RECORD-SWEEP-AUDIT"],
     }
@@ -111,7 +118,7 @@ def _brain_record_for_sweep_audit(
         evidence_phase="BLIND_SAFE",
         training_eligible=True,
         eligibility_reason="unit test record",
-        status="tentative",
+        status="supported",
         confidence_label="low",
         provenance_source_ids=["SRC-RECORD-SWEEP-AUDIT"],
         raw_payload_sha256=payload_hash,
@@ -4194,10 +4201,7 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         / "record_shard_0001.json"
     )
     record_sweep_ref = record_sweep_path.relative_to(tmp_path).as_posix()
-    record_source_hashes = {
-        "REC-sweep-1": record.normalized_payload_sha256,
-    }
-    record_summary = {"record_id": "REC-sweep-1"}
+    record_source_hashes = {"REC-sweep-1": brain_record_envelope_sha256(record)}
     record_sweep_payload = {
         "schema_version": "nslab.record_memory_sweep_contribution.v1",
         "cache_key": "RECSWEEP-linked",
@@ -4207,17 +4211,12 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "brain_version": "brain-linked",
         "record_shard_sha256": _record_sweep_shard_hash(record_source_hashes),
         "record_shard_source_hashes": record_source_hashes,
+        "record_source_hash_kind": "canonical_full_envelope_sha256",
+        "routing_classifier_version": POLARITY_CLASSIFIER_VERSION,
+        "record_routing_sha256": brain_record_routing_root_sha256([record]),
         "record_count": 1,
         "record_ids": ["REC-sweep-1"],
-        "positive_analogs": [record_summary],
-        "negative_analogs": [],
-        "negative_controls": [],
-        "near_misses": [],
-        "counterexamples": [],
-        "leader_selection_pairs": [],
-        "theme_formation_failures": [],
-        "candidate_generation_errors": [],
-        "newsless_or_unexplained": [],
+        **record_sweep_lane_projection([record]),
         "from_cache": False,
     }
     write_json(record_sweep_path, record_sweep_payload)
@@ -4264,6 +4263,33 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     result = audit_provenance(tmp_path)
 
     assert result["passed"], result["findings"]
+
+    tampered_lane_payload = {
+        **record_sweep_payload,
+        "positive_analogs": [],
+        "negative_analogs": record_sweep_payload["positive_analogs"],
+        "negative_controls": record_sweep_payload["positive_analogs"],
+    }
+    write_json(record_sweep_path, tampered_lane_payload)
+    context_manifest_path = tmp_path / "runs" / "manifests" / "RUN-linked.json"
+    context_manifest = read_json(context_manifest_path)
+    context_manifest["record_sweep_artifact_hashes"][record_sweep_ref] = file_sha256(record_sweep_path)
+    write_json(context_manifest_path, context_manifest)
+
+    failed_lane = audit_provenance(tmp_path)
+
+    assert not failed_lane["passed"]
+    assert (
+        "2030-01-10.json: record sweep artifact positive_analogs routing mismatch: "
+        f"{record_sweep_ref}"
+    ) in failed_lane["findings"]
+    assert (
+        "2030-01-10.json: record sweep artifact negative_controls routing mismatch: "
+        f"{record_sweep_ref}"
+    ) in failed_lane["findings"]
+    write_json(record_sweep_path, record_sweep_payload)
+    context_manifest["record_sweep_artifact_hashes"][record_sweep_ref] = file_sha256(record_sweep_path)
+    write_json(context_manifest_path, context_manifest)
 
     tampered_sweep = {
         **sweep_payload,
@@ -4379,13 +4405,17 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
     ) in record_hash_findings
 
     future_record_source_hashes = {
-        "REC-sweep-future": future_record.normalized_payload_sha256,
+        "REC-sweep-future": brain_record_envelope_sha256(future_record),
     }
     future_record_sweep = {
         **record_sweep_payload,
         "record_shard_sha256": _record_sweep_shard_hash(future_record_source_hashes),
         "record_shard_source_hashes": future_record_source_hashes,
         "record_ids": ["REC-sweep-future"],
+        "record_source_hash_kind": "canonical_full_envelope_sha256",
+        "routing_classifier_version": POLARITY_CLASSIFIER_VERSION,
+        "record_routing_sha256": brain_record_routing_root_sha256([future_record]),
+        **record_sweep_lane_projection([future_record]),
     }
     write_json(record_sweep_path, future_record_sweep)
     write_json(

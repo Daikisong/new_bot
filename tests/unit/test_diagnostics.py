@@ -23,7 +23,12 @@ from news_scalping_lab.diagnostics import (
     real_bundle_smoke_report,
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
-from news_scalping_lab.retrieval.store import LocalRetrievalStore
+from news_scalping_lab.records.routing import POLARITY_CLASSIFIER_VERSION
+from news_scalping_lab.retrieval.store import (
+    LocalRetrievalStore,
+    _brain_record_envelope_hashes,
+    _routing_metadata_root_sha256,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import export_training
 from news_scalping_lab.utils import (
@@ -2289,6 +2294,12 @@ def test_production_readiness_rejects_semantic_index_record_store_id_gaps(
             {
                 "record_id": record_id,
                 "record_type": "memory_claim",
+                "evidence_polarity": "CONTEXT",
+                "label_quality": "not_applicable",
+                "routing_disposition": "CONTEXT",
+                "polarity_classifier_version": "record_polarity.v2",
+                "threshold_source": "explicit_record_type",
+                "threshold_role": "explicit_label",
                 "terms": [record_id.lower()],
                 "embedding": [0.1, 0.2],
             },
@@ -11421,6 +11432,12 @@ def _write_semantic_index_fixture(
             {
                 "record_id": record_id,
                 "record_type": "memory_claim",
+                "evidence_polarity": "CONTEXT",
+                "label_quality": "not_applicable",
+                "routing_disposition": "CONTEXT",
+                "polarity_classifier_version": "record_polarity.v2",
+                "threshold_source": "explicit_record_type",
+                "threshold_role": "explicit_label",
                 "terms": [record_id.lower()],
                 "embedding": [0.1, 0.2],
             },
@@ -11436,17 +11453,17 @@ def _write_semantic_index_fixture(
     write_json(
         vector_index_dir / "manifest.json",
         {
-            "schema_version": "nslab.local_vector_index.v2",
+            "schema_version": "nslab.local_vector_index.v3",
             "embedding_method": embedding_method,
             "dimensions": 2,
             "record_count": len(record_ids),
             "accepted_episode_count": 0,
             "accepted_hashes": {},
             "brain_record_count": len(record_ids),
-            "brain_record_hashes": {
-                record_id: f"hash-{index}"
-                for index, record_id in enumerate(record_ids, start=1)
-            },
+            "brain_record_hashes": _brain_record_envelope_hashes(store_records),
+            "brain_record_hash_kind": "canonical_full_envelope_sha256",
+            "routing_classifier_version": POLARITY_CLASSIFIER_VERSION,
+            "routing_metadata_sha256": _routing_metadata_root_sha256(store_records),
             "records_file": "records.jsonl",
             "records_sha256": sha256_text(records_payload),
             "brain_records_file": "brain_records.jsonl",
@@ -11925,6 +11942,15 @@ def _training_record(
     payload: dict[str, object],
 ) -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
+    payload = dict(payload)
+    if record_type in {
+        "supervised_issuer_day_case",
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+        "theme_formation_case",
+        "beneficiary_discovery_case",
+    } and any(key in payload for key in ("response_class", "outcome_label")):
+        payload.setdefault("outcome_high_return_pct", 12.0)
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,

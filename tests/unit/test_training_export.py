@@ -135,6 +135,14 @@ def _brain_record(
         "training_eligible": training_eligible,
         **(payload or {}),
     }
+    if record_type in {
+        "supervised_issuer_day_case",
+        "supervised_direct_event_case",
+        "supervised_theme_formation_case",
+        "theme_formation_case",
+        "beneficiary_discovery_case",
+    } and any(key in body for key in ("response_class", "outcome_label")):
+        body.setdefault("outcome_high_return_pct", 12.0)
     payload_hash = sha256_text(canonical_json(body))
     return BrainRecordEnvelope(
         record_id=record_id,
@@ -145,10 +153,8 @@ def _brain_record(
         training_target=training_target,
         evidence_phase="POSTMORTEM",
         training_eligible=training_eligible,
-        eligibility_reason="record training fixture"
-        if training_eligible
-        else "audit-only fixture",
-        status="tentative",
+        eligibility_reason="record training fixture" if training_eligible else "audit-only fixture",
+        status="supported",
         confidence_label="medium",
         provenance_source_ids=[f"SRC-{record_id}"],
         raw_payload_sha256=payload_hash,
@@ -196,6 +202,138 @@ def test_training_export_selects_valid_negative_and_newsless_calibration_records
     assert newsless_row["task"] == "record_newsless_causal_calibration"
     assert newsless_row["training_category"] == "newsless_causal_calibration_examples"
     assert newsless_row["output"]["outcome"] == {"outcome_high_return_pct": 18.0}
+
+
+def test_training_export_preserves_eligible_counterexample_calibration() -> None:
+    counterexample = _brain_record(
+        "BRAIN-COUNTEREXAMPLE",
+        "counterexample",
+        training_target="counterexample_calibration",
+        training_eligible=True,
+        payload={
+            "classification": "FALSE_POSITIVE_MECHANISM",
+            "rejection_or_exclusion_reason": "mechanism did not bind locally",
+            "screening_decision": "REJECT_SEMANTIC_FALSE_POSITIVE",
+        },
+    )
+
+    assert training_module._record_selected_for_kind("sft", counterexample)
+    assert training_module._record_selected_for_kind("evals", counterexample)
+    row = training_module._record_sft_row(counterexample)
+    assert row["task"] == "record_counterexample_calibration"
+    assert row["training_category"] == "counterexample_calibration_examples"
+    assert row["record_routing"]["routing_disposition"] == "REASONING"
+
+
+def test_training_export_cross_table_keeps_polarity_separate_from_eligibility(
+    tmp_path,
+) -> None:
+    records = [
+        _brain_record(
+            "BRAIN-INELIGIBLE-POSITIVE",
+            "supervised_issuer_day_case",
+            training_target="issuer_day_price_response",
+            training_eligible=False,
+            payload={
+                "response_class": "positive_high10",
+                "D_outcome": {
+                    "high_return_pct": 15.0,
+                    "label_quality": "verified",
+                },
+            },
+        ),
+        _brain_record(
+            "BRAIN-ELIGIBLE-NEGATIVE",
+            "negative_control_case",
+            training_target="negative_control_calibration",
+            training_eligible=True,
+            payload={
+                "control_class": "WEAK_RESPONSE",
+                "high_return_pct": 1.0,
+            },
+        ),
+    ]
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    _write_jsonl(
+        records_dir / "EP-record-training.jsonl",
+        [record.model_dump(mode="json") for record in records],
+    )
+
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    rows = _jsonl(sft.path)
+    manifest = read_json(sft.manifest_path)
+
+    assert [row["record_id"] for row in rows] == ["BRAIN-ELIGIBLE-NEGATIVE"]
+    assert rows[0]["record_routing"] == {
+        "schema_version": "nslab.record_routing_metadata.v2",
+        "record_id": "BRAIN-ELIGIBLE-NEGATIVE",
+        "record_type": "negative_control_case",
+        "available_from": "2030-01-11T00:00:00+09:00",
+        "evidence_polarity": "NEGATIVE",
+        "training_eligible": True,
+        "label_quality": "verified",
+        "routing_disposition": "REASONING",
+        "memory_lanes": ["negative_controls"],
+        "polarity_classifier_version": "record_polarity.v2",
+        "threshold_source": "explicit_record_type",
+        "threshold_role": "explicit_label",
+        "provenance_source_ids": ["SRC-BRAIN-ELIGIBLE-NEGATIVE"],
+    }
+    assert manifest["source_record_routing_counts"]["cross_table"] == {
+        "NEGATIVE|true|verified|REASONING": 1,
+        "POSITIVE|false|verified|AUDIT": 1,
+    }
+    assert manifest["exported_record_routing_counts"]["cross_table"] == {"NEGATIVE|true|verified|REASONING": 1}
+    skipped = {item["record_id"]: item for item in manifest["skipped_records"]}
+    assert skipped["BRAIN-INELIGIBLE-POSITIVE"]["record_routing"]["evidence_polarity"] == "POSITIVE"
+    assert "routing_disposition=AUDIT" in skipped["BRAIN-INELIGIBLE-POSITIVE"]["skip_reasons"]
+    assert audit_training_exports(tmp_path)["passed"] is True
+
+
+def test_training_audit_rejects_routing_metadata_that_disagrees_with_record(
+    tmp_path,
+) -> None:
+    _write_record_training_fixture(tmp_path)
+    sft = export_training(tmp_path, kind="sft")
+    export_training(tmp_path, kind="preference")
+    export_training(tmp_path, kind="evals")
+    rows = _jsonl(sft.path)
+    rows[0]["record_routing"]["evidence_polarity"] = "NEGATIVE"
+    _write_jsonl(sft.path, rows)
+    manifest = read_json(sft.manifest_path)
+    manifest["output_sha256"] = file_sha256(sft.path)
+    sft.manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    audit = audit_training_exports(tmp_path)
+
+    assert audit["passed"] is False
+    assert any("record routing does not match source record" in finding for finding in audit["findings"])
+
+
+def test_training_audit_rejects_stale_full_envelope_source_hash(tmp_path) -> None:
+    _write_record_training_fixture(tmp_path)
+    for kind in ("sft", "preference", "evals"):
+        export_training(tmp_path, kind=kind)
+    records_path = tmp_path / "memory" / "records" / "EP-record-training.jsonl"
+    rows = _jsonl(records_path)
+    issuer = next(row for row in rows if row["record_id"] == "BRAIN-ISSUER")
+    original_payload_hash = issuer["normalized_payload_sha256"]
+    issuer["training_target"] = "changed_after_export"
+    _write_jsonl(records_path, rows)
+
+    audit = audit_training_exports(tmp_path)
+
+    assert issuer["normalized_payload_sha256"] == original_payload_hash
+    assert audit["passed"] is False
+    assert any(
+        "source_record_hashes mismatch current brain records: BRAIN-ISSUER" in finding for finding in audit["findings"]
+    )
 
 
 def _write_record_training_fixture(root: Path) -> list[BrainRecordEnvelope]:
@@ -311,10 +449,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert "postmortem-only edge must not enter blind-safe rows" not in blind_row_text
     assert all(row["source_phase"] == "BLIND" for row in blind_rows)
     assert all(row["eligibility_basis"]["satisfied"] is True for row in blind_rows)
-    assert all(
-        row["eligibility_basis"]["required_fields"] == ["forecast_evaluation_eligible"]
-        for row in blind_rows
-    )
+    assert all(row["eligibility_basis"]["required_fields"] == ["forecast_evaluation_eligible"] for row in blind_rows)
     theme_row = next(row for row in blind_rows if row["task"] == "theme_formation")
     assert theme_row["output"]["failure_conditions"] == ["leader selection"]
     beneficiary_row = next(row for row in blind_rows if row["task"] == "beneficiary_discovery")
@@ -332,24 +467,17 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     failure_rows = [row for row in sft_rows if row["task"] == "failure_correction"]
     assert failure_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert failure_rows[0]["source_phase"] == "POSTMORTEM"
-    assert failure_rows[0]["eligibility_basis"]["required_fields"] == [
-        "retrospective_memory_eligible"
-    ]
+    assert failure_rows[0]["eligibility_basis"]["required_fields"] == ["retrospective_memory_eligible"]
     assert "failure_codes" in failure_rows[0]["output"]
 
     assert preference.row_count == 1
     assert preference_rows[0]["task"] == "positive_vs_negative_candidate_preference"
-    assert (
-        preference_rows[0]["training_category"]
-        == "positive_vs_negative_candidate_preferences"
-    )
+    assert preference_rows[0]["training_category"] == "positive_vs_negative_candidate_preferences"
     assert preference_rows[0]["output"]["chosen"] == "WinnerCo"
     assert preference_rows[0]["output"]["rejected"] == "LoserCo"
     assert preference_rows[0]["hindsight_safe_for_blind_sft"] is False
     assert preference_rows[0]["source_phase"] == "POSTMORTEM"
-    assert preference_rows[0]["eligibility_basis"]["required_fields"] == [
-        "leader_pair_training_eligible"
-    ]
+    assert preference_rows[0]["eligibility_basis"]["required_fields"] == ["leader_pair_training_eligible"]
 
     assert evals.row_count == 3
     assert {row["training_category"] for row in eval_rows} == {"evaluation_examples"}
@@ -359,19 +487,13 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     }
     assert all(row["hindsight_safe_for_blind_sft"] is False for row in eval_rows)
     assert all(row["source_phase"] == "POSTMORTEM" for row in eval_rows)
-    candidate_eval_rows = [
-        row for row in eval_rows if row["task"] == "candidate_outcome_eval"
-    ]
+    candidate_eval_rows = [row for row in eval_rows if row["task"] == "candidate_outcome_eval"]
     failure_eval_row = next(row for row in eval_rows if row["task"] == "failure_code_eval")
     assert all(
-        row["eligibility_basis"]["required_fields"] == [
-            "direct_supervised_cases_eligible"
-        ]
+        row["eligibility_basis"]["required_fields"] == ["direct_supervised_cases_eligible"]
         for row in candidate_eval_rows
     )
-    assert failure_eval_row["eligibility_basis"]["required_fields"] == [
-        "retrospective_memory_eligible"
-    ]
+    assert failure_eval_row["eligibility_basis"]["required_fields"] == ["retrospective_memory_eligible"]
 
     assert sft_manifest["row_count"] == sft.row_count
     assert sft_manifest["task_counts"]["blind_reasoning"] == 1
@@ -412,50 +534,27 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
         "BLIND",
         "POSTMORTEM",
     }
-    assert sft_manifest["phase_outputs"]["BLIND"]["output_file"] == (
-        "training_exports/sft/blind_sft.jsonl"
-    )
+    assert sft_manifest["phase_outputs"]["BLIND"]["output_file"] == ("training_exports/sft/blind_sft.jsonl")
     assert sft_manifest["phase_outputs"]["BLIND"]["row_count"] == 4
     assert sft_manifest["phase_outputs"]["BLIND"]["source_phase"] == "BLIND"
-    assert (
-        sft_manifest["phase_outputs"]["BLIND"]["hindsight_safe_for_blind_sft"] is True
-    )
-    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"] == (
-        "training_exports/sft/postmortem_sft.jsonl"
-    )
+    assert sft_manifest["phase_outputs"]["BLIND"]["hindsight_safe_for_blind_sft"] is True
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"] == ("training_exports/sft/postmortem_sft.jsonl")
     assert sft_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 1
     assert sft_manifest["phase_outputs"]["POSTMORTEM"]["source_phase"] == "POSTMORTEM"
-    assert (
-        sft_manifest["phase_outputs"]["POSTMORTEM"]["hindsight_safe_for_blind_sft"]
-        is False
-    )
-    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"] == (
-        "training_exports/sft/audit_only_sft.jsonl"
-    )
+    assert sft_manifest["phase_outputs"]["POSTMORTEM"]["hindsight_safe_for_blind_sft"] is False
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"] == ("training_exports/sft/audit_only_sft.jsonl")
     assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["row_count"] == 0
     assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["source_phase"] == "AUDIT_ONLY"
     assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["audit_only"] is True
-    assert (
-        sft_manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"]
-        is False
-    )
-    assert (
-        _jsonl(tmp_path / sft_manifest["phase_outputs"]["BLIND"]["output_file"])
-        == blind_rows
-    )
-    assert _jsonl(
-        tmp_path / sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"]
-    ) == failure_rows
-    assert (
-        _jsonl(tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
-        == []
-    )
+    assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"] is False
+    assert _jsonl(tmp_path / sft_manifest["phase_outputs"]["BLIND"]["output_file"]) == blind_rows
+    assert _jsonl(tmp_path / sft_manifest["phase_outputs"]["POSTMORTEM"]["output_file"]) == failure_rows
+    assert _jsonl(tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]) == []
     assert sft_manifest["phase_outputs"]["BLIND"]["output_sha256"]
     assert sft_manifest["phase_outputs"]["POSTMORTEM"]["output_sha256"]
     assert sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_sha256"]
     assert (
-        "The combined output_file is for audit and compatibility; use phase_outputs.BLIND "
-        "for blind-only SFT."
+        "The combined output_file is for audit and compatibility; use phase_outputs.BLIND for blind-only SFT."
     ) in sft_manifest["notes"]
     assert "Do not train postmortem labels as if they were blind answers." in sft_manifest["notes"]
     assert (
@@ -472,9 +571,7 @@ def test_training_exports_separate_blind_postmortem_preference_and_evals(tmp_pat
     assert evals_manifest["phase_outputs"]["BLIND"]["row_count"] == 0
     assert evals_manifest["phase_outputs"]["POSTMORTEM"]["row_count"] == 3
     assert evals_manifest["phase_outputs"]["AUDIT_ONLY"]["row_count"] == 0
-    assert preference_manifest["category_counts"] == {
-        "positive_vs_negative_candidate_preferences": 1
-    }
+    assert preference_manifest["category_counts"] == {"positive_vs_negative_candidate_preferences": 1}
     assert preference_manifest["missing_training_categories"] == []
     assert evals_manifest["category_counts"] == {"evaluation_examples": 3}
     assert evals_manifest["missing_training_categories"] == []
@@ -510,9 +607,7 @@ def test_blind_postmortem_exports_separated(tmp_path) -> None:
     sft = export_training(tmp_path, kind="sft")
     manifest = read_json(sft.manifest_path)
     blind_rows = _jsonl(tmp_path / manifest["phase_outputs"]["BLIND"]["output_file"])
-    postmortem_rows = _jsonl(
-        tmp_path / manifest["phase_outputs"]["POSTMORTEM"]["output_file"]
-    )
+    postmortem_rows = _jsonl(tmp_path / manifest["phase_outputs"]["POSTMORTEM"]["output_file"])
 
     assert manifest["phase_outputs"]["BLIND"]["source_phase"] == "BLIND"
     assert manifest["phase_outputs"]["POSTMORTEM"]["source_phase"] == "POSTMORTEM"
@@ -542,9 +637,7 @@ def test_training_export_uses_explicit_brain_records(tmp_path) -> None:
         "BRAIN-PAIR",
     ]
     assert manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
-    assert {row["record_id"] for row in rows if not row.get("audit_only")} == {
-        "BRAIN-ISSUER"
-    }
+    assert {row["record_id"] for row in rows if not row.get("audit_only")} == {"BRAIN-ISSUER"}
     assert all(row["episode_id"] == "EP-record-training" for row in rows)
 
 
@@ -567,9 +660,7 @@ def test_record_backed_training_export_ignores_unreadable_legacy_episode(
         assert manifest["source_mode"] == "brain_records"
         assert manifest["source_episode_count"] == 1
         assert manifest["episode_ids"] == ["EP-record-training"]
-        assert manifest["source_hashes"] == {
-            "EP-record-training": file_sha256(accepted_path)
-        }
+        assert manifest["source_hashes"] == {"EP-record-training": file_sha256(accepted_path)}
     assert sft.row_count == 1
     assert preference.row_count == 1
     assert evals.row_count == 1
@@ -607,12 +698,8 @@ def test_ineligible_records_not_exported(tmp_path) -> None:
     for export in (sft, preference, evals):
         rows = _jsonl(export.path)
         manifest = read_json(export.manifest_path)
-        audit_rows = _jsonl(
-            tmp_path / manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
-        )
-        assert "BRAIN-MEMORY" not in {
-            row["record_id"] for row in rows if not row.get("audit_only")
-        }
+        audit_rows = _jsonl(tmp_path / manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
+        assert "BRAIN-MEMORY" not in {row["record_id"] for row in rows if not row.get("audit_only")}
         assert any(row["record_id"] == "BRAIN-MEMORY" for row in audit_rows)
 
 
@@ -707,10 +794,7 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
         assert manifest["direct_event_weight_sum_mismatch_count"] == 0
         assert manifest["direct_event_weight_sum_mismatches"] == {}
         assert manifest["phase_outputs"]["AUDIT_ONLY"]["audit_only"] is True
-        assert (
-            manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"]
-            is False
-        )
+        assert manifest["phase_outputs"]["AUDIT_ONLY"]["hindsight_safe_for_blind_sft"] is False
     assert sft_manifest["eligible_record_ids"] == ["BRAIN-ISSUER"]
     assert sft_manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
     assert sft_manifest["skipped_record_ids"] == ["BRAIN-MEMORY", "BRAIN-PAIR"]
@@ -724,15 +808,9 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert evals_manifest["exported_record_ids"] == ["BRAIN-ISSUER"]
     assert evals_manifest["skipped_record_ids"] == ["BRAIN-MEMORY", "BRAIN-PAIR"]
 
-    sft_audit_only = _jsonl(
-        tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
-    )
-    preference_audit_only = _jsonl(
-        tmp_path / preference_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
-    )
-    evals_audit_only = _jsonl(
-        tmp_path / evals_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"]
-    )
+    sft_audit_only = _jsonl(tmp_path / sft_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
+    preference_audit_only = _jsonl(tmp_path / preference_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
+    evals_audit_only = _jsonl(tmp_path / evals_manifest["phase_outputs"]["AUDIT_ONLY"]["output_file"])
     assert {row["record_id"] for row in sft_audit_only} == {
         "BRAIN-MEMORY",
         "BRAIN-PAIR",
@@ -749,9 +827,7 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     assert all(row["audit_only"] is True for row in preference_audit_only)
     assert all(row["kind"] == "evals" for row in evals_audit_only)
     assert "record_type_not_selected_for_export_kind" in {
-        reason
-        for row in sft_audit_only
-        for reason in row["skip_reasons"]
+        reason for row in sft_audit_only for reason in row["skip_reasons"]
     }
 
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
@@ -806,9 +882,7 @@ def test_training_export_report_separates_unique_and_per_export_record_counts(
     )
     failed = audit_training_exports(tmp_path)
     assert not failed["passed"]
-    assert "sft: exported_record_ids does not match manifest records" in failed[
-        "findings"
-    ]
+    assert "sft: exported_record_ids does not match manifest records" in failed["findings"]
 
 
 def test_training_audit_rejects_invalid_skipped_record_reasons(tmp_path) -> None:
@@ -851,10 +925,7 @@ def test_training_audit_rejects_duplicate_manifest_record_id_lists(tmp_path) -> 
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert (
-        "sft: skipped_record_ids contains duplicate record IDs: BRAIN-MEMORY"
-        in audit["findings"]
-    )
+    assert "sft: skipped_record_ids contains duplicate record IDs: BRAIN-MEMORY" in audit["findings"]
 
 
 def test_training_manifest_surfaces_duplicate_issuer_day_weight_validation(
@@ -983,9 +1054,7 @@ def test_training_manifest_surfaces_direct_event_weight_validation(tmp_path) -> 
     assert manifest["issuer_day_weight_sum_mismatches"] == {}
     assert manifest["direct_event_weight_sum_mismatch_count"] == 1
     assert manifest["direct_event_weight_sum_mismatches"] == {"ISSUER-1": 0.8}
-    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {
-        "ISSUER-1": 0.8
-    }
+    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {"ISSUER-1": 0.8}
 
     audit = audit_training_exports(tmp_path)
 
@@ -1079,10 +1148,7 @@ def test_training_audit_requires_brain_record_source_mode_when_records_exist(
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert (
-        "sft: brain record store exists but export source_mode is not brain_records"
-        in audit["findings"]
-    )
+    assert "sft: brain record store exists but export source_mode is not brain_records" in audit["findings"]
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["brain_record_source_required"] is True
     assert training_report["record_store_source_record_count"] == 1
@@ -1132,22 +1198,10 @@ def test_training_audit_rejects_stale_brain_record_source_hashes(tmp_path) -> No
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert (
-        "sft: source_record_count does not match current brain record store"
-        in audit["findings"]
-    )
-    assert (
-        "sft: source_record_hashes missing current brain records: BRAIN-MEMORY"
-        in audit["findings"]
-    )
-    assert (
-        "sft: source_record_hashes contain records outside current store: BRAIN-EXTRA"
-        in audit["findings"]
-    )
-    assert (
-        "sft: source_record_hashes mismatch current brain records: BRAIN-ISSUER"
-        in audit["findings"]
-    )
+    assert "sft: source_record_count does not match current brain record store" in audit["findings"]
+    assert "sft: source_record_hashes missing current brain records: BRAIN-MEMORY" in audit["findings"]
+    assert "sft: source_record_hashes contain records outside current store: BRAIN-EXTRA" in audit["findings"]
+    assert "sft: source_record_hashes mismatch current brain records: BRAIN-ISSUER" in audit["findings"]
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["brain_record_source_required"] is True
     assert training_report["record_store_source_record_count"] == 2
@@ -1192,14 +1246,9 @@ def test_training_audit_rejects_skipped_brain_record_output_rows(tmp_path) -> No
 
     assert audit["passed"] is False
     assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in audit["findings"]
-    assert (
-        "sft: source brain records are neither exported nor skipped: BRAIN-ISSUER"
-        in audit["findings"]
-    )
+    assert "sft: source brain records are neither exported nor skipped: BRAIN-ISSUER" in audit["findings"]
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
-    assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in training_report[
-        "findings"
-    ]
+    assert "sft: exported skipped brain record IDs: BRAIN-MEMORY" in training_report["findings"]
     assert training_report["unique_training_eligible_record_ids"] == ["BRAIN-ISSUER"]
     assert training_report["unique_exported_record_ids"] == [
         "BRAIN-ISSUER",
@@ -1232,10 +1281,7 @@ def test_training_audit_rejects_ineligible_and_phase_mixed_rows(tmp_path) -> Non
     assert audit["passed"] is False
     assert any(finding.startswith("sft: exported ineligible row") for finding in audit["findings"])
     assert any(finding == "sft: output_file sha256 mismatch" for finding in audit["findings"])
-    assert any(
-        finding.startswith("sft: phase_outputs.BLIND contains POSTMORTEM row")
-        for finding in audit["findings"]
-    )
+    assert any(finding.startswith("sft: phase_outputs.BLIND contains POSTMORTEM row") for finding in audit["findings"])
     training_report = read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["passed"] is False
     assert training_report["findings"] == audit["findings"]
@@ -1285,10 +1331,7 @@ def test_training_audit_rejects_escaping_phase_output_file(tmp_path) -> None:
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert (
-        "sft: phase_outputs.BLIND output_file escapes project root"
-        in audit["findings"]
-    )
+    assert "sft: phase_outputs.BLIND output_file escapes project root" in audit["findings"]
 
 
 def test_training_audit_rejects_tampered_audit_only_phase_output(tmp_path) -> None:
@@ -1329,10 +1372,7 @@ def test_training_audit_rejects_tampered_audit_only_phase_output(tmp_path) -> No
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert (
-        "sft: phase_outputs.AUDIT_ONLY row_count mismatch expected 1, got 0"
-        in audit["findings"]
-    )
+    assert "sft: phase_outputs.AUDIT_ONLY row_count mismatch expected 1, got 0" in audit["findings"]
     assert "sft: phase_outputs.AUDIT_ONLY sha256 mismatch" in audit["findings"]
     assert "sft: phase_outputs.AUDIT_ONLY rows mismatch" in audit["findings"]
 
@@ -1356,9 +1396,7 @@ def test_training_audit_rejects_non_sealed_preference_record_rows(tmp_path) -> N
 
     assert audit["passed"] is False
     assert any(
-        finding.startswith(
-            "preference: brain record preference row is not a sealed leader pair"
-        )
+        finding.startswith("preference: brain record preference row is not a sealed leader pair")
         for finding in audit["findings"]
     )
 
@@ -1399,19 +1437,10 @@ def test_training_audit_rejects_malformed_sealed_preference_fields(tmp_path) -> 
     audit = audit_training_exports(tmp_path)
 
     assert audit["passed"] is False
-    assert f"preference: preference row blind_preferred_ticker is missing {row_id}" in audit[
-        "findings"
-    ]
-    assert f"preference: preference row outcome_winner_ticker is missing {row_id}" in audit[
-        "findings"
-    ]
-    assert (
-        f"preference: preference row blind_preference_correct is invalid {row_id}"
-        in audit["findings"]
-    )
-    assert f"preference: preference row training_mode is invalid {row_id}" in audit[
-        "findings"
-    ]
+    assert f"preference: preference row blind_preferred_ticker is missing {row_id}" in audit["findings"]
+    assert f"preference: preference row outcome_winner_ticker is missing {row_id}" in audit["findings"]
+    assert f"preference: preference row blind_preference_correct is invalid {row_id}" in audit["findings"]
+    assert f"preference: preference row training_mode is invalid {row_id}" in audit["findings"]
 
 
 def test_training_audit_rejects_unsealed_training_eligible_preference_record(
@@ -1453,12 +1482,9 @@ def test_training_audit_rejects_unsealed_training_eligible_preference_record(
     assert audit["passed"] is False
     assert (
         "record-store: training-eligible blind_leader_preference_pair records "
-        "are not sealed: BRAIN-UNSEALED-PAIR"
-        in audit["findings"]
+        "are not sealed: BRAIN-UNSEALED-PAIR" in audit["findings"]
     )
-    assert training_report["unsealed_training_eligible_preference_record_ids"] == [
-        "BRAIN-UNSEALED-PAIR"
-    ]
+    assert training_report["unsealed_training_eligible_preference_record_ids"] == ["BRAIN-UNSEALED-PAIR"]
 
 
 def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
@@ -1509,23 +1535,13 @@ def test_training_export_skips_ineligible_accepted_episodes(tmp_path) -> None:
         "leader_selection_comparisons",
         "failure_correction_examples",
     ]
-    assert sft_manifest["skipped_episodes"][0]["missing_eligibility"] == [
-        "forecast_evaluation_eligible"
-    ]
-    assert preference_manifest["category_counts"] == {
-        "positive_vs_negative_candidate_preferences": 0
-    }
-    assert preference_manifest["missing_training_categories"] == [
-        "positive_vs_negative_candidate_preferences"
-    ]
-    assert preference_manifest["skipped_episodes"][0]["missing_eligibility"] == [
-        "leader_pair_training_eligible"
-    ]
+    assert sft_manifest["skipped_episodes"][0]["missing_eligibility"] == ["forecast_evaluation_eligible"]
+    assert preference_manifest["category_counts"] == {"positive_vs_negative_candidate_preferences": 0}
+    assert preference_manifest["missing_training_categories"] == ["positive_vs_negative_candidate_preferences"]
+    assert preference_manifest["skipped_episodes"][0]["missing_eligibility"] == ["leader_pair_training_eligible"]
     assert evals_manifest["category_counts"] == {"evaluation_examples": 0}
     assert evals_manifest["missing_training_categories"] == ["evaluation_examples"]
-    assert evals_manifest["skipped_episodes"][0]["missing_eligibility"] == [
-        "direct_supervised_cases_eligible"
-    ]
+    assert evals_manifest["skipped_episodes"][0]["missing_eligibility"] == ["direct_supervised_cases_eligible"]
 
 
 def test_training_export_does_not_skip_episode_with_evals_rows(tmp_path) -> None:
@@ -1540,11 +1556,7 @@ def test_training_export_does_not_skip_episode_with_evals_rows(tmp_path) -> None
                 leader_pair_training_eligible=False,
                 retrospective_memory_eligible=True,
                 brain_eligible=True,
-                reasons={
-                    "direct_supervised_cases_eligible": (
-                        "resolved candidate D-day outcomes are unavailable"
-                    )
-                },
+                reasons={"direct_supervised_cases_eligible": ("resolved candidate D-day outcomes are unavailable")},
             ),
         }
     )

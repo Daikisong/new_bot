@@ -20,6 +20,10 @@ from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.memory_coverage import build_memory_coverage_manifest
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.routing import (
     CANDIDATE_GENERATION_ERRORS_LANE,
@@ -28,12 +32,13 @@ from news_scalping_lab.records.routing import (
     NEAR_MISSES_LANE,
     NEGATIVE_CONTROLS_LANE,
     NEWSLESS_OR_UNEXPLAINED_LANE,
+    POLARITY_CLASSIFIER_VERSION,
     POSITIVE_ANALOGS_LANE,
     THEME_FORMATION_FAILURES_LANE,
-    record_evidence_polarity,
     record_memory_lanes,
     record_outcome_payload,
     record_response_class,
+    record_routing_metadata,
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
@@ -47,7 +52,18 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v2"
+MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v3"
+RECORD_SWEEP_LANE_FIELDS = {
+    "positive_analogs": POSITIVE_ANALOGS_LANE,
+    "negative_analogs": NEGATIVE_CONTROLS_LANE,
+    "negative_controls": NEGATIVE_CONTROLS_LANE,
+    "near_misses": NEAR_MISSES_LANE,
+    "counterexamples": COUNTEREXAMPLES_LANE,
+    "leader_selection_pairs": LEADER_SELECTION_PAIRS_LANE,
+    "theme_formation_failures": THEME_FORMATION_FAILURES_LANE,
+    "candidate_generation_errors": CANDIDATE_GENERATION_ERRORS_LANE,
+    "newsless_or_unexplained": NEWSLESS_OR_UNEXPLAINED_LANE,
+}
 
 
 @dataclass(frozen=True)
@@ -117,9 +133,7 @@ class MemorySweeper:
         model_config_hash = sha256_text(canonical_json({}))
         episode_payloads: list[dict[str, object]] = []
         for shard_index, episode_shard in enumerate(self._shards(episodes), start=1):
-            source_hashes = _episode_source_hashes(
-                episode_shard, self.store.accepted_hashes()
-            )
+            source_hashes = _episode_source_hashes(episode_shard, self.store.accepted_hashes())
             shard_hash = _episode_shard_hash(source_hashes)
             episode_payloads.append(
                 self._build_contribution(
@@ -140,9 +154,7 @@ class MemorySweeper:
                 )
             )
         record_payloads: list[dict[str, object]] = []
-        for shard_index, record_shard in enumerate(
-            self._record_shards(records), start=1
-        ):
+        for shard_index, record_shard in enumerate(self._record_shards(records), start=1):
             source_hashes = _record_source_hashes(record_shard)
             shard_hash = _record_shard_hash(source_hashes)
             record_payloads.append(
@@ -207,24 +219,16 @@ class MemorySweeper:
             coverage_errors = list(accepted_store_findings)
             if not coverage.manifest.coverage_complete:
                 coverage_errors.append("memory coverage manifest is incomplete")
-            swept_episode_ids = (
-                [] if mode == "fast" else [episode.episode_id for episode in accepted]
-            )
-            production_swept_record_ids = (
-                [] if mode == "fast" else coverage.available_record_ids
-            )
+            swept_episode_ids = [] if mode == "fast" else [episode.episode_id for episode in accepted]
+            production_swept_record_ids = [] if mode == "fast" else coverage.available_record_ids
             return SweepResult(
                 accepted_episode_count=len(accepted),
                 swept_episode_ids=swept_episode_ids,
                 accepted_record_count=coverage.manifest.accepted_record_count,
                 available_record_count=coverage.manifest.available_record_count,
                 available_record_ids=coverage.available_record_ids,
-                training_eligible_available_record_count=len(
-                    coverage.training_eligible_available_record_ids
-                ),
-                training_eligible_available_record_ids=(
-                    coverage.training_eligible_available_record_ids
-                ),
+                training_eligible_available_record_count=len(coverage.training_eligible_available_record_ids),
+                training_eligible_available_record_ids=(coverage.training_eligible_available_record_ids),
                 swept_record_ids=production_swept_record_ids,
                 artifact_paths=[],
                 record_artifact_paths=[],
@@ -245,11 +249,7 @@ class MemorySweeper:
             cutoff_at,
             records_present=bool(all_records),
         )
-        available_records = [
-            record
-            for record in all_records
-            if is_available_as_of(record.available_from, cutoff_at)
-        ]
+        available_records = [record for record in all_records if is_available_as_of(record.available_from, cutoff_at)]
         available_record_ids = [record.record_id for record in available_records]
         training_eligible_available_record_ids = [
             record.record_id for record in available_records if record.training_eligible
@@ -267,12 +267,8 @@ class MemorySweeper:
                 accepted_record_count=len(all_records),
                 available_record_count=len(available_records),
                 available_record_ids=available_record_ids,
-                training_eligible_available_record_count=len(
-                    training_eligible_available_record_ids
-                ),
-                training_eligible_available_record_ids=(
-                    training_eligible_available_record_ids
-                ),
+                training_eligible_available_record_count=len(training_eligible_available_record_ids),
+                training_eligible_available_record_ids=(training_eligible_available_record_ids),
                 swept_record_ids=[],
                 artifact_paths=[],
                 record_artifact_paths=[],
@@ -371,6 +367,7 @@ class MemorySweeper:
                 cutoff_at.isoformat(),
                 prompt_version,
                 model_config_hash,
+                POLARITY_CLASSIFIER_VERSION,
                 length=16,
             )
             cache_path = self.cache_dir / f"{cache_key}.json"
@@ -384,6 +381,7 @@ class MemorySweeper:
                 news_hash=news_hash,
                 shard_hash=shard_hash,
                 record_ids=record_ids,
+                records=record_shard,
                 record_source_hashes=record_source_hashes,
                 prompt_version=prompt_version,
                 model_config_hash=model_config_hash,
@@ -420,61 +418,38 @@ class MemorySweeper:
             swept_counts = Counter(swept_ids)
             missing_ids = sorted((expected_counts - swept_counts).elements())
             duplicate_ids = sorted(
-                episode_id
-                for episode_id, count in swept_counts.items()
-                if count > expected_counts.get(episode_id, 0)
+                episode_id for episode_id, count in swept_counts.items() if count > expected_counts.get(episode_id, 0)
             )
             unexpected_ids = sorted(set(swept_counts) - set(expected_counts))
             if missing_ids:
-                errors.append(
-                    "memory sweep missing accepted episodes: " + ", ".join(missing_ids)
-                )
+                errors.append("memory sweep missing accepted episodes: " + ", ".join(missing_ids))
             if duplicate_ids:
-                errors.append(
-                    "memory sweep duplicated accepted episodes: " + ", ".join(duplicate_ids)
-                )
+                errors.append("memory sweep duplicated accepted episodes: " + ", ".join(duplicate_ids))
             if unexpected_ids:
-                errors.append(
-                    "memory sweep included unavailable episodes: " + ", ".join(unexpected_ids)
-                )
+                errors.append("memory sweep included unavailable episodes: " + ", ".join(unexpected_ids))
             expected_record_ids = [record.record_id for record in available_records]
             expected_record_counts = Counter(expected_record_ids)
             swept_record_counts = Counter(swept_record_ids)
-            missing_record_ids = sorted(
-                (expected_record_counts - swept_record_counts).elements()
-            )
+            missing_record_ids = sorted((expected_record_counts - swept_record_counts).elements())
             duplicate_record_ids = sorted(
                 record_id
                 for record_id, count in swept_record_counts.items()
                 if count > expected_record_counts.get(record_id, 0)
             )
-            unexpected_record_ids = sorted(
-                set(swept_record_counts) - set(expected_record_counts)
-            )
+            unexpected_record_ids = sorted(set(swept_record_counts) - set(expected_record_counts))
             if missing_record_ids:
-                errors.append(
-                    "record memory sweep missing available records: "
-                    + ", ".join(missing_record_ids)
-                )
+                errors.append("record memory sweep missing available records: " + ", ".join(missing_record_ids))
             if duplicate_record_ids:
-                errors.append(
-                    "record memory sweep duplicated available records: "
-                    + ", ".join(duplicate_record_ids)
-                )
+                errors.append("record memory sweep duplicated available records: " + ", ".join(duplicate_record_ids))
             if unexpected_record_ids:
-                errors.append(
-                    "record memory sweep included unavailable records: "
-                    + ", ".join(unexpected_record_ids)
-                )
+                errors.append("record memory sweep included unavailable records: " + ", ".join(unexpected_record_ids))
         return SweepResult(
             accepted_episode_count=len(accepted),
             swept_episode_ids=swept_ids,
             accepted_record_count=len(all_records),
             available_record_count=len(available_records),
             available_record_ids=available_record_ids,
-            training_eligible_available_record_count=len(
-                training_eligible_available_record_ids
-            ),
+            training_eligible_available_record_count=len(training_eligible_available_record_ids),
             training_eligible_available_record_ids=training_eligible_available_record_ids,
             swept_record_ids=swept_record_ids,
             artifact_paths=artifacts,
@@ -589,6 +564,7 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         record_ids: list[str],
+        records: list[BrainRecordEnvelope],
         record_source_hashes: dict[str, str],
         prompt_version: str,
         model_config_hash: str,
@@ -611,6 +587,7 @@ class MemorySweeper:
             news_hash=news_hash,
             shard_hash=shard_hash,
             record_ids=record_ids,
+            records=records,
             record_source_hashes=record_source_hashes,
             prompt_version=prompt_version,
             model_config_hash=model_config_hash,
@@ -663,6 +640,7 @@ class MemorySweeper:
         news_hash: str,
         shard_hash: str,
         record_ids: list[str],
+        records: list[BrainRecordEnvelope],
         record_source_hashes: dict[str, str],
         prompt_version: str,
         model_config_hash: str,
@@ -678,6 +656,12 @@ class MemorySweeper:
             and payload.get("record_shard_sha256") == shard_hash
             and payload.get("record_ids") == record_ids
             and payload.get("record_shard_source_hashes") == record_source_hashes
+            and payload.get("record_source_hash_kind") == "canonical_full_envelope_sha256"
+            and payload.get("routing_classifier_version") == POLARITY_CLASSIFIER_VERSION
+            and payload.get("record_routing_sha256")
+            == brain_record_routing_root_sha256(records)
+            and _payload_lane_projection(payload)
+            == record_sweep_lane_projection(records)
             and payload.get("prompt_version") == prompt_version
             and payload.get("model_config_sha256") == model_config_hash
         )
@@ -702,11 +686,7 @@ class MemorySweeper:
     ) -> dict[str, object]:
         episode_ids = [episode.episode_id for episode in episodes]
         summaries = [episode.blind_analysis.summary for episode in episodes]
-        lessons = [
-            mechanism
-            for episode in episodes
-            for mechanism in episode.blind_analysis.open_world_mechanisms
-        ]
+        lessons = [mechanism for episode in episodes for mechanism in episode.blind_analysis.open_world_mechanisms]
         return {
             "schema_version": "nslab.memory_sweep_contribution.v1",
             "cache_key": cache_key,
@@ -727,9 +707,7 @@ class MemorySweeper:
             "negative_analogs": [],
             "negative_controls": [],
             "near_misses": [miss for episode in episodes for miss in episode.misses],
-            "counterexamples": [
-                claim.statement for episode in episodes for claim in episode.counterexamples
-            ],
+            "counterexamples": [claim.statement for episode in episodes for claim in episode.counterexamples],
             "supporting_points": first_pass_mechanisms,
             "objections": [
                 "Do not use this shard as a whitelist.",
@@ -760,18 +738,7 @@ class MemorySweeper:
         prompt_version: str,
         model_config_hash: str,
     ) -> dict[str, object]:
-        lanes_by_record_id = {
-            record.record_id: record_memory_lanes(record) for record in records
-        }
-
-        def summaries_for(lane: str) -> list[dict[str, object]]:
-            return [
-                _record_summary(record)
-                for record in records
-                if lane in lanes_by_record_id[record.record_id]
-            ]
-
-        negative_controls = summaries_for(NEGATIVE_CONTROLS_LANE)
+        lane_projection = record_sweep_lane_projection(records)
         return {
             "schema_version": "nslab.record_memory_sweep_contribution.v1",
             "cache_key": cache_key,
@@ -784,24 +751,15 @@ class MemorySweeper:
             "current_news_sha256": news_hash,
             "record_shard_sha256": shard_hash,
             "record_shard_source_hashes": record_source_hashes,
+            "record_source_hash_kind": "canonical_full_envelope_sha256",
+            "routing_classifier_version": POLARITY_CLASSIFIER_VERSION,
+            "record_routing_sha256": brain_record_routing_root_sha256(records),
             "shard_index": shard_index,
             "record_count": len(records),
             "record_ids": [record.record_id for record in records],
             "record_types": dict(Counter(record.record_type for record in records)),
-            "training_targets": dict(
-                Counter(record.training_target or "UNKNOWN" for record in records)
-            ),
-            "positive_analogs": summaries_for(POSITIVE_ANALOGS_LANE),
-            "negative_analogs": negative_controls,
-            "negative_controls": negative_controls,
-            "near_misses": summaries_for(NEAR_MISSES_LANE),
-            "counterexamples": summaries_for(COUNTEREXAMPLES_LANE),
-            "leader_selection_pairs": summaries_for(LEADER_SELECTION_PAIRS_LANE),
-            "theme_formation_failures": summaries_for(THEME_FORMATION_FAILURES_LANE),
-            "candidate_generation_errors": summaries_for(
-                CANDIDATE_GENERATION_ERRORS_LANE
-            ),
-            "newsless_or_unexplained": summaries_for(NEWSLESS_OR_UNEXPLAINED_LANE),
+            "training_targets": dict(Counter(record.training_target or "UNKNOWN" for record in records)),
+            **lane_projection,
             "supporting_points": first_pass_mechanisms,
             "objections": [
                 "Do not treat record retrieval misses as candidate blockers.",
@@ -842,10 +800,7 @@ def _episode_shard_hash(episode_source_hashes: dict[str, str]) -> str:
 
 
 def _record_source_hashes(records: list[BrainRecordEnvelope]) -> dict[str, str]:
-    return {
-        record.record_id: record.normalized_payload_sha256
-        for record in records
-    }
+    return {record.record_id: brain_record_envelope_sha256(record) for record in records}
 
 
 def _record_shard_hash(record_source_hashes: dict[str, str]) -> str:
@@ -862,10 +817,7 @@ def _record_shard_hash(record_source_hashes: dict[str, str]) -> str:
 def _serialized_payload_burden(
     payloads: list[dict[str, object]],
 ) -> tuple[int, int]:
-    serialized = [
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        for payload in payloads
-    ]
+    serialized = [json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n" for payload in payloads]
     return (
         sum(len(payload.encode("utf-8")) for payload in serialized),
         sum(max(1, len(payload) // 4) for payload in serialized),
@@ -874,6 +826,7 @@ def _serialized_payload_burden(
 
 def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
     payload = record.payload
+    routing = record_routing_metadata(record)
     return {
         "record_id": record.record_id,
         "episode_id": record.episode_id,
@@ -883,8 +836,13 @@ def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
         "training_eligible": record.training_eligible,
         "eligibility_reason": record.eligibility_reason,
         "training_exclusion_reason": payload.get("training_exclusion_reason"),
-        "evidence_polarity": record_evidence_polarity(record),
-        "memory_lanes": sorted(record_memory_lanes(record)),
+        "evidence_polarity": routing.evidence_polarity,
+        "label_quality": routing.label_quality,
+        "routing_disposition": routing.routing_disposition,
+        "polarity_classifier_version": routing.polarity_classifier_version,
+        "threshold_source": routing.threshold_source,
+        "threshold_role": routing.threshold_role,
+        "memory_lanes": routing.memory_lanes,
         "available_from": record.available_from.isoformat(),
         "response_class": record_response_class(payload),
         "outcome": record_outcome_payload(payload),
@@ -893,3 +851,25 @@ def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
         "path_type": payload.get("path_type"),
         "confidence_label": record.confidence_label,
     }
+
+
+def record_sweep_lane_projection(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, list[dict[str, object]]]:
+    lanes_by_record_id = {record.record_id: record_memory_lanes(record) for record in records}
+    projection = {
+        field: [
+            _record_summary(record)
+            for record in records
+            if lane in lanes_by_record_id[record.record_id]
+        ]
+        for field, lane in RECORD_SWEEP_LANE_FIELDS.items()
+    }
+    projection["negative_analogs"] = list(projection["negative_controls"])
+    return projection
+
+
+def _payload_lane_projection(
+    payload: dict[Any, Any],
+) -> dict[str, object]:
+    return {field: payload.get(field) for field in RECORD_SWEEP_LANE_FIELDS}

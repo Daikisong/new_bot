@@ -25,6 +25,7 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
     NewsCoverageManifest,
+    RecordRoutingMetadata,
 )
 from news_scalping_lab.contracts.models import OpenWorldFirstAnalysis
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
@@ -35,8 +36,17 @@ from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSIO
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_hashes,
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.preference import has_sealed_preference_pair
+from news_scalping_lab.records.routing import (
+    POLARITY_CLASSIFIER_VERSION,
+    record_routing_metadata,
+)
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -44,7 +54,10 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
-from news_scalping_lab.retrieval.store import VECTOR_INDEX_SCHEMA_VERSION, inspect_vector_index
+from news_scalping_lab.retrieval.store import (
+    VECTOR_INDEX_SCHEMA_VERSION,
+    inspect_vector_index,
+)
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports
 from news_scalping_lab.utils import (
@@ -116,8 +129,7 @@ PRODUCTION_WEB_EVIDENCE_CUTOFF_SAFE_ARTIFACT_FIELDS = {
     "final_synthesis_context_artifact",
 }
 PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS = {
-    field: field.removesuffix("_artifact") + "_sha256"
-    for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS
+    field: field.removesuffix("_artifact") + "_sha256" for field in PRODUCTION_WEB_EVIDENCE_ARTIFACT_FIELDS
 }
 PRODUCTION_WEB_EVIDENCE_ARTIFACT_SOURCE_FIELDS = {
     "web_source_artifact": "web_sources",
@@ -220,29 +232,18 @@ def production_readiness_report(
         findings.append("real_bundle: v11 ACCEPT_FULL smoke failed")
         findings.extend(
             f"real_bundle: {reason}"
-            for reason in _string_list(
-                real_bundle_smoke.get("first_production_failure_reasons")
-            )
+            for reason in _string_list(real_bundle_smoke.get("first_production_failure_reasons"))
         )
     real_bundle_import = _real_bundle_import_status(settings, real_bundle_smoke)
-    if (
-        real_bundle_smoke["status"] == "passed"
-        and real_bundle_import["passed"] is not True
-    ):
-        findings.extend(
-            f"real_bundle_import: {finding}"
-            for finding in real_bundle_import["findings"]
-        )
+    if real_bundle_smoke["status"] == "passed" and real_bundle_import["passed"] is not True:
+        findings.extend(f"real_bundle_import: {finding}" for finding in real_bundle_import["findings"])
     if settings.llm_provider.strip().lower() == "mock":
         findings.append("llm: mock provider cannot compile production brain")
     if settings.llm.provider.strip().lower() == "mock":
         findings.append("llm_model: mock model profile cannot compile production brain")
     llm_evidence = _production_llm_evidence_status(settings.project_root)
     if llm_evidence["passed"] is not True:
-        findings.extend(
-            f"llm_evidence: {finding}"
-            for finding in llm_evidence["findings"]
-        )
+        findings.extend(f"llm_evidence: {finding}" for finding in llm_evidence["findings"])
     openai_status = _nested_dict(report, "api_connections", "openai").get("status")
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
@@ -253,24 +254,16 @@ def production_readiness_report(
     elif web_provider not in PRODUCTION_WEB_PROVIDER_ALIASES:
         findings.append(f"web: unsupported production provider {settings.web_provider}")
     elif brave_status != "configured_not_called":
-        findings.append(
-            "brave_search: production web research requires configured Brave Search API key"
-        )
+        findings.append("brave_search: production web research requires configured Brave Search API key")
     price_data = _production_price_data_status(report, settings)
     if price_data["passed"] is not True:
         findings.extend(f"price: {finding}" for finding in price_data["findings"])
     price_evidence = _production_price_evidence_status(settings.project_root)
     if price_evidence["passed"] is not True:
-        findings.extend(
-            f"price_evidence: {finding}"
-            for finding in price_evidence["findings"]
-        )
+        findings.extend(f"price_evidence: {finding}" for finding in price_evidence["findings"])
     web_evidence = _production_web_evidence_status(settings.project_root)
     if web_evidence["passed"] is not True:
-        findings.extend(
-            f"web_evidence: {finding}"
-            for finding in web_evidence["findings"]
-        )
+        findings.extend(f"web_evidence: {finding}" for finding in web_evidence["findings"])
     brain = report.get("brain")
     if isinstance(brain, dict):
         brain_audit = _nested_dict(brain, "audit")
@@ -282,12 +275,8 @@ def production_readiness_report(
             findings.append("brain: latest brain audit was not run with --deep")
         if brain_audit and not _brain_audit_diversity_summary_present(brain_audit):
             findings.append("brain: latest brain audit diversity summary is missing")
-        if brain_audit and _string_list(
-            brain_audit.get("llm_compile_category_schema_mismatches")
-        ):
-            findings.append(
-                "brain: latest brain audit llm compile category schema mismatches"
-            )
+        if brain_audit and _string_list(brain_audit.get("llm_compile_category_schema_mismatches")):
+            findings.append("brain: latest brain audit llm compile category schema mismatches")
         coverage = brain.get("coverage")
         if isinstance(coverage, dict) and coverage.get("status") not in {"complete", "missing"}:
             findings.append("brain: accepted episodes are not fully covered")
@@ -303,9 +292,7 @@ def production_readiness_report(
     catalog_mode_reason = _brain_manifest_catalog_mode_reason(brain_manifest)
     deprecated_mode_alias = _brain_manifest_deprecated_mode_alias(brain_manifest)
     production_eligible = _brain_manifest_production_eligible(brain_manifest)
-    current_brain_version_value = (
-        brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
-    )
+    current_brain_version_value = brain_manifest.get("brain_version") if isinstance(brain_manifest, dict) else None
     record_coverage, record_coverage_read_findings = _read_optional_json_with_findings(
         settings.project_root / "brain" / "current" / "record_coverage_manifest.json",
         label="record coverage manifest",
@@ -350,9 +337,7 @@ def production_readiness_report(
             if formatted_finding not in findings:
                 findings.append(formatted_finding)
     if record_coverage_status["passed"] is not True:
-        findings.extend(
-            f"records: {finding}" for finding in record_coverage_status["findings"]
-        )
+        findings.extend(f"records: {finding}" for finding in record_coverage_status["findings"])
     record_store = _production_record_store_status(settings)
     if record_store["passed"] is not True:
         findings.extend(f"records: {finding}" for finding in record_store["findings"])
@@ -369,18 +354,13 @@ def production_readiness_report(
         expected_source_record_count=expected_source_record_count,
     )
     if semantic_index["passed"] is not True:
-        findings.extend(
-            f"embedding: {finding}" for finding in semantic_index["findings"]
-        )
+        findings.extend(f"embedding: {finding}" for finding in semantic_index["findings"])
     training_exports = _production_training_export_status(settings)
     if training_exports["passed"] is not True:
-        findings.extend(
-            f"training: {finding}" for finding in training_exports["findings"]
-        )
+        findings.extend(f"training: {finding}" for finding in training_exports["findings"])
     findings_by_category = _findings_by_category(findings)
     finding_counts_by_category = {
-        category: len(category_findings)
-        for category, category_findings in findings_by_category.items()
+        category: len(category_findings) for category, category_findings in findings_by_category.items()
     }
     return {
         "schema_version": "nslab.production_readiness.v1",
@@ -447,9 +427,10 @@ def _production_price_data_status(
         findings.append("stock-web provider has no readable path")
     elif not isinstance(stock_web.get("schema"), dict):
         findings.append("stock-web atlas schema is missing or unreadable")
-    elif not isinstance(stock_web.get("schema_status"), dict) or _nested_dict(
-        stock_web, "schema_status"
-    ).get("status") != "ok":
+    elif (
+        not isinstance(stock_web.get("schema_status"), dict)
+        or _nested_dict(stock_web, "schema_status").get("status") != "ok"
+    ):
         findings.append("stock-web atlas manifest/schema or shard roots are incomplete")
     return {
         "schema_version": "nslab.production_price_data.v1",
@@ -458,19 +439,11 @@ def _production_price_data_status(
         "finding_count": len(findings),
         "findings": findings,
         "provider": settings.price_provider,
-        "stock_web_effective_path": (
-            stock_web.get("effective_path") if isinstance(stock_web, dict) else None
-        ),
+        "stock_web_effective_path": (stock_web.get("effective_path") if isinstance(stock_web, dict) else None),
         "stock_web_effective_path_exists": (
-            stock_web.get("effective_path_exists")
-            if isinstance(stock_web, dict)
-            else None
+            stock_web.get("effective_path_exists") if isinstance(stock_web, dict) else None
         ),
-        "stock_web_schema_status": (
-            _nested_dict(stock_web, "schema_status")
-            if isinstance(stock_web, dict)
-            else {}
-        ),
+        "stock_web_schema_status": (_nested_dict(stock_web, "schema_status") if isinstance(stock_web, dict) else {}),
     }
 
 
@@ -647,11 +620,7 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                             "source_name": context_source_name,
                         }
                     )
-                if (
-                    isinstance(source_name, str)
-                    and source_name.strip()
-                    and context_source_name != source_name
-                ):
+                if isinstance(source_name, str) and source_name.strip() and context_source_name != source_name:
                     final_context_source_mismatches.append(
                         {
                             "manifest": relative_path,
@@ -670,11 +639,7 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                     }
                 )
             context_source_ref = price_context.get("source_ref")
-            if (
-                isinstance(source_ref, str)
-                and source_ref.strip()
-                and context_source_ref != source_ref
-            ):
+            if isinstance(source_ref, str) and source_ref.strip() and context_source_ref != source_ref:
                 final_context_source_ref_mismatches.append(
                     {
                         "manifest": relative_path,
@@ -762,14 +727,10 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
                             "ticker": row.get("ticker"),
                             "trade_date": raw_row_trade_date,
                             "allowed_through": (
-                                allowed_through.isoformat()
-                                if allowed_through is not None
-                                else raw_allowed_through
+                                allowed_through.isoformat() if allowed_through is not None else raw_allowed_through
                             ),
                             "manifest_trade_date": (
-                                trade_date.isoformat()
-                                if trade_date is not None
-                                else manifest.get("trade_date")
+                                trade_date.isoformat() if trade_date is not None else manifest.get("trade_date")
                             ),
                             "reasons": reasons,
                         }
@@ -782,8 +743,7 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         findings.append(f"context manifest is unreadable: {path}")
     for manifest in invalid_manifest_schemas:
         findings.append(
-            f"context manifest schema_version is invalid in {manifest['path']}: "
-            f"{manifest['schema_version']}"
+            f"context manifest schema_version is invalid in {manifest['path']}: {manifest['schema_version']}"
         )
     for path in missing_price_snapshots:
         findings.append(f"context manifest price_snapshot is missing: {path}")
@@ -797,10 +757,7 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
             f"{snapshot['path']}: source_ref={snapshot['source_ref']}"
         )
     for snapshot in mock_price_snapshots:
-        findings.append(
-            f"mock price_snapshot present in {snapshot['path']}: "
-            f"source_name={snapshot['source_name']}"
-        )
+        findings.append(f"mock price_snapshot present in {snapshot['path']}: source_name={snapshot['source_name']}")
     for snapshot in invalid_allowed_through:
         findings.append(
             f"context manifest price_snapshot allowed_through is invalid in "
@@ -812,14 +769,10 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
             f"trade_date in {snapshot['path']}: {snapshot['allowed_through']}"
         )
     for snapshot in invalid_as_of:
-        findings.append(
-            f"context manifest price_snapshot as_of is invalid in "
-            f"{snapshot['path']}: {snapshot['as_of']}"
-        )
+        findings.append(f"context manifest price_snapshot as_of is invalid in {snapshot['path']}: {snapshot['as_of']}")
     for snapshot in as_of_after_cutoff:
         findings.append(
-            f"context manifest price_snapshot as_of is after cutoff_at in "
-            f"{snapshot['path']}: {snapshot['as_of']}"
+            f"context manifest price_snapshot as_of is after cutoff_at in {snapshot['path']}: {snapshot['as_of']}"
         )
     for artifact in invalid_final_context_refs:
         findings.append(
@@ -829,23 +782,15 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         )
     for artifact in missing_final_context_artifacts:
         findings.append(
-            f"final synthesis price context artifact is missing: "
-            f"{artifact['manifest']} {artifact['artifact']}"
+            f"final synthesis price context artifact is missing: {artifact['manifest']} {artifact['artifact']}"
         )
     for artifact in unreadable_final_context_artifacts:
-        findings.append(
-            f"final synthesis price context artifact is unreadable: "
-            f"{artifact['artifact']}"
-        )
+        findings.append(f"final synthesis price context artifact is unreadable: {artifact['artifact']}")
     for artifact in missing_final_context_price_data:
-        findings.append(
-            f"final synthesis context d_minus_one_market_data is missing: "
-            f"{artifact['artifact']}"
-        )
+        findings.append(f"final synthesis context d_minus_one_market_data is missing: {artifact['artifact']}")
     for artifact in final_context_mock_price_data:
         findings.append(
-            f"mock final synthesis price data present in {artifact['artifact']}: "
-            f"source_name={artifact['source_name']}"
+            f"mock final synthesis price data present in {artifact['artifact']}: source_name={artifact['source_name']}"
         )
     for mismatch in final_context_source_mismatches:
         findings.append(
@@ -911,21 +856,15 @@ def _production_price_evidence_status(root: Path) -> dict[str, Any]:
         "invalid_final_context_refs": invalid_final_context_refs,
         "missing_final_context_artifact_count": len(missing_final_context_artifacts),
         "missing_final_context_artifacts": missing_final_context_artifacts,
-        "unreadable_final_context_artifact_count": len(
-            unreadable_final_context_artifacts
-        ),
+        "unreadable_final_context_artifact_count": len(unreadable_final_context_artifacts),
         "unreadable_final_context_artifacts": unreadable_final_context_artifacts,
-        "missing_final_context_price_data_count": len(
-            missing_final_context_price_data
-        ),
+        "missing_final_context_price_data_count": len(missing_final_context_price_data),
         "missing_final_context_price_data": missing_final_context_price_data,
         "final_context_mock_price_data_count": len(final_context_mock_price_data),
         "final_context_mock_price_data": final_context_mock_price_data,
         "final_context_source_mismatch_count": len(final_context_source_mismatches),
         "final_context_source_mismatches": final_context_source_mismatches,
-        "final_context_source_ref_mismatch_count": len(
-            final_context_source_ref_mismatches
-        ),
+        "final_context_source_ref_mismatch_count": len(final_context_source_ref_mismatches),
         "final_context_source_ref_mismatches": final_context_source_ref_mismatches,
         "final_context_allowed_mismatch_count": len(final_context_allowed_mismatches),
         "final_context_allowed_mismatches": final_context_allowed_mismatches,
@@ -1012,9 +951,7 @@ def real_bundle_smoke_report(
         summary = _real_bundle_inspection_summary(inspection)
         smoke_passed = summary["v11_accept_full_smoke_passed"] is True
         if production_source:
-            smoke_passed = (
-                smoke_passed and summary["direct_ingest_smoke_passed"] is True
-            )
+            smoke_passed = smoke_passed and summary["direct_ingest_smoke_passed"] is True
         inspections.append(
             {
                 **candidate,
@@ -1026,47 +963,29 @@ def real_bundle_smoke_report(
         )
 
     valid_inspections = [
-        item
-        for item in inspections
-        if isinstance(item.get("inspection"), dict)
-        and item.get("status") == "passed"
+        item for item in inspections if isinstance(item.get("inspection"), dict) and item.get("status") == "passed"
     ]
-    real_valid_inspections = [
-        item for item in valid_inspections if item.get("production_source") is True
-    ]
-    synthetic_valid_inspections = [
-        item for item in valid_inspections if item.get("production_source") is not True
-    ]
-    production_inspections = [
-        item for item in inspections if item.get("production_source") is True
-    ]
+    real_valid_inspections = [item for item in valid_inspections if item.get("production_source") is True]
+    synthetic_valid_inspections = [item for item in valid_inspections if item.get("production_source") is not True]
+    production_inspections = [item for item in inspections if item.get("production_source") is True]
     passed_production_inspections = [
         item
         for item in production_inspections
-        if isinstance(item.get("inspection"), dict)
-        and item.get("status") == "passed"
+        if isinstance(item.get("inspection"), dict) and item.get("status") == "passed"
     ]
-    first_production_inspection = (
-        production_inspections[0] if production_inspections else None
-    )
+    first_production_inspection = production_inspections[0] if production_inspections else None
     first_production_passed = (
         isinstance(first_production_inspection, dict)
         and isinstance(first_production_inspection.get("inspection"), dict)
         and first_production_inspection.get("status") == "passed"
     )
     first_production_source = (
-        first_production_inspection.get("source")
-        if isinstance(first_production_inspection, dict)
-        else None
+        first_production_inspection.get("source") if isinstance(first_production_inspection, dict) else None
     )
     selected = first_production_inspection if first_production_passed else None
     if selected is None and first_production_source == "imported_episodes":
         selected = next(
-            (
-                item
-                for item in passed_production_inspections
-                if item.get("source") == first_production_source
-            ),
+            (item for item in passed_production_inspections if item.get("source") == first_production_source),
             None,
         )
     failed_inspection_count = sum(
@@ -1107,33 +1026,23 @@ def real_bundle_smoke_report(
         "environment_key": REAL_BUNDLE_ENV_KEY,
         "search_locations": search_locations,
         "candidate_count": len(candidates),
-        "inspected_count": len(
-            [item for item in inspections if item.get("inspectable") is True]
-        ),
+        "inspected_count": len([item for item in inspections if item.get("inspectable") is True]),
         "valid_smoke_count": len(valid_inspections),
         "real_valid_smoke_count": len(real_valid_inspections),
         "synthetic_valid_smoke_count": len(synthetic_valid_inspections),
         "failed_inspection_count": failed_inspection_count,
         "production_failed_inspection_count": production_failed_inspection_count,
         "first_production_source": (
-            first_production_inspection.get("source")
-            if first_production_inspection is not None
-            else None
+            first_production_inspection.get("source") if first_production_inspection is not None else None
         ),
         "first_production_status": (
-            first_production_inspection.get("status")
-            if first_production_inspection is not None
-            else None
+            first_production_inspection.get("status") if first_production_inspection is not None else None
         ),
         "first_production_path": (
-            first_production_inspection.get("path")
-            if first_production_inspection is not None
-            else None
+            first_production_inspection.get("path") if first_production_inspection is not None else None
         ),
         "first_production_failure_reasons": (
-            _real_bundle_production_failure_reasons(
-                first_production_inspection["inspection"]
-            )
+            _real_bundle_production_failure_reasons(first_production_inspection["inspection"])
             if isinstance(first_production_inspection, dict)
             and isinstance(first_production_inspection.get("inspection"), dict)
             else []
@@ -1148,9 +1057,7 @@ def build_doctor_report(
     *,
     production: bool = False,
 ) -> dict[str, Any]:
-    accepted_episodes, accepted_store_findings = _read_accepted_episodes_for_diagnostics(
-        settings.project_root
-    )
+    accepted_episodes, accepted_store_findings = _read_accepted_episodes_for_diagnostics(settings.project_root)
     accepted_episode_count = len(accepted_episodes)
     stock_web_path = _resolved_optional_path(settings, settings.stock_web_path)
     stock_web_cache_path = settings.path(settings.stock_web_cache_path)
@@ -1200,14 +1107,8 @@ def build_doctor_report(
             "cache_enabled": settings.stock_web_cache_enabled,
             "cache_path": stock_web_cache_path.as_posix(),
             "cache_path_exists": stock_web_cache_path.exists(),
-            "effective_path": (
-                stock_web_effective_path.as_posix()
-                if stock_web_effective_path is not None
-                else None
-            ),
-            "effective_path_exists": bool(
-                stock_web_effective_path is not None and stock_web_effective_path.exists()
-            ),
+            "effective_path": (stock_web_effective_path.as_posix() if stock_web_effective_path is not None else None),
+            "effective_path_exists": bool(stock_web_effective_path is not None and stock_web_effective_path.exists()),
             "effective_path_source": stock_web_effective_source,
             "remote_url": settings.stock_web_remote_url,
             "schema": stock_web_schema,
@@ -1289,9 +1190,7 @@ def _doctor_readiness(
     accepted_episode_count: int,
 ) -> dict[str, Any]:
     findings: list[str] = []
-    for finding in _string_list(
-        _nested_dict(report, "brain").get("accepted_episode_store_findings")
-    ):
+    for finding in _string_list(_nested_dict(report, "brain").get("accepted_episode_store_findings")):
         formatted = f"brain: {finding}"
         if formatted not in findings:
             findings.append(formatted)
@@ -1323,9 +1222,10 @@ def _doctor_readiness(
             findings.append("stock_web: configured price provider has no readable path")
         elif not isinstance(stock_web.get("schema"), dict):
             findings.append("stock_web: atlas schema is missing or unreadable")
-        elif not isinstance(stock_web.get("schema_status"), dict) or _nested_dict(
-            stock_web, "schema_status"
-        ).get("status") != "ok":
+        elif (
+            not isinstance(stock_web.get("schema_status"), dict)
+            or _nested_dict(stock_web, "schema_status").get("status") != "ok"
+        ):
             findings.append("stock_web: atlas manifest/schema or shard roots are incomplete")
 
     warehouse = report.get("warehouse")
@@ -1334,16 +1234,13 @@ def _doctor_readiness(
     else:
         counts = warehouse.get("counts")
         if not isinstance(counts, dict) or any(
-            not isinstance(count, int) or isinstance(count, bool)
-            for count in counts.values()
+            not isinstance(count, int) or isinstance(count, bool) for count in counts.values()
         ):
             findings.append("warehouse: one or more projections are missing or unreadable")
 
     database = report.get("database")
     if not isinstance(database, dict) or database.get("status") != "ok":
-        findings.append(
-            "database: DuckDB engine is unavailable or cannot query warehouse projections"
-        )
+        findings.append("database: DuckDB engine is unavailable or cannot query warehouse projections")
 
     brain_coverage = _nested_dict(report, "brain", "coverage")
     if accepted_episode_count > 0 and brain_coverage.get("status") != "complete":
@@ -1388,9 +1285,7 @@ def _production_remediation(settings: Settings) -> dict[str, object]:
         REAL_BUNDLE_ENV_KEY: "<path-to-real-v11-ACCEPT_FULL-bundle>",
     }
     if settings.brave_search_api_key_env != "BRAVE_SEARCH_API_KEY":
-        required_environment["NSLAB_BRAVE_SEARCH_API_KEY_ENV"] = (
-            settings.brave_search_api_key_env
-        )
+        required_environment["NSLAB_BRAVE_SEARCH_API_KEY_ENV"] = settings.brave_search_api_key_env
     return {
         "required_environment": required_environment,
         "commands": [
@@ -1497,16 +1392,12 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         findings.append(f"context manifest is unreadable: {path}")
     for manifest in invalid_manifest_schemas:
         findings.append(
-            f"context manifest schema_version is invalid in {manifest['path']}: "
-            f"{manifest['schema_version']}"
+            f"context manifest schema_version is invalid in {manifest['path']}: {manifest['schema_version']}"
         )
     for path in missing_model_config:
         findings.append(f"context manifest model_config is missing: {path}")
     for manifest in mock_manifests:
-        findings.append(
-            f"mock LLM model_config present in {manifest['path']}: "
-            f"{', '.join(manifest['mock_values'])}"
-        )
+        findings.append(f"mock LLM model_config present in {manifest['path']}: {', '.join(manifest['mock_values'])}")
     for path in missing_prompt_hash_manifests:
         findings.append(f"context manifest prompt_hashes missing or empty: {path}")
     for manifest in invalid_prompt_hash_manifests:
@@ -1520,10 +1411,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             f"{manifest['path']} ({len(manifest['duplicate_hashes'])})"
         )
     for manifest in invalid_phase1_coverage_manifests:
-        findings.append(
-            f"Phase 1 coverage evidence invalid in {manifest['path']}: "
-            f"{', '.join(manifest['findings'])}"
-        )
+        findings.append(f"Phase 1 coverage evidence invalid in {manifest['path']}: {', '.join(manifest['findings'])}")
     findings.extend(trace_evidence["findings"])
 
     return {
@@ -1545,21 +1433,15 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "missing_prompt_hash_manifests": missing_prompt_hash_manifests,
         "invalid_prompt_hash_manifest_count": len(invalid_prompt_hash_manifests),
         "invalid_prompt_hash_entry_count": sum(
-            len(manifest["invalid_fields"])
-            for manifest in invalid_prompt_hash_manifests
+            len(manifest["invalid_fields"]) for manifest in invalid_prompt_hash_manifests
         ),
         "invalid_prompt_hash_manifests": invalid_prompt_hash_manifests,
-        "duplicate_prompt_hash_manifest_count": len(
-            duplicate_prompt_hash_manifests
-        ),
+        "duplicate_prompt_hash_manifest_count": len(duplicate_prompt_hash_manifests),
         "duplicate_prompt_hash_count": sum(
-            len(manifest["duplicate_hashes"])
-            for manifest in duplicate_prompt_hash_manifests
+            len(manifest["duplicate_hashes"]) for manifest in duplicate_prompt_hash_manifests
         ),
         "duplicate_prompt_hash_manifests": duplicate_prompt_hash_manifests,
-        "invalid_phase1_coverage_manifest_count": len(
-            invalid_phase1_coverage_manifests
-        ),
+        "invalid_phase1_coverage_manifest_count": len(invalid_phase1_coverage_manifests),
         "invalid_phase1_coverage_manifests": invalid_phase1_coverage_manifests,
         "referenced_prompt_hash_count": len(manifest_prompt_hashes),
         "checked_trace_count": trace_evidence["checked_trace_count"],
@@ -1569,38 +1451,22 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
         "invalid_trace_schemas": trace_evidence["invalid_trace_schemas"],
         "invalid_trace_payload_count": trace_evidence["invalid_trace_payload_count"],
         "invalid_trace_payloads": trace_evidence["invalid_trace_payloads"],
-        "missing_trace_prompt_hash_count": trace_evidence[
-            "missing_trace_prompt_hash_count"
-        ],
+        "missing_trace_prompt_hash_count": trace_evidence["missing_trace_prompt_hash_count"],
         "missing_trace_prompt_hashes": trace_evidence["missing_trace_prompt_hashes"],
-        "prompt_hash_purpose_mismatch_count": trace_evidence[
-            "prompt_hash_purpose_mismatch_count"
-        ],
-        "prompt_hash_purpose_mismatches": trace_evidence[
-            "prompt_hash_purpose_mismatches"
-        ],
-        "missing_trace_checkpoint_id_count": trace_evidence[
-            "missing_trace_checkpoint_id_count"
-        ],
-        "missing_trace_checkpoint_id_traces": trace_evidence[
-            "missing_trace_checkpoint_id_traces"
-        ],
+        "prompt_hash_purpose_mismatch_count": trace_evidence["prompt_hash_purpose_mismatch_count"],
+        "prompt_hash_purpose_mismatches": trace_evidence["prompt_hash_purpose_mismatches"],
+        "missing_trace_checkpoint_id_count": trace_evidence["missing_trace_checkpoint_id_count"],
+        "missing_trace_checkpoint_id_traces": trace_evidence["missing_trace_checkpoint_id_traces"],
         "mock_trace_count": trace_evidence["mock_trace_count"],
         "mock_traces": trace_evidence["mock_traces"],
         "checked_checkpoint_count": trace_evidence["checked_checkpoint_count"],
         "unreadable_checkpoint_count": trace_evidence["unreadable_checkpoint_count"],
         "unreadable_checkpoints": trace_evidence["unreadable_checkpoints"],
-        "invalid_checkpoint_schema_count": trace_evidence[
-            "invalid_checkpoint_schema_count"
-        ],
-        "invalid_checkpoint_schemas": trace_evidence[
-            "invalid_checkpoint_schemas"
-        ],
+        "invalid_checkpoint_schema_count": trace_evidence["invalid_checkpoint_schema_count"],
+        "invalid_checkpoint_schemas": trace_evidence["invalid_checkpoint_schemas"],
         "checkpoint_id_mismatch_count": trace_evidence["checkpoint_id_mismatch_count"],
         "checkpoint_id_mismatches": trace_evidence["checkpoint_id_mismatches"],
-        "checkpoint_trace_mismatch_count": trace_evidence[
-            "checkpoint_trace_mismatch_count"
-        ],
+        "checkpoint_trace_mismatch_count": trace_evidence["checkpoint_trace_mismatch_count"],
         "checkpoint_trace_mismatches": trace_evidence["checkpoint_trace_mismatches"],
         "mock_checkpoint_count": trace_evidence["mock_checkpoint_count"],
         "mock_checkpoints": trace_evidence["mock_checkpoints"],
@@ -1614,12 +1480,8 @@ def _phase1_coverage_evidence_findings(
     summary = manifest.get("event_cluster_summary")
     model_config = manifest.get("model_config")
     phase1 = (
-        isinstance(model_config, dict)
-        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
-    ) or (
-        isinstance(summary, dict)
-        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
-    )
+        isinstance(model_config, dict) and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (isinstance(summary, dict) and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION)
     if not phase1:
         return []
     if not isinstance(summary, dict) or summary.get("cluster_method") != EVENT_CLUSTERING_VERSION:
@@ -1648,10 +1510,7 @@ def _phase1_coverage_evidence_findings(
         if path is None or not path.is_file():
             findings.append(f"{label}_artifact_missing")
             continue
-        if (
-            not isinstance(expected_hash, str)
-            or sha256_text(path.read_text(encoding="utf-8")) != expected_hash
-        ):
+        if not isinstance(expected_hash, str) or sha256_text(path.read_text(encoding="utf-8")) != expected_hash:
             findings.append(f"{label}_hash_mismatch")
             continue
         try:
@@ -1682,12 +1541,9 @@ def _phase1_coverage_evidence_findings(
         or clusters.duplicate_assignment_count != 0
         or not isinstance(model_config, dict)
         or clusters.clustering_version != model_config.get("event_clustering_version")
-        or clusters.embedding_batch_size
-        != model_config.get("event_cluster_embedding_batch_size")
-        or clusters.similarity_threshold
-        != model_config.get("event_cluster_similarity_threshold")
-        or clusters.max_semantic_variants
-        != model_config.get("event_cluster_max_semantic_variants")
+        or clusters.embedding_batch_size != model_config.get("event_cluster_embedding_batch_size")
+        or clusters.similarity_threshold != model_config.get("event_cluster_similarity_threshold")
+        or clusters.max_semantic_variants != model_config.get("event_cluster_max_semantic_variants")
         or clusters.embedding_provider != summary.get("embedding_method")
         or clusters.embedding_status != summary.get("embedding_status")
         or clusters.embedding_status not in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
@@ -1735,27 +1591,17 @@ def _phase1_coverage_evidence_findings(
     if expected != observed:
         findings.append("row_cluster_lineage_mismatch")
     material_cluster_ids = [
-        cluster.cluster_id
-        for cluster in clusters.clusters
-        if cluster.disposition == "MATERIAL_FULL_RETRIEVAL"
+        cluster.cluster_id for cluster in clusters.clusters if cluster.disposition == "MATERIAL_FULL_RETRIEVAL"
     ]
     if (
         open_world.run_id != manifest.get("run_id")
-        or open_world.prompt_version
-        != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+        or open_world.prompt_version != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
         or open_world.source_cluster_ids != material_cluster_ids
         or open_world.analyzed_cluster_ids != material_cluster_ids
         or open_world.uncovered_cluster_ids
-        or [finding.cluster_id for finding in open_world.cluster_findings]
-        != material_cluster_ids
-        or (
-            not material_cluster_ids
-            and open_world.analysis_batch_count != 0
-        )
-        or (
-            bool(material_cluster_ids)
-            and open_world.analysis_batch_count < 1
-        )
+        or [finding.cluster_id for finding in open_world.cluster_findings] != material_cluster_ids
+        or (not material_cluster_ids and open_world.analysis_batch_count != 0)
+        or (bool(material_cluster_ids) and open_world.analysis_batch_count < 1)
     ):
         findings.append("open_world_cluster_coverage_mismatch")
     news_path = _project_relative_artifact_path(root, manifest.get("news_file"))
@@ -1834,11 +1680,7 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
         if not isinstance(value, str) or not value:
             invalid_fields.append(field)
             continue
-        declared_batches = (
-            prompt_batch_hashes.get(field)
-            if isinstance(prompt_batch_hashes, dict)
-            else None
-        )
+        declared_batches = prompt_batch_hashes.get(field) if isinstance(prompt_batch_hashes, dict) else None
         if isinstance(declared_batches, list):
             if not all(isinstance(item, str) and item for item in declared_batches):
                 invalid_fields.append(f"prompt_batch_hashes.{field}")
@@ -1853,11 +1695,7 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
                 invalid_fields.append(f"prompt_batch_hashes.{field}.aggregate")
                 continue
             for index, batch_hash in enumerate(normalized_batches, start=1):
-                batch_field = (
-                    field
-                    if len(normalized_batches) == 1
-                    else f"{field}.batch_{index:04d}"
-                )
+                batch_field = field if len(normalized_batches) == 1 else f"{field}.batch_{index:04d}"
                 values.add(batch_hash)
                 fields_by_hash.setdefault(batch_hash, set()).add(batch_field)
             continue
@@ -1868,9 +1706,7 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
         invalid_fields=sorted(invalid_fields),
         fields_by_hash=fields_by_hash,
         duplicate_hashes={
-            prompt_hash: sorted(fields)
-            for prompt_hash, fields in fields_by_hash.items()
-            if len(fields) > 1
+            prompt_hash: sorted(fields) for prompt_hash, fields in fields_by_hash.items() if len(fields) > 1
         },
     )
 
@@ -1936,9 +1772,7 @@ def _production_llm_trace_evidence_status(
         matched_prompt_hashes.add(prompt_hash)
         checked_traces.append(trace_path)
         expected_purposes = _expected_llm_trace_purposes(
-            manifest_prompt_hash_fields.get(prompt_hash, set())
-            if manifest_prompt_hash_fields is not None
-            else set()
+            manifest_prompt_hash_fields.get(prompt_hash, set()) if manifest_prompt_hash_fields is not None else set()
         )
         trace_purpose = trace.get("purpose")
         if expected_purposes and trace_purpose not in expected_purposes:
@@ -2083,9 +1917,7 @@ def _production_llm_trace_evidence_status(
                         "trace": trace_ref["path"],
                         "trace_id": trace_ref.get("trace_id"),
                         "field": field,
-                        "trace_value": _expected_checkpoint_trace_value(
-                            trace_ref, field
-                        ),
+                        "trace_value": _expected_checkpoint_trace_value(trace_ref, field),
                         "checkpoint_value": checkpoint.get(field),
                     }
                 )
@@ -2104,10 +1936,7 @@ def _production_llm_trace_evidence_status(
     for path in unreadable_traces:
         findings.append(f"referenced LLM trace is unreadable: {path}")
     for trace in invalid_trace_schemas:
-        findings.append(
-            f"referenced LLM trace schema_version is invalid in {trace['path']}: "
-            f"{trace['schema_version']}"
-        )
+        findings.append(f"referenced LLM trace schema_version is invalid in {trace['path']}: {trace['schema_version']}")
     for trace in invalid_trace_payloads:
         findings.append(
             f"referenced LLM trace payload contract mismatch in {trace['path']}: "
@@ -2116,17 +1945,11 @@ def _production_llm_trace_evidence_status(
     for prompt_hash in missing_trace_prompt_hashes:
         findings.append(f"referenced LLM prompt hash has no matching trace: {prompt_hash}")
     for mismatch in prompt_hash_purpose_mismatches:
-        findings.append(
-            f"referenced LLM trace purpose does not match manifest prompt_hashes: "
-            f"{mismatch['path']}"
-        )
+        findings.append(f"referenced LLM trace purpose does not match manifest prompt_hashes: {mismatch['path']}")
     for trace in missing_trace_checkpoint_id_traces:
         findings.append(f"referenced LLM trace missing checkpoint_id: {trace['path']}")
     for trace in mock_traces:
-        findings.append(
-            f"mock LLM trace present in {trace['path']}: "
-            f"{', '.join(trace['mock_values'])}"
-        )
+        findings.append(f"mock LLM trace present in {trace['path']}: {', '.join(trace['mock_values'])}")
     for path in unreadable_checkpoints:
         findings.append(f"referenced LLM checkpoint is unreadable: {path}")
     for checkpoint in invalid_checkpoint_schemas:
@@ -2146,10 +1969,7 @@ def _production_llm_trace_evidence_status(
             f"{mismatch['field']} differs from {mismatch['trace']}"
         )
     for checkpoint in mock_checkpoints:
-        findings.append(
-            f"mock LLM checkpoint present in {checkpoint['path']}: "
-            f"{', '.join(checkpoint['mock_values'])}"
-        )
+        findings.append(f"mock LLM checkpoint present in {checkpoint['path']}: {', '.join(checkpoint['mock_values'])}")
 
     return {
         "findings": findings,
@@ -2195,11 +2015,7 @@ def _llm_trace_payload_mismatches(trace: dict[str, Any]) -> list[str]:
         mismatches.append("output_sha256_missing")
     elif "output_sha256" in trace:
         trace_output = trace.get("output")
-        expected_output_hash = (
-            sha256_text(canonical_json(trace_output))
-            if trace_output is not None
-            else None
-        )
+        expected_output_hash = sha256_text(canonical_json(trace_output)) if trace_output is not None else None
         if trace.get("output_sha256") != expected_output_hash:
             mismatches.append("output_sha256")
     status = trace.get("status")
@@ -2214,8 +2030,7 @@ def _llm_trace_payload_mismatches(trace: dict[str, Any]) -> list[str]:
             operation = trace.get("operation")
             completion_tokens = token_usage.get("completion_tokens_estimate")
             if operation in {"generate_text", "generate_structured"} and (
-                not isinstance(completion_tokens, int)
-                or isinstance(completion_tokens, bool)
+                not isinstance(completion_tokens, int) or isinstance(completion_tokens, bool)
             ):
                 mismatches.append("completion_tokens_estimate_missing")
     return mismatches
@@ -2239,11 +2054,7 @@ def _expected_llm_trace_purposes(fields: set[str]) -> set[str]:
 
 
 def _trace_top_level_metadata(trace: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in trace.items()
-        if key not in LLM_TRACE_CORE_FIELDS
-    }
+    return {key: value for key, value in trace.items() if key not in LLM_TRACE_CORE_FIELDS}
 
 
 def _checkpoint_trace_field_compatible(
@@ -2277,10 +2088,7 @@ def _checkpoint_metadata_compatible(
     top_level_metadata = trace_ref.get("top_level_metadata")
     if not isinstance(top_level_metadata, dict):
         return False
-    return all(
-        top_level_metadata.get(key) == value
-        for key, value in checkpoint_metadata.items()
-    )
+    return all(top_level_metadata.get(key) == value for key, value in checkpoint_metadata.items())
 
 
 def _trace_prompt_hash(trace: dict[str, Any]) -> str | None:
@@ -2363,9 +2171,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
             if source_field is not None:
                 expected_source_ids = _string_list(manifest.get(source_field))
                 try:
-                    source_id_status = _web_evidence_artifact_source_id_status(
-                        artifact_path
-                    )
+                    source_id_status = _web_evidence_artifact_source_id_status(artifact_path)
                 except OSError:
                     source_id_status = WebEvidenceSourceIdStatus(
                         source_ids=[],
@@ -2381,9 +2187,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                             "source_field": source_field,
                             "artifact": relative_artifact_path,
                             "row_count": source_id_status.row_count,
-                            "missing_source_id_count": (
-                                source_id_status.missing_source_id_count
-                            ),
+                            "missing_source_id_count": (source_id_status.missing_source_id_count),
                         }
                     )
                 if (
@@ -2420,9 +2224,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                             "artifact_field": field,
                             "artifact": relative_artifact_path,
                             "checked_row_count": cutoff_status.checked_row_count,
-                            "missing_verification_count": (
-                                cutoff_status.missing_verification_count
-                            ),
+                            "missing_verification_count": (cutoff_status.missing_verification_count),
                         }
                     )
                 if cutoff_status.failed_verification_count:
@@ -2432,9 +2234,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                             "artifact_field": field,
                             "artifact": relative_artifact_path,
                             "checked_row_count": cutoff_status.checked_row_count,
-                            "failed_verification_count": (
-                                cutoff_status.failed_verification_count
-                            ),
+                            "failed_verification_count": (cutoff_status.failed_verification_count),
                         }
                     )
                 if cutoff_status.after_cutoff_count:
@@ -2454,9 +2254,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
                             "artifact_field": field,
                             "artifact": relative_artifact_path,
                             "checked_row_count": cutoff_status.checked_row_count,
-                            "invalid_timestamp_count": (
-                                cutoff_status.invalid_timestamp_count
-                            ),
+                            "invalid_timestamp_count": (cutoff_status.invalid_timestamp_count),
                         }
                     )
             sha_field = PRODUCTION_WEB_EVIDENCE_ARTIFACT_SHA_FIELDS[field]
@@ -2534,13 +2332,11 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         findings.append(f"context manifest is unreadable: {path}")
     for manifest in invalid_manifest_schemas:
         findings.append(
-            f"context manifest schema_version is invalid in {manifest['path']}: "
-            f"{manifest['schema_version']}"
+            f"context manifest schema_version is invalid in {manifest['path']}: {manifest['schema_version']}"
         )
     for ref in invalid_artifact_refs:
         findings.append(
-            "web evidence artifact reference is invalid: "
-            f"{ref['manifest']} {ref['artifact_field']}={ref['artifact']}"
+            f"web evidence artifact reference is invalid: {ref['manifest']} {ref['artifact_field']}={ref['artifact']}"
         )
     for artifact in missing_artifacts:
         findings.append(
@@ -2580,8 +2376,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         )
     for artifact in artifact_cutoff_after:
         findings.append(
-            f"web evidence artifact has rows after cutoff: "
-            f"{artifact['artifact']} ({artifact['after_cutoff_count']})"
+            f"web evidence artifact has rows after cutoff: {artifact['artifact']} ({artifact['after_cutoff_count']})"
         )
     for artifact in artifact_cutoff_invalid_timestamps:
         findings.append(
@@ -2592,8 +2387,7 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         findings.append(f"web evidence artifact is unreadable: {path}")
     for artifact in invalid_json_artifacts:
         findings.append(
-            f"web evidence artifact contains invalid JSON: {artifact['path']} "
-            f"({artifact['invalid_json_count']})"
+            f"web evidence artifact contains invalid JSON: {artifact['path']} ({artifact['invalid_json_count']})"
         )
     for path in empty_artifacts:
         findings.append(f"web evidence artifact has no evidence rows: {path}")
@@ -2601,21 +2395,12 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         mock_url_count = int(artifact["mock_url_count"])
         mock_metadata_count = int(artifact["mock_metadata_count"])
         if mock_url_count:
-            findings.append(
-                f"mock web source URLs present in {artifact['path']} "
-                f"({mock_url_count})"
-            )
+            findings.append(f"mock web source URLs present in {artifact['path']} ({mock_url_count})")
         if mock_metadata_count:
-            findings.append(
-                f"mock web provider metadata present in {artifact['path']} "
-                f"({mock_metadata_count})"
-            )
+            findings.append(f"mock web provider metadata present in {artifact['path']} ({mock_metadata_count})")
     for artifact in placeholder_artifacts:
         placeholder_url_count = int(artifact["placeholder_url_count"])
-        findings.append(
-            f"placeholder web source URLs present in {artifact['path']} "
-            f"({placeholder_url_count})"
-        )
+        findings.append(f"placeholder web source URLs present in {artifact['path']} ({placeholder_url_count})")
 
     return {
         "schema_version": "nslab.production_web_evidence.v1",
@@ -2641,58 +2426,40 @@ def _production_web_evidence_status(root: Path) -> dict[str, Any]:
         "artifact_source_id_mismatch_count": len(artifact_source_id_mismatches),
         "artifact_source_id_mismatches": artifact_source_id_mismatches,
         "artifact_missing_source_id_count": sum(
-            int(artifact["missing_source_id_count"])
-            for artifact in artifact_missing_source_ids
+            int(artifact["missing_source_id_count"]) for artifact in artifact_missing_source_ids
         ),
         "artifact_missing_source_id_artifacts": artifact_missing_source_ids,
         "artifact_cutoff_missing_count": sum(
-            int(artifact["missing_verification_count"])
-            for artifact in artifact_cutoff_missing
+            int(artifact["missing_verification_count"]) for artifact in artifact_cutoff_missing
         ),
         "artifact_cutoff_missing_artifacts": artifact_cutoff_missing,
         "artifact_cutoff_failed_count": sum(
-            int(artifact["failed_verification_count"])
-            for artifact in artifact_cutoff_failed
+            int(artifact["failed_verification_count"]) for artifact in artifact_cutoff_failed
         ),
         "artifact_cutoff_failed_artifacts": artifact_cutoff_failed,
-        "artifact_cutoff_after_count": sum(
-            int(artifact["after_cutoff_count"]) for artifact in artifact_cutoff_after
-        ),
+        "artifact_cutoff_after_count": sum(int(artifact["after_cutoff_count"]) for artifact in artifact_cutoff_after),
         "artifact_cutoff_after_artifacts": artifact_cutoff_after,
         "artifact_cutoff_invalid_timestamp_count": sum(
-            int(artifact["invalid_timestamp_count"])
-            for artifact in artifact_cutoff_invalid_timestamps
+            int(artifact["invalid_timestamp_count"]) for artifact in artifact_cutoff_invalid_timestamps
         ),
-        "artifact_cutoff_invalid_timestamp_artifacts": (
-            artifact_cutoff_invalid_timestamps
-        ),
+        "artifact_cutoff_invalid_timestamp_artifacts": (artifact_cutoff_invalid_timestamps),
         "unreadable_artifact_count": len(unreadable_artifacts),
         "unreadable_artifacts": unreadable_artifacts,
-        "invalid_artifact_json_count": sum(
-            int(artifact["invalid_json_count"]) for artifact in invalid_json_artifacts
-        ),
+        "invalid_artifact_json_count": sum(int(artifact["invalid_json_count"]) for artifact in invalid_json_artifacts),
         "invalid_artifact_json_artifacts": invalid_json_artifacts,
         "empty_artifact_count": len(empty_artifacts),
         "empty_artifacts": empty_artifacts,
         "checked_artifact_record_count": sum(artifact_record_counts.values()),
         "artifact_record_counts": artifact_record_counts,
         "mock_web_artifact_count": len(mock_artifacts),
-        "mock_web_url_count": sum(
-            int(artifact["mock_url_count"]) for artifact in mock_artifacts
-        ),
-        "mock_web_metadata_count": sum(
-            int(artifact["mock_metadata_count"]) for artifact in mock_artifacts
-        ),
+        "mock_web_url_count": sum(int(artifact["mock_url_count"]) for artifact in mock_artifacts),
+        "mock_web_metadata_count": sum(int(artifact["mock_metadata_count"]) for artifact in mock_artifacts),
         "mock_web_evidence_count": sum(
-            int(artifact["mock_url_count"]) + int(artifact["mock_metadata_count"])
-            for artifact in mock_artifacts
+            int(artifact["mock_url_count"]) + int(artifact["mock_metadata_count"]) for artifact in mock_artifacts
         ),
         "mock_web_artifacts": mock_artifacts,
         "placeholder_web_artifact_count": len(placeholder_artifacts),
-        "placeholder_web_url_count": sum(
-            int(artifact["placeholder_url_count"])
-            for artifact in placeholder_artifacts
-        ),
+        "placeholder_web_url_count": sum(int(artifact["placeholder_url_count"]) for artifact in placeholder_artifacts),
         "placeholder_web_artifacts": placeholder_artifacts,
     }
 
@@ -2777,9 +2544,7 @@ def _web_evidence_artifact_counts(
     text = path.read_text(encoding="utf-8")
     values = text.split()
     mock_values = [value for value in values if "mock://" in value]
-    placeholder_values = [
-        value for value in values if _is_placeholder_web_url(value)
-    ]
+    placeholder_values = [value for value in values if _is_placeholder_web_url(value)]
     row_count = 1 if text.strip() else 0
     return WebEvidenceArtifactCounts(
         row_count=row_count,
@@ -2853,12 +2618,8 @@ def _web_evidence_artifact_cutoff_status(path: Path) -> WebEvidenceCutoffStatus:
             has_available_before_cutoff = "available_before_cutoff" in row
             if not has_time_verified and not has_available_before_cutoff:
                 missing_verification_count += 1
-            elif (
-                (has_time_verified and row.get("time_verified") is not True)
-                or (
-                    has_available_before_cutoff
-                    and row.get("available_before_cutoff") is not True
-                )
+            elif (has_time_verified and row.get("time_verified") is not True) or (
+                has_available_before_cutoff and row.get("available_before_cutoff") is not True
             ):
                 failed_verification_count += 1
             timestamp_status = _web_evidence_row_timestamp_status(row)
@@ -3007,10 +2768,7 @@ def _is_placeholder_web_url(value: str) -> bool:
     normalized_host = host.rstrip(".").lower()
     if normalized_host in PLACEHOLDER_WEB_EVIDENCE_HOSTS:
         return True
-    return any(
-        normalized_host.endswith(suffix)
-        for suffix in PLACEHOLDER_WEB_EVIDENCE_HOST_SUFFIXES
-    )
+    return any(normalized_host.endswith(suffix) for suffix in PLACEHOLDER_WEB_EVIDENCE_HOST_SUFFIXES)
 
 
 def _mock_provider_metadata_values(value: object) -> list[str]:
@@ -3080,29 +2838,25 @@ def _production_episode_coverage_status(
             "episode_coverage_brain_version": None,
             "expected_brain_version": (
                 brain_manifest.get("brain_version")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("brain_version"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("brain_version"), str)
                 else None
             ),
             "episode_coverage_created_at": None,
             "expected_created_at": (
                 brain_manifest.get("created_at")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("created_at"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("created_at"), str)
                 else None
             ),
             "episode_coverage_build_mode": None,
             "expected_build_mode": (
                 brain_manifest.get("build_mode")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("build_mode"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("build_mode"), str)
                 else None
             ),
             "episode_coverage_catalog_only": None,
             "expected_catalog_only": (
                 brain_manifest.get("catalog_only")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("catalog_only"), bool)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("catalog_only"), bool)
                 else None
             ),
             "episode_coverage_accepted_episode_count": None,
@@ -3137,29 +2891,25 @@ def _production_episode_coverage_status(
             "episode_coverage_brain_version": None,
             "expected_brain_version": (
                 brain_manifest.get("brain_version")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("brain_version"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("brain_version"), str)
                 else None
             ),
             "episode_coverage_created_at": None,
             "expected_created_at": (
                 brain_manifest.get("created_at")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("created_at"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("created_at"), str)
                 else None
             ),
             "episode_coverage_build_mode": None,
             "expected_build_mode": (
                 brain_manifest.get("build_mode")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("build_mode"), str)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("build_mode"), str)
                 else None
             ),
             "episode_coverage_catalog_only": None,
             "expected_catalog_only": (
                 brain_manifest.get("catalog_only")
-                if isinstance(brain_manifest, dict)
-                and isinstance(brain_manifest.get("catalog_only"), bool)
+                if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("catalog_only"), bool)
                 else None
             ),
             "episode_coverage_accepted_episode_count": None,
@@ -3195,23 +2945,13 @@ def _production_episode_coverage_status(
     missing_episode_ids = _string_list(raw_missing_episode_ids)
     covered_episode_id_set = set(covered_episode_ids)
     expected_episode_id_set = set(expected_covered_episode_ids)
-    missing_covered_episode_ids = sorted(
-        expected_episode_id_set - covered_episode_id_set
-    )
-    unexpected_covered_episode_ids = sorted(
-        covered_episode_id_set - expected_episode_id_set
-    )
+    missing_covered_episode_ids = sorted(expected_episode_id_set - covered_episode_id_set)
+    unexpected_covered_episode_ids = sorted(covered_episode_id_set - expected_episode_id_set)
     expected_missing_episode_ids = missing_covered_episode_ids
     missing_episode_id_set = set(missing_episode_ids)
-    unknown_missing_episode_ids = sorted(
-        missing_episode_id_set - expected_episode_id_set
-    )
-    missing_missing_episode_ids = sorted(
-        set(expected_missing_episode_ids) - missing_episode_id_set
-    )
-    unexpected_missing_episode_ids = sorted(
-        missing_episode_id_set - set(expected_missing_episode_ids)
-    )
+    unknown_missing_episode_ids = sorted(missing_episode_id_set - expected_episode_id_set)
+    missing_missing_episode_ids = sorted(set(expected_missing_episode_ids) - missing_episode_id_set)
+    unexpected_missing_episode_ids = sorted(missing_episode_id_set - set(expected_missing_episode_ids))
 
     if not _string_list_field_valid(raw_covered_episode_ids):
         findings.append("coverage manifest covered_episode_ids is missing or invalid")
@@ -3241,9 +2981,7 @@ def _production_episode_coverage_status(
         and expected_accepted_episode_count is not None
         and accepted_episode_count != expected_accepted_episode_count
     ):
-        findings.append(
-            "coverage manifest accepted_episode_count does not match accepted episodes"
-        )
+        findings.append("coverage manifest accepted_episode_count does not match accepted episodes")
     if covered_episode_count is None:
         findings.append("coverage manifest covered_episode_count is missing")
     elif covered_episode_count != len(covered_episode_ids):
@@ -3253,17 +2991,13 @@ def _production_episode_coverage_status(
         and covered_episode_count is not None
         and covered_episode_count != len(expected_episode_id_set - missing_episode_id_set)
     ):
-        findings.append(
-            "coverage manifest covered count does not match accepted episodes"
-        )
+        findings.append("coverage manifest covered count does not match accepted episodes")
 
     has_findings_before_complete_check = bool(findings)
     if manifest.get("coverage_complete") is not True:
         findings.append("coverage manifest is not marked complete")
     elif has_findings_before_complete_check:
-        findings.append(
-            "coverage manifest is marked complete despite production findings"
-        )
+        findings.append("coverage manifest is marked complete despite production findings")
 
     metadata = _episode_coverage_metadata_status(
         manifest,
@@ -3333,9 +3067,7 @@ def _production_record_coverage_status(
     expected_record_coverage_as_of = None
     if expected_record_coverage_as_of_raw is not None:
         try:
-            expected_record_coverage_as_of = parse_datetime(
-                expected_record_coverage_as_of_raw
-            )
+            expected_record_coverage_as_of = parse_datetime(expected_record_coverage_as_of_raw)
         except ValueError:
             expected_record_coverage_as_of = None
     accepted_episode_store_readable = True
@@ -3348,11 +3080,7 @@ def _production_record_coverage_status(
         accepted_episode_store_error = type(exc).__name__
 
     if not isinstance(record_coverage, dict):
-        unavailable_findings = (
-            list(read_findings)
-            if read_findings
-            else ["record coverage manifest is missing"]
-        )
+        unavailable_findings = list(read_findings) if read_findings else ["record coverage manifest is missing"]
         return {
             "schema_version": "nslab.production_record_coverage.v1",
             "passed": False,
@@ -3405,25 +3133,17 @@ def _production_record_coverage_status(
     store_record_ids = [record.record_id for record in store_records]
     store_record_id_set = set(store_record_ids)
     store_record_count = len(store_record_id_set)
-    store_training_eligible_count = sum(
-        1 for record in store_records if record.training_eligible
+    store_training_eligible_count = sum(1 for record in store_records if record.training_eligible)
+    store_ineligible_count = sum(1 for record in store_records if not record.training_eligible)
+    store_routing = [record_routing_metadata(record) for record in store_records]
+    store_phase_audit_only_count = sum(1 for record in store_records if record.evidence_phase == "AUDIT")
+    store_routing_audit_only_count = sum(
+        1 for routing in store_routing if routing.routing_disposition in {"AUDIT", "QUARANTINED"}
     )
-    store_ineligible_count = sum(
-        1 for record in store_records if not record.training_eligible
-    )
-    store_audit_only_count = sum(
-        1 for record in store_records if record.evidence_phase == "AUDIT"
-    )
-    store_counts_by_type = dict(
-        sorted(Counter(record.record_type for record in store_records).items())
-    )
-    store_counts_by_phase = dict(
-        sorted(Counter(record.evidence_phase for record in store_records).items())
-    )
+    store_counts_by_type = dict(sorted(Counter(record.record_type for record in store_records).items()))
+    store_counts_by_phase = dict(sorted(Counter(record.evidence_phase for record in store_records).items()))
     store_counts_by_target = dict(
-        sorted(
-            Counter(record.training_target or "UNKNOWN" for record in store_records).items()
-        )
+        sorted(Counter(record.training_target or "UNKNOWN" for record in store_records).items())
     )
     raw_coverage_as_of = record_coverage.get("record_coverage_as_of")
     coverage_as_of = _record_coverage_as_of(record_coverage)
@@ -3431,30 +3151,27 @@ def _production_record_coverage_status(
     store_training_eligible_as_of_count: int | None = None
     if not isinstance(raw_coverage_as_of, str) or coverage_as_of is None:
         findings.append("record coverage manifest record_coverage_as_of is missing or invalid")
-    elif (
-        expected_record_coverage_as_of is not None
-        and coverage_as_of != expected_record_coverage_as_of
-    ):
-        findings.append(
-            "record coverage manifest record_coverage_as_of does not match current brain manifest"
-        )
-    if (
-        expected_record_coverage_as_of_raw is not None
-        and expected_record_coverage_as_of is None
-    ):
+    elif expected_record_coverage_as_of is not None and coverage_as_of != expected_record_coverage_as_of:
+        findings.append("record coverage manifest record_coverage_as_of does not match current brain manifest")
+    if expected_record_coverage_as_of_raw is not None and expected_record_coverage_as_of is None:
         findings.append("current brain manifest created_at is invalid")
     if coverage_as_of is not None:
         available_as_of = [
-            record
-            for record in store_records
-            if is_available_as_of(record.available_from, coverage_as_of)
+            record for record in store_records if is_available_as_of(record.available_from, coverage_as_of)
         ]
         store_available_as_of_count = len(available_as_of)
-        store_training_eligible_as_of_count = sum(
-            1 for record in available_as_of if record.training_eligible
-        )
-    if record_coverage.get("schema_version") != "nslab.record_coverage_manifest.v1":
+        store_training_eligible_as_of_count = sum(1 for record in available_as_of if record.training_eligible)
+    record_coverage_schema = record_coverage.get("schema_version")
+    if record_coverage_schema not in {
+        "nslab.record_coverage_manifest.v1",
+        "nslab.record_coverage_manifest.v2",
+    }:
         findings.append("record coverage manifest schema_version is invalid")
+    store_audit_only_count = (
+        store_routing_audit_only_count
+        if record_coverage_schema == "nslab.record_coverage_manifest.v2"
+        else store_phase_audit_only_count
+    )
 
     raw_brain_version = record_coverage.get("brain_version")
     raw_build_mode = record_coverage.get("build_mode")
@@ -3463,23 +3180,17 @@ def _production_record_coverage_status(
         if not isinstance(raw_brain_version, str) or not raw_brain_version:
             findings.append("record coverage manifest brain_version is missing")
         elif raw_brain_version != expected_brain_version:
-            findings.append(
-                "record coverage manifest brain_version does not match current brain manifest"
-            )
+            findings.append("record coverage manifest brain_version does not match current brain manifest")
     if expected_build_mode is not None:
         if not isinstance(raw_build_mode, str) or not raw_build_mode:
             findings.append("record coverage manifest build_mode is missing")
         elif raw_build_mode != expected_build_mode:
-            findings.append(
-                "record coverage manifest build_mode does not match current brain manifest"
-            )
+            findings.append("record coverage manifest build_mode does not match current brain manifest")
     if expected_catalog_only is not None:
         if not isinstance(raw_catalog_only, bool):
             findings.append("record coverage manifest catalog_only is missing")
         elif raw_catalog_only is not expected_catalog_only:
-            findings.append(
-                "record coverage manifest catalog_only does not match current brain manifest"
-            )
+            findings.append("record coverage manifest catalog_only does not match current brain manifest")
 
     accepted_episode_count = _int_from_mapping(
         record_coverage,
@@ -3492,9 +3203,7 @@ def _production_record_coverage_status(
         and expected_accepted_episode_count is not None
         and accepted_episode_count != expected_accepted_episode_count
     ):
-        findings.append(
-            "record coverage manifest accepted_episode_count does not match accepted episodes"
-        )
+        findings.append("record coverage manifest accepted_episode_count does not match accepted episodes")
     if accepted_episode_store_readable is False:
         findings.append("record coverage accepted episode store is unreadable")
 
@@ -3509,10 +3218,7 @@ def _production_record_coverage_status(
         "ineligible_record_count",
         "audit_only_record_count",
     )
-    counts = {
-        key: _int_from_mapping(record_coverage, key)
-        for key in count_keys
-    }
+    counts = {key: _int_from_mapping(record_coverage, key) for key in count_keys}
     for key, value in counts.items():
         if value is None:
             findings.append(f"record coverage manifest {key} is missing")
@@ -3535,12 +3241,8 @@ def _production_record_coverage_status(
     unexpected_swept_record_ids = unknown_swept_record_ids
     expected_unswept_record_ids = missing_swept_record_ids
     unknown_unswept_record_ids = sorted(set(unswept_record_ids) - store_record_id_set)
-    missing_unswept_record_ids = sorted(
-        set(expected_unswept_record_ids) - set(unswept_record_ids)
-    )
-    unexpected_unswept_record_ids = sorted(
-        set(unswept_record_ids) - set(expected_unswept_record_ids)
-    )
+    missing_unswept_record_ids = sorted(set(expected_unswept_record_ids) - set(unswept_record_ids))
+    unexpected_unswept_record_ids = sorted(set(unswept_record_ids) - set(expected_unswept_record_ids))
     if record_store_readable is True and unknown_swept_record_ids:
         findings.append("record coverage manifest swept IDs reference unknown records")
     if record_store_readable is True and missing_swept_record_ids:
@@ -3555,24 +3257,29 @@ def _production_record_coverage_status(
         findings.append("record coverage manifest unswept IDs do not match record store")
 
     count_maps = {
-        "record_counts_by_type": _int_dict(
-            record_coverage.get("record_counts_by_type")
-        ),
-        "record_counts_by_evidence_phase": _int_dict(
-            record_coverage.get("record_counts_by_evidence_phase")
-        ),
-        "record_counts_by_training_target": _int_dict(
-            record_coverage.get("record_counts_by_training_target")
-        ),
+        "record_counts_by_type": _int_dict(record_coverage.get("record_counts_by_type")),
+        "record_counts_by_evidence_phase": _int_dict(record_coverage.get("record_counts_by_evidence_phase")),
+        "record_counts_by_training_target": _int_dict(record_coverage.get("record_counts_by_training_target")),
     }
+    if record_coverage_schema == "nslab.record_coverage_manifest.v2":
+        count_maps.update(
+            {
+                "record_counts_by_evidence_polarity": _int_dict(
+                    record_coverage.get("record_counts_by_evidence_polarity")
+                ),
+                "record_counts_by_label_quality": _int_dict(record_coverage.get("record_counts_by_label_quality")),
+                "record_counts_by_routing_disposition": _int_dict(
+                    record_coverage.get("record_counts_by_routing_disposition")
+                ),
+                "record_routing_cross_table": _int_dict(record_coverage.get("record_routing_cross_table")),
+            }
+        )
     for key, values in count_maps.items():
         raw_value = record_coverage.get(key)
         if not isinstance(raw_value, dict):
             findings.append(f"record coverage manifest {key} is missing")
         elif len(values) != len(raw_value):
-            findings.append(
-                f"record coverage manifest {key} contains non-integer values"
-            )
+            findings.append(f"record coverage manifest {key} contains non-integer values")
 
     accepted_count = counts["accepted_record_count"]
     available_count = counts["available_record_count"]
@@ -3587,163 +3294,90 @@ def _production_record_coverage_status(
     if accepted_count is not None:
         for key, values in count_maps.items():
             if isinstance(record_coverage.get(key), dict) and sum(values.values()) != accepted_count:
-                findings.append(
-                    f"record coverage manifest {key} does not sum to accepted records"
-                )
-    if (
-        accepted_count is not None
-        and available_count is not None
-        and available_count > accepted_count
-    ):
+                findings.append(f"record coverage manifest {key} does not sum to accepted records")
+    if accepted_count is not None and available_count is not None and available_count > accepted_count:
         findings.append("record coverage manifest available count exceeds accepted count")
-    if (
-        record_store_readable is True
-        and accepted_count is not None
-        and accepted_count != store_record_count
-    ):
-        findings.append(
-            "record coverage manifest accepted count does not match record store"
-        )
-    if (
-        record_store_readable is True
-        and available_count is not None
-        and available_count != store_record_count
-    ):
-        findings.append(
-            "record coverage manifest available count does not match record store"
-        )
-    if (
-        available_count is not None
-        and available_count_as_of is not None
-        and available_count_as_of > available_count
-    ):
+    if record_store_readable is True and accepted_count is not None and accepted_count != store_record_count:
+        findings.append("record coverage manifest accepted count does not match record store")
+    if record_store_readable is True and available_count is not None and available_count != store_record_count:
+        findings.append("record coverage manifest available count does not match record store")
+    if available_count is not None and available_count_as_of is not None and available_count_as_of > available_count:
         findings.append("record coverage manifest as-of available count exceeds available count")
     if (
         store_available_as_of_count is not None
         and available_count_as_of is not None
         and available_count_as_of != store_available_as_of_count
     ):
-        findings.append(
-            "record coverage manifest as-of available count does not match record store"
-        )
-    if (
-        accepted_count is not None
-        and compiled_count is not None
-        and compiled_count != accepted_count
-    ):
-        findings.append(
-            "record coverage manifest compiled count does not match accepted count"
-        )
-    if (
-        record_store_readable is True
-        and compiled_count is not None
-        and compiled_count != store_record_count
-    ):
-        findings.append(
-            "record coverage manifest compiled count does not match record store"
-        )
+        findings.append("record coverage manifest as-of available count does not match record store")
+    if accepted_count is not None and compiled_count is not None and compiled_count != accepted_count:
+        findings.append("record coverage manifest compiled count does not match accepted count")
+    if record_store_readable is True and compiled_count is not None and compiled_count != store_record_count:
+        findings.append("record coverage manifest compiled count does not match record store")
     if swept_count is not None and swept_count != len(swept_record_ids):
         findings.append("record coverage manifest swept count does not match swept IDs")
-    if (
-        available_count is not None
-        and swept_count is not None
-        and swept_count != available_count
-    ):
-        findings.append(
-            "record coverage manifest swept count does not match available count"
-        )
+    if available_count is not None and swept_count is not None and swept_count != available_count:
+        findings.append("record coverage manifest swept count does not match available count")
     if (
         training_eligible_count is not None
         and available_count is not None
         and training_eligible_count > available_count
     ):
-        findings.append(
-            "record coverage manifest training eligible count exceeds available count"
-        )
+        findings.append("record coverage manifest training eligible count exceeds available count")
     if (
         record_store_readable is True
         and training_eligible_count is not None
         and training_eligible_count != store_training_eligible_count
     ):
-        findings.append(
-            "record coverage manifest training eligible count does not match record store"
-        )
+        findings.append("record coverage manifest training eligible count does not match record store")
     if (
         training_eligible_count_as_of is not None
         and available_count_as_of is not None
         and training_eligible_count_as_of > available_count_as_of
     ):
-        findings.append(
-            "record coverage manifest as-of training eligible count exceeds as-of available count"
-        )
+        findings.append("record coverage manifest as-of training eligible count exceeds as-of available count")
     if (
         store_training_eligible_as_of_count is not None
         and training_eligible_count_as_of is not None
         and training_eligible_count_as_of != store_training_eligible_as_of_count
     ):
-        findings.append(
-            "record coverage manifest as-of training eligible count does not match record store"
-        )
-    if (
-        ineligible_count is not None
-        and accepted_count is not None
-        and ineligible_count > accepted_count
-    ):
+        findings.append("record coverage manifest as-of training eligible count does not match record store")
+    if ineligible_count is not None and accepted_count is not None and ineligible_count > accepted_count:
         findings.append("record coverage manifest ineligible count exceeds accepted count")
-    if (
-        record_store_readable is True
-        and ineligible_count is not None
-        and ineligible_count != store_ineligible_count
-    ):
-        findings.append(
-            "record coverage manifest ineligible count does not match record store"
-        )
-    if (
-        audit_only_count is not None
-        and accepted_count is not None
-        and audit_only_count > accepted_count
-    ):
+    if record_store_readable is True and ineligible_count is not None and ineligible_count != store_ineligible_count:
+        findings.append("record coverage manifest ineligible count does not match record store")
+    if audit_only_count is not None and accepted_count is not None and audit_only_count > accepted_count:
         findings.append("record coverage manifest audit-only count exceeds accepted count")
-    if (
-        record_store_readable is True
-        and audit_only_count is not None
-        and audit_only_count != store_audit_only_count
-    ):
-        findings.append(
-            "record coverage manifest audit-only count does not match record store"
-        )
+    if record_store_readable is True and audit_only_count is not None and audit_only_count != store_audit_only_count:
+        findings.append("record coverage manifest audit-only count does not match record store")
     if (
         record_store_readable is True
         and isinstance(record_coverage.get("record_counts_by_type"), dict)
         and count_maps["record_counts_by_type"] != store_counts_by_type
     ):
-        findings.append(
-            "record coverage manifest record_counts_by_type does not match record store"
-        )
+        findings.append("record coverage manifest record_counts_by_type does not match record store")
     if (
         record_store_readable is True
         and isinstance(record_coverage.get("record_counts_by_evidence_phase"), dict)
         and count_maps["record_counts_by_evidence_phase"] != store_counts_by_phase
     ):
-        findings.append(
-            "record coverage manifest record_counts_by_evidence_phase does not match record store"
-        )
+        findings.append("record coverage manifest record_counts_by_evidence_phase does not match record store")
     if (
         record_store_readable is True
         and isinstance(record_coverage.get("record_counts_by_training_target"), dict)
         and count_maps["record_counts_by_training_target"] != store_counts_by_target
     ):
-        findings.append(
-            "record coverage manifest record_counts_by_training_target does not match record store"
-        )
+        findings.append("record coverage manifest record_counts_by_training_target does not match record store")
+    if record_coverage_schema == "nslab.record_coverage_manifest.v2":
+        store_routing_maps = _routing_count_maps(store_routing)
+        for key, expected in store_routing_maps.items():
+            if count_maps.get(key) != expected:
+                findings.append(f"record coverage manifest {key} does not match record store")
 
     has_findings_before_complete_check = bool(findings)
     if record_coverage.get("coverage_complete") is not True:
         findings.append("record coverage manifest is not marked complete")
     elif has_findings_before_complete_check:
-        findings.append(
-            "record coverage manifest is marked complete despite production findings"
-        )
+        findings.append("record coverage manifest is marked complete despite production findings")
 
     return {
         "schema_version": "nslab.production_record_coverage.v1",
@@ -3751,21 +3385,13 @@ def _production_record_coverage_status(
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
         "findings": findings,
-        "record_coverage_as_of": raw_coverage_as_of
-        if isinstance(raw_coverage_as_of, str)
-        else None,
+        "record_coverage_as_of": raw_coverage_as_of if isinstance(raw_coverage_as_of, str) else None,
         "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
-        "record_coverage_brain_version": raw_brain_version
-        if isinstance(raw_brain_version, str)
-        else None,
+        "record_coverage_brain_version": raw_brain_version if isinstance(raw_brain_version, str) else None,
         "expected_brain_version": expected_brain_version,
-        "record_coverage_build_mode": raw_build_mode
-        if isinstance(raw_build_mode, str)
-        else None,
+        "record_coverage_build_mode": raw_build_mode if isinstance(raw_build_mode, str) else None,
         "expected_build_mode": expected_build_mode,
-        "record_coverage_catalog_only": raw_catalog_only
-        if isinstance(raw_catalog_only, bool)
-        else None,
+        "record_coverage_catalog_only": raw_catalog_only if isinstance(raw_catalog_only, bool) else None,
         "expected_catalog_only": expected_catalog_only,
         "record_coverage_accepted_episode_count": accepted_episode_count,
         "expected_accepted_episode_count": expected_accepted_episode_count,
@@ -3789,12 +3415,12 @@ def _production_record_coverage_status(
         "missing_unswept_record_ids": missing_unswept_record_ids,
         "unexpected_unswept_record_ids": unexpected_unswept_record_ids,
         "record_counts_by_type": count_maps["record_counts_by_type"],
-        "record_counts_by_evidence_phase": count_maps[
-            "record_counts_by_evidence_phase"
-        ],
-        "record_counts_by_training_target": count_maps[
-            "record_counts_by_training_target"
-        ],
+        "record_counts_by_evidence_phase": count_maps["record_counts_by_evidence_phase"],
+        "record_counts_by_training_target": count_maps["record_counts_by_training_target"],
+        "record_counts_by_evidence_polarity": count_maps.get("record_counts_by_evidence_polarity", {}),
+        "record_counts_by_label_quality": count_maps.get("record_counts_by_label_quality", {}),
+        "record_counts_by_routing_disposition": count_maps.get("record_counts_by_routing_disposition", {}),
+        "record_routing_cross_table": count_maps.get("record_routing_cross_table", {}),
         "ineligible_record_count": ineligible_count,
         "audit_only_record_count": audit_only_count,
         "coverage_complete": record_coverage.get("coverage_complete"),
@@ -3804,19 +3430,14 @@ def _production_record_coverage_status(
         "record_store_counts_by_type": store_counts_by_type,
         "record_store_counts_by_evidence_phase": store_counts_by_phase,
         "record_store_counts_by_training_target": store_counts_by_target,
+        "record_store_routing_counts": _routing_count_maps(store_routing),
         "record_store_training_eligible_record_count": (
             store_training_eligible_count if record_store_readable else None
         ),
-        "record_store_ineligible_record_count": (
-            store_ineligible_count if record_store_readable else None
-        ),
-        "record_store_audit_only_record_count": (
-            store_audit_only_count if record_store_readable else None
-        ),
+        "record_store_ineligible_record_count": (store_ineligible_count if record_store_readable else None),
+        "record_store_audit_only_record_count": (store_audit_only_count if record_store_readable else None),
         "record_store_available_record_count_as_of": store_available_as_of_count,
-        "record_store_training_eligible_record_count_as_of": (
-            store_training_eligible_as_of_count
-        ),
+        "record_store_training_eligible_record_count_as_of": (store_training_eligible_as_of_count),
         "unknown_swept_record_ids": unknown_swept_record_ids,
         "missing_swept_record_ids": missing_swept_record_ids,
     }
@@ -3829,19 +3450,13 @@ def _production_semantic_index_status(
     expected_source_record_count: int | None,
 ) -> dict[str, Any]:
     status = vector_index.get("status") if isinstance(vector_index, dict) else None
-    embedding_method = (
-        vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
-    )
+    embedding_method = vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
     source_brain_record_count = _int_from_mapping(
         vector_index,
         "source_brain_record_count",
     )
     indexed_brain_record_count = _int_from_mapping(vector_index, "brain_record_count")
-    embedding_model = (
-        _llm_embedding_model_from_method(embedding_method)
-        if isinstance(embedding_method, str)
-        else None
-    )
+    embedding_model = _llm_embedding_model_from_method(embedding_method) if isinstance(embedding_method, str) else None
     configured_embedding_model = _production_configured_embedding_model(settings)
     findings: list[str] = []
     manifest_status = _production_semantic_index_manifest_status(
@@ -3871,15 +3486,9 @@ def _production_semantic_index_status(
                 findings.append("semantic index embedding model is missing")
             elif expected_model and embedding_model.strip() != expected_model.strip():
                 findings.append("semantic index embedding model does not match configured model")
-        if (
-            isinstance(expected_source_record_count, int)
-            and source_brain_record_count != expected_source_record_count
-        ):
+        if isinstance(expected_source_record_count, int) and source_brain_record_count != expected_source_record_count:
             findings.append("semantic index source record count does not match coverage")
-        if (
-            isinstance(expected_source_record_count, int)
-            and indexed_brain_record_count != expected_source_record_count
-        ):
+        if isinstance(expected_source_record_count, int) and indexed_brain_record_count != expected_source_record_count:
             findings.append("semantic index record count does not match coverage")
     findings.extend(manifest_status["findings"])
     return {
@@ -3916,9 +3525,7 @@ def _production_semantic_index_manifest_status(
     configured_embedding_model: str | None,
 ) -> dict[str, Any]:
     manifest_path = root / "memory" / "vector_index" / "manifest.json"
-    report_embedding_method = (
-        vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
-    )
+    report_embedding_method = vector_index.get("embedding_method") if isinstance(vector_index, dict) else None
     findings: list[str] = []
     if not manifest_path.exists():
         findings.append("semantic index manifest is missing on disk")
@@ -4012,11 +3619,7 @@ def _production_semantic_index_manifest_status(
         }
 
     embedding_method = manifest.get("embedding_method")
-    embedding_model = (
-        _llm_embedding_model_from_method(embedding_method)
-        if isinstance(embedding_method, str)
-        else None
-    )
+    embedding_model = _llm_embedding_model_from_method(embedding_method) if isinstance(embedding_method, str) else None
     dimensions = _int_from_mapping(manifest, "dimensions")
     dimensions = dimensions if isinstance(dimensions, int) and dimensions > 0 else None
     record_count = _int_from_mapping(manifest, "record_count")
@@ -4027,29 +3630,19 @@ def _production_semantic_index_manifest_status(
     accepted_hash_invalid_count: int | None = None
     if isinstance(accepted_hashes, dict):
         accepted_hashes_valid = {
-            key: value
-            for key, value in accepted_hashes.items()
-            if isinstance(key, str) and isinstance(value, str)
+            key: value for key, value in accepted_hashes.items() if isinstance(key, str) and isinstance(value, str)
         }
         accepted_hash_invalid_count = sum(
-            1
-            for key, value in accepted_hashes.items()
-            if not isinstance(key, str) or not isinstance(value, str)
+            1 for key, value in accepted_hashes.items() if not isinstance(key, str) or not isinstance(value, str)
         )
-    accepted_hash_count = (
-        len(accepted_hashes_valid) if accepted_hashes_valid is not None else None
-    )
+    accepted_hash_count = len(accepted_hashes_valid) if accepted_hashes_valid is not None else None
     expected_accepted_hash_count = len(expected_accepted_hashes)
     accepted_hashes_match = accepted_hashes_valid == expected_accepted_hashes
     brain_record_count = _int_from_mapping(manifest, "brain_record_count")
     brain_record_hashes = manifest.get("brain_record_hashes")
-    brain_record_hash_count = (
-        len(brain_record_hashes) if isinstance(brain_record_hashes, dict) else None
-    )
+    brain_record_hash_count = len(brain_record_hashes) if isinstance(brain_record_hashes, dict) else None
     records_file = manifest.get("records_file")
-    records_file = (
-        records_file if isinstance(records_file, str) and records_file else "records.jsonl"
-    )
+    records_file = records_file if isinstance(records_file, str) and records_file else "records.jsonl"
     records_path = manifest_path.parent / "records.jsonl"
     records_file_is_absolute = False
     records_file_escapes_index = False
@@ -4097,9 +3690,7 @@ def _production_semantic_index_manifest_status(
 
     brain_records_file = manifest.get("brain_records_file")
     brain_records_file = (
-        brain_records_file
-        if isinstance(brain_records_file, str) and brain_records_file
-        else "brain_records.jsonl"
+        brain_records_file if isinstance(brain_records_file, str) and brain_records_file else "brain_records.jsonl"
     )
     brain_records_path = manifest_path.parent / "brain_records.jsonl"
     brain_records_file_is_absolute = False
@@ -4120,9 +3711,7 @@ def _production_semantic_index_manifest_status(
             brain_records_path = resolved_brain_records_path
         else:
             brain_records_path = resolved_brain_records_path
-    brain_records_exists = (
-        brain_records_path.exists() if brain_records_file_path_valid else False
-    )
+    brain_records_exists = brain_records_path.exists() if brain_records_file_path_valid else False
     brain_records_sha256_matches: bool | None = None
     brain_records_row_count: int | None = None
     brain_records_invalid_line_count: int | None = None
@@ -4135,9 +3724,7 @@ def _production_semantic_index_manifest_status(
             brain_records_invalid_line_count = 1
         declared_brain_records_sha = manifest.get("brain_records_sha256")
         if isinstance(declared_brain_records_sha, str):
-            brain_records_sha256_matches = (
-                sha256_text(brain_records_payload) == declared_brain_records_sha
-            )
+            brain_records_sha256_matches = sha256_text(brain_records_payload) == declared_brain_records_sha
         rows = [line for line in brain_records_payload.splitlines() if line.strip()]
         brain_records_row_count = len(rows)
         invalid_line_count = brain_records_invalid_line_count or 0
@@ -4163,11 +3750,7 @@ def _production_semantic_index_manifest_status(
                 invalid_line_count += 1
         brain_records_invalid_line_count = invalid_line_count
     record_store_stats = _brain_record_store_id_stats(root)
-    record_store_records = (
-        record_store_stats["records_by_id"]
-        if record_store_stats["readable"] is True
-        else None
-    )
+    record_store_records = record_store_stats["records_by_id"] if record_store_stats["readable"] is True else None
     unknown_brain_record_ids: list[str] = []
     missing_brain_record_ids: list[str] = []
     brain_record_hash_mismatches: list[str] = []
@@ -4183,23 +3766,24 @@ def _production_semantic_index_manifest_status(
                 if isinstance(key, str) and isinstance(value, str)
             }
             invalid_hash_ids = [
-                key
-                for key, value in brain_record_hashes.items()
-                if isinstance(key, str) and not isinstance(value, str)
+                key for key, value in brain_record_hashes.items() if isinstance(key, str) and not isinstance(value, str)
             ]
             mismatched_hash_ids = [
                 record_id
                 for record_id in sorted(set(manifest_hashes) & record_store_ids)
-                if (
-                    manifest_hashes[record_id]
-                    != record_store_records[record_id].normalized_payload_sha256
-                )
+                if (manifest_hashes[record_id] != brain_record_envelope_sha256(record_store_records[record_id]))
             ]
-            brain_record_hash_mismatches = sorted(
-                {*invalid_hash_ids, *mismatched_hash_ids}
-            )
+            brain_record_hash_mismatches = sorted({*invalid_hash_ids, *mismatched_hash_ids})
     if manifest.get("schema_version") != VECTOR_INDEX_SCHEMA_VERSION:
         findings.append("semantic index manifest schema version is invalid")
+    if manifest.get("brain_record_hash_kind") != "canonical_full_envelope_sha256":
+        findings.append("semantic index brain record hash kind is invalid")
+    if manifest.get("routing_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+        findings.append("semantic index routing classifier version is stale")
+    if isinstance(record_store_records, dict):
+        current_records = list(record_store_records.values())
+        if manifest.get("routing_metadata_sha256") != brain_record_routing_root_sha256(current_records):
+            findings.append("semantic index routing metadata hash is stale")
     if not isinstance(embedding_method, str) or not embedding_method:
         findings.append("semantic index manifest embedding method is missing")
     elif embedding_method == VECTOR_EMBEDDING_METHOD:
@@ -4210,10 +3794,7 @@ def _production_semantic_index_manifest_status(
             findings.append("semantic index manifest provider does not match configured LLM provider")
         if not isinstance(embedding_model, str) or not embedding_model:
             findings.append("semantic index manifest embedding model is missing")
-        elif (
-            configured_embedding_model
-            and embedding_model.strip() != configured_embedding_model.strip()
-        ):
+        elif configured_embedding_model and embedding_model.strip() != configured_embedding_model.strip():
             findings.append("semantic index manifest embedding model does not match configured model")
     if isinstance(report_embedding_method, str) and embedding_method != report_embedding_method:
         findings.append("semantic index report does not match on-disk embedding method")
@@ -4222,20 +3803,12 @@ def _production_semantic_index_manifest_status(
     elif accepted_hash_invalid_count:
         findings.append("semantic index accepted_hashes has invalid hashes")
     if accepted_episode_count != expected_accepted_hash_count:
-        findings.append(
-            "semantic index accepted episode count does not match accepted episodes"
-        )
+        findings.append("semantic index accepted episode count does not match accepted episodes")
     if accepted_hashes_match is not True:
         findings.append("semantic index accepted_hashes do not match accepted episodes")
-    if (
-        isinstance(expected_source_record_count, int)
-        and brain_record_count != expected_source_record_count
-    ):
+    if isinstance(expected_source_record_count, int) and brain_record_count != expected_source_record_count:
         findings.append("semantic index manifest record count does not match coverage")
-    if (
-        isinstance(expected_source_record_count, int)
-        and brain_record_hash_count != expected_source_record_count
-    ):
+    if isinstance(expected_source_record_count, int) and brain_record_hash_count != expected_source_record_count:
         findings.append("semantic index manifest record hash count does not match coverage")
     if records_file_is_absolute:
         findings.append("semantic index records_file must be vector-index relative")
@@ -4247,11 +3820,7 @@ def _production_semantic_index_manifest_status(
         findings.append("semantic index records file has invalid rows")
     if records_exists and records_sha256_matches is not True:
         findings.append("semantic index records file hash mismatch")
-    if (
-        records_row_count is not None
-        and record_count is not None
-        and records_row_count != record_count
-    ):
+    if records_row_count is not None and record_count is not None and records_row_count != record_count:
         findings.append("semantic index records row count does not match manifest")
     if brain_records_file_is_absolute:
         findings.append("semantic index brain_records_file must be vector-index relative")
@@ -4372,10 +3941,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     try:
         source_records = BrainRecordStore(root).list_records()
     except (OSError, ValueError) as exc:
-        finding = (
-            "training export source record store is unreadable: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        finding = f"training export source record store is unreadable: {type(exc).__name__}: {exc}"
         return {
             "schema_version": "nslab.production_training_exports.v1",
             "passed": False,
@@ -4462,23 +4028,13 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "weight_diagnostic_count_mismatches": [],
         }
     source_record_ids = sorted(record.record_id for record in source_records)
-    training_eligible_record_ids = sorted(
-        record.record_id for record in source_records if record.training_eligible
-    )
-    expected_unsealed_preference_record_ids = (
-        _unsealed_training_eligible_preference_record_ids(source_records)
-    )
-    record_store_counts_by_record_type = dict(
-        sorted(Counter(record.record_type for record in source_records).items())
-    )
+    training_eligible_record_ids = sorted(record.record_id for record in source_records if record.training_eligible)
+    expected_unsealed_preference_record_ids = _unsealed_training_eligible_preference_record_ids(source_records)
+    record_store_counts_by_record_type = dict(sorted(Counter(record.record_type for record in source_records).items()))
     record_store_counts_by_training_target = dict(
-        sorted(
-            Counter(record.training_target or "UNKNOWN" for record in source_records).items()
-        )
+        sorted(Counter(record.training_target or "UNKNOWN" for record in source_records).items())
     )
-    record_store_source_record_hashes = {
-        record.record_id: record.normalized_payload_sha256 for record in source_records
-    }
+    record_store_source_record_hashes = brain_record_envelope_hashes(source_records)
     source_record_count = len(source_record_ids)
     if source_record_count == 0:
         return {
@@ -4586,9 +4142,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         findings.append("training export diagnostics report is missing")
     elif diagnostics.get("schema_version") != "nslab.training_export_diagnostics.v1":
         findings.append("training export diagnostics schema_version is invalid")
-    diagnostic_report_passed = (
-        diagnostics.get("passed") if isinstance(diagnostics.get("passed"), bool) else None
-    )
+    diagnostic_report_passed = diagnostics.get("passed") if isinstance(diagnostics.get("passed"), bool) else None
     diagnostic_report_findings = _string_list(diagnostics.get("findings"))
     invalid_diagnostic_report_fields: list[str] = []
     if diagnostics:
@@ -4597,22 +4151,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             findings.append("training export diagnostics passed is invalid")
         elif diagnostics.get("passed") is not True:
             findings.append("training export diagnostics report did not pass")
-        if (
-            "findings" not in diagnostics
-            or not _string_list_field_valid(diagnostics.get("findings"))
-        ):
+        if "findings" not in diagnostics or not _string_list_field_valid(diagnostics.get("findings")):
             invalid_diagnostic_report_fields.append("findings")
             findings.append("training export diagnostics findings is invalid")
         elif diagnostic_report_findings:
-            findings.append(
-                "training export diagnostics report has findings: "
-                + "; ".join(diagnostic_report_findings)
-            )
+            findings.append("training export diagnostics report has findings: " + "; ".join(diagnostic_report_findings))
 
     export_kinds = _string_list(diagnostics.get("export_kinds"))
-    available_manifest_kinds = _string_list(
-        diagnostics.get("available_manifest_kinds")
-    )
+    available_manifest_kinds = _string_list(diagnostics.get("available_manifest_kinds"))
     missing_manifest_kinds = _string_list(diagnostics.get("missing_manifest_kinds"))
     invalid_manifest_kind_fields = [
         field
@@ -4621,8 +4167,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             "available_manifest_kinds",
             "missing_manifest_kinds",
         )
-        if field in diagnostics
-        and not _non_empty_string_list_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _non_empty_string_list_field_valid(diagnostics.get(field))
     ]
     required_manifest_kinds = set(REQUIRED_TRAINING_EXPORT_KINDS)
     export_kind_set = set(export_kinds)
@@ -4630,27 +4175,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     missing_manifest_kind_set = set(missing_manifest_kinds)
     missing_export_kinds = sorted(required_manifest_kinds - export_kind_set)
     unexpected_export_kinds = sorted(export_kind_set - required_manifest_kinds)
-    missing_available_manifest_kinds = sorted(
-        required_manifest_kinds - available_manifest_kind_set
-    )
-    unexpected_available_manifest_kinds = sorted(
-        available_manifest_kind_set - required_manifest_kinds
-    )
-    unexpected_missing_manifest_kinds = sorted(
-        missing_manifest_kind_set - required_manifest_kinds
-    )
+    missing_available_manifest_kinds = sorted(required_manifest_kinds - available_manifest_kind_set)
+    unexpected_available_manifest_kinds = sorted(available_manifest_kind_set - required_manifest_kinds)
+    unexpected_missing_manifest_kinds = sorted(missing_manifest_kind_set - required_manifest_kinds)
     for field in invalid_manifest_kind_fields:
         findings.append(f"training export diagnostics {field} is invalid")
     if missing_export_kinds:
-        findings.append(
-            "training export export_kinds are missing required kinds: "
-            + ", ".join(missing_export_kinds)
-        )
+        findings.append("training export export_kinds are missing required kinds: " + ", ".join(missing_export_kinds))
     if unexpected_export_kinds:
-        findings.append(
-            "training export export_kinds include unexpected kinds: "
-            + ", ".join(unexpected_export_kinds)
-        )
+        findings.append("training export export_kinds include unexpected kinds: " + ", ".join(unexpected_export_kinds))
     if missing_available_manifest_kinds:
         findings.append(
             "training export available manifests are missing required kinds: "
@@ -4667,10 +4200,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             + ", ".join(unexpected_missing_manifest_kinds)
         )
     if missing_manifest_kinds:
-        findings.append(
-            "training export manifests are missing: "
-            + ", ".join(missing_manifest_kinds)
-        )
+        findings.append("training export manifests are missing: " + ", ".join(missing_manifest_kinds))
     if diagnostics.get("brain_record_source_required") is not True:
         findings.append("training export diagnostics do not require brain records")
 
@@ -4708,8 +4238,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     invalid_aggregate_count_fields = [
         field
         for field in aggregate_count_fields
-        if field in diagnostics
-        and not _non_negative_int_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for field in missing_aggregate_count_fields:
         findings.append(f"training export diagnostics {field} is missing")
@@ -4745,8 +4274,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     invalid_per_export_count_fields = [
         field
         for field in per_export_count_fields
-        if field in diagnostics
-        and not _non_negative_int_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for field in missing_per_export_count_fields:
         findings.append(f"training export diagnostics {field} is missing")
@@ -4760,23 +4288,18 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "source_record_hash_count",
     )
     source_record_hashes = _string_map(diagnostics.get("source_record_hashes"))
-    missing_hash_fields = [
-        field for field in ("source_record_hashes",) if diagnostics and field not in diagnostics
-    ]
+    missing_hash_fields = [field for field in ("source_record_hashes",) if diagnostics and field not in diagnostics]
     invalid_hash_fields = [
         field
         for field in ("source_record_hashes",)
-        if field in diagnostics
-        and not _sha256_string_map_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _sha256_string_map_field_valid(diagnostics.get(field))
     ]
     for field in missing_hash_fields:
         findings.append(f"training export diagnostics {field} is missing")
     for field in invalid_hash_fields:
         findings.append(f"training export diagnostics {field} is invalid")
-    expected_source_record_hashes = (
-        _expected_training_export_source_record_hashes_from_manifests(
-            audit.get("manifests")
-        )
+    expected_source_record_hashes = _expected_training_export_source_record_hashes_from_manifests(
+        audit.get("manifests")
     )
     source_record_hash_manifest_mismatch_ids = (
         _hash_mapping_mismatch_ids(
@@ -4806,18 +4329,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "unique_skipped_record_count",
     )
-    unique_source_ids = _string_list(
-        diagnostics.get("unique_source_record_ids")
-    )
-    unique_training_eligible_ids = _string_list(
-        diagnostics.get("unique_training_eligible_record_ids")
-    )
-    unique_exported_ids = _string_list(
-        diagnostics.get("unique_exported_record_ids")
-    )
-    unique_skipped_ids = _string_list(
-        diagnostics.get("unique_skipped_record_ids")
-    )
+    unique_source_ids = _string_list(diagnostics.get("unique_source_record_ids"))
+    unique_training_eligible_ids = _string_list(diagnostics.get("unique_training_eligible_record_ids"))
+    unique_exported_ids = _string_list(diagnostics.get("unique_exported_record_ids"))
+    unique_skipped_ids = _string_list(diagnostics.get("unique_skipped_record_ids"))
     unique_record_id_values = {
         "unique_source_record_ids": unique_source_ids,
         "unique_training_eligible_record_ids": unique_training_eligible_ids,
@@ -4828,9 +4343,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unsealed_preference_record_ids = _string_list(diagnostics.get(unsealed_field))
     invalid_record_id_fields = [
         field
-        for field in (
-            *unique_record_id_values,
-        )
+        for field in (*unique_record_id_values,)
         if field in diagnostics and not _string_list_field_valid(diagnostics.get(field))
     ]
     for field in invalid_record_id_fields:
@@ -4841,18 +4354,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     elif diagnostics and not _string_list_field_valid(diagnostics.get(unsealed_field)):
         invalid_unsealed_preference_record_id_fields.append(unsealed_field)
         findings.append(f"training export diagnostics {unsealed_field} is invalid")
-    elif (
-        diagnostics
-        and sorted(unsealed_preference_record_ids)
-        != expected_unsealed_preference_record_ids
-    ):
-        findings.append(
-            "training export diagnostics unsealed preference record IDs do not "
-            "match current records"
-        )
-    expected_unique_record_ids = _expected_training_export_unique_record_ids_from_manifests(
-        audit.get("manifests")
-    )
+    elif diagnostics and sorted(unsealed_preference_record_ids) != expected_unsealed_preference_record_ids:
+        findings.append("training export diagnostics unsealed preference record IDs do not match current records")
+    expected_unique_record_ids = _expected_training_export_unique_record_ids_from_manifests(audit.get("manifests"))
     unique_record_id_mismatches = [
         field
         for field, expected_ids in expected_unique_record_ids.items()
@@ -4864,51 +4368,37 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     ]
     for field in unique_record_id_mismatches:
         findings.append(f"training export diagnostics {field} does not match manifests")
-    skipped_record_reasons_by_record_id = _string_list_dict(
-        diagnostics.get("skipped_record_reasons_by_record_id")
-    )
+    skipped_record_reasons_by_record_id = _string_list_dict(diagnostics.get("skipped_record_reasons_by_record_id"))
     unique_skipped_record_reasons_by_record_id = _string_list_dict(
         diagnostics.get("unique_skipped_record_reasons_by_record_id")
     )
-    skipped_record_reason_counts = _int_dict(
-        diagnostics.get("skipped_record_reason_counts")
-    )
+    skipped_record_reason_counts = _int_dict(diagnostics.get("skipped_record_reason_counts"))
     invalid_reason_fields = [
         field
         for field in (
             "skipped_record_reasons_by_record_id",
             "unique_skipped_record_reasons_by_record_id",
         )
-        if field in diagnostics
-        and not _string_list_dict_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _string_list_dict_field_valid(diagnostics.get(field))
     ]
-    if (
-        "skipped_record_reason_counts" in diagnostics
-        and not _int_dict_field_valid(diagnostics.get("skipped_record_reason_counts"))
+    if "skipped_record_reason_counts" in diagnostics and not _int_dict_field_valid(
+        diagnostics.get("skipped_record_reason_counts")
     ):
         invalid_reason_fields.append("skipped_record_reason_counts")
     for field in invalid_reason_fields:
         findings.append(f"training export diagnostics {field} is invalid")
-    expected_skipped_reason_fields = (
-        _expected_training_export_skipped_reason_fields_from_manifests(
-            audit.get("manifests")
-        )
+    expected_skipped_reason_fields = _expected_training_export_skipped_reason_fields_from_manifests(
+        audit.get("manifests")
     )
     skipped_reason_values = {
         "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
-        "unique_skipped_record_reasons_by_record_id": (
-            unique_skipped_record_reasons_by_record_id
-        ),
+        "unique_skipped_record_reasons_by_record_id": (unique_skipped_record_reasons_by_record_id),
         "skipped_record_reason_counts": skipped_record_reason_counts,
     }
     skipped_record_reason_mismatches = [
         field
         for field, expected_value in expected_skipped_reason_fields.items()
-        if (
-            diagnostics
-            and field not in invalid_reason_fields
-            and skipped_reason_values[field] != expected_value
-        )
+        if (diagnostics and field not in invalid_reason_fields and skipped_reason_values[field] != expected_value)
     ]
     for field in skipped_record_reason_mismatches:
         findings.append(f"training export diagnostics {field} does not match manifests")
@@ -4921,8 +4411,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     invalid_phase_row_count_fields = [
         field
         for field in phase_row_count_fields
-        if field in diagnostics
-        and not _non_negative_int_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for field in missing_phase_row_count_fields:
         findings.append(f"training export diagnostics {field} is missing")
@@ -4931,17 +4420,13 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
     source_phase_row_count = sum(source_phase_counts.values())
     counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
-    counts_by_training_target = _int_dict(
-        diagnostics.get("counts_by_training_target")
-    )
+    counts_by_training_target = _int_dict(diagnostics.get("counts_by_training_target"))
     count_map_fields = (
         "source_phase_counts",
         "counts_by_record_type",
         "counts_by_training_target",
     )
-    missing_count_fields = [
-        field for field in count_map_fields if diagnostics and field not in diagnostics
-    ]
+    missing_count_fields = [field for field in count_map_fields if diagnostics and field not in diagnostics]
     invalid_count_fields = [
         field
         for field in count_map_fields
@@ -4956,9 +4441,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "counts_by_record_type": counts_by_record_type,
         "counts_by_training_target": counts_by_training_target,
     }
-    expected_count_maps = _expected_training_export_count_maps_from_manifests(
-        audit.get("manifests")
-    )
+    expected_count_maps = _expected_training_export_count_maps_from_manifests(audit.get("manifests"))
     count_map_mismatches = [
         field
         for field, expected_value in expected_count_maps.items()
@@ -4978,8 +4461,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     )
     if invalid_source_phase_labels:
         findings.append(
-            "training export source_phase_counts include invalid phases: "
-            + ", ".join(invalid_source_phase_labels)
+            "training export source_phase_counts include invalid phases: " + ", ".join(invalid_source_phase_labels)
         )
     if (
         diagnostics
@@ -4992,36 +4474,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     ):
         expected_phase_row_count = blind_safe_row_count + hindsight_row_count
         if source_phase_row_count != expected_phase_row_count:
-            findings.append(
-                "training export source phase row count does not match "
-                "blind/hindsight row counts"
-            )
+            findings.append("training export source phase row count does not match blind/hindsight row counts")
         if source_phase_counts.get("BLIND", 0) != blind_safe_row_count:
-            findings.append(
-                "training export BLIND phase count does not match blind-safe row count"
-            )
+            findings.append("training export BLIND phase count does not match blind-safe row count")
         if source_phase_counts.get("POSTMORTEM", 0) != hindsight_row_count:
-            findings.append(
-                "training export POSTMORTEM phase count does not match hindsight row count"
-            )
+            findings.append("training export POSTMORTEM phase count does not match hindsight row count")
 
     if record_store_source_count != source_record_count:
-        findings.append(
-            "training export record-store source count does not match current records"
-        )
+        findings.append("training export record-store source count does not match current records")
     if unique_source_record_count != source_record_count:
-        findings.append(
-            "training export unique source record count does not match current records"
-        )
+        findings.append("training export unique source record count does not match current records")
     if set(unique_source_ids) != set(source_record_ids):
-        findings.append(
-            "training export unique source record IDs do not match current records"
-        )
+        findings.append("training export unique source record IDs do not match current records")
     if set(unique_training_eligible_ids) - set(training_eligible_record_ids):
-        findings.append(
-            "training export unique training-eligible record IDs include IDs "
-            "not in current records"
-        )
+        findings.append("training export unique training-eligible record IDs include IDs not in current records")
     missing_current_training_eligible_ids = sorted(
         set(training_eligible_record_ids) - set(unique_training_eligible_ids)
     )
@@ -5031,36 +4497,25 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             + ", ".join(expected_unsealed_preference_record_ids)
         )
     if set(unique_exported_ids) - set(training_eligible_record_ids):
-        findings.append(
-            "training export exported record IDs include ineligible current records"
-        )
+        findings.append("training export exported record IDs include ineligible current records")
     if source_record_hash_count != source_record_count:
-        findings.append(
-            "training export source record hash count does not match current records"
-        )
+        findings.append("training export source record hash count does not match current records")
     if (
         diagnostics
         and "source_record_hashes" not in missing_hash_fields
         and "source_record_hashes" not in invalid_hash_fields
         and set(source_record_hashes) != set(record_store_source_record_hashes)
     ):
-        findings.append(
-            "training export source_record_hashes IDs do not match current records"
-        )
+        findings.append("training export source_record_hashes IDs do not match current records")
     mismatched_hash_ids = sorted(
         record_id
         for record_id, digest in source_record_hashes.items()
         if record_store_source_record_hashes.get(record_id) is not None
         and record_store_source_record_hashes[record_id] != digest
     )
-    if (
-        diagnostics
-        and "source_record_hashes" not in invalid_hash_fields
-        and mismatched_hash_ids
-    ):
+    if diagnostics and "source_record_hashes" not in invalid_hash_fields and mismatched_hash_ids:
         findings.append(
-            "training export source_record_hashes mismatch current records: "
-            + ", ".join(mismatched_hash_ids)
+            "training export source_record_hashes mismatch current records: " + ", ".join(mismatched_hash_ids)
         )
     if unique_source_record_count is not None:
         if (
@@ -5068,39 +4523,24 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and unique_skipped_count is not None
             and unique_source_record_count != unique_exported_count + unique_skipped_count
         ):
-            findings.append(
-                "training export unique source/export/skipped counts are inconsistent"
-            )
+            findings.append("training export unique source/export/skipped counts are inconsistent")
         if unique_source_record_count != len(set(unique_exported_ids) | set(unique_skipped_ids)):
-            findings.append(
-                "training export unique source IDs do not match exported and skipped IDs"
-            )
-    if (
-        unique_source_record_count is not None
-        and unique_source_record_count != len(unique_source_ids)
-    ):
+            findings.append("training export unique source IDs do not match exported and skipped IDs")
+    if unique_source_record_count is not None and unique_source_record_count != len(unique_source_ids):
         findings.append("training export unique source record ID count mismatch")
-    if (
-        unique_training_eligible_count is not None
-        and unique_training_eligible_count != len(unique_training_eligible_ids)
+    if unique_training_eligible_count is not None and unique_training_eligible_count != len(
+        unique_training_eligible_ids
     ):
-        findings.append(
-            "training export unique training-eligible record ID count mismatch"
-        )
+        findings.append("training export unique training-eligible record ID count mismatch")
     if set(unique_training_eligible_ids) - set(unique_source_ids):
-        findings.append(
-            "training export training-eligible record IDs are not a subset of "
-            "source record IDs"
-        )
+        findings.append("training export training-eligible record IDs are not a subset of source record IDs")
     if unique_exported_count is not None and unique_exported_count != len(unique_exported_ids):
         findings.append("training export unique exported record ID count mismatch")
     if unique_skipped_count is not None and unique_skipped_count != len(unique_skipped_ids):
         findings.append("training export unique skipped record ID count mismatch")
     if set(unique_exported_ids) & set(unique_skipped_ids):
         findings.append("training export exported and skipped record IDs overlap")
-    if unique_skipped_ids and (
-        set(unique_skipped_ids) - set(unique_skipped_record_reasons_by_record_id)
-    ):
+    if unique_skipped_ids and (set(unique_skipped_ids) - set(unique_skipped_record_reasons_by_record_id)):
         findings.append("training export skipped record reasons are missing")
     if per_export_skipped_count and not skipped_record_reason_counts:
         findings.append("training export skipped record reason counts are missing")
@@ -5125,9 +4565,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and field in expected_aggregate_counts
             and observed_count != expected_aggregate_counts[field]
         ):
-            findings.append(
-                f"training export diagnostics {field} does not match manifests"
-            )
+            findings.append(f"training export diagnostics {field} does not match manifests")
     per_export_count_values = {
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
@@ -5141,32 +4579,24 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and field in expected_per_export_counts
             and observed_count != expected_per_export_counts[field]
         ):
-            findings.append(
-                f"training export diagnostics {field} does not match manifests"
-            )
+            findings.append(f"training export diagnostics {field} does not match manifests")
     if (
         diagnostics
         and "counts_by_record_type" not in missing_count_fields
         and "counts_by_record_type" not in invalid_count_fields
         and counts_by_record_type != record_store_counts_by_record_type
     ):
-        findings.append(
-            "training export counts_by_record_type does not match current records"
-        )
+        findings.append("training export counts_by_record_type does not match current records")
     if (
         diagnostics
         and "counts_by_training_target" not in missing_count_fields
         and "counts_by_training_target" not in invalid_count_fields
         and counts_by_training_target != record_store_counts_by_training_target
     ):
-        findings.append(
-            "training export counts_by_training_target does not match current records"
-        )
+        findings.append("training export counts_by_training_target does not match current records")
 
     raw_weight_statuses = diagnostics.get("weight_validation_statuses")
-    expected_weight_statuses = _expected_training_export_weight_statuses_from_manifests(
-        audit.get("manifests")
-    )
+    expected_weight_statuses = _expected_training_export_weight_statuses_from_manifests(audit.get("manifests"))
     missing_weight_validation_kinds: list[str] = []
     unexpected_weight_validation_kinds: list[str] = []
     invalid_weight_validation_entries: list[str] = []
@@ -5181,19 +4611,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         invalid_weight_validation_entries = sorted(
             str(kind)
             for kind, status in raw_weight_statuses.items()
-            if not isinstance(kind, str)
-            or not kind
-            or not isinstance(status, str)
-            or not status
+            if not isinstance(kind, str) or not kind or not isinstance(status, str) or not status
         )
         observed_weight_kinds = set(weight_statuses)
         required_weight_kinds = set(REQUIRED_TRAINING_EXPORT_KINDS)
-        missing_weight_validation_kinds = sorted(
-            required_weight_kinds - observed_weight_kinds
-        )
-        unexpected_weight_validation_kinds = sorted(
-            observed_weight_kinds - required_weight_kinds
-        )
+        missing_weight_validation_kinds = sorted(required_weight_kinds - observed_weight_kinds)
+        unexpected_weight_validation_kinds = sorted(observed_weight_kinds - required_weight_kinds)
         if invalid_weight_validation_entries:
             findings.append(
                 "training export weight validation statuses contain invalid entries: "
@@ -5219,24 +4642,15 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
                 "training export weight validation statuses do not match manifests: "
                 + ", ".join(weight_validation_status_mismatches)
             )
-        failed_weights = [
-            kind
-            for kind, status in sorted(weight_statuses.items())
-            if status != "passed"
-        ]
+        failed_weights = [kind for kind, status in sorted(weight_statuses.items()) if status != "passed"]
         if failed_weights:
-            findings.append(
-                "training export weight validation failed: "
-                + ", ".join(failed_weights)
-            )
+            findings.append("training export weight validation failed: " + ", ".join(failed_weights))
 
     duplicate_issuer_day_count = _int_from_mapping(
         diagnostics,
         "duplicate_issuer_day_count",
     )
-    duplicate_issuer_day_keys = _string_list(
-        diagnostics.get("duplicate_issuer_day_keys")
-    )
+    duplicate_issuer_day_keys = _string_list(diagnostics.get("duplicate_issuer_day_keys"))
     weight_diagnostic_count_fields = (
         "duplicate_issuer_day_count",
         "issuer_day_weight_sum_mismatch_count",
@@ -5258,14 +4672,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     invalid_weight_diagnostic_fields = [
         field
         for field in weight_diagnostic_count_fields
-        if field in diagnostics
-        and not _non_negative_int_field_valid(diagnostics.get(field))
+        if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
-    if (
-        "duplicate_issuer_day_keys" in diagnostics
-        and not _non_empty_string_list_field_valid(
-            diagnostics.get("duplicate_issuer_day_keys")
-        )
+    if "duplicate_issuer_day_keys" in diagnostics and not _non_empty_string_list_field_valid(
+        diagnostics.get("duplicate_issuer_day_keys")
     ):
         invalid_weight_diagnostic_fields.append("duplicate_issuer_day_keys")
     if duplicate_issuer_day_count is not None and duplicate_issuer_day_count != 0:
@@ -5274,16 +4684,12 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics,
         "issuer_day_weight_sum_mismatch_count",
     )
-    issuer_weight_mismatches = _numeric_map(
-        diagnostics.get("issuer_day_weight_sum_mismatches")
-    )
+    issuer_weight_mismatches = _numeric_map(diagnostics.get("issuer_day_weight_sum_mismatches"))
     direct_weight_mismatch_count = _int_from_mapping(
         diagnostics,
         "direct_event_weight_sum_mismatch_count",
     )
-    direct_weight_mismatches = _numeric_map(
-        diagnostics.get("direct_event_weight_sum_mismatches")
-    )
+    direct_weight_mismatches = _numeric_map(diagnostics.get("direct_event_weight_sum_mismatches"))
     invalid_weight_diagnostic_fields.extend(
         field
         for field in weight_diagnostic_map_fields
@@ -5301,25 +4707,16 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         and duplicate_issuer_day_count != len(duplicate_issuer_day_keys)
     ):
         weight_diagnostic_count_mismatches.append("duplicate_issuer_day_count")
-        findings.append(
-            "training export duplicate issuer-day count does not match keys"
-        )
+        findings.append("training export duplicate issuer-day count does not match keys")
     if (
         issuer_weight_mismatch_count is not None
         and "issuer_day_weight_sum_mismatches" not in missing_weight_diagnostic_fields
         and "issuer_day_weight_sum_mismatches" not in invalid_weight_diagnostic_fields
         and issuer_weight_mismatch_count != len(issuer_weight_mismatches)
     ):
-        weight_diagnostic_count_mismatches.append(
-            "issuer_day_weight_sum_mismatch_count"
-        )
-        findings.append(
-            "training export issuer-day weight mismatch count does not match details"
-        )
-    if (
-        issuer_weight_mismatch_count is not None
-        and issuer_weight_mismatch_count != 0
-    ):
+        weight_diagnostic_count_mismatches.append("issuer_day_weight_sum_mismatch_count")
+        findings.append("training export issuer-day weight mismatch count does not match details")
+    if issuer_weight_mismatch_count is not None and issuer_weight_mismatch_count != 0:
         findings.append("training export has issuer-day weight sum mismatches")
     if (
         direct_weight_mismatch_count is not None
@@ -5327,12 +4724,8 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         and "direct_event_weight_sum_mismatches" not in invalid_weight_diagnostic_fields
         and direct_weight_mismatch_count != len(direct_weight_mismatches)
     ):
-        weight_diagnostic_count_mismatches.append(
-            "direct_event_weight_sum_mismatch_count"
-        )
-        findings.append(
-            "training export direct-event weight mismatch count does not match details"
-        )
+        weight_diagnostic_count_mismatches.append("direct_event_weight_sum_mismatch_count")
+        findings.append("training export direct-event weight mismatch count does not match details")
     if direct_weight_mismatch_count is not None and direct_weight_mismatch_count != 0:
         findings.append("training export has direct-event weight sum mismatches")
 
@@ -5373,32 +4766,20 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "unique_training_eligible_record_ids": unique_training_eligible_ids,
         "unique_exported_record_ids": unique_exported_ids,
         "unique_skipped_record_ids": unique_skipped_ids,
-        "missing_current_training_eligible_record_ids": (
-            missing_current_training_eligible_ids
-        ),
-        "unsealed_training_eligible_preference_record_ids": (
-            unsealed_preference_record_ids
-        ),
-        "expected_unsealed_training_eligible_preference_record_ids": (
-            expected_unsealed_preference_record_ids
-        ),
+        "missing_current_training_eligible_record_ids": (missing_current_training_eligible_ids),
+        "unsealed_training_eligible_preference_record_ids": (unsealed_preference_record_ids),
+        "expected_unsealed_training_eligible_preference_record_ids": (expected_unsealed_preference_record_ids),
         "invalid_record_id_fields": invalid_record_id_fields,
-        "invalid_unsealed_preference_record_id_fields": (
-            invalid_unsealed_preference_record_id_fields
-        ),
+        "invalid_unsealed_preference_record_id_fields": (invalid_unsealed_preference_record_id_fields),
         "source_record_hashes": source_record_hashes,
         "record_store_source_record_hashes": record_store_source_record_hashes,
         "expected_source_record_hashes": expected_source_record_hashes,
-        "source_record_hash_manifest_mismatch_ids": (
-            source_record_hash_manifest_mismatch_ids
-        ),
+        "source_record_hash_manifest_mismatch_ids": (source_record_hash_manifest_mismatch_ids),
         "missing_hash_fields": missing_hash_fields,
         "invalid_hash_fields": invalid_hash_fields,
         "invalid_reason_fields": invalid_reason_fields,
         "skipped_record_reasons_by_record_id": skipped_record_reasons_by_record_id,
-        "unique_skipped_record_reasons_by_record_id": (
-            unique_skipped_record_reasons_by_record_id
-        ),
+        "unique_skipped_record_reasons_by_record_id": (unique_skipped_record_reasons_by_record_id),
         "skipped_record_reason_counts": skipped_record_reason_counts,
         "expected_skipped_record_reason_fields": expected_skipped_reason_fields,
         "skipped_record_reason_mismatches": skipped_record_reason_mismatches,
@@ -5415,9 +4796,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "expected_count_maps": expected_count_maps,
         "count_map_mismatches": count_map_mismatches,
         "record_store_counts_by_record_type": record_store_counts_by_record_type,
-        "record_store_counts_by_training_target": (
-            record_store_counts_by_training_target
-        ),
+        "record_store_counts_by_training_target": (record_store_counts_by_training_target),
         "missing_count_fields": missing_count_fields,
         "invalid_count_fields": invalid_count_fields,
         "export_kinds": export_kinds,
@@ -5521,11 +4900,7 @@ def _production_warehouse_status(
     )
     expected_source_counts = merged_mapping(
         actual_warehouse.get("expected_source_counts"),
-        (
-            report_warehouse.get("expected_source_counts")
-            if report_warehouse is not None
-            else None
-        ),
+        (report_warehouse.get("expected_source_counts") if report_warehouse is not None else None),
     )
     required_files = merged_list(
         actual_warehouse.get("required_files"),
@@ -5537,11 +4912,7 @@ def _production_warehouse_status(
     )
     unreadable_files = merged_list(
         actual_warehouse.get("unreadable_files"),
-        (
-            report_warehouse.get("unreadable_files")
-            if report_warehouse is not None
-            else None
-        ),
+        (report_warehouse.get("unreadable_files") if report_warehouse is not None else None),
     )
     return {
         "schema_version": "nslab.production_warehouse.v1",
@@ -5566,65 +4937,33 @@ def _production_warehouse_status(
         "missing_files": missing_files,
         "unreadable_files": unreadable_files,
         "report_required_files_present": (
-            report_warehouse.get("required_files_present")
-            if report_warehouse is not None
-            else None
+            report_warehouse.get("required_files_present") if report_warehouse is not None else None
         ),
-        "report_synced": (
-            report_warehouse.get("synced") if report_warehouse is not None else None
-        ),
+        "report_synced": (report_warehouse.get("synced") if report_warehouse is not None else None),
         "report_projection_synced": (
-            report_warehouse.get("projection_synced")
-            if report_warehouse is not None
-            else None
+            report_warehouse.get("projection_synced") if report_warehouse is not None else None
         ),
         "report_count_mismatches": (
-            report_warehouse.get("count_mismatches", {})
-            if report_warehouse is not None
-            else {}
+            report_warehouse.get("count_mismatches", {}) if report_warehouse is not None else {}
         ),
         "report_identity_mismatches": (
-            report_warehouse.get("identity_mismatches", {})
-            if report_warehouse is not None
-            else {}
+            report_warehouse.get("identity_mismatches", {}) if report_warehouse is not None else {}
         ),
         "report_duplicate_identities": (
-            report_warehouse.get("duplicate_identities", {})
-            if report_warehouse is not None
-            else {}
+            report_warehouse.get("duplicate_identities", {}) if report_warehouse is not None else {}
         ),
         "report_weight_mismatches": (
-            report_warehouse.get("weight_mismatches", {})
-            if report_warehouse is not None
-            else {}
+            report_warehouse.get("weight_mismatches", {}) if report_warehouse is not None else {}
         ),
-        "report_missing_columns": (
-            report_warehouse.get("missing_columns", {})
-            if report_warehouse is not None
-            else {}
-        ),
-        "report_counts": (
-            report_warehouse.get("counts", {}) if report_warehouse is not None else {}
-        ),
+        "report_missing_columns": (report_warehouse.get("missing_columns", {}) if report_warehouse is not None else {}),
+        "report_counts": (report_warehouse.get("counts", {}) if report_warehouse is not None else {}),
         "report_expected_source_counts": (
-            report_warehouse.get("expected_source_counts", {})
-            if report_warehouse is not None
-            else {}
+            report_warehouse.get("expected_source_counts", {}) if report_warehouse is not None else {}
         ),
-        "report_required_files": (
-            report_warehouse.get("required_files", [])
-            if report_warehouse is not None
-            else []
-        ),
-        "report_missing_files": (
-            report_warehouse.get("missing_files", [])
-            if report_warehouse is not None
-            else []
-        ),
+        "report_required_files": (report_warehouse.get("required_files", []) if report_warehouse is not None else []),
+        "report_missing_files": (report_warehouse.get("missing_files", []) if report_warehouse is not None else []),
         "report_unreadable_files": (
-            report_warehouse.get("unreadable_files", [])
-            if report_warehouse is not None
-            else []
+            report_warehouse.get("unreadable_files", []) if report_warehouse is not None else []
         ),
     }
 
@@ -5643,9 +4982,7 @@ def _current_production_warehouse_snapshot(root: Path) -> dict[str, Any]:
         return {
             "status": status,
             "applicable": applicable,
-            "required_files_present": coverage_audit.get(
-                "warehouse_required_files_present"
-            ),
+            "required_files_present": coverage_audit.get("warehouse_required_files_present"),
             "synced": coverage_audit.get("warehouse_synced"),
             "projection_synced": coverage_audit.get("warehouse_projection_synced"),
             "counts": coverage_audit.get("warehouse_counts", {}),
@@ -5803,11 +5140,7 @@ def _production_record_store_status(settings: Settings) -> dict[str, Any]:
     findings.extend(report_findings)
     if audit.get("deep") is not True:
         findings.append("deep record-store audit was not run")
-    passed = (
-        audit.get("passed") is True
-        and audit.get("deep") is True
-        and not report_findings
-    )
+    passed = audit.get("passed") is True and audit.get("deep") is True and not report_findings
     if not passed and not findings:
         findings.append("deep record-store audit failed")
     return {
@@ -5977,48 +5310,29 @@ def _production_record_store_report_findings(
         report_payload,
         "extra_normalized_record_count",
     )
-    if (
-        extra_normalized_record_count is not None
-        and extra_normalized_record_count != 0
-    ):
-        findings.append(
-            "extra_normalized_record_count="
-            f"{extra_normalized_record_count} expected 0"
-        )
+    if extra_normalized_record_count is not None and extra_normalized_record_count != 0:
+        findings.append(f"extra_normalized_record_count={extra_normalized_record_count} expected 0")
     raw_only_record_count = _int_from_mapping(report_payload, "raw_only_record_count")
     if raw_only_record_count is not None and raw_only_record_count != 0:
-        findings.append(
-            f"raw_only_record_count={raw_only_record_count} expected 0 "
-            "for accepted records"
-        )
+        findings.append(f"raw_only_record_count={raw_only_record_count} expected 0 for accepted records")
     quarantined_record_count = _int_from_mapping(
         report_payload,
         "quarantined_record_count",
     )
     if quarantined_record_count is not None and quarantined_record_count != 0:
-        findings.append(
-            f"quarantined_record_count={quarantined_record_count} expected 0"
-        )
+        findings.append(f"quarantined_record_count={quarantined_record_count} expected 0")
     quarantined_normalized_record_count = _int_from_mapping(
         report_payload,
         "quarantined_normalized_record_count",
     )
-    if (
-        quarantined_normalized_record_count is not None
-        and quarantined_normalized_record_count != 0
-    ):
-        findings.append(
-            "quarantined_normalized_record_count="
-            f"{quarantined_normalized_record_count} expected 0"
-        )
+    if quarantined_normalized_record_count is not None and quarantined_normalized_record_count != 0:
+        findings.append(f"quarantined_normalized_record_count={quarantined_normalized_record_count} expected 0")
     quarantined_bundle_count = _int_from_mapping(
         report_payload,
         "quarantined_bundle_count",
     )
     if quarantined_bundle_count is not None and quarantined_bundle_count != 0:
-        findings.append(
-            f"quarantined_bundle_count={quarantined_bundle_count} expected 0"
-        )
+        findings.append(f"quarantined_bundle_count={quarantined_bundle_count} expected 0")
     return findings
 
 
@@ -6035,29 +5349,21 @@ def _imported_raw_block_status(
 ) -> dict[str, Any]:
     raw_block_paths = envelope.get("raw_block_paths") if isinstance(envelope, dict) else None
     raw_block_paths = raw_block_paths if isinstance(raw_block_paths, dict) else {}
-    raw_block_hashes = (
-        envelope.get("raw_block_hashes") if isinstance(envelope, dict) else None
-    )
+    raw_block_hashes = envelope.get("raw_block_hashes") if isinstance(envelope, dict) else None
     raw_block_hashes = raw_block_hashes if isinstance(raw_block_hashes, dict) else {}
-    raw_block_counts = (
-        envelope.get("raw_block_counts") if isinstance(envelope, dict) else None
-    )
+    raw_block_counts = envelope.get("raw_block_counts") if isinstance(envelope, dict) else None
     raw_block_counts = raw_block_counts if isinstance(raw_block_counts, dict) else {}
     path_value = raw_block_paths.get(block_name)
     path_text = path_value if isinstance(path_value, str) and path_value else None
     path_listed = path_text is not None
     path = (
-        root / path_text
-        if path_text is not None
-        else episode_dir / "raw_blocks" / _safe_raw_block_filename(block_name)
+        root / path_text if path_text is not None else episode_dir / "raw_blocks" / _safe_raw_block_filename(block_name)
     )
     declared_sha256 = raw_block_hashes.get(block_name)
     declared_sha256 = declared_sha256 if isinstance(declared_sha256, str) else None
     declared_count = raw_block_counts.get(block_name)
     declared_count = (
-        declared_count
-        if isinstance(declared_count, int) and not isinstance(declared_count, bool)
-        else None
+        declared_count if isinstance(declared_count, int) and not isinstance(declared_count, bool) else None
     )
     exists = path.exists()
     try:
@@ -6071,9 +5377,7 @@ def _imported_raw_block_status(
         "declared_sha256": declared_sha256,
         "observed_sha256": observed_sha256,
         "hash_matches": (
-            observed_sha256 == declared_sha256
-            if observed_sha256 is not None and declared_sha256 is not None
-            else None
+            observed_sha256 == declared_sha256 if observed_sha256 is not None and declared_sha256 is not None else None
         ),
         "declared_count": declared_count,
     }
@@ -6099,41 +5403,23 @@ def _direct_ingest_contract_raw_status(
             valid_json = True
         except ValueError:
             valid_json = False
-    hard_gate_summary = (
-        contract.get("hard_gate_summary") if isinstance(contract, dict) else None
-    )
-    hard_gate_summary = (
-        hard_gate_summary if isinstance(hard_gate_summary, dict) else {}
-    )
+    hard_gate_summary = contract.get("hard_gate_summary") if isinstance(contract, dict) else None
+    hard_gate_summary = hard_gate_summary if isinstance(hard_gate_summary, dict) else {}
     fatal_blockers = contract.get("fatal_blockers") if isinstance(contract, dict) else None
     fatal_blocker_count = len(fatal_blockers) if isinstance(fatal_blockers, list) else None
-    validation_parity_verified = hard_gate_summary.get(
-        "direct_ingest_contract_validation_parity_verified"
-    )
+    validation_parity_verified = hard_gate_summary.get("direct_ingest_contract_validation_parity_verified")
     if validation_parity_verified is None:
         validation_parity_verified = hard_gate_summary.get("schema_contract_verified")
-    count_hash_parity_verified = hard_gate_summary.get(
-        "direct_ingest_contract_count_hash_parity_verified"
-    )
+    count_hash_parity_verified = hard_gate_summary.get("direct_ingest_contract_count_hash_parity_verified")
     if count_hash_parity_verified is None:
-        count_hash_parity_verified = hard_gate_summary.get(
-            "record_count_hash_parity_ready"
-        )
+        count_hash_parity_verified = hard_gate_summary.get("record_count_hash_parity_ready")
     return {
         **raw_status,
         "valid_json": valid_json,
-        "schema_version": contract.get("schema_version")
-        if isinstance(contract, dict)
-        else None,
-        "direct_brain_ingest_ready": contract.get("direct_brain_ingest_ready")
-        if isinstance(contract, dict)
-        else None,
-        "brain_eligible": contract.get("brain_eligible")
-        if isinstance(contract, dict)
-        else None,
-        "requires_human_semantic_review": contract.get(
-            "requires_human_semantic_review"
-        )
+        "schema_version": contract.get("schema_version") if isinstance(contract, dict) else None,
+        "direct_brain_ingest_ready": contract.get("direct_brain_ingest_ready") if isinstance(contract, dict) else None,
+        "brain_eligible": contract.get("brain_eligible") if isinstance(contract, dict) else None,
+        "requires_human_semantic_review": contract.get("requires_human_semantic_review")
         if isinstance(contract, dict)
         else None,
         "fatal_blocker_count": fatal_blocker_count,
@@ -6180,9 +5466,7 @@ def _final_semantic_audit_raw_status(
     return {
         **raw_status,
         "row_count": row_count if raw_status["exists"] is True else None,
-        "invalid_line_count": invalid_line_count
-        if raw_status["exists"] is True
-        else None,
+        "invalid_line_count": invalid_line_count if raw_status["exists"] is True else None,
         "fail_count": fail_count if raw_status["exists"] is True else None,
     }
 
@@ -6206,17 +5490,13 @@ def _imported_direct_ingest_raw_findings(
     findings: list[str] = []
     if inspection.get("direct_ingest_contract_present") is True:
         if contract_status["path_listed"] is not True:
-            findings.append(
-                "direct ingest contract raw block path missing from imported envelope"
-            )
+            findings.append("direct ingest contract raw block path missing from imported envelope")
         if contract_status["exists"] is not True:
             findings.append("direct ingest contract raw block is missing")
         elif contract_status["valid_json"] is not True:
             findings.append("direct ingest contract raw block is invalid JSON")
         if contract_status["declared_sha256"] is None:
-            findings.append(
-                "direct ingest contract raw block hash missing from imported envelope"
-            )
+            findings.append("direct ingest contract raw block hash missing from imported envelope")
         elif contract_status["hash_matches"] is not True:
             findings.append("direct ingest contract raw block hash mismatch")
         checks = (
@@ -6263,15 +5543,11 @@ def _imported_direct_ingest_raw_findings(
                 findings.append(f"{label}={observed!r} expected {expected!r}")
     if inspection.get("final_semantic_audit_present") is True:
         if final_audit_status["path_listed"] is not True:
-            findings.append(
-                "final semantic audit raw block path missing from imported envelope"
-            )
+            findings.append("final semantic audit raw block path missing from imported envelope")
         if final_audit_status["exists"] is not True:
             findings.append("final semantic audit raw block is missing")
         if final_audit_status["declared_sha256"] is None:
-            findings.append(
-                "final semantic audit raw block hash missing from imported envelope"
-            )
+            findings.append("final semantic audit raw block hash missing from imported envelope")
         elif final_audit_status["hash_matches"] is not True:
             findings.append("final semantic audit raw block hash mismatch")
         expected_count = inspection.get("final_semantic_audit_count")
@@ -6280,18 +5556,14 @@ def _imported_direct_ingest_raw_findings(
             and not isinstance(expected_count, bool)
             and final_audit_status.get("row_count") != expected_count
         ):
-            findings.append(
-                "final semantic audit raw block count does not match real smoke"
-            )
+            findings.append("final semantic audit raw block count does not match real smoke")
         expected_fail_count = inspection.get("final_semantic_audit_fail_count")
         if (
             isinstance(expected_fail_count, int)
             and not isinstance(expected_fail_count, bool)
             and final_audit_status.get("fail_count") != expected_fail_count
         ):
-            findings.append(
-                "final semantic audit raw block fail count does not match real smoke"
-            )
+            findings.append("final semantic audit raw block fail count does not match real smoke")
         if final_audit_status.get("invalid_line_count") not in {None, 0}:
             findings.append("final semantic audit raw block has invalid rows")
     return findings
@@ -6306,48 +5578,32 @@ def _real_bundle_import_status(
     inspection = selected.get("inspection") if selected is not None else None
     inspection = inspection if isinstance(inspection, dict) else None
     episode_id = inspection.get("episode_id") if inspection is not None else None
-    raw_bundle_sha256 = (
-        inspection.get("raw_bundle_sha256") if inspection is not None else None
-    )
+    raw_bundle_sha256 = inspection.get("raw_bundle_sha256") if inspection is not None else None
     expected_record_count = _int_from_mapping(inspection, "normalized_record_count")
     expected_training_count = _int_from_mapping(
         inspection,
         "training_eligible_record_count",
     )
-    expected_record_counts_by_type = (
-        inspection.get("record_counts_by_type") if inspection is not None else None
-    )
-    expected_record_ids = (
-        _string_list(inspection.get("normalized_record_ids"))
-        if inspection is not None
-        else []
-    )
+    expected_record_counts_by_type = inspection.get("record_counts_by_type") if inspection is not None else None
+    expected_record_ids = _string_list(inspection.get("normalized_record_ids")) if inspection is not None else []
     base = {
         "schema_version": "nslab.real_bundle_import_status.v1",
         "applicable": real_bundle_smoke.get("status") == "passed",
         "selected_path": selected.get("path") if selected is not None else None,
         "episode_id": episode_id if isinstance(episode_id, str) else None,
-        "raw_bundle_sha256": raw_bundle_sha256
-        if isinstance(raw_bundle_sha256, str)
-        else None,
+        "raw_bundle_sha256": raw_bundle_sha256 if isinstance(raw_bundle_sha256, str) else None,
         "expected_record_count": expected_record_count,
         "expected_training_eligible_record_count": expected_training_count,
         "expected_record_counts_by_type": expected_record_counts_by_type
         if isinstance(expected_record_counts_by_type, dict)
         else None,
-        "expected_record_id_count": len(expected_record_ids)
-        if expected_record_ids
-        else None,
+        "expected_record_id_count": len(expected_record_ids) if expected_record_ids else None,
         "expected_record_ids": expected_record_ids or None,
-        "quarantined_bundle_count": inspection.get("quarantined_bundle_count")
-        if inspection is not None
-        else None,
+        "quarantined_bundle_count": inspection.get("quarantined_bundle_count") if inspection is not None else None,
         "quarantined_raw_record_count": inspection.get("quarantined_raw_record_count")
         if inspection is not None
         else None,
-        "quarantined_record_count": inspection.get("quarantined_record_count")
-        if inspection is not None
-        else None,
+        "quarantined_record_count": inspection.get("quarantined_record_count") if inspection is not None else None,
     }
     if real_bundle_smoke.get("status") != "passed":
         return {
@@ -6385,9 +5641,7 @@ def _real_bundle_import_status(
     normalized_index_path = episode_dir / "normalized_episode_index.json"
     original_bundle_path = episode_dir / "original_bundle.md"
     validation_report_path = episode_dir / "validation_report.json"
-    record_manifest_path = (
-        settings.project_root / "memory" / "record_manifests" / f"{episode_id}.json"
-    )
+    record_manifest_path = settings.project_root / "memory" / "record_manifests" / f"{episode_id}.json"
     envelope = _read_optional_json(envelope_path)
     normalized_index = _read_optional_json(normalized_index_path)
     validation_report = _read_optional_json(validation_report_path)
@@ -6436,14 +5690,10 @@ def _real_bundle_import_status(
             findings.append("imported envelope is not ACCEPT_FULL")
         if adapter != "v23-direct-ingest" and envelope.get("blind_valid") is not True:
             findings.append("imported envelope is not blind_valid")
-        if isinstance(raw_bundle_sha256, str) and (
-            envelope.get("raw_bundle_sha256") != raw_bundle_sha256
-        ):
+        if isinstance(raw_bundle_sha256, str) and (envelope.get("raw_bundle_sha256") != raw_bundle_sha256):
             findings.append("imported envelope raw bundle sha does not match real smoke")
     if original_bundle_path.exists():
-        if isinstance(raw_bundle_sha256, str) and (
-            file_sha256(original_bundle_path) != raw_bundle_sha256
-        ):
+        if isinstance(raw_bundle_sha256, str) and (file_sha256(original_bundle_path) != raw_bundle_sha256):
             findings.append("stored original bundle sha does not match real smoke")
     else:
         findings.append("stored original bundle is missing")
@@ -6454,66 +5704,42 @@ def _real_bundle_import_status(
             findings.append("normalized episode index has duplicate record IDs")
         if (
             isinstance(expected_record_count, int)
-            and len(_string_list(normalized_index.get("record_ids")))
-            != expected_record_count
+            and len(_string_list(normalized_index.get("record_ids"))) != expected_record_count
         ):
             findings.append("normalized episode index count does not match real smoke")
         if expected_record_ids and (
-            sorted(_string_list(normalized_index.get("record_ids")))
-            != sorted(expected_record_ids)
+            sorted(_string_list(normalized_index.get("record_ids"))) != sorted(expected_record_ids)
         ):
             findings.append("normalized episode index IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
-            and normalized_index.get("training_eligible_record_count")
-            != expected_training_count
+            and normalized_index.get("training_eligible_record_count") != expected_training_count
         ):
-            findings.append(
-                "normalized episode index training eligible count does not match real smoke"
-            )
+            findings.append("normalized episode index training eligible count does not match real smoke")
         if isinstance(expected_record_counts_by_type, dict) and (
-            normalized_index.get("record_count_by_type")
-            != expected_record_counts_by_type
+            normalized_index.get("record_count_by_type") != expected_record_counts_by_type
         ):
             findings.append("normalized episode index type counts do not match real smoke")
     if validation_report is None:
         findings.append("validation report for selected real bundle is missing")
     else:
         validation_raw_record_ids = _string_list(validation_report.get("raw_record_ids"))
-        validation_normalized_record_ids = _string_list(
-            validation_report.get("normalized_record_ids")
-        )
-        validation_raw_normalized_record_count_matches = validation_report.get(
-            "raw_normalized_record_count_matches"
-        )
-        validation_missing_normalized_record_ids = _string_list(
-            validation_report.get("missing_normalized_record_ids")
-        )
+        validation_normalized_record_ids = _string_list(validation_report.get("normalized_record_ids"))
+        validation_raw_normalized_record_count_matches = validation_report.get("raw_normalized_record_count_matches")
+        validation_missing_normalized_record_ids = _string_list(validation_report.get("missing_normalized_record_ids"))
         validation_missing_normalized_record_count = _int_from_mapping(
             validation_report,
             "missing_normalized_record_count",
         )
-        if (
-            validation_missing_normalized_record_count is None
-            and validation_missing_normalized_record_ids
-        ):
-            validation_missing_normalized_record_count = len(
-                validation_missing_normalized_record_ids
-            )
-        validation_extra_normalized_record_ids = _string_list(
-            validation_report.get("extra_normalized_record_ids")
-        )
+        if validation_missing_normalized_record_count is None and validation_missing_normalized_record_ids:
+            validation_missing_normalized_record_count = len(validation_missing_normalized_record_ids)
+        validation_extra_normalized_record_ids = _string_list(validation_report.get("extra_normalized_record_ids"))
         validation_extra_normalized_record_count = _int_from_mapping(
             validation_report,
             "extra_normalized_record_count",
         )
-        if (
-            validation_extra_normalized_record_count is None
-            and validation_extra_normalized_record_ids
-        ):
-            validation_extra_normalized_record_count = len(
-                validation_extra_normalized_record_ids
-            )
+        if validation_extra_normalized_record_count is None and validation_extra_normalized_record_ids:
+            validation_extra_normalized_record_count = len(validation_extra_normalized_record_ids)
         validation_raw_payload_hash_mismatch_record_ids = _string_list(
             validation_report.get("raw_payload_hash_mismatch_record_ids")
         )
@@ -6535,67 +5761,52 @@ def _real_bundle_import_status(
         if validation_report.get("record_count_matches_manifest") is not True:
             findings.append("validation report record count manifest parity failed")
         if validation_report.get("training_eligible_count_matches_manifest") is not True:
-            findings.append(
-                "validation report training eligible manifest parity failed"
-            )
+            findings.append("validation report training eligible manifest parity failed")
         if validation_report.get("record_id_set_matches_raw") is not True:
             findings.append("validation report raw record ID parity failed")
         if (
             validation_raw_normalized_record_count_matches is not None
             and validation_raw_normalized_record_count_matches is not True
         ):
-            findings.append(
-                "validation report raw/normalized record count parity failed"
-            )
+            findings.append("validation report raw/normalized record count parity failed")
         if validation_report.get("record_type_counts_match_raw") is not True:
             findings.append("validation report raw record type parity failed")
         if validation_report.get("training_eligible_count_matches_raw") is not True:
-            findings.append(
-                "validation report raw training eligible parity failed"
-            )
+            findings.append("validation report raw training eligible parity failed")
         if validation_report.get("raw_payload_hashes_match") is not True:
             findings.append("validation report raw payload hash parity failed")
         if _duplicate_strings(validation_raw_record_ids):
             findings.append("validation report raw record IDs contain duplicates")
         if _duplicate_strings(validation_normalized_record_ids):
             findings.append("validation report normalized record IDs contain duplicates")
-        if expected_record_ids and validation_raw_record_ids and (
-            sorted(validation_raw_record_ids) != sorted(expected_record_ids)
+        if (
+            expected_record_ids
+            and validation_raw_record_ids
+            and (sorted(validation_raw_record_ids) != sorted(expected_record_ids))
         ):
             findings.append("validation report raw record IDs do not match real smoke")
-        if expected_record_ids and validation_normalized_record_ids and (
-            sorted(validation_normalized_record_ids) != sorted(expected_record_ids)
+        if (
+            expected_record_ids
+            and validation_normalized_record_ids
+            and (sorted(validation_normalized_record_ids) != sorted(expected_record_ids))
         ):
-            findings.append(
-                "validation report normalized record IDs do not match real smoke"
-            )
+            findings.append("validation report normalized record IDs do not match real smoke")
         if validation_missing_normalized_record_ids or (
-            validation_missing_normalized_record_count is not None
-            and validation_missing_normalized_record_count != 0
+            validation_missing_normalized_record_count is not None and validation_missing_normalized_record_count != 0
         ):
             findings.append("validation report has missing normalized record IDs")
         if validation_extra_normalized_record_ids or (
-            validation_extra_normalized_record_count is not None
-            and validation_extra_normalized_record_count != 0
+            validation_extra_normalized_record_count is not None and validation_extra_normalized_record_count != 0
         ):
             findings.append("validation report has extra normalized record IDs")
         if validation_raw_payload_hash_mismatch_record_ids:
             findings.append("validation report has raw payload hash mismatches")
-        if (
-            isinstance(expected_record_count, int)
-            and validation_report.get("record_count") != expected_record_count
-        ):
+        if isinstance(expected_record_count, int) and validation_report.get("record_count") != expected_record_count:
             findings.append("validation report count does not match real smoke")
-        if (
-            isinstance(expected_training_count, int)
-            and validation_effective_training_count != expected_training_count
-        ):
-            findings.append(
-                "validation report training eligible count does not match real smoke"
-            )
+        if isinstance(expected_training_count, int) and validation_effective_training_count != expected_training_count:
+            findings.append("validation report training eligible count does not match real smoke")
         if isinstance(expected_record_counts_by_type, dict) and (
-            validation_report.get("raw_record_counts_by_type")
-            != expected_record_counts_by_type
+            validation_report.get("raw_record_counts_by_type") != expected_record_counts_by_type
         ):
             findings.append("validation report raw type counts do not match real smoke")
     if record_manifest is None:
@@ -6605,64 +5816,43 @@ def _real_bundle_import_status(
             findings.append("record manifest has duplicate record IDs")
         if record_manifest.get("accepted") is not True:
             findings.append("record manifest for selected real bundle is not accepted")
-        if (
-            isinstance(expected_record_count, int)
-            and record_manifest.get("record_count") != expected_record_count
-        ):
+        if isinstance(expected_record_count, int) and record_manifest.get("record_count") != expected_record_count:
             findings.append("record manifest count does not match real smoke")
         if expected_record_ids and (
-            sorted(_string_list(record_manifest.get("record_ids")))
-            != sorted(expected_record_ids)
+            sorted(_string_list(record_manifest.get("record_ids"))) != sorted(expected_record_ids)
         ):
             findings.append("record manifest IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
-            and record_manifest.get("training_eligible_record_count")
-            != expected_training_count
+            and record_manifest.get("training_eligible_record_count") != expected_training_count
         ):
-            findings.append(
-                "record manifest training eligible count does not match real smoke"
-            )
+            findings.append("record manifest training eligible count does not match real smoke")
         if isinstance(expected_record_counts_by_type, dict) and (
-            record_manifest.get("record_counts_by_type")
-            != expected_record_counts_by_type
+            record_manifest.get("record_counts_by_type") != expected_record_counts_by_type
         ):
             findings.append("record manifest type counts do not match real smoke")
         manifest_records_sha = record_manifest.get("records_sha256")
-        if (
-            isinstance(manifest_records_sha, str)
-            and record_file_stats["text_sha256"] != manifest_records_sha
-        ):
+        if isinstance(manifest_records_sha, str) and record_file_stats["text_sha256"] != manifest_records_sha:
             findings.append("record JSONL sha does not match record manifest")
 
     if record_file_stats["exists"] is not True:
         findings.append("record JSONL for selected real bundle is missing")
     else:
-        if (
-            record_file_stats["invalid_line_count"] != 0
-            or record_file_stats["invalid_envelope_count"] != 0
-        ):
+        if record_file_stats["invalid_line_count"] != 0 or record_file_stats["invalid_envelope_count"] != 0:
             findings.append("record JSONL for selected real bundle has invalid rows")
         if record_file_stats["duplicate_record_ids"]:
             findings.append("record JSONL has duplicate record IDs")
-        if (
-            isinstance(expected_record_count, int)
-            and record_file_stats["record_count"] != expected_record_count
-        ):
+        if isinstance(expected_record_count, int) and record_file_stats["record_count"] != expected_record_count:
             findings.append("record JSONL count does not match real smoke")
         if expected_record_ids and (
-            sorted(_string_list(record_file_stats["record_ids"]))
-            != sorted(expected_record_ids)
+            sorted(_string_list(record_file_stats["record_ids"])) != sorted(expected_record_ids)
         ):
             findings.append("record JSONL IDs do not match real smoke")
         if (
             isinstance(expected_training_count, int)
-            and record_file_stats["training_eligible_record_count"]
-            != expected_training_count
+            and record_file_stats["training_eligible_record_count"] != expected_training_count
         ):
-            findings.append(
-                "record JSONL training eligible count does not match real smoke"
-            )
+            findings.append("record JSONL training eligible count does not match real smoke")
         if isinstance(expected_record_counts_by_type, dict) and (
             record_file_stats["record_counts_by_type"] != expected_record_counts_by_type
         ):
@@ -6715,40 +5905,20 @@ def _real_bundle_import_status(
             settings.project_root,
         ),
         "validation_report_exists": validation_report is not None,
-        "validation_report_passed": (
-            validation_report.get("passed") if isinstance(validation_report, dict) else None
-        ),
+        "validation_report_passed": (validation_report.get("passed") if isinstance(validation_report, dict) else None),
         "validation_report_import_loss_audit_passed": (
-            validation_report.get("import_loss_audit_passed")
-            if isinstance(validation_report, dict)
-            else None
+            validation_report.get("import_loss_audit_passed") if isinstance(validation_report, dict) else None
         ),
-        "validation_report_raw_record_id_count": len(validation_raw_record_ids)
-        if validation_raw_record_ids
-        else None,
-        "validation_report_normalized_record_id_count": len(
-            validation_normalized_record_ids
-        )
+        "validation_report_raw_record_id_count": len(validation_raw_record_ids) if validation_raw_record_ids else None,
+        "validation_report_normalized_record_id_count": len(validation_normalized_record_ids)
         if validation_normalized_record_ids
         else None,
-        "validation_report_raw_normalized_record_count_matches": (
-            validation_raw_normalized_record_count_matches
-        ),
-        "validation_report_missing_normalized_record_count": (
-            validation_missing_normalized_record_count
-        ),
-        "validation_report_extra_normalized_record_count": (
-            validation_extra_normalized_record_count
-        ),
-        "validation_report_missing_normalized_record_ids": (
-            validation_missing_normalized_record_ids or None
-        ),
-        "validation_report_extra_normalized_record_ids": (
-            validation_extra_normalized_record_ids or None
-        ),
-        "validation_report_effective_training_eligible_record_count": (
-            validation_effective_training_count
-        ),
+        "validation_report_raw_normalized_record_count_matches": (validation_raw_normalized_record_count_matches),
+        "validation_report_missing_normalized_record_count": (validation_missing_normalized_record_count),
+        "validation_report_extra_normalized_record_count": (validation_extra_normalized_record_count),
+        "validation_report_missing_normalized_record_ids": (validation_missing_normalized_record_ids or None),
+        "validation_report_extra_normalized_record_ids": (validation_extra_normalized_record_ids or None),
+        "validation_report_effective_training_eligible_record_count": (validation_effective_training_count),
         "validation_report_raw_payload_hash_mismatch_record_ids": (
             validation_raw_payload_hash_mismatch_record_ids or None
         ),
@@ -6764,67 +5934,31 @@ def _real_bundle_import_status(
         "record_file_sha256": record_file_stats["sha256"],
         "record_file_text_sha256": record_file_stats["text_sha256"],
         "observed_record_count": record_file_stats["record_count"],
-        "observed_training_eligible_record_count": record_file_stats[
-            "training_eligible_record_count"
-        ],
+        "observed_training_eligible_record_count": record_file_stats["training_eligible_record_count"],
         "observed_record_counts_by_type": record_file_stats["record_counts_by_type"],
         "observed_record_ids": record_file_stats["record_ids"],
         "duplicate_record_ids": record_file_stats["duplicate_record_ids"],
         "record_file_invalid_line_count": record_file_stats["invalid_line_count"],
-        "record_file_invalid_envelope_count": record_file_stats[
-            "invalid_envelope_count"
-        ],
+        "record_file_invalid_envelope_count": record_file_stats["invalid_envelope_count"],
         "direct_ingest_contract_raw_block_path": direct_contract_raw_status["path"],
-        "direct_ingest_contract_raw_block_path_listed": direct_contract_raw_status[
-            "path_listed"
-        ],
-        "direct_ingest_contract_raw_block_exists": direct_contract_raw_status[
-            "exists"
-        ],
-        "direct_ingest_contract_raw_block_hash_matches": direct_contract_raw_status[
-            "hash_matches"
-        ],
-        "direct_ingest_contract_raw_block_valid_json": direct_contract_raw_status[
-            "valid_json"
-        ],
-        "direct_ingest_contract_schema_version": direct_contract_raw_status[
-            "schema_version"
-        ],
-        "direct_brain_ingest_ready": direct_contract_raw_status[
-            "direct_brain_ingest_ready"
-        ],
+        "direct_ingest_contract_raw_block_path_listed": direct_contract_raw_status["path_listed"],
+        "direct_ingest_contract_raw_block_exists": direct_contract_raw_status["exists"],
+        "direct_ingest_contract_raw_block_hash_matches": direct_contract_raw_status["hash_matches"],
+        "direct_ingest_contract_raw_block_valid_json": direct_contract_raw_status["valid_json"],
+        "direct_ingest_contract_schema_version": direct_contract_raw_status["schema_version"],
+        "direct_brain_ingest_ready": direct_contract_raw_status["direct_brain_ingest_ready"],
         "brain_eligible": direct_contract_raw_status["brain_eligible"],
-        "requires_human_semantic_review": direct_contract_raw_status[
-            "requires_human_semantic_review"
-        ],
-        "direct_ingest_fatal_blocker_count": direct_contract_raw_status[
-            "fatal_blocker_count"
-        ],
-        "direct_ingest_contract_validation_parity_verified": (
-            direct_contract_raw_status["validation_parity_verified"]
-        ),
-        "direct_ingest_contract_count_hash_parity_verified": (
-            direct_contract_raw_status["count_hash_parity_verified"]
-        ),
-        "final_semantic_audit_raw_block_path": final_semantic_audit_raw_status[
-            "path"
-        ],
-        "final_semantic_audit_raw_block_path_listed": (
-            final_semantic_audit_raw_status["path_listed"]
-        ),
-        "final_semantic_audit_raw_block_exists": final_semantic_audit_raw_status[
-            "exists"
-        ],
-        "final_semantic_audit_raw_block_hash_matches": (
-            final_semantic_audit_raw_status["hash_matches"]
-        ),
+        "requires_human_semantic_review": direct_contract_raw_status["requires_human_semantic_review"],
+        "direct_ingest_fatal_blocker_count": direct_contract_raw_status["fatal_blocker_count"],
+        "direct_ingest_contract_validation_parity_verified": (direct_contract_raw_status["validation_parity_verified"]),
+        "direct_ingest_contract_count_hash_parity_verified": (direct_contract_raw_status["count_hash_parity_verified"]),
+        "final_semantic_audit_raw_block_path": final_semantic_audit_raw_status["path"],
+        "final_semantic_audit_raw_block_path_listed": (final_semantic_audit_raw_status["path_listed"]),
+        "final_semantic_audit_raw_block_exists": final_semantic_audit_raw_status["exists"],
+        "final_semantic_audit_raw_block_hash_matches": (final_semantic_audit_raw_status["hash_matches"]),
         "final_semantic_audit_count": final_semantic_audit_raw_status["row_count"],
-        "final_semantic_audit_fail_count": final_semantic_audit_raw_status[
-            "fail_count"
-        ],
-        "final_semantic_audit_invalid_line_count": (
-            final_semantic_audit_raw_status["invalid_line_count"]
-        ),
+        "final_semantic_audit_fail_count": final_semantic_audit_raw_status["fail_count"],
+        "final_semantic_audit_invalid_line_count": (final_semantic_audit_raw_status["invalid_line_count"]),
         "passed": not findings,
         "status": "ready" if not findings else "attention",
         "finding_count": len(findings),
@@ -6849,23 +5983,11 @@ def _llm_full_brain_status(
     compile_report_path = settings.project_root / "diagnostics" / "brain_compile_report.json"
     compile_manifest = _read_optional_json(compile_manifest_path)
     compile_report = _read_optional_json(compile_report_path)
-    compile_run = (
-        compile_report.get("llm_compile_run")
-        if isinstance(compile_report, dict)
-        else None
-    )
+    compile_run = compile_report.get("llm_compile_run") if isinstance(compile_report, dict) else None
     compile_run = compile_run if isinstance(compile_run, dict) else None
     record_id_stats = _brain_record_store_id_stats(settings.project_root)
-    known_record_ids = (
-        record_id_stats["record_ids"]
-        if record_id_stats["readable"] is True
-        else None
-    )
-    known_records_by_id = (
-        record_id_stats["records_by_id"]
-        if record_id_stats["readable"] is True
-        else None
-    )
+    known_record_ids = record_id_stats["record_ids"] if record_id_stats["readable"] is True else None
+    known_records_by_id = record_id_stats["records_by_id"] if record_id_stats["readable"] is True else None
     compiled_claim_stats = _compiled_claim_file_stats(
         compiled_claims_path,
         known_record_ids=known_record_ids,
@@ -6898,20 +6020,10 @@ def _llm_full_brain_status(
         "schema_version": "nslab.production_llm_full_brain.v1",
         "build_mode": build_mode if isinstance(build_mode, str) else None,
         "catalog_only": catalog_only if isinstance(catalog_only, bool) else None,
-        "catalog_mode_reason": (
-            catalog_mode_reason if isinstance(catalog_mode_reason, str) else None
-        ),
-        "deprecated_mode_alias": (
-            deprecated_mode_alias
-            if isinstance(deprecated_mode_alias, bool)
-            else None
-        ),
-        "production_eligible": (
-            production_eligible if isinstance(production_eligible, bool) else None
-        ),
-        "current_brain_version": current_brain_version
-        if isinstance(current_brain_version, str)
-        else None,
+        "catalog_mode_reason": (catalog_mode_reason if isinstance(catalog_mode_reason, str) else None),
+        "deprecated_mode_alias": (deprecated_mode_alias if isinstance(deprecated_mode_alias, bool) else None),
+        "production_eligible": (production_eligible if isinstance(production_eligible, bool) else None),
+        "current_brain_version": current_brain_version if isinstance(current_brain_version, str) else None,
         "expected_source_record_count": expected_source_record_count,
         "applicable": build_mode == "llm-full",
         "compile_manifest_path": relative_to_root(
@@ -6926,47 +6038,29 @@ def _llm_full_brain_status(
         "compiled_claims_exists": compiled_claims_path.exists(),
         "compiled_claim_jsonl_count": compiled_claim_count,
         "compiled_claim_valid_count": valid_compiled_claim_count,
-        "compiled_claim_invalid_line_count": compiled_claim_stats[
-            "invalid_line_count"
-        ],
+        "compiled_claim_invalid_line_count": compiled_claim_stats["invalid_line_count"],
         "duplicate_compiled_claim_ids": compiled_claim_stats["duplicate_claim_ids"],
-        "compiled_claim_invalid_categories": compiled_claim_stats[
-            "invalid_categories"
-        ],
-        "compiled_claims_without_supporting_records": compiled_claim_stats[
-            "claims_without_supporting_records"
-        ],
+        "compiled_claim_invalid_categories": compiled_claim_stats["invalid_categories"],
+        "compiled_claims_without_supporting_records": compiled_claim_stats["claims_without_supporting_records"],
         "compiled_claims_with_unknown_supporting_records": compiled_claim_stats[
             "claims_with_unknown_supporting_records"
         ],
         "compiled_claims_with_unknown_contradicting_records": compiled_claim_stats[
             "claims_with_unknown_contradicting_records"
         ],
-        "compiled_claims_without_supporting_episodes": compiled_claim_stats[
-            "claims_without_supporting_episodes"
-        ],
+        "compiled_claims_without_supporting_episodes": compiled_claim_stats["claims_without_supporting_episodes"],
         "compiled_claims_with_unknown_supporting_episodes": compiled_claim_stats[
             "claims_with_unknown_supporting_episodes"
         ],
         "compiled_claims_with_unknown_contradicting_episodes": compiled_claim_stats[
             "claims_with_unknown_contradicting_episodes"
         ],
-        "compiled_claim_episode_record_mismatches": compiled_claim_stats[
-            "episode_record_mismatches"
-        ],
+        "compiled_claim_episode_record_mismatches": compiled_claim_stats["episode_record_mismatches"],
         "compiled_claim_temporal_leaks": compiled_claim_stats["temporal_leaks"],
-        "validated_compiled_claims_without_contradictions": compiled_claim_stats[
-            "validated_without_contradictions"
-        ],
-        "validated_compiled_claims_with_single_episode": compiled_claim_stats[
-            "validated_single_episode"
-        ],
-        "compiled_claim_supporting_record_id_count": compiled_claim_stats[
-            "supporting_record_id_count"
-        ],
-        "compiled_claim_contradicting_record_id_count": compiled_claim_stats[
-            "contradicting_record_id_count"
-        ],
+        "validated_compiled_claims_without_contradictions": compiled_claim_stats["validated_without_contradictions"],
+        "validated_compiled_claims_with_single_episode": compiled_claim_stats["validated_single_episode"],
+        "compiled_claim_supporting_record_id_count": compiled_claim_stats["supporting_record_id_count"],
+        "compiled_claim_contradicting_record_id_count": compiled_claim_stats["contradicting_record_id_count"],
         "record_store_readable_for_compiled_claims": record_id_stats["readable"],
         "record_store_record_count_for_compiled_claims": record_id_stats["record_count"],
         "record_store_error_for_compiled_claims": record_id_stats["error"],
@@ -6977,45 +6071,21 @@ def _llm_full_brain_status(
         "brain_category_unreadable_files": category_file_stats["unreadable_files"],
         "category_manifest_expected_count": len(BRAIN_FILES),
         "category_manifest_observed_count": category_manifest_stats["observed_count"],
-        "category_manifest_schema_mismatches": category_manifest_stats[
-            "schema_mismatches"
-        ],
-        "category_manifest_source_count_mismatches": category_manifest_stats[
-            "source_count_mismatches"
-        ],
+        "category_manifest_schema_mismatches": category_manifest_stats["schema_mismatches"],
+        "category_manifest_source_count_mismatches": category_manifest_stats["source_count_mismatches"],
         "category_manifest_compiled_claim_count_mismatches": (
             category_manifest_stats["compiled_claim_count_mismatches"]
         ),
-        "category_manifest_unknown_compiled_claim_ids": category_manifest_stats[
-            "unknown_compiled_claim_ids"
-        ],
-        "category_manifest_unknown_source_record_ids": category_manifest_stats[
-            "unknown_source_record_ids"
-        ],
-        "record_shard_manifest_observed_count": record_shard_manifest_stats[
-            "observed_count"
-        ],
-        "record_shard_manifest_record_id_count": record_shard_manifest_stats[
-            "record_id_count"
-        ],
-        "record_shard_manifest_unique_record_id_count": record_shard_manifest_stats[
-            "unique_record_id_count"
-        ],
-        "record_shard_manifest_schema_mismatches": record_shard_manifest_stats[
-            "schema_mismatches"
-        ],
-        "record_shard_manifest_count_mismatches": record_shard_manifest_stats[
-            "count_mismatches"
-        ],
-        "record_shard_manifest_duplicate_record_ids": record_shard_manifest_stats[
-            "duplicate_record_ids"
-        ],
-        "record_shard_manifest_unknown_record_ids": record_shard_manifest_stats[
-            "unknown_record_ids"
-        ],
-        "record_shard_manifest_missing_record_ids": record_shard_manifest_stats[
-            "missing_record_ids"
-        ],
+        "category_manifest_unknown_compiled_claim_ids": category_manifest_stats["unknown_compiled_claim_ids"],
+        "category_manifest_unknown_source_record_ids": category_manifest_stats["unknown_source_record_ids"],
+        "record_shard_manifest_observed_count": record_shard_manifest_stats["observed_count"],
+        "record_shard_manifest_record_id_count": record_shard_manifest_stats["record_id_count"],
+        "record_shard_manifest_unique_record_id_count": record_shard_manifest_stats["unique_record_id_count"],
+        "record_shard_manifest_schema_mismatches": record_shard_manifest_stats["schema_mismatches"],
+        "record_shard_manifest_count_mismatches": record_shard_manifest_stats["count_mismatches"],
+        "record_shard_manifest_duplicate_record_ids": record_shard_manifest_stats["duplicate_record_ids"],
+        "record_shard_manifest_unknown_record_ids": record_shard_manifest_stats["unknown_record_ids"],
+        "record_shard_manifest_missing_record_ids": record_shard_manifest_stats["missing_record_ids"],
         "compile_report_path": relative_to_root(
             compile_report_path,
             settings.project_root,
@@ -7024,42 +6094,26 @@ def _llm_full_brain_status(
         "compile_report_schema_version": compile_report.get("schema_version")
         if isinstance(compile_report, dict)
         else None,
-        "expected_compile_report_schema_version": (
-            BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION
-        ),
+        "expected_compile_report_schema_version": (BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION),
         "compile_run_present": compile_run is not None,
-        "compile_run_schema_version": compile_run.get("schema_version")
-        if isinstance(compile_run, dict)
-        else None,
+        "compile_run_schema_version": compile_run.get("schema_version") if isinstance(compile_run, dict) else None,
         "expected_compile_run_schema_version": LLM_FULL_COMPILE_RUN_SCHEMA_VERSION,
-        "provider": compile_manifest.get("provider")
-        if isinstance(compile_manifest, dict)
-        else None,
-        "model": compile_manifest.get("model")
-        if isinstance(compile_manifest, dict)
-        else None,
+        "provider": compile_manifest.get("provider") if isinstance(compile_manifest, dict) else None,
+        "model": compile_manifest.get("model") if isinstance(compile_manifest, dict) else None,
         "compile_manifest_schema_version": compile_manifest.get("schema_version")
         if isinstance(compile_manifest, dict)
         else None,
-        "expected_compile_manifest_schema_version": (
-            LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
-        ),
-        "compiler_version": compile_manifest.get("compiler_version")
-        if isinstance(compile_manifest, dict)
-        else None,
+        "expected_compile_manifest_schema_version": (LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION),
+        "compiler_version": compile_manifest.get("compiler_version") if isinstance(compile_manifest, dict) else None,
         "expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "configured_model": settings.llm.model,
-        "brain_version": compile_manifest.get("brain_version")
-        if isinstance(compile_manifest, dict)
-        else None,
+        "brain_version": compile_manifest.get("brain_version") if isinstance(compile_manifest, dict) else None,
         "source_record_count": _int_from_mapping(compile_manifest, "source_record_count"),
         "compiled_claim_count": _int_from_mapping(compile_manifest, "compiled_claim_count"),
         "record_shard_count": _int_from_mapping(compile_manifest, "record_shard_count"),
         "category_count": _int_from_mapping(compile_manifest, "category_count"),
         "llm_generation_count": _int_from_mapping(compile_manifest, "llm_generation_count"),
-        "run_brain_version": compile_run.get("brain_version")
-        if isinstance(compile_run, dict)
-        else None,
+        "run_brain_version": compile_run.get("brain_version") if isinstance(compile_run, dict) else None,
         "compile_report_brain_version": compile_report.get("brain_version")
         if isinstance(compile_report, dict)
         else None,
@@ -7070,24 +6124,14 @@ def _llm_full_brain_status(
         if isinstance(compile_run, dict)
         else None,
         "manifest_llm_prompt_hash_count": manifest_prompt_hash_stats["prompt_hash_count"],
-        "manifest_llm_unique_prompt_hash_count": manifest_prompt_hash_stats[
-            "unique_prompt_hash_count"
-        ],
-        "manifest_llm_missing_prompt_hash_fields": manifest_prompt_hash_stats[
-            "missing_fields"
-        ],
-        "manifest_llm_duplicate_prompt_hashes": manifest_prompt_hash_stats[
-            "duplicate_prompt_hashes"
-        ],
+        "manifest_llm_unique_prompt_hash_count": manifest_prompt_hash_stats["unique_prompt_hash_count"],
+        "manifest_llm_missing_prompt_hash_fields": manifest_prompt_hash_stats["missing_fields"],
+        "manifest_llm_duplicate_prompt_hashes": manifest_prompt_hash_stats["duplicate_prompt_hashes"],
         "run_llm_prompt_hash_count": run_prompt_hash_stats["prompt_hash_count"],
-        "run_llm_unique_prompt_hash_count": run_prompt_hash_stats[
-            "unique_prompt_hash_count"
-        ],
+        "run_llm_unique_prompt_hash_count": run_prompt_hash_stats["unique_prompt_hash_count"],
         "run_llm_prompt_hashes": run_prompt_hash_stats["prompt_hashes"],
         "run_llm_missing_prompt_hash_fields": run_prompt_hash_stats["missing_fields"],
-        "run_llm_duplicate_prompt_hashes": run_prompt_hash_stats[
-            "duplicate_prompt_hashes"
-        ],
+        "run_llm_duplicate_prompt_hashes": run_prompt_hash_stats["duplicate_prompt_hashes"],
         "run_llm_trace_evidence": run_trace_evidence,
     }
     if catalog_only is True:
@@ -7134,15 +6178,8 @@ def _llm_full_brain_status(
             findings.append("llm-full compile model does not match configured model")
         compiler_version = status["compiler_version"]
         if compiler_version != LLM_FULL_COMPILER_VERSION:
-            observed_version = (
-                compiler_version
-                if isinstance(compiler_version, str) and compiler_version
-                else "missing"
-            )
-            findings.append(
-                "llm-full compile compiler_version is "
-                f"{observed_version}, not {LLM_FULL_COMPILER_VERSION}"
-            )
+            observed_version = compiler_version if isinstance(compiler_version, str) and compiler_version else "missing"
+            findings.append(f"llm-full compile compiler_version is {observed_version}, not {LLM_FULL_COMPILER_VERSION}")
         manifest_brain_version = status["brain_version"]
         if (
             isinstance(current_brain_version, str)
@@ -7153,62 +6190,39 @@ def _llm_full_brain_status(
         source_record_count = status["source_record_count"]
         if not isinstance(source_record_count, int) or source_record_count <= 0:
             findings.append("llm-full compile source records are missing")
-        elif (
-            isinstance(expected_source_record_count, int)
-            and source_record_count != expected_source_record_count
-        ):
+        elif isinstance(expected_source_record_count, int) and source_record_count != expected_source_record_count:
             findings.append("llm-full compile source record count does not match coverage")
         manifest_claim_count = status["compiled_claim_count"]
         if not isinstance(manifest_claim_count, int) or manifest_claim_count <= 0:
             findings.append("llm-full compile manifest has no compiled claims")
         elif manifest_claim_count != valid_compiled_claim_count:
-            findings.append(
-                "llm-full compiled claim count does not match valid JSONL claims"
-            )
+            findings.append("llm-full compiled claim count does not match valid JSONL claims")
         record_shard_count = status["record_shard_count"]
         if not isinstance(record_shard_count, int) or record_shard_count <= 0:
             findings.append("llm-full record shard accounting is missing")
         if record_shard_manifest_stats["schema_mismatches"]:
             findings.append("llm-full compile manifest record shards are invalid")
         if record_shard_manifest_stats["count_mismatches"]:
-            findings.append(
-                "llm-full compile manifest record shard counts are inconsistent"
-            )
+            findings.append("llm-full compile manifest record shard counts are inconsistent")
         if record_shard_manifest_stats["duplicate_record_ids"]:
-            findings.append(
-                "llm-full compile manifest record shards contain duplicate record IDs"
-            )
+            findings.append("llm-full compile manifest record shards contain duplicate record IDs")
         if record_shard_manifest_stats["unknown_record_ids"]:
-            findings.append(
-                "llm-full compile manifest record shards reference unknown record IDs"
-            )
+            findings.append("llm-full compile manifest record shards reference unknown record IDs")
         if record_shard_manifest_stats["missing_record_ids"]:
-            findings.append(
-                "llm-full compile manifest record shards do not cover record store IDs"
-            )
+            findings.append("llm-full compile manifest record shards do not cover record store IDs")
         category_count = status["category_count"]
         if category_count != len(BRAIN_FILES):
             findings.append("llm-full category count does not match brain category files")
         if category_manifest_stats["schema_mismatches"]:
-            findings.append(
-                "llm-full compile manifest categories do not match canonical brain files"
-            )
+            findings.append("llm-full compile manifest categories do not match canonical brain files")
         if category_manifest_stats["source_count_mismatches"]:
-            findings.append(
-                "llm-full compile manifest category source counts are inconsistent"
-            )
+            findings.append("llm-full compile manifest category source counts are inconsistent")
         if category_manifest_stats["compiled_claim_count_mismatches"]:
-            findings.append(
-                "llm-full compile manifest category compiled claim counts are inconsistent"
-            )
+            findings.append("llm-full compile manifest category compiled claim counts are inconsistent")
         if category_manifest_stats["unknown_compiled_claim_ids"]:
-            findings.append(
-                "llm-full compile manifest references unknown compiled claim IDs"
-            )
+            findings.append("llm-full compile manifest references unknown compiled claim IDs")
         if category_manifest_stats["unknown_source_record_ids"]:
-            findings.append(
-                "llm-full compile manifest categories reference unknown source record IDs"
-            )
+            findings.append("llm-full compile manifest categories reference unknown source record IDs")
         if category_file_stats["missing_files"]:
             findings.append("llm-full brain category files are missing")
         if category_file_stats["empty_files"]:
@@ -7235,9 +6249,7 @@ def _llm_full_brain_status(
             run_schema_version = status["compile_run_schema_version"]
             if run_schema_version != LLM_FULL_COMPILE_RUN_SCHEMA_VERSION:
                 observed_schema = (
-                    run_schema_version
-                    if isinstance(run_schema_version, str) and run_schema_version
-                    else "missing"
+                    run_schema_version if isinstance(run_schema_version, str) and run_schema_version else "missing"
                 )
                 findings.append(
                     "llm-full compile run schema_version is "
@@ -7245,11 +6257,7 @@ def _llm_full_brain_status(
                 )
             brain_version = status["brain_version"]
             run_brain_version = status["run_brain_version"]
-            if (
-                isinstance(brain_version, str)
-                and brain_version
-                and run_brain_version != brain_version
-            ):
+            if isinstance(brain_version, str) and brain_version and run_brain_version != brain_version:
                 findings.append("llm-full compile run diagnostics do not match current brain")
             if (
                 isinstance(current_brain_version, str)
@@ -7280,20 +6288,12 @@ def _llm_full_brain_status(
             if status["compiler_version"] == LLM_FULL_COMPILER_VERSION:
                 if run_prompt_hash_stats["missing_fields"]:
                     findings.append("llm-full compile run prompt hashes are missing")
-                if (
-                    isinstance(generation_count, int)
-                    and run_prompt_hash_stats["prompt_hash_count"] != generation_count
-                ):
-                    findings.append(
-                        "llm-full compile run prompt hash accounting does not match "
-                        "generation count"
-                    )
+                if isinstance(generation_count, int) and run_prompt_hash_stats["prompt_hash_count"] != generation_count:
+                    findings.append("llm-full compile run prompt hash accounting does not match generation count")
                 manifest_hashes = set(manifest_prompt_hash_stats["prompt_hashes"])
                 run_hashes = set(run_prompt_hash_stats["prompt_hashes"])
                 if manifest_hashes and run_hashes and manifest_hashes != run_hashes:
-                    findings.append(
-                        "llm-full compile manifest and run prompt hashes differ"
-                    )
+                    findings.append("llm-full compile manifest and run prompt hashes differ")
                 for trace_finding in run_trace_evidence["findings"]:
                     findings.append(f"llm-full compile run {trace_finding}")
     if not compiled_claims_path.exists():
@@ -7327,9 +6327,7 @@ def _llm_full_brain_status(
     if compiled_claim_stats["validated_without_contradictions"]:
         findings.append("validated compiled claims are missing contradiction evidence")
     if compiled_claim_stats["validated_single_episode"]:
-        findings.append(
-            "validated compiled claims rely on one or zero supporting episodes"
-        )
+        findings.append("validated compiled claims rely on one or zero supporting episodes")
     return {
         **status,
         "passed": not findings,
@@ -7435,10 +6433,7 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
     bundle_version = inspection.get("bundle_schema_version")
     adapter = inspection.get("adapter")
     is_direct_ingest = adapter == "v23-direct-ingest"
-    is_v11 = (
-        bundle_version == "nslab.research_bundle.v11"
-        and adapter in {"v11", "v23-direct-ingest"}
-    )
+    is_v11 = bundle_version == "nslab.research_bundle.v11" and adapter in {"v11", "v23-direct-ingest"}
     requires_blind_valid = not is_direct_ingest
     brain_eligible = _first_not_none(
         inspection.get("brain_eligible"),
@@ -7508,42 +6503,26 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "trade_date": inspection.get("trade_date"),
         "raw_record_count": inspection.get("raw_record_count"),
         "normalized_record_count": inspection.get("normalized_record_count"),
-        "training_eligible_record_count": inspection.get(
-            "training_eligible_record_count"
-        ),
+        "training_eligible_record_count": inspection.get("training_eligible_record_count"),
         "raw_record_ids": inspection.get("raw_record_ids"),
         "normalized_record_ids": inspection.get("normalized_record_ids"),
         "raw_record_without_id_count": inspection.get("raw_record_without_id_count"),
         "record_id_set_comparable": inspection.get("record_id_set_comparable"),
         "record_id_set_matches_raw": inspection.get("record_id_set_matches_raw"),
-        "missing_normalized_record_ids": inspection.get(
-            "missing_normalized_record_ids"
-        ),
+        "missing_normalized_record_ids": inspection.get("missing_normalized_record_ids"),
         "extra_normalized_record_ids": inspection.get("extra_normalized_record_ids"),
         "raw_record_counts_by_type": inspection.get("raw_record_counts_by_type"),
-        "record_type_counts_match_raw": inspection.get(
-            "record_type_counts_match_raw"
-        ),
-        "raw_training_eligible_record_count": inspection.get(
-            "raw_training_eligible_record_count"
-        ),
-        "training_eligible_count_matches_raw": inspection.get(
-            "training_eligible_count_matches_raw"
-        ),
+        "record_type_counts_match_raw": inspection.get("record_type_counts_match_raw"),
+        "raw_training_eligible_record_count": inspection.get("raw_training_eligible_record_count"),
+        "training_eligible_count_matches_raw": inspection.get("training_eligible_count_matches_raw"),
         "raw_payload_hashes_match": inspection.get("raw_payload_hashes_match"),
-        "raw_payload_hash_mismatch_record_ids": inspection.get(
-            "raw_payload_hash_mismatch_record_ids"
-        ),
+        "raw_payload_hash_mismatch_record_ids": inspection.get("raw_payload_hash_mismatch_record_ids"),
         "import_loss_audit_passed": inspection.get("import_loss_audit_passed"),
         "typed_payload_valid": inspection.get("typed_payload_valid"),
-        "invalid_typed_payload_record_count": inspection.get(
-            "invalid_typed_payload_record_count"
-        ),
+        "invalid_typed_payload_record_count": inspection.get("invalid_typed_payload_record_count"),
         "dropped_record_count": inspection.get("dropped_record_count"),
         "quarantined_bundle_count": inspection.get("quarantined_bundle_count"),
-        "quarantined_raw_record_count": inspection.get(
-            "quarantined_raw_record_count"
-        ),
+        "quarantined_raw_record_count": inspection.get("quarantined_raw_record_count"),
         "quarantined_record_count": inspection.get("quarantined_record_count"),
         "record_counts_by_type": inspection.get("record_counts_by_type"),
         "validation_passed": inspection.get("validation_passed"),
@@ -7552,54 +6531,26 @@ def _real_bundle_inspection_summary(inspection: dict[str, Any]) -> dict[str, Any
         "validator_exit_code_zero": validation.get("validator_exit_code_zero"),
         "critical_error_count_zero": validation.get("critical_error_count_zero"),
         "record_count_matches_manifest": inspection.get("record_count_matches_manifest"),
-        "training_eligible_count_matches_manifest": inspection.get(
-            "training_eligible_count_matches_manifest"
-        ),
+        "training_eligible_count_matches_manifest": inspection.get("training_eligible_count_matches_manifest"),
         "available_from_valid": inspection.get("available_from_valid"),
-        "invalid_available_from_record_count": inspection.get(
-            "invalid_available_from_record_count"
-        ),
+        "invalid_available_from_record_count": inspection.get("invalid_available_from_record_count"),
         "outcome_label_quality_valid": inspection.get("outcome_label_quality_valid"),
-        "invalid_outcome_label_quality_record_count": inspection.get(
-            "invalid_outcome_label_quality_record_count"
-        ),
+        "invalid_outcome_label_quality_record_count": inspection.get("invalid_outcome_label_quality_record_count"),
         "hash_mismatch_count": inspection.get("hash_mismatch_count"),
-        "hash_expectation_conflict_count": inspection.get(
-            "hash_expectation_conflict_count"
-        ),
-        "missing_source_reference_count": inspection.get(
-            "missing_source_reference_count"
-        ),
-        "missing_payload_reference_count": inspection.get(
-            "missing_payload_reference_count"
-        ),
-        "direct_ingest_contract_present": inspection.get(
-            "direct_ingest_contract_present"
-        ),
-        "direct_ingest_contract_schema_version": inspection.get(
-            "direct_ingest_contract_schema_version"
-        ),
+        "hash_expectation_conflict_count": inspection.get("hash_expectation_conflict_count"),
+        "missing_source_reference_count": inspection.get("missing_source_reference_count"),
+        "missing_payload_reference_count": inspection.get("missing_payload_reference_count"),
+        "direct_ingest_contract_present": inspection.get("direct_ingest_contract_present"),
+        "direct_ingest_contract_schema_version": inspection.get("direct_ingest_contract_schema_version"),
         "direct_brain_ingest_ready": inspection.get("direct_brain_ingest_ready"),
         "brain_eligible": brain_eligible,
-        "requires_human_semantic_review": inspection.get(
-            "requires_human_semantic_review"
-        ),
-        "direct_ingest_fatal_blocker_count": inspection.get(
-            "direct_ingest_fatal_blocker_count"
-        ),
-        "direct_ingest_contract_validation_parity_verified": (
-            direct_ingest_contract_validation_parity_verified
-        ),
-        "direct_ingest_contract_count_hash_parity_verified": (
-            direct_ingest_contract_count_hash_parity_verified
-        ),
-        "final_semantic_audit_present": inspection.get(
-            "final_semantic_audit_present"
-        ),
+        "requires_human_semantic_review": inspection.get("requires_human_semantic_review"),
+        "direct_ingest_fatal_blocker_count": inspection.get("direct_ingest_fatal_blocker_count"),
+        "direct_ingest_contract_validation_parity_verified": (direct_ingest_contract_validation_parity_verified),
+        "direct_ingest_contract_count_hash_parity_verified": (direct_ingest_contract_count_hash_parity_verified),
+        "final_semantic_audit_present": inspection.get("final_semantic_audit_present"),
         "final_semantic_audit_count": inspection.get("final_semantic_audit_count"),
-        "final_semantic_audit_fail_count": inspection.get(
-            "final_semantic_audit_fail_count"
-        ),
+        "final_semantic_audit_fail_count": inspection.get("final_semantic_audit_fail_count"),
     }
 
 
@@ -7715,11 +6666,7 @@ def _real_bundle_direct_ingest_failure_reasons(
         ("final_semantic_audit_present", inspection.get("final_semantic_audit_present"), True),
         ("final_semantic_audit_fail_count", inspection.get("final_semantic_audit_fail_count"), 0),
     )
-    return [
-        f"{name}={observed!r} expected {expected!r}"
-        for name, observed, expected in checks
-        if observed != expected
-    ]
+    return [f"{name}={observed!r} expected {expected!r}" for name, observed, expected in checks if observed != expected]
 
 
 def _real_bundle_production_failure_reasons(
@@ -7738,31 +6685,17 @@ def _brain_audit_status(coverage_audit: dict[str, object]) -> dict[str, Any]:
         "brain_build_mode": coverage_audit.get("brain_build_mode"),
         "catalog_only": coverage_audit.get("catalog_only"),
         "record_coverage_complete": coverage_audit.get("record_coverage_complete"),
-        "deterministic_rebuild_verified": coverage_audit.get(
-            "deterministic_rebuild_verified"
-        ),
-        "llm_compile_category_schema_mismatches": coverage_audit.get(
-            "llm_compile_category_schema_mismatches"
-        ),
+        "deterministic_rebuild_verified": coverage_audit.get("deterministic_rebuild_verified"),
+        "llm_compile_category_schema_mismatches": coverage_audit.get("llm_compile_category_schema_mismatches"),
         "brain_category_file_count": coverage_audit.get("brain_category_file_count"),
-        "brain_category_missing_files": coverage_audit.get(
-            "brain_category_missing_files"
-        ),
-        "brain_category_source_record_types": coverage_audit.get(
-            "brain_category_source_record_types"
-        ),
+        "brain_category_missing_files": coverage_audit.get("brain_category_missing_files"),
+        "brain_category_source_record_types": coverage_audit.get("brain_category_source_record_types"),
         "brain_category_source_population_mismatches": coverage_audit.get(
             "brain_category_source_population_mismatches"
         ),
-        "brain_empty_category_complete_files": coverage_audit.get(
-            "brain_empty_category_complete_files"
-        ),
-        "brain_category_files_identical": coverage_audit.get(
-            "brain_category_files_identical"
-        ),
-        "brain_category_bodies_identical": coverage_audit.get(
-            "brain_category_bodies_identical"
-        ),
+        "brain_empty_category_complete_files": coverage_audit.get("brain_empty_category_complete_files"),
+        "brain_category_files_identical": coverage_audit.get("brain_category_files_identical"),
+        "brain_category_bodies_identical": coverage_audit.get("brain_category_bodies_identical"),
         "finding_count": len(findings),
         "findings": findings,
     }
@@ -8136,17 +7069,12 @@ def _brain_coverage_status(root: Path, accepted_episode_count: int) -> dict[str,
     if manifest_accepted_episode_count is None:
         findings.append("coverage manifest accepted_episode_count is missing")
     elif accepted_store_readable and manifest_accepted_episode_count != accepted_episode_count:
-        findings.append(
-            "coverage manifest accepted_episode_count does not match accepted episodes"
-        )
+        findings.append("coverage manifest accepted_episode_count does not match accepted episodes")
     if manifest_covered_episode_count is None:
         findings.append("coverage manifest covered_episode_count is missing")
     elif manifest_covered_episode_count != len(covered_ids):
         findings.append("coverage manifest covered count does not match covered IDs")
-    coverage_complete = (
-        manifest.get("coverage_complete") is True
-        and not findings
-    )
+    coverage_complete = manifest.get("coverage_complete") is True and not findings
     return {
         "manifest_exists": True,
         "brain_version": manifest.get("brain_version"),
@@ -8185,26 +7113,22 @@ def _episode_coverage_metadata_status(
 ) -> dict[str, Any]:
     expected_brain_version = (
         brain_manifest.get("brain_version")
-        if isinstance(brain_manifest, dict)
-        and isinstance(brain_manifest.get("brain_version"), str)
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("brain_version"), str)
         else None
     )
     expected_created_at = (
         brain_manifest.get("created_at")
-        if isinstance(brain_manifest, dict)
-        and isinstance(brain_manifest.get("created_at"), str)
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("created_at"), str)
         else None
     )
     expected_build_mode = (
         brain_manifest.get("build_mode")
-        if isinstance(brain_manifest, dict)
-        and isinstance(brain_manifest.get("build_mode"), str)
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("build_mode"), str)
         else None
     )
     expected_catalog_only = (
         brain_manifest.get("catalog_only")
-        if isinstance(brain_manifest, dict)
-        and isinstance(brain_manifest.get("catalog_only"), bool)
+        if isinstance(brain_manifest, dict) and isinstance(brain_manifest.get("catalog_only"), bool)
         else None
     )
     brain_version = manifest.get("brain_version")
@@ -8217,9 +7141,7 @@ def _episode_coverage_metadata_status(
         if not isinstance(brain_version, str) or not brain_version:
             findings.append("coverage manifest brain_version is missing")
         elif brain_version != expected_brain_version:
-            findings.append(
-                "coverage manifest brain_version does not match current brain manifest"
-            )
+            findings.append("coverage manifest brain_version does not match current brain manifest")
 
     expected_created_at_value = _datetime_from_string(expected_created_at)
     created_at_value = _datetime_from_string(created_at)
@@ -8229,25 +7151,19 @@ def _episode_coverage_metadata_status(
         if created_at_value is None:
             findings.append("coverage manifest created_at is missing or invalid")
         elif created_at_value != expected_created_at_value:
-            findings.append(
-                "coverage manifest created_at does not match current brain manifest"
-            )
+            findings.append("coverage manifest created_at does not match current brain manifest")
 
     if expected_build_mode is not None:
         if not isinstance(build_mode, str) or not build_mode:
             findings.append("coverage manifest build_mode is missing")
         elif build_mode != expected_build_mode:
-            findings.append(
-                "coverage manifest build_mode does not match current brain manifest"
-            )
+            findings.append("coverage manifest build_mode does not match current brain manifest")
 
     if expected_catalog_only is not None:
         if not isinstance(catalog_only, bool):
             findings.append("coverage manifest catalog_only is missing")
         elif catalog_only is not expected_catalog_only:
-            findings.append(
-                "coverage manifest catalog_only does not match current brain manifest"
-            )
+            findings.append("coverage manifest catalog_only does not match current brain manifest")
 
     return {
         "brain_version": brain_version if isinstance(brain_version, str) else None,
@@ -8368,9 +7284,7 @@ def _compiled_claim_file_stats(
     contradicting_record_ids: list[str] = []
     valid_categories = {_brain_category(file_name) for file_name in BRAIN_FILES}
     known_episode_ids = (
-        {record.episode_id for record in known_records_by_id.values()}
-        if known_records_by_id is not None
-        else None
+        {record.episode_id for record in known_records_by_id.values()} if known_records_by_id is not None else None
     )
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -8399,27 +7313,19 @@ def _compiled_claim_file_stats(
         if known_record_ids is not None:
             unknown_supporting = sorted(set(claim.supporting_record_ids) - known_record_ids)
             if unknown_supporting:
-                claims_with_unknown_supporting_records.append(
-                    f"{claim.claim_id}: {', '.join(unknown_supporting)}"
-                )
-            unknown_contradicting = sorted(
-                set(claim.contradicting_record_ids) - known_record_ids
-            )
+                claims_with_unknown_supporting_records.append(f"{claim.claim_id}: {', '.join(unknown_supporting)}")
+            unknown_contradicting = sorted(set(claim.contradicting_record_ids) - known_record_ids)
             if unknown_contradicting:
                 claims_with_unknown_contradicting_records.append(
                     f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
                 )
         if known_episode_ids is not None:
-            unknown_supporting_episodes = sorted(
-                set(claim.supporting_episode_ids) - known_episode_ids
-            )
+            unknown_supporting_episodes = sorted(set(claim.supporting_episode_ids) - known_episode_ids)
             if unknown_supporting_episodes:
                 claims_with_unknown_supporting_episodes.append(
                     f"{claim.claim_id}: {', '.join(unknown_supporting_episodes)}"
                 )
-            unknown_contradicting_episodes = sorted(
-                set(claim.contradicting_episode_ids) - known_episode_ids
-            )
+            unknown_contradicting_episodes = sorted(set(claim.contradicting_episode_ids) - known_episode_ids)
             if unknown_contradicting_episodes:
                 claims_with_unknown_contradicting_episodes.append(
                     f"{claim.claim_id}: {', '.join(unknown_contradicting_episodes)}"
@@ -8430,13 +7336,9 @@ def _compiled_claim_file_stats(
                 if record is None:
                     continue
                 if record.episode_id not in claim.supporting_episode_ids:
-                    episode_record_mismatches.append(
-                        f"{claim.claim_id}: supporting {record_id}->{record.episode_id}"
-                    )
+                    episode_record_mismatches.append(f"{claim.claim_id}: supporting {record_id}->{record.episode_id}")
                 if not is_available_as_of(record.available_from, claim.available_from):
-                    temporal_leaks.append(
-                        f"{claim.claim_id}: available_from precedes supporting record {record_id}"
-                    )
+                    temporal_leaks.append(f"{claim.claim_id}: available_from precedes supporting record {record_id}")
             for record_id in claim.contradicting_record_ids:
                 record = known_records_by_id.get(record_id)
                 if record is None:
@@ -8446,9 +7348,7 @@ def _compiled_claim_file_stats(
                         f"{claim.claim_id}: contradicting {record_id}->{record.episode_id}"
                     )
                 if not is_available_as_of(record.available_from, claim.available_from):
-                    temporal_leaks.append(
-                        f"{claim.claim_id}: available_from precedes contradicting record {record_id}"
-                    )
+                    temporal_leaks.append(f"{claim.claim_id}: available_from precedes contradicting record {record_id}")
         if claim.status == "validated":
             if not claim.contradicting_record_ids and not claim.contradicting_episode_ids:
                 validated_without_contradictions.append(claim.claim_id)
@@ -8462,24 +7362,12 @@ def _compiled_claim_file_stats(
         "claim_ids": claim_ids,
         "duplicate_claim_ids": _duplicate_strings(claim_ids),
         "invalid_categories": sorted(invalid_categories),
-        "claims_without_supporting_records": sorted(
-            claims_without_supporting_records
-        ),
-        "claims_with_unknown_supporting_records": sorted(
-            claims_with_unknown_supporting_records
-        ),
-        "claims_with_unknown_contradicting_records": sorted(
-            claims_with_unknown_contradicting_records
-        ),
-        "claims_without_supporting_episodes": sorted(
-            claims_without_supporting_episodes
-        ),
-        "claims_with_unknown_supporting_episodes": sorted(
-            claims_with_unknown_supporting_episodes
-        ),
-        "claims_with_unknown_contradicting_episodes": sorted(
-            claims_with_unknown_contradicting_episodes
-        ),
+        "claims_without_supporting_records": sorted(claims_without_supporting_records),
+        "claims_with_unknown_supporting_records": sorted(claims_with_unknown_supporting_records),
+        "claims_with_unknown_contradicting_records": sorted(claims_with_unknown_contradicting_records),
+        "claims_without_supporting_episodes": sorted(claims_without_supporting_episodes),
+        "claims_with_unknown_supporting_episodes": sorted(claims_with_unknown_supporting_episodes),
+        "claims_with_unknown_contradicting_episodes": sorted(claims_with_unknown_contradicting_episodes),
         "episode_record_mismatches": sorted(episode_record_mismatches),
         "temporal_leaks": sorted(temporal_leaks),
         "validated_without_contradictions": sorted(validated_without_contradictions),
@@ -8542,9 +7430,7 @@ def _llm_compile_category_manifest_stats(
     *,
     known_record_ids: set[str] | None = None,
 ) -> dict[str, Any]:
-    expected_by_category = {
-        _brain_category(file_name): file_name for file_name in BRAIN_FILES
-    }
+    expected_by_category = {_brain_category(file_name): file_name for file_name in BRAIN_FILES}
     schema_mismatches: list[str] = []
     source_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
@@ -8561,9 +7447,7 @@ def _llm_compile_category_manifest_stats(
             "unknown_source_record_ids": [],
         }
     if len(categories) != len(BRAIN_FILES):
-        schema_mismatches.append(
-            f"categories: expected {len(BRAIN_FILES)}, got {len(categories)}"
-        )
+        schema_mismatches.append(f"categories: expected {len(BRAIN_FILES)}, got {len(categories)}")
     observed_category_names: list[str] = []
     valid_claim_ids = set(compiled_claim_ids)
     for index, category in enumerate(categories, start=1):
@@ -8580,34 +7464,22 @@ def _llm_compile_category_manifest_stats(
             category_label = category_name
             expected_file_name = expected_by_category.get(category_name)
             if expected_file_name is None:
-                schema_mismatches.append(
-                    f"categories[{index}]: unexpected category {category_name}"
-                )
+                schema_mismatches.append(f"categories[{index}]: unexpected category {category_name}")
             elif file_name != expected_file_name:
-                observed_file = (
-                    file_name
-                    if isinstance(file_name, str) and file_name
-                    else "missing"
-                )
-                schema_mismatches.append(
-                    f"{category_name}: expected file {expected_file_name}, got {observed_file}"
-                )
+                observed_file = file_name if isinstance(file_name, str) and file_name else "missing"
+                schema_mismatches.append(f"{category_name}: expected file {expected_file_name}, got {observed_file}")
         source_ids = _string_list(category.get("source_record_ids"))
-        if (
-            not isinstance(category.get("source_record_ids"), list)
-            or category.get("source_record_count") != len(source_ids)
+        if not isinstance(category.get("source_record_ids"), list) or category.get("source_record_count") != len(
+            source_ids
         ):
             source_count_mismatches.append(category_label)
         source_record_ids.extend(source_ids)
         claim_ids = _string_list(category.get("compiled_claim_ids"))
-        if (
-            not isinstance(category.get("compiled_claim_ids"), list)
-            or category.get("compiled_claim_count") != len(claim_ids)
+        if not isinstance(category.get("compiled_claim_ids"), list) or category.get("compiled_claim_count") != len(
+            claim_ids
         ):
             compiled_claim_count_mismatches.append(category_label)
-        unknown_compiled_claim_ids.extend(
-            claim_id for claim_id in claim_ids if claim_id not in valid_claim_ids
-        )
+        unknown_compiled_claim_ids.extend(claim_id for claim_id in claim_ids if claim_id not in valid_claim_ids)
     for category_name in _duplicate_strings(observed_category_names):
         schema_mismatches.append(f"{category_name}: duplicate category entry")
     missing_categories = sorted(set(expected_by_category) - set(observed_category_names))
@@ -8649,14 +7521,8 @@ def _llm_compile_record_shard_manifest_stats(
             "missing_record_ids": [],
         }
     if expected_shard_count != len(record_shards):
-        observed = (
-            "missing"
-            if expected_shard_count is None
-            else str(expected_shard_count)
-        )
-        count_mismatches.append(
-            f"record_shard_count: expected {len(record_shards)}, got {observed}"
-        )
+        observed = "missing" if expected_shard_count is None else str(expected_shard_count)
+        count_mismatches.append(f"record_shard_count: expected {len(record_shards)}, got {observed}")
     for index, shard in enumerate(record_shards, start=1):
         if not isinstance(shard, dict):
             schema_mismatches.append(f"record_shards[{index}]: invalid entry")
@@ -8669,14 +7535,8 @@ def _llm_compile_record_shard_manifest_stats(
         if shard.get("record_count") != len(shard_record_ids):
             count_mismatches.append(f"record_shards[{index}]")
         record_ids.extend(shard_record_ids)
-    if (
-        isinstance(source_record_count, int)
-        and source_record_count != len(set(record_ids))
-    ):
-        count_mismatches.append(
-            "source_record_count: expected "
-            f"{len(set(record_ids))}, got {source_record_count}"
-        )
+    if isinstance(source_record_count, int) and source_record_count != len(set(record_ids)):
+        count_mismatches.append(f"source_record_count: expected {len(set(record_ids))}, got {source_record_count}")
     unknown_record_ids: list[str] = []
     missing_record_ids: list[str] = []
     if known_record_ids is not None:
@@ -8927,9 +7787,7 @@ def _hash_mapping_mismatch_ids(
     expected: dict[str, str],
 ) -> list[str]:
     return sorted(
-        record_id
-        for record_id in set(observed) | set(expected)
-        if observed.get(record_id) != expected.get(record_id)
+        record_id for record_id in set(observed) | set(expected) if observed.get(record_id) != expected.get(record_id)
     )
 
 
@@ -9001,14 +7859,9 @@ def _expected_training_export_skipped_reason_fields_from_manifests(
             for reason in reasons:
                 reason_counts[reason] += 1
     unique_skipped_ids = source_ids - exported_ids
-    skipped_reasons = {
-        record_id: sorted(reasons)
-        for record_id, reasons in sorted(reasons_by_record.items())
-    }
+    skipped_reasons = {record_id: sorted(reasons) for record_id, reasons in sorted(reasons_by_record.items())}
     unique_skipped_reasons = {
-        record_id: reasons
-        for record_id, reasons in skipped_reasons.items()
-        if record_id in unique_skipped_ids
+        record_id: reasons for record_id, reasons in skipped_reasons.items() if record_id in unique_skipped_ids
     }
     return {
         "skipped_record_reasons_by_record_id": skipped_reasons,
@@ -9052,11 +7905,7 @@ def _expected_training_export_aggregate_counts_from_manifests(
         if not isinstance(manifest, dict):
             return {}
         source_count = manifest.get("source_record_count")
-        if (
-            not isinstance(source_count, int)
-            or isinstance(source_count, bool)
-            or source_count < 0
-        ):
+        if not isinstance(source_count, int) or isinstance(source_count, bool) or source_count < 0:
             return {}
         source_record_counts.append(source_count)
         for field in sum_fields:
@@ -9090,9 +7939,7 @@ def _string_list_field_valid(value: object) -> bool:
 
 
 def _non_empty_string_list_field_valid(value: object) -> bool:
-    return isinstance(value, list) and all(
-        isinstance(item, str) and bool(item) for item in value
-    )
+    return isinstance(value, list) and all(isinstance(item, str) and bool(item) for item in value)
 
 
 def _string_map(value: object) -> dict[str, str]:
@@ -9116,9 +7963,7 @@ def _sha256_string_map_field_valid(value: object) -> bool:
 
 
 def _sha256_digest_valid(value: str) -> bool:
-    return len(value) == 64 and all(
-        char in "0123456789abcdef" for char in value
-    )
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
 def _string_list_dict(value: object) -> dict[str, list[str]]:
@@ -9151,12 +7996,39 @@ def _int_dict(value: object) -> dict[str, int]:
     }
 
 
+def _routing_count_maps(
+    routing_rows: list[RecordRoutingMetadata],
+) -> dict[str, dict[str, int]]:
+    polarity: Counter[str] = Counter()
+    label_quality: Counter[str] = Counter()
+    disposition: Counter[str] = Counter()
+    cross_table: Counter[str] = Counter()
+    for routing in routing_rows:
+        eligible = "true" if routing.training_eligible else "false"
+        polarity[routing.evidence_polarity] += 1
+        label_quality[routing.label_quality] += 1
+        disposition[routing.routing_disposition] += 1
+        cross_table[
+            "|".join(
+                (
+                    routing.evidence_polarity,
+                    eligible,
+                    routing.label_quality,
+                    routing.routing_disposition,
+                )
+            )
+        ] += 1
+    return {
+        "record_counts_by_evidence_polarity": dict(sorted(polarity.items())),
+        "record_counts_by_label_quality": dict(sorted(label_quality.items())),
+        "record_counts_by_routing_disposition": dict(sorted(disposition.items())),
+        "record_routing_cross_table": dict(sorted(cross_table.items())),
+    }
+
+
 def _int_dict_field_valid(value: object) -> bool:
     return isinstance(value, dict) and all(
-        isinstance(key, str)
-        and isinstance(item, int)
-        and not isinstance(item, bool)
-        and item >= 0
+        isinstance(key, str) and isinstance(item, int) and not isinstance(item, bool) and item >= 0
         for key, item in value.items()
     )
 
@@ -9173,10 +8045,7 @@ def _numeric_map(value: object) -> dict[str, float]:
 
 def _numeric_map_field_valid(value: object) -> bool:
     return isinstance(value, dict) and all(
-        isinstance(key, str)
-        and bool(key)
-        and isinstance(item, int | float)
-        and not isinstance(item, bool)
+        isinstance(key, str) and bool(key) and isinstance(item, int | float) and not isinstance(item, bool)
         for key, item in value.items()
     )
 

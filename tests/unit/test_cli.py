@@ -155,10 +155,7 @@ def test_final_synthesis_price_context_rejects_after_allowed_snapshot() -> None:
     )
 
     assert status["d_minus_one_price_context_verified"] is False
-    assert (
-        "final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe"
-        in status["errors"]
-    )
+    assert "final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe" in status["errors"]
     price_status = status["d_minus_one_price_context"]
     assert price_status["source_name_verified"] is True
     assert price_status["source_ref_verified"] is True
@@ -530,11 +527,7 @@ def test_research_inspect_bundle_cli_writes_smoke_diagnostics(
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["inspection_status"] == "validation_failed"
-    report = json.loads(
-        (tmp_path / "diagnostics" / "bundle_inspection_report.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    report = json.loads((tmp_path / "diagnostics" / "bundle_inspection_report.json").read_text(encoding="utf-8"))
     assert report["schema_version"] == "nslab.bundle_inspection_diagnostics.v1"
     assert report["status"] == "validation_failed"
     assert report["bundle_version"] == "nslab.research_bundle.v11"
@@ -571,11 +564,7 @@ def test_research_smoke_bundle_cli_writes_pending_diagnostics(
     assert payload["schema_version"] == "nslab.real_bundle_smoke.v1"
     assert payload["status"] == "pending"
     assert payload["passed"] is False
-    report = json.loads(
-        (tmp_path / "diagnostics" / "bundle_smoke_report.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    report = json.loads((tmp_path / "diagnostics" / "bundle_smoke_report.json").read_text(encoding="utf-8"))
     assert report["status"] == "pending"
 
     required = CliRunner().invoke(app, ["research", "smoke-bundle", "--require-valid"])
@@ -641,11 +630,7 @@ def test_research_migrate_legacy_writes_catalog_only_diagnostics(
     result = CliRunner().invoke(app, ["research", "migrate-legacy"])
 
     assert result.exit_code == 0, result.output
-    report = json.loads(
-        (tmp_path / "diagnostics" / "migration_report.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    report = json.loads((tmp_path / "diagnostics" / "migration_report.json").read_text(encoding="utf-8"))
     assert report["schema_version"] == "nslab.legacy_migration_report.v1"
     assert report["passed"] is True
     assert report["catalog_only"] is True
@@ -660,14 +645,10 @@ def test_research_migrate_legacy_writes_catalog_only_diagnostics(
     assert report["record_counts_by_type"] == {"memory_claim": 1}
     source_path = tmp_path / "research" / "accepted" / "EP-legacy-cli.json"
     raw_text = source_path.read_text(encoding="utf-8")
-    envelope_path = (
-        tmp_path / "research" / "episodes" / "EP-legacy-cli" / "bundle_envelope.json"
-    )
+    envelope_path = tmp_path / "research" / "episodes" / "EP-legacy-cli" / "bundle_envelope.json"
     envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
     assert envelope["raw_bundle_sha256"] == file_sha256(source_path)
-    assert envelope["raw_block_hashes"] == {
-        "legacy_research_episode.json": sha256_text(raw_text)
-    }
+    assert envelope["raw_block_hashes"] == {"legacy_research_episode.json": sha256_text(raw_text)}
 
     envelope["raw_bundle_sha256"] = "stale-bundle-hash"
     envelope["raw_block_hashes"]["legacy_research_episode.json"] = "stale-block-hash"
@@ -676,17 +657,11 @@ def test_research_migrate_legacy_writes_catalog_only_diagnostics(
     rerun = CliRunner().invoke(app, ["research", "migrate-legacy"])
 
     assert rerun.exit_code == 0, rerun.output
-    repaired_report = json.loads(
-        (tmp_path / "diagnostics" / "migration_report.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    repaired_report = json.loads((tmp_path / "diagnostics" / "migration_report.json").read_text(encoding="utf-8"))
     repaired_envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
     assert repaired_report["repaired_legacy_envelope_count"] == 1
     assert repaired_envelope["raw_bundle_sha256"] == file_sha256(source_path)
-    assert repaired_envelope["raw_block_hashes"] == {
-        "legacy_research_episode.json": sha256_text(raw_text)
-    }
+    assert repaired_envelope["raw_block_hashes"] == {"legacy_research_episode.json": sha256_text(raw_text)}
 
 
 def test_analyze_cli_reports_analysis_errors(
@@ -839,9 +814,7 @@ def test_context_inspect_cli_outputs_manifest_inspection_and_strict_failure(
     payload = json.loads(result.output)
     assert payload["run_id"] == "RUN-inspect"
     assert payload["inspection"]["context_manifest"]["exists"] is True
-    assert payload["inspection"]["context_manifest"]["path"] == (
-        "runs/manifests/RUN-inspect.json"
-    )
+    assert payload["inspection"]["context_manifest"]["path"] == ("runs/manifests/RUN-inspect.json")
     assert payload["inspection"]["reproducibility_checks_passed"] is False
 
     strict_result = CliRunner().invoke(
@@ -1081,13 +1054,9 @@ def test_manifest_record_coverage_contract_rejects_id_drift() -> None:
     assert status["missing_swept_record_ids"] == []
     assert status["unexpected_swept_record_ids"] == []
     assert status["duplicate_swept_record_ids"] == []
-    assert "training_eligible_available_record_ids_not_subset_of_available_record_ids" in (
-        status["errors"]
-    )
+    assert "training_eligible_available_record_ids_not_subset_of_available_record_ids" in (status["errors"])
     assert "retrieved_record_ids_not_subset_of_available_record_ids" in status["errors"]
-    assert "counterexample_record_ids_not_subset_of_available_record_ids" in status[
-        "errors"
-    ]
+    assert "counterexample_record_ids_not_subset_of_available_record_ids" in status["errors"]
     assert "exhaustive_swept_record_ids_mismatch" in status["errors"]
     assert "missing_swept_record_ids_mismatch" in status["errors"]
     assert "unexpected_swept_record_ids_mismatch" in status["errors"]
@@ -1234,10 +1203,7 @@ def test_brain_rebuild_cli_rejects_deprecated_full_mode(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["brain", "rebuild", "--mode", "full"])
 
     assert result.exit_code == 1
-    assert (
-        "deprecated full mode is catalog-only; use --mode catalog --allow-catalog"
-        in result.output
-    )
+    assert "deprecated full mode is catalog-only; use --mode catalog --allow-catalog" in result.output
     assert not (tmp_path / "brain").exists()
 
 
@@ -1325,10 +1291,7 @@ def test_brain_update_cli_rejects_deprecated_full_mode() -> None:
     )
 
     assert result.exit_code == 1
-    assert (
-        "deprecated full mode is catalog-only; use --mode catalog --allow-catalog"
-        in result.output
-    )
+    assert "deprecated full mode is catalog-only; use --mode catalog --allow-catalog" in result.output
 
 
 def test_brain_diff_cli_reports_missing_snapshot(
@@ -1453,9 +1416,7 @@ def test_memory_inspect_cli_reports_record_level_counts(
     assert payload["record_counts_by_type"] == {"memory_claim": 1}
     assert payload["record_counts_by_evidence_phase"] == {"AUDIT": 1}
     assert payload["record_counts_by_training_target"] == {"cli_contract": 1}
-    assert payload["record_counts_by_typed_payload_status"] == {
-        "KNOWN_TYPED_PAYLOAD": 1
-    }
+    assert payload["record_counts_by_typed_payload_status"] == {"KNOWN_TYPED_PAYLOAD": 1}
     assert payload["unknown_typed_payload_count"] == 0
     assert payload["raw_only_record_count"] == 0
 
@@ -1478,9 +1439,7 @@ def test_memory_inspect_cli_reports_raw_only_records(
     assert payload["raw_record_count"] is None
     assert payload["raw_normalized_record_count_matches"] is None
     assert payload["record_counts_by_type"] == {"future_record": 1}
-    assert payload["record_counts_by_typed_payload_status"] == {
-        "UNKNOWN_TYPED_PAYLOAD": 1
-    }
+    assert payload["record_counts_by_typed_payload_status"] == {"UNKNOWN_TYPED_PAYLOAD": 1}
     assert payload["unknown_typed_payload_count"] == 1
     assert payload["raw_only_record_count"] == 1
 
@@ -1527,9 +1486,7 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["staged_record_count"] == 1
     assert payload["training_eligible_record_count"] == 0
     assert payload["record_counts_by_type"] == {"memory_claim": 1}
-    assert payload["record_counts_by_typed_payload_status"] == {
-        "KNOWN_TYPED_PAYLOAD": 1
-    }
+    assert payload["record_counts_by_typed_payload_status"] == {"KNOWN_TYPED_PAYLOAD": 1}
     assert payload["unknown_typed_payload_count"] == 0
     assert payload["raw_only_record_count"] == 0
     assert payload["all_unknown_typed_payload_count"] == 1
@@ -1540,9 +1497,7 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["raw_only_record_ids"] == []
     assert payload["all_unknown_typed_payload_record_ids"] == ["BRAIN-STAGED-RAW"]
     assert payload["all_raw_only_record_ids"] == ["BRAIN-STAGED-RAW"]
-    assert payload["staged_unknown_typed_payload_record_ids"] == [
-        "BRAIN-STAGED-RAW"
-    ]
+    assert payload["staged_unknown_typed_payload_record_ids"] == ["BRAIN-STAGED-RAW"]
     assert payload["staged_raw_only_record_ids"] == ["BRAIN-STAGED-RAW"]
     assert payload["raw_record_count"] == 2
     assert payload["normalized_record_count"] == 1
@@ -1555,9 +1510,7 @@ def test_memory_stats_cli_reports_record_store_loss_counts(
     assert payload["quarantined_normalized_record_count"] == 3
     assert payload["quarantined_record_count"] == 2
     assert payload["quarantine_reasons"] == {"BUNDLE_VALIDATION_FAILED": 1}
-    assert payload["quarantine_normalization_skipped_reasons"] == {
-        "BUNDLE_VALIDATION_FAILED": 1
-    }
+    assert payload["quarantine_normalization_skipped_reasons"] == {"BUNDLE_VALIDATION_FAILED": 1}
     assert payload["audit_passed"] is True
 
 
@@ -1639,6 +1592,7 @@ def test_memory_search_records_cli_queries_record_vector_index(
         "evidence_phase": "AUDIT",
         "limit": 20,
         "record_type": "memory_claim",
+        "routing_disposition": ["AUDIT", "QUARANTINED"],
         "training_eligible": False,
         "training_target": "cli_contract",
     }
@@ -1668,10 +1622,7 @@ def test_memory_search_records_cli_rejects_conflicting_eligibility_filters(
     )
 
     assert result.exit_code == 1
-    assert (
-        "--training-eligible-only and --ineligible-only cannot be combined"
-        in result.output
-    )
+    assert "--training-eligible-only and --ineligible-only cannot be combined" in result.output
 
 
 def test_memory_rebuild_index_cli_writes_deterministic_record_index(
@@ -1695,9 +1646,8 @@ def test_memory_rebuild_index_cli_writes_deterministic_record_index(
     assert payload["index_path"] == "memory/vector_index"
     assert payload["embedding_method"] == "deterministic_hashing_v1"
     assert payload["brain_record_count"] == 1
-    assert payload["manifest"]["brain_record_hashes"] == {
-        "BRAIN-CLI": record.normalized_payload_sha256
-    }
+    assert payload["manifest"]["brain_record_hash_kind"] == ("canonical_full_envelope_sha256")
+    assert payload["manifest"]["brain_record_hashes"]["BRAIN-CLI"] != (record.normalized_payload_sha256)
 
 
 def test_memory_rebuild_index_production_rejects_mock_provider(
@@ -1842,9 +1792,7 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
             "warehouse_counts": {"brain_records.parquet": 1},
             "warehouse_missing_files": [],
             "warehouse_unreadable_files": [],
-            "warehouse_count_mismatches": {
-                "brain_records.parquet": {"actual": 1, "expected": 2}
-            },
+            "warehouse_count_mismatches": {"brain_records.parquet": {"actual": 1, "expected": 2}},
             "warehouse_identity_mismatches": {},
             "warehouse_duplicate_identities": {},
             "warehouse_weight_mismatches": {},
@@ -1859,12 +1807,8 @@ def test_warehouse_verify_cli_exits_nonzero_on_warehouse_findings(
     assert result.exit_code == 1
     payload = json.loads(result.output)
     assert payload["passed"] is False
-    assert payload["warehouse_findings"] == [
-        "warehouse: brain_records.parquet count 1 != expected 2"
-    ]
-    assert payload["warehouse_count_mismatches"] == {
-        "brain_records.parquet": {"actual": 1, "expected": 2}
-    }
+    assert payload["warehouse_findings"] == ["warehouse: brain_records.parquet count 1 != expected 2"]
+    assert payload["warehouse_count_mismatches"] == {"brain_records.parquet": {"actual": 1, "expected": 2}}
 
 
 def test_warehouse_verify_cli_exits_nonzero_when_research_episode_count_stale(
@@ -2042,15 +1986,9 @@ def test_demo_steps_refresh_derived_artifacts_after_brain_update() -> None:
     assert step_names.index("warehouse rebuild") < step_names.index("warehouse verify")
     assert step_names.index("warehouse verify") < step_names.index("analyze")
     assert step_names.index("brain update") < step_names.index("training export-sft")
-    assert step_names.index("warehouse rebuild after update") < step_names.index(
-        "warehouse verify after update"
-    )
-    assert step_names.index("warehouse verify after update") < step_names.index(
-        "training export-sft"
-    )
-    assert step_names.index("memory audit deep after update") < step_names.index(
-        "brain audit deep after update"
-    )
+    assert step_names.index("warehouse rebuild after update") < step_names.index("warehouse verify after update")
+    assert step_names.index("warehouse verify after update") < step_names.index("training export-sft")
+    assert step_names.index("memory audit deep after update") < step_names.index("brain audit deep after update")
 
 
 def test_demo_cli_stops_on_first_failure(

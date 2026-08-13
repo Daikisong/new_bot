@@ -29,6 +29,7 @@ from news_scalping_lab.records.routing import (
     record_memory_lanes,
     record_outcome_payload,
     record_response_class,
+    record_routing_metadata,
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.store import (
@@ -108,6 +109,9 @@ def profile_brain_records(
     records = BrainRecordStore(root).list_records(accepted_only=accepted_only)
     record_counts = Counter(record.record_type for record in records)
     polarity_counts: Counter[str] = Counter()
+    label_quality_counts: Counter[str] = Counter()
+    routing_disposition_counts: Counter[str] = Counter()
+    routing_four_axis_crosstab: Counter[str] = Counter()
     lane_counts: Counter[str] = Counter()
     crosstab: dict[str, Counter[str]] = {
         "eligible": Counter(),
@@ -129,9 +133,22 @@ def profile_brain_records(
 
     for record in records:
         polarity = record_evidence_polarity(record).value
+        routing = record_routing_metadata(record)
         polarity_counts[polarity] += 1
         eligibility_key = "eligible" if record.training_eligible else "ineligible"
         crosstab[eligibility_key][polarity] += 1
+        label_quality_counts[routing.label_quality] += 1
+        routing_disposition_counts[routing.routing_disposition] += 1
+        routing_four_axis_crosstab[
+            "|".join(
+                (
+                    polarity,
+                    eligibility_key,
+                    routing.label_quality,
+                    routing.routing_disposition,
+                )
+            )
+        ] += 1
         lane_counts.update(record_memory_lanes(record))
         trade_year_counts[str(record.trade_date.year)] += 1
         available_year_counts[str(record.available_from.year)] += 1
@@ -166,10 +183,15 @@ def profile_brain_records(
         ),
         record_counts_by_type=_sorted_counts(record_counts),
         record_counts_by_polarity=_sorted_counts(polarity_counts),
+        record_counts_by_label_quality=_sorted_counts(label_quality_counts),
+        record_counts_by_routing_disposition=_sorted_counts(
+            routing_disposition_counts
+        ),
         record_counts_by_lane=_sorted_counts(lane_counts),
         eligibility_polarity_crosstab={
             key: _sorted_counts(value) for key, value in sorted(crosstab.items())
         },
+        routing_four_axis_crosstab=_sorted_counts(routing_four_axis_crosstab),
         outcome_field_coverage=_sorted_counts(outcome_coverage),
         independent_unit_profiles={
             key: _independent_unit_profile(values)

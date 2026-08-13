@@ -56,7 +56,7 @@ def test_ineligible_record_is_tentative_boundary_not_positive_support() -> None:
     )
 
     compact = compiler_module._compact_record_for_prompt(record)
-    claim = compiler_module._compiled_claims_from_records([record])[0]
+    claims = compiler_module._compiled_claims_from_records([record])
     shard_prompt = json.loads(
         compiler_module._brain_record_shard_prompt(
             shard_index=1,
@@ -71,11 +71,41 @@ def test_ineligible_record_is_tentative_boundary_not_positive_support() -> None:
     assert compact["eligibility_reason"] == "semantic_contract_failed"
     assert compact["training_exclusion_reason"] == "semantic_contract_failed"
     assert compact["semantic_exclusion_relation_ids"] == ["CAND-1"]
-    assert claim.status == "tentative"
+    assert claims == []
+    assert compact["evidence_polarity"] == "POSITIVE"
+    assert compact["label_quality"] == "missing"
+    assert compact["routing_disposition"] == "AUDIT"
+    assert "A positive claim requires training_eligible=true" in shard_prompt["instruction"]
+    assert "audit context only" in shard_prompt["instruction"]
+
+
+def test_positive_candidate_error_is_correction_only_not_positive_support() -> None:
+    record = _record(
+        "BRAIN-CANDIDATE-ERROR-POSITIVE",
+        record_type="candidate_generation_error_case",
+        training_target="candidate_generation_correction",
+        response_class="positive_high10",
+        training_eligible=True,
+        payload_extra={"outcome_high_return_pct": 29.0},
+    )
+
+    compact = compiler_module._compact_record_for_prompt(record)
+    shard_prompt = json.loads(
+        compiler_module._brain_record_shard_prompt(
+            shard_index=1,
+            records=[record],
+            brain_version="brain-test",
+            provider_name="openai",
+            model="test-model",
+        )
+    )
+    claim = compiler_module._compiled_claims_from_records([record])[0]
+
+    assert compact["evidence_polarity"] == "POSITIVE"
+    assert compact["positive_support_eligible"] is False
+    assert compact["memory_lanes"] == ["candidate_generation_errors"]
     assert claim.positive_case_count == 0
-    assert claim.negative_case_count == 0
-    assert claim.near_miss_count == 1
-    assert "A positive claim requires both eligibility" in shard_prompt["instruction"]
+    assert "Candidate-error records are correction evidence only" in shard_prompt["instruction"]
 
 
 def test_eligible_negative_control_is_supported_negative_not_positive() -> None:
@@ -143,19 +173,11 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert manifest.build_mode == "llm-full"
     assert manifest.catalog_only is False
     assert "brain_compile:shard:0001" in purposes
-    assert len([purpose for purpose in purposes if ":synthesis:" in purpose]) == len(
-        BRAIN_FILES
-    )
-    assert len([purpose for purpose in purposes if ":review:" in purpose]) == len(
-        BRAIN_FILES
-    )
-    shard_prompt = json.loads(
-        next(prompt for purpose, prompt in llm.calls if purpose == "brain_compile:shard:0001")
-    )
+    assert len([purpose for purpose in purposes if ":synthesis:" in purpose]) == len(BRAIN_FILES)
+    assert len([purpose for purpose in purposes if ":review:" in purpose]) == len(BRAIN_FILES)
+    shard_prompt = json.loads(next(prompt for purpose, prompt in llm.calls if purpose == "brain_compile:shard:0001"))
     shard_direct_record = next(
-        record
-        for record in shard_prompt["records"]
-        if record["record_id"] == "BRAIN-DIRECT"
+        record for record in shard_prompt["reasoning_records"] if record["record_id"] == "BRAIN-DIRECT"
     )
     assert shard_direct_record["routing_features"] == {
         "record_type": "supervised_direct_event_case",
@@ -165,9 +187,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         "response_class": "positive_high10",
         "attribution_status": "direct_event_supported",
     }
-    assert shard_direct_record["payload_summary"]["issuer_day_case_id"] == (
-        "20300110:000001"
-    )
+    assert shard_direct_record["payload_summary"]["issuer_day_case_id"] == ("20300110:000001")
     assert shard_direct_record["payload_summary"]["safe_D1_features"] == {
         "gap_rate": 0.03,
         "volume_rank": 2,
@@ -177,11 +197,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         "return_pct": 12.4,
     }
     single_event_prompt = json.loads(
-        next(
-            prompt
-            for purpose, prompt in llm.calls
-            if purpose == "brain_compile:synthesis:single_event"
-        )
+        next(prompt for purpose, prompt in llm.calls if purpose == "brain_compile:synthesis:single_event")
     )
     assert single_event_prompt["category_guidance"]["focus"] == (
         "direct event response patterns and issuer-day evidence"
@@ -191,15 +207,11 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         "supervised_issuer_day_case",
     ]
     assert single_event_prompt["category_guidance"]["must_cite_record_ids"] is True
-    single_event_record = single_event_prompt["records"][0]
+    single_event_record = single_event_prompt["reasoning_records"][0]
     assert single_event_record["payload_summary"]["event_ids"] == ["EVT-1", "EVT-2"]
     assert single_event_record["payload_summary"]["sample_weight"] == 0.75
     counterexample_review_prompt = json.loads(
-        next(
-            prompt
-            for purpose, prompt in llm.calls
-            if purpose == "brain_compile:review:counterexamples"
-        )
+        next(prompt for purpose, prompt in llm.calls if purpose == "brain_compile:review:counterexamples")
     )
     assert counterexample_review_prompt["category_guidance"]["review_targets"] == [
         "positive claims without contradiction checks",
@@ -211,14 +223,10 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
     compiled_claims = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    compiled_claims_by_record = {
-        claim["supporting_record_ids"][0]: claim for claim in compiled_claims
-    }
+    compiled_claims_by_record = {claim["supporting_record_ids"][0]: claim for claim in compiled_claims}
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert brain_manifest["catalog_only"] is False
     assert brain_manifest["catalog_mode_reason"] is None
@@ -226,7 +234,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert brain_manifest["production_eligible"] is True
     assert compile_manifest["record_shard_count"] == 1
     assert compile_manifest["category_count"] == len(BRAIN_FILES)
-    assert compile_manifest["compiled_claim_count"] == 2
+    assert compile_manifest["compiled_claim_count"] == 1
     assert compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
     assert compile_manifest["record_shards"][0]["prompt_sha256"]
     assert all(
@@ -245,15 +253,22 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert compile_report["compiler_provider"] == "openai"
     assert compile_report["compiler_model"] == "test-brain-model"
     assert compile_report["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
-    assert compile_report["compiled_claim_count"] == 2
+    assert compile_report["compiled_claim_count"] == 1
+    counterexample_category = next(
+        category for category in compile_manifest["categories"] if category["category"] == "counterexamples"
+    )
+    assert counterexample_category["reasoning_support_record_ids"] == []
+    assert counterexample_category["non_reasoning_record_ids"] == ["BRAIN-COUNTER"]
+    counterexample_text = (tmp_path / "brain" / "current" / "07_counterexamples.md").read_text(encoding="utf-8")
+    assert "## Context And Excluded Records" in counterexample_text
+    assert "`BRAIN-COUNTER` (counterexample; AUDIT)" in counterexample_text
     assert compile_report["llm_compile_present"] is True
     assert compile_report["llm_compile_run_present"] is True
-    assert compile_report["llm_compile_run"]["llm_generation_count"] == (
-        1 + len(BRAIN_FILES) * 2
+    assert compile_report["llm_compile_run"]["llm_generation_count"] == (1 + len(BRAIN_FILES) * 2)
+    assert (
+        compile_report["llm_compile_run"]["llm_live_call_count"]
+        == compile_report["llm_compile_run"]["llm_generation_count"]
     )
-    assert compile_report["llm_compile_run"]["llm_live_call_count"] == compile_report[
-        "llm_compile_run"
-    ]["llm_generation_count"]
     assert compile_report["llm_compile_run"]["llm_cache_hit_count"] == 0
     assert compile_report["llm_compile_run"]["all_outputs_from_cache"] is False
     assert compile_report["llm_compile_run"]["record_shards"][0]["cache_hit"] is False
@@ -262,8 +277,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         == compile_manifest["record_shards"][0]["prompt_sha256"]
     )
     assert all(
-        category["synthesis_cache_hit"] is False
-        and category["review_cache_hit"] is False
+        category["synthesis_cache_hit"] is False and category["review_cache_hit"] is False
         for category in compile_report["llm_compile_run"]["categories"]
     )
     assert [
@@ -279,9 +293,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         )
         for category in compile_manifest["categories"]
     ]
-    trace_payloads = [
-        read_json(path) for path in sorted((tmp_path / "runs" / "traces").glob("*.json"))
-    ]
+    trace_payloads = [read_json(path) for path in sorted((tmp_path / "runs" / "traces").glob("*.json"))]
     compile_traces = [
         trace
         for trace in trace_payloads
@@ -290,23 +302,20 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         and trace["purpose"].startswith("brain_compile:")
     ]
     assert len(compile_traces) == compile_manifest["llm_generation_count"]
-    assert {
-        trace["input"]["prompt_sha256"] for trace in compile_traces
-    } == _compile_run_prompt_hashes(compile_report["llm_compile_run"])
+    assert {trace["input"]["prompt_sha256"] for trace in compile_traces} == _compile_run_prompt_hashes(
+        compile_report["llm_compile_run"]
+    )
     assert all(trace["status"] == "ok" for trace in compile_traces)
     assert all(
         trace["model_config"]["configured_provider"] == "openai"
         and trace["model_config"]["provider_class"] == "RecordingBrainLLM"
         and trace["model_config"]["model"] == "test-brain-model"
         and trace["model_config"]["embedding_model"] == "embed-brain-test"
-        and trace["model_config"]["compiler_version"]
-        == compiler_module.LLM_FULL_COMPILER_VERSION
+        and trace["model_config"]["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
         for trace in compile_traces
     )
     for trace in compile_traces:
-        checkpoint_path = (
-            tmp_path / "runs" / "checkpoints" / "llm" / f"{trace['checkpoint_id']}.json"
-        )
+        checkpoint_path = tmp_path / "runs" / "checkpoints" / "llm" / f"{trace['checkpoint_id']}.json"
         checkpoint = read_json(checkpoint_path)
         assert checkpoint["schema_version"] == "nslab.llm_checkpoint.v1"
         assert checkpoint["operation"] == trace["operation"]
@@ -314,44 +323,32 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         assert checkpoint["input"] == trace["input"]
         assert checkpoint["model_config"] == trace["model_config"]
     assert compile_report["category_claim_counts"]["single_event"] == 1
-    assert compile_report["category_claim_counts"]["counterexamples"] == 1
+    assert compile_report["category_claim_counts"]["counterexamples"] == 0
     assert compile_report["category_source_record_counts"]["single_event"] == 1
     assert compile_report["record_coverage"]["accepted_record_count"] == 2
     assert compile_report["record_coverage"]["swept_record_count"] == 2
     assert compile_report["record_coverage"]["coverage_complete"] is True
-    assert len(compiled_claims) == 2
+    assert len(compiled_claims) == 1
     assert compiled_claims_by_record["BRAIN-DIRECT"]["category"] == "single_event"
     assert compiled_claims_by_record["BRAIN-DIRECT"]["status"] == "supported"
     assert compiled_claims_by_record["BRAIN-DIRECT"]["positive_case_count"] == 1
-    assert compiled_claims_by_record["BRAIN-COUNTER"]["category"] == "counterexamples"
-    assert compiled_claims_by_record["BRAIN-COUNTER"]["status"] == "tentative"
-    assert compiled_claims_by_record["BRAIN-COUNTER"]["negative_case_count"] == 1
+    assert "BRAIN-COUNTER" not in compiled_claims_by_record
     single_event_category = next(
-        category
-        for category in compile_manifest["categories"]
-        if category["category"] == "single_event"
+        category for category in compile_manifest["categories"] if category["category"] == "single_event"
     )
-    assert single_event_category["compiled_claim_ids"] == [
-        compiled_claims_by_record["BRAIN-DIRECT"]["claim_id"]
-    ]
+    assert single_event_category["compiled_claim_ids"] == [compiled_claims_by_record["BRAIN-DIRECT"]["claim_id"]]
     assert vector_manifest["embedding_method"] == "llm_embedding:openai:embed-brain-test"
     assert vector_manifest["dimensions"] == 2
     assert llm.embed_calls
-    single_event = (tmp_path / "brain" / "current" / "01_single_event_patterns.md").read_text(
-        encoding="utf-8"
-    )
+    single_event = (tmp_path / "brain" / "current" / "01_single_event_patterns.md").read_text(encoding="utf-8")
     assert "## Category Synthesis" in single_event
     assert "## Contradiction And Boundary Review" in single_event
-    assert len(list((tmp_path / "brain" / "llm_cache").glob("*.json"))) == (
-        1 + len(BRAIN_FILES) * 2
-    )
+    assert len(list((tmp_path / "brain" / "llm_cache").glob("*.json"))) == (1 + len(BRAIN_FILES) * 2)
 
     llm.calls.clear()
     llm.embed_calls.clear()
     second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
-    second_compile_manifest = read_json(
-        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
-    )
+    second_compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     second_compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
 
     assert second_manifest.brain_version == manifest.brain_version
@@ -360,17 +357,14 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     assert second_compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
     assert second_compile_manifest == compile_manifest
     assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
-    assert second_compile_report["llm_compile_run"]["llm_cache_hit_count"] == (
-        second_compile_report["llm_compile_run"]["llm_generation_count"]
+    assert (
+        second_compile_report["llm_compile_run"]["llm_cache_hit_count"]
+        == (second_compile_report["llm_compile_run"]["llm_generation_count"])
     )
     assert second_compile_report["llm_compile_run"]["all_outputs_from_cache"] is True
+    assert all(shard["cache_hit"] is True for shard in second_compile_report["llm_compile_run"]["record_shards"])
     assert all(
-        shard["cache_hit"] is True
-        for shard in second_compile_report["llm_compile_run"]["record_shards"]
-    )
-    assert all(
-        category["synthesis_cache_hit"] is True
-        and category["review_cache_hit"] is True
+        category["synthesis_cache_hit"] is True and category["review_cache_hit"] is True
         for category in second_compile_report["llm_compile_run"]["categories"]
     )
 
@@ -397,10 +391,7 @@ def test_llm_full_category_routing_uses_continuation_records() -> None:
         ),
     ]
 
-    continuation_ids = [
-        record.record_id
-        for record in compiler_module._records_for_category(records, "continuation")
-    ]
+    continuation_ids = [record.record_id for record in compiler_module._records_for_category(records, "continuation")]
 
     assert continuation_ids == ["BRAIN-EDGE", "BRAIN-MEMORY"]
 
@@ -459,18 +450,16 @@ def test_llm_full_category_routing_includes_repaired_gold_record_types() -> None
         ),
     ]
 
-    assert [
-        record.record_id
-        for record in compiler_module._records_for_category(records, "theme_formation")
-    ] == ["BRAIN-THEME"]
-    assert [
-        record.record_id
-        for record in compiler_module._records_for_category(records, "failure_modes")
-    ] == ["BRAIN-NEGATIVE", "BRAIN-NEWSLESS"]
-    assert [
-        record.record_id
-        for record in compiler_module._records_for_category(records, "market_memory")
-    ] == ["BRAIN-CONTEXT"]
+    assert [record.record_id for record in compiler_module._records_for_category(records, "theme_formation")] == [
+        "BRAIN-THEME"
+    ]
+    assert [record.record_id for record in compiler_module._records_for_category(records, "failure_modes")] == [
+        "BRAIN-NEGATIVE",
+        "BRAIN-NEWSLESS",
+    ]
+    assert [record.record_id for record in compiler_module._records_for_category(records, "market_memory")] == [
+        "BRAIN-CONTEXT"
+    ]
 
 
 def test_catalog_brain_marked_catalog_only(tmp_path: Path) -> None:
@@ -517,8 +506,7 @@ def test_brain_category_files_are_not_identical(
     )
 
     category_texts = [
-        (tmp_path / "brain" / "current" / file_name).read_text(encoding="utf-8")
-        for file_name in BRAIN_FILES
+        (tmp_path / "brain" / "current" / file_name).read_text(encoding="utf-8") for file_name in BRAIN_FILES
     ]
 
     assert len(set(category_texts)) == len(BRAIN_FILES)
@@ -547,9 +535,7 @@ def test_compiled_claims_reference_existing_records(
     record_ids = {record.record_id for record in records}
     compiled_claims = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 
@@ -582,9 +568,7 @@ def test_single_episode_cannot_validate_rule(
 
     compiled_claims = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 
@@ -594,9 +578,7 @@ def test_single_episode_cannot_validate_rule(
     assert claim["supporting_episode_ids"] == ["EP-llm-full"]
     assert claim["positive_case_count"] == 1
     assert claim["status"] != "validated"
-    assert "do not promote one record to a validated rule without broader evidence" in (
-        claim["boundary_conditions"]
-    )
+    assert "do not promote one record to a validated rule without broader evidence" in (claim["boundary_conditions"])
 
 
 def test_full_rebuild_from_raw_is_reproducible_with_cache(
@@ -622,31 +604,21 @@ def test_full_rebuild_from_raw_is_reproducible_with_cache(
             ),
         ],
     )
-    first_compile_manifest = read_json(
-        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
-    )
-    first_claims = (
-        tmp_path / "brain" / "current" / "compiled_claims.jsonl"
-    ).read_text(encoding="utf-8")
+    first_compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
+    first_claims = (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8")
     cache_files = sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json"))
 
     llm.calls.clear()
     llm.embed_calls.clear()
     second_manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
-    second_compile_manifest = read_json(
-        tmp_path / "brain" / "current" / "llm_compile_manifest.json"
-    )
+    second_compile_manifest = read_json(tmp_path / "brain" / "current" / "llm_compile_manifest.json")
     second_compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
-    second_claims = (
-        tmp_path / "brain" / "current" / "compiled_claims.jsonl"
-    ).read_text(encoding="utf-8")
+    second_claims = (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8")
 
     assert second_manifest.brain_version == first_manifest.brain_version
     assert second_compile_manifest == first_compile_manifest
     assert second_claims == first_claims
-    assert sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json")) == (
-        cache_files
-    )
+    assert sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json")) == (cache_files)
     assert llm.calls == []
     assert llm.embed_calls
     assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
@@ -830,6 +802,7 @@ def _record(
     eligibility_reason: str = "unit test llm-full record",
 ) -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    eligible = record_type != "counterexample" if training_eligible is None else training_eligible
     payload = {
         "record_id": record_id,
         "record_type": record_type,
@@ -838,11 +811,44 @@ def _record(
         "available_from": available_from.isoformat(),
         "training_target": training_target,
         "response_class": response_class,
+        "training_eligible": eligible,
     }
     if payload_extra:
         payload.update(payload_extra)
+    if record_type in {
+        "supervised_direct_event_case",
+        "supervised_issuer_day_case",
+        "supervised_theme_formation_case",
+        "theme_formation_case",
+        "beneficiary_discovery_case",
+        "candidate_generation_error_case",
+        "candidate_ranking_error_case",
+        "ranking_error_case",
+        "row_disposition_error_case",
+        "entity_resolution_error_case",
+    } and not any(
+        key in payload
+        for key in (
+            "outcome_high_return_pct",
+            "high_return_pct",
+            "intraday_high_return_pct",
+            "D_high_return_pct",
+        )
+    ):
+        normalized_response = response_class.upper()
+        payload["outcome_high_return_pct"] = (
+            -1.0
+            if any(marker in normalized_response for marker in ("NEGATIVE", "NO_RESPONSE"))
+            else 3.0
+            if "NEAR_MISS" in normalized_response
+            else 12.0
+        )
+    if record_type == "negative_control_case":
+        payload.setdefault("outcome_high_return_pct", 1.0)
+    if record_type == "newsless_or_unexplained_case":
+        payload.setdefault("outcome_high_return_pct", 18.0)
+        payload.setdefault("no_catalyst_asserted", True)
     payload_hash = sha256_text(canonical_json(payload))
-    eligible = record_type != "counterexample" if training_eligible is None else training_eligible
     return BrainRecordEnvelope(
         record_id=record_id,
         record_type=record_type,

@@ -35,7 +35,7 @@ def test_record_routing_metadata_is_strict_and_versioned() -> None:
         "label_quality": "verified",
         "routing_disposition": "REASONING",
         "memory_lanes": ["negative_controls"],
-        "polarity_classifier_version": "record_polarity.v1",
+        "polarity_classifier_version": "record_polarity.v2",
         "threshold_source": "explicit_label",
         "threshold_role": "explicit_label",
         "provenance_source_ids": ["SRC-1"],
@@ -43,9 +43,13 @@ def test_record_routing_metadata_is_strict_and_versioned() -> None:
 
     model = RecordRoutingMetadata.model_validate(payload)
 
-    assert model.schema_version == "nslab.record_routing_metadata.v1"
+    assert model.schema_version == "nslab.record_routing_metadata.v2"
     with pytest.raises(ValidationError):
         RecordRoutingMetadata.model_validate({**payload, "unexpected": True})
+    with pytest.raises(ValidationError):
+        RecordRoutingMetadata.model_validate(
+            {**payload, "label_quality": "looks_good"}
+        )
 
 
 def test_daily_memory_context_contains_hash_references_not_raw_corpus() -> None:

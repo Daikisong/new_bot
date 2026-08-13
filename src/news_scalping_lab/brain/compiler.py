@@ -27,12 +27,20 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_hashes,
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.routing import (
+    POLARITY_CLASSIFIER_VERSION,
     RecordEvidencePolarity,
+    RecordRoutingDisposition,
     record_evidence_polarity,
     record_is_positive_support,
-    record_memory_lanes,
+    record_routing_disposition,
+    record_routing_metadata,
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
@@ -356,25 +364,15 @@ class BrainCompiler:
         )
         source_hashes = {
             **self.store.accepted_hashes(),
-            **{
-                f"record:{record.record_id}": record.normalized_payload_sha256
-                for record in records
-            },
+            **{f"record:{record.record_id}": brain_record_envelope_sha256(record) for record in records},
         }
         created_at = max(record.available_from for record in records)
-        version = stable_id(
-            "brain",
-            canonical_json(
-                {
-                    "schema": "nslab.brain.llm_full.v1",
-                    "compiler_version": LLM_FULL_COMPILER_VERSION,
-                    "covered_episode_ids": covered_ids,
-                    "source_hashes": source_hashes,
-                    "model": settings.llm.model,
-                    "provider": settings.llm_provider,
-                }
-            ),
-            length=10,
+        version = expected_llm_full_brain_version(
+            covered_episode_ids=covered_ids,
+            source_hashes=source_hashes,
+            model=settings.llm.model,
+            provider=settings.llm_provider,
+            routing_metadata_sha256=brain_record_routing_root_sha256(records),
         )
         claims = self._claims_from_records(records)
         compiled_claims = _compiled_claims_from_records(records)
@@ -388,7 +386,7 @@ class BrainCompiler:
             production_eligible=True,
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
-            accepted_episode_count=len(accepted_episodes),
+            accepted_episode_count=len(covered_ids),
             covered_episode_count=len(covered_ids),
             covered_episode_ids=covered_ids,
             claim_ids=[claim.claim_id for claim in claims],
@@ -426,9 +424,7 @@ class BrainCompiler:
                 provider,
                 embedding_method=_llm_embedding_method(
                     provider_name=settings.llm_provider,
-                    model=_embedding_model_name(base_provider)
-                    or settings.llm.embedding_model
-                    or "configured",
+                    model=_embedding_model_name(base_provider) or settings.llm.embedding_model or "configured",
                 ),
             ),
         ).rebuild_index()
@@ -462,10 +458,7 @@ class BrainCompiler:
             return self.rebuild(mode=mode)
 
         covered_ids = [accepted_episode.episode_id for accepted_episode in episodes]
-        if (
-            current_manifest.covered_episode_ids == covered_ids
-            and current_manifest.source_hashes == source_hashes
-        ):
+        if current_manifest.covered_episode_ids == covered_ids and current_manifest.source_hashes == source_hashes:
             LocalRetrievalStore(self.root).rebuild_index()
             WarehouseStore(self.root).rebuild_all()
             return current_manifest
@@ -517,9 +510,7 @@ class BrainCompiler:
             ),
             deprecated_mode_alias=False,
             production_eligible=False,
-            last_full_rebuild_at=(
-                current_manifest.last_full_rebuild_at or current_manifest.created_at
-            ),
+            last_full_rebuild_at=(current_manifest.last_full_rebuild_at or current_manifest.created_at),
             updated_episode_id=episode.episode_id,
             accepted_episode_count=len(episodes),
             covered_episode_count=len(covered_ids),
@@ -547,8 +538,7 @@ class BrainCompiler:
             self.store.accept(episode.episode_id)
             return
         raise ValueError(
-            "brain update requires an accepted episode; run "
-            f"`nslab research accept {episode.episode_id}` first"
+            f"brain update requires an accepted episode; run `nslab research accept {episode.episode_id}` first"
         )
 
     def _resolve_update_episode(self, identifier: str) -> ResearchEpisode:
@@ -562,8 +552,7 @@ class BrainCompiler:
         matches = [
             episode
             for episode in [*self.store.list_accepted(), *self.store.list_episodes()]
-            if episode.trade_date == trade_date
-            and episode.research_version == "evaluation-postmortem-v1"
+            if episode.trade_date == trade_date and episode.research_version == "evaluation-postmortem-v1"
         ]
         if not matches:
             raise ValueError(
@@ -578,10 +567,7 @@ class BrainCompiler:
             "Episode contributes an abstract market-mechanism lesson; apply only with "
             "its conditions, failures, and counterexamples."
         )
-        mechanism = (
-            "; ".join(episode.blind_analysis.open_world_mechanisms[:3])
-            or episode.blind_analysis.summary
-        )
+        mechanism = "; ".join(episode.blind_analysis.open_world_mechanisms[:3]) or episode.blind_analysis.summary
         return MemoryClaim(
             claim_id=stable_id("CL", episode.episode_id, mechanism),
             statement=statement,
@@ -630,9 +616,7 @@ class BrainCompiler:
         episode: ResearchEpisode,
         source_hash: str | None,
     ) -> list[MechanismMemory]:
-        mechanism_texts = episode.blind_analysis.open_world_mechanisms or [
-            episode.blind_analysis.summary
-        ]
+        mechanism_texts = episode.blind_analysis.open_world_mechanisms or [episode.blind_analysis.summary]
         provenance = _episode_provenance(episode=episode, source_hash=source_hash)
         memories: list[MechanismMemory] = []
         for index, mechanism_text in enumerate(mechanism_texts, start=1):
@@ -663,7 +647,7 @@ class BrainCompiler:
     def _claims_from_records(self, records: list[BrainRecordEnvelope]) -> list[MemoryClaim]:
         claims: list[MemoryClaim] = []
         for record in records:
-            if not record.training_eligible:
+            if not record_is_positive_support(record):
                 continue
             statement = _record_claim_statement(record)
             claims.append(
@@ -723,9 +707,7 @@ class BrainCompiler:
             encoding="utf-8",
         )
         self.claims_dir.mkdir(parents=True, exist_ok=True)
-        (self.claims_dir / "claims.jsonl").write_text(
-            claims_path.read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        (self.claims_dir / "claims.jsonl").write_text(claims_path.read_text(encoding="utf-8"), encoding="utf-8")
         compiled_claims_path = self.current_dir / "compiled_claims.jsonl"
         if compiled_claims is not None:
             compiled_claims_path.write_text(
@@ -799,9 +781,7 @@ class BrainCompiler:
             shutil.rmtree(self.current_shard_brains_dir)
         self.current_shard_brains_dir.mkdir(parents=True, exist_ok=True)
         shard_files: list[str] = []
-        for shard_index, shard in enumerate(
-            _episode_shards(episodes, self.shard_episode_count), start=1
-        ):
+        for shard_index, shard in enumerate(_episode_shards(episodes, self.shard_episode_count), start=1):
             path = self.current_shard_brains_dir / f"shard_{shard_index:04d}.md"
             path.write_text(
                 self._shard_brain_body(
@@ -880,16 +860,10 @@ class BrainCompiler:
             lines.append("No accepted research episodes are assigned to this shard.")
             return "\n".join(lines).rstrip() + "\n"
         for episode in episodes:
-            mechanisms = episode.blind_analysis.open_world_mechanisms or [
-                episode.blind_analysis.summary
-            ]
-            counterexamples = [
-                counterexample.statement for counterexample in episode.counterexamples
-            ]
+            mechanisms = episode.blind_analysis.open_world_mechanisms or [episode.blind_analysis.summary]
+            counterexamples = [counterexample.statement for counterexample in episode.counterexamples]
             miss_lines = [f"  - {miss}" for miss in episode.misses] or ["  - none recorded"]
-            counterexample_lines = [f"  - {item}" for item in counterexamples] or [
-                "  - none recorded"
-            ]
+            counterexample_lines = [f"  - {item}" for item in counterexamples] or ["  - none recorded"]
             lines.extend(
                 [
                     f"## {episode.episode_id}",
@@ -968,22 +942,31 @@ class BrainCompiler:
             records = BrainRecordStore(self.root).list_records()
         record_counts_by_type = Counter(record.record_type for record in records)
         record_counts_by_phase = Counter(record.evidence_phase for record in records)
-        record_counts_by_target = Counter(
-            record.training_target or "UNKNOWN" for record in records
+        record_counts_by_target = Counter(record.training_target or "UNKNOWN" for record in records)
+        routing_metadata = [record_routing_metadata(record) for record in records]
+        record_counts_by_polarity = Counter(routing.evidence_polarity for routing in routing_metadata)
+        record_counts_by_label_quality = Counter(routing.label_quality for routing in routing_metadata)
+        record_counts_by_routing_disposition = Counter(routing.routing_disposition for routing in routing_metadata)
+        routing_cross_table = Counter(
+            "|".join(
+                (
+                    routing.evidence_polarity,
+                    "true" if routing.training_eligible else "false",
+                    routing.label_quality,
+                    routing.routing_disposition,
+                )
+            )
+            for routing in routing_metadata
         )
         record_ids = [record.record_id for record in records]
         training_eligible_count = sum(1 for record in records if record.training_eligible)
         coverage_as_of = manifest.created_at
         available_records_as_of = [
-            record
-            for record in records
-            if is_available_as_of(record.available_from, coverage_as_of)
+            record for record in records if is_available_as_of(record.available_from, coverage_as_of)
         ]
-        training_eligible_as_of_count = sum(
-            1 for record in available_records_as_of if record.training_eligible
-        )
+        training_eligible_as_of_count = sum(1 for record in available_records_as_of if record.training_eligible)
         return {
-            "schema_version": "nslab.record_coverage_manifest.v1",
+            "schema_version": "nslab.record_coverage_manifest.v2",
             "brain_version": manifest.brain_version,
             "build_mode": manifest.build_mode,
             "catalog_only": manifest.catalog_only,
@@ -1001,11 +984,13 @@ class BrainCompiler:
             "record_counts_by_type": dict(sorted(record_counts_by_type.items())),
             "record_counts_by_evidence_phase": dict(sorted(record_counts_by_phase.items())),
             "record_counts_by_training_target": dict(sorted(record_counts_by_target.items())),
-            "ineligible_record_count": sum(
-                1 for record in records if not record.training_eligible
-            ),
+            "record_counts_by_evidence_polarity": dict(sorted(record_counts_by_polarity.items())),
+            "record_counts_by_label_quality": dict(sorted(record_counts_by_label_quality.items())),
+            "record_counts_by_routing_disposition": dict(sorted(record_counts_by_routing_disposition.items())),
+            "record_routing_cross_table": dict(sorted(routing_cross_table.items())),
+            "ineligible_record_count": sum(1 for record in records if not record.training_eligible),
             "audit_only_record_count": sum(
-                1 for record in records if record.evidence_phase == "AUDIT"
+                1 for routing in routing_metadata if routing.routing_disposition in {"AUDIT", "QUARANTINED"}
             ),
             "coverage_complete": True,
         }
@@ -1018,9 +1003,7 @@ class BrainCompiler:
             "build_mode": manifest.build_mode,
             "catalog_only": manifest.catalog_only,
             "last_full_rebuild_at": (
-                manifest.last_full_rebuild_at.isoformat()
-                if manifest.last_full_rebuild_at is not None
-                else None
+                manifest.last_full_rebuild_at.isoformat() if manifest.last_full_rebuild_at is not None else None
             ),
             "updated_episode_id": manifest.updated_episode_id,
             "accepted_episode_count": manifest.accepted_episode_count,
@@ -1044,6 +1027,7 @@ def _deterministic_brain_version(
         "brain_record_hashes": brain_record_hashes or {},
         "compiler_mode": compiler_mode,
         "compiler_version": CATALOG_COMPILER_VERSION,
+        "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
         "covered_episode_ids": covered_episode_ids,
         "shard_episode_count": max(1, shard_episode_count),
         "source_hashes": source_hashes,
@@ -1069,11 +1053,34 @@ def expected_brain_version(
     )
 
 
+def expected_llm_full_brain_version(
+    *,
+    covered_episode_ids: list[str],
+    source_hashes: dict[str, str],
+    model: str,
+    provider: str,
+    routing_metadata_sha256: str,
+) -> str:
+    return stable_id(
+        "brain",
+        canonical_json(
+            {
+                "schema": "nslab.brain.llm_full.v1",
+                "compiler_version": LLM_FULL_COMPILER_VERSION,
+                "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
+                "routing_metadata_sha256": routing_metadata_sha256,
+                "covered_episode_ids": covered_episode_ids,
+                "source_hashes": source_hashes,
+                "model": model,
+                "provider": provider,
+            }
+        ),
+        length=10,
+    )
+
+
 def _brain_record_hashes(root: Path) -> dict[str, str]:
-    return {
-        record.record_id: record.normalized_payload_sha256
-        for record in BrainRecordStore(root).list_records()
-    }
+    return brain_record_envelope_hashes(BrainRecordStore(root).list_records())
 
 
 def _episode_shards(
@@ -1081,10 +1088,7 @@ def _episode_shards(
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
 ) -> list[list[ResearchEpisode]]:
     shard_size = max(1, shard_episode_count)
-    return [
-        episodes[index : index + shard_size]
-        for index in range(0, len(episodes), shard_size)
-    ]
+    return [episodes[index : index + shard_size] for index in range(0, len(episodes), shard_size)]
 
 
 def _can_incrementally_update(
@@ -1097,18 +1101,13 @@ def _can_incrementally_update(
     if not current_manifest.coverage_complete:
         return False
     covered_ids = [episode.episode_id for episode in episodes]
-    if (
-        current_manifest.covered_episode_ids == covered_ids
-        and current_manifest.source_hashes == source_hashes
-    ):
+    if current_manifest.covered_episode_ids == covered_ids and current_manifest.source_hashes == source_hashes:
         return True
     previous_ids = [current_id for current_id in covered_ids if current_id != episode_id]
     if current_manifest.covered_episode_ids != previous_ids:
         return False
     previous_hashes = {
-        previous_id: source_hashes[previous_id]
-        for previous_id in previous_ids
-        if previous_id in source_hashes
+        previous_id: source_hashes[previous_id] for previous_id in previous_ids if previous_id in source_hashes
     }
     return len(previous_hashes) == len(previous_ids) and current_manifest.source_hashes == previous_hashes
 
@@ -1277,9 +1276,7 @@ def current_brain_file_hashes(root: Path) -> dict[str, str]:
     if not current_dir.exists():
         return {}
     return {
-        path.relative_to(root).as_posix(): file_sha256(path)
-        for path in sorted(current_dir.glob("*"))
-        if path.is_file()
+        path.relative_to(root).as_posix(): file_sha256(path) for path in sorted(current_dir.glob("*")) if path.is_file()
     }
 
 
@@ -1294,10 +1291,7 @@ def _directory_file_hashes(directory: Path) -> dict[str, str]:
 def _copy_immutable_directory(*, source_dir: Path, target_dir: Path, label: str) -> None:
     if target_dir.exists():
         if _directory_file_hashes(target_dir) != _directory_file_hashes(source_dir):
-            raise ValueError(
-                f"immutable {label} already exists with different content: "
-                f"{target_dir.name}"
-            )
+            raise ValueError(f"immutable {label} already exists with different content: {target_dir.name}")
         return
     shutil.copytree(source_dir, target_dir)
 
@@ -1506,10 +1500,7 @@ def _claims_for_category(
     selected = [
         claim
         for claim in claims
-        if any(
-            needle in f"{claim.statement} {claim.mechanism} {claim.scope}".lower()
-            for needle in needles
-        )
+        if any(needle in f"{claim.statement} {claim.mechanism} {claim.scope}".lower() for needle in needles)
     ]
     return selected
 
@@ -1518,10 +1509,7 @@ def _record_claim_statement(record: BrainRecordEnvelope) -> str:
     response_class = record.payload.get("response_class")
     target = record.training_target or record.record_type
     if isinstance(response_class, str) and response_class:
-        return (
-            f"{record.record_type} supports studying {target} with "
-            f"observed response_class={response_class}."
-        )
+        return f"{record.record_type} supports studying {target} with observed response_class={response_class}."
     return f"{record.record_type} supports studying {target} with preserved provenance."
 
 
@@ -1535,9 +1523,7 @@ def _brain_compile_diagnostic_report(
     llm_compile_metadata: dict[str, Any] | None,
     llm_compile_run_metadata: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    llm_compile: dict[str, Any] = (
-        llm_compile_metadata if isinstance(llm_compile_metadata, dict) else {}
-    )
+    llm_compile: dict[str, Any] = llm_compile_metadata if isinstance(llm_compile_metadata, dict) else {}
     llm_compile_present = bool(llm_compile)
     compiler_provider = _string_from_mapping(
         llm_compile,
@@ -1593,8 +1579,7 @@ def _brain_compile_diagnostic_report(
         "category_file_count": len(BRAIN_FILES),
         "category_files": BRAIN_FILES,
         "category_claim_counts": {
-            category: len(claim_ids)
-            for category, claim_ids in sorted(category_claim_ids.items())
+            category: len(claim_ids) for category, claim_ids in sorted(category_claim_ids.items())
         },
         "category_claim_ids": category_claim_ids,
         "category_source_record_counts": category_source_record_counts,
@@ -1602,8 +1587,7 @@ def _brain_compile_diagnostic_report(
         "record_coverage": _record_coverage_summary(record_coverage),
         "llm_compile_present": llm_compile_present,
         "llm_compile": llm_compile_metadata,
-        "llm_compile_run_present": isinstance(llm_compile_run_metadata, dict)
-        and bool(llm_compile_run_metadata),
+        "llm_compile_run_present": isinstance(llm_compile_run_metadata, dict) and bool(llm_compile_run_metadata),
         "llm_compile_run": llm_compile_run_metadata,
     }
 
@@ -1638,9 +1622,7 @@ def _category_claim_ids(
         if compiled_claims is not None:
             category_ids = _compiled_claim_ids_for_category(compiled_claims, category)
         else:
-            category_ids = [
-                claim.claim_id for claim in _claims_for_category(claims, category)
-            ]
+            category_ids = [claim.claim_id for claim in _claims_for_category(claims, category)]
         ids[category] = category_ids
     return dict(sorted(ids.items()))
 
@@ -1687,9 +1669,7 @@ def _category_source_record_type_counts(
             ]
             counts = _record_type_counts(category_records)
             unknown_count = sum(
-                1
-                for record_id in record_ids
-                if isinstance(record_id, str) and record_id not in records_by_id
+                1 for record_id in record_ids if isinstance(record_id, str) and record_id not in records_by_id
             )
             if unknown_count:
                 counts["UNKNOWN_RECORD"] = unknown_count
@@ -1704,9 +1684,7 @@ def _category_source_record_type_counts(
             category_records = records
         else:
             allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
-            category_records = [
-                record for record in records if record.record_type in allowed
-            ]
+            category_records = [record for record in records if record.record_type in allowed]
         fallback_counts[category] = _record_type_counts(category_records)
     return dict(sorted(fallback_counts.items()))
 
@@ -1728,6 +1706,10 @@ def _record_coverage_summary(record_coverage: dict[str, object]) -> dict[str, ob
         "record_counts_by_type",
         "record_counts_by_evidence_phase",
         "record_counts_by_training_target",
+        "record_counts_by_evidence_polarity",
+        "record_counts_by_label_quality",
+        "record_counts_by_routing_disposition",
+        "record_routing_cross_table",
         "ineligible_record_count",
         "audit_only_record_count",
         "coverage_complete",
@@ -1752,6 +1734,9 @@ def _compiled_claims_from_records(
     for record in sorted(records, key=lambda item: item.record_id):
         target = str(record.training_target or record.record_type)
         polarity = record_evidence_polarity(record)
+        disposition = record_routing_disposition(record)
+        if disposition is not RecordRoutingDisposition.REASONING:
+            continue
         is_positive_support = record_is_positive_support(record)
         is_negative_evidence = polarity is RecordEvidencePolarity.NEGATIVE
         is_boundary_evidence = polarity in {
@@ -1783,11 +1768,9 @@ def _compiled_claims_from_records(
                 contradicting_episode_ids=[],
                 positive_case_count=1 if is_positive_support else 0,
                 negative_case_count=1 if is_negative_evidence else 0,
-                near_miss_count=(
-                    1 if is_boundary_evidence or not record.training_eligible else 0
-                ),
+                near_miss_count=(1 if is_boundary_evidence else 0),
                 confidence_label=record.confidence_label,
-                status="supported" if record.training_eligible else "tentative",
+                status=("supported" if disposition.value == "REASONING" else "tentative"),
                 available_from=record.available_from,
                 provenance={
                     "source_type": "brain_record",
@@ -1860,10 +1843,7 @@ async def _compile_llm_category_outputs(
             purpose=f"brain_compile:shard:{shard_index:04d}",
             prompt=prompt,
             record_ids=[record.record_id for record in shard],
-            record_hashes={
-                record.record_id: record.normalized_payload_sha256
-                for record in shard
-            },
+            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in shard},
             provider_name=provider_name,
             model=model,
         )
@@ -1883,6 +1863,8 @@ async def _compile_llm_category_outputs(
     for file_name in BRAIN_FILES:
         category = _brain_category(file_name)
         category_records = _records_for_category(records, category)
+        reasoning_records, non_reasoning_records = _split_routing_records(category_records)
+        positive_support_records = [record for record in reasoning_records if record_is_positive_support(record)]
         category_compiled_claim_ids = _compiled_claim_ids_for_category(
             compiled_claims,
             category,
@@ -1906,10 +1888,7 @@ async def _compile_llm_category_outputs(
             purpose=f"brain_compile:synthesis:{category}",
             prompt=prompt,
             record_ids=[record.record_id for record in category_records],
-            record_hashes={
-                record.record_id: record.normalized_payload_sha256
-                for record in category_records
-            },
+            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in category_records},
             provider_name=provider_name,
             model=model,
         )
@@ -1933,10 +1912,7 @@ async def _compile_llm_category_outputs(
             purpose=f"brain_compile:review:{category}",
             prompt=review_prompt,
             record_ids=[record.record_id for record in category_records],
-            record_hashes={
-                record.record_id: record.normalized_payload_sha256
-                for record in category_records
-            },
+            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in category_records},
             provider_name=provider_name,
             model=model,
         )
@@ -1953,7 +1929,12 @@ async def _compile_llm_category_outputs(
             "## Contradiction And Boundary Review\n\n"
             f"{review.strip()}\n\n"
             "## Supporting Records\n\n"
-            + "\n".join(f"- `{record.record_id}` ({record.record_type})" for record in category_records[:200])
+            + "\n".join(f"- `{record.record_id}` ({record.record_type})" for record in reasoning_records[:200])
+            + "\n\n## Context And Excluded Records\n\n"
+            + "\n".join(
+                f"- `{record.record_id}` ({record.record_type}; {record_routing_disposition(record).value})"
+                for record in non_reasoning_records[:200]
+            )
             + "\n"
         )
         categories.append(
@@ -1962,6 +1943,12 @@ async def _compile_llm_category_outputs(
                 "file_name": file_name,
                 "source_record_count": len(category_records),
                 "source_record_ids": [record.record_id for record in category_records],
+                "reasoning_support_record_count": len(reasoning_records),
+                "reasoning_support_record_ids": [record.record_id for record in reasoning_records],
+                "positive_support_record_count": len(positive_support_records),
+                "positive_support_record_ids": [record.record_id for record in positive_support_records],
+                "non_reasoning_record_count": len(non_reasoning_records),
+                "non_reasoning_record_ids": [record.record_id for record in non_reasoning_records],
                 "compiled_claim_count": len(category_compiled_claim_ids),
                 "compiled_claim_ids": category_compiled_claim_ids,
                 "synthesis_cache_key": synthesis_cache_key,
@@ -1972,11 +1959,8 @@ async def _compile_llm_category_outputs(
                 "review_prompt_sha256": review_prompt_sha256,
             }
         )
-    llm_cache_hit_count = sum(
-        1 for shard in shard_summaries if shard.get("cache_hit") is True
-    ) + sum(
-        int(category.get("synthesis_cache_hit") is True)
-        + int(category.get("review_cache_hit") is True)
+    llm_cache_hit_count = sum(1 for shard in shard_summaries if shard.get("cache_hit") is True) + sum(
+        int(category.get("synthesis_cache_hit") is True) + int(category.get("review_cache_hit") is True)
         for category in categories
     )
     llm_generation_count = len(shard_summaries) + len(categories) * 2
@@ -1993,21 +1977,12 @@ async def _compile_llm_category_outputs(
         "record_shard_size": LLM_FULL_RECORD_SHARD_SIZE,
         "record_shard_count": len(shard_summaries),
         "record_shards": [
-            {
-                key: value
-                for key, value in shard.items()
-                if key != "summary"
-                and key != "cache_hit"
-            }
+            {key: value for key, value in shard.items() if key != "summary" and key != "cache_hit"}
             for shard in shard_summaries
         ],
         "category_count": len(categories),
         "categories": [
-            {
-                key: value
-                for key, value in category.items()
-                if key not in {"synthesis_cache_hit", "review_cache_hit"}
-            }
+            {key: value for key, value in category.items() if key not in {"synthesis_cache_hit", "review_cache_hit"}}
             for category in categories
         ],
     }
@@ -2132,7 +2107,7 @@ def _brain_record_shard_prompt(
     provider_name: str,
     model: str,
 ) -> str:
-    compact_records = [_compact_record_for_prompt(record) for record in records]
+    reasoning_records, non_reasoning_records = _split_routing_records(records)
     return json.dumps(
         {
             "instruction": (
@@ -2141,16 +2116,21 @@ def _brain_record_shard_prompt(
                 "misses, contradictions, and unresolved research questions. Cite "
                 "record IDs and avoid ticker, company, theme, region, or "
                 "beneficiary lookup rules. training_eligible states evidence quality, "
-                "not bullish direction. A positive claim requires both eligibility and "
-                "evidence_polarity=POSITIVE. Retain negative, unexplained, and ineligible "
-                "records as controls, boundaries, near misses, or audit context."
+                "not bullish direction. A positive claim requires training_eligible=true, "
+                "label_quality=verified, routing_disposition=REASONING, and "
+                "evidence_polarity=POSITIVE, and positive_support_eligible=true. "
+                "Candidate-error records are correction evidence only. Retain reasoning-eligible negative and "
+                "unexplained records in their explicit lanes. Ineligible, ambiguous, "
+                "or quarantined records are audit context only and must not be relabeled "
+                "as near misses or controls."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
             "shard_index": shard_index,
             "provider": provider_name,
             "model": model,
-            "records": compact_records,
+            "reasoning_records": [_compact_record_for_prompt(record) for record in reasoning_records],
+            "audit_context_records": [_compact_record_for_prompt(record) for record in non_reasoning_records],
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -2166,7 +2146,7 @@ def _brain_category_prompt(
     provider_name: str,
     model: str,
 ) -> str:
-    compact_records = [_compact_record_for_prompt(record) for record in records[:200]]
+    reasoning_records, non_reasoning_records = _split_routing_records(records)
     return json.dumps(
         {
             "instruction": (
@@ -2176,7 +2156,11 @@ def _brain_category_prompt(
                 "supporting record IDs, state boundary conditions, and identify "
                 "contradicting or near-miss records when present. Only records with "
                 "training_eligible=true is not itself positive evidence; positive claims "
-                "also require evidence_polarity=POSITIVE."
+                "also require label_quality=verified, "
+                "routing_disposition=REASONING, evidence_polarity=POSITIVE, and "
+                "positive_support_eligible=true. Candidate-error records are correction evidence only. "
+                "AUDIT and QUARANTINED records may explain exclusions but cannot support "
+                "a reasoning claim."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
@@ -2185,7 +2169,8 @@ def _brain_category_prompt(
             "provider": provider_name,
             "model": model,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),
-            "records": compact_records,
+            "reasoning_records": [_compact_record_for_prompt(record) for record in reasoning_records[:200]],
+            "audit_context_records": [_compact_record_for_prompt(record) for record in non_reasoning_records[:200]],
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -2209,7 +2194,8 @@ def _brain_category_review_prompt(
                 "missing boundary conditions, and claims supported only by a "
                 "single episode. Return concise corrections and unresolved risks. "
                 "Cite record IDs when possible. Reject any positive claim that uses "
-                "an ineligible record or a non-POSITIVE evidence polarity as support."
+                "a record whose positive_support_eligible field is not true. Candidate-error "
+                "records may support correction analysis only, never a generic positive claim."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
@@ -2218,7 +2204,12 @@ def _brain_category_review_prompt(
             "provider": provider_name,
             "model": model,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),
-            "records": [_compact_record_for_prompt(record) for record in records[:200]],
+            "reasoning_records": [
+                _compact_record_for_prompt(record) for record in _split_routing_records(records)[0][:200]
+            ],
+            "audit_context_records": [
+                _compact_record_for_prompt(record) for record in _split_routing_records(records)[1][:200]
+            ],
             "synthesis": synthesis,
         },
         ensure_ascii=False,
@@ -2227,14 +2218,21 @@ def _brain_category_review_prompt(
 
 
 def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
+    routing = record_routing_metadata(record)
     compact: dict[str, Any] = {
         "record_id": record.record_id,
         "record_type": record.record_type,
         "training_target": record.training_target,
         "training_eligible": record.training_eligible,
         "eligibility_reason": record.eligibility_reason,
-        "evidence_polarity": record_evidence_polarity(record),
-        "memory_lanes": sorted(record_memory_lanes(record)),
+        "evidence_polarity": routing.evidence_polarity,
+        "label_quality": routing.label_quality,
+        "routing_disposition": routing.routing_disposition,
+        "polarity_classifier_version": routing.polarity_classifier_version,
+        "threshold_source": routing.threshold_source,
+        "threshold_role": routing.threshold_role,
+        "memory_lanes": routing.memory_lanes,
+        "positive_support_eligible": record_is_positive_support(record),
         "evidence_phase": record.evidence_phase,
         "status": record.status,
         "confidence_label": record.confidence_label,
@@ -2256,6 +2254,19 @@ def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
     return compact
 
 
+def _split_routing_records(
+    records: list[BrainRecordEnvelope],
+) -> tuple[list[BrainRecordEnvelope], list[BrainRecordEnvelope]]:
+    reasoning: list[BrainRecordEnvelope] = []
+    non_reasoning: list[BrainRecordEnvelope] = []
+    for record in records:
+        target = (
+            reasoning if record_routing_disposition(record) is RecordRoutingDisposition.REASONING else non_reasoning
+        )
+        target.append(record)
+    return reasoning, non_reasoning
+
+
 def _record_routing_features(record: BrainRecordEnvelope) -> dict[str, Any]:
     payload = record.payload
     routing = {
@@ -2271,11 +2282,7 @@ def _record_routing_features(record: BrainRecordEnvelope) -> dict[str, Any]:
         "relation_class": payload.get("relation_class"),
         "blind_preference_correct": payload.get("blind_preference_correct"),
     }
-    return {
-        key: value
-        for key, value in routing.items()
-        if not _empty_prompt_value(value)
-    }
+    return {key: value for key, value in routing.items() if not _empty_prompt_value(value)}
 
 
 def _compact_payload_for_llm_prompt(payload: dict[str, Any]) -> dict[str, Any]:
@@ -2317,17 +2324,13 @@ def _compact_prompt_value(value: Any, *, depth: int) -> Any:
         return [
             compact_item
             for item in value[:LLM_PROMPT_MAX_LIST_ITEMS]
-            if not _empty_prompt_value(
-                compact_item := _compact_prompt_value(item, depth=depth + 1)
-            )
+            if not _empty_prompt_value(compact_item := _compact_prompt_value(item, depth=depth + 1))
         ]
     if isinstance(value, dict):
         if depth >= 4:
             return f"[nested object with {len(value)} keys]"
         selected: dict[str, Any] = {}
-        for key, nested in sorted(value.items(), key=lambda item: str(item[0]))[
-            :LLM_PROMPT_MAX_PAYLOAD_FIELDS
-        ]:
+        for key, nested in sorted(value.items(), key=lambda item: str(item[0]))[:LLM_PROMPT_MAX_PAYLOAD_FIELDS]:
             compact_nested = _compact_prompt_value(nested, depth=depth + 1)
             if not _empty_prompt_value(compact_nested):
                 selected[str(key)] = compact_nested

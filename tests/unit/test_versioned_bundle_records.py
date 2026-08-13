@@ -7,9 +7,14 @@ from pathlib import Path
 
 import duckdb
 import pytest
+from pydantic import BaseModel
 
+import news_scalping_lab.brain.compiler as compiler_module
 from news_scalping_lab.audits.coverage import audit_coverage
+from news_scalping_lab.brain.audit import audit_brain
+from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.records.models import (
     BeneficiaryDiscoveryCase,
     BlindLeaderPreferencePair,
@@ -44,9 +49,29 @@ from news_scalping_lab.research_import.versioned_bundle import (
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
+from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
+
+
+class _AuditBrainLLM:
+    embedding_model = "audit-brain-embedding"
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        return f"{purpose}: audited synthesis"
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[BaseModel],
+        purpose: str,
+    ) -> BaseModel:
+        raise AssertionError("llm-full brain compile should use text synthesis")
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return [[float(index + 1), float(len(text) % 7)] for index, text in enumerate(texts)]
 
 
 def _payload_block(payload: str, fence: str) -> str:
@@ -127,6 +152,7 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "safe_D1_features": {"P_amount_rank": 11},
             "D_outcome": {"response_class": "positive_high10"},
             "response_class": "positive_high10",
+            "outcome_high_return_pct": 12.0,
             "sample_weight": 1.0,
             "event_level_weights": {"EVT-1": 1.0},
             "label_quality": "verified",
@@ -392,13 +418,14 @@ def _synthetic_v11_bundle(
             "episode_id": episode_id,
             "trade_date": trade_day.isoformat(),
             "available_from": issuer_available_from or available_from,
-            "status": "tentative",
+            "status": "supported",
             "confidence_label": "low",
             "training_target": "issuer_day_price_response",
             "issuer_day_case_id": "20300110:000001",
             "ticker": "000001",
             "company_name": "Synthetic Issuer",
             "response_class": "positive_high10",
+            "outcome_high_return_pct": 12.0,
             "sample_weight": issuer_sample_weight,
             "training_eligible": True,
             "eligibility_reason": "synthetic verified label",
@@ -455,6 +482,7 @@ def _synthetic_v11_bundle(
                     "ticker": "000001",
                     "company_name": "Synthetic Issuer",
                     "response_class": "positive_high10",
+                    "outcome_high_return_pct": 12.0,
                     "sample_weight": sample_weight,
                     "training_eligible": True,
                     "eligibility_reason": "synthetic direct event label",
@@ -514,7 +542,9 @@ def _synthetic_v11_bundle(
                 "missed_ticker": "000001",
                 "missed_company_name": "Synthetic Issuer",
                 "correction_rationale": "Direct issuer evidence should seed candidate generation.",
+                "outcome_high_return_pct": 29.0,
                 "training_eligible": True,
+                "status": "supported",
                 "eligibility_reason": "synthetic explicit correction label",
                 "provenance_source_ids": ["SRC-SYNTH-1"],
             }
@@ -1835,6 +1865,55 @@ def test_training_export_uses_explicit_error_correction_records(
     assert audit_training_exports(tmp_path)["passed"] is True
 
 
+def test_imported_bundle_llm_full_rebuild_passes_deep_brain_audit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = _write_synthetic_bundle_file(
+        tmp_path,
+        text=_synthetic_v11_bundle(
+            include_unknown=False,
+            direct_event_sample_weights=[0.5, 0.5],
+        ),
+    )
+    import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+    episode = ResearchEpisode(
+        episode_id="NSLAB-20300110-SYNTH",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        created_at=datetime(2030, 1, 10, 16, 0, 0, tzinfo=KST),
+        research_version="llm-full-deep-audit-v1",
+        price_source_snapshot={"source": "unit-test"},
+        blind_analysis=BlindAnalysis(summary="Deep audit source episode."),
+        available_from=datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST),
+    )
+    research_store = ResearchStore(tmp_path)
+    research_store.save_episode(episode)
+    research_store.accept(episode.episode_id)
+    configs = tmp_path / "configs"
+    configs.mkdir(parents=True, exist_ok=True)
+    (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
+    (configs / "models.yaml").write_text(
+        "openai:\n  provider: openai\n  model: audit-brain-model\n  max_retries: 0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(
+        compiler_module,
+        "create_llm_provider",
+        lambda settings: _AuditBrainLLM(),
+    )
+
+    manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+    audit = audit_brain(tmp_path, deep=True)
+
+    assert manifest.build_mode == "llm-full"
+    assert audit["passed"] is True, audit
+    assert audit["source_hashes_verified"] is True
+    assert audit["version_matches_expected"] is True
+    assert audit["determinism_findings"] == []
+
+
 def test_record_provenance_closure(tmp_path: Path) -> None:
     bundle = _write_synthetic_bundle_file(
         tmp_path,
@@ -3048,11 +3127,7 @@ def test_v23_duplicate_safe_d1_feature_mirror_collapses_without_losing_nested_li
     assert inspection["import_loss_audit_passed"] is True
     assert result.accepted is True
 
-    issuer = next(
-        record
-        for record in BrainRecordStore(tmp_path).list_records()
-        if record.record_id == "BD-DIRECT-1"
-    )
+    issuer = next(record for record in BrainRecordStore(tmp_path).list_records() if record.record_id == "BD-DIRECT-1")
     assert issuer.payload["safe_D1_features"] == {
         "snapshot_date": "2030-02-03",
         "amount_rank": 11,

@@ -35,7 +35,7 @@ from news_scalping_lab.records.models import (
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, write_json
 from news_scalping_lab.warehouse import WarehouseStore
 
 
@@ -48,9 +48,7 @@ class OrderAssertingRetrieval:
         raise AssertionError("test retrieval does not accept added episodes")
 
     def search_semantic(self, query: str, *, limit: int = 10) -> list[str]:
-        assert self.first_pass_completed(), (
-            "current-news first pass must finish before past semantic retrieval"
-        )
+        assert self.first_pass_completed(), "current-news first pass must finish before past semantic retrieval"
         self.queries.append(query)
         return []
 
@@ -146,6 +144,8 @@ def _brain_record(
 ) -> BrainRecordEnvelope:
     trade_day = date(2030, 1, 9)
     eligible = record_type != "counterexample" if training_eligible is None else training_eligible
+    if record_type == "counterexample" and response_class == "positive_high10":
+        response_class = "negative_control"
     payload = {
         "record_id": record_id,
         "record_type": record_type,
@@ -161,6 +161,38 @@ def _brain_record(
         "training_eligible": eligible,
         "provenance_source_ids": ["SRC-RECORD-SWEEP"],
     }
+    if record_type == "counterexample":
+        payload.update(
+            {
+                "negative_control_reason": "counterexample fixture",
+                "screening_decision": "REJECT",
+            }
+        )
+    if record_type == "negative_control_case":
+        payload["negative_control_reason"] = "negative-control fixture"
+    if record_type in {
+        "supervised_direct_event_case",
+        "supervised_issuer_day_case",
+        "supervised_theme_formation_case",
+        "theme_formation_case",
+        "beneficiary_discovery_case",
+        "candidate_generation_error_case",
+        "candidate_ranking_error_case",
+        "ranking_error_case",
+        "row_disposition_error_case",
+        "entity_resolution_error_case",
+    } and response_class:
+        normalized_response = response_class.upper()
+        payload["outcome_high_return_pct"] = (
+            -1.0
+            if any(marker in normalized_response for marker in ("NEGATIVE", "NO_RESPONSE"))
+            else 3.0
+            if "NEAR_MISS" in normalized_response
+            else 12.0
+        )
+    if record_type == "newsless_or_unexplained_case":
+        payload["no_catalyst_asserted"] = True
+        payload["outcome_high_return_pct"] = 18.0
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
@@ -172,7 +204,7 @@ def _brain_record(
         evidence_phase="BLIND_SAFE",
         training_eligible=eligible,
         eligibility_reason=eligibility_reason,
-        status="tentative",
+        status="supported",
         confidence_label="low",
         provenance_source_ids=["SRC-RECORD-SWEEP"],
         raw_payload_sha256=payload_hash,
@@ -222,9 +254,7 @@ def _store_brain_records(tmp_path: Path, records: list[BrainRecordEnvelope]) -> 
                 [record.record_type for record in records],
                 1,
             ),
-            training_eligible_record_count=sum(
-                1 for record in records if record.training_eligible
-            ),
+            training_eligible_record_count=sum(1 for record in records if record.training_eligible),
             source_ids=["SRC-RECORD-SWEEP"],
         ),
         records=records,
@@ -243,21 +273,11 @@ def test_normalize_analysis_mode_accepts_only_supported_modes() -> None:
 
 
 def test_semantic_retrieval_categories_match_record_level_contract() -> None:
-    assert _normalize_semantic_retrieval_category("negative_analogs") == (
-        "negative_controls"
-    )
-    assert _normalize_semantic_retrieval_category("leader_selection_cases") == (
-        "leader_selection_pairs"
-    )
-    assert _semantic_record_filters("negative_controls") == {
-        "memory_lane": "negative_controls"
-    }
-    assert _semantic_record_filters("leader_selection_pairs") == {
-        "memory_lane": "leader_selection_pairs"
-    }
-    assert _semantic_record_filters("newsless_or_unexplained") == {
-        "memory_lane": "newsless_or_unexplained"
-    }
+    assert _normalize_semantic_retrieval_category("negative_analogs") == ("negative_controls")
+    assert _normalize_semantic_retrieval_category("leader_selection_cases") == ("leader_selection_pairs")
+    assert _semantic_record_filters("negative_controls") == {"memory_lane": "negative_controls"}
+    assert _semantic_record_filters("leader_selection_pairs") == {"memory_lane": "leader_selection_pairs"}
+    assert _semantic_record_filters("newsless_or_unexplained") == {"memory_lane": "newsless_or_unexplained"}
 
 
 def test_context_assembler_rejects_unknown_analysis_mode(tmp_path) -> None:
@@ -497,6 +517,7 @@ def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> Non
             _brain_record(
                 "BRAIN-COUNTER",
                 record_type="counterexample",
+                training_eligible=True,
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
             _brain_record(
@@ -538,33 +559,49 @@ def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> Non
     assert sweep.errors == []
     assert sweep.record_artifact_paths
     payload = read_json(tmp_path / sweep.record_artifact_paths[0])
-    assert [record["record_id"] for record in payload["near_misses"]] == [
-        "BRAIN-CANDIDATE-ERROR",
-        "BRAIN-NEAR",
-        "BRAIN-SEMANTIC-EXCLUDED",
-    ]
-    assert "BRAIN-SEMANTIC-EXCLUDED" not in {
-        record["record_id"] for record in payload["positive_analogs"]
-    }
-    semantic_excluded = next(
-        record
-        for record in payload["near_misses"]
-        if record["record_id"] == "BRAIN-SEMANTIC-EXCLUDED"
+    assert [record["record_id"] for record in payload["near_misses"]] == ["BRAIN-NEAR"]
+    assert "BRAIN-SEMANTIC-EXCLUDED" in payload["record_ids"]
+    assert "BRAIN-SEMANTIC-EXCLUDED" not in {record["record_id"] for record in payload["positive_analogs"]}
+    assert [record["record_id"] for record in payload["counterexamples"]] == ["BRAIN-COUNTER"]
+    assert [record["record_id"] for record in payload["leader_selection_pairs"]] == ["BRAIN-PAIR"]
+    assert [record["record_id"] for record in payload["theme_formation_failures"]] == ["BRAIN-THEME"]
+    assert [record["record_id"] for record in payload["candidate_generation_errors"]] == ["BRAIN-CANDIDATE-ERROR"]
+
+
+def test_record_memory_sweep_rejects_tampered_lane_cache(tmp_path) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [_brain_record("BRAIN-CACHE-POSITIVE", available_from=datetime(2030, 1, 10, 8, 0, tzinfo=KST))],
     )
-    assert semantic_excluded["training_eligible"] is False
-    assert semantic_excluded["eligibility_reason"] == "semantic_contract_failed"
-    assert [record["record_id"] for record in payload["counterexamples"]] == [
-        "BRAIN-COUNTER"
-    ]
-    assert [record["record_id"] for record in payload["leader_selection_pairs"]] == [
-        "BRAIN-PAIR"
-    ]
-    assert [record["record_id"] for record in payload["theme_formation_failures"]] == [
-        "BRAIN-THEME"
-    ]
-    assert [
-        record["record_id"] for record in payload["candidate_generation_errors"]
-    ] == ["BRAIN-CANDIDATE-ERROR"]
+    sweeper = MemorySweeper(tmp_path, shard_episode_count=10)
+    kwargs = {
+        "mode": "exhaustive",
+        "trade_date": date(2030, 1, 10),
+        "cutoff_at": cutoff_at,
+        "current_news_texts": ["cache routing check"],
+        "first_pass_mechanisms": ["cache routing check"],
+        "brain_version": "brain-cache-routing",
+    }
+    first = sweeper.sweep(run_id="RUN-cache-routing-first", **kwargs)
+    assert first.record_cache_hits == 0
+    cache_path = next(
+        path
+        for path in (tmp_path / "data" / "cache" / "memory_sweep").glob("*.json")
+        if read_json(path).get("schema_version") == "nslab.record_memory_sweep_contribution.v1"
+    )
+    cached = read_json(cache_path)
+    cached["positive_analogs"] = []
+    cached["negative_controls"] = list(cached["record_ids"])
+    write_json(cache_path, cached)
+
+    repeated = sweeper.sweep(run_id="RUN-cache-routing-repeat", **kwargs)
+
+    assert repeated.record_cache_hits == 0
+    repaired = read_json(tmp_path / repeated.record_artifact_paths[0])
+    assert [row["record_id"] for row in repaired["positive_analogs"]] == ["BRAIN-CACHE-POSITIVE"]
+    assert repaired["negative_controls"] == []
 
 
 def test_record_memory_sweep_preserves_records_when_accepted_store_unreadable(
@@ -585,9 +622,7 @@ def test_record_memory_sweep_preserves_records_when_accepted_store_unreadable(
             ),
         ],
     )
-    accepted_path = (
-        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
-    )
+    accepted_path = tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
     accepted_path.parent.mkdir(parents=True, exist_ok=True)
     accepted_path.write_text("{not valid json", encoding="utf-8")
 
@@ -610,6 +645,56 @@ def test_record_memory_sweep_preserves_records_when_accepted_store_unreadable(
     payload = read_json(tmp_path / sweep.record_artifact_paths[0])
     assert payload["record_ids"] == ["BRAIN-SWEEP-AVAILABLE"]
     assert sweep.errors == ["accepted episode store is unreadable"]
+
+
+def test_record_memory_sweep_cache_invalidates_on_envelope_routing_change(
+    tmp_path,
+) -> None:
+    ensure_project_dirs(Settings(project_root=tmp_path))
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [
+            _brain_record(
+                "BRAIN-CACHE-ROUTING",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            )
+        ],
+    )
+    sweeper = MemorySweeper(tmp_path, shard_episode_count=10)
+    first = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_id="RUN-routing-cache-first",
+        current_news_texts=["same news"],
+        first_pass_mechanisms=["same mechanism"],
+        brain_version="brain-test",
+    )
+    records_path = next((tmp_path / "memory" / "records").glob("*.jsonl"))
+    rows = [json.loads(line) for line in records_path.read_text(encoding="utf-8").splitlines() if line]
+    rows[0]["training_eligible"] = False
+    records_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    second = sweeper.sweep(
+        mode="exhaustive",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_id="RUN-routing-cache-second",
+        current_news_texts=["same news"],
+        first_pass_mechanisms=["same mechanism"],
+        brain_version="brain-test",
+    )
+    first_payload = read_json(tmp_path / first.record_artifact_paths[0])
+    second_payload = read_json(tmp_path / second.record_artifact_paths[0])
+
+    assert first_payload["from_cache"] is False
+    assert second_payload["from_cache"] is False
+    assert first_payload["record_shard_sha256"] != second_payload["record_shard_sha256"]
+    assert [row["record_id"] for row in second_payload["positive_analogs"]] == []
 
 
 @pytest.mark.asyncio
@@ -669,17 +754,13 @@ async def test_daily_analyzer_runs_current_news_first_pass_before_past_retrieval
     assert manifest.open_world_first_analysis_sha256 is not None
     assert manifest.open_world_first_analysis_summary["mechanism_count"] >= 1
     assert "open_world_first_analysis" in manifest.prompt_hashes
-    first_pass_payload = read_json(
-        tmp_path / manifest.open_world_first_analysis_artifact
-    )
+    first_pass_payload = read_json(tmp_path / manifest.open_world_first_analysis_artifact)
     assert first_pass_payload["schema_version"] == "nslab.open_world_first_analysis.v2"
     assert first_pass_payload["run_id"] == manifest.run_id
     assert first_pass_payload["mechanisms"]
     assert first_pass_payload["beneficiary_investigation_questions"]
     assert first_pass_payload["uncertainties"]
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert synthesis_payload["open_world_first_analysis"] == first_pass_payload
 
 
@@ -733,9 +814,7 @@ async def test_fast_mode_keeps_open_world_candidates_when_retrieval_misses(tmp_p
         PathType.CONTINUATION,
     }
     beneficiary = next(
-        candidate
-        for candidate in prediction.candidates
-        if candidate.path_type == PathType.THEME_BENEFICIARY
+        candidate for candidate in prediction.candidates if candidate.path_type == PathType.THEME_BENEFICIARY
     )
     assert beneficiary.memory_episode_ids == []
     assert "memory has no exact precedent" in beneficiary.novel_reasoning
@@ -770,12 +849,9 @@ async def test_retrieval_miss_does_not_block_open_world_candidates(tmp_path) -> 
     assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True
     assert prediction.candidates
     assert prediction.dominant_sectors
-    assert "NovelOpenWorldCo" in {
-        candidate.company_name for candidate in prediction.candidates
-    }
+    assert "NovelOpenWorldCo" in {candidate.company_name for candidate in prediction.candidates}
     assert any(
-        candidate.path_type == PathType.THEME_BENEFICIARY
-        and candidate.company_name == "BENEFICIARY_DISCOVERY_REQUIRED"
+        candidate.path_type == PathType.THEME_BENEFICIARY and candidate.company_name == "BENEFICIARY_DISCOVERY_REQUIRED"
         for candidate in prediction.candidates
     )
 
@@ -835,9 +911,7 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert manifest.memory_coverage_manifest_artifact
     assert manifest.memory_coverage_manifest_sha256
     assert manifest.errors == []
-    coverage_manifest = read_json(
-        tmp_path / str(manifest.memory_coverage_manifest_artifact)
-    )
+    coverage_manifest = read_json(tmp_path / str(manifest.memory_coverage_manifest_artifact))
     assert coverage_manifest["accepted_record_count"] == 2
     assert coverage_manifest["available_record_count"] == 1
     assert coverage_manifest["future_record_count"] == 1
@@ -849,24 +923,16 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert synthesis_coverage["available_record_count"] == 1
     assert synthesis_coverage["training_eligible_available_record_count"] == 1
     assert synthesis_coverage["coverage_complete"] is True
-    assert synthesis_context["input_summary"][
-        "memory_coverage_accepted_record_count"
-    ] == 2
-    assert synthesis_context["input_summary"][
-        "memory_coverage_available_record_count"
-    ] == 1
+    assert synthesis_context["input_summary"]["memory_coverage_accepted_record_count"] == 2
+    assert synthesis_context["input_summary"]["memory_coverage_available_record_count"] == 1
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-AVAILABLE"]
     assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-FUTURE"]
     assert synthesis_payload["semantic_retrieval_record_ids"] == ["BRAIN-AVAILABLE"]
-    assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == [
-        "BRAIN-FUTURE"
-    ]
+    assert synthesis_payload["excluded_semantic_retrieval_record_ids"] == ["BRAIN-FUTURE"]
     semantic_context = synthesis_payload["additional_semantic_retrieval"]
     assert semantic_context["included_record_ids"] == ["BRAIN-AVAILABLE"]
     assert semantic_context["excluded_record_ids"] == ["BRAIN-FUTURE"]
-    assert [record["record_id"] for record in semantic_context["records"]] == [
-        "BRAIN-AVAILABLE"
-    ]
+    assert [record["record_id"] for record in semantic_context["records"]] == ["BRAIN-AVAILABLE"]
     cluster_coverage_rows = [
         json.loads(line)
         for line in (tmp_path / str(manifest.semantic_cluster_coverage_artifact))
@@ -874,68 +940,33 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
         .splitlines()
         if line.strip()
     ]
-    cluster_coverage_ids = list(
-        dict.fromkeys(row["cluster_id"] for row in cluster_coverage_rows)
-    )
-    cluster_coverage_lanes = manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_lanes"
-    ]
-    assert len(cluster_coverage_rows) == (
-        manifest.event_cluster_count * len(cluster_coverage_lanes)
-    )
+    cluster_coverage_ids = list(dict.fromkeys(row["cluster_id"] for row in cluster_coverage_rows))
+    cluster_coverage_lanes = manifest.semantic_cluster_coverage_summary["cluster_coverage_lanes"]
+    assert len(cluster_coverage_rows) == (manifest.event_cluster_count * len(cluster_coverage_lanes))
     assert manifest.semantic_cluster_coverage_ids == cluster_coverage_ids
     assert manifest.semantic_cluster_coverage_missing_ids == []
-    assert manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_source_count"
-    ] == manifest.event_cluster_count
-    assert manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_query_count"
-    ] == len(cluster_coverage_rows)
-    assert manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_lane_count"
-    ] == len(cluster_coverage_lanes)
-    assert manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_covered_count"
-    ] == len(cluster_coverage_ids)
-    assert manifest.semantic_cluster_coverage_summary[
-        "cluster_coverage_missing_count"
-    ] == 0
+    assert manifest.semantic_cluster_coverage_summary["cluster_coverage_source_count"] == manifest.event_cluster_count
+    assert manifest.semantic_cluster_coverage_summary["cluster_coverage_query_count"] == len(cluster_coverage_rows)
+    assert manifest.semantic_cluster_coverage_summary["cluster_coverage_lane_count"] == len(cluster_coverage_lanes)
+    assert manifest.semantic_cluster_coverage_summary["cluster_coverage_covered_count"] == len(cluster_coverage_ids)
+    assert manifest.semantic_cluster_coverage_summary["cluster_coverage_missing_count"] == 0
     assert all(row["coverage_query"] is True for row in cluster_coverage_rows)
-    assert {row["retrieval_lane"] for row in cluster_coverage_rows} == set(
-        cluster_coverage_lanes
-    )
-    assert {row["category"] for row in cluster_coverage_rows} == set(
-        cluster_coverage_lanes
-    )
+    assert {row["retrieval_lane"] for row in cluster_coverage_rows} == set(cluster_coverage_lanes)
+    assert {row["category"] for row in cluster_coverage_rows} == set(cluster_coverage_lanes)
     cluster_context = synthesis_payload["semantic_cluster_coverage"]
     assert cluster_context["rows"] == cluster_coverage_rows
     assert cluster_context["covered_cluster_ids"] == cluster_coverage_ids
     assert cluster_context["missing_cluster_ids"] == []
-    assert (
-        cluster_context["promoted_record_ids"]
-        == manifest.semantic_cluster_coverage_promoted_record_ids
-    )
+    assert cluster_context["promoted_record_ids"] == manifest.semantic_cluster_coverage_promoted_record_ids
     assert [record["record_id"] for record in cluster_context["promoted_records"]] == (
         manifest.semantic_cluster_coverage_promoted_record_ids
     )
-    assert (
-        synthesis_payload["semantic_cluster_coverage_ids"]
-        == manifest.semantic_cluster_coverage_ids
-    )
+    assert synthesis_payload["semantic_cluster_coverage_ids"] == manifest.semantic_cluster_coverage_ids
     assert synthesis_payload["semantic_cluster_coverage_missing_ids"] == []
-    assert (
-        synthesis_context["input_summary"]["semantic_cluster_coverage_row_count"]
-        == len(cluster_coverage_rows)
-    )
-    assert (
-        synthesis_context["input_summary"]["semantic_cluster_coverage_id_count"]
-        == len(cluster_coverage_ids)
-    )
-    assert (
-        synthesis_context["input_summary"][
-            "semantic_cluster_coverage_promoted_record_id_count"
-        ]
-        == len(manifest.semantic_cluster_coverage_promoted_record_ids)
+    assert synthesis_context["input_summary"]["semantic_cluster_coverage_row_count"] == len(cluster_coverage_rows)
+    assert synthesis_context["input_summary"]["semantic_cluster_coverage_id_count"] == len(cluster_coverage_ids)
+    assert synthesis_context["input_summary"]["semantic_cluster_coverage_promoted_record_id_count"] == len(
+        manifest.semantic_cluster_coverage_promoted_record_ids
     )
     assert synthesis_payload["brain_compiler"] == {
         "mode": "asof_context",
@@ -949,36 +980,19 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert "available_record_ids" not in synthesis_payload
     semantic_rows = [
         json.loads(line)
-        for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / str(manifest.semantic_retrieval_artifact)).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    positive_row = next(
-        row for row in semantic_rows if row["category"] == "positive_analogs"
-    )
-    assert positive_row["record_retrieval_filters"] == {
-        "memory_lane": "positive_analogs"
-    }
+    positive_row = next(row for row in semantic_rows if row["category"] == "positive_analogs")
+    assert positive_row["record_retrieval_filters"] == {"memory_lane": "positive_analogs"}
     assert positive_row["included_record_ids"] == ["BRAIN-AVAILABLE"]
     assert positive_row["excluded_record_ids"] == ["BRAIN-FUTURE"]
-    candidate_error_row = next(
-        row for row in semantic_rows if row["category"] == "candidate_generation_errors"
-    )
-    assert candidate_error_row["record_retrieval_filters"] == {
-        "memory_lane": "candidate_generation_errors"
-    }
+    candidate_error_row = next(row for row in semantic_rows if row["category"] == "candidate_generation_errors")
+    assert candidate_error_row["record_retrieval_filters"] == {"memory_lane": "candidate_generation_errors"}
     assert candidate_error_row["included_record_ids"] == []
     assert candidate_error_row["excluded_record_ids"] == []
-    assert (
-        manifest.semantic_retrieval_summary["category_query_counts"][
-            "candidate_generation_errors"
-        ]
-        == 1
-    )
-    assert "candidate_generation_errors" in manifest.semantic_retrieval_summary[
-        "required_categories"
-    ]
+    assert manifest.semantic_retrieval_summary["category_query_counts"]["candidate_generation_errors"] == 1
+    assert "candidate_generation_errors" in manifest.semantic_retrieval_summary["required_categories"]
     assert manifest.semantic_retrieval_summary["included_record_count"] == 1
     assert manifest.semantic_retrieval_summary["excluded_record_count"] == 1
     assert manifest.semantic_retrieval_summary["record_retrieval_zero_is_valid"] is True
@@ -1015,9 +1029,7 @@ def test_context_assembler_preserves_record_context_when_accepted_store_unreadab
             ),
         ],
     )
-    accepted_path = (
-        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
-    )
+    accepted_path = tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
     accepted_path.parent.mkdir(parents=True, exist_ok=True)
     accepted_path.write_text("{not valid json", encoding="utf-8")
 
@@ -1063,9 +1075,7 @@ async def test_daily_analyzer_preserves_record_sweep_when_accepted_store_unreada
             ),
         ],
     )
-    accepted_path = (
-        tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
-    )
+    accepted_path = tmp_path / "research" / "accepted" / "NSLAB-20300110-RECORDS.json"
     accepted_path.parent.mkdir(parents=True, exist_ok=True)
     accepted_path.write_text("{not valid json", encoding="utf-8")
     news_csv = tmp_path / "record_backed_corrupt_accepted_news.csv"
@@ -1170,15 +1180,11 @@ def test_exhaustive_coverage_rejects_record_id_mismatch(tmp_path) -> None:
     with pytest.raises(ExhaustiveCoverageError):
         DailyAnalyzer(settings)._fail_if_exhaustive_coverage_incomplete(manifest)
 
-    assert manifest.errors == [
-        "exhaustive mode requires swept_record_ids to match available_record_ids"
-    ]
+    assert manifest.errors == ["exhaustive mode requires swept_record_ids to match available_record_ids"]
     assert manifest.missing_swept_record_ids == ["BRAIN-AVAILABLE"]
     assert manifest.unexpected_swept_record_ids == ["BRAIN-SWEPT"]
     assert manifest.duplicate_swept_record_ids == []
-    saved_manifest = read_json(
-        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-ID-MISMATCH.json"
-    )
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-ID-MISMATCH.json")
     assert saved_manifest["available_record_ids"] == ["BRAIN-AVAILABLE"]
     assert saved_manifest["swept_record_ids"] == ["BRAIN-SWEPT"]
     assert saved_manifest["missing_swept_record_ids"] == ["BRAIN-AVAILABLE"]
@@ -1215,9 +1221,7 @@ def test_exhaustive_coverage_records_duplicate_swept_record_ids(tmp_path) -> Non
     assert manifest.missing_swept_record_ids == ["BRAIN-B"]
     assert manifest.unexpected_swept_record_ids == ["BRAIN-A"]
     assert manifest.duplicate_swept_record_ids == ["BRAIN-A"]
-    saved_manifest = read_json(
-        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-RECORD-DUPLICATE.json"
-    )
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-RECORD-DUPLICATE.json")
     assert saved_manifest["missing_swept_record_ids"] == ["BRAIN-B"]
     assert saved_manifest["unexpected_swept_record_ids"] == ["BRAIN-A"]
     assert saved_manifest["duplicate_swept_record_ids"] == ["BRAIN-A"]
@@ -1250,12 +1254,8 @@ def test_exhaustive_coverage_rejects_episode_id_mismatch(tmp_path) -> None:
     with pytest.raises(ExhaustiveCoverageError):
         DailyAnalyzer(settings)._fail_if_exhaustive_coverage_incomplete(manifest)
 
-    assert manifest.errors == [
-        "exhaustive mode requires swept_episode_ids to match available accepted episode ids"
-    ]
-    saved_manifest = read_json(
-        tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-EPISODE-ID-MISMATCH.json"
-    )
+    assert manifest.errors == ["exhaustive mode requires swept_episode_ids to match available accepted episode ids"]
+    saved_manifest = read_json(tmp_path / "runs" / "manifests" / "RUN-EXHAUSTIVE-EPISODE-ID-MISMATCH.json")
     assert saved_manifest["total_accepted_episode_ids"] == ["EP-AVAILABLE"]
     assert saved_manifest["swept_episode_ids"] == ["EP-SWEPT"]
     assert saved_manifest["errors"] == manifest.errors
@@ -1325,16 +1325,12 @@ async def test_no_future_record_in_historical_context(tmp_path) -> None:
     )
 
     manifest = analysis.context_manifest
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert manifest.available_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert manifest.retrieved_record_ids == ["BRAIN-HISTORICAL-AVAILABLE"]
     assert manifest.excluded_retrieved_record_ids == ["BRAIN-HISTORICAL-FUTURE"]
     assert synthesis_payload["retrieved_record_ids"] == ["BRAIN-HISTORICAL-AVAILABLE"]
-    assert synthesis_payload["excluded_retrieved_record_ids"] == [
-        "BRAIN-HISTORICAL-FUTURE"
-    ]
+    assert synthesis_payload["excluded_retrieved_record_ids"] == ["BRAIN-HISTORICAL-FUTURE"]
     assert "record_level_shard_contributions" not in synthesis_payload
     assert "BRAIN-HISTORICAL-FUTURE" not in json.dumps(
         synthesis_payload["retrieved_records"],
@@ -1358,12 +1354,13 @@ async def test_negative_and_counterexample_retrieval(tmp_path) -> None:
                 "BRAIN-NEG-COUNTER",
                 record_type="counterexample",
                 response_class="negative_control",
+                training_eligible=True,
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
-            _brain_record(
-                "BRAIN-NEG-ERROR",
-                record_type="candidate_generation_error_case",
-                response_class="missed_direct_candidate",
+                _brain_record(
+                    "BRAIN-NEG-ERROR",
+                    record_type="candidate_generation_error_case",
+                    response_class="negative",
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
         ],
@@ -1388,29 +1385,19 @@ async def test_negative_and_counterexample_retrieval(tmp_path) -> None:
     manifest = analysis.context_manifest
     semantic_rows = [
         json.loads(line)
-        for line in (tmp_path / str(manifest.semantic_retrieval_artifact))
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / str(manifest.semantic_retrieval_artifact)).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    counterexample_row = next(
-        row for row in semantic_rows if row["category"] == "counterexamples"
-    )
-    error_row = next(
-        row for row in semantic_rows if row["category"] == "candidate_generation_errors"
-    )
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    counterexample_row = next(row for row in semantic_rows if row["category"] == "counterexamples")
+    error_row = next(row for row in semantic_rows if row["category"] == "candidate_generation_errors")
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
 
     assert manifest.counterexample_record_ids == ["BRAIN-NEG-COUNTER"]
     assert counterexample_row["included_record_ids"] == ["BRAIN-NEG-COUNTER"]
     assert error_row["included_record_ids"] == ["BRAIN-NEG-ERROR"]
     assert synthesis_payload["negative_record_ids"] == ["BRAIN-NEG-COUNTER"]
     assert synthesis_payload["counterexample_record_ids"] == ["BRAIN-NEG-COUNTER"]
-    assert [record["record_id"] for record in synthesis_payload["counterexample_records"]] == [
-        "BRAIN-NEG-COUNTER"
-    ]
+    assert [record["record_id"] for record in synthesis_payload["counterexample_records"]] == ["BRAIN-NEG-COUNTER"]
     assert all(
         candidate.prior_negative_record_ids == ["BRAIN-NEG-COUNTER"]
         for candidate in analysis.blind_prediction.candidates
@@ -1432,6 +1419,7 @@ async def test_counterexample_record_ids_reach_prediction_outputs(tmp_path) -> N
             _brain_record(
                 "BRAIN-COUNTER",
                 record_type="counterexample",
+                training_eligible=True,
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
         ],
@@ -1457,32 +1445,20 @@ async def test_counterexample_record_ids_reach_prediction_outputs(tmp_path) -> N
     assert manifest.counterexample_record_ids == ["BRAIN-COUNTER"]
     assert analysis.blind_prediction.candidates
     assert all(
-        candidate.prior_negative_record_ids == ["BRAIN-COUNTER"]
-        for candidate in analysis.blind_prediction.candidates
+        candidate.prior_negative_record_ids == ["BRAIN-COUNTER"] for candidate in analysis.blind_prediction.candidates
     )
+    assert all("BRAIN-COUNTER" in candidate.memory_record_ids for candidate in analysis.blind_prediction.candidates)
     assert all(
-        "BRAIN-COUNTER" in candidate.memory_record_ids
-        for candidate in analysis.blind_prediction.candidates
-    )
-    assert all(
-        "BRAIN-COUNTER" not in candidate.prior_positive_record_ids
-        for candidate in analysis.blind_prediction.candidates
+        "BRAIN-COUNTER" not in candidate.prior_positive_record_ids for candidate in analysis.blind_prediction.candidates
     )
     assert analysis.blind_prediction.dominant_sectors
     assert all(
-        sector.contradicting_record_ids == ["BRAIN-COUNTER"]
-        for sector in analysis.blind_prediction.dominant_sectors
+        sector.contradicting_record_ids == ["BRAIN-COUNTER"] for sector in analysis.blind_prediction.dominant_sectors
     )
     saved_prediction = read_json(tmp_path / analysis.prediction_path)
-    assert saved_prediction["candidates"][0]["prior_negative_record_ids"] == [
-        "BRAIN-COUNTER"
-    ]
-    assert saved_prediction["dominant_sectors"][0]["contradicting_record_ids"] == [
-        "BRAIN-COUNTER"
-    ]
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    assert saved_prediction["candidates"][0]["prior_negative_record_ids"] == ["BRAIN-COUNTER"]
+    assert saved_prediction["dominant_sectors"][0]["contradicting_record_ids"] == ["BRAIN-COUNTER"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert synthesis_payload["counterexample_record_ids"] == ["BRAIN-COUNTER"]
     assert synthesis_payload["negative_record_ids"] == ["BRAIN-COUNTER"]
     report = (tmp_path / analysis.report_path).read_text(encoding="utf-8")
@@ -1528,9 +1504,7 @@ async def test_fast_mode_does_not_auto_load_unretrieved_counterexamples(
     )
 
     manifest = analysis.context_manifest
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert manifest.available_record_ids == ["BRAIN-FAST-UNRETRIEVED-COUNTER"]
     assert manifest.swept_record_ids == []
     assert manifest.retrieved_record_ids == []
@@ -1539,10 +1513,7 @@ async def test_fast_mode_does_not_auto_load_unretrieved_counterexamples(
     assert synthesis_payload["counterexample_record_ids"] == []
     assert synthesis_payload["counterexample_records"] == []
     assert synthesis_payload["negative_record_ids"] == []
-    assert all(
-        candidate.prior_negative_record_ids == []
-        for candidate in analysis.blind_prediction.candidates
-    )
+    assert all(candidate.prior_negative_record_ids == [] for candidate in analysis.blind_prediction.candidates)
 
 
 @pytest.mark.asyncio
@@ -1558,6 +1529,7 @@ async def test_fast_mode_semantic_counterexamples_reach_final_context(
             _brain_record(
                 "BRAIN-FAST-SEMANTIC-COUNTER",
                 record_type="counterexample",
+                training_eligible=True,
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
         ],
@@ -1581,22 +1553,16 @@ async def test_fast_mode_semantic_counterexamples_reach_final_context(
     )
 
     manifest = analysis.context_manifest
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert {"memory_lane": "counterexamples"} in retrieval.filters_seen
     assert manifest.retrieved_record_ids == []
     assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
     assert manifest.counterexample_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
-    assert synthesis_payload["counterexample_record_ids"] == [
+    assert synthesis_payload["counterexample_record_ids"] == ["BRAIN-FAST-SEMANTIC-COUNTER"]
+    assert [record["record_id"] for record in synthesis_payload["counterexample_records"]] == [
         "BRAIN-FAST-SEMANTIC-COUNTER"
     ]
-    assert [
-        record["record_id"] for record in synthesis_payload["counterexample_records"]
-    ] == ["BRAIN-FAST-SEMANTIC-COUNTER"]
-    assert synthesis_payload["negative_record_ids"] == [
-        "BRAIN-FAST-SEMANTIC-COUNTER"
-    ]
+    assert synthesis_payload["negative_record_ids"] == ["BRAIN-FAST-SEMANTIC-COUNTER"]
     assert all(
         candidate.prior_negative_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
         for candidate in analysis.blind_prediction.candidates
@@ -1638,32 +1604,24 @@ async def test_fast_mode_semantic_positive_records_reach_prediction_memory(
     )
 
     manifest = analysis.context_manifest
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert {"memory_lane": "positive_analogs"} in retrieval.filters_seen
     assert manifest.retrieved_record_ids == []
     assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
     assert manifest.counterexample_record_ids == []
-    assert synthesis_payload["positive_record_ids"] == [
-        "BRAIN-FAST-SEMANTIC-POSITIVE"
-    ]
+    assert synthesis_payload["positive_record_ids"] == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
     assert synthesis_payload["negative_record_ids"] == []
     assert [record["record_id"] for record in synthesis_payload["retrieved_records"]] == [
         "BRAIN-FAST-SEMANTIC-POSITIVE"
     ]
-    assert [
-        record["record_id"]
-        for record in synthesis_payload["additional_semantic_retrieval"]["records"]
-    ] == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
+    assert [record["record_id"] for record in synthesis_payload["additional_semantic_retrieval"]["records"]] == [
+        "BRAIN-FAST-SEMANTIC-POSITIVE"
+    ]
     assert all(
         candidate.prior_positive_record_ids == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
         for candidate in analysis.blind_prediction.candidates
     )
-    assert all(
-        candidate.prior_negative_record_ids == []
-        for candidate in analysis.blind_prediction.candidates
-    )
+    assert all(candidate.prior_negative_record_ids == [] for candidate in analysis.blind_prediction.candidates)
 
 
 @pytest.mark.asyncio
@@ -1722,12 +1680,84 @@ async def test_brain_mode_keeps_shard_brain_context_and_sweeps_available_episode
     assert manifest.shard_brain_file_hashes
     assert manifest.errors == []
     assert all((tmp_path / relative_path).exists() for relative_path in manifest.shard_brain_files)
-    synthesis_payload = read_json(
-        tmp_path / str(manifest.final_synthesis_context_artifact)
-    )["payload"]
+    synthesis_payload = read_json(tmp_path / str(manifest.final_synthesis_context_artifact))["payload"]
     assert synthesis_payload["brain_compiler"] == {
         "mode": "full",
         "provider": "deterministic_catalog",
         "model": CATALOG_COMPILER_VERSION,
         "catalog_only": True,
     }
+
+
+def test_prediction_support_keeps_negative_near_miss_and_newsless_separate(
+    tmp_path,
+) -> None:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    records = [
+        _brain_record("BRAIN-POSITIVE", available_from=available_from),
+        _brain_record(
+            "BRAIN-NEGATIVE",
+            record_type="negative_control_case",
+            response_class="negative_control",
+            available_from=available_from,
+        ),
+        _brain_record(
+            "BRAIN-NEAR",
+            record_type="candidate_generation_error_case",
+            response_class="candidate_missed",
+            available_from=available_from,
+        ),
+        _brain_record(
+            "BRAIN-NEWSLESS",
+            record_type="newsless_or_unexplained_case",
+            response_class="newsless_or_unexplained",
+            available_from=available_from,
+        ),
+        _brain_record(
+            "BRAIN-INELIGIBLE-POSITIVE",
+            training_eligible=False,
+            available_from=available_from,
+        ),
+    ]
+    _store_brain_records(tmp_path, records)
+    analyzer = DailyAnalyzer(Settings(project_root=tmp_path))
+
+    positive, negative = analyzer._prediction_record_polarities([record.record_id for record in records])
+
+    assert positive == ["BRAIN-POSITIVE"]
+    assert negative == ["BRAIN-NEGATIVE"]
+
+
+def test_context_run_id_changes_when_record_envelope_routing_input_changes(
+    tmp_path,
+) -> None:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    _store_brain_records(
+        tmp_path,
+        [_brain_record("BRAIN-RUN-ID", available_from=available_from)],
+    )
+    assembler = ContextAssembler(tmp_path, shard_episode_count=20)
+    cutoff_at = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    first = assembler.assemble(
+        mode="fast",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="record-envelope-hash-test",
+    )
+    records_path = next((tmp_path / "memory" / "records").glob("*.jsonl"))
+    rows = [json.loads(line) for line in records_path.read_text(encoding="utf-8").splitlines() if line]
+    original_payload_hash = rows[0]["normalized_payload_sha256"]
+    rows[0]["training_eligible"] = False
+    records_path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    second = assembler.assemble(
+        mode="fast",
+        trade_date=date(2030, 1, 10),
+        cutoff_at=cutoff_at,
+        run_seed="record-envelope-hash-test",
+    )
+
+    assert rows[0]["normalized_payload_sha256"] == original_payload_hash
+    assert first.run_id != second.run_id

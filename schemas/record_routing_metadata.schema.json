@@ -20,6 +20,15 @@
       "type": "string"
     },
     "label_quality": {
+      "enum": [
+        "verified",
+        "quarantined",
+        "no_tradable_row",
+        "missing",
+        "ambiguous",
+        "conflicting",
+        "not_applicable"
+      ],
       "title": "Label Quality",
       "type": "string"
     },
@@ -60,8 +69,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.record_routing_metadata.v1",
-      "default": "nslab.record_routing_metadata.v1",
+      "const": "nslab.record_routing_metadata.v2",
+      "default": "nslab.record_routing_metadata.v2",
       "title": "Schema Version",
       "type": "string"
     },

@@ -26,6 +26,7 @@ from news_scalping_lab.contracts.models import (
     PriceSnapshot,
     ResearchEpisode,
 )
+from news_scalping_lab.records.hashing import brain_record_envelope_sha256
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
@@ -91,48 +92,31 @@ class ContextAssembler:
             self.store,
             records=all_records,
         )
-        accepted = [
-            episode
-            for episode in all_accepted
-            if is_available_as_of(episode.available_from, cutoff_at)
-        ]
-        unavailable = [
-            episode
-            for episode in all_accepted
-            if not is_available_as_of(episode.available_from, cutoff_at)
-        ]
+        accepted = [episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)]
+        unavailable = [episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)]
         accepted_ids = [episode.episode_id for episode in accepted]
         all_accepted_ids = [episode.episode_id for episode in all_accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
-        available_records = [
-            record
-            for record in all_records
-            if is_available_as_of(record.available_from, cutoff_at)
-        ]
+        available_records = [record for record in all_records if is_available_as_of(record.available_from, cutoff_at)]
         unavailable_records = [
-            record
-            for record in all_records
-            if not is_available_as_of(record.available_from, cutoff_at)
+            record for record in all_records if not is_available_as_of(record.available_from, cutoff_at)
         ]
         available_record_ids = [record.record_id for record in available_records]
         training_eligible_available_record_ids = [
             record.record_id for record in available_records if record.training_eligible
         ]
         available_record_hashes = {
-            record.record_id: record.normalized_payload_sha256
-            for record in available_records
+            record.record_id: brain_record_envelope_sha256(record) for record in available_records
         }
         retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
             accepted=accepted,
             unavailable=unavailable,
         )
-        retrieved_record_ids, excluded_retrieved_record_ids = (
-            _filter_retrieved_record_ids_available_as_of(
-                raw_retrieved_record_ids,
-                available_records=available_records,
-                unavailable_records=unavailable_records,
-            )
+        retrieved_record_ids, excluded_retrieved_record_ids = _filter_retrieved_record_ids_available_as_of(
+            raw_retrieved_record_ids,
+            available_records=available_records,
+            unavailable_records=unavailable_records,
         )
         accepted_hashes = self._accepted_hashes_for(accepted_ids)
         run_id = stable_id(
@@ -155,9 +139,7 @@ class ContextAssembler:
                 }
             ),
         )
-        counterexample_ids = [
-            episode.episode_id for episode in accepted if episode.counterexamples
-        ]
+        counterexample_ids = [episode.episode_id for episode in accepted if episode.counterexamples]
         swept_ids = accepted_ids if mode in {"exhaustive", "brain"} else []
         swept_record_ids = available_record_ids if mode in {"exhaustive", "brain"} else []
         retrieved_record_id_set = set(retrieved_record_ids)
@@ -165,10 +147,7 @@ class ContextAssembler:
             record.record_id
             for record in available_records
             if record.record_type == "counterexample"
-            and (
-                mode in {"exhaustive", "brain"}
-                or record.record_id in retrieved_record_id_set
-            )
+            and (mode in {"exhaustive", "brain"} or record.record_id in retrieved_record_id_set)
         ]
         errors: list[str] = []
         errors.extend(accepted_store_findings)
@@ -213,9 +192,7 @@ class ContextAssembler:
             accepted_record_count=len(all_records),
             available_record_count=len(available_records),
             available_record_ids=available_record_ids,
-            training_eligible_available_record_count=len(
-                training_eligible_available_record_ids
-            ),
+            training_eligible_available_record_count=len(training_eligible_available_record_ids),
             training_eligible_available_record_ids=training_eligible_available_record_ids,
             swept_record_count=len(swept_record_ids),
             swept_record_ids=swept_record_ids,
@@ -244,11 +221,7 @@ class ContextAssembler:
 
     def _accepted_hashes_for(self, accepted_ids: list[str]) -> dict[str, str]:
         hashes = self.store.accepted_hashes()
-        return {
-            episode_id: hashes[episode_id]
-            for episode_id in accepted_ids
-            if episode_id in hashes
-        }
+        return {episode_id: hashes[episode_id] for episode_id in accepted_ids if episode_id in hashes}
 
     def _brain_context_files(
         self,
@@ -296,9 +269,7 @@ class ContextAssembler:
         if all_accepted is None:
             return False
         future_episode_ids = [
-            episode.episode_id
-            for episode in all_accepted
-            if not is_available_as_of(episode.available_from, cutoff_at)
+            episode.episode_id for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)
         ]
         if self._context_files_contain_any_episode_id(
             [*brain_file_hashes, *shard_brain_file_hashes],
@@ -475,9 +446,7 @@ class ContextAssembler:
         )
         write_json(brain_dir / "brain_manifest.json", manifest.model_dump(mode="json"))
 
-        for shard_index, shard in enumerate(
-            _episode_shards(accepted, self.shard_episode_count), start=1
-        ):
+        for shard_index, shard in enumerate(_episode_shards(accepted, self.shard_episode_count), start=1):
             (shard_dir / f"shard_{shard_index:04d}.md").write_text(
                 compiler._shard_brain_body(
                     manifest=manifest,
@@ -549,19 +518,14 @@ def _episode_shards(
     shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
 ) -> list[list[ResearchEpisode]]:
     shard_size = max(1, shard_episode_count)
-    return [
-        episodes[index : index + shard_size]
-        for index in range(0, len(episodes), shard_size)
-    ]
+    return [episodes[index : index + shard_size] for index in range(0, len(episodes), shard_size)]
 
 
 def _file_hashes_relative_to_root(root: Path, directory: Path) -> dict[str, str]:
     if not directory.exists():
         return {}
     return {
-        path.relative_to(root).as_posix(): file_sha256(path)
-        for path in sorted(directory.glob("*"))
-        if path.is_file()
+        path.relative_to(root).as_posix(): file_sha256(path) for path in sorted(directory.glob("*")) if path.is_file()
     }
 
 

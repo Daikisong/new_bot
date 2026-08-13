@@ -15,14 +15,22 @@ from news_scalping_lab.brain.compiler import (
     CATEGORY_RECORD_TYPE_ROUTES,
     LLM_FULL_COMPILER_VERSION,
     _brain_category,
+    _brain_record_hashes,
     _records_for_category,
     current_brain_file_hashes,
     current_brain_version,
     expected_brain_version,
+    expected_llm_full_brain_version,
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.records.hashing import brain_record_routing_root_sha256
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
+from news_scalping_lab.records.routing import (
+    record_is_positive_support,
+    record_routing_disposition,
+    record_routing_metadata,
+)
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -54,17 +62,31 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         *coverage_read_findings,
         *brain_read_findings,
     ]
-    covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
+    records = BrainRecordStore(root).list_records()
+    build_mode = _brain_build_mode(brain_manifest or coverage_manifest)
     accepted_ids = {episode.episode_id for episode in accepted}
+    expected_episode_ids = set(accepted_ids)
+    if build_mode == "llm-full":
+        expected_episode_ids.update(record.episode_id for record in records)
+    covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
     source_hashes = store.accepted_hashes()
-    missing = sorted(accepted_ids - covered)
-    extra = sorted(covered - accepted_ids)
+    missing = sorted(expected_episode_ids - covered)
+    extra = sorted(covered - expected_episode_ids)
     episode_coverage_audit = _audit_episode_coverage_manifest(
         coverage_manifest,
         current_manifest=brain_manifest,
-        expected_episode_ids=accepted_ids,
+        expected_episode_ids=expected_episode_ids,
     )
-    claim_audit = _audit_claims(root, accepted)
+    record_support_available_from: dict[str, datetime] = {}
+    for record in records:
+        current = record_support_available_from.get(record.episode_id)
+        if current is None or record.available_from < current:
+            record_support_available_from[record.episode_id] = record.available_from
+    claim_audit = _audit_claims(
+        root,
+        accepted,
+        record_support_available_from=(record_support_available_from if build_mode == "llm-full" else None),
+    )
     mechanism_audit = _audit_mechanisms(root, accepted)
     determinism_audit = _audit_deterministic_brain_state(
         root=root,
@@ -79,7 +101,7 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         root,
         current_manifest=brain_manifest,
     )
-    compiled_claim_audit = _audit_compiled_claims(root, accepted_ids)
+    compiled_claim_audit = _audit_compiled_claims(root, expected_episode_ids)
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *artifact_read_findings,
@@ -103,12 +125,12 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     coverage_complete = (
         not missing
         and not extra
-        and len(covered) == len(accepted)
+        and len(covered) == len(expected_episode_ids)
         and not episode_coverage_audit["episode_coverage_findings"]
     )
     result = {
         "deep": deep,
-        "accepted_episode_count": len(accepted),
+        "accepted_episode_count": len(expected_episode_ids),
         "brain_covered_episode_count": len(covered),
         "missing_episode_ids": missing,
         "extra_episode_ids": extra,
@@ -154,10 +176,8 @@ def _write_latest_brain_audit_summary(
     category_source_record_types = result.get("brain_category_source_record_types")
     if isinstance(category_source_record_types, dict):
         report["category_source_record_type_counts"] = category_source_record_types
-        report["category_source_record_counts"] = (
-            _category_source_record_counts_from_type_distribution(
-                category_source_record_types
-            )
+        report["category_source_record_counts"] = _category_source_record_counts_from_type_distribution(
+            category_source_record_types
         )
     report["latest_brain_audit"] = {
         "deep": deep,
@@ -169,48 +189,28 @@ def _write_latest_brain_audit_summary(
         "record_coverage_complete": result.get("record_coverage_complete"),
         "deterministic_rebuild_verified": result.get("deterministic_rebuild_verified"),
         "llm_compile_manifest_present": result.get("llm_compile_manifest_present"),
-        "llm_compile_manifest_schema_version": result.get(
-            "llm_compile_manifest_schema_version"
-        ),
-        "llm_compile_expected_manifest_schema_version": result.get(
-            "llm_compile_expected_manifest_schema_version"
-        ),
-        "llm_compile_category_schema_mismatches": result.get(
-            "llm_compile_category_schema_mismatches"
-        ),
+        "llm_compile_manifest_schema_version": result.get("llm_compile_manifest_schema_version"),
+        "llm_compile_expected_manifest_schema_version": result.get("llm_compile_expected_manifest_schema_version"),
+        "llm_compile_category_schema_mismatches": result.get("llm_compile_category_schema_mismatches"),
         "compiled_claim_file_present": result.get("compiled_claim_file_present"),
         "brain_category_file_count": result.get("brain_category_file_count"),
         "brain_category_missing_files": result.get("brain_category_missing_files"),
-        "brain_category_source_record_types": result.get(
-            "brain_category_source_record_types"
-        ),
-        "brain_category_source_population_mismatches": result.get(
-            "brain_category_source_population_mismatches"
-        ),
-        "brain_empty_category_complete_files": result.get(
-            "brain_empty_category_complete_files"
-        ),
+        "brain_category_source_record_types": result.get("brain_category_source_record_types"),
+        "brain_category_source_population_mismatches": result.get("brain_category_source_population_mismatches"),
+        "brain_empty_category_complete_files": result.get("brain_empty_category_complete_files"),
         "brain_category_files_identical": result.get("brain_category_files_identical"),
         "brain_category_bodies_identical": result.get("brain_category_bodies_identical"),
         "artifact_read_findings": result.get("artifact_read_findings"),
         "accepted_store_findings": result.get("accepted_store_findings"),
         "episode_coverage_findings": result.get("episode_coverage_findings"),
         "episode_coverage_brain_version": result.get("episode_coverage_brain_version"),
-        "expected_episode_coverage_brain_version": result.get(
-            "expected_episode_coverage_brain_version"
-        ),
+        "expected_episode_coverage_brain_version": result.get("expected_episode_coverage_brain_version"),
         "episode_coverage_created_at": result.get("episode_coverage_created_at"),
-        "expected_episode_coverage_created_at": result.get(
-            "expected_episode_coverage_created_at"
-        ),
+        "expected_episode_coverage_created_at": result.get("expected_episode_coverage_created_at"),
         "episode_coverage_build_mode": result.get("episode_coverage_build_mode"),
-        "expected_episode_coverage_build_mode": result.get(
-            "expected_episode_coverage_build_mode"
-        ),
+        "expected_episode_coverage_build_mode": result.get("expected_episode_coverage_build_mode"),
         "episode_coverage_catalog_only": result.get("episode_coverage_catalog_only"),
-        "expected_episode_coverage_catalog_only": result.get(
-            "expected_episode_coverage_catalog_only"
-        ),
+        "expected_episode_coverage_catalog_only": result.get("expected_episode_coverage_catalog_only"),
         "finding_count": len(_brain_audit_findings(result)),
         "findings": _brain_audit_findings(result),
     }
@@ -225,9 +225,7 @@ def _category_source_record_counts_from_type_distribution(
         if not isinstance(category, str) or not isinstance(type_counts, dict):
             continue
         counts[category] = sum(
-            count
-            for count in type_counts.values()
-            if isinstance(count, int) and not isinstance(count, bool)
+            count for count in type_counts.values() if isinstance(count, int) and not isinstance(count, bool)
         )
     return dict(sorted(counts.items()))
 
@@ -295,21 +293,13 @@ def _write_latest_record_coverage_audit_summary(
         "expected_build_mode": result.get("expected_build_mode"),
         "record_coverage_catalog_only": result.get("record_coverage_catalog_only"),
         "expected_catalog_only": result.get("expected_catalog_only"),
-        "record_coverage_accepted_episode_count": result.get(
-            "record_coverage_accepted_episode_count"
-        ),
-        "expected_accepted_episode_count": result.get(
-            "expected_accepted_episode_count"
-        ),
+        "record_coverage_accepted_episode_count": result.get("record_coverage_accepted_episode_count"),
+        "expected_accepted_episode_count": result.get("expected_accepted_episode_count"),
         "accepted_record_count": result.get("accepted_record_count"),
         "available_record_count": result.get("available_record_count"),
         "available_record_count_as_of": result.get("available_record_count_as_of"),
-        "training_eligible_available_record_count": result.get(
-            "training_eligible_available_record_count"
-        ),
-        "training_eligible_record_count_as_of": result.get(
-            "training_eligible_record_count_as_of"
-        ),
+        "training_eligible_available_record_count": result.get("training_eligible_available_record_count"),
+        "training_eligible_record_count_as_of": result.get("training_eligible_record_count_as_of"),
         "compiled_record_count": result.get("compiled_record_count"),
         "swept_record_count": result.get("swept_record_count"),
         "swept_record_ids": result.get("swept_record_ids"),
@@ -325,12 +315,8 @@ def _write_latest_record_coverage_audit_summary(
         "duplicate_swept_record_ids": result.get("duplicate_swept_record_ids"),
         "duplicate_unswept_record_ids": result.get("duplicate_unswept_record_ids"),
         "record_counts_by_type": result.get("record_counts_by_type"),
-        "record_counts_by_evidence_phase": result.get(
-            "record_counts_by_evidence_phase"
-        ),
-        "record_counts_by_training_target": result.get(
-            "record_counts_by_training_target"
-        ),
+        "record_counts_by_evidence_phase": result.get("record_counts_by_evidence_phase"),
+        "record_counts_by_training_target": result.get("record_counts_by_training_target"),
         "ineligible_record_count": result.get("ineligible_record_count"),
         "audit_only_record_count": result.get("audit_only_record_count"),
         "finding_count": len(findings) if isinstance(findings, list) else 0,
@@ -430,26 +416,22 @@ def _audit_episode_coverage_manifest(
 ) -> dict[str, Any]:
     expected_brain_version = (
         current_manifest.get("brain_version")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("brain_version"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("brain_version"), str)
         else None
     )
     expected_created_at = (
         current_manifest.get("created_at")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("created_at"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("created_at"), str)
         else None
     )
     expected_build_mode = (
         current_manifest.get("build_mode")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("build_mode"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("build_mode"), str)
         else None
     )
     expected_catalog_only = (
         current_manifest.get("catalog_only")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("catalog_only"), bool)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("catalog_only"), bool)
         else None
     )
     base: dict[str, Any] = {
@@ -485,9 +467,7 @@ def _audit_episode_coverage_manifest(
         if not isinstance(brain_version, str) or not brain_version:
             findings.append("coverage manifest brain_version is missing")
         elif brain_version != expected_brain_version:
-            findings.append(
-                "coverage manifest brain_version does not match current brain manifest"
-            )
+            findings.append("coverage manifest brain_version does not match current brain manifest")
 
     expected_created_at_value = _datetime_value(expected_created_at)
     created_at_value = _datetime_value(created_at)
@@ -497,25 +477,19 @@ def _audit_episode_coverage_manifest(
         if created_at_value is None:
             findings.append("coverage manifest created_at is missing or invalid")
         elif created_at_value != expected_created_at_value:
-            findings.append(
-                "coverage manifest created_at does not match current brain manifest"
-            )
+            findings.append("coverage manifest created_at does not match current brain manifest")
 
     if expected_build_mode is not None:
         if not isinstance(build_mode, str) or not build_mode:
             findings.append("coverage manifest build_mode is missing")
         elif build_mode != expected_build_mode:
-            findings.append(
-                "coverage manifest build_mode does not match current brain manifest"
-            )
+            findings.append("coverage manifest build_mode does not match current brain manifest")
 
     if expected_catalog_only is not None:
         if not isinstance(catalog_only, bool):
             findings.append("coverage manifest catalog_only is missing")
         elif catalog_only is not expected_catalog_only:
-            findings.append(
-                "coverage manifest catalog_only does not match current brain manifest"
-            )
+            findings.append("coverage manifest catalog_only does not match current brain manifest")
 
     if not _string_list_field_valid(raw_covered_ids):
         findings.append("coverage manifest covered_episode_ids is missing or invalid")
@@ -530,9 +504,7 @@ def _audit_episode_coverage_manifest(
         findings.append("coverage manifest does not cover accepted episodes")
     if unknown_missing_ids:
         findings.append("coverage manifest missing IDs reference unknown episodes")
-    if _string_list_field_valid(raw_missing_ids) and (
-        set(missing_ids) != set(expected_missing_ids)
-    ):
+    if _string_list_field_valid(raw_missing_ids) and (set(missing_ids) != set(expected_missing_ids)):
         findings.append("coverage manifest missing IDs do not match accepted episodes")
 
     accepted_episode_count = _int_value(coverage_manifest.get("accepted_episode_count"))
@@ -540,9 +512,7 @@ def _audit_episode_coverage_manifest(
     if accepted_episode_count is None:
         findings.append("coverage manifest accepted_episode_count is missing")
     elif accepted_episode_count != len(expected_ids):
-        findings.append(
-            "coverage manifest accepted_episode_count does not match accepted episodes"
-        )
+        findings.append("coverage manifest accepted_episode_count does not match accepted episodes")
     if covered_episode_count is None:
         findings.append("coverage manifest covered_episode_count is missing")
     elif covered_episode_count != len(covered_ids):
@@ -557,18 +527,10 @@ def _audit_episode_coverage_manifest(
     return {
         **base,
         "episode_coverage_findings": findings,
-        "episode_coverage_brain_version": brain_version
-        if isinstance(brain_version, str)
-        else None,
-        "episode_coverage_created_at": created_at
-        if isinstance(created_at, str)
-        else None,
-        "episode_coverage_build_mode": build_mode
-        if isinstance(build_mode, str)
-        else None,
-        "episode_coverage_catalog_only": catalog_only
-        if isinstance(catalog_only, bool)
-        else None,
+        "episode_coverage_brain_version": brain_version if isinstance(brain_version, str) else None,
+        "episode_coverage_created_at": created_at if isinstance(created_at, str) else None,
+        "episode_coverage_build_mode": build_mode if isinstance(build_mode, str) else None,
+        "episode_coverage_catalog_only": catalog_only if isinstance(catalog_only, bool) else None,
     }
 
 
@@ -593,9 +555,7 @@ def _audit_brain_diversity(root: Path) -> dict[str, Any]:
         findings.append("brain category files are byte-identical: " + ", ".join(group))
     identical_bodies = _duplicate_hash_groups(body_hashes)
     for group in identical_bodies:
-        findings.append(
-            "brain category files differ only by title or metadata: " + ", ".join(group)
-        )
+        findings.append("brain category files differ only by title or metadata: " + ", ".join(group))
     llm_manifest = _read_llm_compile_manifest(root)
     category_type_distribution = _category_record_type_distribution(root, llm_manifest)
     source_population_mismatches = _category_source_population_mismatches(
@@ -668,9 +628,7 @@ def _fallback_category_record_type_distribution(
             category_records = records
         else:
             allowed = CATEGORY_RECORD_TYPE_ROUTES.get(category, set())
-            category_records = [
-                record for record in records if record.record_type in allowed
-            ]
+            category_records = [record for record in records if record.record_type in allowed]
         distribution[category] = _record_type_counts(category_records)
     return dict(sorted(distribution.items()))
 
@@ -689,23 +647,40 @@ def _category_source_population_mismatches(
     records = BrainRecordStore(root).list_records()
     expected_by_category = {
         _brain_category(file_name): [
-            record.record_id
-            for record in _records_for_category(records, _brain_category(file_name))
+            record.record_id for record in _records_for_category(records, _brain_category(file_name))
         ]
         for file_name in BRAIN_FILES
     }
     observed_by_category: dict[str, list[str]] = {}
+    observed_reasoning_by_category: dict[str, list[str]] = {}
+    observed_positive_by_category: dict[str, list[str]] = {}
+    observed_non_reasoning_by_category: dict[str, list[str]] = {}
     for category in categories:
         category_name = _string_value(category.get("category"))
         if category_name is None:
             continue
-        observed_by_category[category_name] = _string_list(
-            category.get("source_record_ids")
-        )
+        observed_by_category[category_name] = _string_list(category.get("source_record_ids"))
+        observed_reasoning_by_category[category_name] = _string_list(category.get("reasoning_support_record_ids"))
+        observed_positive_by_category[category_name] = _string_list(category.get("positive_support_record_ids"))
+        observed_non_reasoning_by_category[category_name] = _string_list(category.get("non_reasoning_record_ids"))
     mismatches: list[str] = []
     for category_name, expected_ids in sorted(expected_by_category.items()):
         observed_ids = observed_by_category.get(category_name)
-        if observed_ids is None or sorted(observed_ids) != sorted(expected_ids):
+        expected_records = [record for record in records if record.record_id in set(expected_ids)]
+        expected_reasoning = sorted(
+            record.record_id for record in expected_records if record_routing_disposition(record).value == "REASONING"
+        )
+        expected_non_reasoning = sorted(set(expected_ids) - set(expected_reasoning))
+        expected_positive = sorted(
+            record.record_id for record in expected_records if record_is_positive_support(record)
+        )
+        if (
+            observed_ids is None
+            or sorted(observed_ids) != sorted(expected_ids)
+            or sorted(observed_reasoning_by_category.get(category_name, [])) != expected_reasoning
+            or sorted(observed_positive_by_category.get(category_name, [])) != expected_positive
+            or sorted(observed_non_reasoning_by_category.get(category_name, [])) != expected_non_reasoning
+        ):
             mismatches.append(category_name)
     return mismatches
 
@@ -720,8 +695,7 @@ def _empty_category_complete_files(
     empty_files = {
         _string_value(category.get("file_name"))
         for category in categories
-        if category.get("source_record_count") == 0
-        or not _string_list(category.get("source_record_ids"))
+        if category.get("source_record_count") == 0 or not _string_list(category.get("source_record_ids"))
     }
     flagged: list[str] = []
     for file_name in sorted(item for item in empty_files if item is not None):
@@ -767,9 +741,7 @@ def _audit_llm_compile_manifest(
         return {
             "llm_compile_manifest_present": False,
             "llm_compile_manifest_schema_version": None,
-            "llm_compile_expected_manifest_schema_version": (
-                LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
-            ),
+            "llm_compile_expected_manifest_schema_version": (LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION),
             "llm_compile_compiler_version": None,
             "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
             "llm_compile_findings": findings,
@@ -778,24 +750,18 @@ def _audit_llm_compile_manifest(
             "llm_compile_category_schema_mismatches": category_schema_mismatches,
             "llm_compile_category_count_mismatches": category_count_mismatches,
             "llm_compile_shard_count_mismatches": shard_count_mismatches,
-            "llm_compile_compiled_claim_count_mismatches": (
-                compiled_claim_count_mismatches
-            ),
+            "llm_compile_compiled_claim_count_mismatches": (compiled_claim_count_mismatches),
         }
     schema_version = _string_value(manifest.get("schema_version"))
     if schema_version != LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION:
         observed_schema = schema_version or "missing"
         findings.append(
-            "llm compile manifest schema_version is "
-            f"{observed_schema}, not {LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION}"
+            f"llm compile manifest schema_version is {observed_schema}, not {LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION}"
         )
     compiler_version = _string_value(manifest.get("compiler_version"))
     if compiler_version != LLM_FULL_COMPILER_VERSION:
         observed_version = compiler_version or "missing"
-        findings.append(
-            "llm compile manifest compiler_version is "
-            f"{observed_version}, not {LLM_FULL_COMPILER_VERSION}"
-        )
+        findings.append(f"llm compile manifest compiler_version is {observed_version}, not {LLM_FULL_COMPILER_VERSION}")
     compiled_claim_file_present, compiled_claim_ids = _compiled_claim_ids(root)
     source_count = _int_value(manifest.get("source_record_count"))
     if source_count is None or source_count != len(record_ids):
@@ -829,9 +795,7 @@ def _audit_llm_compile_manifest(
         claim_ids = _string_list(category.get("compiled_claim_ids"))
         if category.get("compiled_claim_count") != len(claim_ids):
             compiled_claim_count_mismatches.append(category_name)
-        unknown_compiled_claim_ids.extend(
-            claim_id for claim_id in claim_ids if claim_id not in compiled_claim_ids
-        )
+        unknown_compiled_claim_ids.extend(claim_id for claim_id in claim_ids if claim_id not in compiled_claim_ids)
     if category_schema_mismatches:
         findings.append("llm compile manifest categories do not match canonical brain files")
     if category_count_mismatches:
@@ -847,9 +811,7 @@ def _audit_llm_compile_manifest(
     return {
         "llm_compile_manifest_present": True,
         "llm_compile_manifest_schema_version": schema_version,
-        "llm_compile_expected_manifest_schema_version": (
-            LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION
-        ),
+        "llm_compile_expected_manifest_schema_version": (LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION),
         "llm_compile_compiler_version": compiler_version,
         "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "llm_compile_findings": findings,
@@ -858,9 +820,7 @@ def _audit_llm_compile_manifest(
         "llm_compile_category_schema_mismatches": sorted(category_schema_mismatches),
         "llm_compile_category_count_mismatches": sorted(category_count_mismatches),
         "llm_compile_shard_count_mismatches": sorted(shard_count_mismatches),
-        "llm_compile_compiled_claim_count_mismatches": sorted(
-            compiled_claim_count_mismatches
-        ),
+        "llm_compile_compiled_claim_count_mismatches": sorted(compiled_claim_count_mismatches),
     }
 
 
@@ -868,17 +828,11 @@ def _llm_compile_category_schema_mismatches(
     manifest: dict[str, Any],
     categories: list[dict[str, Any]],
 ) -> list[str]:
-    expected_by_category = {
-        _brain_category(file_name): file_name for file_name in BRAIN_FILES
-    }
+    expected_by_category = {_brain_category(file_name): file_name for file_name in BRAIN_FILES}
     mismatches: list[str] = []
     manifest_category_count = _int_value(manifest.get("category_count"))
     if manifest_category_count != len(BRAIN_FILES):
-        observed = (
-            "missing"
-            if manifest_category_count is None
-            else str(manifest_category_count)
-        )
+        observed = "missing" if manifest_category_count is None else str(manifest_category_count)
         mismatches.append(f"category_count: expected {len(BRAIN_FILES)}, got {observed}")
     if len(categories) != len(BRAIN_FILES):
         mismatches.append(f"categories: expected {len(BRAIN_FILES)}, got {len(categories)}")
@@ -896,9 +850,7 @@ def _llm_compile_category_schema_mismatches(
             continue
         if file_name != expected_file_name:
             observed_file = file_name or "missing"
-            mismatches.append(
-                f"{category_name}: expected file {expected_file_name}, got {observed_file}"
-            )
+            mismatches.append(f"{category_name}: expected file {expected_file_name}, got {observed_file}")
     for category_name, count in sorted(observed_counts.items()):
         if count > 1:
             mismatches.append(f"{category_name}: duplicate category entry count {count}")
@@ -948,9 +900,7 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
             "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
             "compiled_claim_temporal_leaks": compiled_claim_temporal_leaks,
-            "validated_compiled_claims_without_contradictions": (
-                validated_without_contradictions
-            ),
+            "validated_compiled_claims_without_contradictions": (validated_without_contradictions),
             "validated_compiled_claims_with_single_episode": validated_single_episode,
         }
     records = BrainRecordStore(root).list_records()
@@ -971,28 +921,16 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             without_supporting_records.append(claim.claim_id)
         unknown_supporting = sorted(set(claim.supporting_record_ids) - record_ids)
         if unknown_supporting:
-            unknown_supporting_records.append(
-                f"{claim.claim_id}: {', '.join(unknown_supporting)}"
-            )
+            unknown_supporting_records.append(f"{claim.claim_id}: {', '.join(unknown_supporting)}")
         unknown_contradicting = sorted(set(claim.contradicting_record_ids) - record_ids)
         if unknown_contradicting:
-            unknown_contradicting_records.append(
-                f"{claim.claim_id}: {', '.join(unknown_contradicting)}"
-            )
-        unknown_support_episodes = sorted(
-            set(claim.supporting_episode_ids) - known_episode_ids
-        )
+            unknown_contradicting_records.append(f"{claim.claim_id}: {', '.join(unknown_contradicting)}")
+        unknown_support_episodes = sorted(set(claim.supporting_episode_ids) - known_episode_ids)
         if unknown_support_episodes:
-            unknown_supporting_episodes.append(
-                f"{claim.claim_id}: {', '.join(unknown_support_episodes)}"
-            )
-        unknown_contradiction_episodes = sorted(
-            set(claim.contradicting_episode_ids) - known_episode_ids
-        )
+            unknown_supporting_episodes.append(f"{claim.claim_id}: {', '.join(unknown_support_episodes)}")
+        unknown_contradiction_episodes = sorted(set(claim.contradicting_episode_ids) - known_episode_ids)
         if unknown_contradiction_episodes:
-            unknown_contradicting_episodes.append(
-                f"{claim.claim_id}: {', '.join(unknown_contradiction_episodes)}"
-            )
+            unknown_contradicting_episodes.append(f"{claim.claim_id}: {', '.join(unknown_contradiction_episodes)}")
         for record_id in claim.supporting_record_ids:
             record = records_by_id.get(record_id)
             if record is not None and not is_available_as_of(
@@ -1044,9 +982,7 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
         "compiled_claims_with_unknown_supporting_episodes": unknown_supporting_episodes,
         "compiled_claims_with_unknown_contradicting_episodes": unknown_contradicting_episodes,
         "compiled_claim_temporal_leaks": compiled_claim_temporal_leaks,
-        "validated_compiled_claims_without_contradictions": (
-            validated_without_contradictions
-        ),
+        "validated_compiled_claims_without_contradictions": (validated_without_contradictions),
         "validated_compiled_claims_with_single_episode": validated_single_episode,
     }
 
@@ -1070,9 +1006,7 @@ def _normalized_brain_body_hash(text: str) -> str:
         "Accepted episodes covered:",
     )
     body = "\n".join(
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.startswith(ignored_prefixes)
+        line.strip() for line in text.splitlines() if line.strip() and not line.startswith(ignored_prefixes)
     )
     return sha256_text(body)
 
@@ -1087,31 +1021,60 @@ def _audit_deterministic_brain_state(
     findings: list[str] = []
     head_version = current_brain_version(root)
     manifest_version = _string_value(current_manifest.get("brain_version"))
+    build_mode = _brain_build_mode(current_manifest)
+    records = BrainRecordStore(root).list_records()
+    expected_covered_episode_ids = [episode.episode_id for episode in accepted]
+    expected_source_hashes = source_hashes
+    llm_manifest = _read_llm_compile_manifest(root) if build_mode == "llm-full" else {}
+    if build_mode == "llm-full":
+        expected_covered_episode_ids = sorted(
+            {
+                *expected_covered_episode_ids,
+                *[record.episode_id for record in records],
+            }
+        )
+        expected_source_hashes = {
+            **source_hashes,
+            **{
+                f"record:{record_id}": record_hash
+                for record_id, record_hash in _brain_record_hashes(root).items()
+            },
+        }
     manifest_source_hashes = _string_dict(current_manifest.get("source_hashes"))
-    source_hashes_verified = manifest_source_hashes == source_hashes
+    source_hashes_verified = manifest_source_hashes == expected_source_hashes
     if not source_hashes_verified:
-        findings.append("brain source_hashes do not match accepted episode files")
+        findings.append("brain source_hashes do not match deterministic build inputs")
     shard_episode_count = _current_shard_episode_count(root)
     if shard_episode_count is None:
         findings.append("brain shard_episode_count missing or invalid")
-    expected_version = (
-        expected_brain_version(
-            compiler_mode=_string_value(current_manifest.get("build_mode")) or "catalog",
-            covered_episode_ids=[episode.episode_id for episode in accepted],
-            source_hashes=source_hashes,
-            brain_record_hashes={
-                record.record_id: record.normalized_payload_sha256
-                for record in BrainRecordStore(root).list_records()
-            },
-            shard_episode_count=shard_episode_count,
+    if build_mode == "llm-full":
+        provider = _string_value(llm_manifest.get("provider"))
+        model = _string_value(llm_manifest.get("model"))
+        expected_version = (
+            expected_llm_full_brain_version(
+                covered_episode_ids=expected_covered_episode_ids,
+                source_hashes=expected_source_hashes,
+                model=model,
+                provider=provider,
+                routing_metadata_sha256=brain_record_routing_root_sha256(records),
+            )
+            if provider is not None and model is not None
+            else None
         )
-        if shard_episode_count is not None
-        else None
-    )
+    else:
+        expected_version = (
+            expected_brain_version(
+                compiler_mode=build_mode or "catalog",
+                covered_episode_ids=expected_covered_episode_ids,
+                source_hashes=expected_source_hashes,
+                brain_record_hashes=_brain_record_hashes(root),
+                shard_episode_count=shard_episode_count,
+            )
+            if shard_episode_count is not None
+            else None
+        )
     version_matches_expected = (
-        manifest_version is not None
-        and expected_version is not None
-        and manifest_version == expected_version
+        manifest_version is not None and expected_version is not None and manifest_version == expected_version
     )
     if not version_matches_expected:
         findings.append("brain_version does not match deterministic accepted source state")
@@ -1145,41 +1108,33 @@ def _audit_record_coverage(
     records = BrainRecordStore(root).list_records()
     expected_brain_version = (
         current_manifest.get("brain_version")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("brain_version"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("brain_version"), str)
         else None
     )
     expected_build_mode = (
         current_manifest.get("build_mode")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("build_mode"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("build_mode"), str)
         else None
     )
     expected_catalog_only = (
         current_manifest.get("catalog_only")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("catalog_only"), bool)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("catalog_only"), bool)
         else None
     )
     expected_record_coverage_as_of_raw = (
         current_manifest.get("created_at")
-        if isinstance(current_manifest, dict)
-        and isinstance(current_manifest.get("created_at"), str)
+        if isinstance(current_manifest, dict) and isinstance(current_manifest.get("created_at"), str)
         else None
     )
     expected_record_coverage_as_of = None
     if expected_record_coverage_as_of_raw is not None:
         try:
-            expected_record_coverage_as_of = parse_datetime(
-                expected_record_coverage_as_of_raw
-            )
+            expected_record_coverage_as_of = parse_datetime(expected_record_coverage_as_of_raw)
         except ValueError:
             expected_record_coverage_as_of = None
     accepted_store_findings: list[str] = []
     try:
-        expected_accepted_episode_count: int | None = len(
-            ResearchStore(root).list_accepted()
-        )
+        expected_accepted_episode_count: int | None = len(ResearchStore(root).list_accepted())
     except (
         OSError,
         json.JSONDecodeError,
@@ -1189,22 +1144,25 @@ def _audit_record_coverage(
         ValueError,
     ):
         expected_accepted_episode_count = None
-        accepted_store_findings = [
-            "record coverage accepted episode store is unreadable"
-        ]
+        accepted_store_findings = ["record coverage accepted episode store is unreadable"]
+    if expected_build_mode == "llm-full" and isinstance(current_manifest, dict):
+        manifest_accepted_count = _int_value(current_manifest.get("accepted_episode_count"))
+        if manifest_accepted_count is not None:
+            expected_accepted_episode_count = manifest_accepted_count
     record_ids = {record.record_id for record in records}
     training_eligible_count = sum(1 for record in records if record.training_eligible)
-    record_counts_by_type = dict(
-        sorted(Counter(record.record_type for record in records).items())
-    )
-    record_counts_by_phase = dict(
-        sorted(Counter(record.evidence_phase for record in records).items())
-    )
-    record_counts_by_target = dict(
-        sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
-    )
+    record_counts_by_type = dict(sorted(Counter(record.record_type for record in records).items()))
+    record_counts_by_phase = dict(sorted(Counter(record.evidence_phase for record in records).items()))
+    record_counts_by_target = dict(sorted(Counter(record.training_target or "UNKNOWN" for record in records).items()))
     ineligible_count = sum(1 for record in records if not record.training_eligible)
-    audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
+    routing_count_maps = _record_routing_count_maps(records)
+    routing_audit_only_count = sum(
+        count
+        for disposition, count in routing_count_maps["record_counts_by_routing_disposition"].items()
+        if disposition in {"AUDIT", "QUARANTINED"}
+    )
+    phase_audit_only_count = sum(1 for record in records if record.evidence_phase == "AUDIT")
+    audit_only_count = phase_audit_only_count
     manifest_path = root / "brain" / "current" / "record_coverage_manifest.json"
     if not manifest_path.exists():
         return _record_coverage_unavailable_result(
@@ -1255,18 +1213,12 @@ def _audit_record_coverage(
     manifest_accepted_episode_count = _int_value(manifest.get("accepted_episode_count"))
     coverage_as_of = _record_coverage_as_of(manifest, findings)
     available_records_as_of = (
-        [
-            record
-            for record in records
-            if is_available_as_of(record.available_from, coverage_as_of)
-        ]
+        [record for record in records if is_available_as_of(record.available_from, coverage_as_of)]
         if coverage_as_of is not None
         else records
     )
     available_count_as_of = len(available_records_as_of)
-    training_eligible_count_as_of = sum(
-        1 for record in available_records_as_of if record.training_eligible
-    )
+    training_eligible_count_as_of = sum(1 for record in available_records_as_of if record.training_eligible)
     raw_swept_record_ids = manifest.get("swept_record_ids")
     raw_unswept_record_ids = manifest.get("unswept_record_ids")
     swept_id_list = _string_list(raw_swept_record_ids)
@@ -1281,57 +1233,47 @@ def _audit_record_coverage(
     unknown_unswept = sorted(set(unswept_id_list) - record_ids)
     missing_unswept = sorted(set(expected_unswept) - set(unswept_id_list))
     unexpected_unswept = sorted(set(unswept_id_list) - set(expected_unswept))
-    duplicate_swept = sorted(
-        record_id for record_id, count in Counter(swept_id_list).items() if count > 1
-    )
-    duplicate_unswept = sorted(
-        record_id for record_id, count in Counter(unswept_id_list).items() if count > 1
-    )
-    if manifest.get("schema_version") != "nslab.record_coverage_manifest.v1":
+    duplicate_swept = sorted(record_id for record_id, count in Counter(swept_id_list).items() if count > 1)
+    duplicate_unswept = sorted(record_id for record_id, count in Counter(unswept_id_list).items() if count > 1)
+    manifest_schema = manifest.get("schema_version")
+    if manifest_schema not in {
+        "nslab.record_coverage_manifest.v1",
+        "nslab.record_coverage_manifest.v2",
+    }:
         findings.append("record coverage manifest schema_version is invalid")
+    audit_only_count = (
+        routing_audit_only_count if manifest_schema == "nslab.record_coverage_manifest.v2" else phase_audit_only_count
+    )
     if (
         coverage_as_of is not None
         and expected_record_coverage_as_of is not None
         and coverage_as_of != expected_record_coverage_as_of
     ):
-        findings.append(
-            "record coverage manifest record_coverage_as_of does not match current brain manifest"
-        )
-    if (
-        expected_record_coverage_as_of_raw is not None
-        and expected_record_coverage_as_of is None
-    ):
+        findings.append("record coverage manifest record_coverage_as_of does not match current brain manifest")
+    if expected_record_coverage_as_of_raw is not None and expected_record_coverage_as_of is None:
         findings.append("current brain manifest created_at is invalid")
     if expected_brain_version is not None:
         if not isinstance(manifest_brain_version, str) or not manifest_brain_version:
             findings.append("record coverage manifest brain_version is missing")
         elif manifest_brain_version != expected_brain_version:
-            findings.append(
-                "record coverage manifest brain_version does not match current brain manifest"
-            )
+            findings.append("record coverage manifest brain_version does not match current brain manifest")
     if expected_build_mode is not None:
         if not isinstance(manifest_build_mode, str) or not manifest_build_mode:
             findings.append("record coverage manifest build_mode is missing")
         elif manifest_build_mode != expected_build_mode:
-            findings.append(
-                "record coverage manifest build_mode does not match current brain manifest"
-            )
+            findings.append("record coverage manifest build_mode does not match current brain manifest")
     if expected_catalog_only is not None:
         if not isinstance(manifest_catalog_only, bool):
             findings.append("record coverage manifest catalog_only is missing")
         elif manifest_catalog_only is not expected_catalog_only:
-            findings.append(
-                "record coverage manifest catalog_only does not match current brain manifest"
-            )
+            findings.append("record coverage manifest catalog_only does not match current brain manifest")
     if manifest_accepted_episode_count is None:
         findings.append("record coverage manifest accepted_episode_count is missing")
     elif (
         expected_accepted_episode_count is not None
         and manifest_accepted_episode_count != expected_accepted_episode_count
     ):
-        findings.append(
-            "record coverage manifest accepted_episode_count does not match accepted episodes"
-        )
+        findings.append("record coverage manifest accepted_episode_count does not match accepted episodes")
     if not _string_list_field_valid(raw_swept_record_ids):
         findings.append("record coverage manifest swept_record_ids is invalid")
     if not _string_list_field_valid(raw_unswept_record_ids):
@@ -1349,53 +1291,37 @@ def _audit_record_coverage(
     if manifest.get("accepted_record_count") != len(records):
         findings.append("record coverage manifest count does not match record store")
     if manifest.get("available_record_count") != len(records):
-        findings.append(
-            "record coverage manifest available count does not match record store"
-        )
+        findings.append("record coverage manifest available count does not match record store")
     if (
         manifest.get("available_record_count_as_of") is not None
         and manifest.get("available_record_count_as_of") != available_count_as_of
     ):
-        findings.append(
-            "record coverage manifest as-of available count does not match record store"
-        )
+        findings.append("record coverage manifest as-of available count does not match record store")
     if manifest.get("training_eligible_available_record_count") != training_eligible_count:
-        findings.append(
-            "record coverage manifest training eligible count does not match record store"
-        )
+        findings.append("record coverage manifest training eligible count does not match record store")
     if (
         manifest.get("training_eligible_record_count_as_of") is not None
-        and manifest.get("training_eligible_record_count_as_of")
-        != training_eligible_count_as_of
+        and manifest.get("training_eligible_record_count_as_of") != training_eligible_count_as_of
     ):
-        findings.append(
-            "record coverage manifest as-of training eligible count does not match record store"
-        )
+        findings.append("record coverage manifest as-of training eligible count does not match record store")
     if manifest.get("compiled_record_count") != len(records):
-        findings.append(
-            "record coverage manifest compiled count does not match record store"
-        )
+        findings.append("record coverage manifest compiled count does not match record store")
     if manifest.get("swept_record_count") != len(swept_id_list):
         findings.append("record coverage manifest swept count does not match swept IDs")
     if _int_dict(manifest.get("record_counts_by_type")) != record_counts_by_type:
         findings.append("record coverage manifest type counts do not match record store")
     if _int_dict(manifest.get("record_counts_by_evidence_phase")) != record_counts_by_phase:
         findings.append("record coverage manifest phase counts do not match record store")
-    if (
-        _int_dict(manifest.get("record_counts_by_training_target"))
-        != record_counts_by_target
-    ):
-        findings.append(
-            "record coverage manifest training target counts do not match record store"
-        )
+    if _int_dict(manifest.get("record_counts_by_training_target")) != record_counts_by_target:
+        findings.append("record coverage manifest training target counts do not match record store")
+    if manifest_schema == "nslab.record_coverage_manifest.v2":
+        for field, expected_counts in routing_count_maps.items():
+            if _int_dict(manifest.get(field)) != expected_counts:
+                findings.append(f"record coverage manifest {field} does not match record store")
     if manifest.get("ineligible_record_count") != ineligible_count:
-        findings.append(
-            "record coverage manifest ineligible count does not match record store"
-        )
+        findings.append("record coverage manifest ineligible count does not match record store")
     if manifest.get("audit_only_record_count") != audit_only_count:
-        findings.append(
-            "record coverage manifest audit-only count does not match record store"
-        )
+        findings.append("record coverage manifest audit-only count does not match record store")
     has_audit_findings = bool(findings)
     manifest_complete = manifest.get("coverage_complete")
     if manifest_complete is not True:
@@ -1407,17 +1333,11 @@ def _audit_record_coverage(
         if isinstance(manifest_record_coverage_as_of, str)
         else None,
         "expected_record_coverage_as_of": expected_record_coverage_as_of_raw,
-        "record_coverage_brain_version": manifest_brain_version
-        if isinstance(manifest_brain_version, str)
-        else None,
+        "record_coverage_brain_version": manifest_brain_version if isinstance(manifest_brain_version, str) else None,
         "expected_brain_version": expected_brain_version,
-        "record_coverage_build_mode": manifest_build_mode
-        if isinstance(manifest_build_mode, str)
-        else None,
+        "record_coverage_build_mode": manifest_build_mode if isinstance(manifest_build_mode, str) else None,
         "expected_build_mode": expected_build_mode,
-        "record_coverage_catalog_only": manifest_catalog_only
-        if isinstance(manifest_catalog_only, bool)
-        else None,
+        "record_coverage_catalog_only": manifest_catalog_only if isinstance(manifest_catalog_only, bool) else None,
         "expected_catalog_only": expected_catalog_only,
         "record_coverage_accepted_episode_count": manifest_accepted_episode_count,
         "expected_accepted_episode_count": expected_accepted_episode_count,
@@ -1443,6 +1363,7 @@ def _audit_record_coverage(
         "record_counts_by_type": record_counts_by_type,
         "record_counts_by_evidence_phase": record_counts_by_phase,
         "record_counts_by_training_target": record_counts_by_target,
+        **routing_count_maps,
         "ineligible_record_count": ineligible_count,
         "audit_only_record_count": audit_only_count,
         "record_coverage_complete": not findings,
@@ -1501,10 +1422,42 @@ def _record_coverage_unavailable_result(
         "record_counts_by_type": record_counts_by_type,
         "record_counts_by_evidence_phase": record_counts_by_phase,
         "record_counts_by_training_target": record_counts_by_target,
+        **_record_routing_count_maps(records),
         "ineligible_record_count": ineligible_count,
         "audit_only_record_count": audit_only_count,
         "record_coverage_complete": False,
         "record_coverage_findings": findings,
+    }
+
+
+def _record_routing_count_maps(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, dict[str, int]]:
+    polarity: Counter[str] = Counter()
+    label_quality: Counter[str] = Counter()
+    disposition: Counter[str] = Counter()
+    cross_table: Counter[str] = Counter()
+    for record in records:
+        routing = record_routing_metadata(record)
+        eligible = "true" if record.training_eligible else "false"
+        polarity[routing.evidence_polarity] += 1
+        label_quality[routing.label_quality] += 1
+        disposition[routing.routing_disposition] += 1
+        cross_table[
+            "|".join(
+                (
+                    routing.evidence_polarity,
+                    eligible,
+                    routing.label_quality,
+                    routing.routing_disposition,
+                )
+            )
+        ] += 1
+    return {
+        "record_counts_by_evidence_polarity": dict(sorted(polarity.items())),
+        "record_counts_by_label_quality": dict(sorted(label_quality.items())),
+        "record_counts_by_routing_disposition": dict(sorted(disposition.items())),
+        "record_routing_cross_table": dict(sorted(cross_table.items())),
     }
 
 
@@ -1552,9 +1505,7 @@ def _audit_mechanisms(root: Path, accepted: list[ResearchEpisode]) -> dict[str, 
         if not mechanism.successful_cases and not mechanism.failed_cases:
             mechanisms_without_cases.append(mechanism.mechanism_id)
         unknown_success_cases = [
-            episode_id
-            for episode_id in mechanism.successful_cases
-            if episode_id not in accepted_ids
+            episode_id for episode_id in mechanism.successful_cases if episode_id not in accepted_ids
         ]
         if unknown_success_cases:
             mechanisms_with_unknown_success_cases.append(
@@ -1570,8 +1521,15 @@ def _audit_mechanisms(root: Path, accepted: list[ResearchEpisode]) -> dict[str, 
     }
 
 
-def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list[str]]:
+def _audit_claims(
+    root: Path,
+    accepted: list[ResearchEpisode],
+    *,
+    record_support_available_from: dict[str, datetime] | None = None,
+) -> dict[str, list[str]]:
     accepted_by_id = {episode.episode_id: episode for episode in accepted}
+    record_support = record_support_available_from or {}
+    allowed_support_ids = set(accepted_by_id) | set(record_support)
     claims_path = root / "brain" / "current" / "claims.jsonl"
     invalid_claim_lines: list[str] = []
     claims_without_support: list[str] = []
@@ -1588,9 +1546,7 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
             "claims_without_provenance": claims_without_provenance,
             "claim_temporal_leaks": claim_temporal_leaks,
             "validated_single_support_claims": validated_single_support_claims,
-            "single_support_claims_without_contradictions": (
-                single_support_claims_without_contradictions
-            ),
+            "single_support_claims_without_contradictions": (single_support_claims_without_contradictions),
         }
     for line_number, line in enumerate(claims_path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -1604,27 +1560,25 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
         if not claim.support_episode_ids:
             claims_without_support.append(claim.claim_id)
         unknown_support = [
-            episode_id
-            for episode_id in claim.support_episode_ids
-            if episode_id not in accepted_by_id
+            episode_id for episode_id in claim.support_episode_ids if episode_id not in allowed_support_ids
         ]
         if unknown_support:
-            claims_with_unknown_support.append(
-                f"{claim.claim_id}: {', '.join(sorted(unknown_support))}"
-            )
+            claims_with_unknown_support.append(f"{claim.claim_id}: {', '.join(sorted(unknown_support))}")
         if not claim.provenance:
             claims_without_provenance.append(claim.claim_id)
         for episode_id in claim.support_episode_ids:
             episode = accepted_by_id.get(episode_id)
-            if episode is None:
-                continue
-            if not is_available_as_of(episode.available_from, claim.available_from):
-                claim_temporal_leaks.append(
-                    f"{claim.claim_id}: available_from precedes support {episode_id}"
-                )
+            support_available_from = (
+                episode.available_from if episode is not None else record_support.get(episode_id)
+            )
+            if support_available_from is not None and not is_available_as_of(
+                support_available_from,
+                claim.available_from,
+            ):
+                claim_temporal_leaks.append(f"{claim.claim_id}: available_from precedes support {episode_id}")
         if (
             len(claim.support_episode_ids) == 1
-            and claim.support_episode_ids[0] in accepted_by_id
+            and claim.support_episode_ids[0] in allowed_support_ids
             and not claim.contradiction_episode_ids
             and not claim.near_miss_episode_ids
         ):
@@ -1638,9 +1592,7 @@ def _audit_claims(root: Path, accepted: list[ResearchEpisode]) -> dict[str, list
         "claims_without_provenance": claims_without_provenance,
         "claim_temporal_leaks": claim_temporal_leaks,
         "validated_single_support_claims": validated_single_support_claims,
-        "single_support_claims_without_contradictions": (
-            single_support_claims_without_contradictions
-        ),
+        "single_support_claims_without_contradictions": (single_support_claims_without_contradictions),
     }
 
 
@@ -1684,11 +1636,7 @@ def _datetime_value(value: object) -> datetime | None:
 def _string_dict(value: object) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
-    return {
-        key: item
-        for key, item in value.items()
-        if isinstance(key, str) and isinstance(item, str)
-    }
+    return {key: item for key, item in value.items() if isinstance(key, str) and isinstance(item, str)}
 
 
 def _int_dict(value: object) -> dict[str, int]:
@@ -1738,7 +1686,5 @@ def _snapshot_matches_current(*, root: Path, brain_version: str | None) -> bool:
     if not snapshot_dir.exists():
         return False
     return current_brain_file_hashes(root) == {
-        f"brain/current/{path.name}": file_sha256(path)
-        for path in sorted(snapshot_dir.glob("*"))
-        if path.is_file()
+        f"brain/current/{path.name}": file_sha256(path) for path in sorted(snapshot_dir.glob("*")) if path.is_file()
     }

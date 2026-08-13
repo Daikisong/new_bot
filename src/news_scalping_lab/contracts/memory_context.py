@@ -38,6 +38,15 @@ EvidencePolarity = Literal[
     "UNKNOWN",
 ]
 RoutingDisposition = Literal["REASONING", "CONTEXT", "AUDIT", "QUARANTINED"]
+RecordLabelQualityValue = Literal[
+    "verified",
+    "quarantined",
+    "no_tradable_row",
+    "missing",
+    "ambiguous",
+    "conflicting",
+    "not_applicable",
+]
 NewsDisposition = Literal[
     "MATERIAL_FULL_RETRIEVAL",
     "MARKET_CONTEXT",
@@ -67,15 +76,15 @@ class ArtifactReference(StrictMemoryContextModel):
 class RecordRoutingMetadata(StrictMemoryContextModel):
     """Four independent axes for using a stored brain record."""
 
-    schema_version: Literal["nslab.record_routing_metadata.v1"] = (
-        "nslab.record_routing_metadata.v1"
+    schema_version: Literal["nslab.record_routing_metadata.v2"] = (
+        "nslab.record_routing_metadata.v2"
     )
     record_id: str
     record_type: str
     available_from: AwareDatetime
     evidence_polarity: EvidencePolarity
     training_eligible: bool
-    label_quality: str
+    label_quality: RecordLabelQualityValue
     routing_disposition: RoutingDisposition
     memory_lanes: list[str] = Field(default_factory=list)
     polarity_classifier_version: str
@@ -546,10 +555,13 @@ class BrainRecordCorpusProfile(StrictMemoryContextModel):
     unknown_typed_record_count: int = Field(ge=0)
     record_counts_by_type: dict[str, int] = Field(default_factory=dict)
     record_counts_by_polarity: dict[str, int] = Field(default_factory=dict)
+    record_counts_by_label_quality: dict[str, int] = Field(default_factory=dict)
+    record_counts_by_routing_disposition: dict[str, int] = Field(default_factory=dict)
     record_counts_by_lane: dict[str, int] = Field(default_factory=dict)
     eligibility_polarity_crosstab: dict[str, dict[str, int]] = Field(
         default_factory=dict
     )
+    routing_four_axis_crosstab: dict[str, int] = Field(default_factory=dict)
     outcome_field_coverage: dict[str, int] = Field(default_factory=dict)
     independent_unit_profiles: dict[str, IndependentUnitProfile] = Field(
         default_factory=dict
@@ -569,6 +581,14 @@ class BrainRecordCorpusProfile(StrictMemoryContextModel):
             _positive_counts(self.record_counts_by_polarity).values()
         ):
             raise ValueError("polarity counts must equal record_count")
+        if self.record_count != sum(
+            _positive_counts(self.record_counts_by_label_quality).values()
+        ):
+            raise ValueError("label quality counts must equal record_count")
+        if self.record_count != sum(
+            _positive_counts(self.record_counts_by_routing_disposition).values()
+        ):
+            raise ValueError("routing disposition counts must equal record_count")
         if self.record_count != (
             self.known_typed_record_count + self.unknown_typed_record_count
         ):
@@ -582,6 +602,10 @@ class BrainRecordCorpusProfile(StrictMemoryContextModel):
         eligible_counts = self.eligibility_polarity_crosstab.get("eligible", {})
         if self.training_eligible_record_count != sum(eligible_counts.values()):
             raise ValueError("eligible cross-tab count mismatch")
+        if self.record_count != sum(
+            _positive_counts(self.routing_four_axis_crosstab).values()
+        ):
+            raise ValueError("four-axis routing cross-tab must equal record_count")
         return self
 
 

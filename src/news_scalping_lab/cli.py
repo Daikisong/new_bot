@@ -39,6 +39,10 @@ from news_scalping_lab.context.session_pack import (
     SessionPackFutureContextError,
     export_session_pack,
 )
+from news_scalping_lab.context.sweep import (
+    RECORD_SWEEP_LANE_FIELDS,
+    record_sweep_lane_projection,
+)
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
     NewsCoverageManifest,
@@ -60,11 +64,16 @@ from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import (
     BrainRecordEnvelope,
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.routing import POLARITY_CLASSIFIER_VERSION
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -1072,9 +1081,7 @@ def _inspect_context_manifest(
         manifest,
         verify_current_store=True,
     )
-    uses_memory_coverage = phase2_memory_coverage_required(manifest) or bool(
-        memory_coverage.get("configured")
-    )
+    uses_memory_coverage = phase2_memory_coverage_required(manifest) or bool(memory_coverage.get("configured"))
     llm_traces = _inspect_llm_traces(root, manifest)
     manifest_reproducibility = _inspect_manifest_reproducibility_fields(root, manifest)
     return {
@@ -1107,10 +1114,7 @@ def _inspect_context_manifest(
         and (
             bool(memory_coverage.get("passed"))
             if uses_memory_coverage
-            else (
-                _memory_sweep_status_passed(memory_sweep)
-                and _record_sweep_status_passed(record_sweep)
-            )
+            else (_memory_sweep_status_passed(memory_sweep) and _record_sweep_status_passed(record_sweep))
         )
         and _llm_trace_status_passed(llm_traces)
         and _manifest_reproducibility_status_passed(manifest_reproducibility),
@@ -1920,9 +1924,7 @@ def _inspect_news_coverage_manifest_artifact(
         root,
         manifest.get("row_disposition_artifact"),
     )
-    expected_sources = {
-        row.row_number: (row.event_id, row.source_id) for row in coverage.rows
-    }
+    expected_sources = {row.row_number: (row.event_id, row.source_id) for row in coverage.rows}
     observed_sources = {
         row_number: (row.get("event_id"), row.get("source_id"))
         for row in disposition_rows or []
@@ -1988,12 +1990,9 @@ def _inspect_event_cluster_manifest_artifact(
         and cluster_manifest.unassigned_row_count == 0
         and cluster_manifest.duplicate_assignment_count == 0
         and isinstance(manifest.get("model_config"), dict)
-        and cluster_manifest.clustering_version
-        == manifest["model_config"].get("event_clustering_version")
-        and cluster_manifest.embedding_batch_size
-        == manifest["model_config"].get("event_cluster_embedding_batch_size")
-        and cluster_manifest.similarity_threshold
-        == manifest["model_config"].get("event_cluster_similarity_threshold")
+        and cluster_manifest.clustering_version == manifest["model_config"].get("event_clustering_version")
+        and cluster_manifest.embedding_batch_size == manifest["model_config"].get("event_cluster_embedding_batch_size")
+        and cluster_manifest.similarity_threshold == manifest["model_config"].get("event_cluster_similarity_threshold")
         and cluster_manifest.max_semantic_variants
         == manifest["model_config"].get("event_cluster_max_semantic_variants")
         and cluster_manifest.embedding_provider
@@ -2008,10 +2007,8 @@ def _inspect_event_cluster_manifest_artifact(
             if isinstance(manifest.get("event_cluster_summary"), dict)
             else None
         )
-        and cluster_manifest.embedding_status
-        in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
-        and manifest.get("event_clustering_result_sha256")
-        == _event_cluster_manifest_result_sha256(cluster_manifest)
+        and cluster_manifest.embedding_status in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
+        and manifest.get("event_clustering_result_sha256") == _event_cluster_manifest_result_sha256(cluster_manifest)
     )
     if not status["manifest_identity_verified"]:
         status["errors"].append("event_cluster_manifest_identity_mismatch")
@@ -2021,9 +2018,7 @@ def _inspect_event_cluster_manifest_artifact(
         manifest.get("news_coverage_manifest_artifact"),
     )
     coverage_rows = coverage_payload.get("rows") if isinstance(coverage_payload, dict) else None
-    expected_assignments: dict[
-        int, tuple[str, str, str, str, str | None, str | None]
-    ] = {}
+    expected_assignments: dict[int, tuple[str, str, str, str, str | None, str | None]] = {}
     for cluster in cluster_manifest.clusters:
         for index, (row_number, event_id, source_id) in enumerate(
             zip(
@@ -2142,9 +2137,7 @@ def _inspect_open_world_first_analysis_artifact(
         status,
     )
     if payload is None:
-        if not status.get("configured") and not _phase1_coverage_artifacts_required(
-            manifest
-        ):
+        if not status.get("configured") and not _phase1_coverage_artifacts_required(manifest):
             status["passed"] = True
         else:
             status["passed"] = _open_world_first_analysis_status_passed(status)
@@ -2168,9 +2161,7 @@ def _inspect_open_world_first_analysis_artifact(
     status["prompt_hash_verified"] = prompt_hash is None or payload.get("prompt_sha256") == prompt_hash
     if _phase1_coverage_artifacts_required(manifest):
         status["prompt_hash_verified"] = bool(
-            status["prompt_hash_verified"]
-            and payload.get("prompt_version")
-            == OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+            status["prompt_hash_verified"] and payload.get("prompt_version") == OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
         )
     if not status["prompt_hash_verified"]:
         status["errors"].append("open_world_first_analysis_prompt_hash_mismatch")
@@ -2188,8 +2179,7 @@ def _inspect_open_world_first_analysis_artifact(
         "uncertainties",
     ]
     fields_are_string_lists = all(
-        isinstance(value := payload.get(field), list)
-        and all(isinstance(item, str) and item.strip() for item in value)
+        isinstance(value := payload.get(field), list) and all(isinstance(item, str) and item.strip() for item in value)
         for field in required_fields
     )
     event_clusters = _string_list(payload.get("event_clusters"))
@@ -2197,40 +2187,32 @@ def _inspect_open_world_first_analysis_artifact(
     uncertainties = _string_list(payload.get("uncertainties"))
     source_cluster_ids = _string_list(payload.get("source_cluster_ids"))
     status["required_fields_present"] = fields_are_string_lists and (
-        not source_cluster_ids
-        or (bool(event_clusters) and bool(mechanisms or uncertainties))
+        not source_cluster_ids or (bool(event_clusters) and bool(mechanisms or uncertainties))
     )
     if not status["required_fields_present"]:
         status["errors"].append("open_world_first_analysis_required_fields_missing")
 
     cluster_findings = payload.get("cluster_findings")
     finding_ids = (
-        [
-            finding.get("cluster_id")
-            for finding in cluster_findings
-            if isinstance(finding, dict)
-        ]
+        [finding.get("cluster_id") for finding in cluster_findings if isinstance(finding, dict)]
         if isinstance(cluster_findings, list)
         else []
     )
-    status["cluster_findings_verified"] = (
-        not _phase1_coverage_artifacts_required(manifest)
-        or (
-            isinstance(cluster_findings, list)
-            and finding_ids == source_cluster_ids
-            and all(
-                isinstance(finding, dict)
-                and isinstance(finding.get("event_summary"), str)
-                and bool(finding["event_summary"].strip())
-                and any(
-                    value.strip()
-                    for value in [
-                        *_string_list(finding.get("mechanisms")),
-                        *_string_list(finding.get("uncertainties")),
-                    ]
-                )
-                for finding in cluster_findings
+    status["cluster_findings_verified"] = not _phase1_coverage_artifacts_required(manifest) or (
+        isinstance(cluster_findings, list)
+        and finding_ids == source_cluster_ids
+        and all(
+            isinstance(finding, dict)
+            and isinstance(finding.get("event_summary"), str)
+            and bool(finding["event_summary"].strip())
+            and any(
+                value.strip()
+                for value in [
+                    *_string_list(finding.get("mechanisms")),
+                    *_string_list(finding.get("uncertainties")),
+                ]
             )
+            for finding in cluster_findings
         )
     )
     if not status["cluster_findings_verified"]:
@@ -2274,15 +2256,9 @@ def _inspect_open_world_first_analysis_artifact(
             "source_cluster_count": len(source_cluster_ids),
             "analyzed_cluster_count": len(analyzed_cluster_ids),
             "uncovered_cluster_count": len(uncovered_cluster_ids),
-        "analysis_batch_count": (analysis_batch_count if analysis_batch_count is not None else -1),
+            "analysis_batch_count": (analysis_batch_count if analysis_batch_count is not None else -1),
             **(
-                {
-                    "cluster_finding_count": (
-                        len(cluster_findings)
-                        if isinstance(cluster_findings, list)
-                        else -1
-                    )
-                }
+                {"cluster_finding_count": (len(cluster_findings) if isinstance(cluster_findings, list) else -1)}
                 if _phase1_coverage_artifacts_required(manifest)
                 else {}
             ),
@@ -3713,10 +3689,7 @@ def _inspect_final_synthesis_context_artifact(
     }
     if not status["schema_version_verified"]:
         status["errors"].append("final_synthesis_context_schema_version_mismatch")
-    if (
-        phase2_memory_coverage_required(manifest)
-        and schema_version != "nslab.final_synthesis_context.v2"
-    ):
+    if phase2_memory_coverage_required(manifest) and schema_version != "nslab.final_synthesis_context.v2":
         status["schema_version_verified"] = False
         status["errors"].append("final_synthesis_context_phase2_downgrade")
 
@@ -3822,25 +3795,16 @@ def _inspect_final_synthesis_context_artifact(
     )
 
     if schema_version == "nslab.final_synthesis_context.v2":
-        forbidden = sorted(
-            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload)
-        )
+        forbidden = sorted(FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload))
         status["forbidden_exhaustive_payload_keys"] = forbidden
-        status["memory_coverage_context_verified"] = (
-            not forbidden
-            and final_synthesis_context_contract_verified(
-                manifest,
-                payload,
-            )
+        status["memory_coverage_context_verified"] = not forbidden and final_synthesis_context_contract_verified(
+            manifest,
+            payload,
         )
         if forbidden:
-            status["errors"].append(
-                "final_synthesis_context_contains_exhaustive_payload"
-            )
+            status["errors"].append("final_synthesis_context_contains_exhaustive_payload")
         if not status["memory_coverage_context_verified"]:
-            status["errors"].append(
-                "final_synthesis_context_memory_coverage_mismatch"
-            )
+            status["errors"].append("final_synthesis_context_memory_coverage_mismatch")
     else:
         status["memory_coverage_context_verified"] = True
 
@@ -5088,6 +5052,23 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         )
         if category_mismatches:
             status["category_field_mismatches"].append({"path": artifact_ref, "fields": category_mismatches})
+        shard_records = [records_by_id[record_id] for record_id in record_ids if record_id in records_by_id]
+        if len(shard_records) == len(record_ids):
+            routing_mismatches: list[str] = []
+            if payload.get("routing_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+                routing_mismatches.append("routing_classifier_version")
+            if payload.get("record_routing_sha256") != brain_record_routing_root_sha256(shard_records):
+                routing_mismatches.append("record_routing_sha256")
+            expected_projection = record_sweep_lane_projection(shard_records)
+            routing_mismatches.extend(
+                field
+                for field in RECORD_SWEEP_LANE_FIELDS
+                if payload.get(field) != expected_projection[field]
+            )
+            if routing_mismatches:
+                status["category_field_mismatches"].append(
+                    {"path": artifact_ref, "fields": sorted(set(routing_mismatches))}
+                )
         source_hashes = _record_sweep_source_hashes(
             payload.get("record_shard_source_hashes"),
             record_ids,
@@ -5097,12 +5078,14 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
                 {"path": artifact_ref, "reason": "invalid_or_missing_source_hashes"}
             )
         else:
+            if payload.get("record_source_hash_kind") != ("canonical_full_envelope_sha256"):
+                status["source_hash_mismatches"].append({"path": artifact_ref, "reason": "source_hash_kind_mismatch"})
             expected_shard_hash = _record_sweep_shard_hash(source_hashes)
             if payload.get("record_shard_sha256") != expected_shard_hash:
                 status["shard_hash_mismatches"].append(artifact_ref)
             for record_id, recorded_hash in sorted(source_hashes.items()):
                 record = records_by_id.get(record_id)
-                actual_hash = record.normalized_payload_sha256 if record is not None else None
+                actual_hash = brain_record_envelope_sha256(record) if record is not None else None
                 if actual_hash != recorded_hash:
                     status["source_hash_mismatches"].append(
                         {
@@ -5906,22 +5889,13 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
             root,
             manifest.get("news_coverage_manifest_artifact"),
         )
-        coverage_rows = (
-            coverage_payload.get("rows")
-            if isinstance(coverage_payload, dict)
-            else None
-        )
-        expected_rows = {
-            item.row_number: (item.event_id, item.source_id)
-            for item in batch.items
-        }
+        coverage_rows = coverage_payload.get("rows") if isinstance(coverage_payload, dict) else None
+        expected_rows = {item.row_number: (item.event_id, item.source_id) for item in batch.items}
         observed_rows = (
             {
                 row_number: (row.get("event_id"), row.get("source_id"))
                 for row in coverage_rows
-                if isinstance(row, dict)
-                and (row_number := _non_bool_int(row.get("row_number")))
-                is not None
+                if isinstance(row, dict) and (row_number := _non_bool_int(row.get("row_number"))) is not None
             }
             if isinstance(coverage_rows, list)
             else {}
@@ -5931,18 +5905,13 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
             {
                 row_number: row
                 for row in coverage_rows
-                if isinstance(row, dict)
-                and (row_number := _non_bool_int(row.get("row_number")))
-                is not None
+                if isinstance(row, dict) and (row_number := _non_bool_int(row.get("row_number"))) is not None
             }
             if isinstance(coverage_rows, list)
             else {}
         )
         outside_rows_are_audit_only = all(
-            (
-                row := coverage_by_row.get(item.row_number)
-            )
-            is not None
+            (row := coverage_by_row.get(item.row_number)) is not None
             and row.get("disposition") == "AUDIT_ONLY"
             and isinstance(row.get("primary_cluster_id"), str)
             and row.get("duplicate_parent_cluster_id") is None
@@ -5952,8 +5921,7 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
             and not news_window_start_at <= item.published_at <= news_window_end_at
         )
         status["phase1_row_identity_verified"] = bool(
-            status["phase1_row_identity_verified"]
-            and outside_rows_are_audit_only
+            status["phase1_row_identity_verified"] and outside_rows_are_audit_only
         )
         if not status["phase1_row_identity_verified"]:
             status["errors"].append("phase1_news_row_identity_mismatch")
@@ -6749,30 +6717,20 @@ def _event_cluster_membership_counts_match(row: dict[str, Any]) -> bool:
         or excerpt.get("event_id") != event_id
         or not _is_sha256(excerpt.get("title_sha256"))
         or not _is_sha256(excerpt.get("body_sha256"))
-        for excerpt, row_number, event_id in zip(
-            excerpts, row_numbers, event_ids, strict=True
-        )
+        for excerpt, row_number, event_id in zip(excerpts, row_numbers, event_ids, strict=True)
     )
 
 
 def _is_sha256(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _phase1_coverage_artifacts_required(manifest: dict[str, Any]) -> bool:
     model_config = manifest.get("model_config")
     summary = manifest.get("event_cluster_summary")
     return (
-        isinstance(model_config, dict)
-        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
-    ) or (
-        isinstance(summary, dict)
-        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
-    )
+        isinstance(model_config, dict) and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (isinstance(summary, dict) and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION)
 
 
 def _event_cluster_manifest_result_sha256(
@@ -7076,9 +7034,9 @@ def _final_synthesis_manifest_count_mismatches(
         )
     if not uses_compact_coverage:
         _add_expected_count(
-        expected_counts,
-        "training_eligible_available_record_count",
-        manifest.get("training_eligible_available_record_count"),
+            expected_counts,
+            "training_eligible_available_record_count",
+            manifest.get("training_eligible_available_record_count"),
         )
     if not uses_compact_coverage and "training_eligible_available_record_ids" in manifest:
         _add_expected_count(
@@ -7088,9 +7046,9 @@ def _final_synthesis_manifest_count_mismatches(
         )
     if not uses_compact_coverage:
         _add_expected_count(
-        expected_counts,
-        "swept_record_count",
-        manifest.get("swept_record_count"),
+            expected_counts,
+            "swept_record_count",
+            manifest.get("swept_record_count"),
         )
     if not uses_compact_coverage and "swept_record_ids" in manifest:
         _add_expected_count(
@@ -7816,6 +7774,16 @@ def memory_search_records(
     path_type: Annotated[str | None, typer.Option("--path-type")] = None,
     response_class: Annotated[str | None, typer.Option("--response-class")] = None,
     confidence_label: Annotated[str | None, typer.Option("--confidence-label")] = None,
+    memory_lane: Annotated[list[str] | None, typer.Option("--memory-lane")] = None,
+    evidence_polarity: Annotated[
+        list[str] | None,
+        typer.Option("--evidence-polarity"),
+    ] = None,
+    label_quality: Annotated[list[str] | None, typer.Option("--label-quality")] = None,
+    routing_disposition: Annotated[
+        list[str] | None,
+        typer.Option("--routing-disposition"),
+    ] = None,
     trade_date_from: Annotated[str | None, typer.Option("--trade-date-from")] = None,
     trade_date_to: Annotated[str | None, typer.Option("--trade-date-to")] = None,
     available_from_as_of: Annotated[
@@ -7837,13 +7805,13 @@ def memory_search_records(
         )
         raise typer.Exit(code=1)
     training_eligible = True if training_eligible_only else False if ineligible_only else None
-    record_type_filter: str | tuple[str, ...] | None
-    if record_type is None or not record_type:
-        record_type_filter = None
-    elif len(record_type) == 1:
-        record_type_filter = record_type[0]
-    else:
-        record_type_filter = tuple(record_type)
+    record_type_filter = _multi_value_filter(record_type)
+    memory_lane_filter = _multi_value_filter(memory_lane)
+    evidence_polarity_filter = _multi_value_filter(evidence_polarity)
+    label_quality_filter = _multi_value_filter(label_quality)
+    routing_disposition_filter = _multi_value_filter(routing_disposition)
+    if ineligible_only and routing_disposition_filter is None:
+        routing_disposition_filter = ("AUDIT", "QUARANTINED")
     available_from = _parse_cutoff(available_from_as_of) if available_from_as_of is not None else None
     settings = load_settings()
     store = LocalRetrievalStore(settings.project_root)
@@ -7857,6 +7825,10 @@ def memory_search_records(
         "path_type": path_type,
         "response_class": response_class,
         "confidence_label": confidence_label,
+        "memory_lane": memory_lane_filter,
+        "evidence_polarity": evidence_polarity_filter,
+        "label_quality": label_quality_filter,
+        "routing_disposition": routing_disposition_filter,
         "trade_date_from": trade_date_from,
         "trade_date_to": trade_date_to,
         "available_from_as_of": available_from_as_of,
@@ -7880,6 +7852,10 @@ def memory_search_records(
             training_eligible=training_eligible,
             evidence_phase=evidence_phase,
             confidence_label=confidence_label,
+            memory_lane=memory_lane_filter,
+            evidence_polarity=evidence_polarity_filter,
+            label_quality=label_quality_filter,
+            routing_disposition=routing_disposition_filter,
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -7902,6 +7878,16 @@ def memory_search_records(
             records.append(record.model_dump(mode="json"))
         payload["records"] = records
     _echo(payload)
+
+
+def _multi_value_filter(
+    values: list[str] | None,
+) -> str | tuple[str, ...] | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return tuple(values)
 
 
 @memory_app.command("stats")

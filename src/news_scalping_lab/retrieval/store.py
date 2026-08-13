@@ -14,8 +14,16 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_hashes,
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import BrainRecordEnvelope
-from news_scalping_lab.records.routing import record_memory_lanes
+from news_scalping_lab.records.routing import (
+    POLARITY_CLASSIFIER_VERSION,
+    record_routing_metadata,
+)
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import (
     VECTOR_DIMENSIONS,
@@ -25,9 +33,14 @@ from news_scalping_lab.retrieval.embedding import (
     text_terms,
 )
 from news_scalping_lab.storage import ResearchStore
-from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, write_json
+from news_scalping_lab.utils import (
+    is_available_as_of,
+    read_json,
+    sha256_text,
+    write_json,
+)
 
-VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v2"
+VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v3"
 VECTOR_INDEX_RECORDS = "episodes.jsonl"
 VECTOR_INDEX_BRAIN_RECORDS = "brain_records.jsonl"
 VECTOR_INDEX_MANIFEST = "manifest.json"
@@ -187,6 +200,9 @@ class LocalRetrievalStore:
         training_eligible: bool | None = None,
         evidence_phase: str | None = None,
         confidence_label: str | None = None,
+        evidence_polarity: str | tuple[str, ...] | list[str] | set[str] | None = None,
+        label_quality: str | tuple[str, ...] | list[str] | set[str] | None = None,
+        routing_disposition: str | tuple[str, ...] | list[str] | set[str] | None = None,
     ) -> list[str]:
         if self.force_empty:
             return []
@@ -200,37 +216,26 @@ class LocalRetrievalStore:
             record
             for record in records
             if _matches_optional_string_filter(record.get("record_type"), record_type)
-            and (
-                training_target is None
-                or record.get("training_target") == training_target
-            )
+            and (training_target is None or record.get("training_target") == training_target)
             and _date_in_range(
                 str(record.get("trade_date", "")),
                 trade_date_from=trade_date_from,
                 trade_date_to=trade_date_to,
             )
-            and (
-                available_from is None
-                or _datetime_leq(str(record.get("available_from", "")), available_from)
-            )
+            and (available_from is None or _datetime_leq(str(record.get("available_from", "")), available_from))
             and _matches_index_filter(record, "ticker", ticker)
             and _matches_index_filter(record, "company_name", company_name)
             and _matches_index_filter(record, "theme_id", theme_id)
             and _matches_index_filter(record, "path_type", path_type)
             and _matches_index_filter(record, "response_class", response_class)
             and _matches_collection_filter(record.get("memory_lanes"), memory_lane)
-            and (
-                training_eligible is None
-                or record.get("training_eligible") is training_eligible
-            )
-            and (
-                evidence_phase is None
-                or record.get("evidence_phase") == evidence_phase
-            )
-            and (
-                confidence_label is None
-                or record.get("confidence_label") == confidence_label
-            )
+            and (training_eligible is None or record.get("training_eligible") is training_eligible)
+            and (evidence_phase is None or record.get("evidence_phase") == evidence_phase)
+            and (confidence_label is None or record.get("confidence_label") == confidence_label)
+            and _matches_optional_string_filter(record.get("evidence_polarity"), evidence_polarity)
+            and _matches_optional_string_filter(record.get("label_quality"), label_quality)
+            and _matches_optional_string_filter(record.get("routing_disposition"), routing_disposition)
+            and (routing_disposition is not None or record.get("routing_disposition") == "REASONING")
         ]
         query_terms = text_terms(query)
         query_vector = self.embedding_provider.embed_texts([query])[0]
@@ -250,9 +255,7 @@ class LocalRetrievalStore:
 
     def get_available_as_of(self, cutoff_at: datetime) -> list[ResearchEpisode]:
         return [
-            episode
-            for episode in self.store.list_accepted()
-            if is_available_as_of(episode.available_from, cutoff_at)
+            episode for episode in self.store.list_accepted() if is_available_as_of(episode.available_from, cutoff_at)
         ]
 
     def get_records_available_as_of(self, cutoff_at: datetime) -> list[BrainRecordEnvelope]:
@@ -293,6 +296,7 @@ class LocalRetrievalStore:
         for record, text, vector in zip(brain_records, record_texts, record_vectors, strict=True):
             payload = record.payload
             filter_values = _brain_record_filter_values(payload)
+            routing = record_routing_metadata(record)
             indexed_brain_records.append(
                 {
                     "record_id": record.record_id,
@@ -314,7 +318,14 @@ class LocalRetrievalStore:
                     "theme_ids": filter_values["theme_id"],
                     "path_types": filter_values["path_type"],
                     "response_classes": filter_values["response_class"],
-                    "memory_lanes": sorted(record_memory_lanes(record)),
+                    "evidence_polarity": routing.evidence_polarity,
+                    "label_quality": routing.label_quality,
+                    "routing_disposition": routing.routing_disposition,
+                    "polarity_classifier_version": routing.polarity_classifier_version,
+                    "threshold_source": routing.threshold_source,
+                    "threshold_role": routing.threshold_role,
+                    "memory_lanes": routing.memory_lanes,
+                    "provenance_source_ids": routing.provenance_source_ids,
                     "text_sha256": sha256_text(text),
                     "terms": sorted(text_terms(text)),
                     "embedding": vector,
@@ -325,14 +336,12 @@ class LocalRetrievalStore:
         )
         self.records_path.write_text(episode_index_payload, encoding="utf-8")
         brain_record_payload = "".join(
-            json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
-            for record in indexed_brain_records
+            json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in indexed_brain_records
         )
         self.brain_records_path.write_text(brain_record_payload, encoding="utf-8")
         accepted_hashes = self.store.accepted_hashes()
-        brain_record_hashes = {
-            record.record_id: record.normalized_payload_sha256 for record in brain_records
-        }
+        brain_record_hashes = brain_record_envelope_hashes(brain_records)
+        routing_metadata_sha256 = brain_record_routing_root_sha256(brain_records)
         manifest = {
             "schema_version": VECTOR_INDEX_SCHEMA_VERSION,
             "embedding_method": self.embedding_provider.embedding_method,
@@ -343,6 +352,9 @@ class LocalRetrievalStore:
             "accepted_hashes": accepted_hashes,
             "accepted_episode_store_findings": accepted_store_findings,
             "brain_record_hashes": brain_record_hashes,
+            "brain_record_hash_kind": "canonical_full_envelope_sha256",
+            "routing_classifier_version": POLARITY_CLASSIFIER_VERSION,
+            "routing_metadata_sha256": routing_metadata_sha256,
             "records_file": VECTOR_INDEX_RECORDS,
             "records_sha256": sha256_text(episode_index_payload),
             "brain_records_file": VECTOR_INDEX_BRAIN_RECORDS,
@@ -361,9 +373,7 @@ class LocalRetrievalStore:
         dimensions = _inspection_dimensions(inspection)
         try:
             records = [
-                json.loads(line)
-                for line in self.records_path.read_text(encoding="utf-8").splitlines()
-                if line.strip()
+                json.loads(line) for line in self.records_path.read_text(encoding="utf-8").splitlines() if line.strip()
             ]
         except (OSError, json.JSONDecodeError):
             return None
@@ -384,9 +394,7 @@ class LocalRetrievalStore:
             ]
         except (OSError, json.JSONDecodeError):
             return None
-        if not all(
-            _is_brain_index_record(record, dimensions=dimensions) for record in records
-        ):
+        if not all(_is_brain_index_record(record, dimensions=dimensions) for record in records):
             return None
         return records
 
@@ -464,30 +472,34 @@ def inspect_vector_index(root: Path) -> dict[str, object]:
     )
     try:
         records_payload = records_path.read_text(encoding="utf-8")
-        brain_records_payload = (
-            brain_records_path.read_text(encoding="utf-8")
-            if brain_records_path.exists()
-            else ""
-        )
+        brain_records_payload = brain_records_path.read_text(encoding="utf-8") if brain_records_path.exists() else ""
     except OSError:
         return {**base, "status": "invalid"}
     accepted_hashes = ResearchStore(root).accepted_hashes()
-    brain_record_hashes = {
-        record.record_id: record.normalized_payload_sha256
-        for record in BrainRecordStore(root).list_records()
-    }
+    source_brain_records = BrainRecordStore(root).list_records()
+    brain_record_hashes = brain_record_envelope_hashes(source_brain_records)
+    routing_metadata_sha256 = brain_record_routing_root_sha256(source_brain_records)
     if manifest.get("schema_version") != VECTOR_INDEX_SCHEMA_VERSION:
         return {**base, "status": "invalid"}
+    if manifest.get("brain_record_hash_kind") != "canonical_full_envelope_sha256":
+        return {**base, "status": "invalid"}
+    if manifest.get("routing_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+        return {**base, "status": "stale"}
+    if manifest.get("routing_metadata_sha256") != routing_metadata_sha256:
+        return {**base, "status": "stale"}
     if manifest.get("records_sha256") != sha256_text(records_payload):
         return {**base, "status": "invalid"}
-    if manifest.get("brain_records_sha256", sha256_text("")) != sha256_text(
-        brain_records_payload
-    ):
+    if manifest.get("brain_records_sha256", sha256_text("")) != sha256_text(brain_records_payload):
         return {**base, "status": "invalid"}
     if manifest.get("accepted_hashes") != accepted_hashes:
         return {**base, "status": "stale"}
     if manifest.get("brain_record_hashes", {}) != brain_record_hashes:
         return {**base, "status": "stale"}
+    if not _indexed_routing_matches_source(
+        brain_records_payload,
+        source_brain_records,
+    ):
+        return {**base, "status": "invalid"}
     return {**base, "status": "current"}
 
 
@@ -519,6 +531,68 @@ def _brain_record_text(record: BrainRecordEnvelope) -> str:
             payload_text,
         ]
     )
+
+
+def _brain_record_envelope_sha256(record: BrainRecordEnvelope) -> str:
+    return brain_record_envelope_sha256(record)
+
+
+def _brain_record_envelope_hashes(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, str]:
+    return brain_record_envelope_hashes(records)
+
+
+def _routing_metadata_root_sha256(records: list[BrainRecordEnvelope]) -> str:
+    return brain_record_routing_root_sha256(records)
+
+
+def _indexed_routing_matches_source(
+    payload: str,
+    source_records: list[BrainRecordEnvelope],
+) -> bool:
+    try:
+        indexed_rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
+    except json.JSONDecodeError:
+        return False
+    if not all(isinstance(row, dict) for row in indexed_rows):
+        return False
+    indexed = {
+        str(row.get("record_id")): _indexed_routing_projection(row)
+        for row in indexed_rows
+        if isinstance(row.get("record_id"), str)
+    }
+    if len(indexed) != len(indexed_rows):
+        return False
+    expected = {
+        record.record_id: _routing_projection(record_routing_metadata(record).model_dump(mode="json"))
+        for record in source_records
+    }
+    return indexed == expected
+
+
+def _indexed_routing_projection(row: dict[str, Any]) -> dict[str, Any]:
+    return _routing_projection(row)
+
+
+def _routing_projection(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: row.get(key)
+        for key in (
+            "record_id",
+            "record_type",
+            "available_from",
+            "evidence_polarity",
+            "training_eligible",
+            "label_quality",
+            "routing_disposition",
+            "memory_lanes",
+            "polarity_classifier_version",
+            "threshold_source",
+            "threshold_role",
+            "provenance_source_ids",
+        )
+    }
 
 
 def _semantic_score(query_terms: set[str], document: str) -> float:
@@ -578,10 +652,20 @@ def _is_brain_index_record(value: object, *, dimensions: int) -> bool:
         return False
     if not isinstance(value.get("record_type"), str):
         return False
-    memory_lanes = value.get("memory_lanes")
-    if not isinstance(memory_lanes, list) or not all(
-        isinstance(lane, str) for lane in memory_lanes
+    for field in (
+        "evidence_polarity",
+        "label_quality",
+        "routing_disposition",
+        "polarity_classifier_version",
+        "threshold_source",
+        "threshold_role",
     ):
+        if not isinstance(value.get(field), str):
+            return False
+    if value.get("polarity_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+        return False
+    memory_lanes = value.get("memory_lanes")
+    if not isinstance(memory_lanes, list) or not all(isinstance(lane, str) for lane in memory_lanes):
         return False
     terms = value.get("terms")
     embedding = value.get("embedding")
@@ -604,9 +688,7 @@ def _vector_dimensions(
             if dimensions is None:
                 dimensions = len(vector)
             elif len(vector) != dimensions:
-                raise ValueError(
-                    f"embedding dimensions mismatch: expected {dimensions}, got {len(vector)}"
-                )
+                raise ValueError(f"embedding dimensions mismatch: expected {dimensions}, got {len(vector)}")
     return dimensions or VECTOR_DIMENSIONS
 
 

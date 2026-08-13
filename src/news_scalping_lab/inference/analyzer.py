@@ -92,9 +92,15 @@ from news_scalping_lab.prices.base import (
     PriceSource,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.records.models import CANDIDATE_ERROR_RECORD_TYPES
 from news_scalping_lab.records.routing import (
+    COUNTEREXAMPLES_LANE,
     MEMORY_RETRIEVAL_LANES,
     NEWSLESS_OR_UNEXPLAINED_LANE,
+    RecordEvidencePolarity,
+    RecordRoutingDisposition,
+    record_is_positive_support,
+    record_routing_metadata,
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
@@ -254,9 +260,7 @@ class DailyAnalyzer:
             embedding_provider=self.llm,
             embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
             similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
-            max_semantic_variants=(
-                self.settings.limits.event_cluster_max_semantic_variants
-            ),
+            max_semantic_variants=(self.settings.limits.event_cluster_max_semantic_variants),
         )
         clustering_result_sha256 = sha256_text(
             canonical_json(
@@ -268,9 +272,7 @@ class DailyAnalyzer:
                         {
                             "cluster_id": cluster.cluster_id,
                             "disposition": cluster.disposition,
-                            "row_numbers": [
-                                item.row_number for item in cluster.members
-                            ],
+                            "row_numbers": [item.row_number for item in cluster.members],
                             "event_ids": [item.event_id for item in cluster.members],
                             "source_ids": [item.source_id for item in cluster.members],
                             "signature": cluster.cluster_signature_sha256,
@@ -315,12 +317,16 @@ class DailyAnalyzer:
         raw_retrieved_record_ids = self._search_memory_records(
             query=" ".join([*web_queries, *first_pass_mechanisms]),
             limit=20,
+            filters={
+                "training_eligible": True,
+                "evidence_polarity": RecordEvidencePolarity.POSITIVE.value,
+                "label_quality": "verified",
+                "routing_disposition": RecordRoutingDisposition.REASONING.value,
+            },
         )
-        retrieved_record_ids, excluded_retrieved_record_ids = (
-            self._filter_retrieved_record_ids_available_as_of(
-                raw_retrieved_record_ids,
-                cutoff_at=cutoff_at,
-            )
+        retrieved_record_ids, excluded_retrieved_record_ids = self._filter_retrieved_record_ids_available_as_of(
+            raw_retrieved_record_ids,
+            cutoff_at=cutoff_at,
         )
         manifest = ContextAssembler(
             self.root,
@@ -351,9 +357,7 @@ class DailyAnalyzer:
             prompt_sha256=open_world_prompt_hash,
             cutoff_at=cutoff_at,
         )
-        manifest.token_counts["open_world_first_analysis_prompt"] = (
-            open_world_prompt_tokens
-        )
+        manifest.token_counts["open_world_first_analysis_prompt"] = open_world_prompt_tokens
         self._write_row_disposition_artifact(
             full_items=full_batch.items,
             included_items=batch.items,
@@ -418,31 +422,21 @@ class DailyAnalyzer:
         manifest.accepted_record_count = sweep.accepted_record_count
         manifest.available_record_count = sweep.available_record_count
         manifest.available_record_ids = sweep.available_record_ids
-        manifest.training_eligible_available_record_count = (
-            sweep.training_eligible_available_record_count
-        )
-        manifest.training_eligible_available_record_ids = (
-            sweep.training_eligible_available_record_ids
-        )
+        manifest.training_eligible_available_record_count = sweep.training_eligible_available_record_count
+        manifest.training_eligible_available_record_ids = sweep.training_eligible_available_record_ids
         manifest.swept_record_count = len(sweep.swept_record_ids)
         manifest.swept_record_ids = sweep.swept_record_ids
-        manifest.memory_coverage_manifest_artifact = (
-            sweep.memory_coverage_manifest_path
-        )
-        manifest.memory_coverage_manifest_sha256 = (
-            sweep.memory_coverage_manifest_sha256
-        )
+        manifest.memory_coverage_manifest_artifact = sweep.memory_coverage_manifest_path
+        manifest.memory_coverage_manifest_sha256 = sweep.memory_coverage_manifest_sha256
         manifest.memory_coverage_corpus_sha256 = sweep.corpus_manifest_sha256
         manifest.memory_coverage_cache_hit = sweep.memory_coverage_cache_hit
         manifest.memory_sweep_artifacts = sweep.artifact_paths
         manifest.record_sweep_artifacts = sweep.record_artifact_paths
         manifest.memory_sweep_artifact_hashes = {
-            artifact_path: file_sha256(self.root / artifact_path)
-            for artifact_path in sweep.artifact_paths
+            artifact_path: file_sha256(self.root / artifact_path) for artifact_path in sweep.artifact_paths
         }
         manifest.record_sweep_artifact_hashes = {
-            artifact_path: file_sha256(self.root / artifact_path)
-            for artifact_path in sweep.record_artifact_paths
+            artifact_path: file_sha256(self.root / artifact_path) for artifact_path in sweep.record_artifact_paths
         }
         manifest.memory_sweep_shard_count = sweep.shard_count
         manifest.record_sweep_shard_count = sweep.record_shard_count
@@ -455,13 +449,11 @@ class DailyAnalyzer:
                 manifest.errors.append(error)
         self._fail_if_exhaustive_coverage_incomplete(manifest)
         self._fail_if_memory_coverage_incomplete(manifest)
-        _semantic_plan, semantic_prompt_hash, semantic_prompt_tokens = (
-            await self._run_semantic_retrieval_plan(
-                news_texts=news_texts,
-                first_pass_mechanisms=first_pass_mechanisms,
-                manifest=manifest,
-                cutoff_at=cutoff_at,
-            )
+        _semantic_plan, semantic_prompt_hash, semantic_prompt_tokens = await self._run_semantic_retrieval_plan(
+            news_texts=news_texts,
+            first_pass_mechanisms=first_pass_mechanisms,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
         )
         self._write_semantic_retrieval_artifact(
             manifest=manifest,
@@ -473,17 +465,16 @@ class DailyAnalyzer:
         )
         self._refresh_counterexample_record_ids_from_retrieval(manifest)
         manifest.token_counts["semantic_retrieval_plan_prompt"] = semantic_prompt_tokens
-        _candidate_expansion, expansion_prompt_hash, expansion_prompt_tokens = (
-            await self._run_candidate_expansion(
-                news_texts=news_texts,
-                first_pass_mechanisms=first_pass_mechanisms,
-                manifest=manifest,
-                cutoff_at=cutoff_at,
-            )
+        _candidate_expansion, expansion_prompt_hash, expansion_prompt_tokens = await self._run_candidate_expansion(
+            news_texts=news_texts,
+            first_pass_mechanisms=first_pass_mechanisms,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
         )
         manifest.token_counts["candidate_expansion_prompt"] = expansion_prompt_tokens
 
         prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(manifest)
+        positive_record_ids, negative_record_ids = self._prediction_record_polarities(prediction_retrieved_record_ids)
         prediction, blind_prompt_hash, blind_prompt_tokens = await self._generate_prediction(
             trade_date=trade_date,
             cutoff_at=cutoff_at,
@@ -491,8 +482,8 @@ class DailyAnalyzer:
             event_ids=event_ids,
             retrieved_episode_ids=retrieved_ids,
             counterexample_episode_ids=manifest.counterexample_episode_ids,
-            retrieved_record_ids=prediction_retrieved_record_ids,
-            counterexample_record_ids=manifest.counterexample_record_ids,
+            retrieved_record_ids=positive_record_ids,
+            counterexample_record_ids=negative_record_ids,
             excluded_source_ids=[],
             first_pass_mechanisms=first_pass_mechanisms,
             context_payload={
@@ -512,75 +503,45 @@ class DailyAnalyzer:
                 "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
                 "counterexample_record_ids": manifest.counterexample_record_ids,
                 "prediction_retrieved_record_ids": prediction_retrieved_record_ids,
+                "positive_record_ids": positive_record_ids,
+                "negative_record_ids": negative_record_ids,
                 "accepted_record_count": manifest.accepted_record_count,
                 "available_record_count": manifest.available_record_count,
-                "training_eligible_available_record_count": (
-                    manifest.training_eligible_available_record_count
-                ),
-                "memory_coverage_manifest": self._memory_coverage_context(
-                    manifest
-                ),
+                "training_eligible_available_record_count": (manifest.training_eligible_available_record_count),
+                "memory_coverage_manifest": self._memory_coverage_context(manifest),
                 "event_cluster_artifact": manifest.event_cluster_artifact,
                 "event_cluster_summary": manifest.event_cluster_summary,
-                "open_world_first_analysis_artifact": (
-                    manifest.open_world_first_analysis_artifact
-                ),
-                "open_world_first_analysis_summary": (
-                    manifest.open_world_first_analysis_summary
-                ),
+                "open_world_first_analysis_artifact": (manifest.open_world_first_analysis_artifact),
+                "open_world_first_analysis_summary": (manifest.open_world_first_analysis_summary),
                 "news_novelty_review_artifact": manifest.news_novelty_review_artifact,
                 "news_novelty_review_summary": manifest.news_novelty_review_summary,
-                "semantic_retrieval_plan_artifact": (
-                    manifest.semantic_retrieval_plan_artifact
-                ),
+                "semantic_retrieval_plan_artifact": (manifest.semantic_retrieval_plan_artifact),
                 "semantic_retrieval_artifact": manifest.semantic_retrieval_artifact,
                 "semantic_retrieval_episode_ids": manifest.semantic_retrieval_episode_ids,
-                "excluded_semantic_retrieval_episode_ids": (
-                    manifest.excluded_semantic_retrieval_episode_ids
-                ),
+                "excluded_semantic_retrieval_episode_ids": (manifest.excluded_semantic_retrieval_episode_ids),
                 "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
-                "excluded_semantic_retrieval_record_ids": (
-                    manifest.excluded_semantic_retrieval_record_ids
-                ),
+                "excluded_semantic_retrieval_record_ids": (manifest.excluded_semantic_retrieval_record_ids),
                 "semantic_retrieval_summary": manifest.semantic_retrieval_summary,
-                "semantic_cluster_coverage_artifact": (
-                    manifest.semantic_cluster_coverage_artifact
-                ),
+                "semantic_cluster_coverage_artifact": (manifest.semantic_cluster_coverage_artifact),
                 "semantic_cluster_coverage_ids": manifest.semantic_cluster_coverage_ids,
-                "semantic_cluster_coverage_missing_ids": (
-                    manifest.semantic_cluster_coverage_missing_ids
-                ),
+                "semantic_cluster_coverage_missing_ids": (manifest.semantic_cluster_coverage_missing_ids),
                 "semantic_cluster_coverage_promoted_record_ids": (
                     manifest.semantic_cluster_coverage_promoted_record_ids
                 ),
-                "semantic_cluster_coverage_summary": (
-                    manifest.semantic_cluster_coverage_summary
-                ),
+                "semantic_cluster_coverage_summary": (manifest.semantic_cluster_coverage_summary),
                 "candidate_expansion_artifact": manifest.candidate_expansion_artifact,
                 "candidate_expansion_summary": manifest.candidate_expansion_summary,
-                "candidate_expansion_cluster_coverage_ids": (
-                    manifest.candidate_expansion_cluster_coverage_ids
-                ),
-                "candidate_expansion_audit_only_cluster_ids": (
-                    manifest.candidate_expansion_audit_only_cluster_ids
-                ),
-                "candidate_expansion_uncovered_cluster_ids": (
-                    manifest.candidate_expansion_uncovered_cluster_ids
-                ),
+                "candidate_expansion_cluster_coverage_ids": (manifest.candidate_expansion_cluster_coverage_ids),
+                "candidate_expansion_audit_only_cluster_ids": (manifest.candidate_expansion_audit_only_cluster_ids),
+                "candidate_expansion_uncovered_cluster_ids": (manifest.candidate_expansion_uncovered_cluster_ids),
                 "web_queries": manifest.web_queries,
                 "web_sources": manifest.web_sources,
                 "excluded_web_source_ids": manifest.excluded_web_source_ids,
                 "web_source_artifact": manifest.web_source_artifact,
                 "candidate_web_source_ids": manifest.candidate_web_source_ids,
-                "candidate_verification_artifact": (
-                    manifest.candidate_verification_artifact
-                ),
-                "candidate_verification_summary": (
-                    manifest.candidate_verification_summary
-                ),
-                "excluded_candidate_web_source_ids": (
-                    manifest.excluded_candidate_web_source_ids
-                ),
+                "candidate_verification_artifact": (manifest.candidate_verification_artifact),
+                "candidate_verification_summary": (manifest.candidate_verification_summary),
+                "excluded_candidate_web_source_ids": (manifest.excluded_candidate_web_source_ids),
                 "candidate_web_check_artifact": manifest.candidate_web_check_artifact,
             },
         )
@@ -611,15 +572,12 @@ class DailyAnalyzer:
             "required_attack_check_count": len(red_team.artifact.required_attack_checks),
             "finding_count": len(red_team.artifact.candidate_findings),
             "all_findings_passed_to_synthesis": all(
-                finding.passed_to_synthesis
-                and all(check.passed_to_synthesis for check in finding.attack_checks)
+                finding.passed_to_synthesis and all(check.passed_to_synthesis for check in finding.attack_checks)
                 for finding in red_team.artifact.candidate_findings
             ),
         }
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
-        company_delta_result = CompanyMemoryStore(self.root).apply_record_deltas(
-            as_of=cutoff_at
-        )
+        company_delta_result = CompanyMemoryStore(self.root).apply_record_deltas(as_of=cutoff_at)
         if company_delta_result.skipped_invalid_record_ids:
             manifest.errors.append(
                 "invalid company_memory_delta records skipped: "
@@ -633,20 +591,18 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
-        prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = (
-            await self._run_final_synthesis(
-                prediction=prediction,
-                manifest=manifest,
-                news_texts=news_texts,
-                event_ids=event_ids,
-                retrieved_episode_ids=retrieved_ids,
-                excluded_source_ids=[],
-                first_pass_mechanisms=first_pass_mechanisms,
-                red_team_artifact=red_team.artifact,
-                d_minus_one_market_data=d_minus_one_market_data,
-                company_memory_context=company_memory_context,
-                market_memory_context=market_memory_context,
-            )
+        prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = await self._run_final_synthesis(
+            prediction=prediction,
+            manifest=manifest,
+            news_texts=news_texts,
+            event_ids=event_ids,
+            retrieved_episode_ids=retrieved_ids,
+            excluded_source_ids=[],
+            first_pass_mechanisms=first_pass_mechanisms,
+            red_team_artifact=red_team.artifact,
+            d_minus_one_market_data=d_minus_one_market_data,
+            company_memory_context=company_memory_context,
+            market_memory_context=market_memory_context,
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
         self._write_source_ledger_artifact(
@@ -726,11 +682,7 @@ class DailyAnalyzer:
         prompt_hashes: list[str] = []
         token_count = 0
         for batch_index, cluster_batch in enumerate(cluster_batches, start=1):
-            news_texts = [
-                member_news
-                for cluster in cluster_batch
-                for member_news in cluster.member_news
-            ]
+            news_texts = [member_news for cluster in cluster_batch for member_news in cluster.member_news]
             event_ids = [event_id for cluster in cluster_batch for event_id in cluster.event_ids]
             cluster_ids = [cluster.cluster_id for cluster in cluster_batch]
             prompt = self._build_open_world_first_analysis_prompt(
@@ -738,9 +690,7 @@ class DailyAnalyzer:
                 cutoff_at=cutoff_at,
             )
             if len(prompt) > self.settings.limits.open_world_max_prompt_chars:
-                raise OpenWorldCoverageError(
-                    "open-world prompt exceeds the configured hard character budget"
-                )
+                raise OpenWorldCoverageError("open-world prompt exceeds the configured hard character budget")
             prompt_sha256 = sha256_text(prompt)
             prompt_hashes.append(prompt_sha256)
             token_count += count_provider_tokens(self.llm, prompt)
@@ -766,9 +716,7 @@ class DailyAnalyzer:
                         "analyzed_cluster_ids": cluster_ids,
                         "uncovered_cluster_ids": [],
                         "analysis_batch_count": 1,
-                        "cluster_findings": self._fallback_cluster_findings(
-                            cluster_batch
-                        ),
+                        "cluster_findings": self._fallback_cluster_findings(cluster_batch),
                     }
                 )
             analyses.append(
@@ -826,9 +774,7 @@ class DailyAnalyzer:
                 )
             )
             if single_prompt_chars > max_chars:
-                raise OpenWorldCoverageError(
-                    "one event cluster exceeds the bounded open-world prompt budget"
-                )
+                raise OpenWorldCoverageError("one event cluster exceeds the bounded open-world prompt budget")
             tentative = [*current, cluster]
             tentative_chars = len(
                 self._build_open_world_first_analysis_prompt(
@@ -890,11 +836,7 @@ class DailyAnalyzer:
             potential_sectors=merged_list("potential_sectors"),
             beneficiary_investigation_questions=merged_list("beneficiary_investigation_questions"),
             uncertainties=merged_list("uncertainties"),
-            cluster_findings=[
-                finding
-                for analysis in analyses
-                for finding in analysis.cluster_findings
-            ],
+            cluster_findings=[finding for analysis in analyses for finding in analysis.cluster_findings],
             notes=merged_list("notes"),
         )
 
@@ -966,27 +908,19 @@ class DailyAnalyzer:
             or analysis.uncovered_cluster_ids
             or analysis.analysis_batch_count != 1
         ):
-            raise OpenWorldCoverageError(
-                "open-world Pass 0 cluster coverage does not match the dispatched batch"
-            )
+            raise OpenWorldCoverageError("open-world Pass 0 cluster coverage does not match the dispatched batch")
 
         def cleaned(values: list[str]) -> list[str]:
-            return _unique_preserving_order(
-                [" ".join(value.split()) for value in values if value.strip()]
-            )
+            return _unique_preserving_order([" ".join(value.split()) for value in values if value.strip()])
 
         event_clusters = cleaned(analysis.event_clusters)
         mechanisms = cleaned(analysis.mechanisms)
         uncertainties = cleaned(analysis.uncertainties)
         finding_ids = [finding.cluster_id for finding in analysis.cluster_findings]
         if finding_ids != cluster_ids:
-            raise OpenWorldCoverageError(
-                "open-world Pass 0 cluster findings do not match the dispatched batch"
-            )
+            raise OpenWorldCoverageError("open-world Pass 0 cluster findings do not match the dispatched batch")
         if cluster_ids and not event_clusters:
-            raise OpenWorldCoverageError(
-                "open-world Pass 0 omitted event-cluster summaries for a material batch"
-            )
+            raise OpenWorldCoverageError("open-world Pass 0 omitted event-cluster summaries for a material batch")
         if cluster_ids and not mechanisms and not uncertainties:
             raise OpenWorldCoverageError(
                 "open-world Pass 0 omitted both mechanisms and uncertainties for a material batch"
@@ -1008,17 +942,11 @@ class DailyAnalyzer:
                 "direct_company_events": cleaned(analysis.direct_company_events),
                 "policy_industry_events": cleaned(analysis.policy_industry_events),
                 "mechanisms": mechanisms,
-                "beneficiary_transmission_paths": cleaned(
-                    analysis.beneficiary_transmission_paths
-                ),
-                "narrative_conversion_points": cleaned(
-                    analysis.narrative_conversion_points
-                ),
+                "beneficiary_transmission_paths": cleaned(analysis.beneficiary_transmission_paths),
+                "narrative_conversion_points": cleaned(analysis.narrative_conversion_points),
                 "direct_candidates": cleaned(analysis.direct_candidates),
                 "potential_sectors": cleaned(analysis.potential_sectors),
-                "beneficiary_investigation_questions": cleaned(
-                    analysis.beneficiary_investigation_questions
-                ),
+                "beneficiary_investigation_questions": cleaned(analysis.beneficiary_investigation_questions),
                 "uncertainties": uncertainties,
             }
         )
@@ -1043,8 +971,7 @@ class DailyAnalyzer:
             for mention in mentions
         ] or ["no direct company mention extracted before web/company verification"]
         transmission_paths = [
-            f"{mechanism} -> direct, indirect, and market-memory beneficiary investigation"
-            for mechanism in mechanisms
+            f"{mechanism} -> direct, indirect, and market-memory beneficiary investigation" for mechanism in mechanisms
         ]
         return OpenWorldFirstAnalysis(
             run_id="RUN-open-world-first-analysis-pending",
@@ -1064,9 +991,7 @@ class DailyAnalyzer:
                 "current evidence becomes market narrative only if cutoff-safe sources support novelty and breadth"
             ],
             direct_candidates=mentions or ["UNVERIFIED_DIRECT_CANDIDATE"],
-            potential_sectors=[
-                "open-world sector hypothesis to be named by LLM and verified by sources"
-            ],
+            potential_sectors=["open-world sector hypothesis to be named by LLM and verified by sources"],
             beneficiary_investigation_questions=[
                 "Which listed entities have direct, supply-chain, infrastructure, regional, or market-memory exposure?",
                 "Which candidates fail directness, novelty, dilution, or D-1 absorption checks?",
@@ -1076,9 +1001,7 @@ class DailyAnalyzer:
                 "economic ownership and customer attribution require cutoff-safe evidence",
                 "D-1 market absorption must be checked without D-day prices",
             ],
-            notes=[
-                "Fallback Pass 0 used current news only and did not inspect past research."
-            ],
+            notes=["Fallback Pass 0 used current news only and did not inspect past research."],
         )
 
     def _fallback_cluster_findings(
@@ -1098,9 +1021,7 @@ class DailyAnalyzer:
                     event_summary=cluster.representative_text.splitlines()[0][:240],
                     mechanisms=mechanisms,
                     direct_candidates=mentions,
-                    uncertainties=[
-                        "fallback cluster semantics require cutoff-safe provider verification"
-                    ],
+                    uncertainties=["fallback cluster semantics require cutoff-safe provider verification"],
                 )
             )
         return findings
@@ -1144,14 +1065,10 @@ class DailyAnalyzer:
             "policy_industry_event_count": len(normalized.policy_industry_events),
             "mechanism_count": len(normalized.mechanisms),
             "transmission_path_count": len(normalized.beneficiary_transmission_paths),
-            "narrative_conversion_point_count": len(
-                normalized.narrative_conversion_points
-            ),
+            "narrative_conversion_point_count": len(normalized.narrative_conversion_points),
             "direct_candidate_count": len(normalized.direct_candidates),
             "potential_sector_count": len(normalized.potential_sectors),
-            "investigation_question_count": len(
-                normalized.beneficiary_investigation_questions
-            ),
+            "investigation_question_count": len(normalized.beneficiary_investigation_questions),
             "uncertainty_count": len(normalized.uncertainties),
         }
 
@@ -1208,9 +1125,7 @@ class DailyAnalyzer:
                     "row_number": item.row_number,
                     "event_id": item.event_id,
                     "published_at": item.published_at.isoformat(),
-                    "collected_at": (
-                        item.collected_at.isoformat() if item.collected_at is not None else None
-                    ),
+                    "collected_at": (item.collected_at.isoformat() if item.collected_at is not None else None),
                     "collected_at_present": item.collected_at is not None,
                     "news_window_start_at": news_window_start_at.isoformat(),
                     "cutoff_at": cutoff_at.isoformat(),
@@ -1223,18 +1138,10 @@ class DailyAnalyzer:
                     "body_sha256": sha256_text(item.body),
                     "title_chars": len(item.title),
                     "body_chars": len(item.body),
-                    "provenance_source_ids": [
-                        provenance.source_id for provenance in item.provenance
-                    ],
+                    "provenance_source_ids": [provenance.source_id for provenance in item.provenance],
                 }
             )
-        artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "row_disposition"
-            / manifest.run_id
-            / "row_disposition.jsonl"
-        )
+        artifact_relative = Path("runs") / "checkpoints" / "row_disposition" / manifest.run_id / "row_disposition.jsonl"
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         payload = "".join(canonical_json(row) + "\n" for row in rows)
@@ -1576,10 +1483,7 @@ class DailyAnalyzer:
         for finding in review.findings:
             cluster_row = cluster_by_id.get(finding.cluster_id)
             if cluster_row is None:
-                raise ValueError(
-                    "news novelty review referenced unknown cluster_id: "
-                    f"{finding.cluster_id}"
-                )
+                raise ValueError(f"news novelty review referenced unknown cluster_id: {finding.cluster_id}")
             normalized_findings.append(
                 self._normalize_news_novelty_finding(
                     finding,
@@ -1628,20 +1532,17 @@ class DailyAnalyzer:
             first_public_at = first_public_at.replace(tzinfo=cutoff_at.tzinfo)
         if first_public_at is not None and first_public_at > cutoff_at:
             raise ValueError(
-                "news novelty review used cutoff-after first_public_evidence_at: "
-                f"{first_public_at.isoformat()}"
+                f"news novelty review used cutoff-after first_public_evidence_at: {first_public_at.isoformat()}"
             )
         evidence_source_ids = _unique_preserving_order(
-            finding.evidence_source_ids
-            or [str(source_id) for source_id in cluster_row.get("source_ids", [])]
+            finding.evidence_source_ids or [str(source_id) for source_id in cluster_row.get("source_ids", [])]
         )
         unknown_source_ids = sorted(
             source_id for source_id in evidence_source_ids if source_id not in allowed_source_ids
         )
         if unknown_source_ids:
             raise ValueError(
-                "news novelty review referenced unknown evidence_source_ids: "
-                + ", ".join(unknown_source_ids)
+                "news novelty review referenced unknown evidence_source_ids: " + ", ".join(unknown_source_ids)
             )
         return finding.model_copy(
             update={
@@ -1779,11 +1680,7 @@ class DailyAnalyzer:
             first_pass_mechanisms=first_pass_mechanisms,
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "semantic_retrieval"
-            / manifest.run_id
-            / "semantic_retrieval_plan.json"
+            Path("runs") / "checkpoints" / "semantic_retrieval" / manifest.run_id / "semantic_retrieval_plan.json"
         )
         artifact_path = self.root / artifact_relative
         write_json(artifact_path, normalized.model_dump(mode="json"))
@@ -1808,9 +1705,7 @@ class DailyAnalyzer:
             "cutoff_at": cutoff_at.isoformat(),
             "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
             "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(
-                manifest
-            )
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
             or first_pass_mechanisms,
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
@@ -1947,11 +1842,9 @@ class DailyAnalyzer:
                 limit=5,
                 filters=record_filters,
             )
-            available_record_ids, unavailable_record_ids = (
-                self._filter_retrieved_record_ids_available_as_of(
-                    raw_record_ids,
-                    cutoff_at=cutoff_at,
-                )
+            available_record_ids, unavailable_record_ids = self._filter_retrieved_record_ids_available_as_of(
+                raw_record_ids,
+                cutoff_at=cutoff_at,
             )
             included_episode_ids.extend(available_ids)
             excluded_episode_ids.extend(unavailable_ids)
@@ -1985,11 +1878,7 @@ class DailyAnalyzer:
         included_record_ids = _unique_preserving_order(included_record_ids)
         excluded_record_ids = _unique_preserving_order(excluded_record_ids)
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "semantic_retrieval"
-            / manifest.run_id
-            / "semantic_retrieval.jsonl"
+            Path("runs") / "checkpoints" / "semantic_retrieval" / manifest.run_id / "semantic_retrieval.jsonl"
         )
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2065,11 +1954,9 @@ class DailyAnalyzer:
                     limit=record_limit,
                     filters=record_filters,
                 )
-                available_record_ids, unavailable_record_ids = (
-                    self._filter_retrieved_record_ids_available_as_of(
-                        raw_record_ids,
-                        cutoff_at=cutoff_at,
-                    )
+                available_record_ids, unavailable_record_ids = self._filter_retrieved_record_ids_available_as_of(
+                    raw_record_ids,
+                    cutoff_at=cutoff_at,
                 )
                 raw_record_ids_all.extend(raw_record_ids)
                 included_record_ids_by_lane.append(available_record_ids)
@@ -2078,9 +1965,7 @@ class DailyAnalyzer:
                         "schema_version": "nslab.semantic_cluster_coverage_result.v1",
                         "run_id": manifest.run_id,
                         "cluster_id": cluster_id,
-                        "cluster_index": int(
-                            cluster_row.get("cluster_index") or cluster_position
-                        ),
+                        "cluster_index": int(cluster_row.get("cluster_index") or cluster_position),
                         "query_index": query_index,
                         "category": lane,
                         "query": query,
@@ -2088,9 +1973,7 @@ class DailyAnalyzer:
                         "related_cluster_ids": [cluster_id],
                         "coverage_query": True,
                         "retrieval_lane": lane,
-                        "source_cluster_indices": [
-                            int(cluster_row.get("cluster_index") or cluster_position)
-                        ],
+                        "source_cluster_indices": [int(cluster_row.get("cluster_index") or cluster_position)],
                         "source_event_ids": _string_values(cluster_row.get("event_ids")),
                         "source_ids": _string_values(cluster_row.get("source_ids")),
                         "raw_episode_ids": raw_episode_ids,
@@ -2108,28 +1991,16 @@ class DailyAnalyzer:
                     }
                 )
         covered_ids = _unique_preserving_order(
-            [
-                str(row["cluster_id"])
-                for row in rows
-                if isinstance(row.get("cluster_id"), str)
-            ]
+            [str(row["cluster_id"]) for row in rows if isinstance(row.get("cluster_id"), str)]
         )
-        all_cluster_ids = _unique_preserving_order(
-            [str(row["cluster_id"]) for row in cluster_rows]
-        )
-        missing_ids = [
-            cluster_id for cluster_id in all_cluster_ids if cluster_id not in covered_ids
-        ]
+        all_cluster_ids = _unique_preserving_order([str(row["cluster_id"]) for row in cluster_rows])
+        missing_ids = [cluster_id for cluster_id in all_cluster_ids if cluster_id not in covered_ids]
         promoted_record_ids = self._promote_cluster_coverage_record_ids(
             included_record_ids_by_lane,
             existing_record_ids=manifest.semantic_retrieval_record_ids,
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "semantic_retrieval"
-            / manifest.run_id
-            / "semantic_cluster_coverage.jsonl"
+            Path("runs") / "checkpoints" / "semantic_retrieval" / manifest.run_id / "semantic_cluster_coverage.jsonl"
         )
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2148,27 +2019,20 @@ class DailyAnalyzer:
             "cluster_coverage_lanes": lanes,
             "cluster_coverage_record_limit_per_lane": record_limit,
             "cluster_coverage_lane_query_counts": {
-                lane: sum(1 for row in rows if row.get("retrieval_lane") == lane)
-                for lane in lanes
+                lane: sum(1 for row in rows if row.get("retrieval_lane") == lane) for lane in lanes
             },
             "cluster_coverage_covered_count": len(covered_ids),
             "cluster_coverage_missing_count": len(missing_ids),
             "cluster_coverage_missing_ids": missing_ids,
-            "cluster_coverage_raw_record_id_count": len(
-                _unique_preserving_order(raw_record_ids_all)
-            ),
+            "cluster_coverage_raw_record_id_count": len(_unique_preserving_order(raw_record_ids_all)),
             "cluster_coverage_promoted_record_count": len(promoted_record_ids),
             "cluster_coverage_promoted_record_ids": promoted_record_ids,
-            "cluster_coverage_promotion_limit": (
-                self.settings.limits.cluster_coverage_promoted_record_limit
-            ),
+            "cluster_coverage_promotion_limit": (self.settings.limits.cluster_coverage_promoted_record_limit),
             "record_retrieval_zero_is_valid": True,
             "retrieval_zero_is_valid": True,
         }
         if missing_ids:
-            message = "semantic cluster coverage missing event clusters: " + ", ".join(
-                missing_ids
-            )
+            message = "semantic cluster coverage missing event clusters: " + ", ".join(missing_ids)
             if message not in manifest.errors:
                 manifest.errors.append(message)
             raise ClusterCoverageError(message)
@@ -2219,7 +2083,8 @@ class DailyAnalyzer:
                 record = store.get_record(record_id)
             except FileNotFoundError:
                 continue
-            if record.record_type == "counterexample":
+            routing = record_routing_metadata(record)
+            if record.record_type == "counterexample" and COUNTEREXAMPLES_LANE in routing.memory_lanes:
                 counterexample_ids.append(record.record_id)
         manifest.counterexample_record_ids = counterexample_ids
 
@@ -2230,6 +2095,29 @@ class DailyAnalyzer:
                 *manifest.semantic_retrieval_record_ids,
             ]
         )
+
+    def _prediction_record_polarities(
+        self,
+        record_ids: Sequence[str],
+    ) -> tuple[list[str], list[str]]:
+        store = BrainRecordStore(self.root)
+        positive: list[str] = []
+        negative: list[str] = []
+        for record_id in _unique_preserving_order(record_ids):
+            try:
+                record = store.get_record(record_id)
+            except FileNotFoundError:
+                continue
+            routing = record_routing_metadata(record)
+            if record_is_positive_support(record):
+                positive.append(record_id)
+            elif (
+                record.record_type not in CANDIDATE_ERROR_RECORD_TYPES
+                and routing.routing_disposition == RecordRoutingDisposition.REASONING.value
+                and routing.evidence_polarity == RecordEvidencePolarity.NEGATIVE.value
+            ):
+                negative.append(record_id)
+        return positive, negative
 
     def _read_semantic_retrieval_plan(
         self,
@@ -2281,11 +2169,7 @@ class DailyAnalyzer:
             first_pass_mechanisms=first_pass_mechanisms,
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "candidate_expansion"
-            / manifest.run_id
-            / "candidate_expansion.json"
+            Path("runs") / "checkpoints" / "candidate_expansion" / manifest.run_id / "candidate_expansion.json"
         )
         artifact_path = self.root / artifact_relative
         write_json(artifact_path, normalized.model_dump(mode="json"))
@@ -2302,11 +2186,7 @@ class DailyAnalyzer:
             "path_counts": path_counts,
             "finding_count": len(normalized.findings),
             "candidate_name_count": len(
-                {
-                    candidate
-                    for finding in normalized.findings
-                    for candidate in finding.candidate_names
-                }
+                {candidate for finding in normalized.findings for candidate in finding.candidate_names}
             ),
             "requires_web_company_discovery_count": sum(
                 1 for finding in normalized.findings if finding.requires_web_company_discovery
@@ -2317,18 +2197,10 @@ class DailyAnalyzer:
                 if finding.path == CandidateExpansionPath.CONTINUATION
             ),
             "cluster_coverage_source_count": manifest.event_cluster_count,
-            "cluster_coverage_covered_count": len(
-                manifest.candidate_expansion_cluster_coverage_ids
-            ),
-            "cluster_coverage_missing_count": len(
-                manifest.candidate_expansion_uncovered_cluster_ids
-            ),
-            "cluster_coverage_missing_ids": (
-                manifest.candidate_expansion_uncovered_cluster_ids
-            ),
-            "audit_only_cluster_count": len(
-                manifest.candidate_expansion_audit_only_cluster_ids
-            ),
+            "cluster_coverage_covered_count": len(manifest.candidate_expansion_cluster_coverage_ids),
+            "cluster_coverage_missing_count": len(manifest.candidate_expansion_uncovered_cluster_ids),
+            "cluster_coverage_missing_ids": (manifest.candidate_expansion_uncovered_cluster_ids),
+            "audit_only_cluster_count": len(manifest.candidate_expansion_audit_only_cluster_ids),
         }
         return normalized, prompt_sha256, count_provider_tokens(self.llm, prompt)
 
@@ -2347,15 +2219,11 @@ class DailyAnalyzer:
             "cutoff_at": cutoff_at.isoformat(),
             "required_paths": [path.value for path in CANDIDATE_EXPANSION_REQUIRED_PATHS],
             "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(
-                manifest
-            )
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
             or first_pass_mechanisms,
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
-            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(
-                manifest
-            ),
+            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(manifest),
             "d_minus_one_only_for_continuation": True,
         }
         return (
@@ -2452,21 +2320,16 @@ class DailyAnalyzer:
             ]
         )
         semantic_covered_ids = [
-            cluster_id
-            for cluster_id in manifest.semantic_cluster_coverage_ids
-            if cluster_id in all_cluster_ids
+            cluster_id for cluster_id in manifest.semantic_cluster_coverage_ids if cluster_id in all_cluster_ids
         ]
         covered_cluster_ids = finding_cluster_ids
         audit_only_cluster_ids = [
-            cluster_id
-            for cluster_id in semantic_covered_ids
-            if cluster_id not in set(covered_cluster_ids)
+            cluster_id for cluster_id in semantic_covered_ids if cluster_id not in set(covered_cluster_ids)
         ]
         uncovered_cluster_ids = [
             cluster_id
             for cluster_id in all_cluster_ids
-            if cluster_id not in set(covered_cluster_ids)
-            and cluster_id not in set(audit_only_cluster_ids)
+            if cluster_id not in set(covered_cluster_ids) and cluster_id not in set(audit_only_cluster_ids)
         ]
         manifest.candidate_expansion_cluster_coverage_ids = _unique_preserving_order(
             [*covered_cluster_ids, *audit_only_cluster_ids]
@@ -2474,9 +2337,7 @@ class DailyAnalyzer:
         manifest.candidate_expansion_audit_only_cluster_ids = audit_only_cluster_ids
         manifest.candidate_expansion_uncovered_cluster_ids = uncovered_cluster_ids
         if uncovered_cluster_ids:
-            message = "candidate expansion missing event cluster coverage: " + ", ".join(
-                uncovered_cluster_ids
-            )
+            message = "candidate expansion missing event cluster coverage: " + ", ".join(uncovered_cluster_ids)
             if message not in manifest.errors:
                 manifest.errors.append(message)
             raise ClusterCoverageError(message)
@@ -2610,13 +2471,7 @@ class DailyAnalyzer:
         manifest.web_sources = _unique_preserving_order(
             [row["source_id"] for row in rows if isinstance(row.get("source_id"), str)]
         )
-        artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "web_sources"
-            / manifest.run_id
-            / "web_sources.jsonl"
-        )
+        artifact_relative = Path("runs") / "checkpoints" / "web_sources" / manifest.run_id / "web_sources.jsonl"
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         payload = "".join(canonical_json(row) + "\n" for row in rows)
@@ -2624,11 +2479,7 @@ class DailyAnalyzer:
         manifest.web_source_artifact = artifact_relative.as_posix()
         manifest.web_source_sha256 = sha256_text(payload)
         excluded_artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "web_sources"
-            / manifest.run_id
-            / "excluded_web_sources.jsonl"
+            Path("runs") / "checkpoints" / "web_sources" / manifest.run_id / "excluded_web_sources.jsonl"
         )
         excluded_artifact_path = self.root / excluded_artifact_relative
         excluded_payload = "".join(canonical_json(row) + "\n" for row in excluded_rows)
@@ -2753,11 +2604,7 @@ class DailyAnalyzer:
             [*manifest.excluded_candidate_web_source_ids, *guard.excluded_source_ids]
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "candidate_web_checks"
-            / manifest.run_id
-            / "candidate_web_checks.jsonl"
+            Path("runs") / "checkpoints" / "candidate_web_checks" / manifest.run_id / "candidate_web_checks.jsonl"
         )
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2777,13 +2624,7 @@ class DailyAnalyzer:
             "verification_focus": list(CANDIDATE_WEB_VERIFICATION_FOCUS),
             "source_count": len(rows),
             "excluded_source_count": len(excluded_rows),
-            "expansion_paths": sorted(
-                {
-                    str(subject.expansion_path)
-                    for subject in subjects
-                    if subject.expansion_path
-                }
-            ),
+            "expansion_paths": sorted({str(subject.expansion_path) for subject in subjects if subject.expansion_path}),
         }
         self._write_candidate_verification_artifact(
             manifest=manifest,
@@ -2803,9 +2644,7 @@ class DailyAnalyzer:
         excluded_artifact_path = self.root / excluded_artifact_relative
         excluded_payload = "".join(canonical_json(row) + "\n" for row in excluded_rows)
         excluded_artifact_path.write_text(excluded_payload, encoding="utf-8")
-        manifest.excluded_candidate_web_check_artifact = (
-            excluded_artifact_relative.as_posix()
-        )
+        manifest.excluded_candidate_web_check_artifact = excluded_artifact_relative.as_posix()
         manifest.excluded_candidate_web_check_sha256 = sha256_text(excluded_payload)
         manifest.excluded_candidate_web_check_count = len(excluded_rows)
 
@@ -2822,29 +2661,13 @@ class DailyAnalyzer:
         findings: list[CandidateVerificationFinding] = []
         for subject in subjects:
             key = _candidate_web_check_subject_key(subject)
-            accepted = [
-                row
-                for row in rows
-                if _candidate_web_check_row_key(row) == key
-            ]
-            excluded = [
-                row
-                for row in excluded_rows
-                if _candidate_web_check_row_key(row) == key
-            ]
+            accepted = [row for row in rows if _candidate_web_check_row_key(row) == key]
+            excluded = [row for row in excluded_rows if _candidate_web_check_row_key(row) == key]
             accepted_source_ids = _unique_preserving_order(
-                [
-                    str(row["source_id"])
-                    for row in accepted
-                    if isinstance(row.get("source_id"), str)
-                ]
+                [str(row["source_id"]) for row in accepted if isinstance(row.get("source_id"), str)]
             )
             excluded_source_ids = _unique_preserving_order(
-                [
-                    str(row["source_id"])
-                    for row in excluded
-                    if isinstance(row.get("source_id"), str)
-                ]
+                [str(row["source_id"]) for row in excluded if isinstance(row.get("source_id"), str)]
             )
             findings.append(
                 CandidateVerificationFinding(
@@ -2885,16 +2708,10 @@ class DailyAnalyzer:
             required_dimensions=list(CANDIDATE_WEB_VERIFICATION_FOCUS),
             subject_count=len(subjects),
             findings=findings,
-            notes=[
-                "Pass 5 checklist records cutoff-safe verification coverage; final synthesis judges substance."
-            ],
+            notes=["Pass 5 checklist records cutoff-safe verification coverage; final synthesis judges substance."],
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "candidate_verifications"
-            / manifest.run_id
-            / "candidate_verification.json"
+            Path("runs") / "checkpoints" / "candidate_verifications" / manifest.run_id / "candidate_verification.json"
         )
         artifact_path = self.root / artifact_relative
         write_json(artifact_path, review.model_dump(mode="json"))
@@ -2911,24 +2728,16 @@ class DailyAnalyzer:
             "finding_count": len(findings),
             "required_dimensions": list(CANDIDATE_WEB_VERIFICATION_FOCUS),
             "status_counts": status_counts,
-            "subjects_without_cutoff_safe_sources": sum(
-                1 for finding in findings if not finding.accepted_source_ids
-            ),
+            "subjects_without_cutoff_safe_sources": sum(1 for finding in findings if not finding.accepted_source_ids),
             "candidate_expansion_subject_count": sum(
                 1 for finding in findings if finding.subject_type == "candidate_expansion"
             ),
-            "d_minus_one_only_subject_count": sum(
-                1 for finding in findings if finding.d_minus_one_market_data_only
-            ),
+            "d_minus_one_only_subject_count": sum(1 for finding in findings if finding.d_minus_one_market_data_only),
             "d_minus_one_snapshot_count": sum(
-                1
-                for finding in findings
-                if finding.blind_safe_market_snapshot.get("status") == "snapshot"
+                1 for finding in findings if finding.blind_safe_market_snapshot.get("status") == "snapshot"
             ),
             "d_minus_one_snapshot_unavailable_count": sum(
-                1
-                for finding in findings
-                if finding.blind_safe_market_snapshot.get("status") != "snapshot"
+                1 for finding in findings if finding.blind_safe_market_snapshot.get("status") != "snapshot"
             ),
         }
 
@@ -3006,9 +2815,7 @@ class DailyAnalyzer:
                 and not subject.ticker
             ):
                 status = CandidateVerificationStatus.NEEDS_COMPANY_DISCOVERY
-                notes = [
-                    "expansion subject has no confirmed ticker yet; web/company discovery must resolve it"
-                ]
+                notes = ["expansion subject has no confirmed ticker yet; web/company discovery must resolve it"]
             dimensions.append(
                 CandidateVerificationDimension(
                     name=name,
@@ -3079,12 +2886,8 @@ class DailyAnalyzer:
                         why_now=str(finding.get("hypothesis") or ""),
                         expansion_path=path,
                         expansion_hypothesis=str(finding.get("hypothesis") or ""),
-                        investigation_questions=tuple(
-                            _string_values(finding.get("investigation_questions"))[:5]
-                        ),
-                        sector_hypotheses=tuple(
-                            _string_values(finding.get("sector_hypotheses"))[:5]
-                        ),
+                        investigation_questions=tuple(_string_values(finding.get("investigation_questions"))[:5]),
+                        sector_hypotheses=tuple(_string_values(finding.get("sector_hypotheses"))[:5]),
                     )
                 )
         return _dedupe_candidate_web_check_subjects(subjects)
@@ -3182,9 +2985,7 @@ class DailyAnalyzer:
         for candidate in prediction.candidates:
             used_event_ids.extend(candidate.event_ids)
             used_event_ids.extend(
-                url.removeprefix("news://")
-                for url in candidate.source_urls
-                if url.startswith("news://")
+                url.removeprefix("news://") for url in candidate.source_urls if url.startswith("news://")
             )
         used_event_ids = _unique_preserving_order(
             [event_id for event_id in used_event_ids if event_id in item_by_event_id]
@@ -3208,9 +3009,7 @@ class DailyAnalyzer:
                     "url": provenance.uri if provenance else f"news://{item.event_id}",
                     "source_url": provenance.uri if provenance else f"news://{item.event_id}",
                     "published_at": item.published_at.isoformat(),
-                    "collected_at": (
-                        item.collected_at.isoformat() if item.collected_at is not None else None
-                    ),
+                    "collected_at": (item.collected_at.isoformat() if item.collected_at is not None else None),
                     "collected_at_present": item.collected_at is not None,
                     "retrieved_at": retrieved_at.isoformat(),
                     "time_verified": True,
@@ -3226,17 +3025,9 @@ class DailyAnalyzer:
                 }
             )
         rows.extend(self._web_source_ledger_rows(manifest, retrieved_at=retrieved_at))
-        rows.extend(
-            self._candidate_web_check_ledger_rows(manifest, retrieved_at=retrieved_at)
-        )
+        rows.extend(self._candidate_web_check_ledger_rows(manifest, retrieved_at=retrieved_at))
 
-        artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "source_ledger"
-            / manifest.run_id
-            / "source_ledger.jsonl"
-        )
+        artifact_relative = Path("runs") / "checkpoints" / "source_ledger" / manifest.run_id / "source_ledger.jsonl"
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         payload = "".join(canonical_json(row) + "\n" for row in rows)
@@ -3370,27 +3161,13 @@ class DailyAnalyzer:
             "no_d_outcome_exposed": manifest.no_d_outcome_exposed,
             "validation": {
                 "blind_web_search_call_count": manifest.blind_web_search_call_count,
-                "blind_price_repository_access_count": (
-                    manifest.blind_price_repository_access_count
-                ),
+                "blind_price_repository_access_count": (manifest.blind_price_repository_access_count),
                 "blind_current_price_access_count": manifest.blind_current_price_access_count,
                 "canonical_blind_hash_verified": True,
             },
         }
-        receipt_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "blind_seal"
-            / manifest.run_id
-            / "blind_seal_receipt.json"
-        )
-        phase_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "phase_state"
-            / manifest.run_id
-            / "phase_state.json"
-        )
+        receipt_relative = Path("runs") / "checkpoints" / "blind_seal" / manifest.run_id / "blind_seal_receipt.json"
+        phase_relative = Path("runs") / "checkpoints" / "phase_state" / manifest.run_id / "phase_state.json"
         receipt_path = self.root / receipt_relative
         phase_path = self.root / phase_relative
         write_json(receipt_path, receipt)
@@ -3526,6 +3303,7 @@ class DailyAnalyzer:
         if not synthesized.candidates:
             synthesized = prediction
         prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(manifest)
+        positive_record_ids, negative_record_ids = self._prediction_record_polarities(prediction_retrieved_record_ids)
         normalized = self._normalize_prediction(
             synthesized,
             trade_date=prediction.trade_date,
@@ -3536,11 +3314,8 @@ class DailyAnalyzer:
             purpose="final_synthesis",
             default_positive_case_ids=manifest.retrieved_episode_ids[:3],
             default_negative_case_ids=manifest.counterexample_episode_ids[:3],
-            default_positive_record_ids=_record_ids_without(
-                prediction_retrieved_record_ids,
-                manifest.counterexample_record_ids,
-            )[:5],
-            default_negative_record_ids=manifest.counterexample_record_ids[:5],
+            default_positive_record_ids=positive_record_ids[:5],
+            default_negative_record_ids=negative_record_ids[:5],
         )
         normalized = normalized.model_copy(update={"context_manifest_id": manifest.run_id})
         if not normalized.blind_analysis.open_world_mechanisms:
@@ -3579,21 +3354,13 @@ class DailyAnalyzer:
                 "catalog_only": manifest.brain_compiler_catalog_only,
             },
             "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(
-                manifest
-            )
+            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
             or first_pass_mechanisms,
             "event_clusters": self._read_event_cluster_context(manifest),
             "news_novelty_review": self._read_news_novelty_review_context(manifest),
-            "additional_semantic_retrieval": self._read_semantic_retrieval_context(
-                manifest
-            ),
-            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(
-                manifest
-            ),
-            "open_world_candidate_expansion": self._read_candidate_expansion_context(
-                manifest
-            ),
+            "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
+            "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(manifest),
+            "open_world_candidate_expansion": self._read_candidate_expansion_context(manifest),
             "web_research": {
                 "queries": manifest.web_queries,
                 "included_sources": manifest.web_sources,
@@ -3608,46 +3375,26 @@ class DailyAnalyzer:
             "retrieved_record_ids": manifest.retrieved_record_ids,
             "excluded_retrieved_record_ids": manifest.excluded_retrieved_record_ids,
             "semantic_retrieval_record_ids": manifest.semantic_retrieval_record_ids,
-            "excluded_semantic_retrieval_record_ids": (
-                manifest.excluded_semantic_retrieval_record_ids
-            ),
+            "excluded_semantic_retrieval_record_ids": (manifest.excluded_semantic_retrieval_record_ids),
             "semantic_cluster_coverage_ids": manifest.semantic_cluster_coverage_ids,
-            "semantic_cluster_coverage_missing_ids": (
-                manifest.semantic_cluster_coverage_missing_ids
-            ),
-            "semantic_cluster_coverage_promoted_record_ids": (
-                manifest.semantic_cluster_coverage_promoted_record_ids
-            ),
-            "candidate_expansion_cluster_coverage_ids": (
-                manifest.candidate_expansion_cluster_coverage_ids
-            ),
-            "candidate_expansion_cluster_coverage_missing_ids": (
-                manifest.candidate_expansion_uncovered_cluster_ids
-            ),
-            "candidate_expansion_uncovered_cluster_ids": (
-                manifest.candidate_expansion_uncovered_cluster_ids
-            ),
-            "candidate_expansion_audit_only_cluster_ids": (
-                manifest.candidate_expansion_audit_only_cluster_ids
-            ),
+            "semantic_cluster_coverage_missing_ids": (manifest.semantic_cluster_coverage_missing_ids),
+            "semantic_cluster_coverage_promoted_record_ids": (manifest.semantic_cluster_coverage_promoted_record_ids),
+            "candidate_expansion_cluster_coverage_ids": (manifest.candidate_expansion_cluster_coverage_ids),
+            "candidate_expansion_cluster_coverage_missing_ids": (manifest.candidate_expansion_uncovered_cluster_ids),
+            "candidate_expansion_uncovered_cluster_ids": (manifest.candidate_expansion_uncovered_cluster_ids),
+            "candidate_expansion_audit_only_cluster_ids": (manifest.candidate_expansion_audit_only_cluster_ids),
             "retrieved_raw_episodes": self._read_retrieved_episode_context(manifest),
             "retrieved_records": self._read_retrieved_record_context(manifest),
             "positive_cases": _candidate_case_refs(prediction, "prior_positive_cases"),
             "negative_cases": _candidate_case_refs(prediction, "prior_negative_cases"),
-            "positive_record_ids": _candidate_case_refs(
-                prediction, "prior_positive_record_ids"
-            ),
-            "negative_record_ids": _candidate_case_refs(
-                prediction, "prior_negative_record_ids"
-            ),
+            "positive_record_ids": _candidate_case_refs(prediction, "prior_positive_record_ids"),
+            "negative_record_ids": _candidate_case_refs(prediction, "prior_negative_record_ids"),
             "counterexamples": self._read_counterexample_context(manifest),
             "counterexample_record_ids": manifest.counterexample_record_ids,
             "counterexample_records": self._read_counterexample_record_context(manifest),
             "candidate_research": prediction.model_dump(mode="json"),
             "candidate_web_checks": self._read_candidate_web_check_context(manifest),
-            "candidate_verification": self._read_candidate_verification_context(
-                manifest
-            ),
+            "candidate_verification": self._read_candidate_verification_context(manifest),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
             "company_memory": company_memory_context,
@@ -3665,9 +3412,7 @@ class DailyAnalyzer:
             "corpus_manifest_sha256": manifest.memory_coverage_corpus_sha256,
             "accepted_record_count": manifest.accepted_record_count,
             "available_record_count": manifest.available_record_count,
-            "training_eligible_available_record_count": (
-                manifest.training_eligible_available_record_count
-            ),
+            "training_eligible_available_record_count": (manifest.training_eligible_available_record_count),
             "coverage_complete": False,
         }
         artifact_ref = manifest.memory_coverage_manifest_artifact
@@ -3720,12 +3465,8 @@ class DailyAnalyzer:
             / "final_synthesis_context.json"
         )
         write_json(artifact_path, artifact.model_dump(mode="json"))
-        manifest.final_synthesis_context_artifact = artifact_path.relative_to(
-            self.root
-        ).as_posix()
-        manifest.final_synthesis_context_sha256 = sha256_text(
-            artifact_path.read_text(encoding="utf-8")
-        )
+        manifest.final_synthesis_context_artifact = artifact_path.relative_to(self.root).as_posix()
+        manifest.final_synthesis_context_sha256 = sha256_text(artifact_path.read_text(encoding="utf-8"))
         manifest.final_synthesis_context_summary = summary
 
     def _read_event_cluster_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
@@ -3806,9 +3547,7 @@ class DailyAnalyzer:
             "rows": rows,
             "covered_cluster_ids": manifest.semantic_cluster_coverage_ids,
             "missing_cluster_ids": manifest.semantic_cluster_coverage_missing_ids,
-            "promoted_record_ids": (
-                manifest.semantic_cluster_coverage_promoted_record_ids
-            ),
+            "promoted_record_ids": (manifest.semantic_cluster_coverage_promoted_record_ids),
             "promoted_records": self._read_record_context_by_ids(
                 manifest.semantic_cluster_coverage_promoted_record_ids
             ),
@@ -4043,13 +3782,9 @@ class DailyAnalyzer:
             for candidate in candidates:
                 ticker = candidate.ticker.strip().upper()
                 if not ticker or ticker in {"UNKNOWN", "UNVERIFIED"}:
-                    payload["skipped_tickers"].append(
-                        {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
-                    )
+                    payload["skipped_tickers"].append({"ticker": candidate.ticker, "reason": "ticker_not_verified"})
                     continue
-                payload["skipped_tickers"].append(
-                    {"ticker": ticker, "reason": "news_only_blind_price_access_disabled"}
-                )
+                payload["skipped_tickers"].append({"ticker": ticker, "reason": "news_only_blind_price_access_disabled"})
             return payload
         if allowed_through is None:
             payload["status"] = "D_MINUS_ONE_PRICE_SNAPSHOT_UNAVAILABLE"
@@ -4065,9 +3800,7 @@ class DailyAnalyzer:
                 continue
             seen.add(ticker)
             if ticker in {"UNKNOWN", "UNVERIFIED"}:
-                payload["skipped_tickers"].append(
-                    {"ticker": candidate.ticker, "reason": "ticker_not_verified"}
-                )
+                payload["skipped_tickers"].append({"ticker": candidate.ticker, "reason": "ticker_not_verified"})
                 continue
             self._mark_d_minus_one_price_access(manifest)
             manifest.blind_price_repository_access_count += 1
@@ -4076,20 +3809,14 @@ class DailyAnalyzer:
             except BlindPriceAccessError as exc:
                 manifest.blind_current_price_access_count += 1
                 payload.setdefault("errors", []).append(str(exc))
-                payload["skipped_tickers"].append(
-                    {"ticker": ticker, "reason": "blind_price_guard_rejected_access"}
-                )
+                payload["skipped_tickers"].append({"ticker": ticker, "reason": "blind_price_guard_rejected_access"})
                 continue
             if snapshot is None:
-                payload["skipped_tickers"].append(
-                    {"ticker": ticker, "reason": "d_minus_one_snapshot_unavailable"}
-                )
+                payload["skipped_tickers"].append({"ticker": ticker, "reason": "d_minus_one_snapshot_unavailable"})
                 continue
             payload["snapshots"].append(_price_record_payload(snapshot))
         payload["blind_context_mode"] = manifest.blind_context_mode
-        payload["blind_price_repository_access_count"] = (
-            manifest.blind_price_repository_access_count
-        )
+        payload["blind_price_repository_access_count"] = manifest.blind_price_repository_access_count
         payload["blind_current_price_access_count"] = manifest.blind_current_price_access_count
         return payload
 
@@ -4166,9 +3893,7 @@ class DailyAnalyzer:
                     "episode_id": episode.episode_id,
                     "trade_date": episode.trade_date.isoformat(),
                     "available_from": episode.available_from.isoformat(),
-                    "counterexamples": [
-                        claim.model_dump(mode="json") for claim in episode.counterexamples
-                    ],
+                    "counterexamples": [claim.model_dump(mode="json") for claim in episode.counterexamples],
                     "misses": episode.misses,
                 }
             )
@@ -4260,12 +3985,8 @@ class DailyAnalyzer:
                 "candidate_path_type": row.get("candidate_path_type"),
                 "candidate_subject_type": row.get("candidate_subject_type"),
                 "candidate_expansion_path": row.get("candidate_expansion_path"),
-                "candidate_expansion_hypothesis": row.get(
-                    "candidate_expansion_hypothesis"
-                ),
-                "candidate_investigation_questions": row.get(
-                    "candidate_investigation_questions"
-                ),
+                "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
+                "candidate_investigation_questions": row.get("candidate_investigation_questions"),
                 "verification_focus": row.get("verification_focus"),
                 "source_id": row.get("source_id"),
                 "query": row.get("query"),
@@ -4279,9 +4000,7 @@ class DailyAnalyzer:
             }
             if "timestamp_precision" in row:
                 check["timestamp_precision"] = row.get("timestamp_precision")
-            checks.append(
-                check
-            )
+            checks.append(check)
         return checks
 
     def _read_candidate_verification_context(
@@ -4359,15 +4078,12 @@ class DailyAnalyzer:
         ]
         if not leaked_ids:
             return
-        manifest.errors.append(
-            "brain context contains future-unavailable episodes: " + ", ".join(leaked_ids)
-        )
+        manifest.errors.append("brain context contains future-unavailable episodes: " + ", ".join(leaked_ids))
         manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
         write_json(manifest_path, manifest.model_dump(mode="json"))
         raise FutureContextLeakError(
-            "brain context contains future-unavailable episodes; see "
-            f"{manifest_path.relative_to(self.root).as_posix()}"
+            f"brain context contains future-unavailable episodes; see {manifest_path.relative_to(self.root).as_posix()}"
         )
 
     def _context_files_contain_episode_id(
@@ -4384,12 +4100,8 @@ class DailyAnalyzer:
     def _fail_if_exhaustive_coverage_incomplete(self, manifest: ContextManifest) -> None:
         if manifest.mode != "exhaustive":
             return
-        episode_id_coverage_complete = self._exhaustive_episode_id_coverage_complete(
-            manifest
-        )
-        record_id_coverage_complete = Counter(manifest.available_record_ids) == Counter(
-            manifest.swept_record_ids
-        )
+        episode_id_coverage_complete = self._exhaustive_episode_id_coverage_complete(manifest)
+        record_id_coverage_complete = Counter(manifest.available_record_ids) == Counter(manifest.swept_record_ids)
         record_coverage_delta = self._exhaustive_record_coverage_delta(manifest)
         manifest.missing_swept_record_ids = record_coverage_delta["missing"]
         manifest.unexpected_swept_record_ids = record_coverage_delta["unexpected"]
@@ -4403,27 +4115,18 @@ class DailyAnalyzer:
         ):
             return
         if manifest.accepted_episode_count != manifest.swept_episode_count:
-            manifest.errors.append(
-                "exhaustive mode requires swept_episode_count == accepted_episode_count"
-            )
+            manifest.errors.append("exhaustive mode requires swept_episode_count == accepted_episode_count")
         if not episode_id_coverage_complete:
-            manifest.errors.append(
-                "exhaustive mode requires swept_episode_ids to match available accepted episode ids"
-            )
+            manifest.errors.append("exhaustive mode requires swept_episode_ids to match available accepted episode ids")
         if manifest.available_record_count != manifest.swept_record_count:
-            manifest.errors.append(
-                "exhaustive mode requires swept_record_count == available_record_count"
-            )
+            manifest.errors.append("exhaustive mode requires swept_record_count == available_record_count")
         if not record_id_coverage_complete:
-            manifest.errors.append(
-                "exhaustive mode requires swept_record_ids to match available_record_ids"
-            )
+            manifest.errors.append("exhaustive mode requires swept_record_ids to match available_record_ids")
         manifest_dir = self.settings.path(self.settings.output_dirs.manifests)
         manifest_path = manifest_dir / f"{manifest.run_id}.json"
         write_json(manifest_path, manifest.model_dump(mode="json"))
         raise ExhaustiveCoverageError(
-            "exhaustive memory coverage failed; see "
-            f"{manifest_path.relative_to(self.root).as_posix()}"
+            f"exhaustive memory coverage failed; see {manifest_path.relative_to(self.root).as_posix()}"
         )
 
     def _fail_if_memory_coverage_incomplete(self, manifest: ContextManifest) -> None:
@@ -4454,11 +4157,7 @@ class DailyAnalyzer:
         swept_counts = Counter(manifest.swept_record_ids)
         missing = sorted((expected_counts - swept_counts).elements())
         unexpected = sorted((swept_counts - expected_counts).elements())
-        duplicate = sorted(
-            record_id
-            for record_id, count in swept_counts.items()
-            if count > 1
-        )
+        duplicate = sorted(record_id for record_id, count in swept_counts.items() if count > 1)
         return {
             "missing": missing,
             "unexpected": unexpected,
@@ -4599,18 +4298,10 @@ class DailyAnalyzer:
     ) -> BlindPrediction:
         prompt_hash = sha256_text(prompt)
         observed_at = now_kst()
-        fallback_positive_case_ids = _unique_preserving_order(
-            list(default_positive_case_ids or [])
-        )[:3]
-        fallback_negative_case_ids = _unique_preserving_order(
-            list(default_negative_case_ids or [])
-        )[:3]
-        fallback_positive_record_ids = _unique_preserving_order(
-            list(default_positive_record_ids or [])
-        )[:5]
-        fallback_negative_record_ids = _unique_preserving_order(
-            list(default_negative_record_ids or [])
-        )[:5]
+        fallback_positive_case_ids = _unique_preserving_order(list(default_positive_case_ids or []))[:3]
+        fallback_negative_case_ids = _unique_preserving_order(list(default_negative_case_ids or []))[:3]
+        fallback_positive_record_ids = _unique_preserving_order(list(default_positive_record_ids or []))[:5]
+        fallback_negative_record_ids = _unique_preserving_order(list(default_negative_record_ids or []))[:5]
         analysis_provenance = _append_unique_provenance(
             prediction.blind_analysis.provenance,
             Provenance(
@@ -4694,14 +4385,10 @@ class DailyAnalyzer:
                 sector.model_copy(
                     update={
                         "triggering_events": sector_event_ids,
-                        "supporting_cases": sector.supporting_cases
-                        or fallback_positive_case_ids,
-                        "contradicting_cases": sector.contradicting_cases
-                        or fallback_negative_case_ids,
-                        "supporting_record_ids": sector.supporting_record_ids
-                        or fallback_positive_record_ids,
-                        "contradicting_record_ids": sector.contradicting_record_ids
-                        or fallback_negative_record_ids,
+                        "supporting_cases": sector.supporting_cases or fallback_positive_case_ids,
+                        "contradicting_cases": sector.contradicting_cases or fallback_negative_case_ids,
+                        "supporting_record_ids": sector.supporting_record_ids or fallback_positive_record_ids,
+                        "contradicting_record_ids": sector.contradicting_record_ids or fallback_negative_record_ids,
                         "provenance": sector_provenance,
                     }
                 )
@@ -4793,21 +4480,11 @@ class DailyAnalyzer:
             model_config=self.llm_model_config,
             default_metadata={"prompt_version": DAILY_BLIND_PROMPT_VERSION},
             purpose_metadata={
-                "open_world_first_analysis": {
-                    "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
-                },
-                "daily_event_clustering": {
-                    "prompt_version": EVENT_CLUSTERING_VERSION
-                },
-                "news_novelty_review": {
-                    "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION
-                },
-                "semantic_retrieval_plan": {
-                    "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION
-                },
-                "candidate_expansion": {
-                    "prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION
-                },
+                "open_world_first_analysis": {"prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION},
+                "daily_event_clustering": {"prompt_version": EVENT_CLUSTERING_VERSION},
+                "news_novelty_review": {"prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION},
+                "semantic_retrieval_plan": {"prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION},
+                "candidate_expansion": {"prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION},
                 "daily_blind_analysis": {"prompt_version": DAILY_BLIND_PROMPT_VERSION},
                 "red_team_candidate_review": {"prompt_version": RED_TEAM_PROMPT_VERSION},
                 "final_synthesis": {"prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION},
@@ -4818,28 +4495,14 @@ class DailyAnalyzer:
     def _llm_model_config(self, provider: LLMProvider) -> dict[str, Any]:
         phase1_config = {
             "event_clustering_version": EVENT_CLUSTERING_VERSION,
-            "event_cluster_embedding_batch_size": (
-                self.settings.limits.event_cluster_embedding_batch_size
-            ),
-            "event_cluster_similarity_threshold": (
-                self.settings.limits.event_cluster_similarity_threshold
-            ),
-            "event_cluster_max_semantic_variants": (
-                self.settings.limits.event_cluster_max_semantic_variants
-            ),
-            "open_world_cluster_batch_size": (
-                self.settings.limits.open_world_cluster_batch_size
-            ),
-            "open_world_max_prompt_chars": (
-                self.settings.limits.open_world_max_prompt_chars
-            ),
-            "novelty_cluster_batch_size": (
-                self.settings.limits.novelty_cluster_batch_size
-            ),
+            "event_cluster_embedding_batch_size": (self.settings.limits.event_cluster_embedding_batch_size),
+            "event_cluster_similarity_threshold": (self.settings.limits.event_cluster_similarity_threshold),
+            "event_cluster_max_semantic_variants": (self.settings.limits.event_cluster_max_semantic_variants),
+            "open_world_cluster_batch_size": (self.settings.limits.open_world_cluster_batch_size),
+            "open_world_max_prompt_chars": (self.settings.limits.open_world_max_prompt_chars),
+            "novelty_cluster_batch_size": (self.settings.limits.novelty_cluster_batch_size),
             "final_synthesis_prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION,
-            "final_synthesis_token_budget": (
-                self.settings.limits.final_synthesis_token_budget
-            ),
+            "final_synthesis_token_budget": (self.settings.limits.final_synthesis_token_budget),
             "token_counting_version": TOKEN_COUNTING_VERSION,
         }
         if isinstance(provider, TracingLLMProvider):
@@ -4887,17 +4550,13 @@ class DailyAnalyzer:
         mentions = self.fallback_llm.extract_company_mentions(news_texts, limit=6)
         prior_positive_cases = _unique_preserving_order(retrieved_episode_ids)[:3]
         prior_negative_cases = _unique_preserving_order(counterexample_episode_ids)[:3]
-        memory_case_ids = _unique_preserving_order(
-            [*prior_positive_cases, *prior_negative_cases]
-        )
+        memory_case_ids = _unique_preserving_order([*prior_positive_cases, *prior_negative_cases])
         prior_positive_record_ids = _record_ids_without(
             retrieved_record_ids,
             counterexample_record_ids,
         )[:5]
         prior_negative_record_ids = _unique_preserving_order(counterexample_record_ids)[:5]
-        memory_record_ids = _unique_preserving_order(
-            [*prior_positive_record_ids, *prior_negative_record_ids]
-        )
+        memory_record_ids = _unique_preserving_order([*prior_positive_record_ids, *prior_negative_record_ids])
         candidates: list[Candidate] = []
         for rank, company in enumerate(mentions[:4], start=1):
             candidates.append(
@@ -5010,9 +4669,7 @@ class DailyAnalyzer:
             formation_mechanism=mechanisms[0],
             expected_breadth="requires web verification and memory comparison",
             direct_beneficiaries=[
-                candidate.company_name
-                for candidate in candidates
-                if candidate.path_type == PathType.SINGLE_EVENT
+                candidate.company_name for candidate in candidates if candidate.path_type == PathType.SINGLE_EVENT
             ],
             indirect_beneficiaries=["BENEFICIARY_DISCOVERY_REQUIRED"],
             narrative_beneficiaries=[],
@@ -5048,9 +4705,7 @@ class DailyAnalyzer:
         )
 
     def _seal(self, prediction: BlindPrediction) -> BlindPrediction:
-        sealed = prediction.model_copy(
-            update={"sealed_at": now_kst(), "blind_artifact_sha256": None}
-        )
+        sealed = prediction.model_copy(update={"sealed_at": now_kst(), "blind_artifact_sha256": None})
         digest = sha256_text(canonical_json(sealed.model_dump(mode="json")))
         return sealed.model_copy(update={"blind_artifact_sha256": digest})
 
@@ -5159,12 +4814,8 @@ def _cluster_coverage_lane_instruction(lane: str) -> str:
         "counterexamples": "retrieve records contradicting the bullish interpretation",
         "leader_selection_pairs": "retrieve records about choosing the correct leader",
         "theme_formation_failures": "retrieve records where theme formation failed",
-        "candidate_generation_errors": (
-            "retrieve records about missed, noisy, or wrongly ranked candidates"
-        ),
-        NEWSLESS_OR_UNEXPLAINED_LANE: (
-            "retrieve strong or unusual outcomes with no cutoff-safe explanatory news"
-        ),
+        "candidate_generation_errors": ("retrieve records about missed, noisy, or wrongly ranked candidates"),
+        NEWSLESS_OR_UNEXPLAINED_LANE: ("retrieve strong or unusual outcomes with no cutoff-safe explanatory news"),
     }
     return instructions.get(lane, "retrieve balanced historical evidence for this lane")
 
@@ -5185,11 +4836,7 @@ def _future_unavailable_episode_ids_for_brain_context_check(
         ValueError,
     ):
         return None
-    return [
-        episode.episode_id
-        for episode in accepted
-        if not is_available_as_of(episode.available_from, cutoff_at)
-    ]
+    return [episode.episode_id for episode in accepted if not is_available_as_of(episode.available_from, cutoff_at)]
 
 
 def _append_unique_provenance(
@@ -5215,11 +4862,7 @@ def _unique_preserving_order(values: Sequence[str]) -> list[str]:
 
 def _record_ids_without(record_ids: Sequence[str], excluded_record_ids: Sequence[str]) -> list[str]:
     excluded = set(excluded_record_ids)
-    return [
-        record_id
-        for record_id in _unique_preserving_order(record_ids)
-        if record_id not in excluded
-    ]
+    return [record_id for record_id in _unique_preserving_order(record_ids) if record_id not in excluded]
 
 
 def _string_values(value: Any) -> list[str]:
@@ -5270,11 +4913,7 @@ def _candidate_web_check_row_key(
         str(row.get("candidate_ticker") or ""),
         str(row.get("candidate_company_name") or ""),
         str(row.get("candidate_path_type") or ""),
-        (
-            str(row["candidate_expansion_path"])
-            if row.get("candidate_expansion_path") is not None
-            else None
-        ),
+        (str(row["candidate_expansion_path"]) if row.get("candidate_expansion_path") is not None else None),
     )
 
 

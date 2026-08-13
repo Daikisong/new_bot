@@ -19,9 +19,18 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
 )
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
+from news_scalping_lab.records.hashing import brain_record_envelope_hashes
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.preference import has_sealed_preference_pair
-from news_scalping_lab.records.routing import record_outcome_payload, record_response_class
+from news_scalping_lab.records.routing import (
+    RecordEvidencePolarity,
+    RecordLabelQuality,
+    RecordRoutingDisposition,
+    record_outcome_payload,
+    record_response_class,
+    record_routing_disposition,
+    record_routing_metadata,
+)
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, stable_id, write_json
@@ -44,6 +53,7 @@ TASK_TRAINING_CATEGORY = {
     "record_beneficiary_discovery": "beneficiary_discovery_examples",
     "record_negative_control_calibration": "negative_control_calibration_examples",
     "record_newsless_causal_calibration": "newsless_causal_calibration_examples",
+    "record_counterexample_calibration": "counterexample_calibration_examples",
     "record_error_correction": "failure_correction_examples",
     "record_eval": "evaluation_examples",
 }
@@ -74,6 +84,7 @@ RECORD_SFT_TRAINING_CATEGORIES = [
     "direct_event_supervised_records",
     "negative_control_calibration_examples",
     "newsless_causal_calibration_examples",
+    "counterexample_calibration_examples",
 ]
 
 ERROR_CORRECTION_RECORD_TYPES = {
@@ -98,18 +109,16 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
     manifests: dict[str, Any] = {}
     summaries: dict[str, dict[str, Any]] = {}
     source_records = BrainRecordStore(root).list_records()
-    record_store_hashes = {
-        record.record_id: record.normalized_payload_sha256
-        for record in source_records
+    record_store_hashes = brain_record_envelope_hashes(source_records)
+    record_store_routing_counts = _record_routing_counts(source_records)
+    record_store_routing = {
+        record.record_id: record_routing_metadata(record).model_dump(mode="json") for record in source_records
     }
-    unsealed_preference_record_ids = (
-        _unsealed_training_eligible_preference_record_ids(source_records)
-    )
+    unsealed_preference_record_ids = _unsealed_training_eligible_preference_record_ids(source_records)
     if unsealed_preference_record_ids:
         findings.append(
             "record-store: training-eligible blind_leader_preference_pair "
-            "records are not sealed: "
-            + ", ".join(unsealed_preference_record_ids)
+            "records are not sealed: " + ", ".join(unsealed_preference_record_ids)
         )
     source_record_ids: set[str] = set()
     training_eligible_record_ids: set[str] = set()
@@ -132,6 +141,15 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             manifest,
             record_store_hashes,
             findings,
+        )
+        _audit_record_routing_manifest(
+            kind,
+            manifest,
+            expected_source_counts=record_store_routing_counts,
+            expected_exported_counts=_record_routing_counts(
+                [record for record in source_records if _record_available_for_training(kind, record)]
+            ),
+            findings=findings,
         )
         _audit_weight_validation_contract(kind, manifest, findings)
         _audit_skipped_record_manifest_entries(kind, manifest, findings)
@@ -158,14 +176,16 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 expected_sha256=manifest.get("output_sha256"),
                 findings=findings,
             )
-            _audit_training_rows(kind, output_rows, findings)
+            _audit_training_rows(
+                kind,
+                output_rows,
+                findings,
+                expected_record_routing=record_store_routing,
+            )
             _audit_record_export_scope(kind, manifest, output_rows, findings)
             row_record_ids = _record_ids_from_rows(output_rows)
             exported_record_ids.update(row_record_ids)
-        if (
-            manifest.get("source_mode") == "brain_records"
-            and manifest.get("weight_validation_status") == "failed"
-        ):
+        if manifest.get("source_mode") == "brain_records" and manifest.get("weight_validation_status") == "failed":
             findings.append(f"{kind}: record weight validation failed")
         if manifest.get("source_mode") == "brain_records" and kind == "preference":
             _audit_record_preference_rows(kind, output_rows, findings)
@@ -212,17 +232,13 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
             "unique_training_eligible_record_count": len(training_eligible_record_ids),
             "unique_exported_record_count": len(exported_record_ids),
             "unique_skipped_record_count": len(unique_skipped_record_ids),
-            "unsealed_training_eligible_preference_record_ids": (
-                unsealed_preference_record_ids
-            ),
+            "unsealed_training_eligible_preference_record_ids": (unsealed_preference_record_ids),
             "unique_source_record_ids": sorted(source_record_ids),
             "unique_training_eligible_record_ids": sorted(training_eligible_record_ids),
             "unique_exported_record_ids": sorted(exported_record_ids),
             "unique_skipped_record_ids": unique_skipped_record_ids,
             "skipped_records_by_export": skipped_records_by_export,
-            "skipped_record_reasons_by_record_id": (
-                _skipped_record_reasons_by_record_id(summaries)
-            ),
+            "skipped_record_reasons_by_record_id": (_skipped_record_reasons_by_record_id(summaries)),
             "unique_skipped_record_reasons_by_record_id": (
                 _skipped_record_reasons_by_record_id(
                     summaries,
@@ -238,9 +254,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 summaries,
                 "source_record_hashes",
             ),
-            "source_record_hash_count": len(
-                _merge_string_maps(summaries, "source_record_hashes")
-            ),
+            "source_record_hash_count": len(_merge_string_maps(summaries, "source_record_hashes")),
             "counts_by_record_type": _max_counter(summaries, "counts_by_record_type"),
             "counts_by_training_target": _max_counter(
                 summaries,
@@ -271,8 +285,7 @@ def audit_training_exports(root: Path) -> dict[str, Any]:
                 "direct_event_weight_sum_mismatches",
             ),
             "weight_validation_statuses": {
-                kind: summary.get("weight_validation_status")
-                for kind, summary in sorted(summaries.items())
+                kind: summary.get("weight_validation_status") for kind, summary in sorted(summaries.items())
             },
             "exports": summaries,
         },
@@ -287,6 +300,8 @@ def _audit_source_hash_contract(
 ) -> None:
     if manifest.get("source_mode") != "brain_records":
         return
+    if manifest.get("source_record_hash_kind") != "canonical_full_envelope_sha256":
+        findings.append(f"{kind}: source_record_hash_kind is invalid")
     hashes = manifest.get("source_record_hashes")
     if not isinstance(hashes, dict) or not hashes:
         findings.append(f"{kind}: source_record_hashes are missing")
@@ -294,25 +309,14 @@ def _audit_source_hash_contract(
     invalid_ids = [
         str(record_id)
         for record_id, digest in hashes.items()
-        if not isinstance(record_id, str)
-        or not record_id
-        or not isinstance(digest, str)
-        or len(digest) != 64
+        if not isinstance(record_id, str) or not record_id or not isinstance(digest, str) or len(digest) != 64
     ]
     if invalid_ids:
-        findings.append(
-            f"{kind}: source_record_hashes contain invalid hash entries: "
-            f"{', '.join(sorted(invalid_ids))}"
-        )
+        findings.append(f"{kind}: source_record_hashes contain invalid hash entries: {', '.join(sorted(invalid_ids))}")
     expected_count = manifest.get("source_record_count")
-    if (
-        isinstance(expected_count, int)
-        and not isinstance(expected_count, bool)
-        and expected_count != len(hashes)
-    ):
+    if isinstance(expected_count, int) and not isinstance(expected_count, bool) and expected_count != len(hashes):
         findings.append(
-            f"{kind}: source_record_hashes count {len(hashes)} does not match "
-            f"source_record_count {expected_count}"
+            f"{kind}: source_record_hashes count {len(hashes)} does not match source_record_count {expected_count}"
         )
 
 
@@ -325,9 +329,7 @@ def _audit_record_store_source_contract(
     if not record_store_hashes:
         return
     if manifest.get("source_mode") != "brain_records":
-        findings.append(
-            f"{kind}: brain record store exists but export source_mode is not brain_records"
-        )
+        findings.append(f"{kind}: brain record store exists but export source_mode is not brain_records")
         return
     manifest_hashes = _string_map(manifest.get("source_record_hashes"))
     missing_ids = sorted(set(record_store_hashes) - set(manifest_hashes))
@@ -335,29 +337,17 @@ def _audit_record_store_source_contract(
     mismatched_ids = sorted(
         record_id
         for record_id, digest in manifest_hashes.items()
-        if record_store_hashes.get(record_id) is not None
-        and record_store_hashes[record_id] != digest
+        if record_store_hashes.get(record_id) is not None and record_store_hashes[record_id] != digest
     )
     expected_count = len(record_store_hashes)
     if manifest.get("source_record_count") != expected_count:
-        findings.append(
-            f"{kind}: source_record_count does not match current brain record store"
-        )
+        findings.append(f"{kind}: source_record_count does not match current brain record store")
     if missing_ids:
-        findings.append(
-            f"{kind}: source_record_hashes missing current brain records: "
-            f"{', '.join(missing_ids)}"
-        )
+        findings.append(f"{kind}: source_record_hashes missing current brain records: {', '.join(missing_ids)}")
     if extra_ids:
-        findings.append(
-            f"{kind}: source_record_hashes contain records outside current store: "
-            f"{', '.join(extra_ids)}"
-        )
+        findings.append(f"{kind}: source_record_hashes contain records outside current store: {', '.join(extra_ids)}")
     if mismatched_ids:
-        findings.append(
-            f"{kind}: source_record_hashes mismatch current brain records: "
-            f"{', '.join(mismatched_ids)}"
-        )
+        findings.append(f"{kind}: source_record_hashes mismatch current brain records: {', '.join(mismatched_ids)}")
 
 
 def _audit_weight_validation_contract(
@@ -375,6 +365,22 @@ def _audit_weight_validation_contract(
     for field, expected_value in expected_fields.items():
         if manifest.get(field) != expected_value:
             findings.append(f"{kind}: {field} does not match weight_validation")
+
+
+def _audit_record_routing_manifest(
+    kind: str,
+    manifest: dict[str, Any],
+    *,
+    expected_source_counts: dict[str, dict[str, int]],
+    expected_exported_counts: dict[str, dict[str, int]],
+    findings: list[str],
+) -> None:
+    if manifest.get("source_mode") != "brain_records":
+        return
+    if manifest.get("source_record_routing_counts") != expected_source_counts:
+        findings.append(f"{kind}: source_record_routing_counts do not match current record store")
+    if manifest.get("exported_record_routing_counts") != expected_exported_counts:
+        findings.append(f"{kind}: exported_record_routing_counts do not match current record store")
 
 
 def _audit_skipped_record_manifest_entries(
@@ -475,11 +481,7 @@ def _skipped_record_entries_from_manifest(manifest: dict[str, Any]) -> list[dict
 
 
 def _record_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
-    return {
-        record_id
-        for row in rows
-        if isinstance(record_id := row.get("record_id"), str) and record_id
-    }
+    return {record_id for row in rows if isinstance(record_id := row.get("record_id"), str) and record_id}
 
 
 def _source_record_ids(records: list[BrainRecordEnvelope]) -> list[str]:
@@ -490,18 +492,12 @@ def _eligible_record_ids_for_kind(
     kind: str,
     records: list[BrainRecordEnvelope],
 ) -> list[str]:
-    return sorted(
-        record.record_id
-        for record in records
-        if _record_selected_for_kind(kind, record) and record.training_eligible
-    )
+    return sorted(record.record_id for record in records if _record_available_for_training(kind, record))
 
 
 def _skipped_record_ids(skipped_records: list[dict[str, Any]]) -> list[str]:
     return sorted(
-        record_id
-        for item in skipped_records
-        if isinstance(record_id := item.get("record_id"), str) and record_id
+        record_id for item in skipped_records if isinstance(record_id := item.get("record_id"), str) and record_id
     )
 
 
@@ -516,20 +512,14 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
     source_mode = "brain_records" if records else "legacy_research_episodes"
     episodes = [] if records else store.list_accepted()
     rows = (
-        _record_rows_for_kind(kind, records)
-        if records
-        else _rows_for_kind(kind, episodes, source_hashes=source_hashes)
+        _record_rows_for_kind(kind, records) if records else _rows_for_kind(kind, episodes, source_hashes=source_hashes)
     )
     training_categories = _training_categories_for_kind(kind, source_mode=source_mode)
     source_episode_ids = (
-        sorted({record.episode_id for record in records})
-        if records
-        else [episode.episode_id for episode in episodes]
+        sorted({record.episode_id for record in records}) if records else [episode.episode_id for episode in episodes]
     )
     row_episode_ids = {
-        episode_id
-        for row in rows
-        if isinstance(episode_id := row.get("episode_id"), str) and episode_id
+        episode_id for row in rows if isinstance(episode_id := row.get("episode_id"), str) and episode_id
     }
     skipped = [] if records else _skipped_episodes(kind, episodes, row_episode_ids=row_episode_ids)
     skipped_records = _skipped_records(kind, records) if records else []
@@ -576,9 +566,8 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "skipped_episode_count": len(skipped),
             "skipped_episodes": skipped,
             "source_hashes": source_hashes,
-            "source_record_hashes": {
-                record.record_id: record.normalized_payload_sha256 for record in records
-            },
+            "source_record_hash_kind": "canonical_full_envelope_sha256",
+            "source_record_hashes": brain_record_envelope_hashes(records),
             "output_file": _project_relative_path(root, path),
             "output_sha256": file_sha256(path),
             "phase_outputs": phase_outputs,
@@ -593,15 +582,15 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
                 rows,
                 training_categories=training_categories,
             ),
-            "blind_safe_row_count": sum(
-                1 for row in rows if row["hindsight_safe_for_blind_sft"] is True
-            ),
-            "hindsight_row_count": sum(
-                1 for row in rows if row["hindsight_safe_for_blind_sft"] is False
-            ),
+            "blind_safe_row_count": sum(1 for row in rows if row["hindsight_safe_for_blind_sft"] is True),
+            "hindsight_row_count": sum(1 for row in rows if row["hindsight_safe_for_blind_sft"] is False),
             "source_phase_counts": _source_phase_counts(rows),
             "counts_by_record_type": _record_type_counts(records),
             "counts_by_training_target": _record_training_target_counts(records),
+            "source_record_routing_counts": _record_routing_counts(records),
+            "exported_record_routing_counts": _record_routing_counts(
+                [record for record in records if _record_available_for_training(kind, record)]
+            ),
             **weight_validation_fields,
             "weight_validation": weight_validation,
             "notes": [
@@ -610,10 +599,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
                     "use phase_outputs.BLIND for blind-only SFT."
                 ),
                 "Blind SFT rows use only blind inputs and blind outputs.",
-                (
-                    "Failure-correction SFT rows are POSTMORTEM rows and are "
-                    "written to phase_outputs.POSTMORTEM."
-                ),
+                ("Failure-correction SFT rows are POSTMORTEM rows and are written to phase_outputs.POSTMORTEM."),
                 "Preference and eval rows may include postmortem/outcome labels.",
                 "Do not train postmortem labels as if they were blind answers.",
                 "Rows with source_phase=POSTMORTEM must not be mixed into blind SFT.",
@@ -630,9 +616,7 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
         {
             "kind": kind,
             "source_mode": source_mode,
-            "source_episode_count": len({record.episode_id for record in records})
-            if records
-            else len(episodes),
+            "source_episode_count": len({record.episode_id for record in records}) if records else len(episodes),
             "source_record_count": len(records),
             "source_record_ids": source_record_ids,
             "eligible_record_count": len(eligible_record_ids),
@@ -644,6 +628,10 @@ def export_training(root: Path, *, kind: str) -> TrainingExportResult:
             "skipped_record_ids": skipped_record_ids,
             "counts_by_record_type": _record_type_counts(records),
             "counts_by_training_target": _record_training_target_counts(records),
+            "source_record_routing_counts": _record_routing_counts(records),
+            "exported_record_routing_counts": _record_routing_counts(
+                [record for record in records if _record_available_for_training(kind, record)]
+            ),
             **weight_validation_fields,
             "weight_validation": weight_validation,
             "output_file": _project_relative_path(root, path),
@@ -672,6 +660,8 @@ def _training_manifest_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "hindsight_row_count": manifest.get("hindsight_row_count"),
         "counts_by_record_type": manifest.get("counts_by_record_type", {}),
         "counts_by_training_target": manifest.get("counts_by_training_target", {}),
+        "source_record_routing_counts": manifest.get("source_record_routing_counts", {}),
+        "exported_record_routing_counts": manifest.get("exported_record_routing_counts", {}),
         "category_counts": manifest.get("category_counts", {}),
         "missing_training_categories": manifest.get("missing_training_categories", []),
         "source_phase_counts": manifest.get("source_phase_counts", {}),
@@ -725,11 +715,7 @@ def _sum_counter(
         if not isinstance(value, dict):
             continue
         for item_key, item_value in value.items():
-            if (
-                isinstance(item_key, str)
-                and isinstance(item_value, int)
-                and not isinstance(item_value, bool)
-            ):
+            if isinstance(item_key, str) and isinstance(item_value, int) and not isinstance(item_value, bool):
                 counter[item_key] += item_value
     return dict(sorted(counter.items()))
 
@@ -766,10 +752,7 @@ def _skipped_record_reasons_by_record_id(
             if not reasons and isinstance(item.get("reason"), str):
                 reasons = [str(item["reason"])]
             reasons_by_record.setdefault(record_id, set()).update(reasons)
-    return {
-        record_id: sorted(reasons)
-        for record_id, reasons in sorted(reasons_by_record.items())
-    }
+    return {record_id: sorted(reasons) for record_id, reasons in sorted(reasons_by_record.items())}
 
 
 def _skipped_record_reason_counts(
@@ -843,9 +826,7 @@ def _numeric_map(value: Any) -> dict[str, float]:
     return {
         item_key: float(item_value)
         for item_key, item_value in sorted(value.items())
-        if isinstance(item_key, str)
-        and isinstance(item_value, int | float)
-        and not isinstance(item_value, bool)
+        if isinstance(item_key, str) and isinstance(item_value, int | float) and not isinstance(item_value, bool)
     }
 
 
@@ -856,21 +837,15 @@ def _string_list(value: Any) -> list[str]:
 
 
 def _string_list_field_valid(value: object) -> bool:
-    return isinstance(value, list) and all(
-        isinstance(item, str) and bool(item) for item in value
-    )
+    return isinstance(value, list) and all(isinstance(item, str) and bool(item) for item in value)
 
 
 def _weight_validation_manifest_fields(
     weight_validation: dict[str, Any],
 ) -> dict[str, Any]:
     duplicate_keys = _string_list(weight_validation.get("duplicate_issuer_day_keys"))
-    issuer_mismatches = _numeric_map(
-        weight_validation.get("issuer_day_weight_sum_mismatches")
-    )
-    direct_mismatches = _numeric_map(
-        weight_validation.get("direct_event_weight_sum_mismatches")
-    )
+    issuer_mismatches = _numeric_map(weight_validation.get("issuer_day_weight_sum_mismatches"))
+    direct_mismatches = _numeric_map(weight_validation.get("direct_event_weight_sum_mismatches"))
     duplicate_count = weight_validation.get("duplicate_issuer_day_count")
     if not isinstance(duplicate_count, int) or isinstance(duplicate_count, bool):
         duplicate_count = len(duplicate_keys)
@@ -888,10 +863,7 @@ def _weight_validation_manifest_fields(
 def _weight_validation_summary_fields(manifest: dict[str, Any]) -> dict[str, Any]:
     validation = manifest.get("weight_validation")
     fallback = _weight_validation_manifest_fields(validation if isinstance(validation, dict) else {})
-    return {
-        field: manifest.get(field, fallback_value)
-        for field, fallback_value in fallback.items()
-    }
+    return {field: manifest.get(field, fallback_value) for field, fallback_value in fallback.items()}
 
 
 def _project_relative_path(root: Path, path: Path) -> str:
@@ -915,10 +887,7 @@ def _write_phase_outputs(
         phase_rows = [row for row in rows if row.get("source_phase") == phase]
         path = target_dir / file_name
         path.write_text(
-            "".join(
-                json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
-                for row in phase_rows
-            ),
+            "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in phase_rows),
             encoding="utf-8",
         )
         outputs[phase] = {
@@ -931,10 +900,7 @@ def _write_phase_outputs(
     audit_only_path = target_dir / f"audit_only_{kind}.jsonl"
     audit_only_rows = _audit_only_rows(kind, skipped_records)
     audit_only_path.write_text(
-        "".join(
-            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
-            for row in audit_only_rows
-        ),
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in audit_only_rows),
         encoding="utf-8",
     )
     outputs["AUDIT_ONLY"] = {
@@ -1026,9 +992,7 @@ def _audit_training_artifact(
 ) -> None:
     if isinstance(expected_count, int) and not isinstance(expected_count, bool):
         if len(rows) != expected_count:
-            findings.append(
-                f"{kind}: {label} row_count mismatch expected {expected_count}, got {len(rows)}"
-            )
+            findings.append(f"{kind}: {label} row_count mismatch expected {expected_count}, got {len(rows)}")
     else:
         findings.append(f"{kind}: {label} row_count is missing or invalid")
     if isinstance(expected_sha256, str) and expected_sha256:
@@ -1043,6 +1007,8 @@ def _audit_training_rows(
     kind: str,
     rows: list[dict[str, Any]],
     findings: list[str],
+    *,
+    expected_record_routing: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     for row in rows:
         example_id = _row_identifier(row)
@@ -1057,6 +1023,25 @@ def _audit_training_rows(
             findings.append(f"{kind}: POSTMORTEM row is marked blind-safe {example_id}")
         elif source_phase not in {"BLIND", "POSTMORTEM"}:
             findings.append(f"{kind}: row has invalid source_phase {example_id}")
+        record_id = row.get("record_id")
+        if not isinstance(record_id, str):
+            continue
+        routing = row.get("record_routing")
+        if not isinstance(routing, dict):
+            findings.append(f"{kind}: record routing is missing {example_id}")
+            continue
+        expected = expected_record_routing.get(record_id) if expected_record_routing is not None else None
+        if expected is not None and routing != expected:
+            findings.append(f"{kind}: record routing does not match source record {example_id}")
+        if routing.get("training_eligible") is not True:
+            findings.append(f"{kind}: routed record is ineligible {example_id}")
+        if routing.get("routing_disposition") != RecordRoutingDisposition.REASONING.value:
+            findings.append(f"{kind}: routed record is not REASONING {example_id}")
+        if (
+            routing.get("evidence_polarity") == RecordEvidencePolarity.POSITIVE.value
+            and routing.get("label_quality") != RecordLabelQuality.VERIFIED.value
+        ):
+            findings.append(f"{kind}: positive record is not verified {example_id}")
 
 
 def _audit_record_export_scope(
@@ -1105,38 +1090,21 @@ def _audit_record_export_scope(
         expected_ids=skipped_ids,
         findings=findings,
     )
-    duplicate_row_ids = sorted(
-        record_id for record_id, count in Counter(row_ids).items() if count > 1
-    )
+    duplicate_row_ids = sorted(record_id for record_id, count in Counter(row_ids).items() if count > 1)
     unknown_row_ids = sorted(row_id_set - source_ids)
     exported_skipped_ids = sorted(row_id_set & skipped_ids)
     uncovered_ids = sorted(source_ids - row_id_set - skipped_ids)
     skipped_unknown_ids = sorted(skipped_ids - source_ids)
     if duplicate_row_ids:
-        findings.append(
-            f"{kind}: duplicate exported brain record IDs: "
-            f"{', '.join(duplicate_row_ids)}"
-        )
+        findings.append(f"{kind}: duplicate exported brain record IDs: {', '.join(duplicate_row_ids)}")
     if unknown_row_ids:
-        findings.append(
-            f"{kind}: exported brain record IDs outside source manifest: "
-            f"{', '.join(unknown_row_ids)}"
-        )
+        findings.append(f"{kind}: exported brain record IDs outside source manifest: {', '.join(unknown_row_ids)}")
     if exported_skipped_ids:
-        findings.append(
-            f"{kind}: exported skipped brain record IDs: "
-            f"{', '.join(exported_skipped_ids)}"
-        )
+        findings.append(f"{kind}: exported skipped brain record IDs: {', '.join(exported_skipped_ids)}")
     if uncovered_ids:
-        findings.append(
-            f"{kind}: source brain records are neither exported nor skipped: "
-            f"{', '.join(uncovered_ids)}"
-        )
+        findings.append(f"{kind}: source brain records are neither exported nor skipped: {', '.join(uncovered_ids)}")
     if skipped_unknown_ids:
-        findings.append(
-            f"{kind}: skipped brain record IDs outside source manifest: "
-            f"{', '.join(skipped_unknown_ids)}"
-        )
+        findings.append(f"{kind}: skipped brain record IDs outside source manifest: {', '.join(skipped_unknown_ids)}")
 
 
 def _audit_manifest_record_id_list(
@@ -1150,19 +1118,12 @@ def _audit_manifest_record_id_list(
     if field not in manifest:
         return
     value = manifest.get(field)
-    if not isinstance(value, list) or not all(
-        isinstance(record_id, str) and record_id for record_id in value
-    ):
+    if not isinstance(value, list) or not all(isinstance(record_id, str) and record_id for record_id in value):
         findings.append(f"{kind}: {field} is invalid")
         return
-    duplicate_ids = sorted(
-        record_id for record_id, count in Counter(value).items() if count > 1
-    )
+    duplicate_ids = sorted(record_id for record_id, count in Counter(value).items() if count > 1)
     if duplicate_ids:
-        findings.append(
-            f"{kind}: {field} contains duplicate record IDs: "
-            f"{', '.join(duplicate_ids)}"
-        )
+        findings.append(f"{kind}: {field} contains duplicate record IDs: {', '.join(duplicate_ids)}")
     observed_ids = set(value)
     if observed_ids != expected_ids:
         findings.append(f"{kind}: {field} does not match manifest records")
@@ -1176,10 +1137,7 @@ def _audit_record_preference_rows(
     for row in rows:
         row_id = _row_identifier(row)
         if row.get("record_type") != "blind_leader_preference_pair":
-            findings.append(
-                f"{kind}: brain record preference row is not a sealed leader pair "
-                f"{row_id}"
-            )
+            findings.append(f"{kind}: brain record preference row is not a sealed leader pair {row_id}")
             continue
         input_payload = row.get("input")
         output_payload = row.get("output")
@@ -1191,29 +1149,20 @@ def _audit_record_preference_rows(
             continue
         for field in ("blind_preferred_ticker", "blind_rejected_ticker"):
             if not _non_empty_string(input_payload.get(field)):
-                findings.append(
-                    f"{kind}: preference row {field} is missing {row_id}"
-                )
+                findings.append(f"{kind}: preference row {field} is missing {row_id}")
         if not _non_empty_string(output_payload.get("outcome_winner_ticker")):
-            findings.append(
-                f"{kind}: preference row outcome_winner_ticker is missing {row_id}"
-            )
+            findings.append(f"{kind}: preference row outcome_winner_ticker is missing {row_id}")
         preference_correct = output_payload.get("blind_preference_correct")
         training_mode = output_payload.get("training_mode")
         if not isinstance(preference_correct, bool):
-            findings.append(
-                f"{kind}: preference row blind_preference_correct is invalid {row_id}"
-            )
+            findings.append(f"{kind}: preference row blind_preference_correct is invalid {row_id}")
         if training_mode not in {"positive_preference", "correction"}:
             findings.append(f"{kind}: preference row training_mode is invalid {row_id}")
         elif isinstance(preference_correct, bool) and (
             (preference_correct and training_mode != "positive_preference")
             or (not preference_correct and training_mode != "correction")
         ):
-            findings.append(
-                f"{kind}: preference row training_mode does not match "
-                f"blind_preference_correct {row_id}"
-            )
+            findings.append(f"{kind}: preference row training_mode does not match blind_preference_correct {row_id}")
 
 
 def _non_empty_string(value: object) -> bool:
@@ -1257,15 +1206,10 @@ def _audit_phase_outputs(
         for row in rows:
             example_id = _row_identifier(row)
             if row.get("source_phase") != phase:
-                findings.append(
-                    f"{kind}: phase_outputs.{phase} contains {row.get('source_phase')} "
-                    f"row {example_id}"
-                )
+                findings.append(f"{kind}: phase_outputs.{phase} contains {row.get('source_phase')} row {example_id}")
             expected_blind_safe = phase == "BLIND"
             if row.get("hindsight_safe_for_blind_sft") is not expected_blind_safe:
-                findings.append(
-                    f"{kind}: phase_outputs.{phase} blind-safe flag mismatch {example_id}"
-                )
+                findings.append(f"{kind}: phase_outputs.{phase} blind-safe flag mismatch {example_id}")
     metadata = phase_outputs.get("AUDIT_ONLY")
     if not isinstance(metadata, dict):
         findings.append(f"{kind}: phase_outputs.AUDIT_ONLY is missing")
@@ -1294,9 +1238,7 @@ def _audit_phase_outputs(
     if metadata.get("audit_only") is not True:
         findings.append(f"{kind}: phase_outputs.AUDIT_ONLY audit_only flag mismatch")
     if metadata.get("hindsight_safe_for_blind_sft") is not False:
-        findings.append(
-            f"{kind}: phase_outputs.AUDIT_ONLY blind-safe flag mismatch"
-        )
+        findings.append(f"{kind}: phase_outputs.AUDIT_ONLY blind-safe flag mismatch")
     expected_rows = _audit_only_rows(kind, _valid_skipped_records(manifest))
     if rows != expected_rows:
         findings.append(f"{kind}: phase_outputs.AUDIT_ONLY rows mismatch")
@@ -1324,33 +1266,17 @@ def _rows_for_kind(
     source_hashes: dict[str, str],
 ) -> list[dict[str, Any]]:
     if kind == "sft":
-        return [
-            row
-            for episode in episodes
-            for row in _sft_rows(episode, source_hashes=source_hashes)
-        ]
+        return [row for episode in episodes for row in _sft_rows(episode, source_hashes=source_hashes)]
     if kind == "preference":
-        return [
-            row
-            for episode in episodes
-            for row in _preference_rows(episode, source_hashes=source_hashes)
-        ]
-    return [
-        row
-        for episode in episodes
-        for row in _eval_rows(episode, source_hashes=source_hashes)
-    ]
+        return [row for episode in episodes for row in _preference_rows(episode, source_hashes=source_hashes)]
+    return [row for episode in episodes for row in _eval_rows(episode, source_hashes=source_hashes)]
 
 
 def _record_rows_for_kind(
     kind: str,
     records: list[BrainRecordEnvelope],
 ) -> list[dict[str, Any]]:
-    selected = [
-        record
-        for record in records
-        if _record_selected_for_kind(kind, record) and record.training_eligible
-    ]
+    selected = [record for record in records if _record_available_for_training(kind, record)]
     if kind == "sft":
         return [_record_sft_row(record) for record in selected]
     if kind == "preference":
@@ -1360,10 +1286,7 @@ def _record_rows_for_kind(
 
 def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
     if kind == "preference":
-        return (
-            record.record_type == "blind_leader_preference_pair"
-            and _record_has_sealed_preference_pair(record)
-        )
+        return record.record_type == "blind_leader_preference_pair" and _record_has_sealed_preference_pair(record)
     if kind == "evals":
         return record.record_type in {
             "supervised_issuer_day_case",
@@ -1373,6 +1296,7 @@ def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
             "beneficiary_discovery_case",
             "negative_control_case",
             "newsless_or_unexplained_case",
+            "counterexample",
         }
     return record.record_type in {
         "supervised_issuer_day_case",
@@ -1382,8 +1306,20 @@ def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
         "beneficiary_discovery_case",
         "negative_control_case",
         "newsless_or_unexplained_case",
+        "counterexample",
         *ERROR_CORRECTION_RECORD_TYPES,
     }
+
+
+def _record_available_for_training(
+    kind: str,
+    record: BrainRecordEnvelope,
+) -> bool:
+    return (
+        _record_selected_for_kind(kind, record)
+        and record.training_eligible
+        and record_routing_disposition(record) is RecordRoutingDisposition.REASONING
+    )
 
 
 def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
@@ -1461,8 +1397,7 @@ def _record_error_correction_sft_row(record: BrainRecordEnvelope) -> dict[str, A
             "error_id": payload.get("error_id"),
             "error_type": payload.get("error_type"),
             "correction_mode": payload.get("correction_mode"),
-            "correction_rationale": payload.get("correction_rationale")
-            or payload.get("rationale"),
+            "correction_rationale": payload.get("correction_rationale") or payload.get("rationale"),
             "corrected_decision": payload.get("corrected_decision"),
             "corrected_candidate_ids": payload.get("corrected_candidate_ids", []),
             "corrected_ticker": payload.get("corrected_ticker"),
@@ -1477,11 +1412,7 @@ def _record_error_correction_sft_row(record: BrainRecordEnvelope) -> dict[str, A
 
 def _record_preference_row(record: BrainRecordEnvelope) -> dict[str, Any]:
     payload = record.payload
-    training_mode = (
-        "positive_preference"
-        if payload.get("blind_preference_correct") is True
-        else "correction"
-    )
+    training_mode = "positive_preference" if payload.get("blind_preference_correct") is True else "correction"
     return _training_record_row(
         task="positive_vs_negative_candidate_preference",
         record=record,
@@ -1543,6 +1474,8 @@ def _record_sft_task(record: BrainRecordEnvelope) -> str:
         return "record_negative_control_calibration"
     if record.record_type == "newsless_or_unexplained_case":
         return "record_newsless_causal_calibration"
+    if record.record_type == "counterexample":
+        return "record_counterexample_calibration"
     return "record_error_correction"
 
 
@@ -1555,6 +1488,7 @@ def _training_record_row(
     split: str,
     hindsight_safe: bool,
 ) -> dict[str, Any]:
+    routing = record_routing_metadata(record)
     return {
         "schema_version": "nslab.training_example.v2",
         "example_id": stable_id("TRN", split, task, record.record_id),
@@ -1574,6 +1508,7 @@ def _training_record_row(
             "field_values": {"training_eligible": record.training_eligible},
             "reasons": {"training_eligible": record.eligibility_reason or ""},
         },
+        "record_routing": routing.model_dump(mode="json"),
         "input": input_payload,
         "output": output_payload,
         "provenance": [
@@ -1603,19 +1538,14 @@ def _sft_rows(
                     input_payload={
                         "trade_date": episode.trade_date.isoformat(),
                         "cutoff_at": episode.cutoff_at.isoformat(),
-                        "observed_events": [
-                            item.model_dump(mode="json") for item in episode.observed_events
-                        ],
+                        "observed_events": [item.model_dump(mode="json") for item in episode.observed_events],
                         "input_news_files": episode.input_news_files,
                     },
                     output_payload={
                         "summary": episode.blind_analysis.summary,
                         "open_world_mechanisms": episode.blind_analysis.open_world_mechanisms,
                         "initial_uncertainties": episode.blind_analysis.initial_uncertainties,
-                        "candidates": [
-                            candidate.model_dump(mode="json")
-                            for candidate in episode.blind_predictions
-                        ],
+                        "candidates": [candidate.model_dump(mode="json") for candidate in episode.blind_predictions],
                     },
                     split="sft",
                     hindsight_safe=True,
@@ -1709,9 +1639,7 @@ def _sft_rows(
                 task="failure_correction",
                 episode=episode,
                 input_payload={
-                    "blind_candidates": [
-                        candidate.model_dump(mode="json") for candidate in episode.blind_predictions
-                    ],
+                    "blind_candidates": [candidate.model_dump(mode="json") for candidate in episode.blind_predictions],
                     "postmortem_summary": episode.postmortem.summary,
                     "misses": episode.misses,
                 },
@@ -1960,14 +1888,8 @@ def _eligibility_basis_for_task(
     return {
         "required_fields": required_fields,
         "satisfied": all(bool(getattr(eligibility, field)) for field in required_fields),
-        "field_values": {
-            field: bool(getattr(eligibility, field)) for field in required_fields
-        },
-        "reasons": {
-            field: eligibility.reasons[field]
-            for field in required_fields
-            if field in eligibility.reasons
-        },
+        "field_values": {field: bool(getattr(eligibility, field)) for field in required_fields},
+        "reasons": {field: eligibility.reasons[field] for field in required_fields if field in eligibility.reasons},
     }
 
 
@@ -2030,11 +1952,7 @@ def _missing_training_categories(
     training_categories: list[str],
 ) -> list[str]:
     counts = _category_counts(rows, training_categories=training_categories)
-    return [
-        category
-        for category in training_categories
-        if counts.get(category, 0) == 0
-    ]
+    return [category for category in training_categories if counts.get(category, 0) == 0]
 
 
 def _source_phase_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -2052,6 +1970,7 @@ def _skipped_records(
     skipped: list[dict[str, Any]] = []
     for record in records:
         skip_reasons: list[str] = []
+        routing = record_routing_metadata(record)
         if not record.training_eligible:
             skip_reasons.append(record.eligibility_reason or "training_eligible=false")
         if (
@@ -2062,6 +1981,8 @@ def _skipped_records(
             skip_reasons.append("sealed_preference_pair_missing")
         if not _record_selected_for_kind(kind, record):
             skip_reasons.append("record_type_not_selected_for_export_kind")
+        elif routing.routing_disposition != RecordRoutingDisposition.REASONING.value:
+            skip_reasons.append(f"routing_disposition={routing.routing_disposition}")
         if not skip_reasons:
             continue
         skipped.append(
@@ -2071,6 +1992,7 @@ def _skipped_records(
                 "episode_id": record.episode_id,
                 "training_eligible": record.training_eligible,
                 "eligibility_reason": record.eligibility_reason,
+                "record_routing": routing.model_dump(mode="json"),
                 "reason": skip_reasons[0],
                 "skip_reasons": skip_reasons,
             }
@@ -2083,9 +2005,41 @@ def _record_type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
 
 
 def _record_training_target_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
-    return dict(
-        sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
-    )
+    return dict(sorted(Counter(record.training_target or "UNKNOWN" for record in records).items()))
+
+
+def _record_routing_counts(
+    records: list[BrainRecordEnvelope],
+) -> dict[str, dict[str, int]]:
+    polarities: Counter[str] = Counter()
+    eligibility: Counter[str] = Counter()
+    qualities: Counter[str] = Counter()
+    dispositions: Counter[str] = Counter()
+    cross_table: Counter[str] = Counter()
+    for record in records:
+        routing = record_routing_metadata(record)
+        eligible = "true" if record.training_eligible else "false"
+        polarities[routing.evidence_polarity] += 1
+        eligibility[eligible] += 1
+        qualities[routing.label_quality] += 1
+        dispositions[routing.routing_disposition] += 1
+        cross_table[
+            "|".join(
+                (
+                    routing.evidence_polarity,
+                    eligible,
+                    routing.label_quality,
+                    routing.routing_disposition,
+                )
+            )
+        ] += 1
+    return {
+        "evidence_polarity": dict(sorted(polarities.items())),
+        "training_eligible": dict(sorted(eligibility.items())),
+        "label_quality": dict(sorted(qualities.items())),
+        "routing_disposition": dict(sorted(dispositions.items())),
+        "cross_table": dict(sorted(cross_table.items())),
+    }
 
 
 def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, Any]:
@@ -2104,30 +2058,20 @@ def _record_weight_validation(records: list[BrainRecordEnvelope]) -> dict[str, A
             if key in issuer_keys and not _uses_fractional_issuer_day_group(record):
                 duplicate_issuer_day_keys.append("|".join(key))
             issuer_keys.add(key)
-            issuer_weights["|".join(key)] += _numeric_weight(
-                record.payload.get("sample_weight", 0.0)
-            )
+            issuer_weights["|".join(key)] += _numeric_weight(record.payload.get("sample_weight", 0.0))
         if record.record_type == "supervised_direct_event_case":
             direct_weights[_issuer_day_weight_identity(record)] += _numeric_weight(
                 record.payload.get("sample_weight", 0.0)
             )
     issuer_weight_mismatches = {
-        key: round(total, 12)
-        for key, total in sorted(issuer_weights.items())
-        if abs(total - 1.0) > 0.000001
+        key: round(total, 12) for key, total in sorted(issuer_weights.items()) if abs(total - 1.0) > 0.000001
     }
     direct_weight_mismatches = {
-        key: round(total, 12)
-        for key, total in sorted(direct_weights.items())
-        if abs(total - 1.0) > 0.000001
+        key: round(total, 12) for key, total in sorted(direct_weights.items()) if abs(total - 1.0) > 0.000001
     }
     return {
         "status": "passed"
-        if (
-            not duplicate_issuer_day_keys
-            and not issuer_weight_mismatches
-            and not direct_weight_mismatches
-        )
+        if (not duplicate_issuer_day_keys and not issuer_weight_mismatches and not direct_weight_mismatches)
         else "failed",
         "duplicate_issuer_day_count": len(duplicate_issuer_day_keys),
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
@@ -2143,10 +2087,7 @@ def _numeric_weight(value: object) -> float:
 
 
 def _uses_fractional_issuer_day_group(record: BrainRecordEnvelope) -> bool:
-    return (
-        record.payload.get("issuer_day_sample_weight_policy")
-        == "fractional_issuer_day_group"
-    )
+    return record.payload.get("issuer_day_sample_weight_policy") == "fractional_issuer_day_group"
 
 
 def _issuer_day_weight_identity(record: BrainRecordEnvelope) -> str:

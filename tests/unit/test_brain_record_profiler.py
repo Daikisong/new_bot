@@ -153,10 +153,15 @@ def test_profile_counts_match_record_population(tmp_path: Path) -> None:
 
     assert sum(profile.record_counts_by_type.values()) == profile.record_count == 5
     assert sum(profile.record_counts_by_polarity.values()) == 5
-    assert sum(
-        sum(counts.values())
-        for counts in profile.eligibility_polarity_crosstab.values()
-    ) == 5
+    assert sum(profile.record_counts_by_label_quality.values()) == 5
+    assert sum(profile.record_counts_by_routing_disposition.values()) == 5
+    assert sum(profile.routing_four_axis_crosstab.values()) == 5
+    assert profile.record_counts_by_polarity == {"NEGATIVE": 5}
+    assert profile.record_counts_by_routing_disposition == {
+        "AUDIT": 2,
+        "REASONING": 3,
+    }
+    assert sum(sum(counts.values()) for counts in profile.eligibility_polarity_crosstab.values()) == 5
     assert profile.sweep_burden.estimated_record_shard_count == 3
 
 
@@ -183,9 +188,7 @@ def test_repaired_inventory_profile_uses_manifest_without_loading_bundles(
             "engine_digest": "engine-a",
         },
     ]
-    manifest.write_text(
-        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
-    )
+    manifest.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
 
     profile = profile_repaired_inventory(manifest)
 
@@ -262,6 +265,7 @@ def _record(
     eligible: bool,
     typed_status: str = "KNOWN_TYPED_PAYLOAD",
 ) -> BrainRecordEnvelope:
+    payload = {**payload, "training_eligible": eligible}
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,

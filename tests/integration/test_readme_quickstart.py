@@ -106,7 +106,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert brain_audit_payload["coverage_complete"] is True
     assert read_json(tmp_path / "memory" / "vector_index" / "manifest.json")[
         "schema_version"
-    ] == "nslab.local_vector_index.v2"
+    ] == "nslab.local_vector_index.v3"
     assert read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")[
         "coverage_complete"
     ] is True

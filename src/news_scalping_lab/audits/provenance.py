@@ -20,6 +20,10 @@ from news_scalping_lab.context.final_synthesis import (
     phase2_memory_coverage_required,
 )
 from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
+from news_scalping_lab.context.sweep import (
+    RECORD_SWEEP_LANE_FIELDS,
+    record_sweep_lane_projection,
+)
 from news_scalping_lab.contracts.memory_context import (
     EventClusterManifest,
     NewsCoverageManifest,
@@ -38,6 +42,12 @@ from news_scalping_lab.inference.analyzer import (
 )
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_hashes,
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
+from news_scalping_lab.records.routing import POLARITY_CLASSIFIER_VERSION
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
 from news_scalping_lab.research_import.bundle import (
@@ -210,9 +220,7 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 findings.append(f"{path.name}: dominant sector is not an object")
                 continue
             if not sector.get("provenance"):
-                findings.append(
-                    f"{path.name}: dominant sector missing provenance: {sector.get('name')}"
-                )
+                findings.append(f"{path.name}: dominant sector missing provenance: {sector.get('name')}")
             has_anchor = (
                 sector.get("triggering_events")
                 or sector.get("supporting_cases")
@@ -221,17 +229,13 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 or sector.get("contradicting_record_ids")
             )
             if not has_anchor:
-                findings.append(
-                    f"{path.name}: dominant sector lacks provenance anchors: {sector.get('name')}"
-                )
+                findings.append(f"{path.name}: dominant sector lacks provenance anchors: {sector.get('name')}")
         for candidate in prediction.get("candidates", []):
             if not isinstance(candidate, dict):
                 findings.append(f"{path.name}: candidate is not an object")
                 continue
             if not candidate.get("provenance"):
-                findings.append(
-                    f"{path.name}: candidate missing provenance: {candidate.get('company_name')}"
-                )
+                findings.append(f"{path.name}: candidate missing provenance: {candidate.get('company_name')}")
             has_anchor = (
                 candidate.get("event_ids")
                 or candidate.get("memory_episode_ids")
@@ -239,13 +243,9 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 or candidate.get("source_urls")
             )
             if not has_anchor:
-                findings.append(
-                    f"{path.name}: candidate lacks provenance anchors: {candidate.get('company_name')}"
-                )
+                findings.append(f"{path.name}: candidate lacks provenance anchors: {candidate.get('company_name')}")
     checked_research_episode_files = _check_research_episode_provenance(root, findings)
-    checked_evaluation_episode_files = _check_evaluation_episode_provenance(
-        root, findings
-    )
+    checked_evaluation_episode_files = _check_evaluation_episode_provenance(root, findings)
     checked_company_memory_files = _check_company_memory_provenance(root, findings)
     checked_mechanism_memory_records = _check_mechanism_memory_provenance(root, findings)
     checked_training_export_manifests = _check_training_export_provenance(root, findings)
@@ -470,8 +470,7 @@ def _check_research_episode_blind_decision_provenance(
         )
         if not has_anchor:
             findings.append(
-                f"{label}: research episode blind prediction lacks provenance anchors: "
-                f"{candidate.get('company_name')}"
+                f"{label}: research episode blind prediction lacks provenance anchors: {candidate.get('company_name')}"
             )
     postmortem = episode.get("postmortem")
     if postmortem is not None:
@@ -560,19 +559,17 @@ def _check_research_episode_blind_analysis_shape(
     if not isinstance(summary, str) or not summary.strip():
         findings.append(f"{label}: research episode blind_analysis summary missing or invalid")
     mechanisms = blind_analysis.get("open_world_mechanisms")
-    if not isinstance(mechanisms, list) or not mechanisms or not all(
-        isinstance(item, str) and item.strip() for item in mechanisms
+    if (
+        not isinstance(mechanisms, list)
+        or not mechanisms
+        or not all(isinstance(item, str) and item.strip() for item in mechanisms)
     ):
-        findings.append(
-            f"{label}: research episode blind_analysis open_world_mechanisms missing or invalid"
-        )
+        findings.append(f"{label}: research episode blind_analysis open_world_mechanisms missing or invalid")
     initial_uncertainties = blind_analysis.get("initial_uncertainties")
     if not isinstance(initial_uncertainties, list) or not all(
         isinstance(item, str) and item.strip() for item in initial_uncertainties
     ):
-        findings.append(
-            f"{label}: research episode blind_analysis initial_uncertainties invalid"
-        )
+        findings.append(f"{label}: research episode blind_analysis initial_uncertainties invalid")
 
 
 def _check_research_episode_observed_event_shape(
@@ -623,10 +620,7 @@ def _check_research_episode_relation_edge_shape(
     if not isinstance(edge.get("directly_mentioned"), bool):
         findings.append(f"{prefix} directly_mentioned missing or invalid")
     confidence_label = edge.get("confidence_label")
-    if (
-        not isinstance(confidence_label, str)
-        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
-    ):
+    if not isinstance(confidence_label, str) or confidence_label not in ALLOWED_CONFIDENCE_LABELS:
         findings.append(f"{prefix} confidence_label missing or invalid")
     for field_name in RELATION_EVIDENCE_SEQUENCE_FIELDS:
         _check_string_list_field(prefix, field_name, edge.get(field_name), findings)
@@ -645,16 +639,12 @@ def _check_research_episode_outcome_labels_shape(
             findings.append(f"{label}: research episode outcome label key missing or invalid")
             continue
         if not isinstance(outcome, dict):
-            findings.append(
-                f"{label}: research episode outcome label {outcome_key} is not an object"
-            )
+            findings.append(f"{label}: research episode outcome label {outcome_key} is not an object")
             continue
         prefix = f"{label}: research episode outcome label {outcome_key}"
         for field_name in OUTCOME_NUMERIC_FIELDS:
             value = outcome.get(field_name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int | float)
-            ):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int | float)):
                 findings.append(f"{prefix} {field_name} invalid")
         for field_name in OUTCOME_BOOLEAN_FIELDS:
             value = outcome.get(field_name)
@@ -671,17 +661,13 @@ def _check_research_episode_execution_metadata_shape(
 ) -> None:
     execution_protocol_version = episode.get("execution_protocol_version")
     if execution_protocol_version is not None and (
-        not isinstance(execution_protocol_version, str)
-        or not execution_protocol_version.strip()
+        not isinstance(execution_protocol_version, str) or not execution_protocol_version.strip()
     ):
-        findings.append(
-            f"{label}: research episode execution_protocol_version invalid"
-        )
+        findings.append(f"{label}: research episode execution_protocol_version invalid")
 
     outcome_coverage_status = episode.get("outcome_coverage_status")
     if outcome_coverage_status is not None and (
-        not isinstance(outcome_coverage_status, str)
-        or not outcome_coverage_status.strip()
+        not isinstance(outcome_coverage_status, str) or not outcome_coverage_status.strip()
     ):
         findings.append(f"{label}: research episode outcome_coverage_status invalid")
 
@@ -716,16 +702,10 @@ def _check_research_episode_eligibility_matrix_shape(
         return
     for field_name in ELIGIBILITY_BOOLEAN_FIELDS:
         if not isinstance(eligibility_matrix.get(field_name), bool):
-            findings.append(
-                f"{label}: research episode eligibility_matrix {field_name} invalid"
-            )
+            findings.append(f"{label}: research episode eligibility_matrix {field_name} invalid")
     reasons = eligibility_matrix.get("reasons")
     if not isinstance(reasons, dict) or not all(
-        isinstance(key, str)
-        and key
-        and isinstance(value, str)
-        and value
-        for key, value in reasons.items()
+        isinstance(key, str) and key and isinstance(value, str) and value for key, value in reasons.items()
     ):
         findings.append(f"{label}: research episode eligibility_matrix reasons invalid")
 
@@ -742,25 +722,15 @@ def _check_research_episode_blind_integrity_shape(
         return
     mode = blind_integrity.get("blind_context_mode")
     if not isinstance(mode, str) or not mode.strip():
-        findings.append(
-            f"{label}: research episode blind_integrity blind_context_mode invalid"
-        )
+        findings.append(f"{label}: research episode blind_integrity blind_context_mode invalid")
     for field_name in BLIND_INTEGRITY_COUNT_FIELDS:
         value = blind_integrity.get(field_name)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            findings.append(
-                f"{label}: research episode blind_integrity {field_name} invalid"
-            )
+            findings.append(f"{label}: research episode blind_integrity {field_name} invalid")
     if blind_integrity.get("blind_current_price_access_count") != 0:
-        findings.append(
-            f"{label}: research episode blind_integrity blind_current_price_access_count "
-            "must be zero"
-        )
+        findings.append(f"{label}: research episode blind_integrity blind_current_price_access_count must be zero")
     if blind_integrity.get("no_d_outcome_exposed") is not True:
-        findings.append(
-            f"{label}: research episode blind_integrity no_d_outcome_exposed "
-            "must be true"
-        )
+        findings.append(f"{label}: research episode blind_integrity no_d_outcome_exposed must be true")
 
 
 def _check_research_episode_blind_seal_receipt_shape(
@@ -774,21 +744,14 @@ def _check_research_episode_blind_seal_receipt_shape(
     if not blind_seal_receipt:
         return
     if blind_seal_receipt.get("schema_version") != "nslab.blind_seal_receipt.v1":
-        findings.append(
-            f"{label}: research episode blind_seal_receipt schema_version invalid"
-        )
+        findings.append(f"{label}: research episode blind_seal_receipt schema_version invalid")
     if blind_seal_receipt.get("phase") != "BLIND_SEALED":
         findings.append(f"{label}: research episode blind_seal_receipt phase invalid")
     blind_hash = blind_seal_receipt.get("blind_artifact_sha256")
     if not isinstance(blind_hash, str) or not blind_hash.strip():
-        findings.append(
-            f"{label}: research episode blind_seal_receipt blind_artifact_sha256 invalid"
-        )
+        findings.append(f"{label}: research episode blind_seal_receipt blind_artifact_sha256 invalid")
     if blind_seal_receipt.get("no_d_outcome_exposed") is not True:
-        findings.append(
-            f"{label}: research episode blind_seal_receipt no_d_outcome_exposed "
-            "must be true"
-        )
+        findings.append(f"{label}: research episode blind_seal_receipt no_d_outcome_exposed must be true")
 
 
 def _check_research_episode_blind_prediction_shape(
@@ -809,10 +772,7 @@ def _check_research_episode_blind_prediction_shape(
     if not isinstance(path_type, str) or path_type not in ALLOWED_CANDIDATE_PATH_TYPES:
         findings.append(f"{prefix} path_type missing or invalid")
     confidence_label = candidate.get("confidence_label")
-    if (
-        not isinstance(confidence_label, str)
-        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
-    ):
+    if not isinstance(confidence_label, str) or confidence_label not in ALLOWED_CONFIDENCE_LABELS:
         findings.append(f"{prefix} confidence_label missing or invalid")
     evidence_quality = candidate.get("evidence_quality")
     if not isinstance(evidence_quality, str) or evidence_quality not in ALLOWED_CONFIDENCE_LABELS:
@@ -834,11 +794,7 @@ def _check_research_episode_blind_prediction_ranks(
     blind_predictions: list[Any],
     findings: list[str],
 ) -> None:
-    ranks = [
-        candidate.get("rank")
-        for candidate in blind_predictions
-        if isinstance(candidate, dict)
-    ]
+    ranks = [candidate.get("rank") for candidate in blind_predictions if isinstance(candidate, dict)]
     if ranks != list(range(1, len(ranks) + 1)):
         findings.append(f"{label}: research episode blind prediction ranks are not sequential")
 
@@ -918,10 +874,7 @@ def _check_research_episode_memory_claim_shape(
     if not isinstance(status, str) or status not in ALLOWED_CLAIM_STATUSES:
         findings.append(f"{prefix} status missing or invalid")
     confidence_label = claim.get("confidence_label")
-    if (
-        not isinstance(confidence_label, str)
-        or confidence_label not in ALLOWED_CONFIDENCE_LABELS
-    ):
+    if not isinstance(confidence_label, str) or confidence_label not in ALLOWED_CONFIDENCE_LABELS:
         findings.append(f"{prefix} confidence_label missing or invalid")
     first_observed_at = claim.get("first_observed_at")
     if first_observed_at is not None:
@@ -968,9 +921,7 @@ def _check_evaluation_episode_provenance(root: Path, findings: list[str]) -> int
     checked = 0
     for path in _iter_research_episode_paths(root):
         episode = _read_json_object(path, findings)
-        if episode is None or not _has_current_evaluation_postmortem_provenance(
-            episode
-        ):
+        if episode is None or not _has_current_evaluation_postmortem_provenance(episode):
             continue
         checked += 1
         label = _display_path(root, path)
@@ -1081,11 +1032,7 @@ def _read_local_json_source(
 
 def _without_provenance(value: object) -> object:
     if isinstance(value, dict):
-        return {
-            key: _without_provenance(item)
-            for key, item in value.items()
-            if key != "provenance"
-        }
+        return {key: _without_provenance(item) for key, item in value.items() if key != "provenance"}
     if isinstance(value, list):
         return [_without_provenance(item) for item in value]
     return value
@@ -1121,28 +1068,22 @@ def _has_semantic_import_provenance(episode: dict[str, Any]) -> bool:
     input_audit = episode.get("input_audit")
     if isinstance(input_audit, dict) and "semantic_import" in input_audit:
         return True
-    return any(
-        entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
-        for entry in _iter_provenance_entries(episode)
-    )
+    return any(entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE for entry in _iter_provenance_entries(episode))
 
 
 def _has_import_provenance(episode: dict[str, Any]) -> bool:
     return _has_semantic_import_provenance(episode) or any(
-        entry.get("source_type") == STRICT_IMPORT_SOURCE_TYPE
-        for entry in _iter_provenance_entries(episode)
+        entry.get("source_type") == STRICT_IMPORT_SOURCE_TYPE for entry in _iter_provenance_entries(episode)
     )
 
 
 def _has_current_evaluation_postmortem_provenance(episode: dict[str, Any]) -> bool:
     entries = _top_level_provenance_entries(episode)
     return any(
-        entry.get("source_type") == "evaluation_postmortem"
-        and _is_evaluation_checkpoint_uri(entry.get("uri"))
+        entry.get("source_type") == "evaluation_postmortem" and _is_evaluation_checkpoint_uri(entry.get("uri"))
         for entry in entries
     ) and any(
-        entry.get("source_type") == "sealed_blind_prediction"
-        and _is_evaluation_checkpoint_uri(entry.get("uri"))
+        entry.get("source_type") == "sealed_blind_prediction" and _is_evaluation_checkpoint_uri(entry.get("uri"))
         for entry in entries
     )
 
@@ -1151,9 +1092,7 @@ def _is_evaluation_checkpoint_uri(value: object) -> bool:
     if not isinstance(value, str):
         return False
     normalized = value.replace("\\", "/")
-    return "/runs/checkpoints/evaluations/" in normalized or normalized.startswith(
-        "runs/checkpoints/evaluations/"
-    )
+    return "/runs/checkpoints/evaluations/" in normalized or normalized.startswith("runs/checkpoints/evaluations/")
 
 
 def _check_evaluation_episode_sources(
@@ -1167,9 +1106,7 @@ def _check_evaluation_episode_sources(
     sealed_prediction_sha256: str | None = None
     evaluation_report: dict[str, Any] | None = None
     source_types = {
-        entry.get("source_type")
-        for entry in provenance_entries
-        if isinstance(entry.get("source_type"), str)
+        entry.get("source_type") for entry in provenance_entries if isinstance(entry.get("source_type"), str)
     }
     for required_type in ("sealed_blind_prediction", "evaluation_postmortem"):
         if required_type not in source_types:
@@ -1226,17 +1163,11 @@ def _check_evaluation_report_payload(
         findings.append(f"{label}: evaluation report execution_protocol_version mismatch")
     if report.get("trade_date") != episode.get("trade_date"):
         findings.append(f"{label}: evaluation report trade_date mismatch")
-    if sealed_prediction is not None and report.get("blind_prediction_id") != sealed_prediction.get(
-        "prediction_id"
-    ):
+    if sealed_prediction is not None and report.get("blind_prediction_id") != sealed_prediction.get("prediction_id"):
         findings.append(f"{label}: evaluation report blind_prediction_id mismatch")
-    if sealed_prediction_sha256 is not None and report.get("blind_prediction_sha256") != (
-        sealed_prediction_sha256
-    ):
+    if sealed_prediction_sha256 is not None and report.get("blind_prediction_sha256") != (sealed_prediction_sha256):
         findings.append(f"{label}: evaluation report blind_prediction_sha256 mismatch")
-    if _postmortem_content(report.get("postmortem")) != _postmortem_content(
-        episode.get("postmortem")
-    ):
+    if _postmortem_content(report.get("postmortem")) != _postmortem_content(episode.get("postmortem")):
         findings.append(f"{label}: evaluation report postmortem mismatch")
     if report.get("eligibility_matrix") != episode.get("eligibility_matrix"):
         findings.append(f"{label}: evaluation report eligibility_matrix mismatch")
@@ -1263,13 +1194,9 @@ def _check_evaluation_sealed_prediction_payload(
         findings.append(f"{label}: sealed blind prediction trade_date mismatch")
     if prediction.get("cutoff_at") != episode.get("cutoff_at"):
         findings.append(f"{label}: sealed blind prediction cutoff_at mismatch")
-    if _without_provenance(prediction.get("blind_analysis")) != _without_provenance(
-        episode.get("blind_analysis")
-    ):
+    if _without_provenance(prediction.get("blind_analysis")) != _without_provenance(episode.get("blind_analysis")):
         findings.append(f"{label}: sealed blind prediction blind_analysis mismatch")
-    if _without_provenance(prediction.get("candidates")) != _without_provenance(
-        episode.get("blind_predictions")
-    ):
+    if _without_provenance(prediction.get("candidates")) != _without_provenance(episode.get("blind_predictions")):
         findings.append(f"{label}: sealed blind prediction blind_predictions mismatch")
 
 
@@ -1296,9 +1223,7 @@ def _check_evaluation_report_outcomes(
             continue
         outcome_key = f"{rank}:{ticker}:{company}"
         if episode_outcomes.get(outcome_key) != report_outcomes.get(company):
-            findings.append(
-                f"{label}: evaluation report outcome mismatch for {outcome_key}"
-            )
+            findings.append(f"{label}: evaluation report outcome mismatch for {outcome_key}")
     expected_count = len(
         [
             candidate
@@ -1389,18 +1314,12 @@ def _check_evaluation_postmortem_trace_output(
         return
     trace_summary = trace_output.get("summary")
     report_summary = report_postmortem.get("summary")
-    if (
-        isinstance(trace_summary, str)
-        and trace_summary.strip()
-        and trace_summary.strip() != report_summary
-    ):
+    if isinstance(trace_summary, str) and trace_summary.strip() and trace_summary.strip() != report_summary:
         findings.append(f"{label}: evaluation postmortem trace summary mismatch")
     trace_lessons = trace_output.get("lessons")
     report_lessons = report_postmortem.get("lessons")
     if isinstance(trace_lessons, list):
-        cleaned_trace_lessons = [
-            lesson for lesson in trace_lessons if isinstance(lesson, str) and lesson.strip()
-        ]
+        cleaned_trace_lessons = [lesson for lesson in trace_lessons if isinstance(lesson, str) and lesson.strip()]
         if cleaned_trace_lessons and cleaned_trace_lessons != report_lessons:
             findings.append(f"{label}: evaluation postmortem trace lessons mismatch")
 
@@ -1486,9 +1405,7 @@ def _check_strict_import_audit(
             source_json = read_json(source_path)
         except Exception:
             findings.append(f"{label}: strict_import source_json invalid")
-        if source_json is not None and strict.get("source_json_sha256") != sha256_text(
-            canonical_json(source_json)
-        ):
+        if source_json is not None and strict.get("source_json_sha256") != sha256_text(canonical_json(source_json)):
             findings.append(f"{label}: strict_import source_json_sha256 mismatch")
         if isinstance(source_json, dict):
             if strict.get("source_schema_version") != source_json.get("schema_version"):
@@ -1497,9 +1414,7 @@ def _check_strict_import_audit(
                 findings.append(f"{label}: strict_import imported_episode_id mismatch")
     source_id = strict.get("source_id")
     known_source_ids = {
-        entry.get("source_id")
-        for entry in provenance_entries
-        if isinstance(entry.get("source_id"), str)
+        entry.get("source_id") for entry in provenance_entries if isinstance(entry.get("source_id"), str)
     }
     if not isinstance(source_id, str) or source_id not in known_source_ids:
         findings.append(f"{label}: strict_import source_id mismatch")
@@ -1539,11 +1454,7 @@ def _check_strict_provenance_entries(
         if source_hash is not None and entry.get("content_sha256") != source_hash:
             findings.append(f"{label}: strict_import provenance content_sha256 mismatch")
         uri = entry.get("uri")
-        if (
-            isinstance(source_ref, str)
-            and isinstance(uri, str)
-            and not _same_project_path(root, source_ref, uri)
-        ):
+        if isinstance(source_ref, str) and isinstance(uri, str) and not _same_project_path(root, source_ref, uri):
             findings.append(f"{label}: strict_import provenance uri mismatch")
 
 
@@ -1564,9 +1475,7 @@ def _check_semantic_import_audit(
         return
 
     provenance_entries = [
-        entry
-        for entry in _iter_provenance_entries(episode)
-        if entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
+        entry for entry in _iter_provenance_entries(episode) if entry.get("source_type") == SEMANTIC_IMPORT_SOURCE_TYPE
     ]
     if not provenance_entries:
         findings.append(f"{label}: semantic_import provenance entry missing")
@@ -1657,12 +1566,8 @@ def _check_semantic_import_trace(
         trace_payload = trace_record["payload"]
         _check_trace_checkpoint(root, trace_path, trace_payload, trace_errors)
         trace_input = trace_payload.get("input")
-        if isinstance(trace_input, dict) and trace_input.get("response_model") != (
-            "SemanticResearchDraft"
-        ):
-            trace_errors.append(
-                f"{label}: semantic_import trace response_model mismatch"
-            )
+        if isinstance(trace_input, dict) and trace_input.get("response_model") != ("SemanticResearchDraft"):
+            trace_errors.append(f"{label}: semantic_import trace response_model mismatch")
         if trace_payload.get("prompt_version") != semantic.get("prompt_version"):
             trace_errors.append(f"{label}: semantic_import trace prompt_version mismatch")
         if trace_payload.get("status") not in {"ok", "checkpoint_hit"}:
@@ -1698,12 +1603,8 @@ def _check_semantic_trace_output_matches_episode(
         "input_news_hashes": episode.get("input_news_hashes"),
         "price_source_snapshot": episode.get("price_source_snapshot"),
         "blind_analysis.summary": blind_analysis.get("summary"),
-        "blind_analysis.open_world_mechanisms": blind_analysis.get(
-            "open_world_mechanisms"
-        ),
-        "blind_analysis.initial_uncertainties": blind_analysis.get(
-            "initial_uncertainties"
-        ),
+        "blind_analysis.open_world_mechanisms": blind_analysis.get("open_world_mechanisms"),
+        "blind_analysis.initial_uncertainties": blind_analysis.get("initial_uncertainties"),
     }
     actual_pairs = {
         "trade_date": trace_output.get("trade_date"),
@@ -1713,21 +1614,15 @@ def _check_semantic_trace_output_matches_episode(
         "input_news_hashes": trace_output.get("input_news_hashes"),
         "price_source_snapshot": trace_output.get("price_source_snapshot"),
         "blind_analysis.summary": trace_output.get("summary"),
-        "blind_analysis.open_world_mechanisms": trace_output.get(
-            "open_world_mechanisms"
-        ),
-        "blind_analysis.initial_uncertainties": trace_output.get(
-            "initial_uncertainties"
-        ),
+        "blind_analysis.open_world_mechanisms": trace_output.get("open_world_mechanisms"),
+        "blind_analysis.initial_uncertainties": trace_output.get("initial_uncertainties"),
     }
     if trace_output.get("available_from") is not None:
         expected_pairs["available_from"] = episode.get("available_from")
         actual_pairs["available_from"] = trace_output.get("available_from")
     for field_name, expected in expected_pairs.items():
         if actual_pairs.get(field_name) != expected:
-            findings.append(
-                f"{label}: semantic_import trace output {field_name} mismatch"
-            )
+            findings.append(f"{label}: semantic_import trace output {field_name} mismatch")
 
 
 def _resolve_semantic_source_path(
@@ -1763,11 +1658,7 @@ def _check_semantic_provenance_entries(
         if source_hash is not None and entry.get("content_sha256") != source_hash:
             findings.append(f"{label}: semantic_import provenance content_sha256 mismatch")
         uri = entry.get("uri")
-        if (
-            isinstance(source_ref, str)
-            and isinstance(uri, str)
-            and not _same_project_path(root, source_ref, uri)
-        ):
+        if isinstance(source_ref, str) and isinstance(uri, str) and not _same_project_path(root, source_ref, uri):
             findings.append(f"{label}: semantic_import provenance uri mismatch")
 
 
@@ -1830,14 +1721,10 @@ def _check_semantic_output_sources(
         findings.append(f"{label}: semantic_import output_field_source_ids missing")
         return
     known_source_ids = {
-        entry.get("source_id")
-        for entry in _iter_provenance_entries(episode)
-        if isinstance(entry.get("source_id"), str)
+        entry.get("source_id") for entry in _iter_provenance_entries(episode) if isinstance(entry.get("source_id"), str)
     }
     missing_required_fields = [
-        field_name
-        for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
-        if field_name not in output_field_source_ids
+        field_name for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS if field_name not in output_field_source_ids
     ]
     if missing_required_fields:
         findings.append(
@@ -1853,9 +1740,7 @@ def _check_semantic_output_sources(
             continue
         for source_id in source_ids:
             if not isinstance(source_id, str) or source_id not in known_source_ids:
-                findings.append(
-                    f"{label}: semantic_import output field source id unknown: {field_name}"
-                )
+                findings.append(f"{label}: semantic_import output field source id unknown: {field_name}")
 
 
 def _check_semantic_output_text_provenance(
@@ -1874,9 +1759,7 @@ def _check_semantic_output_text_provenance(
         findings.append(f"{label}: semantic_import output_text_provenance_sha256 mismatch")
 
     known_source_ids = {
-        entry.get("source_id")
-        for entry in _iter_provenance_entries(episode)
-        if isinstance(entry.get("source_id"), str)
+        entry.get("source_id") for entry in _iter_provenance_entries(episode) if isinstance(entry.get("source_id"), str)
     }
     source_segment_indices = _semantic_source_segment_indices(semantic)
     expected_records = _expected_semantic_output_text_records(episode)
@@ -1885,9 +1768,7 @@ def _check_semantic_output_text_provenance(
 
     for position, record in enumerate(records, start=1):
         if not isinstance(record, dict):
-            findings.append(
-                f"{label}: semantic_import output text provenance {position} is invalid"
-            )
+            findings.append(f"{label}: semantic_import output text provenance {position} is invalid")
             continue
         key = _semantic_output_text_key(record)
         field_name, item_index, sentence_index = key
@@ -1898,38 +1779,24 @@ def _check_semantic_output_text_provenance(
             or isinstance(sentence_index, bool)
             or sentence_index < 1
         ):
-            findings.append(
-                f"{label}: semantic_import output text provenance {position} key invalid"
-            )
+            findings.append(f"{label}: semantic_import output text provenance {position} key invalid")
             continue
         if item_index is not None and (
             not isinstance(item_index, int) or isinstance(item_index, bool) or item_index < 1
         ):
-            findings.append(
-                f"{label}: semantic_import output text provenance {position} item_index invalid"
-            )
+            findings.append(f"{label}: semantic_import output text provenance {position} item_index invalid")
             continue
         if key in seen_keys:
-            findings.append(
-                f"{label}: semantic_import output text provenance duplicate: {field_name}"
-            )
+            findings.append(f"{label}: semantic_import output text provenance duplicate: {field_name}")
         seen_keys.add(key)
         expected = expected_by_key.get(key)
         if expected is None:
-            findings.append(
-                f"{label}: semantic_import output text provenance unexpected: {field_name}"
-            )
+            findings.append(f"{label}: semantic_import output text provenance unexpected: {field_name}")
             continue
         if record.get("text_sha256") != expected.get("text_sha256"):
-            findings.append(
-                f"{label}: semantic_import output text provenance {field_name} "
-                "text_sha256 mismatch"
-            )
+            findings.append(f"{label}: semantic_import output text provenance {field_name} text_sha256 mismatch")
         if record.get("excerpt") != expected.get("excerpt"):
-            findings.append(
-                f"{label}: semantic_import output text provenance {field_name} "
-                "excerpt mismatch"
-            )
+            findings.append(f"{label}: semantic_import output text provenance {field_name} excerpt mismatch")
         _check_semantic_output_text_sources(
             label,
             field_name,
@@ -1942,10 +1809,7 @@ def _check_semantic_output_text_provenance(
     for expected in expected_records:
         key = _semantic_output_text_key(expected)
         if key not in seen_keys:
-            findings.append(
-                f"{label}: semantic_import output text provenance missing: "
-                f"{expected['field_name']}"
-            )
+            findings.append(f"{label}: semantic_import output text provenance missing: {expected['field_name']}")
 
 
 def _check_semantic_output_text_sources(
@@ -1959,23 +1823,14 @@ def _check_semantic_output_text_sources(
 ) -> None:
     source_ids = record.get("source_ids")
     if not isinstance(source_ids, list) or not source_ids:
-        findings.append(
-            f"{label}: semantic_import output text provenance {field_name} "
-            "source_ids invalid"
-        )
+        findings.append(f"{label}: semantic_import output text provenance {field_name} source_ids invalid")
     else:
         for source_id in source_ids:
             if not isinstance(source_id, str) or source_id not in known_source_ids:
-                findings.append(
-                    f"{label}: semantic_import output text provenance {field_name} "
-                    "source_id unknown"
-                )
+                findings.append(f"{label}: semantic_import output text provenance {field_name} source_id unknown")
     referenced_segments = record.get("source_segment_indices")
     if not isinstance(referenced_segments, list) or not referenced_segments:
-        findings.append(
-            f"{label}: semantic_import output text provenance {field_name} "
-            "source_segment_indices invalid"
-        )
+        findings.append(f"{label}: semantic_import output text provenance {field_name} source_segment_indices invalid")
         return
     for segment_index in referenced_segments:
         if (
@@ -1984,8 +1839,7 @@ def _check_semantic_output_text_sources(
             or segment_index not in source_segment_indices
         ):
             findings.append(
-                f"{label}: semantic_import output text provenance {field_name} "
-                "source_segment_index unknown"
+                f"{label}: semantic_import output text provenance {field_name} source_segment_index unknown"
             )
 
 
@@ -2226,9 +2080,7 @@ def _semantic_output_text_key(record: dict[str, Any]) -> tuple[str, int | None, 
     return (
         field_name if isinstance(field_name, str) else "",
         item_index if isinstance(item_index, int) and not isinstance(item_index, bool) else None,
-        sentence_index
-        if isinstance(sentence_index, int) and not isinstance(sentence_index, bool)
-        else 0,
+        sentence_index if isinstance(sentence_index, int) and not isinstance(sentence_index, bool) else 0,
     )
 
 
@@ -2462,11 +2314,7 @@ def _check_manifest_blind_hash(
     if prediction.get("sealed_at") and not isinstance(manifest_hash, str):
         findings.append(f"{prediction_path.name}: context manifest missing blind_artifact_sha256")
         return
-    if (
-        isinstance(prediction_hash, str)
-        and isinstance(manifest_hash, str)
-        and prediction_hash != manifest_hash
-    ):
+    if isinstance(prediction_hash, str) and isinstance(manifest_hash, str) and prediction_hash != manifest_hash:
         findings.append(f"{prediction_path.name}: context manifest blind_artifact_sha256 mismatch")
 
 
@@ -2476,9 +2324,7 @@ def _check_manifest_model_config(
     findings: list[str],
 ) -> None:
     model_config = manifest.get("model_config")
-    if model_config is not None and (
-        not isinstance(model_config, dict) or not model_config
-    ):
+    if model_config is not None and (not isinstance(model_config, dict) or not model_config):
         findings.append(f"{prediction_path.name}: context manifest model_config is invalid")
 
 
@@ -2498,10 +2344,7 @@ def _check_manifest_news_input(
         return
     news_path = _resolve_manifest_path(root, news_file)
     if news_path is None:
-        findings.append(
-            f"{prediction_path.name}: context manifest news_file path escapes project root: "
-            f"{news_file}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_file path escapes project root: {news_file}")
         return
     if not news_path.exists():
         findings.append(f"{prediction_path.name}: context manifest news_file not found: {news_file}")
@@ -2541,10 +2384,7 @@ def _check_manifest_news_row_counts(
             findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
             return
         values[field] = value
-    if (
-        values["included_news_row_count"] + values["excluded_news_row_count"]
-        != values["news_row_count"]
-    ):
+    if values["included_news_row_count"] + values["excluded_news_row_count"] != values["news_row_count"]:
         findings.append(f"{prediction_path.name}: context manifest news row counts mismatch")
     if "news_window_start_at" not in manifest and "news_window_end_at" not in manifest:
         return
@@ -2571,13 +2411,9 @@ def _check_manifest_news_row_counts(
     try:
         batch = load_news_csv(news_path, trade_date=trade_date)
     except (OSError, UnicodeDecodeError, ValueError) as exc:
-        findings.append(
-            f"{prediction_path.name}: context manifest news_file invalid CSV: {type(exc).__name__}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_file invalid CSV: {type(exc).__name__}")
         return
-    observed_included = sum(
-        1 for item in batch.items if window_start_at <= item.published_at <= window_end_at
-    )
+    observed_included = sum(1 for item in batch.items if window_start_at <= item.published_at <= window_end_at)
     observed_excluded = batch.row_count - observed_included
     if batch.row_count != values["news_row_count"]:
         findings.append(f"{prediction_path.name}: context manifest news_row_count mismatch")
@@ -2586,15 +2422,11 @@ def _check_manifest_news_row_counts(
     if observed_excluded != values["excluded_news_row_count"]:
         findings.append(f"{prediction_path.name}: context manifest excluded_news_row_count mismatch")
     row_summary = manifest.get("row_disposition_summary")
-    expected_missing = (
-        row_summary.get("missing_collected_at") if isinstance(row_summary, dict) else None
-    )
+    expected_missing = row_summary.get("missing_collected_at") if isinstance(row_summary, dict) else None
     if isinstance(expected_missing, int):
         observed_missing = sum(1 for item in batch.items if item.collected_at is None)
         if observed_missing != expected_missing:
-            findings.append(
-                f"{prediction_path.name}: context manifest missing_collected_at mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest missing_collected_at mismatch")
     if _phase1_coverage_artifacts_required(manifest):
         coverage_payload = _read_optional_manifest_object(
             root,
@@ -2605,18 +2437,10 @@ def _check_manifest_news_row_counts(
                 coverage = NewsCoverageManifest.model_validate(coverage_payload)
             except ValidationError:
                 return
-            expected_rows = {
-                item.row_number: (item.event_id, item.source_id)
-                for item in batch.items
-            }
-            observed_rows = {
-                row.row_number: (row.event_id, row.source_id)
-                for row in coverage.rows
-            }
+            expected_rows = {item.row_number: (item.event_id, item.source_id) for item in batch.items}
+            observed_rows = {row.row_number: (row.event_id, row.source_id) for row in coverage.rows}
             if expected_rows != observed_rows:
-                findings.append(
-                    f"{prediction_path.name}: context manifest CSV row identity mismatch"
-                )
+                findings.append(f"{prediction_path.name}: context manifest CSV row identity mismatch")
             coverage_by_row = {row.row_number: row for row in coverage.rows}
             if any(
                 (coverage_row := coverage_by_row.get(item.row_number)) is None
@@ -2685,12 +2509,8 @@ def _check_manifest_memory_sweep_artifacts(
     raw_artifacts = manifest.get("memory_sweep_artifacts")
     if raw_artifacts is None:
         return
-    if not isinstance(raw_artifacts, list) or not all(
-        isinstance(item, str) and item for item in raw_artifacts
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest memory_sweep_artifacts is invalid"
-        )
+    if not isinstance(raw_artifacts, list) or not all(isinstance(item, str) and item for item in raw_artifacts):
+        findings.append(f"{prediction_path.name}: context manifest memory_sweep_artifacts is invalid")
         return
     artifact_refs = [str(item) for item in raw_artifacts]
     if not artifact_refs:
@@ -2700,14 +2520,9 @@ def _check_manifest_memory_sweep_artifacts(
     if (
         not isinstance(raw_hashes, dict)
         or not raw_hashes
-        or any(
-            not isinstance(key, str) or not isinstance(value, str)
-            for key, value in raw_hashes.items()
-        )
+        or any(not isinstance(key, str) or not isinstance(value, str) for key, value in raw_hashes.items())
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest memory_sweep_artifact_hashes is invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest memory_sweep_artifact_hashes is invalid")
     else:
         hashes = {str(key): str(value) for key, value in raw_hashes.items()}
 
@@ -2722,8 +2537,7 @@ def _check_manifest_memory_sweep_artifacts(
         )
     if extra_hashes:
         findings.append(
-            f"{prediction_path.name}: context manifest unlisted memory_sweep_artifact_hashes: "
-            f"{', '.join(extra_hashes)}"
+            f"{prediction_path.name}: context manifest unlisted memory_sweep_artifact_hashes: {', '.join(extra_hashes)}"
         )
 
     expected_mode = manifest.get("mode")
@@ -2742,25 +2556,18 @@ def _check_manifest_memory_sweep_artifacts(
             )
             continue
         if not artifact_path.exists():
-            findings.append(
-                f"{prediction_path.name}: context manifest memory sweep artifact not found: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest memory sweep artifact not found: {artifact_ref}")
             continue
         expected_hash = hashes.get(artifact_ref)
         if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
             findings.append(
-                f"{prediction_path.name}: context manifest memory sweep artifact sha256 "
-                f"mismatch: {artifact_ref}"
+                f"{prediction_path.name}: context manifest memory sweep artifact sha256 mismatch: {artifact_ref}"
             )
         payload = _read_json_object(artifact_path, findings)
         if payload is None:
             continue
         if payload.get("schema_version") != "nslab.memory_sweep_contribution.v1":
-            findings.append(
-                f"{prediction_path.name}: memory sweep artifact schema mismatch: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: memory sweep artifact schema mismatch: {artifact_ref}")
         for field, expected in (
             ("mode", expected_mode),
             ("trade_date", expected_trade_date),
@@ -2768,40 +2575,25 @@ def _check_manifest_memory_sweep_artifacts(
             ("brain_version", expected_brain_version),
         ):
             if expected is not None and payload.get(field) != expected:
-                findings.append(
-                    f"{prediction_path.name}: memory sweep artifact {field} mismatch: "
-                    f"{artifact_ref}"
-                )
+                findings.append(f"{prediction_path.name}: memory sweep artifact {field} mismatch: {artifact_ref}")
         episode_ids = payload.get("episode_ids")
-        if not isinstance(episode_ids, list) or not all(
-            isinstance(episode_id, str) for episode_id in episode_ids
-        ):
-            findings.append(
-                f"{prediction_path.name}: memory sweep artifact episode_ids invalid: "
-                f"{artifact_ref}"
-            )
+        if not isinstance(episode_ids, list) or not all(isinstance(episode_id, str) for episode_id in episode_ids):
+            findings.append(f"{prediction_path.name}: memory sweep artifact episode_ids invalid: {artifact_ref}")
             continue
         observed_episode_ids.extend(episode_ids)
         if payload.get("episode_count") != len(episode_ids):
-            findings.append(
-                f"{prediction_path.name}: memory sweep artifact episode_count mismatch: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: memory sweep artifact episode_count mismatch: {artifact_ref}")
         source_hashes = _memory_sweep_source_hashes(
             payload.get("episode_shard_source_hashes"),
             episode_ids,
         )
         if source_hashes is None:
-            findings.append(
-                f"{prediction_path.name}: memory sweep artifact source hashes invalid: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: memory sweep artifact source hashes invalid: {artifact_ref}")
         else:
             expected_shard_hash = _memory_sweep_shard_hash(source_hashes)
             if payload.get("episode_shard_sha256") != expected_shard_hash:
                 findings.append(
-                    f"{prediction_path.name}: memory sweep artifact "
-                    f"episode_shard_sha256 mismatch: {artifact_ref}"
+                    f"{prediction_path.name}: memory sweep artifact episode_shard_sha256 mismatch: {artifact_ref}"
                 )
             for episode_id, recorded_hash in sorted(source_hashes.items()):
                 if accepted_hashes.get(episode_id) != recorded_hash:
@@ -2819,13 +2611,9 @@ def _check_manifest_memory_sweep_artifacts(
     if isinstance(expected_cache_hits, int) and expected_cache_hits != observed_cache_hits:
         findings.append(f"{prediction_path.name}: context manifest memory_sweep_cache_hits mismatch")
     expected_swept_ids = manifest.get("swept_episode_ids")
-    if isinstance(expected_swept_ids, list) and all(
-        isinstance(episode_id, str) for episode_id in expected_swept_ids
-    ):
+    if isinstance(expected_swept_ids, list) and all(isinstance(episode_id, str) for episode_id in expected_swept_ids):
         if Counter(observed_episode_ids) != Counter(expected_swept_ids):
-            findings.append(
-                f"{prediction_path.name}: context manifest memory_sweep swept episode ids mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest memory_sweep swept episode ids mismatch")
     else:
         findings.append(f"{prediction_path.name}: context manifest swept_episode_ids is invalid")
 
@@ -2839,12 +2627,8 @@ def _check_manifest_record_sweep_artifacts(
     raw_artifacts = manifest.get("record_sweep_artifacts")
     if raw_artifacts is None:
         return
-    if not isinstance(raw_artifacts, list) or not all(
-        isinstance(item, str) and item for item in raw_artifacts
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest record_sweep_artifacts is invalid"
-        )
+    if not isinstance(raw_artifacts, list) or not all(isinstance(item, str) and item for item in raw_artifacts):
+        findings.append(f"{prediction_path.name}: context manifest record_sweep_artifacts is invalid")
         return
     artifact_refs = [str(item) for item in raw_artifacts]
     if not artifact_refs:
@@ -2854,14 +2638,9 @@ def _check_manifest_record_sweep_artifacts(
     if (
         not isinstance(raw_hashes, dict)
         or not raw_hashes
-        or any(
-            not isinstance(key, str) or not isinstance(value, str)
-            for key, value in raw_hashes.items()
-        )
+        or any(not isinstance(key, str) or not isinstance(value, str) for key, value in raw_hashes.items())
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest record_sweep_artifact_hashes is invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest record_sweep_artifact_hashes is invalid")
     else:
         hashes = {str(key): str(value) for key, value in raw_hashes.items()}
 
@@ -2876,8 +2655,7 @@ def _check_manifest_record_sweep_artifacts(
         )
     if extra_hashes:
         findings.append(
-            f"{prediction_path.name}: context manifest unlisted record_sweep_artifact_hashes: "
-            f"{', '.join(extra_hashes)}"
+            f"{prediction_path.name}: context manifest unlisted record_sweep_artifact_hashes: {', '.join(extra_hashes)}"
         )
 
     expected_mode = manifest.get("mode")
@@ -2897,25 +2675,18 @@ def _check_manifest_record_sweep_artifacts(
             )
             continue
         if not artifact_path.exists():
-            findings.append(
-                f"{prediction_path.name}: context manifest record sweep artifact not found: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest record sweep artifact not found: {artifact_ref}")
             continue
         expected_hash = hashes.get(artifact_ref)
         if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
             findings.append(
-                f"{prediction_path.name}: context manifest record sweep artifact sha256 "
-                f"mismatch: {artifact_ref}"
+                f"{prediction_path.name}: context manifest record sweep artifact sha256 mismatch: {artifact_ref}"
             )
         payload = _read_json_object(artifact_path, findings)
         if payload is None:
             continue
         if payload.get("schema_version") != "nslab.record_memory_sweep_contribution.v1":
-            findings.append(
-                f"{prediction_path.name}: record sweep artifact schema mismatch: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: record sweep artifact schema mismatch: {artifact_ref}")
         for field, expected in (
             ("mode", expected_mode),
             ("trade_date", expected_trade_date),
@@ -2923,25 +2694,14 @@ def _check_manifest_record_sweep_artifacts(
             ("brain_version", expected_brain_version),
         ):
             if expected is not None and payload.get(field) != expected:
-                findings.append(
-                    f"{prediction_path.name}: record sweep artifact {field} mismatch: "
-                    f"{artifact_ref}"
-                )
+                findings.append(f"{prediction_path.name}: record sweep artifact {field} mismatch: {artifact_ref}")
         record_ids = payload.get("record_ids")
-        if not isinstance(record_ids, list) or not all(
-            isinstance(record_id, str) for record_id in record_ids
-        ):
-            findings.append(
-                f"{prediction_path.name}: record sweep artifact record_ids invalid: "
-                f"{artifact_ref}"
-            )
+        if not isinstance(record_ids, list) or not all(isinstance(record_id, str) for record_id in record_ids):
+            findings.append(f"{prediction_path.name}: record sweep artifact record_ids invalid: {artifact_ref}")
             continue
         observed_record_ids.extend(record_ids)
         if payload.get("record_count") != len(record_ids):
-            findings.append(
-                f"{prediction_path.name}: record sweep artifact record_count mismatch: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: record sweep artifact record_count mismatch: {artifact_ref}")
         _check_record_sweep_category_fields(
             prediction_path,
             artifact_ref,
@@ -2949,25 +2709,41 @@ def _check_manifest_record_sweep_artifacts(
             record_ids,
             findings,
         )
+        shard_records = [records_by_id[record_id] for record_id in record_ids if record_id in records_by_id]
+        if len(shard_records) == len(record_ids):
+            if payload.get("routing_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact routing classifier mismatch: {artifact_ref}"
+                )
+            if payload.get("record_routing_sha256") != brain_record_routing_root_sha256(shard_records):
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact routing root mismatch: {artifact_ref}"
+                )
+            expected_projection = record_sweep_lane_projection(shard_records)
+            for field in RECORD_SWEEP_LANE_FIELDS:
+                if payload.get(field) != expected_projection[field]:
+                    findings.append(
+                        f"{prediction_path.name}: record sweep artifact {field} routing mismatch: {artifact_ref}"
+                    )
         source_hashes = _record_sweep_source_hashes(
             payload.get("record_shard_source_hashes"),
             record_ids,
         )
         if source_hashes is None:
-            findings.append(
-                f"{prediction_path.name}: record sweep artifact source hashes invalid: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: record sweep artifact source hashes invalid: {artifact_ref}")
         else:
+            if payload.get("record_source_hash_kind") != ("canonical_full_envelope_sha256"):
+                findings.append(
+                    f"{prediction_path.name}: record sweep artifact source hash kind mismatch: {artifact_ref}"
+                )
             expected_shard_hash = _record_sweep_shard_hash(source_hashes)
             if payload.get("record_shard_sha256") != expected_shard_hash:
                 findings.append(
-                    f"{prediction_path.name}: record sweep artifact "
-                    f"record_shard_sha256 mismatch: {artifact_ref}"
+                    f"{prediction_path.name}: record sweep artifact record_shard_sha256 mismatch: {artifact_ref}"
                 )
             for record_id, recorded_hash in sorted(source_hashes.items()):
                 record = records_by_id.get(record_id)
-                actual_hash = record.normalized_payload_sha256 if record is not None else None
+                actual_hash = brain_record_envelope_sha256(record) if record is not None else None
                 if actual_hash != recorded_hash:
                     findings.append(
                         f"{prediction_path.name}: record sweep artifact source hash "
@@ -2992,13 +2768,9 @@ def _check_manifest_record_sweep_artifacts(
     if isinstance(expected_cache_hits, int) and expected_cache_hits != observed_cache_hits:
         findings.append(f"{prediction_path.name}: context manifest record_sweep_cache_hits mismatch")
     expected_swept_ids = manifest.get("swept_record_ids")
-    if isinstance(expected_swept_ids, list) and all(
-        isinstance(record_id, str) for record_id in expected_swept_ids
-    ):
+    if isinstance(expected_swept_ids, list) and all(isinstance(record_id, str) for record_id in expected_swept_ids):
         if Counter(observed_record_ids) != Counter(expected_swept_ids):
-            findings.append(
-                f"{prediction_path.name}: context manifest record_sweep swept record ids mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest record_sweep swept record ids mismatch")
     else:
         findings.append(f"{prediction_path.name}: context manifest swept_record_ids is invalid")
 
@@ -3024,17 +2796,11 @@ def _check_record_sweep_category_fields(
     ):
         value = payload.get(field)
         if not isinstance(value, list):
-            findings.append(
-                f"{prediction_path.name}: record sweep artifact {field} invalid: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: record sweep artifact {field} invalid: {artifact_ref}")
             continue
         for item in value:
             if not isinstance(item, dict) or not isinstance(item.get("record_id"), str):
-                findings.append(
-                    f"{prediction_path.name}: record sweep artifact {field} invalid: "
-                    f"{artifact_ref}"
-                )
+                findings.append(f"{prediction_path.name}: record sweep artifact {field} invalid: {artifact_ref}")
                 continue
             record_id = item["record_id"]
             if record_id not in allowed_record_ids:
@@ -3061,9 +2827,7 @@ def _check_manifest_record_count_contract(
 ) -> None:
     count_fields = {
         "available_record_count": "available_record_ids",
-        "training_eligible_available_record_count": (
-            "training_eligible_available_record_ids"
-        ),
+        "training_eligible_available_record_count": ("training_eligible_available_record_ids"),
         "swept_record_count": "swept_record_ids",
     }
     for count_field, ids_field in count_fields.items():
@@ -3077,30 +2841,22 @@ def _check_manifest_record_count_contract(
             findings,
         )
         if expected_count is None:
-            findings.append(
-                f"{prediction_path.name}: context manifest {count_field} is invalid"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {count_field} is invalid")
             continue
         if record_ids is None:
             continue
         if expected_count != len(record_ids):
-            findings.append(
-                f"{prediction_path.name}: context manifest {count_field} "
-                f"does not match {ids_field}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {count_field} does not match {ids_field}")
 
     if "accepted_record_count" in manifest:
         accepted_record_count = _non_bool_int(manifest.get("accepted_record_count"))
         if accepted_record_count is None:
-            findings.append(
-                f"{prediction_path.name}: context manifest accepted_record_count is invalid"
-            )
+            findings.append(f"{prediction_path.name}: context manifest accepted_record_count is invalid")
         else:
             record_store_count = len(BrainRecordStore(root).list_records())
             if accepted_record_count != record_store_count:
                 findings.append(
-                    f"{prediction_path.name}: context manifest accepted_record_count "
-                    "does not match record store"
+                    f"{prediction_path.name}: context manifest accepted_record_count does not match record store"
                 )
 
     available_record_ids = _optional_manifest_string_list(
@@ -3178,8 +2934,7 @@ def _check_manifest_record_count_contract(
         and set(retrieved_record_ids) & set(excluded_retrieved_record_ids)
     ):
         findings.append(
-            f"{prediction_path.name}: context manifest retrieved_record_ids "
-            "overlap excluded_retrieved_record_ids"
+            f"{prediction_path.name}: context manifest retrieved_record_ids overlap excluded_retrieved_record_ids"
         )
     if available_record_ids is not None and counterexample_record_ids is not None:
         missing = sorted(set(counterexample_record_ids) - set(available_record_ids))
@@ -3188,10 +2943,7 @@ def _check_manifest_record_count_contract(
                 f"{prediction_path.name}: context manifest counterexample_record_ids "
                 "are not a subset of available_record_ids"
             )
-    if (
-        available_record_ids is not None
-        and semantic_retrieval_record_ids is not None
-    ):
+    if available_record_ids is not None and semantic_retrieval_record_ids is not None:
         missing = sorted(set(semantic_retrieval_record_ids) - set(available_record_ids))
         if missing:
             findings.append(
@@ -3199,13 +2951,8 @@ def _check_manifest_record_count_contract(
                 "semantic_retrieval_record_ids are not a subset of "
                 "available_record_ids"
             )
-    if (
-        available_record_ids is not None
-        and semantic_cluster_coverage_promoted_record_ids is not None
-    ):
-        missing = sorted(
-            set(semantic_cluster_coverage_promoted_record_ids) - set(available_record_ids)
-        )
+    if available_record_ids is not None and semantic_cluster_coverage_promoted_record_ids is not None:
+        missing = sorted(set(semantic_cluster_coverage_promoted_record_ids) - set(available_record_ids))
         if missing:
             findings.append(
                 f"{prediction_path.name}: context manifest "
@@ -3227,10 +2974,7 @@ def _check_manifest_record_count_contract(
         and swept_record_ids is not None
         and Counter(available_record_ids) != Counter(swept_record_ids)
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest swept_record_ids "
-            "do not match available_record_ids"
-        )
+        findings.append(f"{prediction_path.name}: context manifest swept_record_ids do not match available_record_ids")
 
 
 def _optional_manifest_string_list(
@@ -3256,9 +3000,7 @@ def _manifest_string_list_or_finding(
         return None
     duplicates = _duplicate_strings(value)
     if duplicates:
-        findings.append(
-            f"{prediction_path.name}: context manifest {field} contains duplicate IDs"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {field} contains duplicate IDs")
     return value
 
 
@@ -3283,24 +3025,18 @@ def _check_manifest_record_id_availability(
         if field not in manifest:
             continue
         value = manifest.get(field)
-        if not isinstance(value, list) or not all(
-            isinstance(record_id, str) for record_id in value
-        ):
+        if not isinstance(value, list) or not all(isinstance(record_id, str) for record_id in value):
             findings.append(f"{prediction_path.name}: context manifest {field} is invalid")
             continue
         for record_id in _unique_strings(value):
             record = records_by_id.get(record_id)
             if record is None:
                 findings.append(
-                    f"{prediction_path.name}: context manifest {field} references "
-                    f"unknown record: {record_id}"
+                    f"{prediction_path.name}: context manifest {field} references unknown record: {record_id}"
                 )
                 continue
             if not is_available_as_of(record.available_from, cutoff_at):
-                findings.append(
-                    f"{prediction_path.name}: context manifest {field} exposes future "
-                    f"record: {record_id}"
-                )
+                findings.append(f"{prediction_path.name}: context manifest {field} exposes future record: {record_id}")
 
 
 def _memory_sweep_source_hashes(
@@ -3497,10 +3233,7 @@ def _check_phase1_news_coverage_artifacts(
     cluster_ref = manifest.get("event_cluster_manifest_artifact")
     coverage_hash = manifest.get("news_coverage_manifest_sha256")
     cluster_hash = manifest.get("event_cluster_manifest_sha256")
-    artifacts_missing = all(
-        value is None
-        for value in (coverage_ref, cluster_ref, coverage_hash, cluster_hash)
-    )
+    artifacts_missing = all(value is None for value in (coverage_ref, cluster_ref, coverage_hash, cluster_hash))
     if artifacts_missing and not _phase1_coverage_artifacts_required(manifest):
         return
     coverage_path = _resolve_required_manifest_artifact(
@@ -3556,14 +3289,10 @@ def _check_phase1_news_coverage_artifacts(
         or clusters.unassigned_row_count != 0
         or clusters.duplicate_assignment_count != 0
         or not isinstance(manifest.get("model_config"), dict)
-        or clusters.clustering_version
-        != manifest["model_config"].get("event_clustering_version")
-        or clusters.embedding_batch_size
-        != manifest["model_config"].get("event_cluster_embedding_batch_size")
-        or clusters.similarity_threshold
-        != manifest["model_config"].get("event_cluster_similarity_threshold")
-        or clusters.max_semantic_variants
-        != manifest["model_config"].get("event_cluster_max_semantic_variants")
+        or clusters.clustering_version != manifest["model_config"].get("event_clustering_version")
+        or clusters.embedding_batch_size != manifest["model_config"].get("event_cluster_embedding_batch_size")
+        or clusters.similarity_threshold != manifest["model_config"].get("event_cluster_similarity_threshold")
+        or clusters.max_semantic_variants != manifest["model_config"].get("event_cluster_max_semantic_variants")
         or clusters.embedding_provider
         != (
             manifest.get("event_cluster_summary", {}).get("embedding_method")
@@ -3576,15 +3305,11 @@ def _check_phase1_news_coverage_artifacts(
             if isinstance(manifest.get("event_cluster_summary"), dict)
             else None
         )
-        or clusters.embedding_status
-        not in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
-        or manifest.get("event_clustering_result_sha256")
-        != _event_cluster_manifest_result_sha256(clusters)
+        or clusters.embedding_status not in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
+        or manifest.get("event_clustering_result_sha256") != _event_cluster_manifest_result_sha256(clusters)
     ):
         findings.append(f"{prediction_path.name}: Phase 1 event cluster identity/count mismatch")
-    expected_assignments: dict[
-        int, tuple[str, str, str, str, str | None, str | None]
-    ] = {}
+    expected_assignments: dict[int, tuple[str, str, str, str, str | None, str | None]] = {}
     for cluster in clusters.clusters:
         for index, (row_number, event_id, source_id) in enumerate(
             zip(
@@ -3627,9 +3352,7 @@ def _check_phase1_news_coverage_artifacts(
                 disposition_row.get("event_id"),
                 disposition_row.get("source_id"),
             )
-    expected_sources = {
-        row.row_number: (row.event_id, row.source_id) for row in coverage.rows
-    }
+    expected_sources = {row.row_number: (row.event_id, row.source_id) for row in coverage.rows}
     if expected_sources != observed_sources:
         findings.append(f"{prediction_path.name}: Phase 1 source row identity mismatch")
     material_cluster_ids = {
@@ -3668,12 +3391,8 @@ def _phase1_coverage_artifacts_required(manifest: dict[str, Any]) -> bool:
     model_config = manifest.get("model_config")
     summary = manifest.get("event_cluster_summary")
     return (
-        isinstance(model_config, dict)
-        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
-    ) or (
-        isinstance(summary, dict)
-        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
-    )
+        isinstance(model_config, dict) and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (isinstance(summary, dict) and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION)
 
 
 def _event_cluster_manifest_result_sha256(
@@ -3702,11 +3421,7 @@ def _event_cluster_manifest_result_sha256(
 
 
 def _sha256_value(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _check_manifest_jsonl_artifact(
@@ -3747,54 +3462,32 @@ def _check_manifest_jsonl_artifact(
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{line_number} invalid JSON"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{line_number} invalid JSON")
             continue
         if not isinstance(row, dict):
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{line_number} "
-                "is not an object"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{line_number} is not an object")
             continue
         rows.append(row)
         if row.get("schema_version") != expected_schema:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{line_number} "
-                "schema_version mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{line_number} schema_version mismatch")
         run_id = manifest.get("run_id")
         if isinstance(run_id, str) and row.get("run_id") != run_id:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{line_number} "
-                "run_id mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{line_number} run_id mismatch")
 
     if count_field is not None:
         expected_count = manifest.get(count_field)
         if isinstance(expected_count, int) and not isinstance(expected_count, bool):
             if expected_count != len(rows):
-                findings.append(
-                    f"{prediction_path.name}: context manifest {label} count mismatch"
-                )
+                findings.append(f"{prediction_path.name}: context manifest {label} count mismatch")
         elif expected_count is not None:
-            findings.append(
-                f"{prediction_path.name}: context manifest {count_field} invalid"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {count_field} invalid")
 
     if label == "row_disposition":
         row_summary = manifest.get("row_disposition_summary")
         if isinstance(row_summary, dict):
             total_rows = row_summary.get("total_rows")
-            if (
-                isinstance(total_rows, int)
-                and not isinstance(total_rows, bool)
-                and total_rows != len(rows)
-            ):
-                findings.append(
-                    f"{prediction_path.name}: context manifest row_disposition "
-                    "count mismatch"
-                )
+            if isinstance(total_rows, int) and not isinstance(total_rows, bool) and total_rows != len(rows):
+                findings.append(f"{prediction_path.name}: context manifest row_disposition count mismatch")
     return rows
 
 
@@ -3807,41 +3500,24 @@ def _check_source_ledger_source_coverage(
     _check_source_ledger_summary(prediction_path, manifest, rows, findings)
 
     web_source_ids = _unique_strings(
-        row.get("source_id")
-        for row in rows
-        if row.get("source_type") == "web_search_result"
+        row.get("source_id") for row in rows if row.get("source_type") == "web_search_result"
     )
     if not _same_unique_string_set(web_source_ids, _string_list(manifest.get("web_sources"))):
-        findings.append(
-            f"{prediction_path.name}: context manifest source_ledger "
-            "web_sources mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest source_ledger web_sources mismatch")
 
     candidate_web_source_ids = _unique_strings(
-        row.get("source_id")
-        for row in rows
-        if row.get("source_type") == "candidate_web_check"
+        row.get("source_id") for row in rows if row.get("source_type") == "candidate_web_check"
     )
     if candidate_web_source_ids != _string_list(manifest.get("candidate_web_source_ids")):
-        findings.append(
-            f"{prediction_path.name}: context manifest source_ledger "
-            "candidate_web_source_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest source_ledger candidate_web_source_ids mismatch")
 
     excluded_source_ids = {
         *_string_list(manifest.get("excluded_web_source_ids")),
         *_string_list(manifest.get("excluded_candidate_web_source_ids")),
     }
-    ledger_source_ids = {
-        source_id
-        for row in rows
-        if isinstance(source_id := row.get("source_id"), str)
-    }
+    ledger_source_ids = {source_id for row in rows if isinstance(source_id := row.get("source_id"), str)}
     if ledger_source_ids & excluded_source_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest source_ledger "
-            "contains excluded source_id"
-        )
+        findings.append(f"{prediction_path.name}: context manifest source_ledger contains excluded source_id")
 
 
 def _check_source_ledger_summary(
@@ -3854,15 +3530,9 @@ def _check_source_ledger_summary(
     if summary is None:
         return
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest source_ledger_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest source_ledger_summary invalid")
         return
-    phase_counts = Counter(
-        row.get("usage_phase")
-        for row in rows
-        if isinstance(row.get("usage_phase"), str)
-    )
+    phase_counts = Counter(row.get("usage_phase") for row in rows if isinstance(row.get("usage_phase"), str))
     expected_counts = {
         "total_sources": len(rows),
         "blind_sources": phase_counts.get("BLIND", 0),
@@ -3870,9 +3540,7 @@ def _check_source_ledger_summary(
         "postmortem_sources": phase_counts.get("POSTMORTEM", 0),
     }
     if any(summary.get(key) != value for key, value in expected_counts.items()):
-        findings.append(
-            f"{prediction_path.name}: context manifest source_ledger_summary mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest source_ledger_summary mismatch")
 
 
 def _check_event_cluster_artifact_summary(
@@ -3885,9 +3553,7 @@ def _check_event_cluster_artifact_summary(
     if summary is None:
         return
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest event_cluster_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest event_cluster_summary invalid")
         return
 
     _check_summary_int(
@@ -3907,9 +3573,7 @@ def _check_event_cluster_artifact_summary(
         label="event_cluster",
         findings=findings,
     )
-    exact_duplicate_count = sum(
-        _non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows
-    )
+    exact_duplicate_count = sum(_non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows)
     _check_summary_int(
         prediction_path,
         summary,
@@ -3918,9 +3582,7 @@ def _check_event_cluster_artifact_summary(
         label="event_cluster",
         findings=findings,
     )
-    exact_duplicate_cluster_count = sum(
-        1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0
-    )
+    exact_duplicate_cluster_count = sum(1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0)
     _check_summary_int(
         prediction_path,
         summary,
@@ -3929,31 +3591,20 @@ def _check_event_cluster_artifact_summary(
         label="event_cluster",
         findings=findings,
     )
-    methods = {
-        method
-        for row in rows
-        if isinstance(method := row.get("cluster_method"), str) and method
-    }
+    methods = {method for row in rows if isinstance(method := row.get("cluster_method"), str) and method}
     summary_method = summary.get("cluster_method")
     if isinstance(summary_method, str) and methods and methods != {summary_method}:
-        findings.append(
-            f"{prediction_path.name}: context manifest event_cluster "
-            "cluster_method mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest event_cluster cluster_method mismatch")
     for index, row in enumerate(rows, start=1):
         row_count = _non_bool_int(row.get("row_count"))
         if row_count is None:
-            findings.append(
-                f"{prediction_path.name}: context manifest event_cluster:{index} "
-                "row_count invalid"
-            )
+            findings.append(f"{prediction_path.name}: context manifest event_cluster:{index} row_count invalid")
             continue
         for field in ("row_numbers", "event_ids", "source_ids"):
             value = row.get(field)
             if not isinstance(value, list) or len(value) != row_count:
                 findings.append(
-                    f"{prediction_path.name}: context manifest event_cluster:{index} "
-                    f"{field} count mismatch"
+                    f"{prediction_path.name}: context manifest event_cluster:{index} {field} count mismatch"
                 )
         if not _phase1_coverage_artifacts_required(manifest):
             continue
@@ -3971,14 +3622,11 @@ def _check_event_cluster_artifact_summary(
                 or excerpt.get("event_id") != event_id
                 or not _sha256_value(excerpt.get("title_sha256"))
                 or not _sha256_value(excerpt.get("body_sha256"))
-                for excerpt, row_number, event_id in zip(
-                    excerpts, row_numbers, event_ids, strict=True
-                )
+                for excerpt, row_number, event_id in zip(excerpts, row_numbers, event_ids, strict=True)
             )
         ):
             findings.append(
-                f"{prediction_path.name}: context manifest event_cluster:{index} "
-                "member news excerpts mismatch"
+                f"{prediction_path.name}: context manifest event_cluster:{index} member news excerpts mismatch"
             )
 
 
@@ -3993,8 +3641,7 @@ def _check_open_world_first_analysis_artifact(
     if artifact_ref is None and expected_hash is None:
         if _phase1_coverage_artifacts_required(manifest):
             findings.append(
-                f"{prediction_path.name}: context manifest missing "
-                "Phase 1 open_world_first_analysis artifact"
+                f"{prediction_path.name}: context manifest missing Phase 1 open_world_first_analysis artifact"
             )
         return
     artifact_path = _resolve_required_manifest_artifact(
@@ -4008,15 +3655,9 @@ def _check_open_world_first_analysis_artifact(
         return
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing "
-            "open_world_first_analysis_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing open_world_first_analysis_sha256")
     elif sha256_text(text) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "open_world_first_analysis_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis_sha256 mismatch")
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
@@ -4026,31 +3667,18 @@ def _check_open_world_first_analysis_artifact(
         else "nslab.open_world_first_analysis.v1"
     )
     if payload.get("schema_version") != expected_schema:
-        findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis schema_version mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis run_id mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "open_world_first_analysis")
     if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "prompt_hash mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis prompt_hash mismatch")
     if (
         _phase1_coverage_artifacts_required(manifest)
-        and payload.get("prompt_version")
-        != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+        and payload.get("prompt_version") != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "prompt_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis prompt_version mismatch")
     _check_open_world_first_analysis_summary(
         prediction_path,
         manifest,
@@ -4079,22 +3707,15 @@ def _check_open_world_first_analysis_summary(
     )
     for field in required_fields:
         value = payload.get(field)
-        if not isinstance(value, list) or not all(
-            isinstance(item, str) and item.strip() for item in value
-        ):
-            findings.append(
-                f"{prediction_path.name}: context manifest open_world_first_analysis "
-                f"{field} invalid"
-            )
+        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+            findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis {field} invalid")
     source_cluster_ids = _string_list(payload.get("source_cluster_ids"))
     if source_cluster_ids and not _string_list(payload.get("event_clusters")):
         findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "event cluster summaries missing"
+            f"{prediction_path.name}: context manifest open_world_first_analysis event cluster summaries missing"
         )
     if source_cluster_ids and not (
-        _string_list(payload.get("mechanisms"))
-        or _string_list(payload.get("uncertainties"))
+        _string_list(payload.get("mechanisms")) or _string_list(payload.get("uncertainties"))
     ):
         findings.append(
             f"{prediction_path.name}: context manifest open_world_first_analysis "
@@ -4102,11 +3723,7 @@ def _check_open_world_first_analysis_summary(
         )
     cluster_findings = payload.get("cluster_findings")
     finding_ids = (
-        [
-            finding.get("cluster_id")
-            for finding in cluster_findings
-            if isinstance(finding, dict)
-        ]
+        [finding.get("cluster_id") for finding in cluster_findings if isinstance(finding, dict)]
         if isinstance(cluster_findings, list)
         else []
     )
@@ -4127,10 +3744,7 @@ def _check_open_world_first_analysis_summary(
             for finding in cluster_findings
         )
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest open_world_first_analysis "
-            "cluster findings mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis cluster findings mismatch")
     summary = manifest.get("open_world_first_analysis_summary")
     if not isinstance(summary, dict):
         findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis_summary invalid")
@@ -4163,13 +3777,7 @@ def _check_open_world_first_analysis_summary(
             "uncovered_cluster_count": len(uncovered_cluster_ids),
             "analysis_batch_count": (analysis_batch_count if analysis_batch_count is not None else -1),
             **(
-                {
-                    "cluster_finding_count": (
-                        len(cluster_findings)
-                        if isinstance(cluster_findings, list)
-                        else -1
-                    )
-                }
+                {"cluster_finding_count": (len(cluster_findings) if isinstance(cluster_findings, list) else -1)}
                 if _phase1_coverage_artifacts_required(manifest)
                 else {}
             ),
@@ -4218,35 +3826,20 @@ def _check_news_novelty_review_artifact(
         return
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing "
-            "news_novelty_review_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing news_novelty_review_sha256")
     elif sha256_text(text) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "news_novelty_review_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review_sha256 mismatch")
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
     if payload.get("schema_version") != "nslab.news_novelty_review.v1":
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review schema_version mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review run_id mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "news_novelty_review")
     if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "prompt_hash mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review prompt_hash mismatch")
     _check_news_novelty_review_counts(prediction_path, manifest, payload, findings)
 
 
@@ -4257,26 +3850,15 @@ def _check_news_novelty_review_counts(
     findings: list[str],
 ) -> None:
     findings_rows = payload.get("findings")
-    if not isinstance(findings_rows, list) or not all(
-        isinstance(item, dict) for item in findings_rows
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "findings invalid"
-        )
+    if not isinstance(findings_rows, list) or not all(isinstance(item, dict) for item in findings_rows):
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review findings invalid")
         return
     manifest_count = manifest.get("news_novelty_review_count")
     manifest_count_int = _non_bool_int(manifest_count)
     if manifest_count_int is not None and manifest_count_int != len(findings_rows):
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "count mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review count mismatch")
     elif manifest_count is not None and manifest_count_int is None:
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review_count "
-            "invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review_count invalid")
     _check_payload_int(
         prediction_path,
         payload,
@@ -4299,10 +3881,7 @@ def _check_news_novelty_review_counts(
     if summary is None:
         return
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "news_novelty_review_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review_summary invalid")
         return
     _check_summary_int(
         prediction_path,
@@ -4320,9 +3899,7 @@ def _check_news_novelty_review_counts(
         label="news_novelty_review",
         findings=findings,
     )
-    time_verified_count = sum(
-        1 for item in findings_rows if item.get("time_verified") is True
-    )
+    time_verified_count = sum(1 for item in findings_rows if item.get("time_verified") is True)
     _check_summary_int(
         prediction_path,
         summary,
@@ -4359,17 +3936,12 @@ def _check_news_novelty_counts_summary(
     if summary_counts is None:
         return
     if not isinstance(summary_counts, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "novelty_counts invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review novelty_counts invalid")
         return
     observed_counts = Counter(
         novelty
         for item in findings_rows
-        if isinstance(item, dict)
-        and isinstance(novelty := item.get("novelty"), str)
-        and novelty
+        if isinstance(item, dict) and isinstance(novelty := item.get("novelty"), str) and novelty
     )
     invalid_count = False
     for novelty, expected_count in summary_counts.items():
@@ -4377,16 +3949,10 @@ def _check_news_novelty_counts_summary(
             invalid_count = True
             break
         if int(expected_count) != observed_counts.get(novelty, 0):
-            findings.append(
-                f"{prediction_path.name}: context manifest news_novelty_review "
-                "novelty_counts mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest news_novelty_review novelty_counts mismatch")
             return
     if invalid_count or any(novelty not in summary_counts for novelty in observed_counts):
-        findings.append(
-            f"{prediction_path.name}: context manifest news_novelty_review "
-            "novelty_counts mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest news_novelty_review novelty_counts mismatch")
 
 
 def _check_semantic_retrieval_plan_artifact(
@@ -4410,78 +3976,42 @@ def _check_semantic_retrieval_plan_artifact(
         return
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing "
-            "semantic_retrieval_plan_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing semantic_retrieval_plan_sha256")
     elif sha256_text(text) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_retrieval_plan_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan_sha256 mismatch")
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
     if payload.get("schema_version") != "nslab.semantic_retrieval_plan.v1":
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan schema_version mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan run_id mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "semantic_retrieval_plan")
     if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "prompt_hash mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan prompt_hash mismatch")
     expected_categories = _semantic_retrieval_required_categories(manifest)
     observed_categories = _string_list(payload.get("required_categories"))
     if expected_categories and observed_categories != expected_categories:
         findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "required_categories mismatch"
+            f"{prediction_path.name}: context manifest semantic_retrieval_plan required_categories mismatch"
         )
     queries = payload.get("queries")
     if not isinstance(queries, list) or not all(isinstance(item, dict) for item in queries):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "queries invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan queries invalid")
         return
     expected_query_count = _non_bool_int(manifest.get("semantic_retrieval_query_count"))
     if expected_query_count is not None and len(queries) != expected_query_count:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "query_count mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan query_count mismatch")
     query_categories = [
-        category
-        for query in queries
-        if isinstance(category := query.get("category"), str) and category
+        category for query in queries if isinstance(category := query.get("category"), str) and category
     ]
     if len(query_categories) != len(queries):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "query categories invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan query categories invalid")
     if expected_categories and set(query_categories) != set(expected_categories):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "category coverage mismatch"
-        )
-    if any(
-        not isinstance(query.get("query"), str) or not query.get("query")
-        for query in queries
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_plan "
-            "query text invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan category coverage mismatch")
+    if any(not isinstance(query.get("query"), str) or not query.get("query") for query in queries):
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_plan query text invalid")
 
 
 def _check_semantic_retrieval_artifact_summary(
@@ -4490,16 +4020,10 @@ def _check_semantic_retrieval_artifact_summary(
     rows: list[dict[str, Any]],
     findings: list[str],
 ) -> None:
-    category_counts = Counter(
-        category
-        for row in rows
-        if isinstance(category := row.get("category"), str) and category
-    )
+    category_counts = Counter(category for row in rows if isinstance(category := row.get("category"), str) and category)
     summary = manifest.get("semantic_retrieval_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval_summary invalid")
         return
     expected_category_counts = summary.get("category_query_counts")
     if isinstance(expected_category_counts, dict):
@@ -4509,72 +4033,38 @@ def _check_semantic_retrieval_artifact_summary(
             if isinstance(key, str) and _non_bool_int(value) is not None
         }
         if len(expected_counts) != len(expected_category_counts) or dict(category_counts) != expected_counts:
-            findings.append(
-                f"{prediction_path.name}: context manifest semantic_retrieval "
-                "category_counts mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest semantic_retrieval category_counts mismatch")
     else:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "category_counts invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval category_counts invalid")
     included_ids = _unique_strings(
-        episode_id
-        for row in rows
-        for episode_id in _string_list(row.get("included_episode_ids"))
+        episode_id for row in rows for episode_id in _string_list(row.get("included_episode_ids"))
     )
     excluded_ids = _unique_strings(
-        episode_id
-        for row in rows
-        for episode_id in _string_list(row.get("excluded_episode_ids"))
+        episode_id for row in rows for episode_id in _string_list(row.get("excluded_episode_ids"))
     )
     expected_included_ids = _string_list(manifest.get("semantic_retrieval_episode_ids"))
-    expected_excluded_ids = _string_list(
-        manifest.get("excluded_semantic_retrieval_episode_ids")
-    )
+    expected_excluded_ids = _string_list(manifest.get("excluded_semantic_retrieval_episode_ids"))
     if included_ids != expected_included_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "included_episode_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval included_episode_ids mismatch")
     if excluded_ids != expected_excluded_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "excluded_episode_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval excluded_episode_ids mismatch")
     included_record_ids = _unique_strings(
-        record_id
-        for row in rows
-        for record_id in _string_list(row.get("included_record_ids"))
+        record_id for row in rows for record_id in _string_list(row.get("included_record_ids"))
     )
     excluded_record_ids = _unique_strings(
-        record_id
-        for row in rows
-        for record_id in _string_list(row.get("excluded_record_ids"))
+        record_id for row in rows for record_id in _string_list(row.get("excluded_record_ids"))
     )
     record_contract_required = _semantic_retrieval_record_contract_required(
         manifest,
         summary,
         rows,
     )
-    if (
-        record_contract_required
-        and included_record_ids
-        != _string_list(manifest.get("semantic_retrieval_record_ids"))
+    if record_contract_required and included_record_ids != _string_list(manifest.get("semantic_retrieval_record_ids")):
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval included_record_ids mismatch")
+    if record_contract_required and excluded_record_ids != _string_list(
+        manifest.get("excluded_semantic_retrieval_record_ids")
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "included_record_ids mismatch"
-        )
-    if (
-        record_contract_required
-        and excluded_record_ids
-        != _string_list(manifest.get("excluded_semantic_retrieval_record_ids"))
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "excluded_record_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval excluded_record_ids mismatch")
     _check_summary_int(
         prediction_path,
         summary,
@@ -4617,24 +4107,12 @@ def _check_semantic_retrieval_artifact_summary(
             findings=findings,
         )
     if summary.get("retrieval_zero_is_valid") is not True:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "zero_policy missing"
-        )
-    if (
-        record_contract_required
-        and summary.get("record_retrieval_zero_is_valid") is not True
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "record_zero_policy missing"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval zero_policy missing")
+    if record_contract_required and summary.get("record_retrieval_zero_is_valid") is not True:
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval record_zero_policy missing")
     expected_categories = _semantic_retrieval_required_categories(manifest)
     if expected_categories and set(category_counts) != set(expected_categories):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval "
-            "category coverage mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval category coverage mismatch")
     for index, row in enumerate(rows, start=1):
         _check_semantic_retrieval_row(prediction_path, index, row, findings)
 
@@ -4644,9 +4122,7 @@ def _event_cluster_ids_from_manifest(root: Path, manifest: dict[str, Any]) -> li
     if rows is None:
         return []
     return _unique_strings(
-        row.get("cluster_id")
-        for row in rows
-        if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
+        row.get("cluster_id") for row in rows if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
     )
 
 
@@ -4659,36 +4135,19 @@ def _check_semantic_cluster_coverage_artifact_summary(
 ) -> None:
     summary = manifest.get("semantic_cluster_coverage_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_cluster_coverage_summary invalid")
         return
     event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
     covered_ids = _unique_strings(
-        cluster_id
-        for row in rows
-        for cluster_id in _string_list(row.get("related_cluster_ids"))
+        cluster_id for row in rows for cluster_id in _string_list(row.get("related_cluster_ids"))
     )
     if not covered_ids:
-        covered_ids = _unique_strings(
-            row.get("cluster_id")
-            for row in rows
-            if isinstance(row.get("cluster_id"), str)
-        )
-    missing_ids = [
-        cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)
-    ]
+        covered_ids = _unique_strings(row.get("cluster_id") for row in rows if isinstance(row.get("cluster_id"), str))
+    missing_ids = [cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)]
     if _string_list(manifest.get("semantic_cluster_coverage_ids")) != covered_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_cluster_coverage_ids mismatch")
     if _string_list(manifest.get("semantic_cluster_coverage_missing_ids")) != missing_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage_missing_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_cluster_coverage_missing_ids mismatch")
     expected_source_count = len(event_cluster_ids) if event_cluster_ids else len(rows)
     checks = {
         "cluster_coverage_source_count": expected_source_count,
@@ -4706,19 +4165,12 @@ def _check_semantic_cluster_coverage_artifact_summary(
             findings=findings,
         )
     if _string_list(summary.get("cluster_coverage_missing_ids")) != missing_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage missing_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_cluster_coverage missing_ids mismatch")
     if summary.get("retrieval_zero_is_valid") is not True:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage zero_policy missing"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_cluster_coverage zero_policy missing")
     if summary.get("record_retrieval_zero_is_valid") is not True:
         findings.append(
-            f"{prediction_path.name}: context manifest "
-            "semantic_cluster_coverage record_zero_policy missing"
+            f"{prediction_path.name}: context manifest semantic_cluster_coverage record_zero_policy missing"
         )
 
 
@@ -4739,15 +4191,9 @@ def _check_semantic_retrieval_row(
 ) -> None:
     query = row.get("query")
     if not isinstance(query, str) or not query:
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "query invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval:{index} query invalid")
     elif row.get("query_sha256") != sha256_text(query):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "query_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval:{index} query_sha256 mismatch")
     included_ids = _string_list(row.get("included_episode_ids"))
     excluded_ids = _string_list(row.get("excluded_episode_ids"))
     included_record_ids = _string_list(row.get("included_record_ids"))
@@ -4757,24 +4203,16 @@ def _check_semantic_retrieval_row(
     record_result_count = _non_bool_int(row.get("record_result_count"))
     excluded_record_count = _non_bool_int(row.get("excluded_record_count"))
     if result_count is not None and result_count != len(included_ids):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "result_count mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval:{index} result_count mismatch")
     if excluded_count is not None and excluded_count != len(excluded_ids):
-        findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "excluded_count mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest semantic_retrieval:{index} excluded_count mismatch")
     if record_result_count is not None and record_result_count != len(included_record_ids):
         findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "record_result_count mismatch"
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} record_result_count mismatch"
         )
     if excluded_record_count is not None and excluded_record_count != len(excluded_record_ids):
         findings.append(
-            f"{prediction_path.name}: context manifest semantic_retrieval:{index} "
-            "excluded_record_count mismatch"
+            f"{prediction_path.name}: context manifest semantic_retrieval:{index} excluded_record_count mismatch"
         )
 
 
@@ -4799,32 +4237,20 @@ def _check_candidate_expansion_artifact(
         return
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing candidate_expansion_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing candidate_expansion_sha256")
     elif sha256_text(text) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion_sha256 mismatch")
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
     if payload.get("schema_version") != "nslab.candidate_expansion.v1":
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion schema_version mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion run_id mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "candidate_expansion")
     if isinstance(prompt_hash, str) and payload.get("prompt_sha256") != prompt_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "prompt_hash mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion prompt_hash mismatch")
     _check_candidate_expansion_counts(prediction_path, manifest, payload, findings)
 
 
@@ -4836,24 +4262,15 @@ def _check_candidate_expansion_counts(
 ) -> None:
     summary = manifest.get("candidate_expansion_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion_summary invalid")
         return
     required_paths = _string_list(summary.get("required_paths"))
     observed_required_paths = _string_list(payload.get("required_paths"))
     if required_paths and observed_required_paths != required_paths:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "required_paths mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion required_paths mismatch")
     findings_rows = payload.get("findings")
-    if not isinstance(findings_rows, list) or not all(
-        isinstance(item, dict) for item in findings_rows
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion findings invalid"
-        )
+    if not isinstance(findings_rows, list) or not all(isinstance(item, dict) for item in findings_rows):
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion findings invalid")
         return
     _check_summary_int(
         prediction_path,
@@ -4866,25 +4283,14 @@ def _check_candidate_expansion_counts(
     manifest_count = manifest.get("candidate_expansion_count")
     manifest_count_int = _non_bool_int(manifest_count)
     if manifest_count_int is not None and manifest_count_int != len(findings_rows):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion count mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion count mismatch")
     elif manifest_count is not None and manifest_count_int is None:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion_count invalid"
-        )
-    observed_paths = [
-        path for row in findings_rows if isinstance(path := row.get("path"), str) and path
-    ]
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion_count invalid")
+    observed_paths = [path for row in findings_rows if isinstance(path := row.get("path"), str) and path]
     if len(observed_paths) != len(findings_rows):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion path invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion path invalid")
     if required_paths and set(observed_paths) != set(required_paths):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "path coverage mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion path coverage mismatch")
     observed_path_counts = dict(Counter(observed_paths))
     expected_path_counts = summary.get("path_counts")
     if isinstance(expected_path_counts, dict):
@@ -4894,20 +4300,10 @@ def _check_candidate_expansion_counts(
             if isinstance(key, str) and _non_bool_int(value) is not None
         }
         if len(expected_counts) != len(expected_path_counts) or observed_path_counts != expected_counts:
-            findings.append(
-                f"{prediction_path.name}: context manifest candidate_expansion "
-                "path_counts mismatch"
-            )
+            findings.append(f"{prediction_path.name}: context manifest candidate_expansion path_counts mismatch")
     else:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "path_counts invalid"
-        )
-    candidate_names = {
-        candidate
-        for row in findings_rows
-        for candidate in _string_list(row.get("candidate_names"))
-    }
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion path_counts invalid")
+    candidate_names = {candidate for row in findings_rows for candidate in _string_list(row.get("candidate_names"))}
     _check_summary_int(
         prediction_path,
         summary,
@@ -4916,9 +4312,7 @@ def _check_candidate_expansion_counts(
         label="candidate_expansion",
         findings=findings,
     )
-    web_discovery_count = sum(
-        1 for row in findings_rows if row.get("requires_web_company_discovery") is True
-    )
+    web_discovery_count = sum(1 for row in findings_rows if row.get("requires_web_company_discovery") is True)
     _check_summary_int(
         prediction_path,
         summary,
@@ -4927,16 +4321,13 @@ def _check_candidate_expansion_counts(
         label="candidate_expansion",
         findings=findings,
     )
-    continuation_rows = [
-        row for row in findings_rows if row.get("path") == "CONTINUATION"
-    ]
+    continuation_rows = [row for row in findings_rows if row.get("path") == "CONTINUATION"]
     continuation_verified = bool(continuation_rows) and all(
         row.get("d_minus_one_market_data_only") is True for row in continuation_rows
     )
     if summary.get("continuation_d_minus_one_only_verified") != continuation_verified:
         findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion "
-            "continuation_d_minus_one mismatch"
+            f"{prediction_path.name}: context manifest candidate_expansion continuation_d_minus_one mismatch"
         )
     for index, row in enumerate(findings_rows, start=1):
         _check_candidate_expansion_row(prediction_path, index, row, findings)
@@ -4963,18 +4354,10 @@ def _check_candidate_expansion_row(
         "memory_episode_ids",
         "uncertainties",
     ):
-        if not isinstance(row.get(field), list) or any(
-            not isinstance(item, str) for item in row.get(field, [])
-        ):
-            findings.append(
-                f"{prediction_path.name}: context manifest candidate_expansion:{index} "
-                f"{field} invalid"
-            )
+        if not isinstance(row.get(field), list) or any(not isinstance(item, str) for item in row.get(field, [])):
+            findings.append(f"{prediction_path.name}: context manifest candidate_expansion:{index} {field} invalid")
     if not isinstance(row.get("hypothesis"), str) or not row.get("hypothesis"):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion:{index} "
-            "hypothesis invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_expansion:{index} hypothesis invalid")
     if not isinstance(row.get("requires_web_company_discovery"), bool):
         findings.append(
             f"{prediction_path.name}: context manifest candidate_expansion:{index} "
@@ -4982,8 +4365,7 @@ def _check_candidate_expansion_row(
         )
     if not isinstance(row.get("d_minus_one_market_data_only"), bool):
         findings.append(
-            f"{prediction_path.name}: context manifest candidate_expansion:{index} "
-            "d_minus_one_market_data_only invalid"
+            f"{prediction_path.name}: context manifest candidate_expansion:{index} d_minus_one_market_data_only invalid"
         )
 
 
@@ -4996,8 +4378,7 @@ def _check_candidate_expansion_retrieval_miss_rows(
         for field in ("candidate_names", "sector_hypotheses", "investigation_questions"):
             if not _string_list(row.get(field)):
                 findings.append(
-                    f"{prediction_path.name}: context manifest "
-                    f"candidate_expansion:{index} retrieval miss {field} empty"
+                    f"{prediction_path.name}: context manifest candidate_expansion:{index} retrieval miss {field} empty"
                 )
         path = row.get("path")
         if path in {"SINGLE_EVENT", "THEME_FORMATION", "BENEFICIARY_DISCOVERY"} and (
@@ -5050,8 +4431,7 @@ def _check_candidate_web_check_artifacts(
             prediction_path,
             rows,
             label="candidate_web_check",
-            required_fields=CANDIDATE_WEB_CHECK_REQUIRED_FIELDS
-            | {"verification_focus"},
+            required_fields=CANDIDATE_WEB_CHECK_REQUIRED_FIELDS | {"verification_focus"},
             findings=findings,
         )
     if excluded_rows is not None:
@@ -5092,13 +4472,9 @@ def _check_candidate_web_check_source_ids(
     row_source_ids = _unique_strings(row.get("source_id") for row in rows)
     expected_source_ids = _string_list(manifest.get(manifest_field))
     if row_source_ids != expected_source_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} source_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} source_ids mismatch")
     if len(row_source_ids) != len(rows):
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} duplicate source_id"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} duplicate source_id")
 
 
 def _check_candidate_web_check_rows(
@@ -5112,46 +4488,20 @@ def _check_candidate_web_check_rows(
     for index, row in enumerate(rows, start=1):
         missing = sorted(required_fields - set(row))
         if missing:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "required_fields missing"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} required_fields missing")
         for field in ("candidate_company_name", "candidate_path_type", "source_id", "query"):
             if not isinstance(row.get(field), str) or not row.get(field):
-                findings.append(
-                    f"{prediction_path.name}: context manifest {label}:{index} "
-                    f"{field} invalid"
-                )
-        if not isinstance(row.get("candidate_rank"), int) or isinstance(
-            row.get("candidate_rank"), bool
-        ):
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "candidate_rank invalid"
-            )
-        if not (
-            isinstance(row.get("source_url"), str)
-            and row.get("source_url") == row.get("url")
-        ):
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "source_url mismatch"
-            )
+                findings.append(f"{prediction_path.name}: context manifest {label}:{index} {field} invalid")
+        if not isinstance(row.get("candidate_rank"), int) or isinstance(row.get("candidate_rank"), bool):
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} candidate_rank invalid")
+        if not (isinstance(row.get("source_url"), str) and row.get("source_url") == row.get("url")):
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} source_url mismatch")
         if "opened_text" in row:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "opened_text present"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} opened_text present")
         if "body" in row or "content" in row:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "body/content present"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} body/content present")
         if "verification_focus" in row and not _string_list(row.get("verification_focus")):
-            findings.append(
-                f"{prediction_path.name}: context manifest {label}:{index} "
-                "verification_focus invalid"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label}:{index} verification_focus invalid")
 
 
 def _check_candidate_web_check_summary(
@@ -5163,9 +4513,7 @@ def _check_candidate_web_check_summary(
 ) -> None:
     summary = manifest.get("candidate_web_check_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_web_check_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_web_check_summary invalid")
         return
     _check_candidate_web_check_summary_int(
         prediction_path,
@@ -5184,14 +4532,10 @@ def _check_candidate_web_check_summary(
     subject_rows = [*rows, *excluded_rows]
     subject_keys = _candidate_web_check_subject_keys(subject_rows)
     final_candidate_keys = _candidate_web_check_subject_keys(
-        row
-        for row in subject_rows
-        if row.get("candidate_subject_type") == "final_candidate"
+        row for row in subject_rows if row.get("candidate_subject_type") == "final_candidate"
     )
     expansion_subject_keys = _candidate_web_check_subject_keys(
-        row
-        for row in subject_rows
-        if row.get("candidate_subject_type") == "candidate_expansion"
+        row for row in subject_rows if row.get("candidate_subject_type") == "candidate_expansion"
     )
     _check_candidate_web_check_summary_int(
         prediction_path,
@@ -5216,18 +4560,10 @@ def _check_candidate_web_check_summary(
     )
     expansion_paths = _candidate_web_check_expansion_paths(subject_rows)
     if _string_list(summary.get("expansion_paths")) != expansion_paths:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_web_check "
-            "expansion_paths mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_web_check expansion_paths mismatch")
     expected_focus = _string_list(summary.get("verification_focus"))
-    if expected_focus and any(
-        _string_list(row.get("verification_focus")) != expected_focus for row in rows
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_web_check "
-            "verification_focus mismatch"
-        )
+    if expected_focus and any(_string_list(row.get("verification_focus")) != expected_focus for row in rows):
+        findings.append(f"{prediction_path.name}: context manifest candidate_web_check verification_focus mismatch")
 
 
 def _check_candidate_web_check_summary_int(
@@ -5239,10 +4575,7 @@ def _check_candidate_web_check_summary_int(
     findings: list[str],
 ) -> None:
     if _non_bool_int(summary.get(field)) != expected:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_web_check "
-            f"{field} mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_web_check {field} mismatch")
 
 
 def _candidate_web_check_subject_keys(
@@ -5268,11 +4601,7 @@ def _candidate_web_check_subject_key(
 
 def _candidate_web_check_expansion_paths(rows: Iterable[dict[str, Any]]) -> list[str]:
     return sorted(
-        {
-            str(row["candidate_expansion_path"])
-            for row in rows
-            if row.get("candidate_expansion_path") is not None
-        }
+        {str(row["candidate_expansion_path"]) for row in rows if row.get("candidate_expansion_path") is not None}
     )
 
 
@@ -5306,105 +4635,57 @@ def _check_candidate_verification_artifact(
 
     text = artifact_path.read_text(encoding="utf-8", errors="replace")
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing "
-            "candidate_verification_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing candidate_verification_sha256")
     elif sha256_text(text) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "candidate_verification_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification_sha256 mismatch")
 
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification invalid JSON"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification invalid JSON")
         return
     if not isinstance(payload, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "is not an object"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification is not an object")
         return
 
     if payload.get("schema_version") != "nslab.candidate_verification.v1":
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification schema_version mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification run_id mismatch")
 
     expected_dimensions = _candidate_verification_required_dimensions(manifest)
-    if not expected_dimensions or _string_list(
-        payload.get("required_dimensions")
-    ) != expected_dimensions:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "required_dimensions mismatch"
-        )
+    if not expected_dimensions or _string_list(payload.get("required_dimensions")) != expected_dimensions:
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification required_dimensions mismatch")
 
     candidate_findings = payload.get("findings")
-    if not isinstance(candidate_findings, list) or not all(
-        isinstance(finding, dict) for finding in candidate_findings
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "findings invalid"
-        )
+    if not isinstance(candidate_findings, list) or not all(isinstance(finding, dict) for finding in candidate_findings):
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification findings invalid")
         return
 
     summary = manifest.get("candidate_verification_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "candidate_verification_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification_summary invalid")
         return
 
     expected_count = _non_bool_int(manifest.get("candidate_verification_count"))
     summary_count = _non_bool_int(summary.get("finding_count"))
-    if (
-        expected_count is None
-        or expected_count != len(candidate_findings)
-        or summary_count != len(candidate_findings)
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "count mismatch"
-        )
+    if expected_count is None or expected_count != len(candidate_findings) or summary_count != len(candidate_findings):
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification count mismatch")
 
-    if (
-        _non_bool_int(payload.get("subject_count")) != len(candidate_findings)
-        or _non_bool_int(summary.get("subject_count")) != len(candidate_findings)
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "subject_count mismatch"
-        )
+    if _non_bool_int(payload.get("subject_count")) != len(candidate_findings) or _non_bool_int(
+        summary.get("subject_count")
+    ) != len(candidate_findings):
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification subject_count mismatch")
 
     if not expected_dimensions or any(
-        _candidate_verification_dimension_names(finding) != expected_dimensions
-        for finding in candidate_findings
+        _candidate_verification_dimension_names(finding) != expected_dimensions for finding in candidate_findings
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "dimension_coverage mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification dimension_coverage mismatch")
 
     observed_status_counts = _candidate_verification_status_counts(candidate_findings)
     if summary.get("status_counts") != observed_status_counts:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "status_counts mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification status_counts mismatch")
 
     _check_candidate_verification_sources(
         prediction_path,
@@ -5432,67 +4713,38 @@ def _check_candidate_verification_sources(
     candidate_findings: list[dict[str, Any]],
     findings: list[str],
 ) -> None:
-    source_count = sum(
-        _non_bool_int(finding.get("source_count")) or 0
-        for finding in candidate_findings
-    )
+    source_count = sum(_non_bool_int(finding.get("source_count")) or 0 for finding in candidate_findings)
     excluded_source_count = sum(
-        _non_bool_int(finding.get("excluded_source_count")) or 0
-        for finding in candidate_findings
+        _non_bool_int(finding.get("excluded_source_count")) or 0 for finding in candidate_findings
     )
-    if (
-        source_count != _non_bool_int(manifest.get("candidate_web_check_count"))
-        or excluded_source_count
-        != _non_bool_int(manifest.get("excluded_candidate_web_check_count"))
-    ):
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "source_counts mismatch"
-        )
+    if source_count != _non_bool_int(
+        manifest.get("candidate_web_check_count")
+    ) or excluded_source_count != _non_bool_int(manifest.get("excluded_candidate_web_check_count")):
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification source_counts mismatch")
 
     expected_accepted_ids = _string_list(manifest.get("candidate_web_source_ids"))
-    expected_excluded_ids = _string_list(
-        manifest.get("excluded_candidate_web_source_ids")
-    )
+    expected_excluded_ids = _string_list(manifest.get("excluded_candidate_web_source_ids"))
     accepted_ids = _unique_strings(
-        source_id
-        for finding in candidate_findings
-        for source_id in _string_list(finding.get("accepted_source_ids"))
+        source_id for finding in candidate_findings for source_id in _string_list(finding.get("accepted_source_ids"))
     )
     excluded_ids = _unique_strings(
-        source_id
-        for finding in candidate_findings
-        for source_id in _string_list(finding.get("excluded_source_ids"))
+        source_id for finding in candidate_findings for source_id in _string_list(finding.get("excluded_source_ids"))
     )
     if accepted_ids != expected_accepted_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "accepted_source_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification accepted_source_ids mismatch")
     if excluded_ids != expected_excluded_ids:
-        findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "excluded_source_ids mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest candidate_verification excluded_source_ids mismatch")
 
     accepted_id_set = set(expected_accepted_ids)
     excluded_id_set = set(expected_excluded_ids)
     for index, finding in enumerate(candidate_findings, start=1):
-        if any(
-            source_id not in accepted_id_set
-            for source_id in _string_list(finding.get("accepted_source_ids"))
-        ):
+        if any(source_id not in accepted_id_set for source_id in _string_list(finding.get("accepted_source_ids"))):
             findings.append(
-                f"{prediction_path.name}: context manifest "
-                f"candidate_verification:{index} accepted_source_ids mismatch"
+                f"{prediction_path.name}: context manifest candidate_verification:{index} accepted_source_ids mismatch"
             )
-        if any(
-            source_id not in excluded_id_set
-            for source_id in _string_list(finding.get("excluded_source_ids"))
-        ):
+        if any(source_id not in excluded_id_set for source_id in _string_list(finding.get("excluded_source_ids"))):
             findings.append(
-                f"{prediction_path.name}: context manifest "
-                f"candidate_verification:{index} excluded_source_ids mismatch"
+                f"{prediction_path.name}: context manifest candidate_verification:{index} excluded_source_ids mismatch"
             )
 
 
@@ -5502,10 +4754,7 @@ def _check_candidate_verification_market_snapshots(
     candidate_findings: list[dict[str, Any]],
     findings: list[str],
 ) -> None:
-    if (
-        "d_minus_one_snapshot_count" not in summary
-        and "d_minus_one_snapshot_unavailable_count" not in summary
-    ):
+    if "d_minus_one_snapshot_count" not in summary and "d_minus_one_snapshot_unavailable_count" not in summary:
         return
     for index, finding in enumerate(candidate_findings, start=1):
         snapshot = finding.get("blind_safe_market_snapshot")
@@ -5520,16 +4769,12 @@ def _check_candidate_verification_market_snapshots(
                 f"{prediction_path.name}: context manifest "
                 f"candidate_verification:{index} blind_safe_market_snapshot status invalid"
             )
-        if snapshot.get("status") == "snapshot" and not isinstance(
-            snapshot.get("snapshot"), dict
-        ):
+        if snapshot.get("status") == "snapshot" and not isinstance(snapshot.get("snapshot"), dict):
             findings.append(
                 f"{prediction_path.name}: context manifest "
                 f"candidate_verification:{index} blind_safe_market_snapshot payload invalid"
             )
-        if snapshot.get("status") == "unavailable" and not isinstance(
-            snapshot.get("reason"), str
-        ):
+        if snapshot.get("status") == "unavailable" and not isinstance(snapshot.get("reason"), str):
             findings.append(
                 f"{prediction_path.name}: context manifest "
                 f"candidate_verification:{index} blind_safe_market_snapshot reason missing"
@@ -5542,11 +4787,7 @@ def _check_candidate_verification_summary_counts(
     candidate_findings: list[dict[str, Any]],
     findings: list[str],
 ) -> None:
-    expansion_count = sum(
-        1
-        for finding in candidate_findings
-        if finding.get("subject_type") == "candidate_expansion"
-    )
+    expansion_count = sum(1 for finding in candidate_findings if finding.get("subject_type") == "candidate_expansion")
     if _non_bool_int(summary.get("candidate_expansion_subject_count")) != expansion_count:
         findings.append(
             f"{prediction_path.name}: context manifest candidate_verification "
@@ -5554,28 +4795,18 @@ def _check_candidate_verification_summary_counts(
         )
 
     without_sources_count = sum(
-        1
-        for finding in candidate_findings
-        if not _string_list(finding.get("accepted_source_ids"))
+        1 for finding in candidate_findings if not _string_list(finding.get("accepted_source_ids"))
     )
-    if (
-        _non_bool_int(summary.get("subjects_without_cutoff_safe_sources"))
-        != without_sources_count
-    ):
+    if _non_bool_int(summary.get("subjects_without_cutoff_safe_sources")) != without_sources_count:
         findings.append(
             f"{prediction_path.name}: context manifest candidate_verification "
             "subjects_without_cutoff_safe_sources mismatch"
         )
 
-    d_minus_one_count = sum(
-        1
-        for finding in candidate_findings
-        if finding.get("d_minus_one_market_data_only") is True
-    )
+    d_minus_one_count = sum(1 for finding in candidate_findings if finding.get("d_minus_one_market_data_only") is True)
     if _non_bool_int(summary.get("d_minus_one_only_subject_count")) != d_minus_one_count:
         findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "d_minus_one_only_subject_count mismatch"
+            f"{prediction_path.name}: context manifest candidate_verification d_minus_one_only_subject_count mismatch"
         )
 
     snapshot_count = sum(
@@ -5593,16 +4824,10 @@ def _check_candidate_verification_summary_counts(
     expected_snapshot_count = _non_bool_int(summary.get("d_minus_one_snapshot_count"))
     if expected_snapshot_count is not None and expected_snapshot_count != snapshot_count:
         findings.append(
-            f"{prediction_path.name}: context manifest candidate_verification "
-            "d_minus_one_snapshot_count mismatch"
+            f"{prediction_path.name}: context manifest candidate_verification d_minus_one_snapshot_count mismatch"
         )
-    expected_unavailable_count = _non_bool_int(
-        summary.get("d_minus_one_snapshot_unavailable_count")
-    )
-    if (
-        expected_unavailable_count is not None
-        and expected_unavailable_count != unavailable_count
-    ):
+    expected_unavailable_count = _non_bool_int(summary.get("d_minus_one_snapshot_unavailable_count"))
+    if expected_unavailable_count is not None and expected_unavailable_count != unavailable_count:
         findings.append(
             f"{prediction_path.name}: context manifest candidate_verification "
             "d_minus_one_snapshot_unavailable_count mismatch"
@@ -5660,9 +4885,7 @@ def _candidate_verification_status_counts(
         if not isinstance(dimensions, list):
             continue
         for dimension in dimensions:
-            if not isinstance(dimension, dict) or not isinstance(
-                dimension.get("status"), str
-            ):
+            if not isinstance(dimension, dict) or not isinstance(dimension.get("status"), str):
                 continue
             counts[str(dimension["status"])] += 1
     return dict(counts)
@@ -5701,9 +4924,7 @@ def _same_unique_string_set(left: Any, right: Any) -> bool:
     left_strings = _unique_strings(left)
     right_strings = _unique_strings(right)
     return (
-        len(left_strings) == len(left)
-        and len(right_strings) == len(right)
-        and set(left_strings) == set(right_strings)
+        len(left_strings) == len(left) and len(right_strings) == len(right) and set(left_strings) == set(right_strings)
     )
 
 
@@ -5720,9 +4941,7 @@ def _check_payload_int(
         return
     observed = _non_bool_int(payload.get(field))
     if observed is None or observed != expected:
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} {field} mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} {field} mismatch")
 
 
 def _check_summary_int(
@@ -5738,9 +4957,7 @@ def _check_summary_int(
         return
     observed = _non_bool_int(summary.get(field))
     if observed is None or observed != expected:
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} {field} mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} {field} mismatch")
 
 
 def _non_bool_int(value: Any) -> int | None:
@@ -5777,40 +4994,25 @@ def _check_manifest_prediction_artifact(
         return
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("context_manifest_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: context manifest prediction_artifact run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest prediction_artifact run_id mismatch")
     if payload.get("schema_version") != "nslab.blind_prediction.v1":
-        findings.append(
-            f"{prediction_path.name}: context manifest prediction_artifact "
-            "schema_version mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest prediction_artifact schema_version mismatch")
     sealed_at = payload.get("sealed_at")
     if not isinstance(sealed_at, str) or not sealed_at:
-        findings.append(
-            f"{prediction_path.name}: context manifest prediction_artifact "
-            "sealed_at missing"
-        )
+        findings.append(f"{prediction_path.name}: context manifest prediction_artifact sealed_at missing")
     artifact_blind_hash = payload.get("blind_artifact_sha256")
     if not isinstance(artifact_blind_hash, str) or not artifact_blind_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest prediction_artifact "
-            "missing blind_artifact_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest prediction_artifact missing blind_artifact_sha256")
     else:
-        expected_blind_hash = sha256_text(
-            canonical_json({**payload, "blind_artifact_sha256": None})
-        )
+        expected_blind_hash = sha256_text(canonical_json({**payload, "blind_artifact_sha256": None}))
         if artifact_blind_hash != expected_blind_hash:
             findings.append(
-                f"{prediction_path.name}: context manifest prediction_artifact "
-                "blind_artifact_sha256 mismatch"
+                f"{prediction_path.name}: context manifest prediction_artifact blind_artifact_sha256 mismatch"
             )
     manifest_blind_hash = manifest.get("blind_artifact_sha256")
     if isinstance(manifest_blind_hash, str) and artifact_blind_hash != manifest_blind_hash:
         findings.append(
-            f"{prediction_path.name}: context manifest prediction_artifact "
-            "manifest blind_artifact_sha256 mismatch"
+            f"{prediction_path.name}: context manifest prediction_artifact manifest blind_artifact_sha256 mismatch"
         )
 
 
@@ -5840,27 +5042,18 @@ def _check_manifest_report_artifact(
         findings.append(f"{prediction_path.name}: context manifest report_sha256 mismatch")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and run_id not in report_text:
-        findings.append(
-            f"{prediction_path.name}: context manifest report_artifact missing run id"
-        )
+        findings.append(f"{prediction_path.name}: context manifest report_artifact missing run id")
     section_status = inspect_preopen_report_sections(report_text)
     if section_status["missing"]:
         missing = ", ".join(section_status["missing"])
         findings.append(
-            f"{prediction_path.name}: context manifest report_artifact missing "
-            f"required sections: {missing}"
+            f"{prediction_path.name}: context manifest report_artifact missing required sections: {missing}"
         )
     if section_status["empty"]:
         empty = ", ".join(section_status["empty"])
-        findings.append(
-            f"{prediction_path.name}: context manifest report_artifact empty "
-            f"required sections: {empty}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest report_artifact empty required sections: {empty}")
     if not section_status["ordered"]:
-        findings.append(
-            f"{prediction_path.name}: context manifest report_artifact required "
-            "sections out of order"
-        )
+        findings.append(f"{prediction_path.name}: context manifest report_artifact required sections out of order")
 
 
 def _check_manifest_final_synthesis_context_artifact(
@@ -5883,14 +5076,9 @@ def _check_manifest_final_synthesis_context_artifact(
     if artifact_path is None:
         return
     if not isinstance(expected_hash, str) or not expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing "
-            "final_synthesis_context_sha256"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing final_synthesis_context_sha256")
     elif sha256_text(artifact_path.read_text(encoding="utf-8", errors="replace")) != expected_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest final_synthesis_context_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest final_synthesis_context_sha256 mismatch")
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
@@ -5899,48 +5087,26 @@ def _check_manifest_final_synthesis_context_artifact(
         "nslab.final_synthesis_context.v1",
         "nslab.final_synthesis_context.v2",
     }:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context invalid schema_version"
-        )
-    if (
-        phase2_memory_coverage_required(manifest)
-        and schema_version != "nslab.final_synthesis_context.v2"
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context Phase 2 downgrade"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context invalid schema_version")
+    if phase2_memory_coverage_required(manifest) and schema_version != "nslab.final_synthesis_context.v2":
+        findings.append(f"{prediction_path.name}: final_synthesis_context Phase 2 downgrade")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context run_id mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context run_id mismatch")
     context_payload = payload.get("payload")
     if not isinstance(context_payload, dict):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context payload must be object"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context payload must be object")
         return
     if payload.get("payload_sha256") != sha256_text(canonical_json(context_payload)):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context payload_sha256 mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context payload_sha256 mismatch")
     required_inputs = context_payload.get("required_inputs")
-    if not isinstance(required_inputs, list) or not all(
-        isinstance(item, str) for item in required_inputs
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context required_inputs invalid"
-        )
+    if not isinstance(required_inputs, list) or not all(isinstance(item, str) for item in required_inputs):
+        findings.append(f"{prediction_path.name}: final_synthesis_context required_inputs invalid")
     elif payload.get("required_inputs") != required_inputs:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context required_inputs mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context required_inputs mismatch")
     else:
         if not final_synthesis_required_inputs_compatible(required_inputs):
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context "
-                "required_inputs incompatible"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context required_inputs incompatible")
         _check_final_synthesis_required_input_fields(
             prediction_path,
             manifest,
@@ -5950,15 +5116,10 @@ def _check_manifest_final_synthesis_context_artifact(
         )
     expected_summary = final_synthesis_input_summary(context_payload)
     if payload.get("input_summary") != expected_summary:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context input_summary mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context input_summary mismatch")
     manifest_summary = manifest.get("final_synthesis_context_summary")
     if manifest_summary is not None and manifest_summary != payload.get("input_summary"):
-        findings.append(
-            f"{prediction_path.name}: context manifest final_synthesis_context_summary "
-            "mismatch"
-        )
+        findings.append(f"{prediction_path.name}: context manifest final_synthesis_context_summary mismatch")
     _check_final_synthesis_manifest_record_ids(
         prediction_path,
         manifest,
@@ -5986,19 +5147,14 @@ def _check_manifest_final_synthesis_context_artifact(
         findings,
     )
     if schema_version == "nslab.final_synthesis_context.v2":
-        forbidden = sorted(
-            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload)
-        )
+        forbidden = sorted(FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload))
         if forbidden:
             findings.append(
                 f"{prediction_path.name}: final_synthesis_context contains "
-                "exhaustive payload fields: "
-                + ", ".join(forbidden)
+                "exhaustive payload fields: " + ", ".join(forbidden)
             )
         if not final_synthesis_context_contract_verified(manifest, payload):
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context v2 contract mismatch"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context v2 contract mismatch")
 
 
 def _check_final_synthesis_required_input_fields(
@@ -6017,8 +5173,7 @@ def _check_final_synthesis_required_input_fields(
     if missing_inputs:
         findings.append(
             f"{prediction_path.name}: final_synthesis_context missing required "
-            "input fields: "
-            + ", ".join(missing_inputs)
+            "input fields: " + ", ".join(missing_inputs)
         )
 
 
@@ -6071,10 +5226,7 @@ def _check_final_synthesis_manifest_record_ids(
         if manifest_ids is None or payload_ids is None:
             continue
         if manifest_ids != payload_ids:
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context {field} "
-                "does not match context manifest"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context {field} does not match context manifest")
 
 
 def _check_final_synthesis_manifest_record_coverage_metadata(
@@ -6112,10 +5264,7 @@ def _check_final_synthesis_manifest_record_coverage_metadata(
         if manifest_ids is None or payload_ids is None:
             continue
         if manifest_ids != payload_ids:
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context {field} "
-                "does not match context manifest"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context {field} does not match context manifest")
 
     for count_field, ids_field in (
         ("accepted_record_count", None),
@@ -6146,17 +5295,13 @@ def _check_final_synthesis_manifest_record_coverage_metadata(
             continue
         if manifest_count != payload_count:
             findings.append(
-                f"{prediction_path.name}: final_synthesis_context {count_field} "
-                "does not match context manifest"
+                f"{prediction_path.name}: final_synthesis_context {count_field} does not match context manifest"
             )
         if ids_field is None:
             continue
         payload_ids = context_payload.get(ids_field)
         if isinstance(payload_ids, list) and payload_count != len(payload_ids):
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context {count_field} "
-                f"does not match {ids_field}"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context {count_field} does not match {ids_field}")
 
 
 def _final_synthesis_string_list(
@@ -6210,12 +5355,8 @@ def _check_final_synthesis_record_id_availability(
         if field not in context_payload:
             continue
         value = context_payload.get(field)
-        if not isinstance(value, list) or not all(
-            isinstance(record_id, str) for record_id in value
-        ):
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context {field} is invalid"
-            )
+        if not isinstance(value, list) or not all(isinstance(record_id, str) for record_id in value):
+            findings.append(f"{prediction_path.name}: final_synthesis_context {field} is invalid")
             continue
         field_record_ids[field] = _unique_strings(value)
     _collect_final_synthesis_record_object_ids(
@@ -6235,14 +5376,12 @@ def _check_final_synthesis_record_id_availability(
             record = records_by_id.get(record_id)
             if record is None:
                 findings.append(
-                    f"{prediction_path.name}: final_synthesis_context {field} "
-                    f"references unknown record: {record_id}"
+                    f"{prediction_path.name}: final_synthesis_context {field} references unknown record: {record_id}"
                 )
                 continue
             if not is_available_as_of(record.available_from, cutoff_at):
                 findings.append(
-                    f"{prediction_path.name}: final_synthesis_context {field} "
-                    f"exposes future record: {record_id}"
+                    f"{prediction_path.name}: final_synthesis_context {field} exposes future record: {record_id}"
                 )
 
 
@@ -6258,16 +5397,12 @@ def _collect_final_synthesis_record_object_ids(
         if value is None:
             continue
         if not isinstance(value, list):
-            findings.append(
-                f"{prediction_path.name}: final_synthesis_context {field} is invalid"
-            )
+            findings.append(f"{prediction_path.name}: final_synthesis_context {field} is invalid")
             continue
         ids: list[str] = []
         for item in value:
             if not isinstance(item, dict):
-                findings.append(
-                    f"{prediction_path.name}: final_synthesis_context {field} is invalid"
-                )
+                findings.append(f"{prediction_path.name}: final_synthesis_context {field} is invalid")
                 ids = []
                 break
             record_id = item.get("record_id")
@@ -6280,17 +5415,13 @@ def _collect_final_synthesis_record_object_ids(
     if contributions is None:
         return
     if not isinstance(contributions, list):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "record_level_shard_contributions is invalid"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context record_level_shard_contributions is invalid")
         return
     ids = []
     for item in contributions:
         if not isinstance(item, dict):
             findings.append(
-                f"{prediction_path.name}: final_synthesis_context "
-                "record_level_shard_contributions is invalid"
+                f"{prediction_path.name}: final_synthesis_context record_level_shard_contributions is invalid"
             )
             ids = []
             break
@@ -6348,15 +5479,12 @@ def _append_record_object_id_mismatches(
     extra_ids = sorted(set(observed_ids) - set(expected_ids))
     if missing_ids:
         findings.append(
-            f"{prediction_path.name}: final_synthesis_context {field} missing "
-            "record IDs: "
-            + ", ".join(missing_ids)
+            f"{prediction_path.name}: final_synthesis_context {field} missing record IDs: " + ", ".join(missing_ids)
         )
     if extra_ids:
         findings.append(
             f"{prediction_path.name}: final_synthesis_context {field} has "
-            "unexpected record IDs: "
-            + ", ".join(extra_ids)
+            "unexpected record IDs: " + ", ".join(extra_ids)
         )
 
 
@@ -6372,9 +5500,7 @@ def _check_final_synthesis_embedded_artifacts(
         manifest.get("event_cluster_artifact"),
     )
     if event_clusters is not None and context_payload.get("event_clusters") != event_clusters:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context event_clusters mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context event_clusters mismatch")
 
     open_world_first_analysis = _read_optional_manifest_object(
         root,
@@ -6382,13 +5508,9 @@ def _check_final_synthesis_embedded_artifacts(
     )
     if (
         open_world_first_analysis is not None
-        and context_payload.get("open_world_first_analysis")
-        != open_world_first_analysis
+        and context_payload.get("open_world_first_analysis") != open_world_first_analysis
     ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "open_world_first_analysis mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context open_world_first_analysis mismatch")
 
     semantic_retrieval_rows = _read_optional_manifest_jsonl_rows(
         root,
@@ -6435,53 +5557,29 @@ def _check_final_synthesis_embedded_artifacts(
         root,
         manifest.get("candidate_verification_artifact"),
     )
-    if (
-        candidate_verification is not None
-        and context_payload.get("candidate_verification") != candidate_verification
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "candidate_verification mismatch"
-        )
+    if candidate_verification is not None and context_payload.get("candidate_verification") != candidate_verification:
+        findings.append(f"{prediction_path.name}: final_synthesis_context candidate_verification mismatch")
 
     candidate_web_checks = _read_candidate_web_check_context_rows(
         root,
         manifest.get("candidate_web_check_artifact"),
     )
-    if (
-        candidate_web_checks is not None
-        and context_payload.get("candidate_web_checks") != candidate_web_checks
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "candidate_web_checks mismatch"
-        )
+    if candidate_web_checks is not None and context_payload.get("candidate_web_checks") != candidate_web_checks:
+        findings.append(f"{prediction_path.name}: final_synthesis_context candidate_web_checks mismatch")
 
     news_novelty_review = _read_optional_manifest_object(
         root,
         manifest.get("news_novelty_review_artifact"),
     )
-    if (
-        news_novelty_review is not None
-        and context_payload.get("news_novelty_review") != news_novelty_review
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "news_novelty_review mismatch"
-        )
+    if news_novelty_review is not None and context_payload.get("news_novelty_review") != news_novelty_review:
+        findings.append(f"{prediction_path.name}: final_synthesis_context news_novelty_review mismatch")
 
     candidate_expansion = _read_optional_manifest_object(
         root,
         manifest.get("candidate_expansion_artifact"),
     )
-    if (
-        candidate_expansion is not None
-        and context_payload.get("open_world_candidate_expansion") != candidate_expansion
-    ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "open_world_candidate_expansion mismatch"
-        )
+    if candidate_expansion is not None and context_payload.get("open_world_candidate_expansion") != candidate_expansion:
+        findings.append(f"{prediction_path.name}: final_synthesis_context open_world_candidate_expansion mismatch")
 
     red_team_artifacts = manifest.get("red_team_artifacts")
     if not (
@@ -6493,9 +5591,7 @@ def _check_final_synthesis_embedded_artifacts(
         return
     red_team = _read_optional_manifest_object(root, red_team_artifacts[0])
     if red_team is not None and context_payload.get("red_team_output") != red_team:
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context red_team_output mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context red_team_output mismatch")
 
 
 def _read_optional_manifest_object(root: Path, artifact_ref: object) -> dict[str, Any] | None:
@@ -6569,10 +5665,7 @@ def _semantic_retrieval_record_contract_required(
     summary: object,
     rows: list[dict[str, Any]],
 ) -> bool:
-    if (
-        "semantic_retrieval_record_ids" in manifest
-        or "excluded_semantic_retrieval_record_ids" in manifest
-    ):
+    if "semantic_retrieval_record_ids" in manifest or "excluded_semantic_retrieval_record_ids" in manifest:
         return True
     if isinstance(summary, dict) and any(
         key in summary
@@ -6602,10 +5695,7 @@ def _check_final_synthesis_semantic_retrieval_context(
 ) -> None:
     context = context_payload.get("additional_semantic_retrieval")
     if not isinstance(context, dict):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "additional_semantic_retrieval mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context additional_semantic_retrieval mismatch")
         return
     expected_fields = {
         "plan_artifact": manifest.get("semantic_retrieval_plan_artifact"),
@@ -6624,16 +5714,11 @@ def _check_final_synthesis_semantic_retrieval_context(
                 "included_episode_ids": manifest.get("semantic_retrieval_episode_ids"),
                 "included_record_ids": manifest.get("semantic_retrieval_record_ids"),
                 "records": _semantic_retrieval_record_context(root, manifest),
-                "excluded_record_ids": manifest.get(
-                    "excluded_semantic_retrieval_record_ids"
-                ),
+                "excluded_record_ids": manifest.get("excluded_semantic_retrieval_record_ids"),
             }
         )
     if any(context.get(field) != expected for field, expected in expected_fields.items()):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "additional_semantic_retrieval mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context additional_semantic_retrieval mismatch")
 
 
 def _check_final_synthesis_semantic_cluster_coverage_context(
@@ -6646,10 +5731,7 @@ def _check_final_synthesis_semantic_cluster_coverage_context(
 ) -> None:
     context = context_payload.get("semantic_cluster_coverage")
     if not isinstance(context, dict):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "semantic_cluster_coverage mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch")
         return
     expected = {
         "artifact": manifest.get("semantic_cluster_coverage_artifact"),
@@ -6657,19 +5739,14 @@ def _check_final_synthesis_semantic_cluster_coverage_context(
         "rows": semantic_cluster_coverage_rows,
         "covered_cluster_ids": manifest.get("semantic_cluster_coverage_ids"),
         "missing_cluster_ids": manifest.get("semantic_cluster_coverage_missing_ids"),
-        "promoted_record_ids": manifest.get(
-            "semantic_cluster_coverage_promoted_record_ids"
-        ),
+        "promoted_record_ids": manifest.get("semantic_cluster_coverage_promoted_record_ids"),
         "promoted_records": _record_context_for_ids(
             root,
             _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
         ),
     }
     if any(context.get(field) != value for field, value in expected.items()):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context "
-            "semantic_cluster_coverage mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch")
 
 
 def _check_final_synthesis_web_research_context(
@@ -6681,9 +5758,7 @@ def _check_final_synthesis_web_research_context(
 ) -> None:
     context = context_payload.get("web_research")
     if not isinstance(context, dict):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context web_research mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context web_research mismatch")
         return
     if (
         context.get("queries") != manifest.get("web_queries")
@@ -6697,9 +5772,7 @@ def _check_final_synthesis_web_research_context(
             manifest.get("excluded_web_source_ids"),
         )
     ):
-        findings.append(
-            f"{prediction_path.name}: final_synthesis_context web_research mismatch"
-        )
+        findings.append(f"{prediction_path.name}: final_synthesis_context web_research mismatch")
 
 
 def _read_web_source_context_rows(
@@ -6765,9 +5838,7 @@ def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
         "candidate_subject_type": row.get("candidate_subject_type"),
         "candidate_expansion_path": row.get("candidate_expansion_path"),
         "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
-        "candidate_investigation_questions": row.get(
-            "candidate_investigation_questions"
-        ),
+        "candidate_investigation_questions": row.get("candidate_investigation_questions"),
         "verification_focus": row.get("verification_focus"),
         "source_id": row.get("source_id"),
         "query": row.get("query"),
@@ -6797,15 +5868,10 @@ def _resolve_required_manifest_artifact(
         return None
     artifact_path = _resolve_manifest_path(root, artifact_ref)
     if artifact_path is None:
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} path escapes project root: "
-            f"{artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} path escapes project root: {artifact_ref}")
         return None
     if not artifact_path.exists():
-        findings.append(
-            f"{prediction_path.name}: context manifest {label} not found: {artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest {label} not found: {artifact_ref}")
         return None
     return artifact_path
 
@@ -6838,34 +5904,20 @@ def _check_manifest_file_hashes(
     missing_hashes = sorted(file_ref_set - hash_key_set)
     extra_hashes = sorted(hash_key_set - file_ref_set)
     if missing_hashes:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing {hashes_field}: "
-            f"{', '.join(missing_hashes)}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing {hashes_field}: {', '.join(missing_hashes)}")
     if extra_hashes:
-        findings.append(
-            f"{prediction_path.name}: context manifest unlisted {hashes_field}: "
-            f"{', '.join(extra_hashes)}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest unlisted {hashes_field}: {', '.join(extra_hashes)}")
     for file_ref in file_refs:
         artifact_path = _resolve_manifest_path(root, file_ref)
         if artifact_path is None:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label} path escapes project root: "
-                f"{file_ref}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label} path escapes project root: {file_ref}")
             continue
         if not artifact_path.exists():
-            findings.append(
-                f"{prediction_path.name}: context manifest {label} not found: {file_ref}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label} not found: {file_ref}")
             continue
         expected_hash = hashes.get(file_ref)
         if isinstance(expected_hash, str) and file_sha256(artifact_path) != expected_hash:
-            findings.append(
-                f"{prediction_path.name}: context manifest {label} sha256 mismatch: "
-                f"{file_ref}"
-            )
+            findings.append(f"{prediction_path.name}: context manifest {label} sha256 mismatch: {file_ref}")
 
 
 def _check_prompt_hash_traces(
@@ -6916,16 +5968,12 @@ def _check_prompt_hash_traces(
             continue
         if purpose not in traces_by_purpose:
             if requires_current_traces:
-                findings.append(
-                    f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
-                )
+                findings.append(f"{prediction_path.name}: prompt hash has no matching trace for {purpose}")
             continue
         trace_metadata = traces_by_purpose[purpose]
         prompt_hashes_for_purpose = trace_metadata["prompt_hashes"]
         if manifest_hash not in prompt_hashes_for_purpose:
-            findings.append(
-                f"{prediction_path.name}: prompt hash has no matching trace for {purpose}"
-            )
+            findings.append(f"{prediction_path.name}: prompt hash has no matching trace for {purpose}")
             continue
         matching_trace_records = [
             trace_record
@@ -7106,31 +6154,20 @@ def _check_trace_model_config_matches_manifest(
         "novelty_cluster_batch_size",
         "token_counting_version",
     ]
-    expected = {
-        key: manifest_model_config[key]
-        for key in comparable_keys
-        if key in manifest_model_config
-    }
+    expected = {key: manifest_model_config[key] for key in comparable_keys if key in manifest_model_config}
     if not expected:
         return
     if not trace_model_configs:
         findings.append(f"{prediction_path.name}: trace model_config missing for {purpose}")
         return
     mismatch_sets = [
-        [
-            key
-            for key, expected_value in expected.items()
-            if trace_model_config.get(key) != expected_value
-        ]
+        [key for key, expected_value in expected.items() if trace_model_config.get(key) != expected_value]
         for trace_model_config in trace_model_configs
     ]
     if any(not mismatches for mismatches in mismatch_sets):
         return
     best_mismatches = min(mismatch_sets, key=len)
-    findings.append(
-        f"{prediction_path.name}: trace model_config mismatch for {purpose}: "
-        f"{', '.join(best_mismatches)}"
-    )
+    findings.append(f"{prediction_path.name}: trace model_config mismatch for {purpose}: {', '.join(best_mismatches)}")
 
 
 def _check_trace_prompt_token_counts_match_manifest(
@@ -7150,10 +6187,7 @@ def _check_trace_prompt_token_counts_match_manifest(
         or isinstance(expected_prompt_tokens, bool)
         or expected_prompt_tokens < 0
     ):
-        findings.append(
-            f"{prediction_path.name}: context manifest missing {token_count_key} "
-            f"token count for {purpose}"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing {token_count_key} token count for {purpose}")
         return
     mismatched_records: list[dict[str, Any]] = []
     for trace_record in trace_records:
@@ -7163,13 +6197,8 @@ def _check_trace_prompt_token_counts_match_manifest(
             return
         mismatched_records.append(trace_record)
     if mismatched_records:
-        trace_names = ", ".join(
-            trace_record["path"].name for trace_record in mismatched_records
-        )
-        findings.append(
-            f"{prediction_path.name}: trace prompt token count mismatch for "
-            f"{purpose}: {trace_names}"
-        )
+        trace_names = ", ".join(trace_record["path"].name for trace_record in mismatched_records)
+        findings.append(f"{prediction_path.name}: trace prompt token count mismatch for {purpose}: {trace_names}")
 
 
 def _trace_prompt_token_count_mismatch(
@@ -7178,22 +6207,13 @@ def _trace_prompt_token_count_mismatch(
 ) -> bool:
     token_usage = payload.get("token_usage")
     trace_input = payload.get("input")
-    observed_prompt_tokens = (
-        token_usage.get("prompt_tokens_estimate")
-        if isinstance(token_usage, dict)
-        else None
-    )
+    observed_prompt_tokens = token_usage.get("prompt_tokens_estimate") if isinstance(token_usage, dict) else None
     prompt_tokens_from_input = _estimate_prompt_tokens_from_trace_input(trace_input)
-    if not isinstance(observed_prompt_tokens, int) or isinstance(
-        observed_prompt_tokens, bool
-    ):
+    if not isinstance(observed_prompt_tokens, int) or isinstance(observed_prompt_tokens, bool):
         return True
     if observed_prompt_tokens != expected_prompt_tokens:
         return True
-    return (
-        prompt_tokens_from_input is None
-        or observed_prompt_tokens != prompt_tokens_from_input
-    )
+    return prompt_tokens_from_input is None or observed_prompt_tokens != prompt_tokens_from_input
 
 
 def _estimate_prompt_tokens_from_trace_input(value: object) -> int | None:
@@ -7253,9 +6273,7 @@ def _trace_metadata_by_purpose(root: Path, findings: list[str]) -> dict[str, dic
             {"prompt_hashes": set(), "model_configs": [], "trace_records": []},
         )
         trace_metadata["prompt_hashes"].add(prompt_sha256)
-        trace_metadata["trace_records"].append(
-            {"path": path, "payload": payload, "prompt_sha256": prompt_sha256}
-        )
+        trace_metadata["trace_records"].append({"path": path, "payload": payload, "prompt_sha256": prompt_sha256})
         model_config = payload.get("model_config")
         if isinstance(model_config, dict):
             trace_metadata["model_configs"].append(model_config)
@@ -7308,10 +6326,7 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
     if status in {"ok", "checkpoint_hit"} and output is None:
         findings.append(f"{path.name}: successful trace missing output")
     if operation == "embed":
-        findings.extend(
-            f"{path.name}: {error}"
-            for error in _embedding_trace_output_findings(output)
-        )
+        findings.extend(f"{path.name}: {error}" for error in _embedding_trace_output_findings(output))
     if not isinstance(payload.get("tool_calls"), list):
         findings.append(f"{path.name}: trace tool_calls is not a list")
     retries = payload.get("retries")
@@ -7328,9 +6343,7 @@ def _check_trace_payload(path: Path, payload: dict[str, Any], findings: list[str
     if not isinstance(token_usage, dict):
         findings.append(f"{path.name}: trace token_usage is not an object")
     else:
-        if status in {"ok", "checkpoint_hit"} and not isinstance(
-            token_usage.get("prompt_tokens_estimate"), int
-        ):
+        if status in {"ok", "checkpoint_hit"} and not isinstance(token_usage.get("prompt_tokens_estimate"), int):
             findings.append(f"{path.name}: trace missing prompt token estimate")
         if (
             status in {"ok", "checkpoint_hit"}
@@ -7385,9 +6398,7 @@ def _check_trace_checkpoint(
         findings.append(f"{trace_path.name}: trace checkpoint retries mismatch")
     checkpoint_retries = checkpoint.get("retries")
     normalized_checkpoint_retries = (
-        checkpoint_retries
-        if isinstance(checkpoint_retries, int) and not isinstance(checkpoint_retries, bool)
-        else None
+        checkpoint_retries if isinstance(checkpoint_retries, int) and not isinstance(checkpoint_retries, bool) else None
     )
     for error in _retry_error_history_findings(
         label=f"{trace_path.name}: trace checkpoint retry_errors",
@@ -7397,18 +6408,13 @@ def _check_trace_checkpoint(
         findings.append(error)
     trace_retries = trace_payload.get("retries")
     trace_retry_count = (
-        trace_retries
-        if isinstance(trace_retries, int) and not isinstance(trace_retries, bool)
-        else None
+        trace_retries if isinstance(trace_retries, int) and not isinstance(trace_retries, bool) else None
     )
     if (
-        (
-            "retry_errors" in checkpoint
-            or "retry_errors" in trace_payload
-            or (trace_retry_count is not None and trace_retry_count > 0)
-        )
-        and checkpoint.get("retry_errors") != trace_payload.get("retry_errors", [])
-    ):
+        "retry_errors" in checkpoint
+        or "retry_errors" in trace_payload
+        or (trace_retry_count is not None and trace_retry_count > 0)
+    ) and checkpoint.get("retry_errors") != trace_payload.get("retry_errors", []):
         findings.append(f"{trace_path.name}: trace checkpoint retry_errors mismatch")
     if "token_usage" in checkpoint:
         checkpoint_token_usage = checkpoint.get("token_usage")
@@ -7422,19 +6428,13 @@ def _check_trace_checkpoint(
         if checkpoint.get("input_sha256") != expected_input_hash:
             findings.append(f"{trace_path.name}: trace checkpoint input_sha256 invalid")
     checkpoint_output = checkpoint.get("output")
-    expected_output_hash = (
-        sha256_text(canonical_json(checkpoint_output))
-        if checkpoint_output is not None
-        else None
-    )
+    expected_output_hash = sha256_text(canonical_json(checkpoint_output)) if checkpoint_output is not None else None
     if checkpoint.get("output_sha256") != expected_output_hash:
         findings.append(f"{trace_path.name}: trace checkpoint output_sha256 invalid")
     operation = trace_payload.get("operation")
     if operation == "embed":
         trace_output = trace_payload.get("output")
-        vectors_sha256 = (
-            trace_output.get("vectors_sha256") if isinstance(trace_output, dict) else None
-        )
+        vectors_sha256 = trace_output.get("vectors_sha256") if isinstance(trace_output, dict) else None
         if vectors_sha256 != checkpoint.get("output_sha256"):
             findings.append(f"{trace_path.name}: trace checkpoint embedding output mismatch")
     else:
@@ -7587,7 +6587,7 @@ def _check_session_pack_context_hashes(
     files_field: str,
     hashes_field: str,
     findings: list[str],
-    ) -> None:
+) -> None:
     file_refs = _session_pack_string_list_field(label, manifest, files_field, findings)
     hashes = _session_pack_hash_dict_field(label, manifest, hashes_field, findings)
     if file_refs is None or hashes is None:
@@ -7595,33 +6595,22 @@ def _check_session_pack_context_hashes(
     missing_hashes = sorted(set(file_refs) - set(hashes))
     extra_hashes = sorted(set(hashes) - set(file_refs))
     for file_ref in missing_hashes:
-        findings.append(
-            f"{label}: session pack {hashes_field} missing: {file_ref}"
-        )
+        findings.append(f"{label}: session pack {hashes_field} missing: {file_ref}")
     for file_ref in extra_hashes:
-        findings.append(
-            f"{label}: session pack {hashes_field} unlisted: {file_ref}"
-        )
+        findings.append(f"{label}: session pack {hashes_field} unlisted: {file_ref}")
     for file_ref in file_refs:
         expected_hash = hashes.get(file_ref)
         if not isinstance(expected_hash, str):
             continue
         path = _resolve_project_path(root, file_ref)
         if path is None:
-            findings.append(
-                f"{label}: session pack {files_field} path escapes project root: "
-                f"{file_ref}"
-            )
+            findings.append(f"{label}: session pack {files_field} path escapes project root: {file_ref}")
             continue
         if not path.is_file():
-            findings.append(
-                f"{label}: session pack {files_field} file not found: {file_ref}"
-            )
+            findings.append(f"{label}: session pack {files_field} file not found: {file_ref}")
             continue
         if file_sha256(path) != expected_hash:
-            findings.append(
-                f"{label}: session pack {hashes_field} mismatch: {file_ref}"
-            )
+            findings.append(f"{label}: session pack {hashes_field} mismatch: {file_ref}")
 
 
 def _check_session_pack_files(
@@ -7650,9 +6639,7 @@ def _check_session_pack_files(
     for file_name in SESSION_PACK_FILES:
         expected_hash = pack_hashes.get(file_name)
         if not isinstance(expected_hash, str):
-            findings.append(
-                f"{label}: session pack pack_file_hashes missing: {file_name}"
-            )
+            findings.append(f"{label}: session pack pack_file_hashes missing: {file_name}")
             continue
         path = manifest_path.parent / file_name
         if not path.is_file():
@@ -7660,26 +6647,17 @@ def _check_session_pack_files(
             continue
         observed_hash = file_sha256(path)
         observed_hashes[file_name] = observed_hash
-        observed_token_counts[file_name] = _estimate_session_pack_tokens(
-            path.read_text(encoding="utf-8")
-        )
+        observed_token_counts[file_name] = _estimate_session_pack_tokens(path.read_text(encoding="utf-8"))
         if observed_hash != expected_hash:
-            findings.append(
-                f"{label}: session pack pack_file_hashes mismatch: {file_name}"
-            )
+            findings.append(f"{label}: session pack pack_file_hashes mismatch: {file_name}")
     extra_hashes = sorted(str(key) for key in pack_hashes if key not in SESSION_PACK_FILES)
     if extra_hashes:
-        findings.append(
-            f"{label}: session pack unlisted pack_file_hashes: "
-            f"{', '.join(extra_hashes)}"
-        )
+        findings.append(f"{label}: session pack unlisted pack_file_hashes: {', '.join(extra_hashes)}")
     expected_pack_sha = manifest.get("pack_sha256")
     if not isinstance(expected_pack_sha, str) or not expected_pack_sha:
         findings.append(f"{label}: session pack pack_sha256 missing")
     elif set(observed_hashes) == set(SESSION_PACK_FILES):
-        observed_pack_sha = sha256_text(
-            "\n".join(observed_hashes[file_name] for file_name in SESSION_PACK_FILES)
-        )
+        observed_pack_sha = sha256_text("\n".join(observed_hashes[file_name] for file_name in SESSION_PACK_FILES))
         if observed_pack_sha != expected_pack_sha:
             findings.append(f"{label}: session pack pack_sha256 mismatch")
     return observed_token_counts
@@ -7706,14 +6684,10 @@ def _check_session_pack_token_counts(
         expected_total += expected_count
         observed_count = observed_token_counts.get(file_name)
         if observed_count is not None and observed_count != expected_count:
-            findings.append(
-                f"{label}: session pack token_counts mismatch: {file_name}"
-            )
+            findings.append(f"{label}: session pack token_counts mismatch: {file_name}")
     extra_counts = sorted(str(key) for key in token_counts if key not in SESSION_PACK_FILES)
     if extra_counts:
-        findings.append(
-            f"{label}: session pack unlisted token_counts: {', '.join(extra_counts)}"
-        )
+        findings.append(f"{label}: session pack unlisted token_counts: {', '.join(extra_counts)}")
 
     manifest_total = _non_bool_int(manifest.get("token_count_total"))
     if manifest_total is None:
@@ -7789,16 +6763,10 @@ def _check_session_pack_record_scope(
         available_ids = record_ids
         unavailable_ids: set[str] = set()
     else:
-        available_ids = {
-            record.record_id
-            for record in records
-            if is_available_as_of(record.available_from, cutoff_at)
-        }
+        available_ids = {record.record_id for record in records if is_available_as_of(record.available_from, cutoff_at)}
         unavailable_ids = record_ids - available_ids
     training_eligible_available_ids = {
-        record.record_id
-        for record in records
-        if record.training_eligible and record.record_id in available_ids
+        record.record_id for record in records if record.training_eligible and record.record_id in available_ids
     }
 
     accepted_count = _non_bool_int(manifest.get("accepted_record_count"))
@@ -7833,16 +6801,10 @@ def _check_session_pack_record_scope(
     if training_ids is not None:
         training_set = set(training_ids)
         if training_set != training_eligible_available_ids:
+            findings.append(f"{label}: session pack training_eligible_available_record_ids mismatch")
+        if available_record_ids is not None and not training_set <= set(available_record_ids):
             findings.append(
-                f"{label}: session pack "
-                "training_eligible_available_record_ids mismatch"
-            )
-        if available_record_ids is not None and not training_set <= set(
-            available_record_ids
-        ):
-            findings.append(
-                f"{label}: session pack training_eligible_available_record_ids "
-                "are not a subset of available_record_ids"
+                f"{label}: session pack training_eligible_available_record_ids are not a subset of available_record_ids"
             )
     _check_session_pack_record_count(
         label,
@@ -7869,10 +6831,7 @@ def _check_session_pack_record_scope(
             findings=findings,
         )
         if not included_set <= available_ids:
-            findings.append(
-                f"{label}: session pack included_record_ids are not a subset of "
-                "available_record_ids"
-            )
+            findings.append(f"{label}: session pack included_record_ids are not a subset of available_record_ids")
     _check_session_pack_record_count(
         label,
         manifest,
@@ -7898,10 +6857,7 @@ def _check_session_pack_record_scope(
             findings=findings,
         )
         if not budget_omitted_set <= available_ids:
-            findings.append(
-                f"{label}: session pack budget_omitted_record_ids are not a subset "
-                "of available_record_ids"
-            )
+            findings.append(f"{label}: session pack budget_omitted_record_ids are not a subset of available_record_ids")
     _check_session_pack_record_count(
         label,
         manifest,
@@ -7917,10 +6873,7 @@ def _check_session_pack_record_scope(
         "unavailable_record_ids",
         findings,
     )
-    if (
-        unavailable_record_ids is not None
-        and set(unavailable_record_ids) != unavailable_ids
-    ):
+    if unavailable_record_ids is not None and set(unavailable_record_ids) != unavailable_ids:
         findings.append(f"{label}: session pack unavailable_record_ids mismatch")
     _check_session_pack_record_count(
         label,
@@ -7955,13 +6908,9 @@ def _check_session_pack_record_scope(
             findings.append(f"{label}: session pack budget_omitted_record_ids mismatch")
         coverage_complete = manifest.get("available_record_coverage_complete")
         if not isinstance(coverage_complete, bool):
-            findings.append(
-                f"{label}: session pack available_record_coverage_complete invalid"
-            )
+            findings.append(f"{label}: session pack available_record_coverage_complete invalid")
         elif coverage_complete != (not expected_budget_omitted):
-            findings.append(
-                f"{label}: session pack available_record_coverage_complete mismatch"
-            )
+            findings.append(f"{label}: session pack available_record_coverage_complete mismatch")
     if omitted_record_ids is not None and budget_omitted_ids is not None:
         expected_omitted = set(budget_omitted_ids) | unavailable_ids
         if set(omitted_record_ids) != expected_omitted:
@@ -8012,44 +6961,30 @@ def _check_session_pack_record_memory_cases(
     blocks = _record_memory_case_blocks(text)
     duplicates = _duplicate_strings(record_ids)
     if duplicates:
-        findings.append(
-            f"{label}: session pack record_memory_cases.md duplicate records: "
-            + ", ".join(duplicates)
-        )
+        findings.append(f"{label}: session pack record_memory_cases.md duplicate records: " + ", ".join(duplicates))
     observed = set(record_ids)
     expected = set(included_record_ids)
     unknown = sorted(observed - set(records_by_id))
     if unknown:
         findings.append(
-            f"{label}: session pack record_memory_cases.md references unknown records: "
-            + ", ".join(unknown)
+            f"{label}: session pack record_memory_cases.md references unknown records: " + ", ".join(unknown)
         )
     missing = sorted(expected - observed)
     extra = sorted(observed - expected)
     if missing:
-        findings.append(
-            f"{label}: session pack record_memory_cases.md missing included records: "
-            + ", ".join(missing)
-        )
+        findings.append(f"{label}: session pack record_memory_cases.md missing included records: " + ", ".join(missing))
     if extra:
-        findings.append(
-            f"{label}: session pack record_memory_cases.md includes unlisted records: "
-            + ", ".join(extra)
-        )
+        findings.append(f"{label}: session pack record_memory_cases.md includes unlisted records: " + ", ".join(extra))
     for record_id in sorted(expected & observed):
         record = records_by_id.get(record_id)
         if record is None:
             continue
         block = blocks.get(record_id, "")
         if record.raw_payload_sha256 not in block:
-            findings.append(
-                f"{label}: session pack record_memory_cases.md raw payload hash "
-                f"missing: {record_id}"
-            )
+            findings.append(f"{label}: session pack record_memory_cases.md raw payload hash missing: {record_id}")
         if record.normalized_payload_sha256 not in block:
             findings.append(
-                f"{label}: session pack record_memory_cases.md normalized payload "
-                f"hash missing: {record_id}"
+                f"{label}: session pack record_memory_cases.md normalized payload hash missing: {record_id}"
             )
 
 
@@ -8104,10 +7039,7 @@ def _check_unknown_session_pack_record_ids(
 ) -> None:
     unknown = sorted(record_ids - known_record_ids)
     if unknown:
-        findings.append(
-            f"{label}: session pack {field} references unknown records: "
-            + ", ".join(unknown)
-        )
+        findings.append(f"{label}: session pack {field} references unknown records: " + ", ".join(unknown))
 
 
 def _check_session_pack_blocking_contract(
@@ -8125,9 +7057,7 @@ def _check_session_pack_blocking_contract(
         findings.append(f"{label}: session pack token_budget invalid")
     elif observed_total is not None and observed_total > token_budget:
         if blocked is not True:
-            findings.append(
-                f"{label}: session pack token budget exceeded without blocked"
-            )
+            findings.append(f"{label}: session pack token budget exceeded without blocked")
         _require_session_pack_error(
             label,
             errors,
@@ -8151,9 +7081,7 @@ def _check_session_pack_blocking_contract(
     )
     if budget_omitted_ids:
         if blocked is not True:
-            findings.append(
-                f"{label}: session pack budget omissions without blocked"
-            )
+            findings.append(f"{label}: session pack budget omissions without blocked")
         _require_session_pack_error(
             label,
             errors,
@@ -8177,9 +7105,7 @@ def _check_session_pack_blocking_contract(
     )
     if budget_omitted_record_ids:
         if blocked is not True:
-            findings.append(
-                f"{label}: session pack record budget omissions without blocked"
-            )
+            findings.append(f"{label}: session pack record budget omissions without blocked")
         _require_session_pack_error(
             label,
             errors,
@@ -8247,9 +7173,7 @@ def _session_pack_string_list_field(
     findings: list[str],
 ) -> list[str] | None:
     value = manifest.get(field)
-    if not isinstance(value, list) or not all(
-        isinstance(item, str) and item for item in value
-    ):
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         findings.append(f"{label}: session pack {field} invalid")
         return None
     return list(value)
@@ -8275,8 +7199,7 @@ def _session_pack_hash_dict_field(
 ) -> dict[str, str] | None:
     value = manifest.get(field)
     if not isinstance(value, dict) or not all(
-        isinstance(key, str) and key and isinstance(item, str) and item
-        for key, item in value.items()
+        isinstance(key, str) and key and isinstance(item, str) and item for key, item in value.items()
     ):
         findings.append(f"{label}: session pack {field} invalid")
         return None
@@ -8354,9 +7277,7 @@ def _check_analysis_bundle_provenance(root: Path, findings: list[str]) -> int:
         except BundleImportError as exc:
             findings.append(f"{label}: analysis bundle invalid: {exc}")
             continue
-        failed_validations = sorted(
-            key for key, value in parsed.validation.items() if value is not True
-        )
+        failed_validations = sorted(key for key, value in parsed.validation.items() if value is not True)
         for key in failed_validations:
             findings.append(f"{label}: analysis bundle validation failed: {key}")
         manifest = parsed.json_blocks.get("bundle_manifest.json")
@@ -8485,16 +7406,14 @@ def _training_export_source_record_hashes(
 ) -> dict[str, str]:
     raw = manifest.get("source_record_hashes")
     if not isinstance(raw, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) and value
-        for key, value in raw.items()
+        isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
     ):
         findings.append(f"{label}: training export source_record_hashes invalid")
         return {}
     source_record_hashes = dict(raw)
-    accepted_record_hashes = {
-        record.record_id: record.normalized_payload_sha256
-        for record in BrainRecordStore(root).list_records()
-    }
+    if manifest.get("source_record_hash_kind") != ("canonical_full_envelope_sha256"):
+        findings.append(f"{label}: training export source_record_hash_kind invalid")
+    accepted_record_hashes = brain_record_envelope_hashes(BrainRecordStore(root).list_records())
     if source_record_hashes != accepted_record_hashes:
         findings.append(f"{label}: training export source_record_hashes mismatch")
     if manifest.get("source_record_count") != len(accepted_record_hashes):
@@ -8534,11 +7453,7 @@ def _check_training_export_record_scope(
     if manifest.get("skipped_record_count") != len(skipped_record_ids):
         findings.append(f"{label}: training export skipped_record_count mismatch")
 
-    row_record_ids = {
-        record_id
-        for row in rows
-        if isinstance(record_id := row.get("record_id"), str) and record_id
-    }
+    row_record_ids = {record_id for row in rows if isinstance(record_id := row.get("record_id"), str) and record_id}
     if not row_record_ids <= source_record_ids:
         findings.append(f"{label}: training export row record scope mismatch")
     if row_record_ids & skipped_record_ids:
@@ -8582,8 +7497,7 @@ def _training_export_source_hashes(
 ) -> dict[str, str]:
     raw = manifest.get("source_hashes")
     if not isinstance(raw, dict) or not all(
-        isinstance(key, str) and isinstance(value, str) and value
-        for key, value in raw.items()
+        isinstance(key, str) and isinstance(value, str) and value for key, value in raw.items()
     ):
         findings.append(f"{label}: training export source_hashes invalid")
         return {}
@@ -8591,9 +7505,7 @@ def _training_export_source_hashes(
     for episode_id, expected_hash in source_hashes.items():
         accepted_path = root / "research" / "accepted" / f"{episode_id}.json"
         if not accepted_path.exists():
-            findings.append(
-                f"{label}: training export source episode not found: {episode_id}"
-            )
+            findings.append(f"{label}: training export source episode not found: {episode_id}")
             continue
         if file_sha256(accepted_path) != expected_hash:
             findings.append(f"{label}: training export source_hash mismatch: {episode_id}")
@@ -8650,9 +7562,7 @@ def _check_training_export_episode_scope(
         findings.append(f"{label}: training export eligible_episode_count mismatch")
 
     row_episode_ids = {
-        episode_id
-        for row in rows
-        if isinstance(episode_id := row.get("episode_id"), str) and episode_id
+        episode_id for row in rows if isinstance(episode_id := row.get("episode_id"), str) and episode_id
     }
     if not row_episode_ids <= accepted_ids:
         findings.append(f"{label}: training export row episode scope mismatch")
@@ -8663,10 +7573,7 @@ def _check_training_export_episode_scope(
 
 
 def _accepted_episode_hashes(root: Path) -> dict[str, str]:
-    return {
-        path.stem: file_sha256(path)
-        for path in sorted((root / "research" / "accepted").glob("*.json"))
-    }
+    return {path.stem: file_sha256(path) for path in sorted((root / "research" / "accepted").glob("*.json"))}
 
 
 def _training_export_manifest_episode_ids(
@@ -8895,11 +7802,7 @@ def _check_training_export_rows(
             findings.append(f"{label}: training export row {index} source_phase mismatch")
         if kind in {"preference", "evals"} and hindsight_safe:
             findings.append(f"{label}: training export row {index} must be postmortem-only")
-        if (
-            kind == "sft"
-            and source_phase == "POSTMORTEM"
-            and category != "failure_correction_examples"
-        ):
+        if kind == "sft" and source_phase == "POSTMORTEM" and category != "failure_correction_examples":
             findings.append(f"{label}: training export row {index} mixes postmortem into blind SFT")
         _check_training_export_row_provenance(
             label,
@@ -8920,11 +7823,7 @@ def _check_training_export_rows(
 
 def _expected_training_export_split(kind: str, row: dict[str, Any]) -> str:
     if kind == "sft":
-        return (
-            "sft_postmortem"
-            if row.get("training_category") == "failure_correction_examples"
-            else "sft"
-        )
+        return "sft_postmortem" if row.get("training_category") == "failure_correction_examples" else "sft"
     return kind
 
 
@@ -8966,11 +7865,7 @@ def _check_training_export_blind_row_hindsight_leaks(
     source_payloads: dict[str, dict[str, Any]],
     findings: list[str],
 ) -> None:
-    if (
-        kind != "sft"
-        or row.get("hindsight_safe_for_blind_sft") is not True
-        or row.get("source_phase") != "BLIND"
-    ):
+    if kind != "sft" or row.get("hindsight_safe_for_blind_sft") is not True or row.get("source_phase") != "BLIND":
         return
     episode_id = row.get("episode_id")
     if not isinstance(episode_id, str):
@@ -8984,10 +7879,7 @@ def _check_training_export_blind_row_hindsight_leaks(
     row_text = canonical_json({"input": row.get("input"), "output": row.get("output")})
     for snippet in forbidden_snippets:
         if snippet in row_text:
-            findings.append(
-                f"{label}: training export row {index} blind-safe SFT contains "
-                "postmortem content"
-            )
+            findings.append(f"{label}: training export row {index} blind-safe SFT contains postmortem content")
             return
 
 
@@ -9101,42 +7993,28 @@ def _check_training_export_phase_outputs(
             findings.append(f"{label}: training export phase output {phase} invalid")
             continue
         if entry.get("source_phase") != phase:
-            findings.append(
-                f"{label}: training export phase output {phase} source_phase mismatch"
-            )
+            findings.append(f"{label}: training export phase output {phase} source_phase mismatch")
         expected_hindsight_safe = phase == "BLIND"
         if entry.get("hindsight_safe_for_blind_sft") is not expected_hindsight_safe:
-            findings.append(
-                f"{label}: training export phase output {phase} hindsight flag mismatch"
-            )
+            findings.append(f"{label}: training export phase output {phase} hindsight flag mismatch")
         if phase == "AUDIT_ONLY" and entry.get("audit_only") is not True:
-            findings.append(
-                f"{label}: training export phase output {phase} audit_only flag mismatch"
-            )
+            findings.append(f"{label}: training export phase output {phase} audit_only flag mismatch")
         output_file = entry.get("output_file")
         if not isinstance(output_file, str) or not output_file:
             findings.append(f"{label}: training export phase output {phase} output_file missing")
             continue
         if Path(output_file).is_absolute():
-            findings.append(
-                f"{label}: training export phase output {phase} output_file must be project-relative"
-            )
+            findings.append(f"{label}: training export phase output {phase} output_file must be project-relative")
         output_path = _resolve_training_export_output_path(root, output_file)
         if output_path is None:
-            findings.append(
-                f"{label}: training export phase output {phase} output_file escapes project root"
-            )
+            findings.append(f"{label}: training export phase output {phase} output_file escapes project root")
             continue
         if not output_path.exists():
-            findings.append(
-                f"{label}: training export phase output {phase} output_file not found"
-            )
+            findings.append(f"{label}: training export phase output {phase} output_file not found")
             continue
         expected_sha = entry.get("output_sha256")
         if not isinstance(expected_sha, str) or file_sha256(output_path) != expected_sha:
-            findings.append(
-                f"{label}: training export phase output {phase} output_sha256 mismatch"
-            )
+            findings.append(f"{label}: training export phase output {phase} output_sha256 mismatch")
         phase_rows = _read_training_export_rows(output_path, label, findings)
         expected_rows = (
             _training_audit_only_rows(manifest)
@@ -9240,17 +8118,13 @@ def _check_red_team_artifacts(
     artifact_paths = manifest.get("red_team_artifacts", [])
     if not artifact_paths:
         return
-    if not isinstance(artifact_paths, list) or not all(
-        isinstance(path, str) and path for path in artifact_paths
-    ):
+    if not isinstance(artifact_paths, list) or not all(isinstance(path, str) and path for path in artifact_paths):
         findings.append(f"{prediction_path.name}: context manifest red_team_artifacts is invalid")
         return
 
     red_team_prompt_hash = prompt_hashes.get("red_team_candidate_review")
     if not red_team_prompt_hash:
-        findings.append(
-            f"{prediction_path.name}: context manifest missing red_team_candidate_review prompt hash"
-        )
+        findings.append(f"{prediction_path.name}: context manifest missing red_team_candidate_review prompt hash")
     if not prompt_hashes.get("final_synthesis"):
         findings.append(f"{prediction_path.name}: context manifest missing final_synthesis prompt hash")
 
@@ -9261,9 +8135,7 @@ def _check_red_team_artifacts(
     for artifact_ref in artifact_paths:
         artifact_path = _resolve_manifest_path(root, artifact_ref)
         if artifact_path is None:
-            findings.append(
-                f"{prediction_path.name}: red-team artifact path escapes project root: {artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: red-team artifact path escapes project root: {artifact_ref}")
             continue
         if not artifact_path.exists():
             findings.append(f"{prediction_path.name}: red-team artifact not found: {artifact_ref}")
@@ -9303,17 +8175,13 @@ def _check_red_team_artifact(
     if red_team_prompt_hash and artifact.get("prompt_sha256") != red_team_prompt_hash:
         findings.append(f"{prediction_path.name}: red-team artifact prompt hash mismatch: {artifact_ref}")
     if candidate_count is not None and artifact.get("candidate_count") != candidate_count:
-        findings.append(
-            f"{prediction_path.name}: red-team artifact candidate_count mismatch: {artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: red-team artifact candidate_count mismatch: {artifact_ref}")
     candidate_findings = artifact.get("candidate_findings")
     if not isinstance(candidate_findings, list):
         findings.append(f"{prediction_path.name}: red-team artifact candidate_findings is invalid")
         return
     if candidate_count is not None and len(candidate_findings) != candidate_count:
-        findings.append(
-            f"{prediction_path.name}: red-team artifact finding count mismatch: {artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: red-team artifact finding count mismatch: {artifact_ref}")
     prompt_version = artifact.get("prompt_version")
     if prompt_version == "red_team.candidate_attack.v1":
         return
@@ -9321,10 +8189,7 @@ def _check_red_team_artifact(
     if not isinstance(required_attack_checks, list) or not all(
         isinstance(item, str) and item for item in required_attack_checks
     ):
-        findings.append(
-            f"{prediction_path.name}: red-team artifact required_attack_checks is invalid: "
-            f"{artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: red-team artifact required_attack_checks is invalid: {artifact_ref}")
         return
     _check_red_team_summary(
         prediction_path,
@@ -9337,40 +8202,27 @@ def _check_red_team_artifact(
     )
     for index, item in enumerate(candidate_findings, start=1):
         if not isinstance(item, dict):
-            findings.append(
-                f"{prediction_path.name}: red-team artifact finding {index} is invalid: "
-                f"{artifact_ref}"
-            )
+            findings.append(f"{prediction_path.name}: red-team artifact finding {index} is invalid: {artifact_ref}")
             continue
         attack_checks = item.get("attack_checks")
         if not isinstance(attack_checks, list):
             findings.append(
-                f"{prediction_path.name}: red-team artifact finding {index} "
-                f"missing attack_checks: {artifact_ref}"
+                f"{prediction_path.name}: red-team artifact finding {index} missing attack_checks: {artifact_ref}"
             )
             continue
-        observed_names = [
-            check.get("name")
-            for check in attack_checks
-            if isinstance(check, dict)
-        ]
+        observed_names = [check.get("name") for check in attack_checks if isinstance(check, dict)]
         if observed_names != required_attack_checks:
             findings.append(
-                f"{prediction_path.name}: red-team artifact finding {index} "
-                f"attack_checks mismatch: {artifact_ref}"
+                f"{prediction_path.name}: red-team artifact finding {index} attack_checks mismatch: {artifact_ref}"
             )
-        if any(
-            not isinstance(check, dict) or check.get("passed_to_synthesis") is not True
-            for check in attack_checks
-        ):
+        if any(not isinstance(check, dict) or check.get("passed_to_synthesis") is not True for check in attack_checks):
             findings.append(
                 f"{prediction_path.name}: red-team artifact finding {index} "
                 f"attack_checks not passed to synthesis: {artifact_ref}"
             )
         if item.get("passed_to_synthesis") is not True:
             findings.append(
-                f"{prediction_path.name}: red-team artifact finding {index} "
-                f"not passed to synthesis: {artifact_ref}"
+                f"{prediction_path.name}: red-team artifact finding {index} not passed to synthesis: {artifact_ref}"
             )
 
 
@@ -9387,30 +8239,21 @@ def _check_red_team_summary(
         findings.append(f"{prediction_path.name}: context manifest red_team_summary is invalid")
         return
     artifact_candidate_count = _non_bool_int(artifact.get("candidate_count"))
-    if (
-        _non_bool_int(red_team_summary.get("candidate_count")) != artifact_candidate_count
-        or artifact_candidate_count != len(candidate_findings)
-    ):
-        findings.append(
-            f"{prediction_path.name}: red-team artifact summary candidate_count "
-            f"mismatch: {artifact_ref}"
-        )
+    if _non_bool_int(
+        red_team_summary.get("candidate_count")
+    ) != artifact_candidate_count or artifact_candidate_count != len(candidate_findings):
+        findings.append(f"{prediction_path.name}: red-team artifact summary candidate_count mismatch: {artifact_ref}")
     if _non_bool_int(red_team_summary.get("finding_count")) != len(candidate_findings):
-        findings.append(
-            f"{prediction_path.name}: red-team artifact summary finding_count "
-            f"mismatch: {artifact_ref}"
-        )
+        findings.append(f"{prediction_path.name}: red-team artifact summary finding_count mismatch: {artifact_ref}")
 
     summary_checks = _string_list(red_team_summary.get("required_attack_checks"))
     if (
         not summary_checks
         or summary_checks != required_attack_checks
-        or _non_bool_int(red_team_summary.get("required_attack_check_count"))
-        != len(required_attack_checks)
+        or _non_bool_int(red_team_summary.get("required_attack_check_count")) != len(required_attack_checks)
     ):
         findings.append(
-            f"{prediction_path.name}: red-team artifact summary "
-            f"required_attack_checks mismatch: {artifact_ref}"
+            f"{prediction_path.name}: red-team artifact summary required_attack_checks mismatch: {artifact_ref}"
         )
 
     all_passed = True
@@ -9420,8 +8263,7 @@ def _check_red_team_summary(
             break
         attack_checks = item.get("attack_checks")
         if not isinstance(attack_checks, list) or any(
-            not isinstance(check, dict) or check.get("passed_to_synthesis") is not True
-            for check in attack_checks
+            not isinstance(check, dict) or check.get("passed_to_synthesis") is not True for check in attack_checks
         ):
             all_passed = False
             break

@@ -70,9 +70,7 @@ class RecordingSemanticLLM:
         raise AssertionError("semantic import should request structured output")
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
-        self.calls.append(
-            {"prompt": prompt, "response_model": response_model, "purpose": purpose}
-        )
+        self.calls.append({"prompt": prompt, "response_model": response_model, "purpose": purpose})
         assert response_model is SemanticResearchDraft
         draft = SemanticResearchDraft(
             trade_date=date(2040, 2, 3),
@@ -96,9 +94,7 @@ class RichSemanticLLM:
         raise AssertionError("semantic import should request structured output")
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
-        self.calls.append(
-            {"prompt": prompt, "response_model": response_model, "purpose": purpose}
-        )
+        self.calls.append({"prompt": prompt, "response_model": response_model, "purpose": purpose})
         assert response_model is SemanticResearchDraft
         trade_day = date(2040, 2, 3)
         cutoff_at = datetime.combine(trade_day, time(8, 59, 59), tzinfo=KST)
@@ -204,11 +200,7 @@ def _batch_episode(episode_id: str, summary: str) -> ResearchEpisode:
 
 def _tree_hashes(root: Path, relative_dir: str) -> dict[str, str]:
     base = root / relative_dir
-    return {
-        path.relative_to(base).as_posix(): file_sha256(path)
-        for path in sorted(base.rglob("*"))
-        if path.is_file()
-    }
+    return {path.relative_to(base).as_posix(): file_sha256(path) for path in sorted(base.rglob("*")) if path.is_file()}
 
 
 def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
@@ -244,13 +236,9 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert episode.episode_id in manifest.covered_episode_ids
     brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
     coverage_manifest = read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")
-    record_coverage_manifest = read_json(
-        tmp_path / "brain" / "current" / "record_coverage_manifest.json"
-    )
+    record_coverage_manifest = read_json(tmp_path / "brain" / "current" / "record_coverage_manifest.json")
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
-    brain_text = (tmp_path / "brain" / "current" / "00_world_model.md").read_text(
-        encoding="utf-8"
-    )
+    brain_text = (tmp_path / "brain" / "current" / "00_world_model.md").read_text(encoding="utf-8")
     assert brain_manifest["catalog_only"] is True
     assert brain_manifest["catalog_mode_reason"] == "deprecated_full_alias"
     assert brain_manifest["deprecated_mode_alias"] is True
@@ -258,11 +246,12 @@ def test_semantic_import_accept_and_brain_rebuild(tmp_path) -> None:
     assert coverage_manifest["catalog_only"] is True
     assert record_coverage_manifest["catalog_only"] is True
     assert record_coverage_manifest["record_coverage_as_of"] == manifest.created_at.isoformat()
-    assert record_coverage_manifest["available_record_count_as_of"] == (
-        record_coverage_manifest["available_record_count"]
+    assert (
+        record_coverage_manifest["available_record_count_as_of"] == (record_coverage_manifest["available_record_count"])
     )
-    assert record_coverage_manifest["training_eligible_record_count_as_of"] == (
-        record_coverage_manifest["training_eligible_available_record_count"]
+    assert (
+        record_coverage_manifest["training_eligible_record_count_as_of"]
+        == (record_coverage_manifest["training_eligible_available_record_count"])
     )
     assert brain_report["catalog_mode_reason"] == "deprecated_full_alias"
     assert brain_report["deprecated_mode_alias"] is True
@@ -315,15 +304,9 @@ def test_brain_audit_requires_record_coverage_manifest_without_records(
     assert audit["record_coverage_complete"] is False
     assert audit["accepted_record_count"] == 0
     assert audit["expected_swept_record_ids"] == []
-    assert audit["record_coverage_findings"] == [
-        "record coverage manifest is missing"
-    ]
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
-    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == [
-        "record coverage manifest is missing"
-    ]
+    assert audit["record_coverage_findings"] == ["record coverage manifest is missing"]
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
+    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == ["record coverage manifest is missing"]
 
 
 def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
@@ -342,9 +325,7 @@ def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
     coverage_manifest.update(
         {
             "brain_version": "brain-stale",
-            "created_at": manifest.created_at.replace(
-                year=manifest.created_at.year + 1
-            ).isoformat(),
+            "created_at": manifest.created_at.replace(year=manifest.created_at.year + 1).isoformat(),
             "build_mode": "llm-full",
             "catalog_only": False,
         }
@@ -371,9 +352,7 @@ def test_brain_audit_rejects_stale_episode_coverage_manifest(tmp_path) -> None:
         "coverage manifest is marked complete despite audit findings",
     ]
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
-    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit[
-        "episode_coverage_findings"
-    ]
+    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit["episode_coverage_findings"]
     assert (
         "episode_coverage_findings: coverage manifest brain_version does not match current brain manifest"
         in brain_report["latest_brain_audit"]["findings"]
@@ -417,9 +396,7 @@ def test_brain_audit_rejects_malformed_episode_coverage_ids(tmp_path) -> None:
         "coverage manifest is marked complete despite audit findings",
     ]
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
-    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit[
-        "episode_coverage_findings"
-    ]
+    assert brain_report["latest_brain_audit"]["episode_coverage_findings"] == audit["episode_coverage_findings"]
     assert (
         "episode_coverage_findings: coverage manifest covered_episode_ids is missing or invalid"
         in brain_report["latest_brain_audit"]["findings"]
@@ -449,9 +426,7 @@ def test_brain_audit_reports_unreadable_coverage_manifest(tmp_path) -> None:
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest = brain_report["latest_brain_audit"]
     assert latest["artifact_read_findings"] == ["coverage manifest is unreadable"]
-    assert "artifact_read_findings: coverage manifest is unreadable" in latest[
-        "findings"
-    ]
+    assert "artifact_read_findings: coverage manifest is unreadable" in latest["findings"]
 
 
 def test_brain_audit_reports_unreadable_brain_manifest(tmp_path) -> None:
@@ -475,9 +450,7 @@ def test_brain_audit_reports_unreadable_brain_manifest(tmp_path) -> None:
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest = brain_report["latest_brain_audit"]
     assert latest["artifact_read_findings"] == ["brain manifest is unreadable"]
-    assert "artifact_read_findings: brain manifest is unreadable" in latest[
-        "findings"
-    ]
+    assert "artifact_read_findings: brain manifest is unreadable" in latest["findings"]
 
 
 def test_brain_audit_reports_unreadable_accepted_store(tmp_path) -> None:
@@ -498,27 +471,18 @@ def test_brain_audit_reports_unreadable_accepted_store(tmp_path) -> None:
 
     assert audit["passed"] is False
     assert audit["accepted_episode_count"] == 0
-    assert audit["accepted_store_findings"] == [
-        "accepted episode store is unreadable"
-    ]
-    assert audit["artifact_read_findings"] == [
-        "accepted episode store is unreadable"
-    ]
-    assert "record coverage accepted episode store is unreadable" in audit[
-        "record_coverage_findings"
-    ]
+    assert audit["accepted_store_findings"] == ["accepted episode store is unreadable"]
+    assert audit["artifact_read_findings"] == ["accepted episode store is unreadable"]
+    assert "record coverage accepted episode store is unreadable" in audit["record_coverage_findings"]
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest = brain_report["latest_brain_audit"]
-    assert latest["accepted_store_findings"] == [
-        "accepted episode store is unreadable"
-    ]
-    assert "artifact_read_findings: accepted episode store is unreadable" in latest[
-        "findings"
-    ]
+    assert latest["accepted_store_findings"] == ["accepted episode store is unreadable"]
+    assert "artifact_read_findings: accepted episode store is unreadable" in latest["findings"]
     record_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
-    assert "record coverage accepted episode store is unreadable" in record_report[
-        "latest_record_coverage_audit"
-    ]["findings"]
+    assert (
+        "record coverage accepted episode store is unreadable"
+        in record_report["latest_record_coverage_audit"]["findings"]
+    )
 
 
 def test_brain_audit_recovers_unreadable_existing_diagnostic_reports(
@@ -546,19 +510,13 @@ def test_brain_audit_recovers_unreadable_existing_diagnostic_reports(
 
     audit = audit_brain(tmp_path)
 
-    assert "latest_brain_audit" in read_json(
-        diagnostics_dir / "brain_compile_report.json"
-    )
+    assert "latest_brain_audit" in read_json(diagnostics_dir / "brain_compile_report.json")
     brain_report = read_json(diagnostics_dir / "brain_compile_report.json")
     record_report = read_json(diagnostics_dir / "record_coverage_report.json")
-    assert brain_report["previous_report_read_findings"] == [
-        "brain compile diagnostic report is unreadable"
-    ]
-    assert record_report["previous_report_read_findings"] == [
-        "record coverage diagnostic report is unreadable"
-    ]
-    assert record_report["latest_record_coverage_audit"]["record_coverage_complete"] == (
-        audit["record_coverage_complete"]
+    assert brain_report["previous_report_read_findings"] == ["brain compile diagnostic report is unreadable"]
+    assert record_report["previous_report_read_findings"] == ["record coverage diagnostic report is unreadable"]
+    assert (
+        record_report["latest_record_coverage_audit"]["record_coverage_complete"] == (audit["record_coverage_complete"])
     )
 
 
@@ -581,9 +539,7 @@ def test_coverage_audit_surfaces_stale_episode_coverage_manifest(
     coverage_manifest.update(
         {
             "brain_version": "brain-stale",
-            "created_at": manifest.created_at.replace(
-                year=manifest.created_at.year + 1
-            ).isoformat(),
+            "created_at": manifest.created_at.replace(year=manifest.created_at.year + 1).isoformat(),
             "build_mode": "llm-full",
             "catalog_only": False,
         }
@@ -593,26 +549,11 @@ def test_coverage_audit_surfaces_stale_episode_coverage_manifest(
     coverage = audit_coverage(tmp_path)
 
     assert coverage["passed"] is False
-    assert (
-        "coverage manifest brain_version does not match current brain manifest"
-        in coverage["brain_audit_findings"]
-    )
-    assert (
-        "brain: coverage manifest brain_version does not match current brain manifest"
-        in coverage["findings"]
-    )
-    assert (
-        "brain: coverage manifest created_at does not match current brain manifest"
-        in coverage["findings"]
-    )
-    assert (
-        "brain: coverage manifest build_mode does not match current brain manifest"
-        in coverage["findings"]
-    )
-    assert (
-        "brain: coverage manifest catalog_only does not match current brain manifest"
-        in coverage["findings"]
-    )
+    assert "coverage manifest brain_version does not match current brain manifest" in coverage["brain_audit_findings"]
+    assert "brain: coverage manifest brain_version does not match current brain manifest" in coverage["findings"]
+    assert "brain: coverage manifest created_at does not match current brain manifest" in coverage["findings"]
+    assert "brain: coverage manifest build_mode does not match current brain manifest" in coverage["findings"]
+    assert "brain: coverage manifest catalog_only does not match current brain manifest" in coverage["findings"]
 
 
 def test_brain_rebuild_uses_configurable_shard_episode_count(tmp_path) -> None:
@@ -629,21 +570,15 @@ def test_brain_rebuild_uses_configurable_shard_episode_count(tmp_path) -> None:
 
     default_manifest = BrainCompiler(tmp_path).rebuild(mode="full")
     manifest = BrainCompiler(tmp_path, shard_episode_count=2).rebuild(mode="full")
-    shard_manifest = read_json(
-        tmp_path / "memory" / "shard_brains" / "current" / "manifest.json"
-    )
+    shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
 
     assert manifest.brain_version != default_manifest.brain_version
     assert shard_manifest["brain_version"] == manifest.brain_version
     assert shard_manifest["shard_episode_count"] == 2
     assert shard_manifest["shard_count"] == 2
     assert len(shard_manifest["shard_files"]) == 2
-    first_shard = (tmp_path / shard_manifest["shard_files"][0]).read_text(
-        encoding="utf-8"
-    )
-    second_shard = (tmp_path / shard_manifest["shard_files"][1]).read_text(
-        encoding="utf-8"
-    )
+    first_shard = (tmp_path / shard_manifest["shard_files"][0]).read_text(encoding="utf-8")
+    second_shard = (tmp_path / shard_manifest["shard_files"][1]).read_text(encoding="utf-8")
     assert "EP-shard-config-0" in first_shard
     assert "EP-shard-config-1" in first_shard
     assert "EP-shard-config-2" in second_shard
@@ -870,9 +805,7 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
 
     episode = ResearchImporter(tmp_path).import_path(source, mode="strict")
 
-    strict_provenance = [
-        item for item in episode.provenance if item.source_type == "strict_research_json"
-    ]
+    strict_provenance = [item for item in episode.provenance if item.source_type == "strict_research_json"]
     assert len(strict_provenance) == 1
     preserved_raw = Path(strict_provenance[0].uri)
     assert preserved_raw.exists()
@@ -892,9 +825,7 @@ def test_strict_import_preserves_raw_source_and_provenance_hash(tmp_path) -> Non
     assert episode.postmortem.provenance == strict_provenance
     assert episode.lessons[0].provenance == strict_provenance
     assert episode.counterexamples[0].provenance == strict_provenance
-    assert ResearchStore(tmp_path).get_episode("EP-strict-source").episode_id == (
-        "EP-strict-source"
-    )
+    assert ResearchStore(tmp_path).get_episode("EP-strict-source").episode_id == ("EP-strict-source")
     audit = audit_provenance(tmp_path)
     assert audit["passed"], audit["findings"]
     assert audit["checked_research_episode_files"] == 1
@@ -996,9 +927,7 @@ def test_brain_rebuild_uses_accepted_snapshot_when_canonical_episode_changes(tmp
     store.save_episode(changed)
 
     fetched = store.get_episode(episode.episode_id)
-    assert fetched.blind_analysis.open_world_mechanisms == (
-        episode.blind_analysis.open_world_mechanisms
-    )
+    assert fetched.blind_analysis.open_world_mechanisms == (episode.blind_analysis.open_world_mechanisms)
 
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")
     claims_text = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
@@ -1056,24 +985,16 @@ def test_brain_rebuild_includes_imported_lessons_and_counterexamples_as_claims(
     manifest = BrainCompiler(tmp_path).rebuild(mode="full")
     claims = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line
     ]
     claims_by_id = {claim["claim_id"]: claim for claim in claims}
 
     assert "CL-imported-lesson" in manifest.claim_ids
     assert "CL-imported-counterexample" in manifest.claim_ids
-    assert claims_by_id["CL-imported-lesson"]["support_episode_ids"] == [
-        enriched_episode.episode_id
-    ]
-    assert claims_by_id["CL-imported-lesson"]["provenance"][0]["source_id"] == (
-        "SRC-imported-claim-test"
-    )
-    assert claims_by_id["CL-imported-counterexample"]["contradiction_episode_ids"] == [
-        enriched_episode.episode_id
-    ]
+    assert claims_by_id["CL-imported-lesson"]["support_episode_ids"] == [enriched_episode.episode_id]
+    assert claims_by_id["CL-imported-lesson"]["provenance"][0]["source_id"] == ("SRC-imported-claim-test")
+    assert claims_by_id["CL-imported-counterexample"]["contradiction_episode_ids"] == [enriched_episode.episode_id]
     assert audit_brain(tmp_path)["passed"] is True
 
 
@@ -1098,12 +1019,8 @@ def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
     diff = build_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
     diff_path = write_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
     diff_hash = file_sha256(diff_path)
-    second_diff = build_brain_diff(
-        tmp_path, manifest_a.brain_version, manifest_b.brain_version
-    )
-    second_diff_path = write_brain_diff(
-        tmp_path, manifest_a.brain_version, manifest_b.brain_version
-    )
+    second_diff = build_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
+    second_diff_path = write_brain_diff(tmp_path, manifest_a.brain_version, manifest_b.brain_version)
 
     assert second_diff == diff
     assert diff["generated_at"] == manifest_b.created_at.isoformat()
@@ -1112,10 +1029,7 @@ def test_brain_diff_compares_versioned_snapshots(tmp_path) -> None:
     assert diff["removed_episode_ids"] == []
     file_changes = diff["file_changes"]
     assert isinstance(file_changes, list)
-    assert any(
-        isinstance(change, dict) and change["file"] == "brain_manifest.json"
-        for change in file_changes
-    )
+    assert any(isinstance(change, dict) and change["file"] == "brain_manifest.json" for change in file_changes)
     assert diff_path.exists()
     assert second_diff_path == diff_path
     assert file_sha256(second_diff_path) == diff_hash
@@ -1147,13 +1061,9 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
         tmp_path,
         f"memory/mechanisms/{first_manifest.brain_version}",
     )
-    first_diff_hash = file_sha256(
-        tmp_path / "brain" / "diffs" / f"{first_manifest.brain_version}.md"
-    )
+    first_diff_hash = file_sha256(tmp_path / "brain" / "diffs" / f"{first_manifest.brain_version}.md")
     first_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
-    first_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
-        encoding="utf-8"
-    )
+    first_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(encoding="utf-8")
     second_manifest = compiler.rebuild(mode="full")
     second_hashes = current_brain_file_hashes(tmp_path)
     second_snapshot_hashes = _tree_hashes(
@@ -1170,9 +1080,7 @@ def test_brain_rebuild_is_deterministic_for_same_accepted_episodes(tmp_path) -> 
         tmp_path,
         f"memory/mechanisms/{second_manifest.brain_version}",
     )
-    second_diff_hash = file_sha256(
-        tmp_path / "brain" / "diffs" / f"{second_manifest.brain_version}.md"
-    )
+    second_diff_hash = file_sha256(tmp_path / "brain" / "diffs" / f"{second_manifest.brain_version}.md")
     second_claims = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
     second_mechanisms = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
         encoding="utf-8"
@@ -1221,10 +1129,7 @@ def test_brain_audit_flags_non_deterministic_current_state(tmp_path) -> None:
     assert tampered_hash_audit["passed"] is False
     assert tampered_hash_audit["source_hashes_verified"] is False
     assert tampered_hash_audit["version_matches_expected"] is True
-    assert (
-        "brain source_hashes do not match accepted episode files"
-        in tampered_hash_audit["determinism_findings"]
-    )
+    assert "brain source_hashes do not match deterministic build inputs" in tampered_hash_audit["determinism_findings"]
 
     write_json(
         manifest_path,
@@ -1244,9 +1149,7 @@ def test_brain_audit_flags_non_deterministic_current_state(tmp_path) -> None:
     )
 
     write_json(manifest_path, original_manifest)
-    snapshot_file = (
-        tmp_path / "brain" / "snapshots" / manifest.brain_version / "00_world_model.md"
-    )
+    snapshot_file = tmp_path / "brain" / "snapshots" / manifest.brain_version / "00_world_model.md"
     snapshot_file.write_text(
         snapshot_file.read_text(encoding="utf-8") + "\nTampered snapshot.\n",
         encoding="utf-8",
@@ -1259,13 +1162,11 @@ def test_brain_audit_flags_non_deterministic_current_state(tmp_path) -> None:
     assert tampered_snapshot_audit["version_matches_expected"] is True
     assert tampered_snapshot_audit["snapshot_matches_current"] is False
     assert (
-        "brain immutable snapshot does not match current brain files"
-        in tampered_snapshot_audit["determinism_findings"]
+        "brain immutable snapshot does not match current brain files" in tampered_snapshot_audit["determinism_findings"]
     )
     assert coverage["passed"] is False
     assert any(
-        "brain immutable snapshot does not match current brain files" in finding
-        for finding in coverage["findings"]
+        "brain immutable snapshot does not match current brain files" in finding for finding in coverage["findings"]
     )
 
 
@@ -1279,9 +1180,7 @@ def test_brain_rebuild_refuses_to_overwrite_existing_snapshot(tmp_path) -> None:
 
     compiler = BrainCompiler(tmp_path)
     manifest = compiler.rebuild(mode="full")
-    snapshot_manifest = (
-        tmp_path / "brain" / "snapshots" / manifest.brain_version / "brain_manifest.json"
-    )
+    snapshot_manifest = tmp_path / "brain" / "snapshots" / manifest.brain_version / "brain_manifest.json"
     original_snapshot = snapshot_manifest.read_text(encoding="utf-8")
     snapshot_manifest.write_text(
         original_snapshot.replace(manifest.brain_version, "brain-corrupted", 1),
@@ -1378,9 +1277,7 @@ def test_brain_audit_validates_claim_support_provenance_and_temporal_order(tmp_p
     assert audit["claims_without_support"] == ["CL-no-support"]
     assert audit["claims_with_unknown_support"] == ["CL-unknown-support: EP-unknown"]
     assert audit["claims_without_provenance"] == ["CL-no-provenance"]
-    assert audit["claim_temporal_leaks"] == [
-        f"CL-temporal-leak: available_from precedes support {episode.episode_id}"
-    ]
+    assert audit["claim_temporal_leaks"] == [f"CL-temporal-leak: available_from precedes support {episode.episode_id}"]
     assert audit["single_support_claims_without_contradictions"] == [
         "CL-no-provenance",
         "CL-temporal-leak",
@@ -1499,107 +1396,62 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     audit = audit_brain(tmp_path)
 
     assert audit["passed"] is False
-    assert audit["compiled_claims_without_supporting_records"] == [
-        "CC-no-record-support"
-    ]
-    assert audit["compiled_claims_with_unknown_supporting_records"] == [
-        "CC-unknown-records: BRAIN-MISSING"
-    ]
-    assert audit["compiled_claims_with_unknown_contradicting_records"] == [
-        "CC-unknown-records: BRAIN-MISSING-CONTRA"
-    ]
-    assert audit["compiled_claims_with_unknown_supporting_episodes"] == [
-        "CC-unknown-records: EP-unknown"
-    ]
-    assert audit["compiled_claims_with_unknown_contradicting_episodes"] == [
-        "CC-unknown-records: EP-unknown-contra"
-    ]
+    assert audit["compiled_claims_without_supporting_records"] == ["CC-no-record-support"]
+    assert audit["compiled_claims_with_unknown_supporting_records"] == ["CC-unknown-records: BRAIN-MISSING"]
+    assert audit["compiled_claims_with_unknown_contradicting_records"] == ["CC-unknown-records: BRAIN-MISSING-CONTRA"]
+    assert audit["compiled_claims_with_unknown_supporting_episodes"] == ["CC-unknown-records: EP-unknown"]
+    assert audit["compiled_claims_with_unknown_contradicting_episodes"] == ["CC-unknown-records: EP-unknown-contra"]
     assert audit["compiled_claim_temporal_leaks"] == [
         "CC-future-record: available_from precedes supporting record BRAIN-FUTURE",
         "CC-future-record: available_from precedes contradicting record BRAIN-FUTURE",
     ]
-    assert audit["validated_compiled_claims_without_contradictions"] == [
-        "CC-validated-single"
-    ]
-    assert audit["validated_compiled_claims_with_single_episode"] == [
-        "CC-validated-single"
-    ]
+    assert audit["validated_compiled_claims_without_contradictions"] == ["CC-validated-single"]
+    assert audit["validated_compiled_claims_with_single_episode"] == ["CC-validated-single"]
     assert audit["llm_compile_unknown_record_ids"] == [
         "BRAIN-CATEGORY-MISSING",
         "BRAIN-SHARD-MISSING",
     ]
-    assert (
-        audit["llm_compile_manifest_schema_version"]
-        == "bad.llm_full_brain_compile_manifest.v1"
-    )
-    assert (
-        audit["llm_compile_expected_manifest_schema_version"]
-        == "nslab.llm_full_brain_compile_manifest.v1"
-    )
+    assert audit["llm_compile_manifest_schema_version"] == "bad.llm_full_brain_compile_manifest.v1"
+    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
     assert audit["llm_compile_compiler_version"] is None
     assert audit["llm_compile_expected_compiler_version"] == LLM_FULL_COMPILER_VERSION
     assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
     assert "single_event" in audit["brain_category_source_population_mismatches"]
     assert "theme_formation" in audit["brain_category_source_population_mismatches"]
-    assert audit["llm_compile_unknown_compiled_claim_ids"] == [
-        "CC-missing-manifest-claim"
-    ]
-    assert "category_count: expected 9, got missing" in audit[
-        "llm_compile_category_schema_mismatches"
-    ]
-    assert "categories: expected 9, got 2" in audit[
-        "llm_compile_category_schema_mismatches"
-    ]
-    assert "world_model: expected file 00_world_model.md, got missing" in audit[
-        "llm_compile_category_schema_mismatches"
-    ]
+    assert audit["llm_compile_unknown_compiled_claim_ids"] == ["CC-missing-manifest-claim"]
+    assert "category_count: expected 9, got missing" in audit["llm_compile_category_schema_mismatches"]
+    assert "categories: expected 9, got 2" in audit["llm_compile_category_schema_mismatches"]
+    assert (
+        "world_model: expected file 00_world_model.md, got missing" in audit["llm_compile_category_schema_mismatches"]
+    )
     assert audit["llm_compile_compiled_claim_count_mismatches"] == [
         "manifest",
         "world_model",
     ]
-    assert "llm compile manifest source_record_count does not match record store" in audit[
-        "llm_compile_findings"
-    ]
+    assert "llm compile manifest source_record_count does not match record store" in audit["llm_compile_findings"]
     assert (
         "llm compile manifest schema_version is "
         "bad.llm_full_brain_compile_manifest.v1, not "
-        "nslab.llm_full_brain_compile_manifest.v1"
-        in audit["llm_compile_findings"]
+        "nslab.llm_full_brain_compile_manifest.v1" in audit["llm_compile_findings"]
     )
     assert (
         "llm compile manifest compiler_version is missing, not "
-        f"{LLM_FULL_COMPILER_VERSION}"
-        in audit["llm_compile_findings"]
+        f"{LLM_FULL_COMPILER_VERSION}" in audit["llm_compile_findings"]
     )
-    assert "llm compile manifest references unknown compiled claim IDs" in audit[
-        "llm_compile_findings"
-    ]
-    assert "llm compile manifest categories do not match canonical brain files" in audit[
-        "llm_compile_findings"
-    ]
-    assert "compiled claims expose future record evidence" in audit[
-        "compiled_claim_findings"
-    ]
+    assert "llm compile manifest references unknown compiled claim IDs" in audit["llm_compile_findings"]
+    assert "llm compile manifest categories do not match canonical brain files" in audit["llm_compile_findings"]
+    assert "compiled claims expose future record evidence" in audit["compiled_claim_findings"]
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_audit = compile_report["latest_brain_audit"]
     assert latest_audit["passed"] is False
     assert latest_audit["deep"] is False
     assert latest_audit["llm_compile_manifest_present"] is True
-    assert (
-        latest_audit["llm_compile_manifest_schema_version"]
-        == "bad.llm_full_brain_compile_manifest.v1"
-    )
-    assert (
-        latest_audit["llm_compile_expected_manifest_schema_version"]
-        == "nslab.llm_full_brain_compile_manifest.v1"
-    )
-    assert "categories: expected 9, got 2" in latest_audit[
-        "llm_compile_category_schema_mismatches"
-    ]
+    assert latest_audit["llm_compile_manifest_schema_version"] == "bad.llm_full_brain_compile_manifest.v1"
+    assert latest_audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
+    assert "categories: expected 9, got 2" in latest_audit["llm_compile_category_schema_mismatches"]
     assert latest_audit["compiled_claim_file_present"] is True
     assert any(
-        finding
-        == "llm_compile_findings: llm compile manifest references unknown compiled claim IDs"
+        finding == "llm_compile_findings: llm compile manifest references unknown compiled claim IDs"
         for finding in latest_audit["findings"]
     )
 
@@ -1616,6 +1468,7 @@ def test_brain_audit_accepts_compiled_claim_episode_from_record_store(
     record = _compiled_claim_test_record(
         "BRAIN-RECORD-ONLY",
         "EP-record-only",
+        record_type="supervised_direct_event_case",
         training_eligible=True,
     )
     records_dir = tmp_path / "memory" / "records"
@@ -1629,16 +1482,12 @@ def test_brain_audit_accepts_compiled_claim_episode_from_record_store(
 
     compiled_claims = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     audit = audit_brain(tmp_path)
 
-    assert [claim["supporting_episode_ids"] for claim in compiled_claims] == [
-        ["EP-record-only"]
-    ]
+    assert [claim["supporting_episode_ids"] for claim in compiled_claims] == [["EP-record-only"]]
     assert audit["compiled_claims_with_unknown_supporting_episodes"] == []
     assert audit["compiled_claims_with_unknown_contradicting_episodes"] == []
     assert audit["compiled_claim_findings"] == []
@@ -1652,9 +1501,7 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     BrainCompiler(tmp_path).rebuild(mode="full")
     complete_file = tmp_path / "brain" / "current" / "02_theme_formation_patterns.md"
     complete_file.write_text(
-        "# Theme Formation Patterns\n\n"
-        "Source record count: 0\n\n"
-        "Coverage complete. This category is fully covered.\n",
+        "# Theme Formation Patterns\n\nSource record count: 0\n\nCoverage complete. This category is fully covered.\n",
         encoding="utf-8",
     )
     category_files = (
@@ -1697,18 +1544,13 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     audit = audit_brain(tmp_path)
 
     assert audit["passed"] is False
-    assert audit["brain_empty_category_complete_files"] == [
-        "02_theme_formation_patterns.md"
+    assert audit["brain_empty_category_complete_files"] == ["02_theme_formation_patterns.md"]
+    assert ("brain category with no source records declares complete: 02_theme_formation_patterns.md") in audit[
+        "brain_diversity_findings"
     ]
-    assert (
-        "brain category with no source records declares complete: "
-        "02_theme_formation_patterns.md"
-    ) in audit["brain_diversity_findings"]
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_audit = compile_report["latest_brain_audit"]
-    assert latest_audit["brain_empty_category_complete_files"] == [
-        "02_theme_formation_patterns.md"
-    ]
+    assert latest_audit["brain_empty_category_complete_files"] == ["02_theme_formation_patterns.md"]
     assert latest_audit["brain_category_source_population_mismatches"] == []
 
 
@@ -1735,17 +1577,11 @@ def test_brain_audit_rejects_llm_full_without_compile_manifest(tmp_path: Path) -
     assert audit["brain_build_mode"] == "llm-full"
     assert audit["llm_compile_manifest_present"] is False
     assert audit["llm_compile_manifest_schema_version"] is None
-    assert (
-        audit["llm_compile_expected_manifest_schema_version"]
-        == "nslab.llm_full_brain_compile_manifest.v1"
-    )
+    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
     assert "llm-full compile manifest is missing" in audit["llm_compile_findings"]
-    latest_audit = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")[
-        "latest_brain_audit"
-    ]
+    latest_audit = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")["latest_brain_audit"]
     assert any(
-        finding == "llm_compile_findings: llm-full compile manifest is missing"
-        for finding in latest_audit["findings"]
+        finding == "llm_compile_findings: llm-full compile manifest is missing" for finding in latest_audit["findings"]
     )
 
 
@@ -1768,6 +1604,14 @@ def _compiled_claim_test_record(
         "training_target": training_target,
         "training_eligible": training_eligible,
     }
+    if record_type.startswith("supervised_"):
+        payload.update(
+            {
+                "response_class": "positive_high10",
+                "label_quality": "verified",
+                "outcome_high_return_pct": 12.0,
+            }
+        )
     payload_hash = sha256_text(canonical_json(payload))
     return BrainRecordEnvelope(
         record_id=record_id,
@@ -1776,10 +1620,10 @@ def _compiled_claim_test_record(
         trade_date=date(2030, 1, 10),
         available_from=record_available_from,
         training_target=training_target,
-        evidence_phase="AUDIT",
+        evidence_phase="POSTMORTEM" if training_eligible else "AUDIT",
         training_eligible=training_eligible,
         eligibility_reason="compiled claim audit fixture",
-        status="tentative",
+        status="supported" if training_eligible else "tentative",
         confidence_label="low",
         provenance_source_ids=["SRC-compiled-claim-audit"],
         raw_payload_sha256=payload_hash,
@@ -1832,9 +1676,7 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     report = read_json(report_path)
     compiled_claim_rows = [
         json.loads(line)
-        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
+        for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     stale_report = dict(report)
@@ -1848,30 +1690,23 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     assert report["deprecated_mode_alias"] is True
     assert report["production_eligible"] is False
     assert report["compiled_claims_file_present"] is True
-    assert report["compiled_claim_count"] == 3
+    assert report["compiled_claim_count"] == 2
     assert {row["supporting_record_ids"][0] for row in compiled_claim_rows} == {
         "BRAIN-ISSUER",
-        "BRAIN-MEMORY",
         "BRAIN-PAIR",
     }
-    assert report["category_claim_counts"]["world_model"] == 3
+    assert report["category_claim_counts"]["world_model"] == 2
     assert report["category_claim_counts"]["single_event"] == 1
     assert report["category_claim_counts"]["leader_selection"] == 1
-    assert report["category_claim_counts"]["market_memory"] == 1
+    assert report["category_claim_counts"]["market_memory"] == 0
     assert report["category_source_record_type_counts"]["world_model"] == {
         "blind_leader_preference_pair": 1,
         "memory_claim": 1,
         "supervised_issuer_day_case": 1,
     }
-    assert report["category_source_record_type_counts"]["single_event"] == {
-        "supervised_issuer_day_case": 1
-    }
-    assert report["category_source_record_type_counts"]["leader_selection"] == {
-        "blind_leader_preference_pair": 1
-    }
-    assert report["category_source_record_type_counts"]["market_memory"] == {
-        "memory_claim": 1
-    }
+    assert report["category_source_record_type_counts"]["single_event"] == {"supervised_issuer_day_case": 1}
+    assert report["category_source_record_type_counts"]["leader_selection"] == {"blind_leader_preference_pair": 1}
+    assert report["category_source_record_type_counts"]["market_memory"] == {"memory_claim": 1}
     assert report["category_source_record_type_counts"]["theme_formation"] == {}
     assert report["category_source_record_counts"]["world_model"] == 3
     assert report["category_source_record_counts"]["single_event"] == 1
@@ -1903,16 +1738,11 @@ def test_catalog_brain_compile_report_records_category_source_type_distribution(
     }
     post_audit_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_audit = post_audit_report["latest_brain_audit"]
-    assert post_audit_report["category_source_record_type_counts"] == audit[
-        "brain_category_source_record_types"
-    ]
+    assert post_audit_report["category_source_record_type_counts"] == audit["brain_category_source_record_types"]
     assert post_audit_report["category_source_record_counts"]["world_model"] == 3
     assert post_audit_report["category_source_record_counts"]["theme_formation"] == 0
     assert latest_audit["brain_category_file_count"] == 9
-    assert (
-        latest_audit["brain_category_source_record_types"]
-        == audit["brain_category_source_record_types"]
-    )
+    assert latest_audit["brain_category_source_record_types"] == audit["brain_category_source_record_types"]
     assert latest_audit["brain_category_source_population_mismatches"] == []
     assert latest_audit["brain_empty_category_complete_files"] == []
 
@@ -1954,6 +1784,11 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert coverage["available_record_count_as_of"] == 1
     assert coverage["training_eligible_available_record_count"] == 2
     assert coverage["training_eligible_record_count_as_of"] == 1
+    assert coverage["schema_version"] == "nslab.record_coverage_manifest.v2"
+    assert coverage["record_counts_by_evidence_polarity"] == {"CONTEXT": 2}
+    assert coverage["record_counts_by_label_quality"] == {"not_applicable": 2}
+    assert coverage["record_counts_by_routing_disposition"] == {"CONTEXT": 2}
+    assert coverage["record_routing_cross_table"] == {"CONTEXT|true|not_applicable|CONTEXT": 2}
     assert audit["record_coverage_as_of"] == manifest.created_at.isoformat()
     assert audit["expected_record_coverage_as_of"] == manifest.created_at.isoformat()
     assert audit["record_coverage_brain_version"] == manifest.brain_version
@@ -1980,6 +1815,37 @@ def test_record_coverage_counts_only_as_of_available_records(tmp_path: Path) -> 
     assert audit["record_coverage_findings"] == []
 
 
+def test_brain_audit_rejects_tampered_record_routing_cross_table(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    source = tmp_path / "research_20300110.md"
+    source.write_text("Routing cross-table audit note.", encoding="utf-8")
+    episode = ResearchImporter(tmp_path).import_path(source, mode="semantic")
+    ResearchStore(tmp_path).accept(episode.episode_id)
+    record = _compiled_claim_test_record("BRAIN-ROUTING-AUDIT", episode.episode_id)
+    records_dir = tmp_path / "memory" / "records"
+    records_dir.mkdir(parents=True, exist_ok=True)
+    (records_dir / f"{episode.episode_id}.jsonl").write_text(
+        record.model_dump_json() + "\n",
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    coverage_path = tmp_path / "brain" / "current" / "record_coverage_manifest.json"
+    coverage = read_json(coverage_path)
+    coverage["record_routing_cross_table"] = {"POSITIVE|true|verified|REASONING": 1}
+    write_json(coverage_path, coverage)
+
+    audit = audit_brain(tmp_path)
+
+    assert audit["record_coverage_complete"] is False
+    assert (
+        "record coverage manifest record_routing_cross_table does not match record store"
+        in audit["record_coverage_findings"]
+    )
+
+
 def test_brain_audit_reports_unreadable_record_coverage_manifest(
     tmp_path: Path,
 ) -> None:
@@ -2004,29 +1870,20 @@ def test_brain_audit_reports_unreadable_record_coverage_manifest(
 
     assert audit["passed"] is False
     assert audit["record_coverage_complete"] is False
-    assert audit["record_coverage_findings"] == [
-        "record coverage manifest is unreadable"
-    ]
+    assert audit["record_coverage_findings"] == ["record coverage manifest is unreadable"]
     assert audit["accepted_record_count"] == 1
     assert audit["compiled_record_count"] == 0
     assert audit["expected_swept_record_ids"] == ["BRAIN-COVERAGE-UNREADABLE"]
     assert audit["missing_swept_record_ids"] == ["BRAIN-COVERAGE-UNREADABLE"]
     assert audit["record_coverage_as_of"] is None
     assert audit["expected_record_coverage_as_of"] == brain_manifest.created_at.isoformat()
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
     latest_record_audit = record_coverage_report["latest_record_coverage_audit"]
-    assert latest_record_audit["findings"] == [
-        "record coverage manifest is unreadable"
-    ]
+    assert latest_record_audit["findings"] == ["record coverage manifest is unreadable"]
     assert latest_record_audit["record_coverage_complete"] is False
     brain_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     latest_brain_audit = brain_report["latest_brain_audit"]
-    assert (
-        "record_coverage_findings: record coverage manifest is unreadable"
-        in latest_brain_audit["findings"]
-    )
+    assert "record_coverage_findings: record coverage manifest is unreadable" in latest_brain_audit["findings"]
 
 
 def test_brain_audit_rejects_record_coverage_episode_count_mismatch(
@@ -2060,17 +1917,10 @@ def test_brain_audit_rejects_record_coverage_episode_count_mismatch(
         "record coverage manifest accepted_episode_count does not match accepted episodes"
         in audit["record_coverage_findings"]
     )
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
     assert record_coverage_report["record_coverage_accepted_episode_count"] == 0
     assert record_coverage_report["expected_accepted_episode_count"] == 1
-    assert (
-        record_coverage_report["latest_record_coverage_audit"][
-            "record_coverage_accepted_episode_count"
-        ]
-        == 0
-    )
+    assert record_coverage_report["latest_record_coverage_audit"]["record_coverage_accepted_episode_count"] == 0
 
 
 def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
@@ -2124,33 +1974,21 @@ def test_brain_audit_rejects_stale_record_coverage_brain_metadata(
         in audit["record_coverage_findings"]
     )
     assert (
-        "record coverage manifest build_mode does not match current brain manifest"
-        in audit["record_coverage_findings"]
+        "record coverage manifest build_mode does not match current brain manifest" in audit["record_coverage_findings"]
     )
     assert (
         "record coverage manifest catalog_only does not match current brain manifest"
         in audit["record_coverage_findings"]
     )
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
     assert record_coverage_report["record_coverage_brain_version"] == "brain-stale"
     assert record_coverage_report["expected_brain_version"] == brain_manifest.brain_version
-    assert record_coverage_report["record_coverage_as_of"] == manifest[
-        "record_coverage_as_of"
-    ]
+    assert record_coverage_report["record_coverage_as_of"] == manifest["record_coverage_as_of"]
     assert (
-        record_coverage_report["latest_record_coverage_audit"][
-            "expected_record_coverage_as_of"
-        ]
+        record_coverage_report["latest_record_coverage_audit"]["expected_record_coverage_as_of"]
         == brain_manifest.created_at.isoformat()
     )
-    assert (
-        record_coverage_report["latest_record_coverage_audit"][
-            "record_coverage_build_mode"
-        ]
-        == "llm-full"
-    )
+    assert record_coverage_report["latest_record_coverage_audit"]["record_coverage_build_mode"] == "llm-full"
 
 
 def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -> None:
@@ -2223,9 +2061,7 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
         "record coverage manifest audit-only count does not match record store",
         "record coverage manifest is marked complete despite audit findings",
     ]
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
     assert record_coverage_report["available_record_count_as_of"] == 1
     assert record_coverage_report["training_eligible_record_count_as_of"] == 0
     assert record_coverage_report["compiled_record_count"] == 1
@@ -2243,36 +2079,20 @@ def test_brain_audit_rejects_tampered_record_coverage_manifest(tmp_path: Path) -
     assert record_coverage_report["duplicate_swept_record_ids"] == ["BRAIN-UNKNOWN"]
     assert record_coverage_report["record_counts_by_type"] == {"memory_claim": 1}
     assert record_coverage_report["record_counts_by_evidence_phase"] == {"AUDIT": 1}
-    assert record_coverage_report["record_counts_by_training_target"] == {
-        "compiled_claim_audit_fixture": 1
-    }
+    assert record_coverage_report["record_counts_by_training_target"] == {"compiled_claim_audit_fixture": 1}
     assert record_coverage_report["ineligible_record_count"] == 1
     assert record_coverage_report["audit_only_record_count"] == 1
     assert record_coverage_report["latest_record_coverage_audit"]["passed"] is False
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "unknown_swept_record_ids"
-    ] == ["BRAIN-UNKNOWN"]
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "missing_swept_record_ids"
-    ] == ["BRAIN-COVERAGE"]
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "missing_unswept_record_ids"
-    ] == ["BRAIN-COVERAGE"]
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "duplicate_swept_record_ids"
-    ] == ["BRAIN-UNKNOWN"]
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "record_counts_by_type"
-    ] == {"memory_claim": 1}
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "record_counts_by_evidence_phase"
-    ] == {"AUDIT": 1}
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "record_counts_by_training_target"
-    ] == {"compiled_claim_audit_fixture": 1}
-    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == audit[
-        "record_coverage_findings"
-    ]
+    assert record_coverage_report["latest_record_coverage_audit"]["unknown_swept_record_ids"] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["latest_record_coverage_audit"]["missing_swept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["latest_record_coverage_audit"]["missing_unswept_record_ids"] == ["BRAIN-COVERAGE"]
+    assert record_coverage_report["latest_record_coverage_audit"]["duplicate_swept_record_ids"] == ["BRAIN-UNKNOWN"]
+    assert record_coverage_report["latest_record_coverage_audit"]["record_counts_by_type"] == {"memory_claim": 1}
+    assert record_coverage_report["latest_record_coverage_audit"]["record_counts_by_evidence_phase"] == {"AUDIT": 1}
+    assert record_coverage_report["latest_record_coverage_audit"]["record_counts_by_training_target"] == {
+        "compiled_claim_audit_fixture": 1
+    }
+    assert record_coverage_report["latest_record_coverage_audit"]["findings"] == audit["record_coverage_findings"]
 
 
 def test_brain_audit_rejects_non_string_record_coverage_ids(tmp_path: Path) -> None:
@@ -2306,14 +2126,8 @@ def test_brain_audit_rejects_non_string_record_coverage_ids(tmp_path: Path) -> N
 
     assert audit["passed"] is False
     assert audit["record_coverage_complete"] is False
-    assert (
-        "record coverage manifest swept_record_ids is invalid"
-        in audit["record_coverage_findings"]
-    )
-    assert (
-        "record coverage manifest unswept_record_ids is invalid"
-        in audit["record_coverage_findings"]
-    )
+    assert "record coverage manifest swept_record_ids is invalid" in audit["record_coverage_findings"]
+    assert "record coverage manifest unswept_record_ids is invalid" in audit["record_coverage_findings"]
 
 
 def test_brain_audit_rejects_duplicate_unswept_record_coverage_ids(
@@ -2356,19 +2170,12 @@ def test_brain_audit_rejects_duplicate_unswept_record_coverage_ids(
     assert audit["passed"] is False
     assert audit["record_coverage_complete"] is False
     assert audit["duplicate_unswept_record_ids"] == ["BRAIN-COVERAGE-UNSWEPT"]
-    assert (
-        "record coverage manifest has duplicate unswept records"
-        in audit["record_coverage_findings"]
-    )
-    record_coverage_report = read_json(
-        tmp_path / "diagnostics" / "record_coverage_report.json"
-    )
-    assert record_coverage_report["duplicate_unswept_record_ids"] == [
+    assert "record coverage manifest has duplicate unswept records" in audit["record_coverage_findings"]
+    record_coverage_report = read_json(tmp_path / "diagnostics" / "record_coverage_report.json")
+    assert record_coverage_report["duplicate_unswept_record_ids"] == ["BRAIN-COVERAGE-UNSWEPT"]
+    assert record_coverage_report["latest_record_coverage_audit"]["duplicate_unswept_record_ids"] == [
         "BRAIN-COVERAGE-UNSWEPT"
     ]
-    assert record_coverage_report["latest_record_coverage_audit"][
-        "duplicate_unswept_record_ids"
-    ] == ["BRAIN-COVERAGE-UNSWEPT"]
 
 
 def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
@@ -2449,30 +2256,14 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
     assert failed["warehouse_missing_files"] == ["events.parquet"]
     assert failed["warehouse_unreadable_files"] == ["event_sources.parquet"]
     assert "vector_index: status is invalid" in failed["findings"]
-    assert (
-        "warehouse: research_episodes.parquet count 0 != accepted_episode_count 1"
-        in failed["findings"]
-    )
+    assert "warehouse: research_episodes.parquet count 0 != accepted_episode_count 1" in failed["findings"]
     assert "warehouse: missing required parquet file: events.parquet" in failed["findings"]
+    assert "warehouse: unreadable required parquet file: event_sources.parquet" in failed["findings"]
+    assert "warehouse: predictions.parquet count 0 != source predictions count 1" in failed["findings"]
+    assert "warehouse: daily_outcomes.parquet count 0 != source postmortem reports count 1" in failed["findings"]
+    assert "warehouse: company_memory.parquet count 0 != source company memory files count 1" in failed["findings"]
     assert (
-        "warehouse: unreadable required parquet file: event_sources.parquet"
-        in failed["findings"]
-    )
-    assert (
-        "warehouse: predictions.parquet count 0 != source predictions count 1"
-        in failed["findings"]
-    )
-    assert (
-        "warehouse: daily_outcomes.parquet count 0 != source postmortem reports count 1"
-        in failed["findings"]
-    )
-    assert (
-        "warehouse: company_memory.parquet count 0 != source company memory files count 1"
-        in failed["findings"]
-    )
-    assert (
-        "warehouse: mechanism_memory.parquet count 3 != source mechanism memory records count 1"
-        in failed["findings"]
+        "warehouse: mechanism_memory.parquet count 3 != source mechanism memory records count 1" in failed["findings"]
     )
 
 
@@ -2601,23 +2392,13 @@ def test_coverage_audit_requires_accepted_episode_projection_counts(tmp_path) ->
         "events.parquet": {"actual": 0, "expected": 1},
         "market_memory.parquet": {"actual": 0, "expected": 1},
     }
-    assert (
-        "warehouse: events.parquet count 0 != accepted observed events count 1"
-        in failed["findings"]
-    )
-    assert (
-        "warehouse: event_sources.parquet count 0 != accepted event sources count 1"
-        in failed["findings"]
-    )
+    assert "warehouse: events.parquet count 0 != accepted observed events count 1" in failed["findings"]
+    assert "warehouse: event_sources.parquet count 0 != accepted event sources count 1" in failed["findings"]
     assert (
         "warehouse: event_ticker_edges.parquet count 0 != accepted event ticker edges "
-        "plus brain record edge records count 1"
-        in failed["findings"]
+        "plus brain record edge records count 1" in failed["findings"]
     )
-    assert (
-        "warehouse: market_memory.parquet count 0 != accepted market memory claims count 1"
-        in failed["findings"]
-    )
+    assert "warehouse: market_memory.parquet count 0 != accepted market memory claims count 1" in failed["findings"]
 
 
 def test_coverage_audit_requires_warehouse_prediction_id_set_to_match_source(
@@ -2796,13 +2577,8 @@ def test_coverage_audit_reports_duplicate_brain_record_projection_ids(
         "extra": [],
         "missing": ["BRAIN-WAREHOUSE-DUP-B"],
     }
-    assert audit["warehouse_duplicate_identities"]["brain_records.parquet"] == [
-        "BRAIN-WAREHOUSE-DUP-A"
-    ]
-    assert (
-        "warehouse: brain_records.parquet duplicate ids: BRAIN-WAREHOUSE-DUP-A"
-        in audit["findings"]
-    )
+    assert audit["warehouse_duplicate_identities"]["brain_records.parquet"] == ["BRAIN-WAREHOUSE-DUP-A"]
+    assert "warehouse: brain_records.parquet duplicate ids: BRAIN-WAREHOUSE-DUP-A" in audit["findings"]
 
 
 def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -> None:
@@ -2835,9 +2611,7 @@ def test_brain_audit_validates_mechanism_memory_cases_and_provenance(tmp_path) -
 
     assert audit["passed"] is False
     assert audit["mechanisms_without_cases"] == ["MM-no-cases"]
-    assert audit["mechanisms_with_unknown_success_cases"] == [
-        "MM-unknown-success: EP-unknown"
-    ]
+    assert audit["mechanisms_with_unknown_success_cases"] == ["MM-unknown-success: EP-unknown"]
     assert audit["mechanisms_without_provenance"] == [
         "MM-no-cases",
         "MM-unknown-success",
@@ -2994,12 +2768,10 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
     assert (tmp_path / "brain" / "snapshots" / updated.brain_version).exists()
     assert (tmp_path / "memory" / "mechanisms" / updated.brain_version).exists()
     assert (tmp_path / "memory" / "shard_brains" / updated.brain_version).exists()
-    claims_payload = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(
+    claims_payload = (tmp_path / "brain" / "current" / "claims.jsonl").read_text(encoding="utf-8")
+    mechanisms_payload = (tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl").read_text(
         encoding="utf-8"
     )
-    mechanisms_payload = (
-        tmp_path / "memory" / "mechanisms" / "current" / "mechanisms.jsonl"
-    ).read_text(encoding="utf-8")
     shard_manifest = read_json(tmp_path / "memory" / "shard_brains" / "current" / "manifest.json")
     coverage = audit_coverage(tmp_path)
 
@@ -3022,8 +2794,7 @@ def test_brain_update_incrementally_merges_new_episode_without_full_rebuild(
 def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -> None:
     source = tmp_path / "freeform_notes.md"
     source.write_text(
-        "Free-form research note without a parseable date.\n"
-        "Second sentence should be covered by source segment audit.",
+        "Free-form research note without a parseable date.\nSecond sentence should be covered by source segment audit.",
         encoding="utf-8",
     )
     llm = RecordingSemanticLLM()
@@ -3043,25 +2814,18 @@ def test_semantic_import_uses_structured_llm_output_and_writes_trace(tmp_path) -
     assert semantic_audit["prompt_sha256"] == sha256_text(str(llm.calls[0]["prompt"]))
     assert semantic_audit["source_path"] == episode.provenance[0].uri
     assert semantic_audit["source_sha256"] == file_sha256(preserved_raw)
-    assert semantic_audit["source_text_sha256"] == sha256_text(
-        preserved_raw.read_text(encoding="utf-8")
-    )
-    assert semantic_audit["source_segment_count"] == len(
-        semantic_audit["source_segments"]
-    )
+    assert semantic_audit["source_text_sha256"] == sha256_text(preserved_raw.read_text(encoding="utf-8"))
+    assert semantic_audit["source_segment_count"] == len(semantic_audit["source_segments"])
     assert semantic_audit["source_segment_count"] >= 2
     first_segment = semantic_audit["source_segments"][0]
     assert first_segment["excerpt"] == "Free-form research note without a parseable date."
     assert first_segment["text_sha256"] == sha256_text(str(first_segment["excerpt"]))
     assert semantic_audit["output_field_source_ids"] == {
-        field_name: [episode.provenance[0].source_id]
-        for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
+        field_name: [episode.provenance[0].source_id] for field_name in SEMANTIC_IMPORT_REQUIRED_OUTPUT_FIELDS
     }
     output_text_provenance = semantic_audit["output_text_provenance"]
     assert semantic_audit["output_text_provenance_count"] == len(output_text_provenance)
-    assert semantic_audit["output_text_provenance_sha256"] == sha256_text(
-        canonical_json(output_text_provenance)
-    )
+    assert semantic_audit["output_text_provenance_sha256"] == sha256_text(canonical_json(output_text_provenance))
     assert output_text_provenance == [
         {
             "field_name": "blind_analysis.summary",
@@ -3117,32 +2881,18 @@ def test_semantic_import_preserves_canonical_episode_collections(tmp_path) -> No
 
     assert episode.research_version == "semantic-rich-test"
     assert [candidate.ticker for candidate in episode.blind_predictions] == ["424242"]
-    assert (
-        episode.blind_predictions[0].provenance[0].source_id
-        == episode.provenance[0].source_id
-    )
-    assert (
-        episode.observed_events[0].provenance[0].source_id
-        == episode.provenance[0].source_id
-    )
+    assert episode.blind_predictions[0].provenance[0].source_id == episode.provenance[0].source_id
+    assert episode.observed_events[0].provenance[0].source_id == episode.provenance[0].source_id
     assert episode.event_ticker_edges[0].episode_id == episode.episode_id
-    assert (
-        episode.event_ticker_edges[0].provenance[0].source_id
-        == episode.provenance[0].source_id
-    )
+    assert episode.event_ticker_edges[0].provenance[0].source_id == episode.provenance[0].source_id
     assert episode.lessons[0].support_episode_ids == [episode.episode_id]
     assert episode.lessons[0].provenance[0].source_id == episode.provenance[0].source_id
     assert episode.counterexamples[0].contradiction_episode_ids == [episode.episode_id]
-    assert (
-        episode.counterexamples[0].provenance[0].source_id
-        == episode.provenance[0].source_id
-    )
+    assert episode.counterexamples[0].provenance[0].source_id == episode.provenance[0].source_id
     assert episode.misses == ["The source omits downstream price validation."]
 
     semantic_audit = episode.input_audit["semantic_import"]
-    output_text_fields = {
-        record["field_name"] for record in semantic_audit["output_text_provenance"]
-    }
+    output_text_fields = {record["field_name"] for record in semantic_audit["output_text_provenance"]}
     assert {
         "blind_predictions.thesis",
         "blind_predictions.direct_evidence[1]",
@@ -3154,9 +2904,7 @@ def test_semantic_import_preserves_canonical_episode_collections(tmp_path) -> No
         "misses[1]",
     }.issubset(output_text_fields)
     for field_name in output_text_fields:
-        assert semantic_audit["output_field_source_ids"][field_name] == [
-            episode.provenance[0].source_id
-        ]
+        assert semantic_audit["output_field_source_ids"][field_name] == [episode.provenance[0].source_id]
 
     audit = audit_provenance(tmp_path)
     assert audit["passed"], audit["findings"]
